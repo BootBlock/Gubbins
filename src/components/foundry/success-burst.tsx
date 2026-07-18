@@ -3,18 +3,23 @@
  *
  * A single {@link BurstProvider} mounted near the app root owns one fixed, `pointer-events-none`
  * overlay and exposes an imperative {@link useBurst} trigger. Any feature can call `burst()` on a
- * genuine milestone moment — the first item ever added, a completed stock-take — and a brief,
- * tasteful spark burst plays once from a point and then cleans itself up. It is deliberately
- * fire-and-forget: the caller doesn't render or dispose anything; each burst self-removes from
- * state once its animation has run, leaving no lingering DOM or opacity behind.
+ * genuine milestone moment — the first item ever added, a completed stock-take — and a firework
+ * plays once: a page-filling shell of sparks that carries into every corner of the viewport over
+ * three to four seconds and then cleans itself up. It is deliberately fire-and-forget: the caller
+ * doesn't render or dispose anything; each burst self-removes from state once its animation has
+ * run, leaving no lingering DOM or opacity behind.
  *
  * Why a provider (like {@link ToastProvider}) rather than a per-call-site component: the animation
  * lives in exactly one place, so no call site hand-rolls particles, and a burst can fire from a
  * dialog that is itself about to close without being torn down mid-play.
  *
  * Design constraints (see the `gubbins-burst-*` keyframes in `styles/index.css`):
- *  - **Compositor-only** — sparks animate `transform` + `opacity` only (no layout/paint thrash),
- *    with `will-change` hints; the particle count is capped in {@link buildBurstParticles}.
+ *  - **GPU-only** — sparks animate `transform` (3D-composited via `translate3d`) + `opacity` and
+ *    nothing else, so every frame is the compositor's work: no layout, no paint, no main-thread
+ *    involvement once the animation is running. The overlay is promoted to its own layer and
+ *    `contain`ed so the sparks can never invalidate the page beneath them, each spark carries a
+ *    `will-change` hint, and the particle count is capped in {@link buildBurstParticles} so the
+ *    number of composited layers is bounded regardless of viewport size.
  *  - **Tokens only** — every colour is a brand token (`--primary` / `--highlight`) that tracks the
  *    user's accent, so the burst recolours for free with their Colour.
  *  - **Reduced motion is nothing** — when decorative motion is suppressed (OS
@@ -41,6 +46,7 @@ import {
 import {
   buildBurstParticles,
   BURST_DURATION_MS,
+  DEFAULT_BURST_REACH,
   type BurstParticle,
   type Rng,
 } from './success-burst-geometry';
@@ -72,13 +78,29 @@ interface ActiveBurst {
   readonly id: string;
   readonly x: number;
   readonly y: number;
+  /** How far the furthest spark travels, px — sized to the viewport when the burst was fired. */
+  readonly reach: number;
   readonly particles: readonly BurstParticle[];
 }
 
 const BurstContext = createContext<BurstContextValue | null>(null);
 
-/** The soft ring's diameter at full expansion, px. */
-const RING_SIZE = 128;
+/**
+ * The soft shockwave ring expands to the full reach of the sparks, so it reads as the leading edge
+ * of the shell rather than a small halo left behind at the origin.
+ */
+const RING_SIZE_FACTOR = 2;
+
+/** How long the shockwave ring takes to cross the page, ms — it leads the sparks, then is gone. */
+const RING_DURATION_MS = 1400;
+
+/**
+ * How many bursts may be in flight at once. Each one is now a page-filling shell that lives for
+ * several seconds, so — unlike the old brief pop — repeated fires genuinely overlap, and each
+ * carries ~100 composited layers. Retiring the oldest keeps the worst case bounded no matter how
+ * often `burst()` is called (a milestone firing beside a stock-take, or the lab trigger held down).
+ */
+const MAX_ACTIVE_BURSTS = 3;
 
 /** The brand-token CSS variable each spark hue maps to (accent-tracked — see the Colour axis). */
 const HUE_VAR: Record<BurstParticle['hue'], string> = {
@@ -91,6 +113,18 @@ function defaultOrigin(): BurstOrigin {
   const w = typeof window !== 'undefined' ? window.innerWidth : 0;
   const h = typeof window !== 'undefined' ? window.innerHeight : 0;
   return { x: w / 2, y: h * 0.42 };
+}
+
+/**
+ * How far the sparks must travel from `origin` to reach the furthest corner of the viewport — the
+ * distance to the corner diagonally opposite, so the shell genuinely fills the page from wherever
+ * it was fired rather than stopping short. Falls back to the geometry default off-DOM.
+ */
+function reachFor(origin: BurstOrigin): number {
+  if (typeof window === 'undefined') return DEFAULT_BURST_REACH;
+  const { innerWidth: w, innerHeight: h } = window;
+  if (!w || !h) return DEFAULT_BURST_REACH;
+  return Math.hypot(Math.max(origin.x, w - origin.x), Math.max(origin.y, h - origin.y));
 }
 
 export interface BurstProviderProps {
@@ -130,8 +164,11 @@ export function BurstProvider({ children, motionProvider, rng }: BurstProviderPr
       if (reducedRef.current) return;
       const id = crypto.randomUUID();
       const origin = options?.origin ?? defaultOrigin();
-      const particles = buildBurstParticles(undefined, rng);
-      setBursts((current) => [...current, { id, x: origin.x, y: origin.y, particles }]);
+      const reach = reachFor(origin);
+      const particles = buildBurstParticles(undefined, rng, reach);
+      setBursts((current) =>
+        [...current, { id, x: origin.x, y: origin.y, reach, particles }].slice(-MAX_ACTIVE_BURSTS),
+      );
       // Self-clean once the animation has run (+ a small buffer so the last frame paints).
       timers.current.set(
         id,
@@ -154,44 +191,60 @@ export function BurstProvider({ children, motionProvider, rng }: BurstProviderPr
           aria-hidden
           className="pointer-events-none fixed inset-0 z-[70] overflow-hidden"
           data-testid="burst-overlay"
+          // Promote the whole overlay to its own compositor layer and isolate it: the sparks then
+          // animate entirely on the GPU and can never invalidate layout or paint of the page
+          // beneath, however many are in flight.
+          style={{
+            transform: 'translateZ(0)',
+            willChange: 'transform',
+            contain: 'layout paint style',
+          }}
         >
-          {bursts.map((b) => (
-            <div key={b.id} className="absolute" style={{ left: b.x, top: b.y }} data-testid="burst">
-              {/* Soft expanding ring behind the sparks, centred on the origin. */}
-              <span
-                aria-hidden
-                className="animate-burst-ring absolute rounded-full"
-                style={{
-                  width: RING_SIZE,
-                  height: RING_SIZE,
-                  left: -RING_SIZE / 2,
-                  top: -RING_SIZE / 2,
-                  border: '2px solid color-mix(in oklab, var(--primary) 50%, transparent)',
-                  willChange: 'transform, opacity',
-                }}
-              />
-              {b.particles.map((p) => (
+          {bursts.map((b) => {
+            const ringSize = b.reach * RING_SIZE_FACTOR;
+            return (
+              <div key={b.id} className="absolute" style={{ left: b.x, top: b.y }} data-testid="burst">
+                {/* Soft shockwave ring expanding out ahead of the sparks, centred on the origin. */}
                 <span
-                  key={p.id}
                   aria-hidden
-                  data-testid="burst-particle"
-                  className="animate-burst-spark absolute rounded-full"
+                  className="animate-burst-ring absolute rounded-full"
                   style={{
-                    width: p.size,
-                    height: p.size,
-                    left: -p.size / 2,
-                    top: -p.size / 2,
-                    backgroundColor: HUE_VAR[p.hue],
-                    animationDelay: `${p.delayMs}ms`,
+                    width: ringSize,
+                    height: ringSize,
+                    left: -ringSize / 2,
+                    top: -ringSize / 2,
+                    border: '2px solid color-mix(in oklab, var(--primary) 50%, transparent)',
                     willChange: 'transform, opacity',
-                    // Consumed by the `gubbins-burst-spark` keyframe as the outward end-point.
-                    ['--burst-dx' as string]: `${p.dx}px`,
-                    ['--burst-dy' as string]: `${p.dy}px`,
+                    // The shockwave outruns the sparks and is gone well before they land.
+                    ['--burst-duration' as string]: `${RING_DURATION_MS}ms`,
                   }}
                 />
-              ))}
-            </div>
-          ))}
+                {b.particles.map((p) => (
+                  <span
+                    key={p.id}
+                    aria-hidden
+                    data-testid="burst-particle"
+                    className="animate-burst-spark absolute rounded-full"
+                    style={{
+                      width: p.size,
+                      height: p.size,
+                      left: -p.size / 2,
+                      top: -p.size / 2,
+                      backgroundColor: HUE_VAR[p.hue],
+                      animationDelay: `${p.delayMs}ms`,
+                      willChange: 'transform, opacity',
+                      // Consumed by the `gubbins-burst-spark` keyframe as the outward end-point,
+                      // the gravity sag applied as it fades, and this spark's own flight time.
+                      ['--burst-dx' as string]: `${p.dx}px`,
+                      ['--burst-dy' as string]: `${p.dy}px`,
+                      ['--burst-drop' as string]: `${p.drop}px`,
+                      ['--burst-duration' as string]: `${p.durationMs}ms`,
+                    }}
+                  />
+                ))}
+              </div>
+            );
+          })}
         </div>
       ) : null}
     </BurstContext.Provider>

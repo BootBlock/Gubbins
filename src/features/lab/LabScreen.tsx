@@ -8,10 +8,11 @@
  *
  * The screen is registry-driven so future switches cost one entry rather than a new screen:
  * {@link OCCASIONS} render as three-way garnish gates and {@link LAB_FLAGS} as grouped on/off
- * rows. Two things sit outside that pattern because they are not booleans — the **date override**,
- * which shifts what the whole app considers "today", and the **actions** section, which is
- * separated and confirmation-gated precisely because (unlike every switch above it) it writes to
- * the user's real data.
+ * rows. Three things sit outside that pattern because they are not booleans — the **date override**,
+ * which shifts what the whole app considers "today"; the **effects** section, which plays a one-off
+ * animation on demand rather than storing anything; and the **actions** section, which is separated
+ * and confirmation-gated precisely because (unlike every switch above it) it writes to the user's
+ * real data.
  */
 import { useMemo, useState } from 'react';
 import {
@@ -25,8 +26,10 @@ import {
   SelectField,
   Surface,
   MAIN_CONTENT_ID,
+  useBurst,
 } from '@/components/foundry';
-import { LabIcon, ResetIcon, WarningIcon } from '@/components/icons';
+import { useDecorationFlourishReduced } from '@/components/foundry/decoration-motion';
+import { CelebrateIcon, LabIcon, ResetIcon, WarningIcon } from '@/components/icons';
 import { OCCASIONS, resolveOccasion, type OccasionMode } from '@/components/background/seasonal';
 import { useT } from '@/features/i18n';
 import { nowDate } from '@/lib/clock';
@@ -182,6 +185,8 @@ export function LabScreen() {
           })}
         </Surface>
 
+        <BurstSection />
+
         <SeedSection />
       </main>
     </PageContainer>
@@ -224,6 +229,53 @@ function DateOverrideSection({
       </div>
       <p className="mt-3 text-xs text-muted-foreground" role="status" data-testid="lab-date-status">
         {value ? t('lab.date.active', { vars: { date: value } }) : t('lab.date.real')}
+      </p>
+    </Surface>
+  );
+}
+
+/**
+ * The effects section: play a one-off effect on demand rather than waiting for the milestone that
+ * normally fires it (the first item ever added, a completed stock-take), which is otherwise a
+ * once-per-device moment and awkward to see again.
+ *
+ * It reads the same flourish gate the burst itself does, so when the effect *can't* play — the
+ * animation level is below the maximal tier, or the device prefers reduced motion — the row says
+ * so up front instead of leaving a button that silently does nothing.
+ */
+function BurstSection() {
+  const t = useT();
+  const { burst } = useBurst();
+  const suppressed = useDecorationFlourishReduced();
+  const [fired, setFired] = useState(false);
+
+  return (
+    <Surface className="p-5" aria-labelledby="lab-burst-heading">
+      <h2 id="lab-burst-heading" className="text-sm font-semibold text-foreground">
+        {t('lab.burst.heading')}
+      </h2>
+      <p className="mt-1 text-xs text-muted-foreground">{t('lab.burst.intro')}</p>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">{t('lab.burst.label')}</div>
+          <p className="text-xs text-muted-foreground">{t('lab.burst.description')}</p>
+        </div>
+        <Button
+          variant="outline"
+          data-testid="lab-burst-fire"
+          onClick={() => {
+            burst();
+            setFired(true);
+          }}
+        >
+          <CelebrateIcon aria-hidden />
+          {t('lab.burst.action')}
+        </Button>
+      </div>
+
+      <p className="mt-3 text-xs text-muted-foreground" role="status" data-testid="lab-burst-status">
+        {suppressed ? t('lab.burst.suppressed') : fired ? t('lab.burst.fired') : null}
       </p>
     </Surface>
   );

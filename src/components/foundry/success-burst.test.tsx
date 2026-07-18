@@ -48,16 +48,31 @@ describe('buildBurstParticles', () => {
   });
 
   it('alternates the two accent hues and keeps offsets/sizes bounded', () => {
-    const particles = buildBurstParticles(BURST_PARTICLE_COUNT, () => 0.5);
+    const reach = 900;
+    const particles = buildBurstParticles(BURST_PARTICLE_COUNT, () => 0.5, reach);
     expect(particles[0]!.hue).toBe('primary');
     expect(particles[1]!.hue).toBe('highlight');
     for (const p of particles) {
-      // Radius is clamped ≤ 104px, so each axis offset stays within that magnitude.
-      expect(Math.hypot(p.dx, p.dy)).toBeLessThanOrEqual(104.001);
-      expect(p.size).toBeGreaterThanOrEqual(5);
-      expect(p.size).toBeLessThanOrEqual(9);
+      // No spark travels further than the reach it was laid out for.
+      expect(Math.hypot(p.dx, p.dy)).toBeLessThanOrEqual(reach + 0.001);
+      expect(p.drop).toBeGreaterThanOrEqual(0);
+      expect(p.size).toBeGreaterThanOrEqual(6);
+      expect(p.size).toBeLessThanOrEqual(16);
       expect(p.delayMs).toBeGreaterThanOrEqual(0);
+      // Every flight lands inside the 3–5s the effect is meant to occupy.
+      expect(p.durationMs).toBeGreaterThanOrEqual(3000);
+      expect(p.durationMs + p.delayMs).toBeLessThanOrEqual(BURST_DURATION_MS);
     }
+  });
+
+  it('scales the sparks to the reach it is given, and clamps an absurd one', () => {
+    const near = buildBurstParticles(8, () => 0.9, 300);
+    const far = buildBurstParticles(8, () => 0.9, 1200);
+    expect(Math.hypot(far[0]!.dx, far[0]!.dy)).toBeGreaterThan(Math.hypot(near[0]!.dx, near[0]!.dy));
+
+    // A reach beyond the clamp band can't produce an unbounded burst.
+    const absurd = buildBurstParticles(8, () => 1, 100_000);
+    for (const p of absurd) expect(Math.hypot(p.dx, p.dy)).toBeLessThanOrEqual(1600.001);
   });
 
   it('is deterministic for a given RNG', () => {
@@ -94,6 +109,9 @@ describe('BurstProvider / useBurst', () => {
     // The keyframe reads these custom props as the spark's outward end-point.
     expect(first.style.getPropertyValue('--burst-dx')).not.toBe('');
     expect(first.style.getPropertyValue('--burst-dy')).not.toBe('');
+    // …plus the gravity sag and this spark's own flight time.
+    expect(first.style.getPropertyValue('--burst-drop')).not.toBe('');
+    expect(first.style.getPropertyValue('--burst-duration')).not.toBe('');
     // Colour comes from an accent-tracking brand token, never a raw literal.
     expect(first.style.backgroundColor).toContain('var(--primary)');
     expect(first).toHaveClass('animate-burst-spark');
@@ -108,6 +126,18 @@ describe('BurstProvider / useBurst', () => {
     fireEvent.click(screen.getByText('go'));
     expect(screen.queryByTestId('burst-overlay')).not.toBeInTheDocument();
     expect(screen.queryAllByTestId('burst-particle')).toHaveLength(0);
+  });
+
+  it('retires the oldest burst rather than stacking them without limit', () => {
+    render(
+      <BurstProvider motionProvider={motion(false)} rng={() => 0.5}>
+        <Trigger />
+      </BurstProvider>,
+    );
+    // Each burst now lives for seconds, so repeated fires overlap; the worst case must stay bounded.
+    for (let i = 0; i < 6; i++) fireEvent.click(screen.getByText('go'));
+    expect(screen.getAllByTestId('burst')).toHaveLength(3);
+    expect(screen.getAllByTestId('burst-particle')).toHaveLength(3 * BURST_PARTICLE_COUNT);
   });
 
   it('self-cleans once the animation has run (no lingering DOM)', () => {

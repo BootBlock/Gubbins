@@ -46,6 +46,7 @@ vi.mock('@/components/icons', async (importOriginal) => {
 });
 
 import { LabScreen } from './LabScreen';
+import { BurstProvider } from '@/components/foundry';
 import { useLabStore } from '@/state/stores/useLabStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { setClockOffsetMs } from '@/lib/clock';
@@ -157,6 +158,45 @@ describe('LabScreen', () => {
         stop();
         setClockOffsetMs(0);
       }
+    });
+  });
+
+  describe('firework trigger', () => {
+    // The burst only plays at the maximal animation level, so each test states the level it means.
+    afterEach(() => usePreferencesStore.setState({ animationLevel: 'balanced' }));
+
+    it('plays the firework on demand when the animation level allows it', () => {
+      usePreferencesStore.setState({ animationLevel: 'headache' });
+      render(
+        <BurstProvider
+          motionProvider={() => ({ matches: false, addEventListener() {}, removeEventListener() {} })}
+        >
+          <LabScreen />
+        </BurstProvider>,
+      );
+      expect(screen.queryByTestId('burst-overlay')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('lab-burst-fire'));
+
+      expect(screen.getByTestId('burst-overlay')).toBeInTheDocument();
+      expect(screen.getAllByTestId('burst-particle').length).toBeGreaterThan(0);
+      expect(screen.getByTestId('lab-burst-status')).toHaveTextContent('Fired');
+    });
+
+    it('says up front that nothing will play at a calmer animation level', () => {
+      usePreferencesStore.setState({ animationLevel: 'balanced' });
+      render(
+        <BurstProvider
+          motionProvider={() => ({ matches: false, addEventListener() {}, removeEventListener() {} })}
+        >
+          <LabScreen />
+        </BurstProvider>,
+      );
+      expect(screen.getByTestId('lab-burst-status')).toHaveTextContent('Total Gubbage');
+
+      // …and the button genuinely stays a no-op rather than the hint being cosmetic.
+      fireEvent.click(screen.getByTestId('lab-burst-fire'));
+      expect(screen.queryByTestId('burst-overlay')).not.toBeInTheDocument();
     });
   });
 
