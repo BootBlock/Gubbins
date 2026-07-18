@@ -72,7 +72,11 @@ export function ReportsScreen() {
 
   const value = useInventoryValue();
   const consumption = useConsumptionRate();
-  const movement = useMovement();
+  // Stock movement has its own selectable window (issue #86), matching the Spend and Sales
+  // sections rather than the fixed 30-day span it used to be pinned to.
+  const movementWindow = normaliseAnalyticsWindow(usePreferencesStore((s) => s.reportsMovementWindow));
+  const setMovementWindow = usePreferencesStore((s) => s.setReportsMovementWindow);
+  const movement = useMovement(movementWindow);
   const lowStock = useLowStockCount();
   // The global idle threshold (issue #92) — the figure the panel is labelled with, and the
   // fallback for items whose location doesn't override it.
@@ -328,7 +332,17 @@ export function ReportsScreen() {
 
         {/* Stock movement */}
         <Reveal>
-          <Panel title={`Stock movement (last ${REPORT_WINDOW_DAYS} days)`}>
+          <Panel
+            title={`Stock movement (last ${movementWindow} days)`}
+            action={
+              <WindowToggle
+                value={movementWindow}
+                onChange={setMovementWindow}
+                formatters={f}
+                label="Stock movement window"
+              />
+            }
+          >
             {movement.isLoading ? (
               <CentredSpinner />
             ) : movement.data ? (
@@ -649,10 +663,25 @@ function StatCard({
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+/**
+ * A titled report surface. `action` is an optional control rendered opposite the heading — the
+ * Stock-movement panel uses it for its window toggle; panels without one keep the plain heading.
+ */
+function Panel({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <Surface className="flex flex-col gap-3 p-4">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{title}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{title}</h2>
+        {action}
+      </div>
       {children}
     </Surface>
   );

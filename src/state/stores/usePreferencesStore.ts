@@ -484,13 +484,15 @@ interface PreferencesStore {
   readonly cataloguePaperPreview: boolean;
   /**
    * Last-selected trailing window (days) for each Reports analytics section (issue #116). Each
-   * section — Advanced analytics, Spend analytics, Sales & disposals — remembers its own choice
-   * independently, so switching one doesn't move the others, and the pick survives a reload.
+   * section — Advanced analytics, Stock movement, Spend analytics, Sales & disposals — remembers
+   * its own choice independently, so switching one doesn't move the others, and the pick survives
+   * a reload.
    * Persisted as *intent* and reconciled through `normaliseAnalyticsWindow` on read, so a window
    * no longer offered can never reach a query key or the segmented control. Default is the shared
    * {@link DEFAULT_ANALYTICS_WINDOW} (a quarter).
    */
   readonly reportsAnalyticsWindow: number;
+  readonly reportsMovementWindow: number;
   readonly reportsSpendWindow: number;
   readonly reportsSalesWindow: number;
   setBaseCurrency: (currency: string) => void;
@@ -607,6 +609,7 @@ interface PreferencesStore {
   setCataloguePaperPreview: (on: boolean) => void;
   /** Remember the trailing window (days) chosen for a Reports analytics section (issue #116). */
   setReportsAnalyticsWindow: (days: number) => void;
+  setReportsMovementWindow: (days: number) => void;
   setReportsSpendWindow: (days: number) => void;
   setReportsSalesWindow: (days: number) => void;
 }
@@ -685,6 +688,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       catalogueRunningHeader: true,
       cataloguePaperPreview: false,
       reportsAnalyticsWindow: DEFAULT_ANALYTICS_WINDOW,
+      reportsMovementWindow: DEFAULT_ANALYTICS_WINDOW,
       reportsSpendWindow: DEFAULT_ANALYTICS_WINDOW,
       reportsSalesWindow: DEFAULT_ANALYTICS_WINDOW,
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
@@ -806,6 +810,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // Normalise so a stale/out-of-range persisted or passed value can never reach a query key
       // or the segmented control (the control only ever offers valid windows).
       setReportsAnalyticsWindow: (days) => set({ reportsAnalyticsWindow: normaliseAnalyticsWindow(days) }),
+      setReportsMovementWindow: (days) => set({ reportsMovementWindow: normaliseAnalyticsWindow(days) }),
       setReportsSpendWindow: (days) => set({ reportsSpendWindow: normaliseAnalyticsWindow(days) }),
       setReportsSalesWindow: (days) => set({ reportsSalesWindow: normaliseAnalyticsWindow(days) }),
     }),

@@ -47,6 +47,7 @@ import {
   SPEND_BUCKETS,
   VALUATION_TREND_POINTS,
 } from '@/features/reports/queries';
+import { normaliseAnalyticsWindow } from '@/features/reports/analytics-windows';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
   buildCatalogCsv,
@@ -97,7 +98,14 @@ async function buildReportCsv(kind: ReportExportKind): Promise<string> {
     case 'CONSUMPTION':
       return buildConsumptionCsv(await repo.consumptionRate(REPORT_WINDOW_DAYS));
     case 'MOVEMENT':
-      return buildMovementCsv(await repo.movement(REPORT_WINDOW_DAYS, REPORT_MOVEMENT_BUCKETS));
+      // Honour the user's selected movement window (issue #86), on the same reasoning as
+      // dead stock below: the exported CSV should cover the span the on-screen chart shows.
+      return buildMovementCsv(
+        await repo.movement(
+          normaliseAnalyticsWindow(usePreferencesStore.getState().reportsMovementWindow),
+          REPORT_MOVEMENT_BUCKETS,
+        ),
+      );
     case 'DEAD_STOCK':
       // Honour the user's configured idle threshold (issue #92) so the exported CSV agrees
       // with the on-screen report it was exported from, rather than the bare default.
