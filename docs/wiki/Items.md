@@ -41,15 +41,15 @@ The tabs you see depend on which [[modules|Modular-UI]] you have enabled:
 
 | Tab | Holds |
 | --- | --- |
-| **Details** | Name, description, notes, part number (MPN), manufacturer, barcode, serial number, unit cost, category, weight and dimensions. Recording the weight of a single unit also lets you [[count a handful on a scale|Counting-by-Weight]]. |
-| **Supplier & ops** | [[Supplier parts & prices|Supplier-Parts-and-Price-History]], reorder points, and whether this item is watched for [[dead stock|ABC-Turnover-and-Aging]]. |
-| **Lifecycle** | [[Warranty & depreciation|Warranty-and-Depreciation]], [[current value|Current-Value-and-Revaluation]], [[maintenance|Maintenance-and-Servicing]], [[test records|Test-and-Calibration-Records]], and [[variants|Variants-and-SKUs]]. |
-| **Kit** | Define the item as a [[kit of other items|Kits-and-Bundles]]. |
-| **Related** | [[Cross-links to other items|Tags-Attachments-and-Related-Items]] (works with, accessory, spare-for). |
-| **Substitutions** | [[Interchangeable stand-ins|Tags-Attachments-and-Related-Items]] for this item. |
-| **Media & docs** | Photos and linked [[datasheets/attachments|Tags-Attachments-and-Related-Items]]. |
-| **Classification** | [[Tags, capabilities and custom fields|Custom-Fields-and-Capabilities]]. |
-| **Activity** | This item's [[change history|Activity-Log]]. |
+| **Details** | Name, description, notes, part number (MPN), manufacturer, barcode, serial number, unit cost, category, weight and dimensions. Recording the weight of a single unit also lets you [[count a handful on a scale\|Counting-by-Weight]]. |
+| **Supplier & ops** | [[Supplier parts & prices\|Supplier-Parts-and-Price-History]], reorder points, and whether this item is watched for [[dead stock\|ABC-Turnover-and-Aging]]. |
+| **Lifecycle** | [[Warranty & depreciation\|Warranty-and-Depreciation]], [[current value\|Current-Value-and-Revaluation]], [[maintenance\|Maintenance-and-Servicing]], [[test records\|Test-and-Calibration-Records]], and [[variants\|Variants-and-SKUs]]. |
+| **Kit** | Define the item as a [[kit of other items\|Kits-and-Bundles]]. |
+| **Related** | [[Cross-links to other items\|Tags-Attachments-and-Related-Items]] (works with, accessory, spare-for). |
+| **Substitutions** | [[Interchangeable stand-ins\|Tags-Attachments-and-Related-Items]] for this item. |
+| **Media & docs** | Photos and linked [[datasheets/attachments\|Tags-Attachments-and-Related-Items]]. |
+| **Classification** | [[Tags, capabilities and custom fields\|Custom-Fields-and-Capabilities]]. |
+| **Activity** | This item's [[change history\|Activity-Log]]. |
 
 > **ℹ️ Note**
 > You'll only see tabs for capabilities you've enabled. If an item is missing something

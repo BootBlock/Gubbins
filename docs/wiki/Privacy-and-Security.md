@@ -18,14 +18,14 @@ A few optional features exist precisely to move data. Each is opt-in and stays u
 
 | Feature | What it does | Your control |
 | --- | --- | --- |
-| **[[Cloud sync|Cloud-Sync]]** | Keeps devices in step | Through *your own* folder or Drive; no Gubbins server in between |
-| **[[Backup & restore|Backup-and-Restore]]** | Portable copy of your data | A file *you* save, where *you* choose |
-| **[[Export & import|Export-and-Import]]** | Open-format data out/in | Only what you export leaves |
-| **[[Bridge|Bridge-Overview]]** | Exposes data to other tools | You run it; loopback-only + token by default; read-only unless you allow writes |
-| **[[Scraping|Scraping-Supplier-Data]]** | Reads a supplier web page | Only when *you* trigger it, via the trusted companion extension |
-| **[[Product lookup|Scraping-Supplier-Data]]** | Names a scanned barcode | Off until you allow it; then sends *only the barcode number* to Open Food Facts, only when you tap **Look up** |
-| **[[Camera scanning|Camera-Scanning]]** / **[[OCR|Receipt-and-Label-OCR]]** | Read codes / text | On-device only; no image leaves your device |
-| **[[Diagnostics|About-and-Diagnostics]]** | Environment details for a bug report | Only gathered when you press **Refresh**; only shared if you copy it or open the pre-filled issue; never includes your inventory |
+| **[[Cloud sync\|Cloud-Sync]]** | Keeps devices in step | Through *your own* folder or Drive; no Gubbins server in between |
+| **[[Backup & restore\|Backup-and-Restore]]** | Portable copy of your data | A file *you* save, where *you* choose |
+| **[[Export & import\|Export-and-Import]]** | Open-format data out/in | Only what you export leaves |
+| **[[Bridge\|Bridge-Overview]]** | Exposes data to other tools | You run it; loopback-only + token by default; read-only unless you allow writes |
+| **[[Scraping\|Scraping-Supplier-Data]]** | Reads a supplier web page | Only when *you* trigger it, via the trusted companion extension |
+| **[[Product lookup\|Scraping-Supplier-Data]]** | Names a scanned barcode | Off until you allow it; then sends *only the barcode number* to Open Food Facts, only when you tap **Look up** |
+| **[[Camera scanning\|Camera-Scanning]]** / **[[OCR\|Receipt-and-Label-OCR]]** | Read codes / text | On-device only; no image leaves your device |
+| **[[Diagnostics\|About-and-Diagnostics]]** | Environment details for a bug report | Only gathered when you press **Refresh**; only shared if you copy it or open the pre-filled issue; never includes your inventory |
 
 ## Good habits
 

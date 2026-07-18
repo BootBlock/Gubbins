@@ -13,7 +13,7 @@ attaching when you report a problem.
 | **About Gubbins** | The **version** you're running and its **build date** — the two facts almost every support question needs. |
 | **Project & support** | Links to this wiki, the source repository, and the issue tracker. |
 | **Author** | Who makes Gubbins. |
-| **Privacy** | The short version of the local-first promise (the full story is on the privacy page linked below). |
+| **Privacy** | The short version of the local-first promise — see [[Privacy & security\|Privacy-and-Security]]. |
 | **AI-assisted development** | A note that AI tooling was used in building the app. |
 | **Diagnostics** | A collapsible panel of environment details — see below. |
 | **Licence & disclaimer** | Gubbins is MIT-licensed and provided "as is". |
