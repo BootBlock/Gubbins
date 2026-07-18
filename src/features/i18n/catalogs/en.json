@@ -1058,5 +1058,20 @@
   "webhooks.delete.title": "Delete this webhook?",
   "webhooks.delete.body": "“{name}” will stop receiving events, and its filter, payload format and signing settings will be lost. This can’t be undone.",
   "webhooks.delete.confirm": "Delete webhook",
-  "webhooks.delete.cancel": "Cancel"
+  "webhooks.delete.cancel": "Cancel",
+  "webhooks.filter.kind.item": "Specific items",
+  "webhooks.filter.itemSearch": "Find items",
+  "webhooks.filter.itemSearchPlaceholder": "Search by name, barcode or serial number…",
+  "webhooks.filter.itemSearchHint": "Start typing to find the items this webhook should be limited to.",
+  "webhooks.filter.itemNoMatches": "No items match that search.",
+  "webhooks.headers.title": "Extra headers",
+  "webhooks.headers.hint": "Optional. Sent with every request from this webhook — handy when your receiver expects a particular header.",
+  "webhooks.headers.empty": "No extra headers.",
+  "webhooks.headers.add": "Add header",
+  "webhooks.headers.name": "Name",
+  "webhooks.headers.value": "Value",
+  "webhooks.headers.remove": "Remove header",
+  "webhooks.headers.issue.empty": "Enter a header name.",
+  "webhooks.headers.issue.reserved": "Names starting “X-Gubbins-” are set by Gubbins itself, including the signature, so they can’t be overridden.",
+  "webhooks.headers.issue.forbidden": "This header can’t be set here — it either carries credentials or is worked out for each request."
 }

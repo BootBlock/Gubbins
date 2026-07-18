@@ -1058,5 +1058,20 @@
   "webhooks.delete.title": "Diesen Webhook löschen?",
   "webhooks.delete.body": "„{name}“ empfängt dann keine Ereignisse mehr, und Filter, Nutzdatenformat und Signiereinstellungen gehen verloren. Das lässt sich nicht rückgängig machen.",
   "webhooks.delete.confirm": "Webhook löschen",
-  "webhooks.delete.cancel": "Abbrechen"
+  "webhooks.delete.cancel": "Abbrechen",
+  "webhooks.filter.kind.item": "Bestimmte Artikel",
+  "webhooks.filter.itemSearch": "Artikel suchen",
+  "webhooks.filter.itemSearchPlaceholder": "Nach Name, Barcode oder Seriennummer suchen…",
+  "webhooks.filter.itemSearchHint": "Tippen Sie los, um die Artikel zu finden, auf die dieser Webhook beschränkt sein soll.",
+  "webhooks.filter.itemNoMatches": "Keine Artikel passen zu dieser Suche.",
+  "webhooks.headers.title": "Zusätzliche Header",
+  "webhooks.headers.hint": "Optional. Werden bei jeder Anfrage dieses Webhooks mitgesendet — nützlich, wenn Ihr Empfänger einen bestimmten Header erwartet.",
+  "webhooks.headers.empty": "Keine zusätzlichen Header.",
+  "webhooks.headers.add": "Header hinzufügen",
+  "webhooks.headers.name": "Name",
+  "webhooks.headers.value": "Wert",
+  "webhooks.headers.remove": "Header entfernen",
+  "webhooks.headers.issue.empty": "Geben Sie einen Header-Namen ein.",
+  "webhooks.headers.issue.reserved": "Namen, die mit „X-Gubbins-“ beginnen, setzt Gubbins selbst — einschließlich der Signatur — und lassen sich daher nicht überschreiben.",
+  "webhooks.headers.issue.forbidden": "Dieser Header kann hier nicht gesetzt werden — er enthält entweder Zugangsdaten oder wird pro Anfrage berechnet."
 }

@@ -40,6 +40,13 @@ import {
   webhookFilterToForm,
   type WebhookFilterForm,
 } from '../filter-form';
+import { WebhookHeadersEditor } from './WebhookHeadersEditor';
+import {
+  webhookHeaderRows,
+  webhookHeaderRowsValid,
+  webhookHeadersFromRows,
+  type WebhookHeaderRow,
+} from '../header-rows';
 import { EventTypePicker } from './EventTypePicker';
 import { WebhookFilterBuilder } from './WebhookFilterBuilder';
 import { WebhookTemplateEditor } from './WebhookTemplateEditor';
@@ -75,6 +82,7 @@ export interface WebhookFormSubmit {
   readonly eventTypes: readonly string[];
   readonly filter: ReturnType<typeof formToWebhookFilter>;
   readonly template: string | null;
+  readonly headers: Readonly<Record<string, string>> | null;
 }
 
 export function WebhookFormDialog({ subscription, onClose, onSubmit, busy, error }: WebhookFormDialogProps) {
@@ -89,6 +97,9 @@ export function WebhookFormDialog({ subscription, onClose, onSubmit, busy, error
     subscription?.eventTypes ?? DEFAULT_SUBSCRIBED_EVENT_TYPES,
   );
   const [template, setTemplate] = useState<string | null>(subscription?.template ?? null);
+  const [headerRows, setHeaderRows] = useState<readonly WebhookHeaderRow[]>(
+    webhookHeaderRows(subscription?.headers),
+  );
 
   const [signingMode, setSigningMode] = useState<SigningMode>(
     subscription === null
@@ -132,6 +143,14 @@ export function WebhookFormDialog({ subscription, onClose, onSubmit, busy, error
       return;
     }
 
+    // Refused here rather than dropped on save: the bridge would decline to send these anyway, and
+    // a header that vanished between saving and delivering is the exact confusion this editor
+    // exists to prevent.
+    if (!webhookHeaderRowsValid(headerRows)) {
+      setValidationKey('webhooks.form.error.headers');
+      return;
+    }
+
     const plan = planWebhookSubscription({
       name,
       url,
@@ -142,6 +161,7 @@ export function WebhookFormDialog({ subscription, onClose, onSubmit, busy, error
       eventTypes,
       filter: unrepresentable ?? formToWebhookFilter(filterForm),
       template,
+      headers: webhookHeadersFromRows(headerRows),
     });
 
     if (!plan.ok) {
@@ -160,6 +180,7 @@ export function WebhookFormDialog({ subscription, onClose, onSubmit, busy, error
       eventTypes: plan.subscription.eventTypes,
       filter: plan.subscription.filter,
       template: plan.subscription.template,
+      headers: plan.subscription.headers,
     });
   };
 
@@ -211,6 +232,7 @@ export function WebhookFormDialog({ subscription, onClose, onSubmit, busy, error
         </FormField>
 
         <SelectField
+          data-testid="webhook-method"
           label={t('webhooks.form.method')}
           value={method}
           onChange={(value) => setMethod(value as WebhookMethod)}
@@ -268,6 +290,12 @@ export function WebhookFormDialog({ subscription, onClose, onSubmit, busy, error
           <WebhookTemplateEditor value={template} onChange={setTemplate} method={method} />
         </section>
 
+        <section className="flex flex-col gap-field-gap">
+          <h3 className="text-sm font-semibold text-foreground">{t('webhooks.headers.title')}</h3>
+          <p className="text-xs text-muted-foreground">{t('webhooks.headers.hint')}</p>
+          <WebhookHeadersEditor rows={headerRows} onChange={setHeaderRows} />
+        </section>
+
         {validationKey !== null ? (
           <p role="alert" className="text-sm text-destructive">
             {t(validationKey)}
@@ -322,6 +350,7 @@ function SigningSection({
       <h3 className="text-sm font-semibold text-foreground">{t('webhooks.form.signingTitle')}</h3>
 
       <SelectField
+        data-testid="webhook-signing"
         label={t('webhooks.form.signing')}
         value={mode}
         onChange={(value) => onModeChange(value as SigningMode)}

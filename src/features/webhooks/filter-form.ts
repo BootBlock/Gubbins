@@ -13,15 +13,15 @@
  * way to say "anything in the shed" than a list with a dropdown on top.
  *
  * Everything else still round-trips safely. {@link webhookFilterToForm} returns `null` for a filter
- * this model cannot represent — a nested tree, a `not`, an inert `none`, or an `item` leaf — and the
- * builder then shows that filter **read-only** rather than editing it. That is the important half:
+ * this model cannot represent — a nested tree, a `not`, or an inert `none` — and the builder then
+ * shows that filter **read-only** rather than editing it. That is the important half:
  * these rows arrive over sync from peers on other builds, and quietly rewriting a filter the editor
  * did not fully understand would change what a subscription delivers without anyone asking for it.
  */
 import type { WebhookFilter, WebhookFilterOp } from './filter';
 
-/** The leaf kinds the builder can create. See the module note on why `item` is not among them. */
-export const WEBHOOK_FORM_CONDITION_KINDS = ['location', 'category', 'tag', 'quantity'] as const;
+/** The leaf kinds the builder can create. */
+export const WEBHOOK_FORM_CONDITION_KINDS = ['location', 'category', 'tag', 'item', 'quantity'] as const;
 export type WebhookFormConditionKind = (typeof WEBHOOK_FORM_CONDITION_KINDS)[number];
 
 /** How the conditions combine. The tree supports more; the builder offers these two. */
@@ -129,10 +129,12 @@ function leafToCondition(filter: WebhookFilter, id: string): WebhookFormConditio
       return { ...base, kind: 'category', ids: filter.categoryIds };
     case 'tag':
       return { ...base, kind: 'tag', ids: filter.tagIds };
+    case 'item':
+      return { ...base, kind: 'item', ids: filter.itemIds };
     case 'quantity':
       return { ...base, kind: 'quantity', op: filter.op, value: String(filter.value) };
     default:
-      // `all` / `any` (nested), `not`, `none` and `item` — deliberately not representable.
+      // `all` / `any` (nested), `not` and `none` — deliberately not representable.
       return null;
   }
 }
@@ -154,5 +156,7 @@ function conditionToLeaf(condition: WebhookFormCondition): WebhookFilter | null 
       return { kind: 'category', categoryIds: ids };
     case 'tag':
       return { kind: 'tag', tagIds: ids };
+    case 'item':
+      return { kind: 'item', itemIds: ids };
   }
 }
