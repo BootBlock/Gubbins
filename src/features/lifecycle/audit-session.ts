@@ -12,16 +12,19 @@
  * or an immutable reducer over {@link AuditSessionState}.
  */
 
-/** How a single location in the scope has been dealt with. */
-export type AuditLocationStatus =
-  /** Not yet finished — still to walk, or currently open. */
-  | 'pending'
-  /** Counted with nothing left to authorise (a clean count, or no countable stock). */
-  | 'counted'
-  /** Variances were found and their reconciliation adjustments authorised. */
-  | 'reconciled'
-  /** Deliberately skipped by the auditor — done, but not counted. */
-  | 'skipped';
+import { isPlainObject, normaliseInteger, normaliseOneOf } from '@/lib/persisted-state';
+
+/**
+ * How a single location in the scope has been dealt with:
+ *
+ * - `pending` — not yet finished: still to walk, or currently open.
+ * - `counted` — counted with nothing left to authorise (a clean count, or no countable stock).
+ * - `reconciled` — variances were found and their reconciliation adjustments authorised.
+ * - `skipped` — deliberately skipped by the auditor: done, but not counted.
+ */
+export const AUDIT_LOCATION_STATUSES = ['pending', 'counted', 'reconciled', 'skipped'] as const;
+
+export type AuditLocationStatus = (typeof AUDIT_LOCATION_STATUSES)[number];
 
 /** A location the walk visits, in the order it will be visited. */
 export interface AuditScopeLocation {
@@ -336,4 +339,67 @@ function findNode(nodes: readonly AuditTreeNode[], id: string): AuditTreeNode | 
     if (found) return found;
   }
   return null;
+}
+
+// --- Rehydration -----------------------------------------------------------------
+
+/** Reconcile one persisted scope entry; null when it isn't a usable `{ id, name }` pair. */
+function normaliseScopeLocation(value: unknown): AuditScopeLocation | null {
+  if (!isPlainObject(value)) return null;
+  const { id, name } = value;
+  if (typeof id !== 'string' || id === '' || typeof name !== 'string') return null;
+  return { id, name };
+}
+
+/** Reconcile one persisted per-location record against {@link AuditLocationRecord}. */
+function normaliseRecord(value: unknown): AuditLocationRecord {
+  if (!isPlainObject(value)) return PENDING_RECORD;
+  return {
+    status: normaliseOneOf(value.status, AUDIT_LOCATION_STATUSES, 'pending'),
+    variancesFound: normaliseInteger(value.variancesFound, 0, { min: 0 }),
+    adjustmentsMade: normaliseInteger(value.adjustmentsMade, 0, { min: 0 }),
+  };
+}
+
+/**
+ * Reconcile a session rehydrated from `localStorage` back into a valid
+ * {@link AuditSessionState}, or `null` when nothing resumable survives.
+ *
+ * Persisted JSON is untyped (see `lib/persisted-state`), and every function in this seam
+ * indexes `scope` by `currentIndex` and dereferences `scope[i].id` — so a truncated write, a
+ * hand-edit, or a shape from an older release would throw rather than degrade. Scope entries
+ * that aren't a usable `{ id, name }` pair are dropped, duplicate ids collapse to their first
+ * occurrence (the walk visits each location once), `currentIndex` is clamped into range, and
+ * records for ids no longer in scope are discarded. An empty scope has nothing to walk, so it
+ * reconciles to "no session" rather than an unresumable one.
+ */
+export function normaliseAuditSession(value: unknown): AuditSessionState | null {
+  if (!isPlainObject(value)) return null;
+
+  const seen = new Set<string>();
+  const scope: AuditScopeLocation[] = [];
+  for (const entry of Array.isArray(value.scope) ? value.scope : []) {
+    const location = normaliseScopeLocation(entry);
+    if (!location || seen.has(location.id)) continue;
+    seen.add(location.id);
+    scope.push(location);
+  }
+  if (scope.length === 0) return null;
+
+  const persistedRecords = isPlainObject(value.records) ? value.records : {};
+  const records: Record<string, AuditLocationRecord> = {};
+  for (const location of scope) {
+    // Only ids still in scope are kept — a stale record can't affect progress, and carrying
+    // it would let a removed location count towards `done`. `hasOwnProperty`, not `in`, so an
+    // id colliding with an `Object.prototype` key can't conjure a record that was never stored.
+    if (Object.prototype.hasOwnProperty.call(persistedRecords, location.id)) {
+      records[location.id] = normaliseRecord(persistedRecords[location.id]);
+    }
+  }
+
+  return {
+    scope,
+    currentIndex: normaliseInteger(value.currentIndex, 0, { min: 0, max: scope.length - 1 }),
+    records,
+  };
 }

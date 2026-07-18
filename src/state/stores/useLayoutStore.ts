@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DashboardLayout } from '@/features/dashboard/dashboard-layout';
 import type { NavOrder } from '@/features/dashboard/dashboard-nav-order';
+import { normaliseArray, normaliseBoolean, normaliseOneOf } from '@/lib/persisted-state';
 
 /**
  * The inventory "View" axis — how the collection is presented (orthogonal to {@link GroupingMode}).
@@ -27,7 +28,22 @@ import type { NavOrder } from '@/features/dashboard/dashboard-nav-order';
  * - `treemap` — a value treemap: tiles whose area is proportional to the stock value they hold,
  *   grouped by category (or by location under the grouping axis).
  */
-export type LayoutDensity = 'data' | 'visual' | 'table' | 'map' | 'treemap';
+export const LAYOUT_DENSITIES = ['data', 'visual', 'table', 'map', 'treemap'] as const;
+
+export type LayoutDensity = (typeof LAYOUT_DENSITIES)[number];
+
+/** The view the inventory opens in before the user picks one. */
+export const DEFAULT_DENSITY: LayoutDensity = 'visual';
+
+/**
+ * Reconcile a persisted/unknown density against the live union, falling back to
+ * {@link DEFAULT_DENSITY}. Rehydrated `localStorage` is untyped (see `lib/persisted-state`), and
+ * a value from an older release or a hand-edit would otherwise reach the per-density row-height
+ * table — which the {@link ItemDensity} doc below relies on being exhaustive.
+ */
+export function normaliseDensity(value: unknown): LayoutDensity {
+  return normaliseOneOf(value, LAYOUT_DENSITIES, DEFAULT_DENSITY);
+}
 
 /**
  * The subset of {@link LayoutDensity} that draws the inventory **item by item** — the modes the
@@ -46,7 +62,17 @@ export type ItemDensity = Exclude<LayoutDensity, 'map' | 'treemap'>;
  * (by category, by tag, …) slot in here and into the `GROUP_MODES` descriptor SSOT
  * (`features/inventory/grouping.ts`) without touching the render fork.
  */
-export type GroupingMode = 'none' | 'location';
+export const GROUPING_MODES = ['none', 'location'] as const;
+
+export type GroupingMode = (typeof GROUPING_MODES)[number];
+
+/** The arrangement the inventory opens in before the user picks one. */
+export const DEFAULT_GROUPING: GroupingMode = 'none';
+
+/** Reconcile a persisted/unknown grouping against the live union — see {@link normaliseDensity}. */
+export function normaliseGrouping(value: unknown): GroupingMode {
+  return normaliseOneOf(value, GROUPING_MODES, DEFAULT_GROUPING);
+}
 
 interface LayoutStore {
   readonly density: LayoutDensity;
@@ -86,21 +112,39 @@ interface LayoutStore {
 export const useLayoutStore = create<LayoutStore>()(
   persist(
     (set) => ({
-      density: 'visual',
-      grouping: 'none',
+      density: DEFAULT_DENSITY,
+      grouping: DEFAULT_GROUPING,
       sidebarCollapsed: false,
       inventoryLocationCard: true,
       dashboardLayout: [],
       navTileOrder: [],
-      setDensity: (density) => set({ density }),
+      setDensity: (density) => set({ density: normaliseDensity(density) }),
       toggleDensity: () => set((state) => ({ density: state.density === 'data' ? 'visual' : 'data' })),
-      setGrouping: (grouping) => set({ grouping }),
+      setGrouping: (grouping) => set({ grouping: normaliseGrouping(grouping) }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       toggleInventoryLocationCard: () =>
         set((state) => ({ inventoryLocationCard: !state.inventoryLocationCard })),
       setDashboardLayout: (dashboardLayout) => set({ dashboardLayout }),
       setNavTileOrder: (navTileOrder) => set({ navTileOrder }),
     }),
-    { name: 'gubbins:layout' },
+    {
+      name: 'gubbins:layout',
+      // Rehydrated JSON is untyped, so reconcile every persisted field against its live shape
+      // rather than merging it over the defaults verbatim. `dashboardLayout` / `navTileOrder`
+      // are only array-checked here — their *members* are reconciled against the live widget
+      // and nav registries on render, which is where a stale tile id has to be resolved anyway.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<Record<keyof LayoutStore, unknown>>;
+        return {
+          ...current,
+          density: normaliseDensity(p.density),
+          grouping: normaliseGrouping(p.grouping),
+          sidebarCollapsed: normaliseBoolean(p.sidebarCollapsed, current.sidebarCollapsed),
+          inventoryLocationCard: normaliseBoolean(p.inventoryLocationCard, current.inventoryLocationCard),
+          dashboardLayout: normaliseArray<DashboardLayout[number]>(p.dashboardLayout),
+          navTileOrder: normaliseArray<NavOrder[number]>(p.navTileOrder),
+        };
+      },
+    },
   ),
 );

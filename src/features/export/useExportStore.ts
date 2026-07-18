@@ -7,31 +7,63 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { normaliseBoolean, normaliseOneOf } from '@/lib/persisted-state';
 
 /**
  * JSON = §2 versioned backup; CSV = items spreadsheet; VAULT = §4.5 Markdown zip;
  * REPORTS = a §3 aggregate report CSV (Phase 61);
  * CATALOG_CSV = a catalog-ready CSV that round-trips through the import wizard (Phase 67).
  */
-export type ExportFormat = 'JSON' | 'CSV' | 'VAULT' | 'REPORTS' | 'CATALOG_CSV';
+export const EXPORT_FORMATS = ['JSON', 'CSV', 'VAULT', 'REPORTS', 'CATALOG_CSV'] as const;
+
+export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 /**
  * §4.5 granularity: the whole inventory, a single item, or a Project/BOM scope. The chosen
  * target id (an item or project) lives in {@link ExportStore.scopeTargetId}.
  */
-export type ExportScope = 'ALL' | 'ITEM' | 'PROJECT';
+export const EXPORT_SCOPES = ['ALL', 'ITEM', 'PROJECT'] as const;
+
+export type ExportScope = (typeof EXPORT_SCOPES)[number];
 
 /** Which §3 aggregate report a `REPORTS`-format export serialises (Phase 61; analytics Phase 74). */
-export type ReportExportKind =
-  | 'VALUATION'
-  | 'CONSUMPTION'
-  | 'MOVEMENT'
-  | 'DEAD_STOCK'
-  | 'ABC'
-  | 'TURNOVER'
-  | 'AGING'
-  | 'VALUATION_TREND'
-  | 'DATA_HYGIENE'
-  | 'SPEND';
+export const REPORT_EXPORT_KINDS = [
+  'VALUATION',
+  'CONSUMPTION',
+  'MOVEMENT',
+  'DEAD_STOCK',
+  'ABC',
+  'TURNOVER',
+  'AGING',
+  'VALUATION_TREND',
+  'DATA_HYGIENE',
+  'SPEND',
+] as const;
+
+export type ReportExportKind = (typeof REPORT_EXPORT_KINDS)[number];
+
+/** The wizard's defaults — also where a stale or unrecognised persisted value lands. */
+export const DEFAULT_EXPORT_FORMAT: ExportFormat = 'JSON';
+export const DEFAULT_EXPORT_SCOPE: ExportScope = 'ALL';
+export const DEFAULT_REPORT_EXPORT_KIND: ReportExportKind = 'VALUATION';
+
+/**
+ * Reconcile a persisted/unknown value against the live union. Rehydrated `localStorage` is
+ * untyped (see `lib/persisted-state`), so a format retired in an earlier release would
+ * otherwise pre-select a step the wizard can no longer run.
+ */
+export function normaliseExportFormat(value: unknown): ExportFormat {
+  return normaliseOneOf(value, EXPORT_FORMATS, DEFAULT_EXPORT_FORMAT);
+}
+
+/** Reconcile a persisted/unknown scope — see {@link normaliseExportFormat}. */
+export function normaliseExportScope(value: unknown): ExportScope {
+  return normaliseOneOf(value, EXPORT_SCOPES, DEFAULT_EXPORT_SCOPE);
+}
+
+/** Reconcile a persisted/unknown report kind — see {@link normaliseExportFormat}. */
+export function normaliseReportExportKind(value: unknown): ReportExportKind {
+  return normaliseOneOf(value, REPORT_EXPORT_KINDS, DEFAULT_REPORT_EXPORT_KIND);
+}
 
 interface ExportStore {
   readonly format: ExportFormat;
@@ -51,18 +83,35 @@ interface ExportStore {
 export const useExportStore = create<ExportStore>()(
   persist(
     (set) => ({
-      format: 'JSON',
-      scope: 'ALL',
+      format: DEFAULT_EXPORT_FORMAT,
+      scope: DEFAULT_EXPORT_SCOPE,
       scopeTargetId: null,
       includeInactive: false,
-      reportKind: 'VALUATION',
-      setFormat: (format) => set({ format }),
+      reportKind: DEFAULT_REPORT_EXPORT_KIND,
+      setFormat: (format) => set({ format: normaliseExportFormat(format) }),
       // Switching scope drops a now-irrelevant target so a stale id can't leak in.
-      setScope: (scope) => set({ scope, scopeTargetId: scope === 'ALL' ? null : null }),
+      setScope: (scope) => set({ scope: normaliseExportScope(scope), scopeTargetId: null }),
       setScopeTargetId: (scopeTargetId) => set({ scopeTargetId }),
       setIncludeInactive: (includeInactive) => set({ includeInactive }),
-      setReportKind: (reportKind) => set({ reportKind }),
+      setReportKind: (reportKind) => set({ reportKind: normaliseReportExportKind(reportKind) }),
     }),
-    { name: 'gubbins:export' },
+    {
+      name: 'gubbins:export',
+      // Rehydrated JSON is untyped, so reconcile the remembered settings against the live
+      // unions rather than pre-selecting a step the wizard can no longer run. A target id is
+      // kept only for a scope that has one — `ALL` never carries a target.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<Record<keyof ExportStore, unknown>>;
+        const scope = normaliseExportScope(p.scope);
+        return {
+          ...current,
+          format: normaliseExportFormat(p.format),
+          scope,
+          scopeTargetId: scope !== 'ALL' && typeof p.scopeTargetId === 'string' ? p.scopeTargetId : null,
+          includeInactive: normaliseBoolean(p.includeInactive, current.includeInactive),
+          reportKind: normaliseReportExportKind(p.reportKind),
+        };
+      },
+    },
   ),
 );

@@ -19,6 +19,7 @@ import {
   advance,
   resumeAt,
   progress,
+  normaliseAuditSession,
   type AuditLocationStatus,
   type AuditScopeLocation,
   type AuditSessionState,
@@ -79,6 +80,15 @@ export const useAuditSessionStore = create<AuditSessionStore>()(
 
       abandon: () => set({ session: null }),
     }),
-    { name: 'gubbins:audit-session' },
+    {
+      name: 'gubbins:audit-session',
+      // The session is rehydrated from untyped JSON but every reducer here indexes `scope` by
+      // `currentIndex`, so reconcile it back to a valid shape (or "no session") on read rather
+      // than letting a truncated or stale write reach `progress`.
+      merge: (persisted, current) => ({
+        ...current,
+        session: normaliseAuditSession((persisted as { session?: unknown } | null | undefined)?.session),
+      }),
+    },
   ),
 );

@@ -10,6 +10,7 @@ import {
   progress,
   summarise,
   statusOf,
+  normaliseAuditSession,
   recordFor,
   isTerminal,
   collectAuditableInOrder,
@@ -360,5 +361,95 @@ describe('audit-session — buildScope', () => {
 
   it('mode "selected" with no ids is empty', () => {
     expect(buildScope(TREE, 'selected', {})).toEqual([]);
+  });
+});
+
+describe('normaliseAuditSession', () => {
+  const VALID = {
+    scope: [
+      { id: 'a', name: 'Shelf A' },
+      { id: 'b', name: 'Shelf B' },
+    ],
+    currentIndex: 1,
+    records: { a: { status: 'counted', variancesFound: 2, adjustmentsMade: 1 } },
+  };
+
+  it('round-trips a session that is already valid', () => {
+    expect(normaliseAuditSession(VALID)).toEqual(VALID);
+  });
+
+  it.each([[null], [undefined], ['{}'], [42], [[]]])('reads %p as no session', (value) => {
+    expect(normaliseAuditSession(value)).toBeNull();
+  });
+
+  it('reads a session with nothing walkable as no session', () => {
+    // An empty scope can't be resumed, and every reducer here indexes `scope`.
+    expect(normaliseAuditSession({ scope: [], currentIndex: 0, records: {} })).toBeNull();
+    expect(normaliseAuditSession({ scope: 'Shelf A' })).toBeNull();
+  });
+
+  it('drops scope entries that are not a usable id/name pair', () => {
+    const session = normaliseAuditSession({
+      scope: [{ id: 'a', name: 'Shelf A' }, null, { id: '', name: 'Blank' }, { id: 'c' }, 'b'],
+    });
+    expect(session?.scope).toEqual([{ id: 'a', name: 'Shelf A' }]);
+  });
+
+  it('collapses duplicate ids so the walk visits each location once', () => {
+    const session = normaliseAuditSession({
+      scope: [
+        { id: 'a', name: 'Shelf A' },
+        { id: 'a', name: 'Shelf A (again)' },
+      ],
+    });
+    expect(session?.scope).toEqual([{ id: 'a', name: 'Shelf A' }]);
+  });
+
+  it('clamps currentIndex into the reconciled scope', () => {
+    expect(normaliseAuditSession({ ...VALID, currentIndex: 99 })?.currentIndex).toBe(1);
+    expect(normaliseAuditSession({ ...VALID, currentIndex: -3 })?.currentIndex).toBe(0);
+    expect(normaliseAuditSession({ ...VALID, currentIndex: 'two' })?.currentIndex).toBe(0);
+  });
+
+  it('discards records for locations no longer in scope', () => {
+    const session = normaliseAuditSession({
+      ...VALID,
+      records: { ...VALID.records, gone: { status: 'skipped', variancesFound: 0, adjustmentsMade: 0 } },
+    });
+    expect(Object.keys(session!.records)).toEqual(['a']);
+  });
+
+  it('repairs a record with a bad status or counts rather than dropping the session', () => {
+    const session = normaliseAuditSession({
+      ...VALID,
+      records: { a: { status: 'half-done', variancesFound: -4, adjustmentsMade: 'many' } },
+    });
+    expect(session?.records.a).toEqual({ status: 'pending', variancesFound: 0, adjustmentsMade: 0 });
+  });
+
+  it('does not conjure a record for an id that collides with an Object.prototype key', () => {
+    const session = normaliseAuditSession({
+      scope: [{ id: 'constructor', name: 'Shelf A' }],
+      records: {},
+    });
+    expect(session?.records).toEqual({});
+  });
+
+  it('reads a non-object records map as no records', () => {
+    expect(normaliseAuditSession({ ...VALID, records: 'nope' })?.records).toEqual({});
+  });
+
+  it('produces a session the pure seam can walk without throwing', () => {
+    // The regression this guards: `progress` dereferences `scope[i].id`, so a truncated
+    // persisted write used to throw on resume rather than degrade.
+    const session = normaliseAuditSession({
+      scope: [{ id: 'a', name: 'Shelf A' }, undefined, { id: 'b', name: 'Shelf B' }],
+      currentIndex: 7,
+      records: null,
+    })!;
+    const p = progress(session);
+    expect(p.total).toBe(2);
+    expect(p.current).toEqual({ id: 'b', name: 'Shelf B' });
+    expect(() => resumeAt(session)).not.toThrow();
   });
 });
