@@ -1,13 +1,14 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useRef, useState, type KeyboardEvent } from 'react';
 import { Banner, Button, FormField, Input, Modal } from '@/components/foundry';
 import { ScaleIcon, WarningIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
-import { toGrams } from '@/lib/weight';
+import { fromGrams, toGrams } from '@/lib/weight';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveWeighCount, weighCountNote } from '../weigh-count';
 import { useAdjustQuantity } from '../mutations';
+import { ScaleReadPanel } from './ScaleReadPanel';
 
 /**
  * "Count by weight" dialog (issue #101) — counts a handful of small, identical parts by
@@ -43,8 +44,28 @@ export function WeighCountDialog({
   const weightUnit = usePreferencesStore((s) => s.weightUnit);
   const [gross, setGross] = useState('');
   const [tare, setTare] = useState('');
+  const [scaleSource, setScaleSource] = useState<string | null>(null);
   const grossRef = useRef<HTMLInputElement>(null);
   const tareRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Fill the gross field from a Home Assistant scale reading (issue #122). The reading arrives in
+   * canonical grams and is converted into the user's `weightUnit` for the field, so what lands
+   * there is exactly what they would have typed — the value then flows through the *same*
+   * `resolve`/`submit` path as a hand-entered one, with no separate branch to keep in step.
+   *
+   * `toPrecision`-free rounding to 4 decimals keeps a converted reading (e.g. 1250 g → 44.0925 oz)
+   * from filling the box with floating-point noise, while staying far finer than any scale's
+   * resolution.
+   */
+  const applyScaleReading = useCallback(
+    (grams: number, label: string) => {
+      const value = fromGrams(grams, weightUnit);
+      setGross(String(Math.round(value * 10_000) / 10_000));
+      setScaleSource(label);
+    },
+    [weightUnit],
+  );
 
   const unitWeight = item.weight;
   // Without a per-unit mass there is nothing to divide by, so the dialog degrades to an
@@ -95,6 +116,9 @@ export function WeighCountDialog({
         onSuccess: () => {
           setGross('');
           setTare('');
+          // Cleared alongside the fields it describes: this component stays mounted when the
+          // Modal closes, so a surviving note would reappear over an empty field next time.
+          setScaleSource(null);
           onClose();
         },
       },
@@ -131,6 +155,8 @@ export function WeighCountDialog({
             })}
           </p>
 
+          <ScaleReadPanel onReading={applyScaleReading} />
+
           <div className="grid gap-4 sm:grid-cols-2">
             {/* `min`/`step` are deliberately omitted: a `type="number"` Input renders the
                 calculator-backed NumberInput, which is a `type="text"` box — those attributes
@@ -152,10 +178,19 @@ export function WeighCountDialog({
                 ref={grossRef}
                 type="number"
                 value={gross}
-                onChange={(e) => setGross(e.target.value)}
+                onChange={(e) => {
+                  setGross(e.target.value);
+                  // Typing over a pulled reading makes the "from the scale" note a lie, so drop it.
+                  setScaleSource(null);
+                }}
                 onKeyDown={onEnter}
                 placeholder="0"
               />
+              {scaleSource !== null ? (
+                <p className="mt-1 text-xs text-muted-foreground" data-testid="weigh-count-scale-source">
+                  {t('inventory.weighCount.scaleReadFrom', { vars: { reading: scaleSource } })}
+                </p>
+              ) : null}
             </FormField>
 
             <FormField

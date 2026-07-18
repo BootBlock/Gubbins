@@ -369,6 +369,14 @@ export const openapiDocument: JsonValue = {
         'implied by GUBBINS_BRIDGE_WEBHOOKS=on). A Server-Sent Events feed of typed inventory-change ' +
         'events, the same events delivered to outbound webhooks. When disabled this path returns 404.',
     },
+    {
+      name: 'scale',
+      description:
+        'Opt-in Home Assistant reads (off by default; enabled with GUBBINS_BRIDGE_HA=on) — the ' +
+        'inbound path behind "count by weight". Lets the app read a live weight off a Home ' +
+        'Assistant scale entity, reconciled to canonical grams. Outbound-only and read-only: the ' +
+        'bridge calls Home Assistant and cannot invoke a service. When disabled these return 404.',
+    },
   ],
   paths: {
     '/api/v1': {
@@ -849,6 +857,109 @@ export const openapiDocument: JsonValue = {
             },
           },
           ...(errorResponses(401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/scale/entities': {
+      get: {
+        tags: ['scale'],
+        summary: 'List the Home Assistant entities that can be used as a scale',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Projects Home Assistant’s ' +
+          'entity states down to those reporting a convertible mass unit, for the app’s scale ' +
+          'picker. Reads Home Assistant rather than the snapshot, so it answers before a snapshot ' +
+          'has loaded. Strictly read-only — the bridge cannot call a Home Assistant service.',
+        responses: {
+          200: {
+            description: 'The pickable weight sensors.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['entities'],
+                  properties: {
+                    entities: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        required: ['entityId', 'name', 'unit'],
+                        properties: {
+                          entityId: { type: 'string', example: 'sensor.workshop_scale' },
+                          name: { type: 'string', example: 'Workshop scale' },
+                          unit: { type: 'string', example: 'kg' },
+                        },
+                      },
+                    },
+                  },
+                },
+                example: {
+                  entities: [{ entityId: 'sensor.workshop_scale', name: 'Workshop scale', unit: 'kg' }],
+                },
+              },
+            },
+          },
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/scale/state': {
+      get: {
+        tags: ['scale'],
+        summary: 'Read the current weight from a scale entity, in grams',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Reconciles the sensor’s own ' +
+          'unit (mg, g, kg, oz, lb, st) to canonical grams. A reading that cannot be used is a 409 ' +
+          '— never a 200 with a zero weight — because the caller turns this number into a stock ' +
+          'count: scale_unavailable, scale_unsupported_unit or scale_not_a_number.',
+        parameters: [
+          {
+            name: 'entity_id',
+            in: 'query',
+            required: true,
+            description: 'The Home Assistant entity id of the scale, e.g. sensor.workshop_scale.',
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'The current reading.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['entityId', 'grams', 'value', 'unit'],
+                  properties: {
+                    entityId: { type: 'string', example: 'sensor.workshop_scale' },
+                    grams: { type: 'number', description: 'The reading in canonical grams.', example: 1250 },
+                    value: { type: 'number', description: 'The raw value as reported.', example: 1.25 },
+                    unit: { type: 'string', description: 'The unit that raw value was in.', example: 'kg' },
+                    lastUpdated: { type: ['string', 'null'], format: 'date-time' },
+                  },
+                },
+                example: {
+                  entityId: 'sensor.workshop_scale',
+                  grams: 1250,
+                  value: 1.25,
+                  unit: 'kg',
+                  lastUpdated: '2025-06-27T06:13:20.000Z',
+                },
+              },
+            },
+          },
+          409: {
+            description: 'The scale is unavailable, reports an unconvertible unit, or is not numeric.',
+            content: {
+              'application/json': {
+                example: {
+                  error: {
+                    code: 'scale_unavailable',
+                    message: 'The scale is unavailable in Home Assistant.',
+                  },
+                },
+              },
+            },
+          },
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
