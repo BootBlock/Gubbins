@@ -44,6 +44,7 @@ import { buildCategoryMaintenanceInsert, type CategoryMaintenanceDefault } from 
 import { itemOrderByClause, THUMBNAIL_SUBQUERY, type ItemSort } from './sql';
 import { buildStatusFilter, type ItemStatusFilter } from './status-filter';
 import type { LowStockThresholds } from '../types';
+import { nowMs } from '@/lib/clock';
 
 /** The default ordering for a list read when the caller requests no explicit sort. */
 const DEFAULT_ITEM_ORDER = 'name COLLATE NOCASE ASC, serial_no ASC, created_at ASC';
@@ -81,7 +82,7 @@ export interface ItemListFilters extends PageParams {
   readonly expirySoonWindowDays?: number;
   /**
    * Injected clock (UNIX-ms) for the time-based statuses (expiring / overdue / maintenance).
-   * Omit outside tests — `list`/`count` stamp `Date.now()` at query time so the cutoff is
+   * Omit outside tests — `list`/`count` stamp `nowMs()` at query time so the cutoff is
    * evaluated when the read runs, keeping `now` out of the query cache key.
    */
   readonly now?: number;
@@ -121,7 +122,7 @@ export class ItemCoreRepository extends BaseRepository {
     const { limit, offset } = this.resolvePage(filters);
     // Stamp the clock at query time so the time-based status filters (expiring / overdue /
     // maintenance) evaluate against "now" when the read runs, keeping `now` out of the key.
-    const [clause, params] = buildListFilter({ ...filters, now: filters.now ?? Date.now() });
+    const [clause, params] = buildListFilter({ ...filters, now: filters.now ?? nowMs() });
     params.push(limit, offset);
     // Favourites lead the list ahead of everything else, then the caller's explicit sort (or
     // the default name/serial/created order) breaks ties among them and among the rest.
@@ -137,7 +138,7 @@ export class ItemCoreRepository extends BaseRepository {
 
   /** Count items matching a filter (for pagination headers / dashboard widgets). */
   async count(filters: Omit<ItemListFilters, 'limit' | 'offset'> = {}): Promise<number> {
-    const [clause, params] = buildListFilter({ ...filters, now: filters.now ?? Date.now() });
+    const [clause, params] = buildListFilter({ ...filters, now: filters.now ?? nowMs() });
     const row = await this.driver.queryOne<{ n: number }>(
       `SELECT COUNT(*) AS n FROM items ${clause};`,
       params,
@@ -572,7 +573,7 @@ function buildListFilter(
     // an OR-combined group AND-ed alongside the other filters. `now` is stamped by the
     // caller (`list`/`count`); the predicate SQL is each concept's SSOT (see status-filter.ts).
     const [statusClause, statusParams] = buildStatusFilter(filters.status, {
-      now: filters.now ?? Date.now(),
+      now: filters.now ?? nowMs(),
       lowStockThresholds: filters.lowStockThresholds,
       expirySoonWindowDays: filters.expirySoonWindowDays,
     });

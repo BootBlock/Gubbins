@@ -6,6 +6,7 @@
  * "Overdue Items" tracker (§3) and the checkout UI share one tested implementation
  * with no clock hidden inside them (callers pass `now`).
  */
+import { nowMs } from '@/lib/clock';
 
 export const MS_PER_DAY = 86_400_000;
 
@@ -23,7 +24,7 @@ export function dueDateFromDays(days: number, from: number = Date.now()): number
 }
 
 /** Whole days remaining until `dueDate` (negative when overdue), rounded down. */
-export function daysUntil(dueDate: number, now: number = Date.now()): number {
+export function daysUntil(dueDate: number, now: number = nowMs()): number {
   return Math.floor((dueDate - now) / MS_PER_DAY);
 }
 
@@ -31,7 +32,7 @@ export function daysUntil(dueDate: number, now: number = Date.now()): number {
  * Classify a checkout's urgency. `dueDate` of `null` is `NONE`. Past due is
  * `OVERDUE`; within `dueSoonDays` (default 2) is `DUE_SOON`; otherwise `UPCOMING`.
  */
-export function dueStatus(dueDate: number | null, now: number = Date.now(), dueSoonDays = 2): DueStatus {
+export function dueStatus(dueDate: number | null, now: number = nowMs(), dueSoonDays = 2): DueStatus {
   if (dueDate === null) return 'NONE';
   if (dueDate < now) return 'OVERDUE';
   if (dueDate - now <= dueSoonDays * MS_PER_DAY) return 'DUE_SOON';
@@ -39,6 +40,6 @@ export function dueStatus(dueDate: number | null, now: number = Date.now(), dueS
 }
 
 /** True when an open checkout's due date has passed. */
-export function isOverdue(dueDate: number | null, now: number = Date.now()): boolean {
+export function isOverdue(dueDate: number | null, now: number = nowMs()): boolean {
   return dueDate !== null && dueDate < now;
 }

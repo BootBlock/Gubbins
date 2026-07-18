@@ -29,6 +29,7 @@ import {
   UNTRACKED_BATCH,
 } from './stock-batches';
 import { batchIdentityFromKey, planBatchSelection } from '@/features/inventory/batches';
+import { nowMs } from '@/lib/clock';
 import { rowToCheckout } from './mappers';
 import type {
   CheckoutBorrower,
@@ -539,7 +540,7 @@ export class CheckoutRepository extends BaseRepository {
        LIMIT ? OFFSET ?;`,
       [...whereParams, limit, offset],
     );
-    const now = Date.now();
+    const now = nowMs();
     return this.toPage(
       rows.map((r) => toCheckoutWithNames(r, now)),
       limit,

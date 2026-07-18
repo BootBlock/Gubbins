@@ -17,6 +17,7 @@ import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { WARRANTY_EXPIRING_SOON_DAYS } from '@/features/inventory/asset-lifecycle';
 import { buildAlerts, applyDismissals, maintenanceDueAtMs, type Alert, type AlertSources } from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
+import { nowMs } from '@/lib/clock';
 
 /** TanStack Query key for the warranty-expiring feed. */
 const warrantyExpiringKey = () => [...inventoryKeys.all, 'warranty-expiring'] as const;
@@ -36,7 +37,7 @@ export function useAlerts(): {
   readonly isLoading: boolean;
   readonly isError: boolean;
 } {
-  const now = Date.now();
+  const now = nowMs();
 
   // --- Source queries ---
   //

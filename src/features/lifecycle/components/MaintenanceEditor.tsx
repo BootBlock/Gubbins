@@ -10,6 +10,7 @@ import { Button, InfoHint, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/
 import { SettingsIcon, AddIcon, DeleteIcon, CheckIcon, WarningIcon } from '@/components/icons';
 import { MAINTENANCE_BASES, type MaintenanceBasis, type MaintenanceSchedule } from '@/db/repositories';
 import { cn } from '@/lib/utils';
+import { nowMs } from '@/lib/clock';
 import { MAINTENANCE_BASIS_LABELS } from '@/features/inventory/components/inventory-ui';
 import { maintenanceStatus, maintenancePerformedNote, type MaintenanceScheduleState } from '../maintenance';
 import {
@@ -203,7 +204,7 @@ function ScheduleRow({ schedule, itemId }: { schedule: MaintenanceSchedule; item
     lastPerformedAt: schedule.lastPerformedAt,
     createdAt: schedule.createdAt,
   };
-  const status = maintenanceStatus(state, Date.now());
+  const status = maintenanceStatus(state, nowMs());
 
   const usageDetail = schedule.accrueCheckoutHours
     ? `every ${schedule.intervalUsage} hours · ${schedule.autoUsageHours.toFixed(1)}h from loans`

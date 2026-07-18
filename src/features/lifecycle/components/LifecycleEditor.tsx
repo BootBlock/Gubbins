@@ -20,6 +20,7 @@ import {
   toDateInputValue,
 } from '@/features/inventory/components/inventory-ui';
 import { expiryStatus, daysUntilExpiry, type ExpiryStatus } from '../expiry';
+import { nowMs } from '@/lib/clock';
 import { useCreateVariant, useInTransitQty, useItemVariants } from '../hooks';
 import { StockBreakdown } from './StockBreakdown';
 
@@ -40,8 +41,8 @@ export function LifecycleEditor({ item }: { item: Item }) {
   const [condition, setCondition] = useState<string>(item.condition ?? '');
   const conditionLabelId = useId();
 
-  const status = expiryStatus(item.expiryDate, Date.now());
-  const days = daysUntilExpiry(item.expiryDate, Date.now());
+  const status = expiryStatus(item.expiryDate, nowMs());
+  const days = daysUntilExpiry(item.expiryDate, nowMs());
   // Distinct "incoming" stock (Phase 20, §4): derived from In-Transit BOM lines,
   // shown beside on-hand stock which it never overloads.
   const inTransitQty = useInTransitQty(item.id).data ?? 0;
