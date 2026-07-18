@@ -20,8 +20,18 @@
  * component-testable with a fake — no real browser, no real service worker. The real
  * seam pulls in `virtual:pwa-register` via a dynamic import, so the vite-plugin-pwa
  * virtual module is never evaluated in non-browser (test) environments.
+ *
+ * **Lab flags** (`/lab`, hidden testing screen): `pwa-update-available` swaps in
+ * {@link pretendPwaUpdateApi} — no explicit `apiOverride` is passed — so the prompt appears
+ * without any real deploy. `pwa-update-breaking` (only meaningful alongside the flag above)
+ * makes the pretend incoming build report a `schemaVersion` one higher than
+ * {@link APP_SCHEMA_VERSION}, so the prompt takes its data-safety-warning path. Both are
+ * no-ops when an explicit `apiOverride` is supplied (component tests), keeping this
+ * byte-identical to before when the flags are off.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLabFlag } from '@/state/stores/useLabStore';
+import { APP_SCHEMA_VERSION, APP_VERSION } from '@/lib/app-version';
 
 /** Callbacks the seam invokes for service-worker lifecycle transitions we surface. */
 export interface PwaUpdateHandlers {
@@ -103,6 +113,35 @@ export function browserPwaUpdateApi(): PwaUpdateApi {
 }
 
 /**
+ * Lab-flag seam (`pwa-update-available` / `pwa-update-breaking`, `/lab`): behaves as though a
+ * worker is already waiting, with no real service worker involved. `register` announces the
+ * waiting worker as soon as it's called; the returned updater has nothing real to hand off to,
+ * so it just clears `needRefresh` — dismissing the prompt rather than reloading onto a
+ * non-existent worker. `fetchDeployedVersion` reports the pretend build as schema-compatible
+ * unless `breaking` is set, in which case it reports one generation newer than
+ * {@link APP_SCHEMA_VERSION} so the prompt takes its data-safety-warning path.
+ */
+function pretendPwaUpdateApi(setNeedRefresh: (value: boolean) => void, breaking: boolean): PwaUpdateApi {
+  return {
+    register(handlers) {
+      handlers.onNeedRefresh();
+      return async () => {
+        setNeedRefresh(false);
+      };
+    },
+    async checkForUpdate() {
+      // Already reported as waiting — nothing further to announce.
+    },
+    async fetchDeployedVersion() {
+      return {
+        version: APP_VERSION,
+        schemaVersion: breaking ? APP_SCHEMA_VERSION + 1 : APP_SCHEMA_VERSION,
+      };
+    },
+  };
+}
+
+/**
  * Read the deployed build's `version.json` straight from the network. `cache: 'no-store'`
  * bypasses the HTTP cache, and the file is deliberately kept out of the service-worker
  * precache (see vite.config.ts), so this reaches the *freshly deployed* manifest — the one
@@ -171,9 +210,17 @@ export function usePwaUpdate(
   apiOverride?: PwaUpdateApi,
   checkIntervalMs: number = DEFAULT_CHECK_INTERVAL_MS,
 ): PwaUpdateState {
-  // Resolve the seam once (per override identity) so the effect deps stay stable.
-  const api = useMemo(() => apiOverride ?? browserPwaUpdateApi(), [apiOverride]);
+  const pretendAvailable = useLabFlag('pwa-update-available');
+  const pretendBreaking = useLabFlag('pwa-update-breaking');
   const [needRefresh, setNeedRefresh] = useState(false);
+  // Resolve the seam once (per override/flag identity) so the effect deps stay stable. An
+  // explicit `apiOverride` (component tests) always wins over the lab flags.
+  const api = useMemo(
+    () =>
+      apiOverride ??
+      (pretendAvailable ? pretendPwaUpdateApi(setNeedRefresh, pretendBreaking) : browserPwaUpdateApi()),
+    [apiOverride, pretendAvailable, pretendBreaking],
+  );
   // Ticks 1,2,3… on each waiting-worker notification (not just the first), so callers
   // can distinguish a brand-new worker from a prompt they've already snoozed.
   const [updateAvailableSeq, setUpdateAvailableSeq] = useState(0);
