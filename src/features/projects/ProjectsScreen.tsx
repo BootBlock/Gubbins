@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Glyph,
@@ -9,6 +9,8 @@ import {
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import { AddIcon, ImportIcon, ProjectIcon } from '@/components/icons';
+import { useHotkeyScope } from '@/features/hotkeys/useHotkeyScope';
+import { useHotkeyIntent } from '@/features/hotkeys/useHotkeyIntent';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { useProjects } from './projects';
@@ -28,6 +30,18 @@ export function ProjectsScreen() {
   const [importOpen, setImportOpen] = useState(false);
 
   const rows = useMemo(() => projects.data?.rows ?? [], [projects.data?.rows]);
+
+  // The contextual "new" shortcut (issue #127): on this screen, `N` creates a project.
+  useHotkeyScope({ onNew: useCallback(() => setCreateOpen(true), []) });
+
+  // A "new project" shortcut pressed from another screen navigates here and leaves an intent
+  // behind, since the create dialog is local state with no route of its own.
+  const pendingIntent = useHotkeyIntent((s) => s.pending);
+  useEffect(() => {
+    if (pendingIntent !== 'new-project') return;
+    useHotkeyIntent.getState().consume('new-project');
+    setCreateOpen(true);
+  }, [pendingIntent]);
 
   // Default the selection to the first project once loaded. Only acts when nothing is
   // selected, so it never fights an explicit selection (e.g. a freshly created project

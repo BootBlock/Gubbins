@@ -47,6 +47,20 @@ describe('sanitiseSettingsRecord', () => {
     expect(parsed.state.mode).toBe('dark');
   });
 
+  it('carries keyboard shortcut bindings into the backup (issue #127)', () => {
+    // Bindings are device-local *state*, but they are a preference the user configured by hand
+    // and expects to find again after restoring onto a new machine — so unlike the bridge token
+    // they must survive the scrub. Locked here because they travel inside the preferences blob:
+    // nothing names them explicitly, so a future scrub rule could drop them unnoticed.
+    const withBindings = JSON.stringify({
+      state: { bridgeToken: 'shh', hotkeyBindings: { 'nav.inventory': 'F1', 'nav.reports': 'G R' } },
+    });
+    const out = sanitiseSettingsRecord({ 'gubbins:preferences': withBindings });
+    const parsed = JSON.parse(out['gubbins:preferences']!);
+    expect(parsed.state.bridgeToken).toBeUndefined();
+    expect(parsed.state.hotkeyBindings).toEqual({ 'nav.inventory': 'F1', 'nav.reports': 'G R' });
+  });
+
   it('drops an unparseable preferences blob rather than exporting it raw', () => {
     const out = sanitiseSettingsRecord({ 'gubbins:preferences': 'not json' });
     expect(out['gubbins:preferences']).toBeUndefined();

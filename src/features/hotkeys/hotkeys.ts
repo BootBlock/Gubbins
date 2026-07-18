@@ -22,6 +22,20 @@
  * uses. A Cmd press is therefore folded to `Ctrl` when a chord is recorded, and rendered back
  * as `⌘` for display, so one stored `Ctrl+/` is the right key on every platform — and the
  * long-standing Cmd+/ command-palette shortcut keeps working on a Mac.
+ *
+ * **Sequences.** A binding may also be *two* chords typed in turn, separated by a space:
+ * `G I` is "press G, then I" (the Gmail/Vim convention). This exists because comfortable single
+ * keys are scarce — there are not enough of them to give every destination one, and spending a
+ * modifier chord on each is worse. A sequence's first chord is a *prefix*: pressing it arms the
+ * matcher rather than doing anything, and the next chord either completes a binding or cancels.
+ * {@link stepHotkeySequence} is that matcher, kept pure so the arming/expiry rules are testable
+ * without a browser; the timeout itself lives in the React hook.
+ *
+ * **Scopes.** Most actions are global, but two — "new" and "focus search" — mean something
+ * different on every screen, which is the whole point of binding a bare `N` or `/` to them. Those
+ * carry {@link HotkeyAction.scoped} and only fire when the screen currently on top has registered
+ * a handler for them (see `useHotkeyScope`). An unhandled scoped press is left for the browser,
+ * so `/` still types a slash on a screen that offers no search.
  */
 import type { AppRoutePath } from '@/components/nav/nav-destinations';
 import type { FeatureId } from '@/features/modules/feature-registry';
@@ -81,8 +95,25 @@ export type HotkeyEffect =
   /** Run a named app command, dispatched by {@link useGlobalHotkeys}. */
   | { readonly kind: 'command'; readonly command: HotkeyCommand };
 
-/** The non-navigation commands a hotkey can trigger. */
-export type HotkeyCommand = 'command-palette' | 'open-settings' | 'open-hotkey-settings';
+/**
+ * The non-navigation commands a hotkey can trigger.
+ *
+ * The `screen-*` pair are the {@link HotkeyAction.scoped} ones: they carry no fixed meaning of
+ * their own and are dispatched to whichever screen has registered a handler.
+ */
+export type HotkeyCommand =
+  | 'command-palette'
+  | 'open-settings'
+  | 'open-hotkey-settings'
+  | 'shortcuts-overlay'
+  | 'add-item'
+  | 'start-scan'
+  | 'new-project'
+  | 'new-purchase-order'
+  | 'toggle-full-width'
+  | 'toggle-theme'
+  | 'screen-new'
+  | 'screen-search';
 
 export interface HotkeyAction {
   readonly id: HotkeyActionId;
@@ -109,6 +140,14 @@ export interface HotkeyAction {
    * which already gated its shortcut before hotkeys existed.
    */
   readonly requiresPref?: 'dashboardCommandPalette';
+  /**
+   * A **contextual** action: its meaning comes from the screen you are on, so it fires only when
+   * that screen has registered a handler (`useHotkeyScope`). This is what lets a bare `N` mean
+   * "new project" on Projects and "new order" on Purchase orders without either spending its own
+   * key — and what makes an unhandled press fall through to the browser untouched, so `/` still
+   * types a slash where no search box exists.
+   */
+  readonly scoped?: true;
 }
 
 export type HotkeyActionId =
@@ -124,17 +163,34 @@ export type HotkeyActionId =
   | 'nav.alerts'
   | 'command.palette'
   | 'command.settings'
-  | 'command.hotkeys';
+  | 'command.hotkeys'
+  | 'command.shortcutsOverlay'
+  | 'action.addItem'
+  | 'action.startScan'
+  | 'action.newProject'
+  | 'action.newPurchaseOrder'
+  | 'action.toggleFullWidth'
+  | 'action.toggleTheme'
+  | 'screen.new'
+  | 'screen.search';
 
 /**
  * Every rebindable action, in the order the Settings list shows them.
  *
- * **Choosing the shipped defaults.** Only the highest-traffic destinations get one, so the
- * out-of-the-box set stays small enough to remember: the four everyday workspaces on `F1`–`F4`
- * (issue #32 asks for `F1` → Inventory specifically), and the two conventional app chords
- * `Ctrl+/` (command palette, unchanged from before hotkeys existed) and `Ctrl+,` (settings —
- * the near-universal preferences shortcut). Everything else ships unbound but appears in the
- * list ready to be given a key, which keeps the default surface honest without limiting anyone.
+ * **Choosing the shipped defaults.** The set stays small enough to remember: the four everyday
+ * workspaces on `F1`–`F4` (issue #32 asks for `F1` → Inventory specifically), and the two
+ * conventional app chords `Ctrl+/` (command palette, unchanged from before hotkeys existed) and
+ * `Ctrl+,` (settings — the near-universal preferences shortcut).
+ *
+ * The remaining destinations now ship on `G` **sequences** (`G R` → Reports) rather than unbound.
+ * That was the original reason they had no default at all: a single comfortable key per screen is
+ * a budget that runs out after about four, and a modifier chord each is harder to recall than it
+ * is to type. A two-key sequence costs one prefix key for the whole set (issue #127).
+ *
+ * Three more ship bound because they are the conventions users arrive expecting: `?` for the
+ * shortcut list, and the contextual `N` / `/` for "new" and "focus search" on whichever screen is
+ * open. The rest of the commands appear in the list ready to be given a key, which keeps the
+ * default surface honest without limiting anyone.
  */
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
   {
@@ -173,7 +229,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
     id: 'nav.reports',
     label: 'Reports',
     messageKey: 'nav.reports',
-    defaultBinding: '',
+    defaultBinding: 'G R',
     effect: { kind: 'navigate', to: '/reports' },
     feature: 'reports',
   },
@@ -181,7 +237,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
     id: 'nav.contacts',
     label: 'Contacts',
     messageKey: 'nav.contacts',
-    defaultBinding: '',
+    defaultBinding: 'G C',
     effect: { kind: 'navigate', to: '/contacts' },
     feature: 'contacts',
   },
@@ -189,7 +245,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
     id: 'nav.bookings',
     label: 'Bookings',
     messageKey: 'nav.bookings',
-    defaultBinding: '',
+    defaultBinding: 'G B',
     effect: { kind: 'navigate', to: '/bookings' },
     feature: 'bookings',
   },
@@ -197,7 +253,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
     id: 'nav.upcoming',
     label: 'Upcoming',
     messageKey: 'nav.upcoming',
-    defaultBinding: '',
+    defaultBinding: 'G U',
     effect: { kind: 'navigate', to: '/upcoming' },
     feature: 'upcoming',
   },
@@ -205,15 +261,17 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
     id: 'nav.activity',
     label: 'Activity',
     messageKey: 'nav.activity',
-    defaultBinding: '',
+    defaultBinding: 'G A',
     effect: { kind: 'navigate', to: '/activity' },
     feature: 'activity',
   },
   {
+    // `G L` rather than `G A` — Activity took the initial, so Alerts uses the next letter that
+    // is unmistakably its own rather than a second-choice initial nobody would guess.
     id: 'nav.alerts',
     label: 'Alerts',
     messageKey: 'nav.alerts',
-    defaultBinding: '',
+    defaultBinding: 'G L',
     effect: { kind: 'navigate', to: '/alerts' },
     feature: 'alerts',
   },
@@ -240,6 +298,80 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
     defaultBinding: '',
     effect: { kind: 'command', command: 'open-hotkey-settings' },
     feature: 'settings',
+  },
+  {
+    // `?` is the near-universal "what are my shortcuts" key, so it ships bound — the cheat sheet
+    // is what makes every other binding discoverable, and a discoverability aid nobody can find
+    // is no aid at all.
+    id: 'command.shortcutsOverlay',
+    label: 'Show keyboard shortcuts',
+    messageKey: 'hotkeys.action.shortcutsOverlay',
+    defaultBinding: '?',
+    effect: { kind: 'command', command: 'shortcuts-overlay' },
+  },
+  {
+    id: 'action.addItem',
+    label: 'Add item',
+    messageKey: 'hotkeys.action.addItem',
+    defaultBinding: '',
+    effect: { kind: 'command', command: 'add-item' },
+    feature: 'inventory',
+  },
+  {
+    id: 'action.startScan',
+    label: 'Start a scan',
+    messageKey: 'hotkeys.action.startScan',
+    defaultBinding: '',
+    effect: { kind: 'command', command: 'start-scan' },
+    feature: 'inventory',
+  },
+  {
+    id: 'action.newProject',
+    label: 'New project',
+    messageKey: 'hotkeys.action.newProject',
+    defaultBinding: '',
+    effect: { kind: 'command', command: 'new-project' },
+    feature: 'projects',
+  },
+  {
+    id: 'action.newPurchaseOrder',
+    label: 'New purchase order',
+    messageKey: 'hotkeys.action.newPurchaseOrder',
+    defaultBinding: '',
+    effect: { kind: 'command', command: 'new-purchase-order' },
+    feature: 'purchase-orders',
+  },
+  {
+    id: 'action.toggleFullWidth',
+    label: 'Toggle full width',
+    messageKey: 'hotkeys.action.toggleFullWidth',
+    defaultBinding: '',
+    effect: { kind: 'command', command: 'toggle-full-width' },
+  },
+  {
+    id: 'action.toggleTheme',
+    label: 'Toggle light/dark',
+    messageKey: 'hotkeys.action.toggleTheme',
+    defaultBinding: '',
+    effect: { kind: 'command', command: 'toggle-theme' },
+  },
+  {
+    // Contextual (see `scoped`): bare `N` and `/` are only affordable because they mean whatever
+    // the screen in front of you says they mean, and stay out of the way where nothing claims them.
+    id: 'screen.new',
+    label: 'New (current screen)',
+    messageKey: 'hotkeys.action.screenNew',
+    defaultBinding: 'N',
+    effect: { kind: 'command', command: 'screen-new' },
+    scoped: true,
+  },
+  {
+    id: 'screen.search',
+    label: 'Focus search (current screen)',
+    messageKey: 'hotkeys.action.screenSearch',
+    defaultBinding: '/',
+    effect: { kind: 'command', command: 'screen-search' },
+    scoped: true,
   },
 ];
 
@@ -302,16 +434,28 @@ export interface HotkeyKeyEvent {
  * On macOS the Command key is folded into `ctrl` (see the module docstring): it is the
  * primary modifier there, so `⌘/` and `Ctrl+/` are one stored binding rather than two the
  * user would have to set separately.
+ *
+ * Shift is likewise dropped when the key is a **shifted punctuation character**, because the
+ * character already encodes the Shift: `?` is what the keyboard reports for Shift+/, so keeping
+ * the flag would store it as `Shift+?` — a chord that reads like it needs Shift pressed twice,
+ * and that a different layout (where `?` is unshifted) would never reproduce. Letters and digits
+ * keep the flag, since `Shift+A` and `A` are genuinely different bindings.
+ *
+ * "Letter" is decided by Unicode property, not an `A-Z` range: on a German layout `Ä` is a letter
+ * that `A-Z` would miss, and dropping Shift there would store `Shift+Ä` as plain `Ä` — so pressing
+ * the *unshifted* `ä` would then fire a shortcut the user bound to the shifted key.
  */
 export function chordFromEvent(event: HotkeyKeyEvent, isMac = false): HotkeyChord | null {
   if (event.key === '' || event.key === 'Unidentified' || MODIFIER_KEYS.has(event.key)) return null;
   const commandIsPrimary = isMac && event.metaKey;
+  const key = normaliseHotkeyKey(event.key);
+  const shiftIsInTheCharacter = key.length === 1 && !/[\p{L}\p{N}]/u.test(key);
   return {
     ctrl: event.ctrlKey || commandIsPrimary,
     alt: event.altKey,
-    shift: event.shiftKey,
+    shift: event.shiftKey && !shiftIsInTheCharacter,
     meta: event.metaKey && !commandIsPrimary,
-    key: normaliseHotkeyKey(event.key),
+    key,
   };
 }
 
@@ -344,17 +488,39 @@ export function parseBinding(
   return modifiers.some((m) => m === '') ? null : { modifiers, key };
 }
 
+/**
+ * The separator between the two chords of a sequence binding (`G I`). A space can never be part
+ * of a chord — the space *key* serialises as `Space` (see {@link normaliseHotkeyKey}) precisely
+ * so it survives this split.
+ */
+export const SEQUENCE_SEPARATOR = ' ';
+
+/** The most chords one binding may chain. Two is the whole convention; three is a code. */
+export const MAX_SEQUENCE_LENGTH = 2;
+
+/**
+ * Split a binding into its chords: one for an ordinary chord binding, two for a sequence.
+ * Returns `null` for `''` (unbound) or a structurally broken string.
+ */
+export function parseSequence(binding: HotkeyBinding): readonly string[] | null {
+  if (binding === '') return null;
+  const steps = binding.split(SEQUENCE_SEPARATOR);
+  if (steps.length > MAX_SEQUENCE_LENGTH) return null;
+  return steps.some((s) => s === '') ? null : steps;
+}
+
+/** Whether a binding is a two-chord sequence rather than a single chord. */
+export function isSequenceBinding(binding: HotkeyBinding): boolean {
+  const steps = parseSequence(binding);
+  return steps !== null && steps.length > 1;
+}
+
 /** Why a candidate binding can't be used — `null` when it's fine. */
 export type HotkeyRejection = 'reserved' | 'modifier-only' | 'malformed';
 
-/**
- * Validate a candidate binding string. Returns `null` when it is usable (including `''`,
- * which means "unbind"), otherwise the reason so the UI can explain the refusal rather than
- * silently dropping the choice.
- */
-export function rejectBinding(binding: HotkeyBinding): HotkeyRejection | null {
-  if (binding === '') return null;
-  const parsed = parseBinding(binding);
+/** Validate one chord of a binding (the whole thing, for a non-sequence binding). */
+function rejectChord(chord: string): HotkeyRejection | null {
+  const parsed = parseBinding(chord);
   if (parsed === null) return 'malformed';
   const { modifiers, key } = parsed;
   if (MODIFIER_KEYS.has(key)) return 'modifier-only';
@@ -367,7 +533,25 @@ export function rejectBinding(binding: HotkeyBinding): HotkeyRejection | null {
     cursor = at + 1;
   }
   if (RESERVED_KEYS.has(key) && modifiers.length === 0) return 'reserved';
-  if (RESERVED_CHORDS.has(binding)) return 'reserved';
+  if (RESERVED_CHORDS.has(chord)) return 'reserved';
+  return null;
+}
+
+/**
+ * Validate a candidate binding string. Returns `null` when it is usable (including `''`,
+ * which means "unbind"), otherwise the reason so the UI can explain the refusal rather than
+ * silently dropping the choice.
+ *
+ * Every chord of a sequence is validated, so `G F5` is rejected for the same reason `F5` is.
+ */
+export function rejectBinding(binding: HotkeyBinding): HotkeyRejection | null {
+  if (binding === '') return null;
+  const steps = parseSequence(binding);
+  if (steps === null) return 'malformed';
+  for (const step of steps) {
+    const rejection = rejectChord(step);
+    if (rejection !== null) return rejection;
+  }
   return null;
 }
 
@@ -411,25 +595,179 @@ export function resolveHotkeyAction(
 }
 
 /**
+ * What one key press means to the sequence matcher.
+ *
+ * - `idle` — not ours (or a sequence that went nowhere). The press is left for the browser.
+ * - `pending` — the chord opened a sequence; hold it and wait for the next chord. The caller
+ *   claims the press (so `G` alone doesn't type into anything) and starts an expiry timer.
+ * - `fire` — run this action.
+ */
+export type HotkeyStep =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'pending'; readonly prefix: string }
+  | { readonly kind: 'fire'; readonly action: HotkeyAction };
+
+/** Whether `chord` opens some enabled sequence binding — i.e. is worth arming the matcher for. */
+function isSequencePrefix(
+  bindings: Readonly<Record<HotkeyActionId, HotkeyBinding>>,
+  chord: string,
+  isEnabled: (action: HotkeyAction) => boolean,
+): boolean {
+  return HOTKEY_ACTIONS.some((action) => {
+    const steps = parseSequence(bindings[action.id] ?? '');
+    return steps !== null && steps.length > 1 && steps[0] === chord && isEnabled(action);
+  });
+}
+
+/**
+ * Advance the two-key sequence matcher by one chord (issue #127).
+ *
+ * The whole point of a sequence is that its first chord is *inert* — pressing `G` must do
+ * nothing visible and commit to nothing, because the user has not yet said which screen they
+ * want. So this is a two-state machine, and the interesting rules are the recovery ones:
+ *
+ * - A pending prefix that the next chord doesn't complete does **not** simply swallow that
+ *   chord. It is re-evaluated as a fresh press, so a stray `G` followed by `F1` still goes to
+ *   Inventory rather than silently eating a shortcut the user meant.
+ * - An exact single-chord binding wins over arming a prefix, so a key that is *both* can still
+ *   be pressed for its own action; only a key with no binding of its own becomes a pure prefix.
+ *
+ * Expiry is the caller's job (a timer, cleared on the next press) — time is not something a pure
+ * function should read.
+ */
+export function stepHotkeySequence(
+  pending: string | null,
+  chord: string,
+  bindings: Readonly<Record<HotkeyActionId, HotkeyBinding>>,
+  isEnabled: (action: HotkeyAction) => boolean,
+): HotkeyStep {
+  if (pending !== null) {
+    const completed = resolveHotkeyAction(bindings, `${pending}${SEQUENCE_SEPARATOR}${chord}`, isEnabled);
+    if (completed !== null) return { kind: 'fire', action: completed };
+    // Fell through: re-evaluate as a fresh press rather than eating it (see the docstring).
+  }
+  const exact = resolveHotkeyAction(bindings, chord, isEnabled);
+  if (exact !== null) return { kind: 'fire', action: exact };
+  if (isSequencePrefix(bindings, chord, isEnabled)) return { kind: 'pending', prefix: chord };
+  return { kind: 'idle' };
+}
+
+/**
+ * For each conflicting action, the *other* actions holding the same key (issue #127).
+ *
+ * This is the single source of truth for "what clashes with what": {@link findHotkeyConflicts} is
+ * derived from it, so the warning triangle and the inline "unbind the other one" offer can never
+ * disagree about whether a row is in trouble.
+ *
+ * Unbound actions never conflict — any number of them may be unbound.
+ */
+export function findHotkeyConflictRivals(
+  bindings: Readonly<Record<HotkeyActionId, HotkeyBinding>>,
+): ReadonlyMap<HotkeyActionId, readonly HotkeyActionId[]> {
+  const byBinding = new Map<HotkeyBinding, HotkeyActionId[]>();
+  for (const id of HOTKEY_ACTION_IDS) {
+    const binding = bindings[id];
+    if (binding === '') continue;
+    const bucket = byBinding.get(binding);
+    if (bucket) bucket.push(id);
+    else byBinding.set(binding, [id]);
+  }
+  const rivals = new Map<HotkeyActionId, readonly HotkeyActionId[]>();
+  for (const ids of byBinding.values()) {
+    if (ids.length < 2) continue;
+    for (const id of ids) {
+      rivals.set(
+        id,
+        ids.filter((other) => other !== id),
+      );
+    }
+  }
+  return rivals;
+}
+
+/**
  * The ids of actions sharing a binding with another action — what the Settings list marks as
- * conflicting. Unbound actions never conflict (any number may be unbound).
+ * conflicting. A thin view over {@link findHotkeyConflictRivals}: an action conflicts exactly
+ * when it has at least one rival.
  */
 export function findHotkeyConflicts(
   bindings: Readonly<Record<HotkeyActionId, HotkeyBinding>>,
 ): ReadonlySet<HotkeyActionId> {
-  const seen = new Map<HotkeyBinding, HotkeyActionId[]>();
-  for (const id of HOTKEY_ACTION_IDS) {
-    const binding = bindings[id];
-    if (binding === '') continue;
-    const bucket = seen.get(binding);
-    if (bucket) bucket.push(id);
-    else seen.set(binding, [id]);
-  }
-  const conflicts = new Set<HotkeyActionId>();
-  for (const ids of seen.values()) {
-    if (ids.length > 1) for (const id of ids) conflicts.add(id);
-  }
-  return conflicts;
+  return new Set(findHotkeyConflictRivals(bindings).keys());
+}
+
+/** A ready-made scheme the user can adopt instead of rebinding a dozen rows by hand. */
+export interface HotkeyPreset {
+  readonly id: HotkeyPresetId;
+  readonly label: string;
+  readonly messageKey: MessageKey;
+  /**
+   * The bindings this preset sets. Sparse by design: an action the preset doesn't mention keeps
+   * its shipped default, so adding an action to the registry later doesn't silently unbind it
+   * for everyone on a preset.
+   */
+  readonly bindings: Readonly<Partial<Record<HotkeyActionId, HotkeyBinding>>>;
+}
+
+export type HotkeyPresetId = 'default' | 'vim';
+
+/**
+ * The shipped preset schemes (issue #127).
+ *
+ * A preset is a *starting point*, not a mode: applying one writes ordinary bindings the user can
+ * then edit row by row. Nothing remembers which preset was applied, because the moment one row is
+ * changed the answer would be a lie.
+ */
+export const HOTKEY_PRESETS: readonly HotkeyPreset[] = [
+  {
+    id: 'default',
+    label: 'Gubbins default',
+    messageKey: 'hotkeys.preset.default',
+    bindings: DEFAULT_HOTKEY_BINDINGS,
+  },
+  {
+    // Vim-flavoured: `g`-prefixed goto sequences for every destination (so the function keys are
+    // handed back), plus Vim's own `/` for search and its `i`/`o` verbs for the create actions.
+    id: 'vim',
+    label: 'Vim-flavoured',
+    messageKey: 'hotkeys.preset.vim',
+    bindings: {
+      'nav.dashboard': 'G D',
+      'nav.inventory': 'G I',
+      'nav.projects': 'G P',
+      'nav.purchaseOrders': 'G O',
+      'nav.reports': 'G R',
+      'nav.contacts': 'G C',
+      'nav.bookings': 'G B',
+      'nav.upcoming': 'G U',
+      'nav.activity': 'G A',
+      'nav.alerts': 'G L',
+      'command.palette': 'Ctrl+/',
+      'command.settings': 'G S',
+      'command.hotkeys': 'G K',
+      'command.shortcutsOverlay': '?',
+      'action.addItem': 'I',
+      'action.startScan': 'G N',
+      'action.newProject': 'G Shift+P',
+      'action.newPurchaseOrder': 'G Shift+O',
+      'action.toggleFullWidth': 'G W',
+      'action.toggleTheme': 'G T',
+      'screen.new': 'O',
+      'screen.search': '/',
+    },
+  },
+];
+
+/**
+ * Apply a preset over the shipped defaults, producing a complete binding map.
+ *
+ * Layered over {@link DEFAULT_HOTKEY_BINDINGS} rather than over the user's current map: a preset
+ * is "start again from this scheme", so leaving unmentioned actions on whatever the user had
+ * would produce a hybrid that matches neither what they picked nor what they left.
+ */
+export function applyHotkeyPreset(id: HotkeyPresetId): Record<HotkeyActionId, HotkeyBinding> {
+  const preset = HOTKEY_PRESETS.find((p) => p.id === id);
+  return normaliseHotkeyBindings({ ...DEFAULT_HOTKEY_BINDINGS, ...(preset?.bindings ?? {}) });
 }
 
 /**
@@ -441,7 +779,17 @@ export function findHotkeyConflicts(
  * (see the module docstring), which is also the key the user pressed to record it.
  */
 export function displayBinding(binding: HotkeyBinding, isMac: boolean): string {
-  const parsed = parseBinding(binding);
+  const steps = parseSequence(binding);
+  if (steps === null) return '';
+  const shown = steps.map((step) => displayChord(step, isMac));
+  // A sequence is spelled "then" rather than joined, so `G R` can't be misread as one chord
+  // where both keys are held down — the distinction the whole feature turns on.
+  return shown.some((s) => s === '') ? '' : shown.join(SEQUENCE_SEPARATOR);
+}
+
+/** Render one chord of a binding; `''` when it is structurally broken. */
+function displayChord(chord: string, isMac: boolean): string {
+  const parsed = parseBinding(chord);
   if (parsed === null) return '';
   const modifiers = parsed.modifiers.map((m) => {
     if (!isMac) return m;

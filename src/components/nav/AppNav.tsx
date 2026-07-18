@@ -1,12 +1,29 @@
 import { Fragment } from 'react';
 import { useRouterState } from '@tanstack/react-router';
-import { Menu, MenuLink, MenuAction, MenuExternalLink, MenuSeparator } from '@/components/foundry';
+import { Kbd, Menu, MenuLink, MenuAction, MenuExternalLink, MenuSeparator } from '@/components/foundry';
 import { MenuIcon, WikiIcon, ExternalLinkIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { useHotkeyHints } from '@/features/hotkeys/useHotkeyHints';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useT } from '@/features/i18n';
 import { NAV_DESTINATIONS, NAV_GROUP_ORDER } from './nav-destinations';
+
+/**
+ * A row's bound shortcut, printed the way a desktop menu prints its accelerators (issue #127).
+ *
+ * Decorative: the row's own label already names the action, and the menu item is reachable by
+ * keyboard regardless — announcing "G then R" to a screen-reader user stepping through the menu
+ * would be noise at exactly the wrong moment. Renders nothing when the row has no shortcut.
+ */
+function NavShortcutHint({ binding }: { readonly binding: string | undefined }) {
+  if (binding === undefined) return null;
+  return (
+    <span aria-hidden data-testid="app-nav-shortcut">
+      <Kbd>{binding}</Kbd>
+    </span>
+  );
+}
 
 /**
  * The project wiki — help, tips and support. It lives on GitHub, so it is an external
@@ -30,6 +47,7 @@ export function AppNav() {
   const alertCount = alerts.length;
   const enabledFeatures = useEnabledFeatures();
   const openSettings = useSettingsDialog((s) => s.openSettings);
+  const hints = useHotkeyHints();
 
   // Drop rows whose feature is switched off, then discard any group left with no rows so no
   // empty section — or the separator that would precede it — is rendered (§3, Phase 2). Core
@@ -69,7 +87,12 @@ export function AppNav() {
                 // Settings is a dialog, not a screen: open it over the current route rather
                 // than navigating (a link would also prefetch-open it on hover). See
                 // `useSettingsDialog` / `SettingsDialogHost`.
-                <MenuAction icon={<dest.Icon />} onSelect={openSettings} data-testid="app-nav-settings">
+                <MenuAction
+                  icon={<dest.Icon />}
+                  onSelect={openSettings}
+                  data-testid="app-nav-settings"
+                  trailing={<NavShortcutHint binding={hints.forCommand('open-settings')} />}
+                >
                   {t(dest.messageKey)}
                 </MenuAction>
               ) : (
@@ -78,14 +101,19 @@ export function AppNav() {
                   icon={<dest.Icon />}
                   current={pathname === dest.to}
                   trailing={
-                    dest.to === '/alerts' && alertCount > 0 ? (
-                      <span
-                        className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-destructive-foreground"
-                        data-testid="app-nav-alerts-count"
-                      >
-                        {alertCount > 99 ? '99+' : alertCount}
-                      </span>
-                    ) : undefined
+                    // The alert count and the accelerator can both apply to the same row, so
+                    // they share the slot rather than one hiding the other.
+                    <span className="ml-auto flex items-center gap-1.5">
+                      {dest.to === '/alerts' && alertCount > 0 ? (
+                        <span
+                          className="flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-destructive-foreground"
+                          data-testid="app-nav-alerts-count"
+                        >
+                          {alertCount > 99 ? '99+' : alertCount}
+                        </span>
+                      ) : null}
+                      <NavShortcutHint binding={hints.forRoute(dest.to)} />
+                    </span>
                   }
                 >
                   {t(dest.messageKey)}

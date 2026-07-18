@@ -27,7 +27,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Button, Input, LiveRegion, Modal, Select, Spinner } from '@/components/foundry';
+import { Button, Input, Kbd, LiveRegion, Modal, Select, Spinner } from '@/components/foundry';
 import {
   SearchIcon,
   PackageIcon,
@@ -41,6 +41,7 @@ import {
 import { cn } from '@/lib/utils';
 import { rankFuzzy } from '@/lib/fuzzy';
 import { PALETTE_DESTINATIONS, type PaletteDestination } from '@/components/nav/nav-destinations';
+import { useHotkeyHints } from '@/features/hotkeys/useHotkeyHints';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -94,6 +95,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   const navigate = useNavigate();
   const openSettings = useSettingsDialog((s) => s.openSettings);
   const enabledFeatures = useEnabledFeatures();
+  const hints = useHotkeyHints();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -295,6 +297,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
                       icon={<entry.dest.Icon aria-hidden />}
                       label={entry.dest.label}
                       positions={entry.positions}
+                      shortcut={hints.forRoute(entry.dest.to)}
                       testid="command-palette-screen"
                     />
                   ) : null,
@@ -566,6 +569,7 @@ function EntryRow({
   icon,
   label,
   positions,
+  shortcut,
   testid,
 }: {
   readonly id: string;
@@ -576,6 +580,8 @@ function EntryRow({
   readonly icon: ReactNode;
   readonly label: string;
   readonly positions?: readonly number[];
+  /** The row's global shortcut, printed like a desktop menu accelerator (issue #127). */
+  readonly shortcut?: string;
   readonly testid: string;
 }) {
   return (
@@ -596,9 +602,16 @@ function EntryRow({
         data-testid={testid}
       >
         {icon}
-        <span className="truncate font-medium text-foreground">
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground">
           <Highlight text={label} positions={positions} />
         </span>
+        {/* Decorative: the row is already selectable, and reading the accelerator aloud mid-list
+          would be noise. It is here to be *noticed* on the way to clicking. */}
+        {shortcut !== undefined ? (
+          <span aria-hidden className="shrink-0" data-testid="command-palette-shortcut">
+            <Kbd>{shortcut}</Kbd>
+          </span>
+        ) : null}
       </button>
       {onActions ? (
         <button
@@ -635,14 +648,5 @@ function Highlight({ text, positions }: { readonly text: string; readonly positi
         ),
       )}
     </>
-  );
-}
-
-/** A small keyboard-cap glyph for the help footer. */
-function Kbd({ children }: { readonly children: ReactNode }) {
-  return (
-    <kbd className="rounded border border-border bg-card px-1 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
-      {children}
-    </kbd>
   );
 }

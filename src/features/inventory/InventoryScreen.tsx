@@ -76,6 +76,7 @@ import {
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
 import { requestHighlight } from '@/lib/highlight';
 import { useFullscreen } from '@/lib/useFullscreen';
+import { useHotkeyScope } from '@/features/hotkeys/useHotkeyScope';
 import { useInventoryEntry } from './useInventoryEntry';
 import { ItemDragProvider } from './item-drag';
 import { GROUP_MODES } from './grouping';
@@ -270,6 +271,14 @@ function InventoryWorkspace() {
     else if (pendingIntent === 'import') setImportOpen(true);
     useInventoryEntry.getState().clearIntent();
   }, [pendingIntent]);
+
+  // The contextual shortcuts (issue #127): on this screen `N` adds an item and `/` jumps to the
+  // quick-search box. Both reuse the very controls the buttons drive, so the keyboard route and
+  // the pointer route can't drift apart.
+  useHotkeyScope({
+    onNew: useCallback(() => setAddOpen(true), []),
+    onSearch: useCallback(() => searchRef.current?.focus(), []),
+  });
   useEffect(() => {
     if (pendingLocationId === null) return;
     setSelectedLocationId(pendingLocationId);

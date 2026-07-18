@@ -379,6 +379,8 @@ export interface MenuActionProps {
    * stays a bare `menuitem` with no checked state (so existing call sites are unchanged).
    */
   readonly selectionRole?: 'radio' | 'checkbox';
+  /** Optional trailing adornment (e.g. a keyboard accelerator), as {@link MenuLink} takes. */
+  readonly trailing?: ReactNode;
   readonly 'data-testid'?: string;
 }
 
@@ -390,6 +392,7 @@ export function MenuAction({
   disabled,
   selected,
   selectionRole,
+  trailing,
   ...rest
 }: MenuActionProps) {
   const ctx = useContext(MenuContext);
@@ -418,6 +421,7 @@ export function MenuAction({
         {selected ? <CheckIcon /> : icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{children}</span>
+      {trailing}
     </button>
   );
 }
