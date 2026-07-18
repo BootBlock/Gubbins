@@ -306,6 +306,82 @@ await shot('inventory-workspace', page.locator('#main-content'), { settle: 600 }
 // The location tree on its own.
 await shot('locations-tree', page.getByRole('tree', { name: 'Locations' }));
 
+// --- Location photos & regions (issue #81) ---------------------------------------
+// The photo is *generated in-page* rather than loaded from a fixture: it keeps the repo free
+// of a binary asset, and it guarantees the sample stays synthetic — a real photograph of a
+// real space is exactly the personal data public-repo hygiene forbids.
+try {
+  const dialog = await openLocationEditor('Workshop Shelf A');
+  await dialog.getByRole('tab', { name: 'Photos' }).click();
+
+  const bytes = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 800;
+    const g = canvas.getContext('2d');
+    g.fillStyle = '#8a6a44';
+    g.fillRect(0, 0, canvas.width, canvas.height);
+    ['#c9d6df', '#e8d5b7', '#bcd4c4', '#d9c2d4'].forEach((fill, i) => {
+      g.fillStyle = fill;
+      g.fillRect(40 + i * 290, 120, 250, 560);
+      g.fillStyle = '#333';
+      g.font = 'bold 40px sans-serif';
+      g.fillText(`Bay ${i + 1}`, 70 + i * 290, 730);
+    });
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.9));
+    return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  });
+
+  await dialog
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles({
+      name: 'shelf-bays.webp',
+      mimeType: 'image/webp',
+      buffer: Buffer.from(bytes),
+    });
+  await page.waitForTimeout(2500);
+  await shot('location-photos-tab', dialog, { settle: 500 });
+
+  await dialog
+    .getByRole('button', { name: /Draw regions/i })
+    .first()
+    .click();
+  const editor = page.getByRole('dialog').last();
+  await editor.waitFor({ state: 'visible', timeout: 8000 });
+  await page.waitForTimeout(1200);
+
+  // Drag a rectangle over the second bay, in the image's own proportions.
+  await editor.getByRole('radio', { name: 'Rectangle' }).first().click();
+  const canvasBox = await editor.locator('img').first().boundingBox();
+  if (canvasBox) {
+    const at = (fx, fy) => ({
+      x: canvasBox.x + canvasBox.width * fx,
+      y: canvasBox.y + canvasBox.height * fy,
+    });
+    const from = at(0.28, 0.16);
+    const to = at(0.48, 0.84);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(900);
+    const nameField = editor.getByLabel(/Region name/i).first();
+    if (await nameField.isVisible().catch(() => false)) {
+      await nameField.fill('Bay 2 — capacitors');
+      await nameField.blur();
+      await page.waitForTimeout(600);
+    }
+  }
+  await shot('location-region-editor', editor, { settle: 500 });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Escape');
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ location photos — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // A single item card (crop). The card root Surface carries the `select-none` class.
 const firstCard = page
   .locator('#main-content')

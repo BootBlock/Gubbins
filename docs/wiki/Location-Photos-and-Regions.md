@@ -24,6 +24,8 @@ Open a location for editing and choose the **Photos** tab, then pick an image. G
 compresses it as it comes in — a full-resolution copy for viewing and a small thumbnail for
 lists — exactly as it does for [[item photos|Items]].
 
+![The Photos tab of a location, showing a photo of a shelving unit](images/location-photos-tab.png)
+
 You can add several photos to one location: a wide shot of the whole wall, then close-ups of
 individual shelves.
 
@@ -43,6 +45,8 @@ door". Open a photo and choose a shape:
 Draw by dragging on the photo (for a polygon, click each corner, then click the first point
 again to close it). Give the region a name, and optionally a colour so it stands out against
 the photo.
+
+![The region editor, with a rectangle drawn around the second bay of a shelving unit and named "Bay 2 — capacitors"](images/location-region-editor.png)
 
 > **💡 Tip**
 > On a touchscreen, **press and hold** briefly before dragging to start drawing — a quick swipe

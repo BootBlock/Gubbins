@@ -826,7 +826,6 @@
   "inventory.regions.updated": "Region “{name}” updated.",
   "inventory.regions.deleted": "Region “{name}” deleted.",
   "inventory.regions.selected": "Region “{name}” selected.",
-  "inventory.regions.tooSmall": "That shape is too small — drag a little further to make a region.",
   "inventory.regions.itemsTitle": "Items in this region",
   "inventory.regions.addItem": "Add an item to this region",
   "inventory.regions.addItemPlaceholder": "Search items…",
@@ -835,5 +834,13 @@
   "inventory.placements.title": "Where it sits",
   "inventory.placements.empty": "This item has not been placed on a location photo.",
   "inventory.placements.at": "{region} — {location}",
-  "inventory.placements.viewLocation": "Open {location}"
+  "inventory.placements.viewLocation": "Open {location}",
+  "inventory.location.detailsTab": "Details",
+  "inventory.location.railLabel": "Location sections",
+  "inventory.locationPhotos.missing": "The full-size photo isn’t available on this device.",
+  "inventory.regions.add": "Add region",
+  "inventory.regions.defaultName": "New region",
+  "inventory.regions.done": "Done",
+  "inventory.regions.removeCancel": "Cancel",
+  "inventory.regions.addItemAction": "Add"
 }

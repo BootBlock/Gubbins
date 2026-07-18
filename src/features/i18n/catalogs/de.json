@@ -826,7 +826,6 @@
   "inventory.regions.updated": "Bereich „{name}“ aktualisiert.",
   "inventory.regions.deleted": "Bereich „{name}“ gelöscht.",
   "inventory.regions.selected": "Bereich „{name}“ ausgewählt.",
-  "inventory.regions.tooSmall": "Diese Form ist zu klein — ziehen Sie etwas weiter, um einen Bereich zu erstellen.",
   "inventory.regions.itemsTitle": "Gegenstände in diesem Bereich",
   "inventory.regions.addItem": "Gegenstand zu diesem Bereich hinzufügen",
   "inventory.regions.addItemPlaceholder": "Gegenstände suchen…",
@@ -835,5 +834,13 @@
   "inventory.placements.title": "Wo er sich befindet",
   "inventory.placements.empty": "Dieser Gegenstand wurde noch nicht auf einem Ortsfoto platziert.",
   "inventory.placements.at": "{region} — {location}",
-  "inventory.placements.viewLocation": "{location} öffnen"
+  "inventory.placements.viewLocation": "{location} öffnen",
+  "inventory.location.detailsTab": "Details",
+  "inventory.location.railLabel": "Ortsabschnitte",
+  "inventory.locationPhotos.missing": "Das Foto in voller Größe ist auf diesem Gerät nicht verfügbar.",
+  "inventory.regions.add": "Bereich hinzufügen",
+  "inventory.regions.defaultName": "Neuer Bereich",
+  "inventory.regions.done": "Fertig",
+  "inventory.regions.removeCancel": "Abbrechen",
+  "inventory.regions.addItemAction": "Hinzufügen"
 }
