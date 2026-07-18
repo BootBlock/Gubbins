@@ -8,7 +8,8 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
-import { ALL_TOOLS, findTool, ToolInputError, type McpTool } from './tools.ts';
+import { createWriteExecutor, MAX_NOTE_LENGTH } from '../write.ts';
+import { ALL_TOOLS, createWriteTools, findTool, ToolInputError, type McpTool } from './tools.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-snapshot.json', import.meta.url);
 
@@ -209,5 +210,128 @@ describe('gubbins_list_capabilities', () => {
     const voltage = result.data.find((c) => c.key === 'voltage');
     expect(voltage).toBeDefined();
     expect(voltage!.hasNumericValues).toBe(true);
+  });
+});
+
+// --- the opt-in write tools -------------------------------------------------------
+
+/**
+ * The write tools are driven end-to-end through the *real* {@link createWriteExecutor}, with the
+ * snapshot file replaced by an in-memory string — so these exercise the actual mutation path
+ * (hydrate → the app's own repository → merged snapshot written back), not a stub of it.
+ */
+describe('the write tools', () => {
+  /** Build the write tools over an in-memory snapshot, exposing the stored JSON for assertions. */
+  function withInMemorySnapshot(initial: string): {
+    tools: readonly McpTool[];
+    stored: () => string;
+  } {
+    let stored = initial;
+    const tools = createWriteTools(
+      createWriteExecutor('/virtual/gubbins-sync.json', {
+        readSnapshot: async () => stored,
+        writeSnapshotAtomic: async (_p, text) => {
+          stored = text;
+        },
+      }),
+    );
+    return { tools, stored: () => stored };
+  }
+
+  /** Run one write tool by name against the in-memory snapshot. */
+  function runWriteTool(
+    tools: readonly McpTool[],
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
+    const tool = tools.find((t) => t.name === name);
+    if (tool === undefined) throw new Error(`No such write tool: ${name}`);
+    return tool.run(hydrated.driver, args);
+  }
+
+  let fixture: string;
+
+  beforeEach(async () => {
+    fixture = await readFile(fileURLToPath(FIXTURE_URL), 'utf8');
+  });
+
+  it('builds exactly the two adjust tools, each with an object input schema', () => {
+    const tools = createWriteTools(async () => {
+      throw new Error('not called');
+    });
+    expect(tools.map((t) => t.name)).toEqual(['gubbins_adjust_quantity', 'gubbins_adjust_gauge']);
+    for (const tool of tools) {
+      expect(tool.description.length).toBeGreaterThan(0);
+      expect(tool.inputSchema.type).toBe('object');
+      expect(tool.inputSchema.required).toEqual(['id', 'delta']);
+    }
+  });
+
+  it('keeps the write tools out of the read-only registry', () => {
+    // They must only ever reach a caller via createWriteTools (i.e. under the opt-in), so a
+    // global lookup must not find them even by name.
+    expect(findTool('gubbins_adjust_quantity')).toBeUndefined();
+    expect(findTool('gubbins_adjust_gauge')).toBeUndefined();
+  });
+
+  it('adjusts a DISCRETE quantity and writes the merged snapshot back', async () => {
+    const { tools, stored } = withInMemorySnapshot(fixture);
+    const result = (await runWriteTool(tools, 'gubbins_adjust_quantity', {
+      id: 'item-m3-bolt',
+      delta: -2,
+      note: 'Taken to the workshop',
+    })) as { updated: boolean; item: { id: string; quantity: number } };
+
+    expect(result.updated).toBe(true);
+    expect(result.item.quantity).toBe(40); // the fixture's 42, less two
+
+    // The change landed in the snapshot the PWA will sync, with the history entry alongside it.
+    const after = await hydrateFromJson(stored());
+    const rows = await after.driver.query("SELECT quantity FROM items WHERE id = 'item-m3-bolt';");
+    expect((rows[0] as { quantity: number }).quantity).toBe(40);
+    await after.driver.close();
+  });
+
+  it('surfaces a domain rejection as a model-visible ToolInputError', async () => {
+    const { tools } = withInMemorySnapshot(fixture);
+    // The fixture is all-DISCRETE, so a gauge adjustment is a wrong-tracking-mode rejection
+    // (a 422 WriteError) — the model should see the reason, not a generic failure.
+    await expect(
+      runWriteTool(tools, 'gubbins_adjust_gauge', { id: 'item-m3-bolt', delta: -10 }),
+    ).rejects.toThrow(ToolInputError);
+  });
+
+  it('reports an unknown item as a model-visible ToolInputError', async () => {
+    const { tools } = withInMemorySnapshot(fixture);
+    await expect(
+      runWriteTool(tools, 'gubbins_adjust_quantity', { id: 'item-does-not-exist', delta: 1 }),
+    ).rejects.toThrow(ToolInputError);
+  });
+
+  it.each([
+    ['a missing id', { delta: 1 }],
+    ['an empty id', { id: '   ', delta: 1 }],
+    ['a missing delta', { id: 'item-m3-bolt' }],
+    ['a non-numeric delta', { id: 'item-m3-bolt', delta: 'two' }],
+    ['a zero delta', { id: 'item-m3-bolt', delta: 0 }],
+    ['a fractional delta', { id: 'item-m3-bolt', delta: 1.5 }],
+    ['a non-string note', { id: 'item-m3-bolt', delta: 1, note: 42 }],
+    ['an over-long note', { id: 'item-m3-bolt', delta: 1, note: 'x'.repeat(MAX_NOTE_LENGTH + 1) }],
+  ])('rejects %s without touching the snapshot', async (_label, args) => {
+    const { tools, stored } = withInMemorySnapshot(fixture);
+    await expect(runWriteTool(tools, 'gubbins_adjust_quantity', args)).rejects.toThrow(ToolInputError);
+    expect(stored()).toBe(fixture); // nothing was written
+  });
+
+  it('accepts a fractional delta on the gauge tool (a gauge is not whole-numbered)', async () => {
+    const { tools } = withInMemorySnapshot(fixture);
+    // It still fails on tracking mode against this all-DISCRETE fixture — but as a domain
+    // rejection, proving the fractional value cleared argument validation.
+    const err = await runWriteTool(tools, 'gubbins_adjust_gauge', {
+      id: 'item-m3-bolt',
+      delta: -1.5,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ToolInputError);
+    expect((err as Error).message).toMatch(/CONSUMABLE_GAUGE/);
   });
 });

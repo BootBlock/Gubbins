@@ -357,6 +357,15 @@ export function loadSnapshotPath(env: Env = process.env): string {
   return snapshotPath;
 }
 
+/**
+ * Resolve the `GUBBINS_BRIDGE_ALLOW_WRITES` opt-in on its own, using the *same* parsing as
+ * {@link loadConfig}. Shared by the MCP stdio server, which needs this one flag but none of the
+ * HTTP config around it (it has no port, host or bearer token to resolve).
+ */
+export function loadAllowWrites(env: Env = process.env): boolean {
+  return parseBool(env.GUBBINS_BRIDGE_ALLOW_WRITES, false, 'GUBBINS_BRIDGE_ALLOW_WRITES');
+}
+
 /** Whether `host` exposes the bridge beyond loopback (a deliberate, documented choice). */
 export function isLanExposed(host: string): boolean {
   return host !== DEFAULT_HOST && host !== 'localhost' && host !== '::1';

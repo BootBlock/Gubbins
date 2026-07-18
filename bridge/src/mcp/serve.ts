@@ -9,14 +9,24 @@
  *   node bridge/mcp.mjs
  *
  * Transport posture: stdio is the local process's own pipe, so there is **no network bearer
- * token** — only `GUBBINS_SNAPSHOT_PATH` is required. Read-only throughout: the tools only
- * ever read through the query core / repositories.
+ * token** — only `GUBBINS_SNAPSHOT_PATH` is required. Read-only by default: the tools only ever
+ * read through the query core / repositories.
+ *
+ * Writes are an opt-in the operator must set deliberately (`GUBBINS_BRIDGE_ALLOW_WRITES=on`, the
+ * *same* flag the HTTP endpoints use), and are likewise refused for a raw `.sqlite` source, which
+ * has no sync channel to round-trip through. Because stdio carries no bearer token, the trust
+ * boundary here is **process launch**: anything able to start this server under that flag can
+ * adjust stock. That is why the tools are only constructed when the flag is on — off, they are
+ * absent from `tools/list` and uncallable — and why enabling it is logged loudly at startup.
  *
  * IMPORTANT: stdout carries the JSON-RPC protocol; **all logging goes to stderr** so it never
  * corrupts the message stream.
  */
-import { loadSnapshotPath, type Env } from '../config.ts';
+import { loadAllowWrites, loadSnapshotPath, type Env } from '../config.ts';
 import { createSnapshotWatcher, type SnapshotWatcher } from '../watcher.ts';
+import { detectSource, writesEnabledForSource } from '../sqlite-source.ts';
+import { createWriteExecutor } from '../write.ts';
+import { ALL_TOOLS, createWriteTools } from './tools.ts';
 import { runStdioServer, type StdioServer } from './stdio.ts';
 
 export interface RunningMcpServer {
@@ -32,6 +42,7 @@ function log(message: string): void {
 /** Load config, hydrate the first snapshot, and start serving MCP over stdio. */
 export async function startMcpServer(env: Env = process.env): Promise<RunningMcpServer> {
   const snapshotPath = loadSnapshotPath(env);
+  const allowWrites = loadAllowWrites(env);
 
   const watcher = createSnapshotWatcher({
     snapshotPath,
@@ -40,8 +51,28 @@ export async function startMcpServer(env: Env = process.env): Promise<RunningMcp
   });
   await watcher.start();
 
-  const server = runStdioServer({ getState: () => watcher.getState() });
-  log('Gubbins MCP server ready on stdio (read-only).');
+  // The write tools exist only under the opt-in *and* a JSON snapshot source; otherwise they are
+  // never built, so the tool list stays read-only and nothing can mutate the inventory.
+  const source = await detectSource(snapshotPath);
+  const writesEnabled = writesEnabledForSource(allowWrites, source);
+  const tools = writesEnabled
+    ? [...ALL_TOOLS, ...createWriteTools(createWriteExecutor(snapshotPath))]
+    : ALL_TOOLS;
+
+  const server = runStdioServer({ getState: () => watcher.getState(), tools });
+  log(`Gubbins MCP server ready on stdio (${writesEnabled ? 'reads + limited writes' : 'read-only'}).`);
+  if (writesEnabled) {
+    log(
+      'Writes ENABLED (GUBBINS_BRIDGE_ALLOW_WRITES=on): the gubbins_adjust_quantity and ' +
+        'gubbins_adjust_gauge tools can mutate the snapshot. stdio carries no bearer token, so any ' +
+        'agent that can launch this server can adjust stock. Each write round-trips through the sync merge.',
+    );
+  } else if (allowWrites && source === 'sqlite') {
+    log(
+      'Writes requested but REFUSED: a raw .sqlite source has no sync channel to round-trip ' +
+        'through, so writes would drift. Use a JSON sync snapshot to enable writes. (Read-only.)',
+    );
+  }
 
   const shutdown = (): void => {
     void watcher.stop();

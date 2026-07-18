@@ -11,12 +11,33 @@ The [[bridge|Bridge-Overview]] can expose your inventory to an **AI assistant** 
 
 ## How it works
 
-The bridge includes an **MCP server** that exposes your Gubbins data as a small set of
-**read-only** tools — search items, get an item's details, and so on. You wire that server into an
-MCP client, and the assistant can then look things up on your behalf, in natural language.
+The bridge includes an **MCP server** that exposes your Gubbins data as a small set of tools —
+search items, get an item's details, and so on. These are **read-only**: you wire that server into
+an MCP client, and the assistant can then look things up on your behalf, in natural language.
 
 Because it uses the same query engine as the rest of the bridge, the assistant sees exactly the
 data you'd see — and, by default, **cannot change anything**.
+
+## Letting an assistant adjust stock (optional)
+
+If you switch **writes** on when running the bridge, two more tools appear alongside the read-only
+ones, letting an assistant *adjust* stock as well as look it up — so "I've just used two of those"
+can actually bring the count down:
+
+- **Adjust a quantity** — add or remove a whole number of a counted item.
+- **Adjust a gauge** — change how full a part-used item is (a solder reel, a bottle of flux).
+
+Nothing else is exposed: an assistant cannot create, rename or delete anything, and every
+adjustment is recorded in the [[activity log|Activity-Log]] just as if you'd made it yourself — so
+you can always see what changed. Adjustments flow back through the same [[sync|Cloud-Sync]] as any
+other change, so your other devices pick them up normally.
+
+> **⚠️ Heads-up**
+> This is off by default, and worth a moment's thought before switching on. Unlike the bridge's
+> web API, an MCP assistant doesn't present a token — anything able to start the server with
+> writes enabled can adjust your stock. Turn it on only for an assistant you trust on a machine
+> you control, and bear in mind that an assistant can be influenced by whatever it reads. Ask it
+> to confirm before it adjusts anything.
 
 > **💡 Tip**
 > The natural-language lookups here are the "external" cousin of the in-app
