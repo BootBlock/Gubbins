@@ -1,4 +1,5 @@
 import type { ItemSort } from '@/db/repositories';
+import type { MessageKey } from '@/features/i18n';
 import type { InventorySort, InventorySortField } from '@/state/stores/useLayoutStore';
 
 /**
@@ -16,16 +17,28 @@ import type { InventorySort, InventorySortField } from '@/state/stores/useLayout
  */
 export interface SortModeDescriptor {
   readonly value: InventorySortField;
-  /** Trigger/menu label — self-describing so "Default" never reads as an empty state. */
+  /**
+   * Trigger/menu label — self-describing so "Default" never reads as an empty state. The
+   * *displayed* text comes from the catalog via {@link labelKey}; this English field is the base
+   * reference, held byte-identical to `en.json` by the catalog-drift test.
+   */
   readonly label: string;
-  /** One-line explanation surfaced as the option's help text. */
+  readonly labelKey: MessageKey;
+  /**
+   * One-line explanation, intended as the option's help text. Not surfaced by any control yet, so
+   * it is deliberately *not* in the message catalog — see the same note on `GroupModeDescriptor`.
+   */
   readonly hint: string;
   /**
    * What each direction means for *this* field, so the direction control reads naturally
-   * ("A → Z" for a name, "Newest first" for a date) rather than a bare "Ascending".
-   * `null` for the default order, which has no user-facing direction.
+   * ("A → Z" for a name, "Newest first" for a date) rather than a bare "Ascending". `null` for
+   * the default order, which has no user-facing direction.
+   *
+   * Labels and keys are held in **one** object rather than two parallel nullable fields, so a
+   * field can't end up with one kind's wording under another kind's keys, and "has a direction"
+   * is a single check instead of two that must agree.
    */
-  readonly directionLabels: { readonly asc: string; readonly desc: string } | null;
+  readonly directions: DirectionPair | null;
   /**
    * The direction this field sorts by when the user *first* picks it. Text reads naturally
    * ascending (A → Z), while numbers and dates are almost always wanted biggest/newest first
@@ -34,72 +47,102 @@ export interface SortModeDescriptor {
   readonly naturalDirection: 'asc' | 'desc';
 }
 
-const TEXT_DIRECTIONS = { asc: 'A → Z', desc: 'Z → A' } as const;
-const NUMBER_DIRECTIONS = { asc: 'Lowest first', desc: 'Highest first' } as const;
-const DATE_DIRECTIONS = { asc: 'Oldest first', desc: 'Newest first' } as const;
+/** The two ways one field can run, named for what the direction *means* for that kind of value. */
+export interface DirectionPair {
+  /**
+   * English base reference, held byte-identical to `en.json` by the catalog-drift test. The
+   * displayed text comes from {@link keys}.
+   */
+  readonly labels: { readonly asc: string; readonly desc: string };
+  readonly keys: { readonly asc: MessageKey; readonly desc: MessageKey };
+}
+
+// Three kinds of value, each with its own natural reading. Shared by reference across the
+// descriptors below, so every text-valued field words its directions identically.
+const TEXT_DIRECTIONS: DirectionPair = {
+  labels: { asc: 'A → Z', desc: 'Z → A' },
+  keys: { asc: 'inventory.sort.direction.text.asc', desc: 'inventory.sort.direction.text.desc' },
+};
+const NUMBER_DIRECTIONS: DirectionPair = {
+  labels: { asc: 'Lowest first', desc: 'Highest first' },
+  keys: { asc: 'inventory.sort.direction.number.asc', desc: 'inventory.sort.direction.number.desc' },
+};
+const DATE_DIRECTIONS: DirectionPair = {
+  labels: { asc: 'Oldest first', desc: 'Newest first' },
+  keys: { asc: 'inventory.sort.direction.date.asc', desc: 'inventory.sort.direction.date.desc' },
+};
 
 export const SORT_MODES: readonly SortModeDescriptor[] = [
   {
     value: 'default',
     label: 'Default',
+    labelKey: 'inventory.sort.default',
     hint: 'Favourites first, then alphabetically by name.',
-    directionLabels: null,
+    directions: null,
     naturalDirection: 'asc',
   },
   {
     value: 'name',
     label: 'Name',
+    labelKey: 'inventory.sort.name',
     hint: "Alphabetically by the item's name.",
-    directionLabels: TEXT_DIRECTIONS,
+    directions: TEXT_DIRECTIONS,
     naturalDirection: 'asc',
   },
   {
     value: 'quantity',
     label: 'Quantity',
+    labelKey: 'inventory.sort.quantity',
     hint: 'By how much stock you hold — find the fullest or the emptiest.',
-    directionLabels: NUMBER_DIRECTIONS,
+    directions: NUMBER_DIRECTIONS,
     naturalDirection: 'desc',
   },
   {
     value: 'unitCost',
     label: 'Unit cost',
+    labelKey: 'inventory.sort.unitCost',
     hint: 'By what one unit costs — find the most and least valuable items.',
-    directionLabels: NUMBER_DIRECTIONS,
+    directions: NUMBER_DIRECTIONS,
     naturalDirection: 'desc',
   },
   {
     value: 'manufacturer',
     label: 'Manufacturer',
+    labelKey: 'inventory.sort.manufacturer',
     hint: 'Alphabetically by manufacturer, so one brand’s items sit together.',
-    directionLabels: TEXT_DIRECTIONS,
+    directions: TEXT_DIRECTIONS,
     naturalDirection: 'asc',
   },
   {
     value: 'mpn',
     label: 'MPN',
+    labelKey: 'inventory.sort.mpn',
     hint: 'By manufacturer part number.',
-    directionLabels: TEXT_DIRECTIONS,
+    directions: TEXT_DIRECTIONS,
     naturalDirection: 'asc',
   },
   {
     value: 'serialNo',
     label: 'Serial number',
+    labelKey: 'inventory.sort.serialNo',
     hint: 'By serial number, for individually-tracked items.',
-    directionLabels: TEXT_DIRECTIONS,
+    directions: TEXT_DIRECTIONS,
     naturalDirection: 'asc',
   },
   {
     value: 'createdAt',
     label: 'Date added',
+    labelKey: 'inventory.sort.createdAt',
     hint: 'By when the item was added to your inventory.',
-    directionLabels: DATE_DIRECTIONS,
+    directions: DATE_DIRECTIONS,
     naturalDirection: 'desc',
   },
   {
     value: 'updatedAt',
     label: 'Last updated',
+    labelKey: 'inventory.sort.updatedAt',
     hint: 'By when the item last changed — see what you’ve touched recently.',
-    directionLabels: DATE_DIRECTIONS,
+    directions: DATE_DIRECTIONS,
     naturalDirection: 'desc',
   },
 ];

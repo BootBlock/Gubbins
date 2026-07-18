@@ -38,8 +38,8 @@ describe('SORT_MODES', () => {
 
   it('gives every field a direction pair except the default order, which has no direction', () => {
     for (const mode of SORT_MODES) {
-      if (mode.value === 'default') expect(mode.directionLabels).toBeNull();
-      else expect(mode.directionLabels).not.toBeNull();
+      if (mode.value === 'default') expect(mode.directions).toBeNull();
+      else expect(mode.directions).not.toBeNull();
     }
   });
 
