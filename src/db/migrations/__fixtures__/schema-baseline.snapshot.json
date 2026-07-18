@@ -657,6 +657,12 @@
     },
     {
       "type": "table",
+      "name": "webhooks",
+      "tbl_name": "webhooks",
+      "sql": "CREATE TABLE webhooks (\n          id          TEXT    PRIMARY KEY NOT NULL,\n          name        TEXT    NOT NULL,                  -- user label, e.g. \"Home Assistant\"\n          url         TEXT    NOT NULL,                  -- absolute http(s) endpoint\n          method      TEXT    NOT NULL DEFAULT 'POST',\n          enabled     INTEGER NOT NULL DEFAULT 1,\n          secret      TEXT,                              -- HMAC secret held in-row (syncs!)\n          secret_ref  TEXT,                              -- name of a bridge-side secret (preferred)\n          event_types TEXT    NOT NULL,                  -- JSON array of dotted types, or [\"*\"]\n          filter      TEXT,                              -- JSON filter expression, or NULL (all)\n          template    TEXT,                              -- payload template, or NULL (default envelope)\n          headers     TEXT,                              -- JSON object of extra static headers\n          created_at  INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at  INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (method IN ('POST', 'GET', 'PUT', 'PATCH')),\n          CHECK (enabled IN (0, 1)),\n          CHECK (secret IS NULL OR secret_ref IS NULL)\n        ) STRICT"
+    },
+    {
+      "type": "table",
       "name": "wishlist",
       "tbl_name": "wishlist",
       "sql": "CREATE TABLE wishlist (\n          id           TEXT    PRIMARY KEY NOT NULL,\n          name         TEXT    NOT NULL,\n          note         TEXT,                           -- optional free-text context\n          url          TEXT,                           -- optional http(s) link (app-sanitised)\n          target_price REAL    CHECK (target_price IS NULL OR target_price >= 0),\n          priority     TEXT    NOT NULL DEFAULT 'NONE', -- HIGH | MEDIUM | LOW | NONE (app-enforced)\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
@@ -954,6 +960,12 @@
       "name": "trg_users_updated_at",
       "tbl_name": "users",
       "sql": "CREATE TRIGGER trg_users_updated_at\n    AFTER UPDATE ON users\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE users SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_webhooks_updated_at",
+      "tbl_name": "webhooks",
+      "sql": "CREATE TRIGGER trg_webhooks_updated_at\n    AFTER UPDATE ON webhooks\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE webhooks SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -5500,6 +5512,124 @@
         {
           "seq": 2,
           "name": "sqlite_autoindex_users_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    "webhooks": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "url",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "method",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'POST'",
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "enabled",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "1",
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "secret",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "secret_ref",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "event_types",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "filter",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "template",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "headers",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_webhooks_1",
           "unique": 1,
           "origin": "pk",
           "partial": 0

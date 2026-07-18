@@ -36,3 +36,4 @@ export type * from './types/bookings';
 export type * from './types/maintenance';
 export type * from './types/tare-presets';
 export type * from './types/wishlist';
+export type * from './types/webhooks';
