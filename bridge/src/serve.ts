@@ -24,7 +24,7 @@ import { ingestSnapshot } from './push.ts';
 import { detectSource, pushEnabledForSource, writesEnabledForSource } from './sqlite-source.ts';
 import { createSnapshotWatcher, type SnapshotWatcher } from './watcher.ts';
 import { summarizeSnapshotHealth } from './snapshot-health.ts';
-import packageJson from '../package.json' with { type: 'json' };
+import { BRIDGE_VERSION } from './version.ts';
 import { createMdnsAdvertiser, type MdnsAdvertiser } from './mdns/advertise.ts';
 import { pickAdvertisedAddress, resolveMdnsPlan, sanitizeHostLabel } from './mdns/records.ts';
 import { discoverHomeAssistant } from './mdns/discover.ts';
@@ -471,7 +471,7 @@ function createMqttPublisherFromConfig(config: BridgeConfig, endpoint: MqttEndpo
     prefix: config.mqttPrefix,
     discovery: config.mqttDiscovery,
     discoveryPrefix: config.mqttDiscoveryPrefix,
-    version: packageJson.version,
+    version: BRIDGE_VERSION,
   });
 }
 
@@ -502,7 +502,7 @@ async function maybeStartMdns(
     hostLabel: sanitizeHostLabel(os.hostname()),
     port: config.port,
     address,
-    txt: { serverVersion: packageJson.version },
+    txt: { serverVersion: BRIDGE_VERSION },
   });
   await advertiser.start();
   return advertiser;

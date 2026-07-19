@@ -34,6 +34,10 @@ The bridge is built to be cautious:
 - **Everything network-facing is opt-in** — each feature (events, MQTT, discovery) is off until you
   enable it, and every choice is logged at startup.
 
+Because you run it yourself, the bridge only updates when you update it — and Gubbins warns you on
+the **Sync** screen when the one you're connected to has fallen behind the app. See
+[[Keeping it up to date|Running-the-Bridge]].
+
 > **⚠️ Heads-up**
 > The bridge reads a *copy* of your data and can serve it over the network if you configure it to.
 > Treat its **token** like a password, keep the default loopback bind unless you know you need a

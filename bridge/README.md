@@ -211,7 +211,7 @@ every endpoint is **GET-only** and strictly read-only.
 
 | Endpoint | Returns |
 | --- | --- |
-| `GET /api/v1` | A small discovery index (version + endpoint list). |
+| `GET /api/v1` | A small discovery index (API version, the `bridge` build block, and the endpoint list). See [Updating the bridge](#updating-the-bridge). |
 | `GET /api/v1/openapi.json` | This API's OpenAPI 3 document. |
 | `GET /api/v1/$metadata` | OData v4 CSDL describing the read model (descriptive; see [OData-style options](#odata-style-query-options)). |
 | `GET /api/v1/items/$count` | The count of matching items as a bare `text/plain` integer (honours `$filter`/`$search`). |
@@ -1556,7 +1556,10 @@ What is advertised (service type **`_gubbins._tcp.local`**):
 | --- | --- |
 | Instance name | `Gubbins Bridge` (override with `GUBBINS_BRIDGE_MDNS_NAME`). |
 | Port | the bridge's HTTP port. |
-| TXT | `server=gubbins-bridge`, `api=v1`, `path=/api/v1`, `version=<bridge version>`. |
+| TXT | `server=gubbins-bridge`, `api=v1`, `path=/api/v1`, `version=<Gubbins version>`. |
+
+The `version=` value is the **Gubbins release the checkout is on** (e.g. `1.2.0`) — the bridge
+has no version of its own to advertise. See [Updating the bridge](#updating-the-bridge).
 
 > **No secret is ever advertised.** The TXT record carries only the API path/version for
 > identification — **never** the bearer token. Home Assistant still prompts for the token in
@@ -1733,7 +1736,7 @@ a backstop, not the security boundary — the token and the loopback default are
 
 ```
 bridge/
-  package.json          # no runtime deps; borrows the repo-root toolchain
+  package.json          # no runtime deps; borrows the repo-root toolchain (and deliberately no version field)
   tsconfig.json         # @/* → ../src/* alias (type-check only; bundler resolution)
   vitest.config.ts      # node env + the same @/ alias, pinned to bridge/ as root
   loader.mjs            # zero-dep ESM resolve hook (the runtime half of the alias)
@@ -1752,6 +1755,7 @@ bridge/
     sqlite-source.ts    # raw .sqlite front-end: detect source + copy/open/migrate; write-gating
     query.ts            # read-only query core: searchItems / whereIs (transport-agnostic)
     spoken.ts           # pure spoken-answer shaper (the voice UX)
+    version.ts          # the bridge's reported build — read from the repo-root package.json, never hand-maintained
     config.ts           # env-driven host/port/token/snapshot-path/rate-limit (pure, injectable)
     rate-limit.ts       # pure per-IP token-bucket abuse guard (injectable clock)
     server.ts           # node:http server (legacy paths + auth/rate-limit; delegates /api/v1; POST writes)
@@ -1824,7 +1828,8 @@ The bridge is meant to run continuously next to your synced folder. Two supporte
 
 A thin, **build-free** image ([`Dockerfile`](Dockerfile)) — single `node:slim` stage, no
 `npm install`, no compile. The build **context is the repo root** (the bridge imports the
-app's pure modules from `../src`):
+app's pure modules from `../src`, and reads the root `package.json` for the version it
+reports — see [Updating the bridge](#updating-the-bridge)):
 
 ```bash
 # from the repo root
@@ -1882,3 +1887,91 @@ Anywhere that can see the synced folder and that Home Assistant can reach over t
 
 In every case the bridge re-hydrates **automatically and atomically** whenever the watched
 snapshot changes, so it always answers from fresh data without a restart.
+
+---
+
+## Updating the bridge
+
+The bridge **re-reads your data** by itself, but it never **updates itself**. It has no build
+step, no published package and no release artefact — by design: it ships as source *inside this
+repository* and Node runs the TypeScript directly (see
+[Shared-code mechanism](#shared-code-mechanism-the-important-decision)). So it only moves when
+you move the checkout it runs from.
+
+### How to update it
+
+| You run it as | Update it by |
+| --- | --- |
+| A checkout (`node bridge/serve.mjs`, systemd) | `git pull` in the repository, then restart the process. |
+| The Docker image | `git pull`, then `docker build -f bridge/Dockerfile -t gubbins-bridge .` from the repo root again, then recreate the container. |
+
+`npm install` is only needed again if the **root** toolchain changed — the bridge itself has no
+dependencies of its own to install.
+
+### Which build am I running?
+
+The bridge **has no version of its own**. It reports the version of the Gubbins repository the
+checkout is on — the same number the PWA shows on its About screen — because that is the only
+thing that actually identifies which code is answering. (`bridge/package.json` deliberately
+carries no `version` field: a second, hand-edited number could only ever drift, and did.)
+
+Ask the running bridge directly:
+
+```bash
+curl -H "Authorization: Bearer $GUBBINS_BRIDGE_TOKEN" http://127.0.0.1:8787/api/v1
+```
+
+```jsonc
+{
+  "name": "Gubbins Bridge API",
+  "version": "1.0.0",          // the API *contract* version — see the note below
+  "bridge": {
+    "version": "1.2.0",        // which Gubbins release this bridge's checkout is on
+    "schemaVersion": 5         // the data-schema generation it expects
+  },
+  "openapi": "/api/v1/openapi.json"
+  // …
+}
+```
+
+> **ℹ️ Two different versions live in that index.** The top-level `version` is the **API
+> contract** version — what the `/api/v1` endpoints promise, which stays put across many
+> releases of the software implementing it. The `bridge` block is **which build is answering**.
+> They are unrelated numbers; don't compare one against the other.
+
+The same value is what mDNS advertises in its `version=` TXT record and what MQTT discovery
+reports as `sw_version`, so a Home Assistant device page shows the bridge's build too.
+
+### `schemaVersion` is the one that matters
+
+Of the two numbers in the `bridge` block, **`schemaVersion` is the one that governs whether the
+bridge reads your data correctly.** It is the compatibility generation of the stored schema. A
+bridge a release or two behind on `version` is untidy but still reading the snapshot correctly;
+a bridge behind on `schemaVersion` may be reading columns that have since moved — the failure
+that shows up as plausible-looking but wrong answers rather than an error.
+
+### The app tells you when yours is stale
+
+You don't have to poll this yourself. The Gubbins app compares the `bridge` block against its
+own build and, on the **Sync** screen's bridge section, says so when they differ:
+
+| What the app sees | What it tells you |
+| --- | --- |
+| Same version, same schema | Nothing — it stays quiet. |
+| Older `schemaVersion` | A **warning**: the bridge may misread your data. Update it. |
+| Same schema, older `version` | An informational note that an update is available. |
+| Newer than the app | A note — usually just a browser tab that hasn't reloaded since the checkout moved. |
+| No `bridge` block at all | The bridge predates this reporting, so it is definitely old. |
+
+### What this does *not* give you
+
+Being honest about the limits:
+
+- **No signed or checksummed release artefact.** There is no tarball, tag-based download or
+  published image to verify — you get whatever your `git pull` fetched. Verify the *repository*
+  (clone over HTTPS/SSH from the canonical remote) if you need provenance.
+- **No version pin.** The bridge always reports and runs whatever the checkout is on; there is
+  no way to hold it at a version independent of the repository. Pin by checking out a tag or
+  commit yourself.
+- **No auto-update and no update channel.** Nothing checks for, downloads or applies updates.
+  The app's notice tells you drift exists; acting on it is manual.

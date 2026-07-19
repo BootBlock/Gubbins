@@ -10,6 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import rootPackageJson from '../../../package.json' with { type: 'json' };
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import { createBridgeServer, type BridgeServerState } from '../server.ts';
 
@@ -56,6 +57,18 @@ describe('meta endpoints', () => {
     expect(body.version).toBe('1.0.0');
     expect(body.openapi).toBe('/api/v1/openapi.json');
     expect(Array.isArray(body.endpoints)).toBe(true);
+  });
+
+  it('reports which build the bridge is, so a client can spot a stale one (issue #282)', async () => {
+    const body = await json('/api/v1');
+
+    // Asserted against the repository manifest rather than a literal, because that wiring *is*
+    // the fix: the bridge has no version of its own to drift, so this checks the whole path
+    // (manifest → version.ts → index) without a number anyone must remember to edit.
+    expect(body.bridge).toEqual({
+      version: rootPackageJson.version,
+      schemaVersion: rootPackageJson.schemaVersion,
+    });
   });
 
   it('serves the OpenAPI document', async () => {

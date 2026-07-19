@@ -1212,7 +1212,26 @@ export const openapiDocument: JsonValue = {
         type: 'object',
         properties: {
           name: { type: 'string', example: 'Gubbins Bridge API' },
-          version: { type: 'string', example: '1.0.0' },
+          version: {
+            type: 'string',
+            description:
+              'The API contract version — what these endpoints promise. Distinct from "bridge", which says which build is answering.',
+            example: '1.0.0',
+          },
+          bridge: {
+            type: 'object',
+            description:
+              'Which build of Gubbins this bridge is. The bridge ships as source with no separate release, so it reports the repository version it was taken from; a client that knows its own can spot a bridge left behind.',
+            properties: {
+              version: { type: 'string', example: '1.2.0' },
+              schemaVersion: {
+                type: 'integer',
+                description:
+                  'The stored-data compatibility generation. A bridge behind on this may read the snapshot with out-of-date assumptions.',
+                example: 5,
+              },
+            },
+          },
           openapi: { type: 'string', example: '/api/v1/openapi.json' },
           writable: { type: 'boolean', description: 'Whether the opt-in write endpoints are enabled.' },
           pushable: {
@@ -1222,6 +1241,11 @@ export const openapiDocument: JsonValue = {
           streamable: {
             type: 'boolean',
             description: 'Whether the opt-in read-only SSE event stream (/api/v1/events) is enabled.',
+          },
+          scalable: {
+            type: 'boolean',
+            description:
+              'Whether the opt-in Home Assistant read is enabled, i.e. whether "count by weight" can pull a live reading off a scale entity.',
           },
           endpoints: { type: 'array', items: { type: 'string' } },
         },
