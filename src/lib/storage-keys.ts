@@ -131,7 +131,17 @@ export const STORAGE_KEYS = [
     backupIncluded: false,
   },
 
-  // --- Cloud sign-in (secrets — never backed up) ------------------------------------
+  // --- Sign-in (identity — never backed up) -----------------------------------------
+  {
+    // Who is signed in on this device (issue #79). Device-local by design: signing in on one
+    // device must not sign another in. Holds an id and a display name only — never a role or
+    // its grants, which are re-read from the database, so this is not a permissions store.
+    key: 'gubbins:session',
+    store: 'useSessionStore',
+    storage: 'local',
+    eraseGroup: 'cloud-signin',
+    backupIncluded: false,
+  },
   {
     key: 'gubbins:auth',
     store: 'useAuthStore',

@@ -1133,5 +1133,19 @@
   "sync.bridge.build.behind": "Ihre Bridge läuft mit {bridgeVersion} und ist damit älter als diese App ({appVersion}). Sie liest Ihre Daten weiterhin korrekt, sollte aber bei Gelegenheit aktualisiert werden.",
   "sync.bridge.build.unknown": "Ihre Bridge ist zu alt, um ihre Version zu melden. Aktualisieren Sie sie und starten Sie sie neu, damit sie zu dieser App ({appVersion}) passt.",
   "sync.bridge.build.aheadHeading": "Ihre Bridge ist neuer als diese App",
-  "sync.bridge.build.ahead": "Ihre Bridge läuft mit {bridgeVersion}, diese App mit {appVersion}. Laden Sie Gubbins neu, um aufzuholen."
+  "sync.bridge.build.ahead": "Ihre Bridge läuft mit {bridgeVersion}, diese App mit {appVersion}. Laden Sie Gubbins neu, um aufzuholen.",
+  "signIn.title": "Wer nutzt Gubbins?",
+  "signIn.subtitle.choose": "Wählen Sie Ihr Konto, um fortzufahren.",
+  "signIn.subtitle.password": "Geben Sie Ihr Passwort ein, um fortzufahren.",
+  "signIn.loading": "Konten werden geladen …",
+  "signIn.noAccounts": "Auf diesem Gerät gibt es keine Konten zum Anmelden.",
+  "signIn.password.label": "Passwort",
+  "signIn.submit": "Anmelden",
+  "signIn.back": "Zurück",
+  "signIn.tile.noPassword": "Kein Passwort festgelegt",
+  "signIn.tile.disabled": "Für dieses Konto ist die Anmeldung deaktiviert",
+  "signIn.error.wrongPassword": "Dieses Passwort stimmt nicht. Versuchen Sie es erneut.",
+  "signIn.error.disabled": "Für dieses Konto ist die Anmeldung deaktiviert. Wenden Sie sich an die Person, die dieses Gerät betreut.",
+  "signIn.error.unknownUser": "Dieses Konto ist auf diesem Gerät nicht mehr verfügbar.",
+  "signIn.error.failed": "Die Anmeldung hat gerade nicht funktioniert. Versuchen Sie es erneut."
 }

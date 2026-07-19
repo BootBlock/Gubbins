@@ -23,13 +23,12 @@
  */
 import { useEffect, useRef, useState, type ComponentType, type RefObject, type SVGProps } from 'react';
 import { useRouterState } from '@tanstack/react-router';
-import { Button, Modal, useRovingRadioGroup } from '@/components/foundry';
+import { Button, Modal, optionCardClassName, useRovingRadioGroup } from '@/components/foundry';
 import { CheckIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ANIMATION_LEVELS, type AnimationLevel } from '@/features/settings/theme-registry';
-import { presetCardClassName } from './preset-card';
 import { PRESETS, type PresetId } from './presets';
 
 /**
@@ -127,7 +126,7 @@ function ChoiceStep({
             tabIndex={checked ? 0 : -1}
             onClick={() => selectAt(index)}
             onKeyDown={(event) => onKeyDown(event, index)}
-            className={cn('flex items-start gap-3 [&_svg]:size-5', presetCardClassName(checked))}
+            className={cn('flex items-start gap-3 [&_svg]:size-5', optionCardClassName(checked))}
           >
             {choice.Icon ? (
               <choice.Icon aria-hidden className="mt-0.5 shrink-0 text-muted-foreground" />

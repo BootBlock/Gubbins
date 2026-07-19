@@ -1,7 +1,7 @@
 # Users & ACLs — implementation plan
 
-> **Status:** 🟢 ACTIVE — phases 1 (schema, built-in users, attribution) and 2 (permission
-> engine) shipped; phase 3 (authentication & session) next.
+> **Status:** 🟢 ACTIVE — phases 1 (schema, built-in users, attribution), 2 (permission engine)
+> and 3 (authentication & session) shipped; phase 4 (module, gating & admin UI) next.
 
 Gubbins has no concept of a user. Every action is anonymous, `item_history` records *what*
 happened but never *who*, and the Bridge authenticates with a single all-or-nothing bearer
@@ -228,6 +228,43 @@ side-effect-free and independent of React so the Bridge can import it too.
 Password hashing helpers, sign-in screen, session store (who is signed in, persisted per device),
 sign-out, disabled-user handling with `disabled_message`, and the no-password warning. Adds the
 `gubbins:session` storage key to the registry.
+
+#### Phase 3 as built — decisions worth knowing before phase 4
+
+- **The built-in Admin can now take a password, and the trigger was narrowed to allow it.**
+  §2.2 said Admin was immutable, which made the account single-user mode acts as the one
+  account that could never be protected — with the module on, that is an unprotected
+  full-access sign-in. `trg_users_protect_builtin_update` is therefore split in two:
+  `trg_users_protect_system_update` (System, still wholly immutable — it is an actor, never a
+  person) and `trg_users_protect_admin_update`, which names the columns it defends (`username`,
+  `display_name`, `kind`, `role_id`, `is_enabled`) so the password triple can change and
+  nothing else. Same move as the phase-1 ledger trigger. **This changed the baseline**, so the
+  schema snapshot was re-captured and `schemaVersion` bumped.
+- **Sign-in is a gate, not a route.** `SignInGate` wraps the router inside `BootGate`. A
+  `/sign-in` route would be reachable by URL, leave the app mounted behind it and let the back
+  button step past it. For the same reason the screen does **not** use `PageContainer` /
+  `PageHeader`: those mount `AppNav` and the command palette, either of which walks around the
+  gate. It uses the boot-screen shell instead.
+- **The session stores an id and a display name — nothing else, and `partialize` enforces it.**
+  A device can edit its own localStorage, so anything persisted is something it can award
+  itself. The resolved `Authority` and actor id live in the same store but are **derived and
+  in-memory only**; `authority-refresh.ts` recomputes them from the database. That is also why
+  a restored session renders nothing until the first refresh resolves — otherwise the guards
+  answer from the store's unrestricted default for a moment.
+- **`resolveActor` / `resolveAuthority` now read the session store**, which is the single arrow
+  phases 1–2 were built to leave swappable; no repository signature or call site changed. With
+  the module off the store's defaults (Admin, unrestricted) are returned untouched, so shipped
+  behaviour is identical.
+- **`usersModuleEnabled()` returns `false` unconditionally** (`features/users/module.ts`).
+  Phase 4 rewires that one function to the modules store. It is deliberately not registered in
+  `feature-registry.ts` yet: turning enforcement on before there is any way to administer
+  accounts would offer a door with no key cut for it.
+- **A deleted account denies rather than falling back to Admin.** A session can outlive its
+  user (deleted on another device, arriving by sync); resolving that to full access is the
+  exact failure this feature exists to prevent. Attribution, by contrast, follows the person
+  even when their authority denies everything — a disabled user's writes are still theirs.
+- Signing in and out both invalidate the query cache. One user's data left resident for the
+  next person to sign in is the obvious way this would leak.
 
 ### Phase 4 — Module, gating & admin UI
 

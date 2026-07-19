@@ -117,8 +117,10 @@ describe('users, roles and attribution', () => {
       await expect(driver.execute('DELETE FROM users WHERE id = ?;', [id])).rejects.toThrow(
         /cannot be deleted/i,
       );
+      // Both refuse a disable; the wording differs because Admin's guard is scoped to its
+      // identity columns so it can still take a password (phase 3), while System is immutable.
       await expect(driver.execute('UPDATE users SET is_enabled = 0 WHERE id = ?;', [id])).rejects.toThrow(
-        /cannot be modified/i,
+        /cannot be (modified|renamed, disabled or re-roled)/i,
       );
     });
   });

@@ -229,12 +229,38 @@ const baselineStatements: SqlStatement[] = [
   // a guard. `kind` doubles as the flag, since only the seeded rows are ever system/admin.
   {
     sql: `
-        CREATE TRIGGER trg_users_protect_builtin_update
+        CREATE TRIGGER trg_users_protect_system_update
         BEFORE UPDATE ON users
         FOR EACH ROW
-        WHEN OLD.kind IN ('system', 'admin')
+        WHEN OLD.kind = 'system'
         BEGIN
-          SELECT RAISE(ABORT, 'The built-in System and Admin users cannot be modified.');
+          SELECT RAISE(ABORT, 'The built-in System user cannot be modified.');
+        END;
+      `,
+  },
+  // Admin is protected in its *identity and authority*, not in every column. It must be able
+  // to take a password: with the users module on, Admin is a real account someone signs in as,
+  // and a full-access account that cannot be protected would be worse than no sign-in at all.
+  // So the guard names the columns it defends — username, kind, role and enabled state —
+  // rather than the whole row, exactly as `trg_item_history_immutable` names the substantive
+  // ledger columns so an actor can still be re-pointed. `display_name` is included: Admin is a
+  // well-known identity that history entries are attributed to, and renaming it would make
+  // past attribution read as somebody else.
+  {
+    sql: `
+        CREATE TRIGGER trg_users_protect_admin_update
+        BEFORE UPDATE ON users
+        FOR EACH ROW
+        WHEN OLD.kind = 'admin'
+          AND (
+            NEW.username     IS NOT OLD.username
+            OR NEW.display_name IS NOT OLD.display_name
+            OR NEW.kind      IS NOT OLD.kind
+            OR NEW.role_id   IS NOT OLD.role_id
+            OR NEW.is_enabled IS NOT OLD.is_enabled
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'The built-in Admin user cannot be renamed, disabled or re-roled.');
         END;
       `,
   },

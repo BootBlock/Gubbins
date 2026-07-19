@@ -7,6 +7,7 @@ import {
   Select,
   Surface,
   MAIN_CONTENT_ID,
+  optionCardClassName,
 } from '@/components/foundry';
 import { CheckIcon, ModulesIcon, ResetIcon, SearchIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
@@ -23,7 +24,6 @@ import {
 import { closureToDisable, closureToEnable, resolveEnabled } from './modules-graph';
 import { ConfirmCascadeModal, type PendingCascade } from './ConfirmCascadeModal';
 import { FirstRunModulesDialog } from './FirstRunModules';
-import { presetCardClassName } from './preset-card';
 import { PRESETS, type PresetId } from './presets';
 
 /** On/off pair for the per-feature {@link Select} toggles (On listed first). */
@@ -172,7 +172,7 @@ export function ModulesScreen() {
                   aria-pressed={active}
                   data-testid={`preset-${preset.id}`}
                   onClick={() => applyPreset(preset.id)}
-                  className={cn('flex flex-col gap-1.5 [&_svg]:size-4', presetCardClassName(active))}
+                  className={cn('flex flex-col gap-1.5 [&_svg]:size-4', optionCardClassName(active))}
                 >
                   <span className="flex items-center gap-2 text-sm font-medium text-foreground">
                     <preset.Icon aria-hidden />

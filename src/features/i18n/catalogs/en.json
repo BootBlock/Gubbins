@@ -1133,5 +1133,19 @@
   "sync.bridge.build.behind": "Your bridge is running {bridgeVersion}, which is older than this app ({appVersion}). It is still reading your data correctly, but it is worth updating when convenient.",
   "sync.bridge.build.unknown": "Your bridge is too old to report which version it is. Update it and restart it so it matches this app ({appVersion}).",
   "sync.bridge.build.aheadHeading": "Your bridge is newer than this app",
-  "sync.bridge.build.ahead": "Your bridge is running {bridgeVersion} while this app is {appVersion}. Reload Gubbins to catch up."
+  "sync.bridge.build.ahead": "Your bridge is running {bridgeVersion} while this app is {appVersion}. Reload Gubbins to catch up.",
+  "signIn.title": "Who’s using Gubbins?",
+  "signIn.subtitle.choose": "Choose your account to carry on.",
+  "signIn.subtitle.password": "Enter your password to carry on.",
+  "signIn.loading": "Loading accounts…",
+  "signIn.noAccounts": "There are no accounts to sign in with on this device.",
+  "signIn.password.label": "Password",
+  "signIn.submit": "Sign in",
+  "signIn.back": "Back",
+  "signIn.tile.noPassword": "No password set",
+  "signIn.tile.disabled": "Signing in is turned off for this account",
+  "signIn.error.wrongPassword": "That password doesn’t match. Try again.",
+  "signIn.error.disabled": "Signing in is turned off for this account. Ask whoever looks after this device.",
+  "signIn.error.unknownUser": "That account is no longer available on this device.",
+  "signIn.error.failed": "Signing in didn’t work just now. Try again."
 }
