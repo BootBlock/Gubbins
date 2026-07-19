@@ -25,6 +25,13 @@ updates:
         update-types: ["minor", "patch"]
 
   # Keep the GitHub Actions used by the workflows current.
+  #
+  # Every `uses:` in `.github/workflows/` is pinned to a full commit SHA with the release it
+  # corresponds to in a trailing comment, rather than to a major tag: a tag is a pointer its
+  # owner can repoint at any commit, so a tag-pinned workflow is not reproducible and silently
+  # takes whatever code that pointer names today. Dependabot understands this form — it bumps
+  # the SHA and rewrites the comment — so pinning costs no maintenance, it just moves the
+  # upgrade into a reviewable pull request instead of happening unannounced.
   - package-ecosystem: github-actions
     directory: /
     schedule:
