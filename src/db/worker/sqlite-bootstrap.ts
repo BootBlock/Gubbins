@@ -11,10 +11,8 @@
  */
 import sqlite3InitModule, { type Sqlite3Static, type OpfsDatabase } from '@sqlite.org/sqlite-wasm';
 import { DbError } from '../errors';
+import { DB_FILENAME } from '../db-file';
 import type { DbDiagnostics } from '../rpc/protocol';
-
-/** The single database file within the OPFS hierarchy. */
-export const DB_FILENAME = '/gubbins.sqlite3';
 
 /** The OPFS VFS name as registered by sqlite-wasm. */
 const OPFS_VFS = 'opfs';
