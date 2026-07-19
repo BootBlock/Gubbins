@@ -43,6 +43,7 @@ import {
 import { createWebhookDeliveryLog, type WebhookDeliveryLog } from './events/webhook-log.ts';
 import { createWebhookTestFirer } from './events/webhook-test.ts';
 import type { WebhookTestCapability } from './server.ts';
+import { attachServerResilience, installProcessResilience, type ProcessResilience } from './resilience.ts';
 import { createMqttPublisher, type MqttPublisher } from './mqtt/publisher.ts';
 import { endpointLabel, parseMqttEndpoint, type MqttEndpoint } from './mqtt/client.ts';
 import type { Server } from 'node:http';
@@ -56,8 +57,23 @@ export interface RunningBridge {
   readonly mqtt?: MqttPublisher;
 }
 
+/**
+ * The process-wide fault handlers (issue #305), installed on first use and shared thereafter: the
+ * server's own `'error'` listener counts into the same window as an uncaught exception, so "the
+ * bridge is failing repeatedly" is judged once across every source rather than per-source.
+ */
+let processResilience: ProcessResilience | undefined;
+function sharedResilience(): ProcessResilience {
+  processResilience ??= installProcessResilience();
+  return processResilience;
+}
+
 /** Load config, hydrate the first snapshot, and start listening. Resolves once bound. */
 export async function startBridge(env: Env = process.env): Promise<RunningBridge> {
+  // First, before anything that can start async work of its own: the watcher's file/socket
+  // handles and the MQTT publisher's connection are both live well before `listen` is reached,
+  // so installing these after binding would leave the whole startup window unguarded (#305).
+  const { tracker, onExit } = sharedResilience();
   const config = loadConfig(env);
 
   // EI-1 events / webhooks / SSE (opt-in). The stream + webhooks share one event pipeline: the
@@ -220,8 +236,21 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     webhookTest,
   });
   await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(config.port, config.host, resolve);
+    // One-shot on purpose: a failed *bind* must fail startup rather than be logged and shrugged
+    // off. Once bound, `attachServerResilience` re-arms a persistent listener in its place —
+    // without which the server would spend the rest of its life with no `'error'` listener, and
+    // the next accept-time failure would be re-thrown and kill the process (issue #305).
+    const onListenError = (err: Error): void => reject(err);
+    server.once('error', onListenError);
+    server.listen(config.port, config.host, () => {
+      // Swapped synchronously inside the bind callback, not after the `await` resolves: detached
+      // first (left attached it would still be first to fire on a *later* error, consuming it into
+      // an already-settled promise — a silent no-op), then replaced in the same tick, so the bound
+      // server is never left without an `'error'` listener even for a microtask.
+      server.off('error', onListenError);
+      attachServerResilience(server, tracker, onExit);
+      resolve();
+    });
   });
 
   if (isLanExposed(config.host)) {
