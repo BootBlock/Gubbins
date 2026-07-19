@@ -17,6 +17,14 @@
  */
 
 /**
+ * Estimated height (px) of one virtual row per density — the size the virtualizer assumes
+ * before a row is measured, and the height a not-yet-resident placeholder holds. Shared by
+ * the flat list and the grouped view's large sections so a row reserves the same space
+ * whichever way the inventory is arranged.
+ */
+export const LIST_ROW_HEIGHT = { data: 60, visual: 232, table: 48 } as const;
+
+/**
  * Absolute number of virtual rows spanning everything loaded so far: the resident
  * window occupies absolute item indices `[firstItemIndex, firstItemIndex + residentCount)`,
  * and the row count is the absolute end rounded up to whole rows. Rows below the

@@ -346,14 +346,16 @@ export function useItemPage(filters: ItemQueryFilters, page: number, pageSize: n
 
 /**
  * Item pages for one collapsible **location section** in the grouped inventory view
- * (spec §3 grouping axis). Mirrors {@link useInventoryItems} but deliberately omits
- * `maxPages`: a section renders its loaded pages as plain DOM rather than through the
- * virtualiser, so front-trimming would make earlier items *vanish* as the user pages
- * further down a large location. Every loaded page is retained while the section is
- * expanded; collapsing it unmounts the consumer, so the cache is released on `gcTime`.
+ * (spec §3 grouping axis). Mirrors {@link useInventoryItems}, including the bounded
+ * resident window: a section that has paged past its first page renders through the
+ * virtualiser in absolute index space, so trimming a page off the front neither moves
+ * the rows on screen nor loses the user's place — the trimmed prefix refetches via
+ * `getPreviousPageParam` when they scroll back up. Without the cap, paging to the bottom
+ * of a location holding tens of thousands of items retained every page's thumbnail BLOBs
+ * for as long as the section stayed open (issue #171).
  *
  * The `'section'` key suffix keeps this cache distinct from the flat list's cache for the
- * same filters (they configure `maxPages` differently) while staying under the
+ * same filters (a section pages independently of the flat list) while staying under the
  * `inventoryKeys.items()` prefix, so item mutations invalidate it just the same.
  */
 export function useLocationSectionItems(filters: ItemQueryFilters, pageSize = DEFAULT_PAGE_SIZE) {
@@ -362,6 +364,9 @@ export function useLocationSectionItems(filters: ItemQueryFilters, pageSize = DE
     initialPageParam: 0,
     queryFn: ({ pageParam }) => getItemRepository().list({ ...filters, limit: pageSize, offset: pageParam }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
+    getPreviousPageParam: (firstPage) =>
+      firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
+    maxPages: MAX_LIST_PAGES,
   });
 }
 

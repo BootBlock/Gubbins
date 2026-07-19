@@ -6,7 +6,7 @@ import { PackageIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import type { ItemDensity } from '@/state/stores/useLayoutStore';
 import { inventoryEmptyState, type InventoryEmptyContext } from '../inventory-empty-state';
-import { listRowCount, resolveListRow } from '../list-window';
+import { LIST_ROW_HEIGHT as ROW_HEIGHT, listRowCount, resolveListRow } from '../list-window';
 import { ItemCard } from './ItemCard';
 import { ItemRow } from './ItemRow';
 import { ItemTableHeader, ItemTableRow } from './ItemTable';
@@ -16,9 +16,6 @@ import { cardFieldProps, itemCardProps, type CardFieldsListContext } from './car
 import type { ItemSelection } from './inventory-ui';
 
 const VISUAL_CARD_MIN_WIDTH = 280;
-
-/** Estimated row height per density — also the height of a not-yet-resident placeholder. */
-const ROW_HEIGHT = { data: 60, visual: 232, table: 48 } as const;
 
 /**
  * Virtualised item list (spec §2.1, §3). Pages from `useInventoryItems` are
