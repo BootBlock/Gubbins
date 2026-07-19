@@ -1123,5 +1123,11 @@
   "reports.foreignCurrency.heading.one": "{count} item is not included in these totals",
   "reports.foreignCurrency.heading.other": "{count} items are not included in these totals",
   "reports.foreignCurrency.body.one": "Its price is quoted by a supplier in a currency other than {currency}, and Gubbins never converts between currencies. Give the item its own unit cost, or record the supplier’s price in {currency}, to include it.",
-  "reports.foreignCurrency.body.other": "Their prices are quoted by suppliers in a currency other than {currency}, and Gubbins never converts between currencies. Give those items their own unit cost, or record the suppliers’ prices in {currency}, to include them."
+  "reports.foreignCurrency.body.other": "Their prices are quoted by suppliers in a currency other than {currency}, and Gubbins never converts between currencies. Give those items their own unit cost, or record the suppliers’ prices in {currency}, to include them.",
+  "sync.bridge.build.heading": "Your bridge is out of date",
+  "sync.bridge.build.schemaBehind": "Your bridge is running {bridgeVersion}, which stores data differently from this app ({appVersion}). It may report incorrect results until you update it and restart it.",
+  "sync.bridge.build.behind": "Your bridge is running {bridgeVersion}, which is older than this app ({appVersion}). It is still reading your data correctly, but it is worth updating when convenient.",
+  "sync.bridge.build.unknown": "Your bridge is too old to report which version it is. Update it and restart it so it matches this app ({appVersion}).",
+  "sync.bridge.build.aheadHeading": "Your bridge is newer than this app",
+  "sync.bridge.build.ahead": "Your bridge is running {bridgeVersion} while this app is {appVersion}. Reload Gubbins to catch up."
 }

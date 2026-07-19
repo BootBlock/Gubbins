@@ -61,6 +61,35 @@ add-on — and it comes back on a clean slate without anyone noticing.
 > If the bridge restarts repeatedly, its log holds the reason. The most common causes are a
 > snapshot file it can no longer read and a broker or Home Assistant address it can never reach.
 
+## Keeping it up to date
+
+The bridge re-reads your **data** on its own, but it never updates **itself**. It runs from a copy
+of the Gubbins repository you keep on your own machine, so it only moves forward when you update
+that copy and restart it — pull the latest code and start it again, or rebuild the image if you run
+it in [[Docker|Self-Hosting-with-Docker]].
+
+Because of that, the bridge doesn't have a version of its own: it reports **the version of Gubbins
+it was taken from**, which is the same number the app shows on its
+[[About screen|About-and-Diagnostics]].
+
+**Gubbins now checks this for you.** On the **Sync** screen, the bridge section compares the bridge
+you're connected to against the app you're using and tells you when they've drifted apart:
+
+- **Nothing shown** — the two match; there's nothing to do.
+- **An update is available** — the bridge is a release or two behind. It's still reading your data
+  correctly, so this is a nudge rather than a problem.
+- **A warning** — the bridge is behind on the *data format*, not just the version. This is the one
+  worth acting on: an older bridge can misread newer data and give answers that look plausible but
+  aren't. Update it.
+- **The bridge is newer** — usually just a browser tab that hasn't been reloaded since you updated.
+  Refresh the app.
+- **The bridge didn't say** — it's old enough to predate this check, so it's certainly due an update.
+
+> **ℹ️ Note**
+> There's no automatic updater and no download to verify — you always get whatever your copy of the
+> repository contains. If you need to stay on a particular release, keep your copy on that release
+> yourself.
+
 ## Read-only unless you say otherwise
 
 The bridge **can't modify your inventory** by default — it's a window onto your data, not a way
