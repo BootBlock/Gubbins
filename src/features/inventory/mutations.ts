@@ -495,7 +495,12 @@ export function useRestoreItem() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => getItemRepository().restore(id),
-    onSettled: () => invalidateItems(client),
+    onSettled: () => {
+      invalidateItems(client);
+      // Restoring puts the item back into its location's count, exactly as soft-deleting took
+      // it out — so the sidebar tree needs the same refresh the delete already asked for.
+      void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+    },
   });
 }
 

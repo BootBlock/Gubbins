@@ -603,6 +603,12 @@
     },
     {
       "type": "table",
+      "name": "location_item_counts",
+      "tbl_name": "location_item_counts",
+      "sql": "CREATE TABLE location_item_counts (\n          location_id TEXT    PRIMARY KEY NOT NULL,\n          item_count  INTEGER NOT NULL DEFAULT 0,\n          CHECK (item_count >= 0)\n        ) STRICT"
+    },
+    {
+      "type": "table",
       "name": "location_photos",
       "tbl_name": "location_photos",
       "sql": "CREATE TABLE location_photos (\n          id                     TEXT    PRIMARY KEY NOT NULL,\n          location_id            TEXT    NOT NULL REFERENCES locations(id) ON DELETE CASCADE,\n          caption                TEXT,\n          thumbnail_blob         BLOB,\n          full_res_opfs_path     TEXT    NOT NULL,\n          full_res_downgraded_at INTEGER,\n          natural_width          INTEGER NOT NULL,\n          natural_height         INTEGER NOT NULL,\n          position               INTEGER NOT NULL DEFAULT 0,\n          created_at             INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at             INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
@@ -900,6 +906,30 @@
       "name": "trg_location_field_values_updated_at",
       "tbl_name": "location_field_values",
       "sql": "CREATE TRIGGER trg_location_field_values_updated_at\n    AFTER UPDATE ON location_field_values\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_field_values SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_location_item_counts_del",
+      "tbl_name": "items",
+      "sql": "CREATE TRIGGER trg_location_item_counts_del\n        AFTER DELETE ON items\n        FOR EACH ROW WHEN OLD.is_active = 1\n        BEGIN\n          UPDATE location_item_counts\n          SET item_count = MAX(item_count - 1, 0)\n          WHERE location_id = OLD.location_id;\n        END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_location_item_counts_ins",
+      "tbl_name": "items",
+      "sql": "CREATE TRIGGER trg_location_item_counts_ins\n        AFTER INSERT ON items\n        FOR EACH ROW WHEN NEW.is_active = 1\n        BEGIN\n          INSERT INTO location_item_counts (location_id, item_count) VALUES (NEW.location_id, 1)\n          ON CONFLICT (location_id) DO UPDATE SET item_count = item_count + 1;\n        END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_location_item_counts_sweep",
+      "tbl_name": "locations",
+      "sql": "CREATE TRIGGER trg_location_item_counts_sweep\n        AFTER DELETE ON locations\n        FOR EACH ROW\n        BEGIN\n          DELETE FROM location_item_counts WHERE location_id = OLD.id;\n        END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_location_item_counts_upd",
+      "tbl_name": "items",
+      "sql": "CREATE TRIGGER trg_location_item_counts_upd\n        AFTER UPDATE ON items\n        FOR EACH ROW WHEN OLD.location_id IS NOT NEW.location_id OR OLD.is_active IS NOT NEW.is_active\n        BEGIN\n          UPDATE location_item_counts\n          SET item_count = MAX(item_count - 1, 0)\n          WHERE OLD.is_active = 1 AND location_id = OLD.location_id;\n\n          INSERT INTO location_item_counts (location_id, item_count)\n          SELECT NEW.location_id, 1 WHERE NEW.is_active = 1\n          ON CONFLICT (location_id) DO UPDATE SET item_count = item_count + 1;\n        END"
     },
     {
       "type": "trigger",
@@ -3712,6 +3742,36 @@
           "name": "sqlite_autoindex_location_field_values_2",
           "unique": 1,
           "origin": "u",
+          "partial": 0
+        }
+      ]
+    },
+    "location_item_counts": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "location_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "item_count",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_location_item_counts_1",
+          "unique": 1,
+          "origin": "pk",
           "partial": 0
         }
       ]
