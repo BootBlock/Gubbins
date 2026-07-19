@@ -13,7 +13,6 @@
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { effectiveUnitCost as resolveCostPrecedence } from '@/features/inventory/supplier-cost';
-import { effectiveUnitValue } from '@/features/inventory/valuation';
 
 // --- Effective unit cost (the single swap-point for cost precedence) -----------
 
@@ -77,20 +76,6 @@ export interface InventoryValueReport {
   readonly byLocation: readonly ValueGroup[];
 }
 
-/** A raw valuation input row: one (item, group) contribution from the database. */
-export interface ValuationRow {
-  readonly groupId: string | null;
-  readonly groupName: string | null;
-  readonly quantity: number;
-  readonly unitCost: number | null;
-  readonly preferredSupplierCost?: number | null;
-  /**
-   * Manual current / market value per unit (feature-gap G9); when set it **wins** over the
-   * replacement cost so an appreciating asset is valued at today's worth. Absent/null → cost.
-   */
-  readonly currentValue?: number | null;
-}
-
 /**
  * Fallback label for a row with no category/location group.
  *
@@ -99,61 +84,34 @@ export interface ValuationRow {
 export const UNGROUPED_LABEL = 'Ungrouped';
 
 /**
- * Roll raw `(group, quantity, cost)` rows into sorted {@link ValueGroup}s. Rows with the
- * same group id merge; an unpriced row contributes 0 value but still counts its quantity.
- * Groups are sorted by value descending, with the null/ungrouped bucket forced last.
+ * One already-summed group as the database returns it (issue #170): the valuation totals
+ * themselves are computed by `SUM(...) … GROUP BY` in SQL, so a report over a 100k-item
+ * inventory transfers ~50 rows rather than every item row. Only the presentation rules —
+ * naming the ungrouped bucket and ordering the groups — remain here.
  */
-export function groupValuation(rows: readonly ValuationRow[]): ValueGroup[] {
-  const map = new Map<string, ValueGroup>();
-  for (const row of rows) {
-    const key = row.groupId ?? ' ungrouped';
-    // Manual current value (G9) wins over the replacement cost when set.
-    const unitValue = effectiveUnitValue(row.currentValue, effectiveUnitCost(row));
-    const qty = Math.max(0, row.quantity);
-    const value = qty * unitValue;
-    const existing = map.get(key);
-    if (existing) {
-      map.set(key, { ...existing, value: existing.value + value, quantity: existing.quantity + qty });
-    } else {
-      map.set(key, { id: row.groupId, name: row.groupName ?? UNGROUPED_LABEL, value, quantity: qty });
-    }
-  }
-  return [...map.values()].sort((a, b) => {
-    // Force the ungrouped bucket to the end regardless of its value.
-    if (a.id === null && b.id !== null) return 1;
-    if (b.id === null && a.id !== null) return -1;
-    if (b.value !== a.value) return b.value - a.value;
-    return a.name.localeCompare(b.name);
-  });
-}
-
-/** A raw item-level valuation row (one per active item) for the headline totals. */
-export interface ItemValuationRow {
+export interface ValueGroupTotals {
+  readonly id: string | null;
+  /** The group's name as stored; null for the ungrouped bucket (or a dangling reference). */
+  readonly name: string | null;
+  readonly value: number;
   readonly quantity: number;
-  readonly unitCost: number | null;
-  readonly preferredSupplierCost?: number | null;
-  /** Manual current / market value per unit (feature-gap G9); wins over the cost when set. */
-  readonly currentValue?: number | null;
 }
 
-/** Headline totals across every valued item (overall value, units, unpriced count). */
-export function summariseValuation(items: readonly ItemValuationRow[]): {
-  totalValue: number;
-  totalQuantity: number;
-  unpricedItemCount: number;
-} {
-  let totalValue = 0;
-  let totalQuantity = 0;
-  let unpricedItemCount = 0;
-  for (const item of items) {
-    const qty = Math.max(0, item.quantity);
-    // Manual current value (G9) wins over the replacement cost when set.
-    const unitValue = effectiveUnitValue(item.currentValue, effectiveUnitCost(item));
-    totalQuantity += qty;
-    if (unitValue > 0) totalValue += qty * unitValue;
-    else unpricedItemCount += 1;
-  }
-  return { totalValue, totalQuantity, unpricedItemCount };
+/**
+ * Label and order already-summed valuation {@link ValueGroupTotals}: a nameless group takes
+ * the {@link UNGROUPED_LABEL}, and groups sort by value descending (name as the tiebreak)
+ * with the null/ungrouped bucket forced last regardless of its value.
+ */
+export function sortValueGroups(groups: readonly ValueGroupTotals[]): ValueGroup[] {
+  return groups
+    .map((g) => ({ id: g.id, name: g.name ?? UNGROUPED_LABEL, value: g.value, quantity: g.quantity }))
+    .sort((a, b) => {
+      // Force the ungrouped bucket to the end regardless of its value.
+      if (a.id === null && b.id !== null) return 1;
+      if (b.id === null && a.id !== null) return -1;
+      if (b.value !== a.value) return b.value - a.value;
+      return a.name.localeCompare(b.name);
+    });
 }
 
 // --- Consumption rate (from item_history negative deltas) ----------------------

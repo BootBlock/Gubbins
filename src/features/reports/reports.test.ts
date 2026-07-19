@@ -3,10 +3,9 @@ import { MS_PER_DAY } from '@/db/repositories';
 import {
   bucketMovement,
   effectiveUnitCost,
-  groupValuation,
   selectDeadStock,
+  sortValueGroups,
   summariseConsumption,
-  summariseValuation,
   UNGROUPED_LABEL,
 } from './reports';
 
@@ -34,40 +33,25 @@ describe('effectiveUnitCost — the single cost-precedence seam', () => {
   });
 });
 
-describe('groupValuation — valuation grouping', () => {
-  it('merges rows by group id, multiplies qty × cost, and sorts by value desc', () => {
-    const groups = groupValuation([
-      { groupId: 'a', groupName: 'Capacitors', quantity: 10, unitCost: 2 }, // 20
-      { groupId: 'a', groupName: 'Capacitors', quantity: 5, unitCost: 2 }, //  10 → 30 total
-      { groupId: 'b', groupName: 'Resistors', quantity: 100, unitCost: 1 }, // 100
+describe('sortValueGroups — ordering the SQL-summed groups', () => {
+  it('sorts by value descending, breaking ties on the name', () => {
+    const groups = sortValueGroups([
+      { id: 'a', name: 'Capacitors', quantity: 15, value: 30 },
+      { id: 'c', name: 'Batteries', quantity: 1, value: 100 },
+      { id: 'b', name: 'Resistors', quantity: 100, value: 100 },
     ]);
-    expect(groups.map((g) => [g.name, g.value, g.quantity])).toEqual([
-      ['Resistors', 100, 100],
-      ['Capacitors', 30, 15],
-    ]);
+    expect(groups.map((g) => g.name)).toEqual(['Batteries', 'Resistors', 'Capacitors']);
   });
 
-  it('counts unpriced quantity but contributes zero value, and forces ungrouped last', () => {
-    const groups = groupValuation([
-      { groupId: null, groupName: null, quantity: 3, unitCost: 50 }, // 150 but ungrouped
-      { groupId: 'b', groupName: 'Resistors', quantity: 4, unitCost: null }, // unpriced → 0
-      { groupId: 'a', groupName: 'Capacitors', quantity: 2, unitCost: 5 }, // 10
+  it('labels the nameless bucket and forces it last whatever its value', () => {
+    const groups = sortValueGroups([
+      { id: null, name: null, quantity: 3, value: 150 },
+      { id: 'b', name: 'Resistors', quantity: 4, value: 0 },
+      { id: 'a', name: 'Capacitors', quantity: 2, value: 10 },
     ]);
     // Ungrouped is forced last even though its value (150) is the largest.
     expect(groups.map((g) => g.name)).toEqual(['Capacitors', 'Resistors', UNGROUPED_LABEL]);
-    const resistors = groups.find((g) => g.id === 'b');
-    expect(resistors).toMatchObject({ value: 0, quantity: 4 });
-  });
-});
-
-describe('summariseValuation — headline totals', () => {
-  it('totals value/quantity and counts unpriced items', () => {
-    const summary = summariseValuation([
-      { quantity: 10, unitCost: 2 }, // 20
-      { quantity: 5, unitCost: null }, // unpriced
-      { quantity: 3, unitCost: 0 }, // zero cost → counts as unpriced
-    ]);
-    expect(summary).toEqual({ totalValue: 20, totalQuantity: 18, unpricedItemCount: 2 });
+    expect(groups.find((g) => g.id === 'b')).toMatchObject({ value: 0, quantity: 4 });
   });
 });
 
