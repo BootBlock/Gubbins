@@ -31,7 +31,7 @@ import { planPoReceipt, planPoReturn } from '@/features/purchasing/po-receipt';
 import { derivePoStatus, type PoStatusLine } from '@/features/purchasing/po-status';
 import { type ReorderPlanGroup } from '@/features/purchasing/reorder-plan';
 import { DbError } from '../errors';
-import { BaseRepository, type RepositoryOptions } from './base';
+import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import { historyStatement } from './item/history';
 import { rowToPurchaseOrder, rowToPurchaseOrderLine } from './mappers';
 import { addStockStatement, stockRowId } from './stock';
@@ -119,7 +119,7 @@ export class PurchaseOrderRepository extends BaseRepository {
 
   constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
     super(driver, options);
-    this.suppliers = new SupplierRepository(driver, options);
+    this.suppliers = new SupplierRepository(driver, collaboratorOptions(options));
   }
 
   // --- purchase orders ---------------------------------------------------------

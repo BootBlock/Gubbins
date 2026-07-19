@@ -1,7 +1,7 @@
 # Users & ACLs — implementation plan
 
-> **Status:** 🟢 ACTIVE — phase 1 (schema, built-in users, attribution) shipped; phase 2
-> (permission engine) next.
+> **Status:** 🟢 ACTIVE — phases 1 (schema, built-in users, attribution) and 2 (permission
+> engine) shipped; phase 3 (authentication & session) next.
 
 Gubbins has no concept of a user. Every action is anonymous, `item_history` records *what*
 happened but never *who*, and the Bridge authenticates with a single all-or-nothing bearer
@@ -187,6 +187,41 @@ Four things were settled during implementation that the design above did not pin
 `permission-registry.ts`, role resolution, the pure `can(user, permission)` seam and its tests,
 plus repository-level enforcement. Pure and exhaustively unit-testable; no UI. The engine must be
 side-effect-free and independent of React so the Bridge can import it too.
+
+#### Phase 2 as built — decisions worth knowing before phase 3
+
+- **`stock` is a subject in its own right, separate from `items`.** §2.3 listed subjects as
+  entity types, but moving, adjusting, counting and writing off quantity is a different
+  capability from editing an item record — and it is exactly the line the **Stocker** role
+  exists to draw. It has no `delete`: stock is written down or written off, never deleted.
+  Two other subjects departed from the uniform `read`/`write`/`delete` triple for the same
+  "don't mint a key nothing can check" reason: `audit` is `view`/`delete` (the ledger is
+  immutable, so there is no writing one), and `users` is `read`/`manage` (anyone who can edit
+  an account can grant themselves a role, so a separate `users:delete` protects nothing).
+- **Roles store *grants*, which may be wider than a key.** A stored grant is a key, a subject
+  wildcard (`items:*`) or the global wildcard (`*`). **Administrator holds `*`** so that a
+  role defined as "everything" still means everything after a later release adds a key —
+  enumerating today's keys into the baseline would have quietly left it short. The other
+  three enumerate deliberately, so a new capability does *not* silently reach a restricted
+  role. A grant this build does not recognise is preserved on write and never matches on
+  read, so editing a role on an older device cannot strip what a newer one granted.
+- **Enforcement is `BaseRepository.assertPermission(key)`, wired through
+  `RepositoryOptions.resolveAuthority`** — the same shape as `resolveActor`, and phase 3
+  changes that one arrow to the session's authority. Production and every test fixture
+  resolve to `UNRESTRICTED_AUTHORITY` today, so all guards are inert and single-user mode is
+  untouched. **Writes are gated; reads are not** — gating every list and search query is a
+  phase-4 concern that belongs with the UI that hides the screens.
+- **The rule the keys follow:** `<entity>:delete` means deleting the *entity*. Editing an
+  entity's child records — an attachment, capability, relation, BOM line, budget expense,
+  category field, photo region — is `<entity>:write`. Without that rule the keys drift into
+  "delete means any statement containing DELETE", which is not a permission a user can reason
+  about.
+- **The built-in roles are seeded by the baseline, which imports `builtin-roles.ts`** — the
+  same module the app and the Bridge read, so a database's roles and the code's roles cannot
+  drift. Their ids are constant UUIDs for the reason the built-in user ids are: four devices
+  seeding random ids would produce four duplicate roles on first sync. Note this made three
+  phase-1 tests collide on `roles.name` (they created roles called `Stocker`, `Viewer`,
+  `Manager`); operator-defined test roles now use names no built-in takes.
 
 ### Phase 3 — Authentication & session
 

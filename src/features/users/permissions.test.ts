@@ -38,9 +38,9 @@ describe('resolveAuthority', () => {
   });
 
   it('makes the built-in Admin unrestricted', () => {
-    expect(resolveAuthority({ moduleEnabled: true, user: { id: 'a', kind: 'admin', isEnabled: true } })).toEqual(
-      UNRESTRICTED_AUTHORITY,
-    );
+    expect(
+      resolveAuthority({ moduleEnabled: true, user: { id: 'a', kind: 'admin', isEnabled: true } }),
+    ).toEqual(UNRESTRICTED_AUTHORITY);
   });
 
   it('makes the built-in System user unrestricted despite being stored disabled', () => {
@@ -62,12 +62,18 @@ describe('resolveAuthority', () => {
     ).toEqual({ mode: 'denied', reason: 'disabled' });
   });
 
-  it('denies an ordinary user with no role, or an empty one', () => {
+  it('denies an ordinary user with no role', () => {
     const user = { id: 'u1', kind: 'normal', isEnabled: true } as const;
     expect(resolveAuthority({ moduleEnabled: true, user })).toEqual({ mode: 'denied', reason: 'no-role' });
+  });
+
+  it('distinguishes a role that grants nothing from having no role at all', () => {
+    // Both deny everything, but only one is fixed by assigning a role — telling an operator
+    // to assign a role they already assigned is worse advice than none.
+    const user = { id: 'u1', kind: 'normal', isEnabled: true } as const;
     expect(resolveAuthority({ moduleEnabled: true, user, grants: [] })).toEqual({
       mode: 'denied',
-      reason: 'no-role',
+      reason: 'no-permissions',
     });
   });
 

@@ -29,7 +29,7 @@ import {
   type OverlapCandidate,
 } from '@/features/bookings/booking-overlap';
 import { isBookableTrackingMode } from '@/features/bookings/booking-status';
-import { BaseRepository, type RepositoryOptions } from './base';
+import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import { CheckoutRepository } from './CheckoutRepository';
 import { ContactRepository } from './ContactRepository';
 import { rowToBooking } from './mappers';
@@ -57,8 +57,8 @@ export class AssetBookingRepository extends BaseRepository {
 
   constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
     super(driver, options);
-    this.contacts = new ContactRepository(driver, options);
-    this.checkouts = new CheckoutRepository(driver, options);
+    this.contacts = new ContactRepository(driver, collaboratorOptions(options));
+    this.checkouts = new CheckoutRepository(driver, collaboratorOptions(options));
   }
 
   async getById(id: string): Promise<AssetBooking | undefined> {

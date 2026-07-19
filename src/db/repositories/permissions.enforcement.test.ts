@@ -18,7 +18,9 @@ import { migrations } from '../migrations';
 import { runMigrations } from '../migrations/engine';
 import type { Authority } from '@/features/users/permissions';
 import { BUILTIN_ROLES } from '@/features/users/builtin-roles';
-import { resolveAuthority } from '@/features/users/permissions';
+import { can, resolveAuthority } from '@/features/users/permissions';
+import { CheckoutRepository } from './CheckoutRepository';
+import { ContactRepository } from './ContactRepository';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { UNASSIGNED_LOCATION_ID } from './constants';
@@ -77,14 +79,20 @@ describe('repository permission enforcement', () => {
   describe('with a denied authority', () => {
     it('refuses to create, edit or delete an item', async () => {
       const items = new ItemRepository(driver, withAuthority(DENIED));
-      await expectDenied(() => items.create({ name: 'Nope', locationId: UNASSIGNED_LOCATION_ID }), 'items:write');
+      await expectDenied(
+        () => items.create({ name: 'Nope', locationId: UNASSIGNED_LOCATION_ID }),
+        'items:write',
+      );
       await expectDenied(() => items.update('any-id', { name: 'Nope' }), 'items:write');
       await expectDenied(() => items.softDelete('any-id'), 'items:delete');
     });
 
     it('refuses before touching the database, so nothing is half-written', async () => {
       const items = new ItemRepository(driver, withAuthority(DENIED));
-      await expectDenied(() => items.create({ name: 'Nope', locationId: UNASSIGNED_LOCATION_ID }), 'items:write');
+      await expectDenied(
+        () => items.create({ name: 'Nope', locationId: UNASSIGNED_LOCATION_ID }),
+        'items:write',
+      );
       const remaining = await driver.queryOne<{ count: number }>('SELECT COUNT(*) AS count FROM items;');
       expect(remaining?.count).toBe(0);
     });
@@ -127,7 +135,10 @@ describe('repository permission enforcement', () => {
       const locations = new LocationRepository(driver, authority);
       const users = new UserRepository(driver, authority);
 
-      await expectDenied(() => items.create({ name: 'Nope', locationId: UNASSIGNED_LOCATION_ID }), 'items:write');
+      await expectDenied(
+        () => items.create({ name: 'Nope', locationId: UNASSIGNED_LOCATION_ID }),
+        'items:write',
+      );
       await expectDenied(() => locations.create({ name: 'Nope' }), 'locations:write');
       await expectDenied(() => users.create({ username: 'nope' }), 'users:manage');
     });
@@ -145,21 +156,48 @@ describe('repository permission enforcement', () => {
     });
   });
 
+  describe('a permission never transitively demands another subject', () => {
+    // A repository that privately constructs another to do part of its own job runs that
+    // collaborator unrestricted: the public method has already been authorised. Passing the
+    // caller's authority down instead would make `checkouts:write` secretly also require
+    // `contacts:write`, refusing a role the very action it was granted.
+    it('lets a Stocker check an item out to a borrower who does not exist yet', async () => {
+      const seed = new ItemRepository(driver);
+      const item = await seed.create({
+        name: 'Cordless drill',
+        locationId: UNASSIGNED_LOCATION_ID,
+        quantity: 1,
+      });
+
+      const stocker = asRole('Stocker');
+      expect(can(stocker, 'checkouts:write')).toBe(true);
+      // The role deliberately does *not* grant this, which is the whole point of the case.
+      expect(can(stocker, 'contacts:write')).toBe(false);
+
+      const checkouts = new CheckoutRepository(driver, withAuthority(stocker));
+      await expect(
+        checkouts.checkout({ itemId: item.id, quantity: 1, contactName: 'Ada' }),
+      ).resolves.toBeDefined();
+    });
+
+    it('still refuses the borrower repository when reached directly', async () => {
+      // The collaborator exemption must not become a way to launder a write: creating a
+      // contact as its own action is still `contacts:write`.
+      const contacts = new ContactRepository(driver, withAuthority(asRole('Stocker')));
+      await expectDenied(() => contacts.create({ name: 'Ada' }), 'contacts:write');
+    });
+  });
+
   describe('stock movement is gated separately from editing an item', () => {
     it('lets a Viewer neither, and a Stocker both', async () => {
       const seed = new ItemRepository(driver);
       const item = await seed.create({ name: 'Screws', locationId: UNASSIGNED_LOCATION_ID, quantity: 10 });
 
       const viewer = new ItemRepository(driver, withAuthority(asRole('Viewer')));
-      await expectDenied(
-        () => viewer.adjustQuantity(item.id, { delta: 5, locationId: UNASSIGNED_LOCATION_ID }),
-        'stock:write',
-      );
+      await expectDenied(() => viewer.adjustQuantity(item.id, 5), 'stock:write');
 
       const stocker = new ItemRepository(driver, withAuthority(asRole('Stocker')));
-      await expect(
-        stocker.adjustQuantity(item.id, { delta: 5, locationId: UNASSIGNED_LOCATION_ID }),
-      ).resolves.toBeDefined();
+      await expect(stocker.adjustQuantity(item.id, 5)).resolves.toMatchObject({ quantity: 15 });
     });
   });
 });

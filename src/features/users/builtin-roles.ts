@@ -10,6 +10,15 @@
  * "Stocker" grants, but removing it outright would strand every user assigned to it. Editing
  * one changes only that database's copy — the definitions here are the starting point, not a
  * contract the app re-asserts on every boot.
+ *
+ * ⚠️ **Editing this file resets every existing database.** The baseline seeds these rows
+ * through bound parameters, and `baselineFingerprint` hashes parameters as well as SQL, so
+ * changing a name, description or grant list shifts the fingerprint and boot refuses the
+ * on-disk database with `SCHEMA_STALE`. That is correct pre-release — the baseline genuinely
+ * did change — but it means a one-word description fix costs every user their local data, and
+ * a *new permission subject* does it silently, because Manager's grants are generated from
+ * the subject list. Weigh that before editing, and expect it to become a real migration
+ * problem rather than a free one once Gubbins is past 1.0.
  */
 import {
   GRANT_ALL,
@@ -68,7 +77,8 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
   {
     id: STOCKER_ROLE_ID,
     name: 'Stocker',
-    description: 'Can add and edit items, move stock and run counts, but cannot delete or see the audit trail.',
+    description:
+      'Can add and edit items, move stock and run counts, but cannot delete or see the audit trail.',
     grants: [
       'items:read',
       'items:write',
@@ -88,7 +98,8 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
   {
     id: VIEWER_ROLE_ID,
     name: 'Viewer',
-    description: 'Can look at everything except the audit trail and user accounts, but cannot change anything.',
+    description:
+      'Can look at everything except the audit trail and user accounts, but cannot change anything.',
     grants: [
       'items:read',
       'stock:read',

@@ -61,6 +61,27 @@ export interface RepositoryOptions {
   readonly resolveAuthority?: () => Authority;
 }
 
+/**
+ * Options for a **collaborator** repository — one repository constructs privately to do part
+ * of its own job, never one a caller reaches directly.
+ *
+ * Such a call has already been authorised by the public method that made it, so it runs
+ * unrestricted. Passing the caller's authority through instead would make a permission
+ * transitively demand every subject its implementation happens to touch: checking a tool out
+ * to a new borrower would require `contacts:write` on top of `checkouts:write`, and creating
+ * a purchase order would require `suppliers:write` — refusing a role the action it was
+ * explicitly granted, with an error naming a subject the user never mentioned.
+ *
+ * This is the authority-side counterpart to the actor seam's explicit `SYSTEM_USER_ID`: both
+ * exist so an internal call can say "this is the app acting on its own behalf, not the user
+ * reaching for a second capability". Everything else — the Hard Stop, the actor, the base
+ * currency — is passed through unchanged, so the collaborator still attributes its writes to
+ * the right person and still refuses to grow storage at the locked tier.
+ */
+export function collaboratorOptions(options: RepositoryOptions): RepositoryOptions {
+  return { ...options, resolveAuthority: () => UNRESTRICTED_AUTHORITY };
+}
+
 export abstract class BaseRepository {
   protected readonly driver: IDatabaseDriver;
   private readonly isWriteSuspended: () => boolean;

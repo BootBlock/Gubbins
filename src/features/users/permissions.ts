@@ -32,8 +32,13 @@ export interface AuthorityPrincipal {
   readonly isEnabled: boolean;
 }
 
-/** Why an authority grants nothing at all — surfaced so the UI can say which it was. */
-export type AuthorityDenial = 'signed-out' | 'disabled' | 'no-role';
+/**
+ * Why an authority grants nothing at all. The distinction exists purely to be *shown*: all
+ * four deny identically, but "you have no role" and "your role grants nothing" call for
+ * different advice, and telling an operator to assign a role they already assigned is worse
+ * than saying nothing.
+ */
+export type AuthorityDenial = 'signed-out' | 'disabled' | 'no-role' | 'no-permissions';
 
 /**
  * A resolved answer to "what may this session do?".
@@ -89,7 +94,10 @@ export function resolveAuthority(input: AuthorityInput): Authority {
   if (!user.isEnabled) return { mode: 'denied', reason: 'disabled' };
 
   const grants = input.grants;
-  if (!grants || grants.length === 0) return { mode: 'denied', reason: 'no-role' };
+  if (!grants) return { mode: 'denied', reason: 'no-role' };
+  // A role that deliberately grants nothing (a "Suspended" role) is not the same state as an
+  // account with no role assigned, even though both permit nothing.
+  if (grants.length === 0) return { mode: 'denied', reason: 'no-permissions' };
   return { mode: 'granted', grants: new Set(grants) };
 }
 

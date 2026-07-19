@@ -15,7 +15,7 @@
  */
 import { DbError } from '../errors';
 import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
-import { BaseRepository, type RepositoryOptions } from './base';
+import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import type { BorrowerType, CheckoutStatus, Condition } from './constants';
 import { ContactRepository } from './ContactRepository';
 import { borrowerColumn, planCheckIn, planCheckInAllForTarget } from './checkout-plan';
@@ -105,7 +105,7 @@ export class CheckoutRepository extends BaseRepository {
 
   constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
     super(driver, options);
-    this.contacts = new ContactRepository(driver, options);
+    this.contacts = new ContactRepository(driver, collaboratorOptions(options));
   }
 
   async getById(id: string): Promise<Checkout | undefined> {

@@ -17,7 +17,7 @@
  * record a tombstone in the same transaction so the deletion syncs (§7.2).
  */
 import { DbError } from '../errors';
-import { BaseRepository, type RepositoryOptions } from './base';
+import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import { rowToSupplierPart, rowToSupplierPartPriceHistory } from './mappers';
 import { SupplierRepository } from './SupplierRepository';
 import { tombstoneStatement } from './tombstone';
@@ -114,7 +114,7 @@ export class SupplierPartRepository extends BaseRepository {
 
   constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
     super(driver, options);
-    this.suppliers = new SupplierRepository(driver, options);
+    this.suppliers = new SupplierRepository(driver, collaboratorOptions(options));
   }
 
   async getById(id: string): Promise<SupplierPart | undefined> {

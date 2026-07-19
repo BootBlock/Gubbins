@@ -63,6 +63,15 @@ describe('users, roles and attribution', () => {
       const updated = await roles.update(stocker.id, { permissions: ['items:read'] });
       expect(updated.permissions).toEqual(['items:read']);
     });
+
+    it('canonicalises grants on write, so an edited role is stored like a seeded one', async () => {
+      const role = await roles.create({ name: 'Padded', permissions: [' items:write ', 'items:write'] });
+      // Untrimmed and duplicated input would otherwise persist as a grant matching nothing.
+      expect(role.permissions).toEqual(['items:write']);
+
+      const updated = await roles.update(role.id, { permissions: ['stock:write', 'items:read', ''] });
+      expect(updated.permissions).toEqual(['items:read', 'stock:write']);
+    });
   });
 
   describe('the built-in principals', () => {
@@ -141,7 +150,9 @@ describe('users, roles and attribution', () => {
     });
 
     it('keeps the account when its role is deleted, clearing only the grant', async () => {
-      const role = await roles.create({ name: 'Stocker', permissions: ['items:write'] });
+      // A deliberately operator-defined name: the four built-in roles are seeded by the
+      // baseline (phase 2), so reusing one of their names here would collide on `roles.name`.
+      const role = await roles.create({ name: 'Bench Lead', permissions: ['items:write'] });
       const user = await users.create({ username: 'sam', roleId: role.id });
       expect((await users.getById(user.id))!.roleId).toBe(role.id);
 
@@ -155,8 +166,10 @@ describe('users, roles and attribution', () => {
 
   describe('roles', () => {
     it('round-trips permissions through storage', async () => {
-      const role = await roles.create({ name: 'Viewer', permissions: ['items:read', 'audit:view'] });
-      expect((await roles.getById(role.id))!.permissions).toEqual(['items:read', 'audit:view']);
+      const role = await roles.create({ name: 'Read Only', permissions: ['items:read', 'audit:view'] });
+      // Grants are canonicalised on write (phase 2), so they come back sorted rather than in
+      // the order they were supplied — two roles with the same permissions compare equal.
+      expect((await roles.getById(role.id))!.permissions).toEqual(['audit:view', 'items:read']);
     });
 
     it('degrades an unparseable permissions column to no permissions', async () => {
@@ -167,7 +180,7 @@ describe('users, roles and attribution', () => {
     });
 
     it('refuses to delete a built-in role at both layers', async () => {
-      const role = await roles.create({ name: 'Manager' });
+      const role = await roles.create({ name: 'Promoted Custom Role' });
       await driver.execute('UPDATE roles SET is_builtin = 1 WHERE id = ?;', [role.id]);
 
       await expect(roles.delete(role.id)).rejects.toThrow(/cannot be deleted/i);
