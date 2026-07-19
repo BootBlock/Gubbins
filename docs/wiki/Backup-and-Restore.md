@@ -37,8 +37,10 @@ thresholds, and vice versa.
 > you're rebuilding the *same* device.
 
 > **💡 Tip**
-> Your bridge **access token** is never included in a backup, whatever you tick, so a `.zip` you
-> share or store elsewhere can't leak it. You'll re-enter it on the restored device.
+> No usable credential is ever included in a backup, whatever you tick. The bridge URL and token
+> you set up on a device stay on that device, so you'll re-enter them after restoring; and an
+> [[API token|Bridge-API-Tokens]] itself is never stored anywhere — only a scrambled fingerprint
+> of it — so a `.zip` you share or store elsewhere can't leak one.
 
 ## Restoring: Merge or Replace
 

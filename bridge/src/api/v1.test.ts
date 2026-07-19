@@ -12,10 +12,11 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import rootPackageJson from '../../../package.json' with { type: 'json' };
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
+import { mintTestToken } from '../fixtures/test-identity.ts';
 import { createBridgeServer, type BridgeServerState } from '../server.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-snapshot.json', import.meta.url);
-const TOKEN = 'placeholder-token-for-tests';
+let TOKEN = '';
 
 let hydrated: HydrateResult;
 let server: ReturnType<typeof createBridgeServer>;
@@ -23,11 +24,14 @@ let baseUrl: string;
 
 beforeAll(async () => {
   hydrated = await hydrateFromJson(await readFile(fileURLToPath(FIXTURE_URL), 'utf8'));
+  // A caller is identified by a per-user token now, so the test mints one for the built-in
+  // Admin (unrestricted, like the old shared token) against the hydrated fixture.
+  TOKEN = await mintTestToken(hydrated.driver);
   const state: BridgeServerState = {
     driver: hydrated.driver,
     snapshotGeneratedAt: new Date(hydrated.snapshot.generatedAt).toISOString(),
   };
-  server = createBridgeServer({ token: TOKEN, getState: () => state });
+  server = createBridgeServer({ getState: () => state });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
   baseUrl = `http://127.0.0.1:${port}`;

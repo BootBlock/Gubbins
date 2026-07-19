@@ -93,6 +93,7 @@
 **Bridge & Home Assistant**
 - [[Bridge overview|Bridge-Overview]]
 - [[Running the bridge|Running-the-Bridge]]
+- [[Bridge API tokens|Bridge-API-Tokens]]
 - [[Home Assistant|Home-Assistant-Integration]]
 - [[AI assistant query (MCP)|AI-Assistant-Query-MCP]]
 - [[Webhooks]]

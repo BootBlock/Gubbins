@@ -29,7 +29,8 @@ The bridge is built to be cautious:
 
 - **Loopback by default** — it listens only on your own machine (`127.0.0.1`) unless you
   deliberately expose it.
-- **Token-protected** — requests need a secret token you set.
+- **Per-user tokens** — requests need an [[API token|Bridge-API-Tokens]] you mint in the app
+  against a particular account, and they can only do what that account can do.
 - **Read-only by default** — it can't change your data unless you explicitly turn writes on.
 - **Everything network-facing is opt-in** — each feature (events, MQTT, discovery) is off until you
   enable it, and every choice is logged at startup.
@@ -40,12 +41,14 @@ the **Sync** screen when the one you're connected to has fallen behind the app. 
 
 > **⚠️ Heads-up**
 > The bridge reads a *copy* of your data and can serve it over the network if you configure it to.
-> Treat its **token** like a password, keep the default loopback bind unless you know you need a
-> LAN, and never commit the token anywhere. See [[Privacy & security|Privacy-and-Security]].
+> Treat an [[API token|Bridge-API-Tokens]] like a password, keep the default loopback bind unless
+> you know you need a LAN, and never commit a token anywhere. See
+> [[Privacy & security|Privacy-and-Security]].
 
 ## Related pages
 
 - **[[Running the bridge|Running-the-Bridge]]** — starting it up.
+- **[[Bridge API tokens|Bridge-API-Tokens]]** — how tools are given access, and how to take it back.
 - **[[Home Assistant integration|Home-Assistant-Integration]]** — the flagship use.
 - **[[AI assistant query (MCP)|AI-Assistant-Query-MCP]]**, **[[Webhooks]]** and
   **[[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]** — the other surfaces.

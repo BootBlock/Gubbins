@@ -11,12 +11,13 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from './hydrate.ts';
+import { mintTestToken } from './fixtures/test-identity.ts';
 import { createBridgeServer, requestBase, type BridgeServerState } from './server.ts';
 import { createRateLimiter } from './rate-limit.ts';
 import { HEALTHY_RELOAD, summarizeSnapshotHealth } from './snapshot-health.ts';
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
-const TOKEN = 'placeholder-token-for-tests';
+let TOKEN = '';
 
 let hydrated: HydrateResult;
 let server: ReturnType<typeof createBridgeServer>;
@@ -24,11 +25,14 @@ let baseUrl: string;
 
 beforeAll(async () => {
   hydrated = await hydrateFromJson(await readFile(fileURLToPath(FIXTURE_URL), 'utf8'));
+  // A caller is identified by a per-user token now, so the test mints one for the built-in
+  // Admin (unrestricted, like the old shared token) against the hydrated fixture.
+  TOKEN = await mintTestToken(hydrated.driver);
   const state: BridgeServerState = {
     driver: hydrated.driver,
     snapshotGeneratedAt: new Date(hydrated.snapshot.generatedAt).toISOString(),
   };
-  server = createBridgeServer({ token: TOKEN, getState: () => state });
+  server = createBridgeServer({ getState: () => state });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
   baseUrl = `http://127.0.0.1:${port}`;
@@ -74,7 +78,6 @@ describe('GET /health', () => {
   it('drops ok and reports the failures once the snapshot has gone stale', async () => {
     let report = summarizeSnapshotHealth(HEALTHY_RELOAD);
     const stale = createBridgeServer({
-      token: TOKEN,
       getState: () => ({
         driver: hydrated.driver,
         snapshotGeneratedAt: new Date(hydrated.snapshot.generatedAt).toISOString(),
@@ -198,7 +201,6 @@ describe('rate limiting', () => {
       snapshotGeneratedAt: new Date(hydrated.snapshot.generatedAt).toISOString(),
     };
     const limited = createBridgeServer({
-      token: TOKEN,
       getState: () => state,
       rateLimiter: createRateLimiter({ capacity: 2, refillPerSec: 1, now: () => 0 }),
     });
@@ -222,7 +224,7 @@ describe('rate limiting', () => {
 
 describe('503 before a snapshot is loaded', () => {
   it('answers 503 when state is null', async () => {
-    const empty = createBridgeServer({ token: TOKEN, getState: () => null });
+    const empty = createBridgeServer({ getState: () => null });
     await new Promise<void>((resolve) => empty.listen(0, '127.0.0.1', resolve));
     try {
       const { port } = empty.address() as AddressInfo;

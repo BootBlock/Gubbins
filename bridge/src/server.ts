@@ -26,7 +26,6 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { emptyAst } from '@/db/search/ast.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
@@ -35,6 +34,7 @@ import type { RateLimiter } from './rate-limit.ts';
 import { sendError, sendJson, sendMetrics } from './api/respond.ts';
 import { readQueryParam, readResultLimit } from './api/params.ts';
 import { API_V1_BASE, handleApiV1, isApiV1Path, pathAllowsUrlToken } from './api/v1.ts';
+import { isPermitted, resolveIdentity } from './identity.ts';
 import { projectMetrics } from './feeds/metrics.ts';
 import { formatMetrics } from './feeds/metrics-format.ts';
 import type { WriteOperation } from './write.ts';
@@ -59,7 +59,14 @@ export const MAX_BODY_BYTES = 8 * 1024;
  * there). `execute` round-trips through the §7.3 sync merge — see `write.ts`.
  */
 export interface WriteCapability {
-  readonly execute: (op: WriteOperation) => Promise<ItemDetailDto>;
+  /**
+   * Apply one operation, attributing the resulting Activity-Ledger entry to `actorUserId` —
+   * the owner of the token that authorised the request (issue #79, plan §1.3). The actor is a
+   * required argument for the reason the plan gives at §2.4: a caller that forgets one should
+   * fail to compile rather than quietly write everything as System, which is what the bridge
+   * did when it had only a shared token to go on.
+   */
+  readonly execute: (op: WriteOperation, actorUserId: string) => Promise<ItemDetailDto>;
 }
 
 /** The versioned snapshot-ingest path (the PWA "push to bridge"); POST-only, opt-in. */
@@ -143,8 +150,6 @@ export interface BridgeServerState {
 }
 
 export interface BridgeServerOptions {
-  /** Shared bearer token required on every request. */
-  readonly token: string;
   /**
    * Returns the current state, or null before the first snapshot has loaded (the server
    * then answers 503 rather than serving from a half-loaded DB).
@@ -309,12 +314,35 @@ export async function handleRequest(
       return;
     }
 
-    if (!isAuthorised(req, options.token, url)) {
+    // --- Identify the caller (issue #79, plan §1.3) ------------------------------------
+    //
+    // A token is per-user now, and the rows that resolve one arrive in the snapshot — so
+    // unlike the old shared-token check this cannot be answered before the first snapshot has
+    // loaded. A `503` there is the fail-closed answer: the bridge does not yet know who anyone
+    // is, so it lets nobody in. (This is why the scale reads, which need no snapshot of their
+    // own, nonetheless wait for one.)
+    const presented = presentedToken(req, url);
+    const authState = options.getState();
+    if (authState === null) {
+      req.resume();
+      sendError(res, 503, 'snapshot_unavailable', 'Snapshot not loaded yet', { v1 });
+      return;
+    }
+    const identity = presented === null ? null : await resolveIdentity(authState.driver, presented);
+    if (identity === null) {
       req.resume();
       sendError(res, 401, 'unauthorized', 'Unauthorised', {
         v1,
         headers: { 'www-authenticate': 'Bearer' },
       });
+      return;
+    }
+    // Authenticated but not permitted: the token is real and its owner is known, their role
+    // simply does not reach this route. The env capability flags are a separate, outer bound —
+    // a route the operator disabled is still a 404 for everyone, however permissive the role.
+    if (!isPermitted(identity, req.method, url.pathname)) {
+      req.resume();
+      sendError(res, 403, 'forbidden', 'Forbidden', { v1 });
       return;
     }
 
@@ -344,6 +372,7 @@ export async function handleRequest(
       const body = await readJsonBody(req, MAX_BODY_BYTES);
       await handleApiV1(res, url, {
         method: 'POST',
+        actorUserId: identity.userId,
         getState: options.getState,
         getSnapshotHealth: options.getSnapshotHealth,
         write: options.write,
@@ -551,32 +580,31 @@ function clientKey(req: IncomingMessage): string {
 }
 
 /**
- * Constant-time bearer-token check. The token normally arrives as an `Authorization: Bearer …`
- * header. A missing/malformed header is unauthorised — **except** on the read-only subscription
+ * Extract the token a request presents, or `null` when it presents none.
+ *
+ * It normally arrives as an `Authorization: Bearer …` header. On the read-only subscription
  * paths (the calendar feed `GET /api/v1/calendar.ics` and the syndication feeds
- * `GET /api/v1/activity.{rss,atom,json}`), where the token may instead be supplied as a `?token=`
- * query parameter, because a calendar / feed client subscribing by URL cannot send an auth header.
+ * `GET /api/v1/activity.{rss,atom,json}`) it may instead be supplied as a `?token=` query
+ * parameter, because a calendar / feed client subscribing by URL cannot send an auth header.
  * That weaker token-in-URL posture (URLs get logged by proxies / browser history) is deliberately
- * scoped to just those read-only feed paths (see `pathAllowsUrlToken`); everything else — including
- * `/metrics` — requires the header.
+ * scoped to just those read-only feed paths (see `pathAllowsUrlToken`); everything else —
+ * including `/metrics` — requires the header.
+ *
+ * There is no constant-time compare here any more, and none is needed: the presented value is
+ * not compared against a secret, it is hashed and looked up by index (see `identity.ts`). A hash
+ * lookup reveals nothing about the stored value through timing, and the old shared-token compare
+ * — the thing the constant-time guard protected — no longer exists.
  */
-function isAuthorised(req: IncomingMessage, token: string, url: URL): boolean {
+function presentedToken(req: IncomingMessage, url: URL): string | null {
   const header = req.headers.authorization;
   const prefix = 'Bearer ';
   if (typeof header === 'string' && header.startsWith(prefix)) {
-    if (constantTimeEqual(header.slice(prefix.length).trim(), token)) return true;
+    const value = header.slice(prefix.length).trim();
+    if (value.length > 0) return value;
   }
   if (pathAllowsUrlToken(url.pathname)) {
     const queryToken = url.searchParams.get('token');
-    if (queryToken !== null && constantTimeEqual(queryToken, token)) return true;
+    if (queryToken !== null && queryToken.length > 0) return queryToken;
   }
-  return false;
-}
-
-/** Length-safe constant-time string comparison (avoids leaking the token via timing). */
-function constantTimeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a, 'utf8');
-  const bb = Buffer.from(b, 'utf8');
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
+  return null;
 }

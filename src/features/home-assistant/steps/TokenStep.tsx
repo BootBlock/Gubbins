@@ -1,30 +1,25 @@
-import { useState } from 'react';
 import { Banner, Button, FormField, Input, useToast } from '@/components/foundry';
-import { KeyIcon, RefreshIcon, SecureIcon, SuccessIcon, TerminalIcon } from '@/components/icons';
+import { KeyIcon, SecureIcon, SuccessIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { CommandBlock, StepCard } from '../components';
 import { useGuide } from '../context';
-import { generateBridgeToken } from '../token';
 
 /**
  * Step 2 — the access token.
  *
- * The bridge authenticates every request with a shared bearer token. This step can mint a
- * strong one in the browser (Web Crypto) so a user without a terminal isn't stuck, explains
- * exactly where it goes, and — since the token is a secret the later steps need — keeps it in
- * guide state so "Run the bridge" and "Connect" can fill it in automatically. The user may also
- * paste a token they already have.
+ * This step used to *generate* a token in the browser, because the bridge authenticated everyone
+ * with one shared secret that lived in its `.env`. That is gone (issue #79): a token is now minted
+ * per user in the app, carries exactly that user's permissions, and reaches the bridge through the
+ * ordinary sync snapshot rather than through the environment.
+ *
+ * So the step's job changed from "make a secret" to "go and mint one, then paste it here". The
+ * guide still needs the value, because Home Assistant has to be given it — but Gubbins can no
+ * longer conjure one, and offering to would produce a string the bridge has never heard of.
  */
 export function TokenStep() {
   const { token, setToken } = useGuide();
   const toast = useToast();
   const setBridgeToken = usePreferencesStore((s) => s.setBridgeToken);
-  const [justGenerated, setJustGenerated] = useState(false);
-
-  const generate = () => {
-    setToken(generateBridgeToken());
-    setJustGenerated(true);
-  };
 
   const saveToDevice = () => {
     setBridgeToken(token.trim());
@@ -41,55 +36,46 @@ export function TokenStep() {
     <div className="space-y-6">
       <StepCard title="What a token is, and why you need one" icon={<KeyIcon />}>
         <p className="text-sm text-muted-foreground">
-          The bridge is protected by a single <span className="text-foreground">access token</span> — a long
-          random secret. Every request (including Home Assistant's) must present it, so nobody else on your
-          network can read your inventory. You'll use the <span className="text-foreground">same</span> token
-          in two places: the bridge (as{' '}
-          <code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_TOKEN</code>) and Home Assistant.
+          Every request to the bridge — including Home Assistant's — has to present an{' '}
+          <span className="text-foreground">API token</span>. A token belongs to one Gubbins account and can
+          do exactly what that account can do, no more. That is how the bridge knows who is asking, and it is
+          why anything it changes is recorded against a name rather than "the bridge".
         </p>
         <Banner tone="warning" icon={<SecureIcon />} heading="Treat it like a password">
-          Anyone with this token can read your inventory over your network. Don't paste it into a public chat,
-          screenshot, or a file you commit to git. If it ever leaks, come back here, generate a new one, and
-          update both places.
+          Anyone holding this token can reach your inventory over your network as its owner. Don't paste it
+          into a public chat, a screenshot, or a file you commit to git. If it ever leaks, revoke it in
+          Gubbins and create a replacement — that takes effect everywhere, with no bridge restart.
         </Banner>
       </StepCard>
 
       <StepCard title="Create your token">
         <p className="text-sm text-muted-foreground">
-          Let Gubbins generate a strong token for you here in your browser, or paste one you already have.
+          Tokens are made in Gubbins itself, not here. Go to the{' '}
+          <span className="text-foreground">Users</span> screen, pick the account the bridge should act as,
+          choose <span className="text-foreground">API tokens</span>, and create one. It is shown once — copy
+          it straight into the field below. (Open it in a second tab if you'd rather not lose your place in
+          this guide.)
         </p>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={generate} data-testid="generate-token">
-            <RefreshIcon />
-            Generate {hasToken ? 'a new' : 'a'} token
-          </Button>
-        </div>
+        <Banner tone="info">
+          If you'd rather Home Assistant not have the run of everything, give it its own account with a narrow
+          role first, and mint the token there. The bridge will hold it to exactly that role.
+        </Banner>
 
         <FormField
           label="Bridge access token"
-          hint="A 64-character random hex string (256 bits of entropy). Kept only in this browser tab unless you choose to save it below."
+          hint="Starts with `gbn_`. Kept only in this browser tab unless you choose to save it below."
         >
           <Input
             type="text"
             spellCheck={false}
             autoComplete="off"
-            placeholder="Generate one above, or paste your own"
+            placeholder="gbn_…"
             value={token}
-            onChange={(e) => {
-              setToken(e.target.value);
-              setJustGenerated(false);
-            }}
+            onChange={(e) => setToken(e.target.value)}
             className="font-mono text-xs"
             data-testid="token-input"
           />
         </FormField>
-
-        {justGenerated ? (
-          <Banner tone="success" icon={<SuccessIcon />} data-testid="token-generated">
-            A fresh token is ready. Copy it now — the next steps will fill it into the commands for you
-            automatically, but you'll also need it to hand.
-          </Banner>
-        ) : null}
 
         {hasToken ? (
           <div className="space-y-4">
@@ -106,20 +92,6 @@ export function TokenStep() {
             </p>
           </div>
         ) : null}
-      </StepCard>
-
-      <StepCard title="Prefer to make it yourself?" icon={<TerminalIcon />}>
-        <p className="text-sm text-muted-foreground">
-          Any long random string works. If you'd rather generate it in a terminal on the machine that will run
-          the bridge, this prints a good one:
-        </p>
-        <CommandBlock
-          label="token generation command"
-          code={`node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`}
-        />
-        <p className="text-sm text-muted-foreground">
-          Paste the result into the field above so the rest of the guide can use it, or just keep it handy.
-        </p>
       </StepCard>
     </div>
   );

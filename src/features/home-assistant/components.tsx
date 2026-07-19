@@ -2,6 +2,7 @@ import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'rea
 import { cn } from '@/lib/utils';
 import { Surface } from '@/components/foundry';
 import { CheckIcon, CopyIcon, ErrorIcon, type LucideIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
 
 /**
  * Shared, guide-local building blocks for the Home Assistant setup walkthrough.
@@ -175,6 +176,7 @@ export function CommandBlock({
   /** Optional small caption above the block (e.g. a filename or where it goes). */
   readonly caption?: ReactNode;
 }) {
+  const t = useT();
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   const onCopy = async () => {
@@ -193,7 +195,11 @@ export function CommandBlock({
         <button
           type="button"
           onClick={onCopy}
-          aria-label={state === 'copied' ? `Copied ${label}` : `Copy ${label}`}
+          aria-label={
+            state === 'copied'
+              ? t('commandBlock.copied', { vars: { label } })
+              : t('commandBlock.copy', { vars: { label } })
+          }
           className={cn(
             'absolute right-2 top-2 grid size-8 place-items-center rounded-md border border-border bg-card/80 outline-none transition-colors ease-emphasized [&_svg]:size-4',
             'hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring',
@@ -213,9 +219,9 @@ export function CommandBlock({
       {/* Politely announce the copy outcome without stealing focus. */}
       <span aria-live="polite" className="sr-only">
         {state === 'copied'
-          ? `${label} copied to the clipboard.`
+          ? t('commandBlock.announceCopied', { vars: { label } })
           : state === 'failed'
-            ? `Could not copy ${label}.`
+            ? t('commandBlock.announceFailed', { vars: { label } })
             : ''}
       </span>
     </figure>

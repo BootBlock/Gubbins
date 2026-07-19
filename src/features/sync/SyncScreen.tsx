@@ -643,7 +643,7 @@ export function SyncScreen() {
             </FormField>
             <FormField
               label="Access token"
-              hint="The bridge's `GUBBINS_BRIDGE_TOKEN`. Treated as a secret — stored only on this device and never synced."
+              hint="An API token minted in Users → the account → API tokens. Treated as a secret — stored only on this device and never synced."
             >
               <Input
                 type="password"

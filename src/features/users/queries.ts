@@ -7,13 +7,18 @@
  * to `undefined` in every screen test.
  */
 import { useQuery } from '@tanstack/react-query';
-import { getRoleRepository, getUserRepository } from '@/db/repositories';
+import { getApiTokenRepository, getRoleRepository, getUserRepository } from '@/db/repositories';
 
 export const userKeys = {
   all: ['users'] as const,
   list: () => [...userKeys.all, 'list'] as const,
   /** The sign-in screen's candidate list, invalidated by every account edit. */
   signInCandidates: () => [...userKeys.all, 'sign-in-candidates'] as const,
+} as const;
+
+export const apiTokenKeys = {
+  all: ['api-tokens'] as const,
+  byUser: (userId: string) => [...apiTokenKeys.all, 'by-user', userId] as const,
 } as const;
 
 export const roleKeys = {
@@ -29,6 +34,22 @@ export function useUsers() {
   return useQuery({
     queryKey: userKeys.list(),
     queryFn: () => getUserRepository().list({ limit: 100 }),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * One user's Bridge API tokens (issue #79, plan §1.3).
+ *
+ * Fetched per user rather than app-wide because the only place they are shown is that user's own
+ * token dialog, and a list of *whose* credentials exist is not something to hold in memory for
+ * every screen. `enabled` keeps it from firing until a user is actually selected.
+ */
+export function useApiTokens(userId: string | null) {
+  return useQuery({
+    queryKey: apiTokenKeys.byUser(userId ?? ''),
+    queryFn: () => getApiTokenRepository().listByUser(userId!),
+    enabled: userId !== null,
     staleTime: 60_000,
   });
 }

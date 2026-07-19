@@ -11,7 +11,6 @@ import {
   WarningIcon,
 } from '@/components/icons';
 import { CommandBlock, ChoiceCards, BranchPanel, StepCard } from '../components';
-import { useGuide, tokenForDisplay } from '../context';
 import { GuideLink } from '../links';
 
 type Placement = 'same-host' | 'other-host';
@@ -27,13 +26,12 @@ const HA_TOKEN_PLACEHOLDER = '<YOUR_HOME_ASSISTANT_TOKEN>';
  *
  * The most branch-heavy step. It first establishes *where* the bridge runs relative to Home
  * Assistant (which decides whether it must be exposed on the LAN), then offers three ways to
- * run it (bare Node, Docker, systemd) with the token already spliced into every command, and
+ * run it (bare Node, Docker, systemd) — there is no token to splice in any more, as callers
+ * authenticate with per-user API tokens minted in the app (issue #79) — and
  * then an outcome selector that routes common startup problems to a fix, and finally the one
  * optional capability that is also configured here: reading a Home Assistant scale entity.
  */
 export function BridgeStep() {
-  const { token } = useGuide();
-  const displayToken = tokenForDisplay(token);
   const [placement, setPlacement] = useState<Placement | null>(null);
   const [method, setMethod] = useState<RunMethod | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -142,7 +140,7 @@ export function BridgeStep() {
               <CommandBlock
                 label="bridge/.env contents"
                 caption="bridge/.env"
-                code={envFileContents(displayToken, exposed)}
+                code={envFileContents(exposed)}
               />
               <p className="text-sm text-muted-foreground">Then start it from the repository root:</p>
               <CommandBlock label="start command" code={`node bridge/serve.mjs`} />
@@ -157,7 +155,7 @@ export function BridgeStep() {
                 label="docker build command"
                 code={`docker build -f bridge/Dockerfile -t gubbins-bridge .`}
               />
-              <CommandBlock label="docker run command" code={dockerRunCommand(displayToken, bindHost)} />
+              <CommandBlock label="docker run command" code={dockerRunCommand(bindHost)} />
               <p className="text-sm text-muted-foreground">
                 Replace <code className="rounded bg-secondary/60 px-1">{SNAPSHOT_PLACEHOLDER}</code> with the
                 real path to your data file (covered next). Mounting it{' '}
@@ -176,7 +174,7 @@ export function BridgeStep() {
               <CommandBlock
                 label="systemd env file contents"
                 caption="/etc/gubbins-bridge.env"
-                code={envFileContents(displayToken, exposed)}
+                code={envFileContents(exposed)}
               />
               <CommandBlock
                 label="systemd enable command"
@@ -322,19 +320,23 @@ function haEnvSettings(): string {
   ].join('\n');
 }
 
-/** The `.env` / env-file body, with the token filled in and LAN exposure added when needed. */
-function envFileContents(token: string, exposed: boolean): string {
-  const lines = [`GUBBINS_BRIDGE_TOKEN=${token}`, `GUBBINS_SNAPSHOT_PATH=${SNAPSHOT_PLACEHOLDER}`];
+/**
+ * The `.env` / env-file body, with LAN exposure added when needed.
+ *
+ * There is no token here: callers authenticate with a per-user API token minted in the app
+ * (issue #79), which reaches the bridge in the sync snapshot rather than through the environment.
+ */
+function envFileContents(exposed: boolean): string {
+  const lines = [`GUBBINS_SNAPSHOT_PATH=${SNAPSHOT_PLACEHOLDER}`];
   if (exposed) lines.push('GUBBINS_BRIDGE_HOST=0.0.0.0');
   return lines.join('\n');
 }
 
 /** The `docker run` command, publishing to loopback or the LAN depending on placement. */
-function dockerRunCommand(token: string, bindHost: string): string {
+function dockerRunCommand(bindHost: string): string {
   return [
     'docker run --rm \\',
     `  -p ${bindHost}:8787:8787 \\`,
-    `  -e GUBBINS_BRIDGE_TOKEN=${token} \\`,
     '  -e GUBBINS_SNAPSHOT_PATH=/data/gubbins-sync.json \\',
     `  -v ${SNAPSHOT_PLACEHOLDER}:/data/gubbins-sync.json:ro \\`,
     '  gubbins-bridge',

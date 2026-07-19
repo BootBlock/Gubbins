@@ -13,11 +13,12 @@
 #   docker build -f bridge/Dockerfile -t gubbins-bridge .
 #
 # Then run it, mounting your synced snapshot read-only and passing config via the
-# environment (NEVER bake a token or a snapshot into the image — see .dockerignore):
+# environment (NEVER bake a snapshot into the image — see .dockerignore). There is no token to
+# pass: callers authenticate with per-user API tokens minted in the app, which arrive with the
+# snapshot:
 #
 #   docker run --rm \
 #     -p 127.0.0.1:8787:8787 \
-#     -e GUBBINS_BRIDGE_TOKEN=your-long-random-token \
 #     -e GUBBINS_SNAPSHOT_PATH=/data/gubbins-sync.json \
 #     -v /path/to/synced/folder/gubbins-sync.json:/data/gubbins-sync.json:ro \
 #     gubbins-bridge

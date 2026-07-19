@@ -107,3 +107,47 @@ export interface UpdateUserInput {
   readonly disabledMessage?: string | null;
   readonly roleId?: string | null;
 }
+
+export interface ApiTokenRow {
+  readonly id: string;
+  readonly user_id: string;
+  readonly name: string;
+  readonly token_hash: string;
+  readonly token_prefix: string;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+/**
+ * A Bridge API token as the application sees it (issue #79, plan §1.3).
+ *
+ * `token_hash` is deliberately **absent**, for the same reason the password triple is absent
+ * from {@link User}: nothing outside the repository has any business handling it, and leaving
+ * it off the DTO means a careless `JSON.stringify` in a log or an export cannot carry it.
+ * The token itself exists only in the instant it is minted and is never stored at all.
+ */
+export interface ApiToken {
+  readonly id: string;
+  readonly userId: string;
+  /** Operator-facing label, so a token can be recognised and revoked without revealing it. */
+  readonly name: string;
+  /** The token's non-secret leading characters, purely so a list can identify the row. */
+  readonly tokenPrefix: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export interface CreateApiTokenInput {
+  readonly userId: string;
+  readonly name: string;
+}
+
+/**
+ * A newly-minted token: the stored record, plus the plaintext to show **once**. The two are
+ * returned together so a caller cannot record the row without having had the chance to show
+ * the token — there is no second opportunity, as it is never stored.
+ */
+export interface MintedApiTokenResult {
+  readonly apiToken: ApiToken;
+  readonly token: string;
+}

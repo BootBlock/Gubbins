@@ -8,17 +8,21 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
+import { mintTestToken } from '../fixtures/test-identity.ts';
 import { createBridgeServer, type BridgeServerState } from '../server.ts';
 import { createSseHub } from './sse.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-snapshot.json', import.meta.url);
-const TOKEN = 'placeholder-token-for-tests';
+let TOKEN = '';
 
 let hydrated: HydrateResult;
 let state: BridgeServerState;
 
 beforeAll(async () => {
   hydrated = await hydrateFromJson(await readFile(fileURLToPath(FIXTURE_URL), 'utf8'));
+  // A caller is identified by a per-user token now, so the test mints one for the built-in
+  // Admin (unrestricted, like the old shared token) against the hydrated fixture.
+  TOKEN = await mintTestToken(hydrated.driver);
   state = { driver: hydrated.driver, snapshotGeneratedAt: null };
 });
 
@@ -28,7 +32,7 @@ afterAll(async () => {
 
 /** Start a server (optionally with the SSE hub) on an ephemeral port; returns base URL + teardown. */
 async function startServer(hub?: ReturnType<typeof createSseHub>) {
-  const server = createBridgeServer({ token: TOKEN, getState: () => state, events: hub });
+  const server = createBridgeServer({ getState: () => state, events: hub });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
   return {

@@ -1,8 +1,8 @@
 # Users & ACLs — implementation plan
 
 > **Status:** 🟢 ACTIVE — phases 1 (schema, built-in users, attribution), 2 (permission engine),
-> 3 (authentication & session) and 4 (module, gating & admin UI) shipped; phase 5 (Bridge tokens)
-> next.
+> 3 (authentication & session), 4 (module, gating & admin UI) and 5 (Bridge per-user tokens)
+> shipped; phase 6 (wiki & i18n sweep) next.
 
 Gubbins has no concept of a user. Every action is anonymous, `item_history` records *what*
 happened but never *who*, and the Bridge authenticates with a single all-or-nothing bearer
@@ -322,6 +322,62 @@ the Bridge, write attribution, and the `bridge/README.md` permission matrix rewr
 identities rather than a single token. `npm run smoke:bridge` is mandatory here — the Bridge's
 strip-only loader forbids TS parameter properties and enums, which a new permission class could
 easily reintroduce.
+
+#### Phase 5 as built — decisions worth knowing before phase 6
+
+- **A token is hashed with plain SHA-256, not PBKDF2, and that is deliberate.** The password
+  precedent (`password.ts`) stretches to 600k iterations because a human-chosen password is
+  guessable; neither half of that reasoning survives here. A token is 32 bytes of CSPRNG output,
+  so there is no dictionary to slow down — and the Bridge must resolve one on *every request*,
+  where a 600k-iteration KDF would be a self-inflicted denial of service and a standing
+  invitation to cache credentials somewhere worse. What the hash buys is that the stored form is
+  not a usable credential, which matters because `api_tokens` rows travel in the sync snapshot.
+- **Tokens sync, because that is the only way they reach the Bridge.** The Bridge owns no
+  database; it hydrates the snapshot. So `api_tokens` sits in `SYNC_TABLES` for exactly the
+  reason `webhooks` does — syncing it *is* the delivery mechanism — and a token excluded from
+  the snapshot could never authenticate anything.
+- **Revocation is a hard, tombstoned delete, not a `revoked_at` flag.** A flag obliges every
+  consumer to remember to check it, and the one that forgets keeps honouring a revoked
+  credential; a missing row cannot be honoured by anybody. Deletion also rides the sync path
+  every other deletion already uses, so a revocation propagates with no new machinery.
+- **`ON DELETE CASCADE`, which is the opposite of what `item_history.actor_user_id` does.**
+  History is a record of what happened and must outlive the person, so phase 1 re-points it to
+  System. A credential is authority *to act*, and must die with the account it speaks for.
+- **The Bridge resolves every token with `moduleEnabled: true`, unconditionally.** Whether
+  sign-in is switched on is a per-device UI choice the Bridge cannot see and should not inherit.
+  A token was minted deliberately, for one named user, so it carries that user's permissions
+  always. Single-user mode is unaffected: a token minted against Admin resolves to
+  `unrestricted`, which is what the shared token effectively was.
+- **Authentication now needs a loaded snapshot, so the Bridge fails closed before its first
+  one.** Every route — including the `/api/v1/scale/*` reads, which deliberately did *not* need
+  a snapshot before — answers `503` until one hydrates. Letting a request through because we
+  cannot yet tell who is asking is the wrong direction on the only question this feature exists
+  to answer.
+- **`403 forbidden` is a new, distinct code from `401`.** "I don't know who you are" and "I know
+  exactly who you are and the answer is no" send an operator to different places — a bad token
+  versus a role — and conflating them would waste their afternoon. `errorResponses(401, …)` in
+  the OpenAPI document now implies `403`, so no operation can be documented with one and not the
+  other.
+- **Every route requires a `bridge:read` / `bridge:write` capability *plus* the subject it
+  exposes** (the map lives in `bridge/src/identity.ts`). The `bridge:*` half lets an operator
+  withhold remote access from a role without unpicking each subject. Two mappings are worth
+  noting: the syndication feeds are gated on `audit:view` because they publish the Activity
+  Ledger, and the stock-adjust POSTs on `stock:write` rather than `items:write` — the phase-2
+  line the Stocker role exists to draw.
+- **The env capability flags stay an outer bound, and there is a test for it.** A route the
+  operator disabled is a `404` for an unrestricted caller too; permissions can only ever narrow
+  what the flags already allowed, never re-open it.
+- **The Home Assistant guide stopped generating tokens.** Its "Access token" step used to mint a
+  random string in the browser for the operator to paste into `.env`; with `GUBBINS_BRIDGE_TOKEN`
+  gone that would produce a value the Bridge has never heard of. The step now points at Users →
+  API tokens and takes the result, and `features/home-assistant/token.ts` was deleted rather than
+  left as a generator with no destination.
+- **MCP writes are attributed to System, stated once at the composition root.** stdio carries no
+  credential, so there is no identity to attribute to; `mcp/serve.ts` binds `SYSTEM_USER_ID`
+  explicitly rather than letting the write path default to it silently.
+- **`npm run smoke:bridge` now seeds a token into a temporary snapshot** and asserts both a `200`
+  for it and a `401` for an unknown one — so the strip-only loader check exercises the real
+  identity-resolution path (repository + permission engine) rather than skipping past it.
 
 ### Phase 6 — Wiki & i18n sweep
 

@@ -41,8 +41,12 @@ const rolesResult = { data: { rows: [] as Role[] }, isPending: false, isError: f
 vi.mock('./queries', () => ({
   useUsers: () => usersResult,
   useRoles: () => rolesResult,
+  // The token dialog is closed in every test here, so this stays inert — but it must still be
+  // mocked, or the hook resolves to `undefined` and the screen fails to render at all.
+  useApiTokens: () => ({ data: [], isPending: false }),
   userKeys: { all: ['users'] },
   roleKeys: { all: ['roles'] },
+  apiTokenKeys: { all: ['api-tokens'] },
 }));
 
 // `vi.mock` is hoisted above this file's bindings, so the spy the factory closes over is created
@@ -59,6 +63,8 @@ vi.mock('./mutations', () => {
     useCreateRole: idle,
     useUpdateRole: idle,
     useDeleteRole: idle,
+    useMintApiToken: idle,
+    useRevokeApiToken: idle,
   };
 });
 

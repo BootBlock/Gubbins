@@ -18,6 +18,7 @@ import { CategoryRepository, INHERIT_VALUE } from '@/db/repositories/CategoryRep
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
+import { mintTestToken } from '../fixtures/test-identity.ts';
 import { loadItemDetail } from '../item-detail.ts';
 import { toItemFieldValues } from './dto.ts';
 import {
@@ -40,6 +41,7 @@ const ITEM_ID = 'item-esp32';
 const CATEGORY_ID = 'cat-electronics';
 const LOCATION_ID = 'loc-shelf-2';
 
+let TOKEN = '';
 let hydrated: HydrateResult;
 
 /**
@@ -70,6 +72,9 @@ async function seedFields(): Promise<void> {
 
 beforeEach(async () => {
   hydrated = await hydrateFromJson(await readFile(fileURLToPath(FIXTURE_URL), 'utf8'));
+  // A caller is identified by a per-user token now, so the test mints one for the built-in
+  // Admin (unrestricted, like the old shared token) against the hydrated fixture.
+  TOKEN = await mintTestToken(hydrated.driver);
   await seedFields();
 });
 
@@ -200,7 +205,6 @@ describe('MCP tools see the same shape', () => {
 });
 
 describe('over HTTP', () => {
-  const TOKEN = 'placeholder-token-for-tests';
   let server: ReturnType<typeof createBridgeServer>;
   let baseUrl: string;
 
@@ -209,7 +213,7 @@ describe('over HTTP', () => {
       driver: hydrated.driver,
       snapshotGeneratedAt: new Date(hydrated.snapshot.generatedAt).toISOString(),
     };
-    server = createBridgeServer({ token: TOKEN, getState: () => state });
+    server = createBridgeServer({ getState: () => state });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });

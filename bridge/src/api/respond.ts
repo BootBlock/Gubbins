@@ -18,6 +18,11 @@ import type { ServerResponse } from 'node:http';
 export type ApiErrorCode =
   | 'bad_request'
   | 'unauthorized'
+  // The token was valid but its owner's role does not permit this route — HTTP 403. Distinct
+  // from `unauthorized` on purpose: "I don't know who you are" and "I know exactly who you are
+  // and the answer is no" call for different fixes, and conflating them would send an operator
+  // hunting for a bad token when the actual problem is a role (issue #79).
+  | 'forbidden'
   | 'not_found'
   | 'method_not_allowed'
   | 'too_many_requests'

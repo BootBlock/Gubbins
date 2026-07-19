@@ -16,6 +16,8 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ITEM_HISTORY_TABLE, SYNC_TABLES } from '@/db/repositories';
+import { ADMIN_USER_ID, SYSTEM_USER_ID } from '@/db/repositories/constants';
+import { UserRepository } from '@/db/repositories/UserRepository.ts';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
@@ -29,6 +31,12 @@ import { applyOperation, createWriteExecutor, executeWrite, MAX_NOTE_LENGTH, Wri
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
 const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE];
+/**
+ * The actor every write in this file is attributed to. Since issue #79 the bridge writes as the
+ * owner of the token that authorised the request; these tests drive the layer below that, so they
+ * name an actor explicitly — which is exactly the point of making it a required argument.
+ */
+const ACTOR = ADMIN_USER_ID;
 
 async function fixtureJson(): Promise<string> {
   return readFile(fileURLToPath(FIXTURE_URL), 'utf8');
@@ -51,11 +59,15 @@ describe('applyOperation', () => {
   });
 
   it('adjusts a DISCRETE quantity up and logs it', async () => {
-    const item = await applyOperation(hydrated.driver, {
-      kind: 'adjust-quantity',
-      itemId: 'item-m3-bolt',
-      delta: 5,
-    });
+    const item = await applyOperation(
+      hydrated.driver,
+      {
+        kind: 'adjust-quantity',
+        itemId: 'item-m3-bolt',
+        delta: 5,
+      },
+      ACTOR,
+    );
     expect(item.quantity).toBe(47);
     const history = await hydrated.driver.query<{ action: string; quantity_delta: number }>(
       "SELECT action, quantity_delta FROM item_history WHERE item_id = 'item-m3-bolt' ORDER BY created_at DESC LIMIT 1;",
@@ -64,27 +76,55 @@ describe('applyOperation', () => {
     expect(Number(history[0]?.quantity_delta)).toBe(5);
   });
 
-  it('adjusts a DISCRETE quantity down', async () => {
-    const item = await applyOperation(hydrated.driver, {
-      kind: 'adjust-quantity',
-      itemId: 'item-m3-bolt',
-      delta: -2,
+  // Issue #79: the bridge used to attribute every write to System because a shared token named
+  // nobody. It now writes as the owner of the presented token, which is the whole point of the
+  // per-user credential — the ledger has to say who, not merely what.
+  it('attributes the ledger entry to the actor it was given, not to System', async () => {
+    const actor = await new UserRepository(hydrated.driver).create({
+      username: 'kit',
+      displayName: 'Kit Alvarez',
     });
+    await applyOperation(
+      hydrated.driver,
+      { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1 },
+      actor.id,
+    );
+    const history = await hydrated.driver.query<{ actor_user_id: string }>(
+      "SELECT actor_user_id FROM item_history WHERE item_id = 'item-m3-bolt' ORDER BY created_at DESC LIMIT 1;",
+    );
+    expect(history[0]?.actor_user_id).toBe(actor.id);
+    expect(history[0]?.actor_user_id).not.toBe(SYSTEM_USER_ID);
+  });
+
+  it('adjusts a DISCRETE quantity down', async () => {
+    const item = await applyOperation(
+      hydrated.driver,
+      {
+        kind: 'adjust-quantity',
+        itemId: 'item-m3-bolt',
+        delta: -2,
+      },
+      ACTOR,
+    );
     expect(item.quantity).toBe(40);
   });
 
   it('rejects an unknown item with a 404 WriteError', async () => {
     await expect(
-      applyOperation(hydrated.driver, { kind: 'adjust-quantity', itemId: 'nope', delta: 1 }),
+      applyOperation(hydrated.driver, { kind: 'adjust-quantity', itemId: 'nope', delta: 1 }, ACTOR),
     ).rejects.toMatchObject({ name: 'WriteError', status: 404, code: 'not_found' });
   });
 
   it('rejects a below-zero adjustment with a 422 and the app’s own message', async () => {
-    const err = await applyOperation(hydrated.driver, {
-      kind: 'adjust-quantity',
-      itemId: 'item-esp32', // total 7
-      delta: -10,
-    }).catch((e) => e);
+    const err = await applyOperation(
+      hydrated.driver,
+      {
+        kind: 'adjust-quantity',
+        itemId: 'item-esp32', // total 7
+        delta: -10,
+      },
+      ACTOR,
+    ).catch((e) => e);
     expect(err).toBeInstanceOf(WriteError);
     expect(err.status).toBe(422);
     expect(err.code).toBe('unprocessable');
@@ -93,39 +133,51 @@ describe('applyOperation', () => {
 
   it('rejects a non-integer delta with a 422', async () => {
     await expect(
-      applyOperation(hydrated.driver, { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1.5 }),
+      applyOperation(hydrated.driver, { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1.5 }, ACTOR),
     ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
   });
 
   it('rejects a note longer than the documented bound with a 422', async () => {
     // The bound lives here, in the shared core, so BOTH write surfaces (HTTP and the MCP tools)
     // honour it — an unbounded string must never reach the history ledger.
-    const err = await applyOperation(hydrated.driver, {
-      kind: 'adjust-quantity',
-      itemId: 'item-m3-bolt',
-      delta: 1,
-      note: 'x'.repeat(MAX_NOTE_LENGTH + 1),
-    }).catch((e) => e);
+    const err = await applyOperation(
+      hydrated.driver,
+      {
+        kind: 'adjust-quantity',
+        itemId: 'item-m3-bolt',
+        delta: 1,
+        note: 'x'.repeat(MAX_NOTE_LENGTH + 1),
+      },
+      ACTOR,
+    ).catch((e) => e);
     expect(err).toBeInstanceOf(WriteError);
     expect(err.status).toBe(422);
   });
 
   it('accepts a note exactly at the bound', async () => {
-    const item = await applyOperation(hydrated.driver, {
-      kind: 'adjust-quantity',
-      itemId: 'item-m3-bolt',
-      delta: 1,
-      note: 'x'.repeat(MAX_NOTE_LENGTH),
-    });
+    const item = await applyOperation(
+      hydrated.driver,
+      {
+        kind: 'adjust-quantity',
+        itemId: 'item-m3-bolt',
+        delta: 1,
+        note: 'x'.repeat(MAX_NOTE_LENGTH),
+      },
+      ACTOR,
+    );
     expect(item.id).toBe('item-m3-bolt');
   });
 
   it('rejects a gauge adjustment on a DISCRETE item with a 422', async () => {
-    const err = await applyOperation(hydrated.driver, {
-      kind: 'adjust-gauge',
-      itemId: 'item-m3-bolt',
-      delta: -10,
-    }).catch((e) => e);
+    const err = await applyOperation(
+      hydrated.driver,
+      {
+        kind: 'adjust-gauge',
+        itemId: 'item-m3-bolt',
+        delta: -10,
+      },
+      ACTOR,
+    ).catch((e) => e);
     expect(err).toBeInstanceOf(WriteError);
     expect(err.status).toBe(422);
     expect(err.message).toMatch(/CONSUMABLE_GAUGE/);
@@ -138,6 +190,7 @@ describe('executeWrite', () => {
   it('applies the mutation and writes the merged snapshot back atomically', async () => {
     let stored = await fixtureJson();
     const detail = await executeWrite({
+      actorUserId: ACTOR,
       snapshotPath: '/virtual/gubbins-sync.json',
       op: { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 5, note: 'restock' },
       io: {
@@ -163,6 +216,7 @@ describe('executeWrite', () => {
   it('surfaces a read failure as a 503 (snapshot briefly unavailable)', async () => {
     await expect(
       executeWrite({
+        actorUserId: ACTOR,
         snapshotPath: '/virtual/missing.json',
         op: { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1 },
         io: {
@@ -184,8 +238,8 @@ describe('executeWrite', () => {
     });
     // Fire two +1 writes without awaiting between them; serialisation must apply both.
     await Promise.all([
-      execute({ kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1 }),
-      execute({ kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1 }),
+      execute({ kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1 }, ACTOR),
+      execute({ kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1 }, ACTOR),
     ]);
     const after = await hydrateFromJson(stored);
     expect(await quantityOf(after.driver, 'item-m3-bolt')).toBe(44); // 42 + 1 + 1, none lost
@@ -204,6 +258,7 @@ describe('round-trip through the app’s §7.3 reconcile (no drift)', () => {
   ): Promise<{ json: string; bridge: HydrateResult }> {
     let written = onDiskJson;
     await executeWrite({
+      actorUserId: ACTOR,
       snapshotPath: '/virtual/gubbins-sync.json',
       op,
       io: { readSnapshot: async () => onDiskJson, writeSnapshotAtomic: async (_p, t) => void (written = t) },

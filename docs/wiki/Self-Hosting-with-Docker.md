@@ -87,7 +87,8 @@ about your inventory — can run in the same Compose setup. It's off unless you 
 docker compose --profile bridge up -d
 ```
 
-The bridge needs an access token and a copy of your synced data; see
+The bridge needs a copy of your synced data, and each tool that queries it needs an
+[[API token|Bridge-API-Tokens]] minted in the app — there's no token to set on the container. See
 [[Running the bridge|Running-the-Bridge]] for what to set and why, and
 [[Cloud sync|Cloud-Sync]] for producing the synced file it reads.
 

@@ -38,18 +38,21 @@ import { useFeature } from '@/features/modules/useFeature';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { BUILTIN_USER_IDS } from '@/db/repositories/constants';
 import type { Role, User } from '@/db/repositories/types';
-import { useRoles, useUsers } from './queries';
+import { useApiTokens, useRoles, useUsers } from './queries';
 import {
   useClearUserPassword,
   useCreateRole,
   useCreateUser,
   useDeleteRole,
   useDeleteUser,
+  useMintApiToken,
+  useRevokeApiToken,
   useSetUserPassword,
   useUpdateRole,
   useUpdateUser,
 } from './mutations';
 import { UserFormDialog, type UserFormValues } from './components/UserFormDialog';
+import { ApiTokensDialog } from './components/ApiTokensDialog';
 import { PasswordDialog } from './components/PasswordDialog';
 import { RoleFormDialog, type RoleFormValues } from './components/RoleFormDialog';
 
@@ -71,17 +74,29 @@ export function UsersScreen() {
   const deleteUser = useDeleteUser();
   const setPassword = useSetUserPassword();
   const clearPassword = useClearUserPassword();
+  const mintApiToken = useMintApiToken();
+  const revokeApiToken = useRevokeApiToken();
   const createRole = useCreateRole();
   const updateRole = useUpdateRole();
   const deleteRole = useDeleteRole();
 
   const [userDialog, setUserDialog] = useState<{ readonly user: User | null } | null>(null);
   const [passwordFor, setPasswordFor] = useState<User | null>(null);
+  const [tokensFor, setTokensFor] = useState<User | null>(null);
+  // The plaintext of a token minted in this session, paired with the id of the row it belongs
+  // to. Held here rather than in the dialog so it is cleared when the dialog closes — the token
+  // is unrecoverable, so it must not linger. The id is what lets a revocation clear it only when
+  // it is *that* token being revoked.
+  const [minted, setMinted] = useState<{ readonly id: string; readonly token: string } | null>(null);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
   const [roleDialog, setRoleDialog] = useState<{ readonly role: Role | null } | null>(null);
   const [deletingRole, setDeletingRole] = useState<Role | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
+
+  // Declared after the state it reads: only fetched while a token dialog is open (see
+  // `useApiTokens`), so it stays inert on every other visit to this screen.
+  const apiTokensQuery = useApiTokens(tokensFor?.id ?? null);
 
   const users = usersQuery.data?.rows ?? [];
   const roles = rolesQuery.data?.rows ?? [];
@@ -103,6 +118,15 @@ export function UsersScreen() {
   const openPasswordDialog = (user: User): void => {
     setFormError(null);
     setPasswordFor(user);
+  };
+  const openTokensDialog = (user: User): void => {
+    setFormError(null);
+    setMinted(null);
+    setTokensFor(user);
+  };
+  const closeTokensDialog = (): void => {
+    setMinted(null);
+    setTokensFor(null);
   };
 
   const submitUser = (values: UserFormValues): void => {
@@ -202,6 +226,7 @@ export function UsersScreen() {
                     isSelf={user.id === signedInUserId}
                     onEdit={() => openUserDialog(user)}
                     onPassword={() => openPasswordDialog(user)}
+                    onTokens={() => openTokensDialog(user)}
                     onDelete={() => {
                       setFormError(null);
                       setDeletingUser(user);
@@ -269,6 +294,48 @@ export function UsersScreen() {
           error={formError}
           onSubmit={submitUser}
           onClose={() => setUserDialog(null)}
+        />
+      ) : null}
+
+      {tokensFor ? (
+        <ApiTokensDialog
+          key={tokensFor.id}
+          user={tokensFor}
+          tokens={apiTokensQuery.data ?? []}
+          loading={apiTokensQuery.isPending}
+          busy={mintApiToken.isPending || revokeApiToken.isPending}
+          error={formError}
+          mintedToken={minted?.token ?? null}
+          onMint={(name) => {
+            setFormError(null);
+            mintApiToken.mutate(
+              { userId: tokensFor.id, name },
+              {
+                onSuccess: ({ apiToken, token }) => {
+                  setMinted({ id: apiToken.id, token });
+                  setAnnouncement(t('users.announce.tokenMinted', { vars: { name } }));
+                },
+                onError,
+              },
+            );
+          }}
+          onRevoke={(token) => {
+            setFormError(null);
+            revokeApiToken.mutate(
+              { id: token.id, userId: tokensFor.id },
+              {
+                onSuccess: () => {
+                  // Only clear the displayed plaintext when it is *this* token being revoked —
+                  // revoking a different one must not snatch away a token the user has not
+                  // copied yet.
+                  setMinted((current) => (current?.id === token.id ? null : current));
+                  setAnnouncement(t('users.announce.tokenRevoked', { vars: { name: token.name } }));
+                },
+                onError,
+              },
+            );
+          }}
+          onClose={closeTokensDialog}
         />
       ) : null}
 
@@ -411,6 +478,7 @@ function UserRow({
   isSelf,
   onEdit,
   onPassword,
+  onTokens,
   onDelete,
 }: {
   readonly user: User;
@@ -418,6 +486,7 @@ function UserRow({
   readonly isSelf: boolean;
   readonly onEdit: () => void;
   readonly onPassword: () => void;
+  readonly onTokens: () => void;
   readonly onDelete: () => void;
 }) {
   const t = useT();
@@ -472,10 +541,17 @@ function UserRow({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* System never signs in and never speaks for anyone over the Bridge, so neither a
+            password nor a credential belongs on its row. */}
         {!isSystem ? (
-          <Button variant="outline" size="sm" onClick={onPassword}>
-            {t('users.row.passwordAction')}
-          </Button>
+          <>
+            <Button variant="outline" size="sm" onClick={onPassword}>
+              {t('users.row.passwordAction')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={onTokens}>
+              {t('users.row.tokensAction')}
+            </Button>
+          </>
         ) : null}
         {!builtin ? (
           <>

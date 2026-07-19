@@ -25,6 +25,7 @@ import { MaintenanceRepository } from './MaintenanceRepository';
 import { ProjectRepository } from './ProjectRepository';
 import { PurchaseOrderRepository } from './PurchaseOrderRepository';
 import { ReportRepository } from './ReportRepository';
+import { ApiTokenRepository } from './ApiTokenRepository';
 import { RoleRepository } from './RoleRepository';
 import { StorageRepository } from './StorageRepository';
 import { SuggestionRepository } from './SuggestionRepository';
@@ -52,6 +53,7 @@ export { StorageRepository } from './StorageRepository';
 export { ContactRepository } from './ContactRepository';
 export { UserRepository } from './UserRepository';
 export { RoleRepository } from './RoleRepository';
+export { ApiTokenRepository } from './ApiTokenRepository';
 export {
   DiagnosticsRepository,
   type DiagnosticsSnapshot,
@@ -138,6 +140,7 @@ let tarePresetRepository: TarePresetRepository | null = null;
 let webhookRepository: WebhookRepository | null = null;
 let userRepository: UserRepository | null = null;
 let roleRepository: RoleRepository | null = null;
+let apiTokenRepository: ApiTokenRepository | null = null;
 
 /**
  * Production repository options: the §7.6.1 write-gate, plus the actor every write is
@@ -170,6 +173,11 @@ export function getUserRepository(): UserRepository {
 export function getRoleRepository(): RoleRepository {
   roleRepository ??= new RoleRepository(getDatabaseDriver(), productionOptions);
   return roleRepository;
+}
+
+export function getApiTokenRepository(): ApiTokenRepository {
+  apiTokenRepository ??= new ApiTokenRepository(getDatabaseDriver(), productionOptions);
+  return apiTokenRepository;
 }
 
 export function getItemRepository(): ItemRepository {

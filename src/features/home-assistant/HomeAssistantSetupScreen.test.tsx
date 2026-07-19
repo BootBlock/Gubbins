@@ -57,7 +57,10 @@ describe('HomeAssistantSetupScreen', () => {
     expect(screen.getByText(/we'll go through it together/i)).toBeInTheDocument();
   });
 
-  it('moves forward with Next and generates a real token on the token step', async () => {
+  // The step no longer *generates* a token: since issue #79 a token belongs to a Gubbins account
+  // and is minted on the Users screen, so the guide's job is to take the value, not invent one.
+  // A generated string would be one the bridge has never heard of.
+  it('moves forward with Next and accepts a pasted token on the token step', async () => {
     const user = userEvent.setup();
     renderGuide();
 
@@ -67,9 +70,13 @@ describe('HomeAssistantSetupScreen', () => {
 
     const input = screen.getByTestId('token-input') as HTMLInputElement;
     expect(input.value).toBe('');
-    await user.click(screen.getByTestId('generate-token'));
-    expect(input.value).toMatch(/^[0-9a-f]{64}$/);
-    expect(screen.getByTestId('token-generated')).toBeInTheDocument();
+    // Nothing here offers to make one — the copy sends the user to Users → API tokens.
+    expect(screen.queryByTestId('generate-token')).not.toBeInTheDocument();
+
+    await user.type(input, 'gbn_placeholder');
+    expect(input.value).toBe('gbn_placeholder');
+    // Once a token is present, it is offered back for copying and for saving to this device.
+    expect(screen.getByTestId('save-token-device')).toBeInTheDocument();
   });
 
   it('lets the user jump to any step from the progress rail', async () => {

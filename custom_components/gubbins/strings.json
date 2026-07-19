@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Gubbins inventory bridge",
-        "description": "Connect to your local Gubbins bridge. The token is the GUBBINS_BRIDGE_TOKEN you set in the bridge's .env file; it is stored securely by Home Assistant and never written to YAML.",
+        "description": "Connect to your local Gubbins bridge. The token is an API token minted in the Gubbins app (Users → an account → API tokens); it is stored securely by Home Assistant and never written to YAML.",
         "data": {
           "host": "Host",
           "port": "Port",
@@ -13,7 +13,7 @@
       },
       "zeroconf_confirm": {
         "title": "Gubbins inventory bridge",
-        "description": "Discovered a Gubbins bridge at {host}:{port}. Enter its access token (the GUBBINS_BRIDGE_TOKEN you set in the bridge's .env file) to finish. The token is never advertised over the network — it is stored securely by Home Assistant.",
+        "description": "Discovered a Gubbins bridge at {host}:{port}. Enter its access token (an API token minted in the Gubbins app (Users → an account → API tokens)) to finish. The token is never advertised over the network — it is stored securely by Home Assistant.",
         "data": {
           "token": "Access token"
         }
@@ -21,7 +21,7 @@
     },
     "error": {
       "cannot_connect": "Could not reach the bridge. Check the host and port, and that the bridge is running.",
-      "invalid_auth": "The bridge rejected the token. Check GUBBINS_BRIDGE_TOKEN matches."
+      "invalid_auth": "The bridge did not recognise the token. It may have been mistyped, or revoked in the Gubbins app."
     },
     "abort": {
       "already_configured": "This Gubbins bridge is already configured."

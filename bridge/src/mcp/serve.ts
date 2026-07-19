@@ -26,6 +26,7 @@ import { loadAllowWrites, loadSnapshotPath, type Env } from '../config.ts';
 import { createSnapshotWatcher, type SnapshotWatcher } from '../watcher.ts';
 import { detectSource, writesEnabledForSource } from '../sqlite-source.ts';
 import { createWriteExecutor } from '../write.ts';
+import { SYSTEM_USER_ID } from '@/db/repositories/constants';
 import { errorDetail } from '../errors.ts';
 import { ALL_TOOLS, createWriteTools } from './tools.ts';
 import { runStdioServer, type StdioServer } from './stdio.ts';
@@ -56,8 +57,13 @@ export async function startMcpServer(env: Env = process.env): Promise<RunningMcp
   // never built, so the tool list stays read-only and nothing can mutate the inventory.
   const source = await detectSource(snapshotPath);
   const writesEnabled = writesEnabledForSource(allowWrites, source);
+  // stdio carries no credential, so there is no user to attribute an MCP write to (issue #79):
+  // anyone who can launch this process already has the snapshot. Writes are therefore recorded
+  // against the System user — the actor the app itself writes as — which is stated here once
+  // rather than being a silent default inside the write path.
+  const writeExecutor = createWriteExecutor(snapshotPath);
   const tools = writesEnabled
-    ? [...ALL_TOOLS, ...createWriteTools(createWriteExecutor(snapshotPath))]
+    ? [...ALL_TOOLS, ...createWriteTools((op) => writeExecutor(op, SYSTEM_USER_ID))]
     : ALL_TOOLS;
 
   const server = runStdioServer({ getState: () => watcher.getState(), tools });

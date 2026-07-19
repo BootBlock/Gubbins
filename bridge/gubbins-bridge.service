@@ -7,13 +7,15 @@
 #      build; see bridge/README.md -> Requirements for the FTS5 gap) must be on PATH
 #      (/usr/bin/node).
 #   2. Create /etc/gubbins-bridge.env from bridge/.env.example with your real
-#      GUBBINS_BRIDGE_TOKEN and GUBBINS_SNAPSHOT_PATH. It holds the bearer token, so:
+#      GUBBINS_SNAPSHOT_PATH. It may hold outbound credentials (MQTT, Home Assistant), so:
 #         chown root:gubbins /etc/gubbins-bridge.env && chmod 640 /etc/gubbins-bridge.env
 #      (Never commit this file. Set GUBBINS_BRIDGE_HOST=0.0.0.0 in it only if Home
 #      Assistant runs on another machine and needs LAN access.)
+#      Callers authenticate with per-user API tokens minted in the Gubbins app, so there is
+#      no inbound token to put here.
 #   3. Copy this file to /etc/systemd/system/gubbins-bridge.service.
 #   4. systemctl daemon-reload && systemctl enable --now gubbins-bridge
-#   5. journalctl -u gubbins-bridge -f   # logs never contain the token or any item data
+#   5. journalctl -u gubbins-bridge -f   # logs never contain a token or any item data
 #
 [Unit]
 Description=Gubbins read-only inventory query bridge

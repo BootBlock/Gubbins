@@ -9,14 +9,12 @@ import { DEFAULT_LOOKUP_DEBOUNCE_MS, MAX_LOOKUP_DEBOUNCE_MS } from './events/loo
 import { DEFAULT_STALE_AFTER_FAILURES } from './snapshot-health.ts';
 
 const VALID: Record<string, string> = {
-  GUBBINS_BRIDGE_TOKEN: 'placeholder-token-for-tests',
   GUBBINS_SNAPSHOT_PATH: '/tmp/synthetic/gubbins-sync.json',
 };
 
 describe('loadConfig (HA-3)', () => {
   it('resolves required values and applies host/port defaults', () => {
     expect(loadConfig(VALID)).toEqual({
-      token: 'placeholder-token-for-tests',
       snapshotPath: '/tmp/synthetic/gubbins-sync.json',
       host: DEFAULT_HOST,
       port: DEFAULT_PORT,
@@ -227,16 +225,16 @@ describe('loadConfig (HA-3)', () => {
     expect(config.port).toBe(9999);
   });
 
-  it('throws when the token is missing', () => {
-    expect(() => loadConfig({ GUBBINS_SNAPSHOT_PATH: VALID.GUBBINS_SNAPSHOT_PATH })).toThrow(
-      /GUBBINS_BRIDGE_TOKEN/,
-    );
+  // There is no inbound bearer token in the environment any more (issue #79, plan §1.3): callers
+  // present per-user tokens minted in the app, which arrive in the snapshot. A config that names
+  // one is simply ignored rather than being honoured as a back door.
+  it('needs no inbound token, and ignores a leftover one', () => {
+    const config = loadConfig({ ...VALID, GUBBINS_BRIDGE_TOKEN: 'placeholder-token-for-tests' });
+    expect(config).not.toHaveProperty('token');
   });
 
   it('throws when the snapshot path is missing', () => {
-    expect(() => loadConfig({ GUBBINS_BRIDGE_TOKEN: VALID.GUBBINS_BRIDGE_TOKEN })).toThrow(
-      /GUBBINS_SNAPSHOT_PATH/,
-    );
+    expect(() => loadConfig({})).toThrow(/GUBBINS_SNAPSHOT_PATH/);
   });
 
   it('rejects an out-of-range port', () => {

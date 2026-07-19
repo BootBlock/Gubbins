@@ -48,7 +48,6 @@ services:
       # a required variable here would break the plain `docker compose up -d` that runs the
       # app alone. The bridge refuses to start without a token anyway, with a clearer
       # message than interpolation can give (bridge/src/config.ts).
-      GUBBINS_BRIDGE_TOKEN: ${GUBBINS_BRIDGE_TOKEN:-}
       GUBBINS_SNAPSHOT_PATH: /data/gubbins-sync.json
     volumes:
       # Point the left-hand side at the folder the app syncs to, and keep it read-only:
