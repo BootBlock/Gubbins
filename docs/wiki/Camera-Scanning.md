@@ -80,6 +80,17 @@ handier.
 > doesn't appear and camera scanning works as normal. The first tap asks your permission to use
 > NFC.
 
+## When the camera won't start
+
+If Gubbins can't get the camera going — permission was refused, the device has no camera, or the
+browser blocks the live picture from playing — the scanner says so plainly and points you at the
+manual box, rather than sitting on a blank viewfinder. Grant camera access in your browser's site
+settings and tap **Scan** again, or type the code in by hand in the meantime.
+
+> **ℹ️ Note**
+> On iPhone and iPad, a browser may refuse to start a live picture in some situations — for
+> example inside another app's in-app browser. Opening Gubbins in Safari itself usually clears it.
+
 ## When a code isn't found
 
 A barcode with no matching item isn't an error — it just means nothing's linked to it yet. Gubbins

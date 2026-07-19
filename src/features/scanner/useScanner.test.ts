@@ -20,9 +20,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderScanner(status: ScannerStatus, dispatch: (action: ScannerAction) => void) {
-  const videoRef = { current: null };
+function renderScanner(
+  status: ScannerStatus,
+  dispatch: (action: ScannerAction) => void,
+  video: HTMLVideoElement | null = null,
+) {
+  const videoRef = { current: video };
   return renderHook(() => useScanner({ videoRef, status, dispatch, onDecode: vi.fn() }));
+}
+
+/** A video element stand-in whose `play()` resolves or rejects on command. */
+function fakeVideo(play: () => Promise<void>) {
+  return { srcObject: null, play } as unknown as HTMLVideoElement;
+}
+
+function mockCamera(stream: unknown = { getTracks: () => [] }) {
+  const getUserMedia = vi.fn().mockResolvedValue(stream);
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+  return getUserMedia;
 }
 
 describe('useScanner — camera acquisition (no-camera lab flag)', () => {
@@ -47,18 +62,44 @@ describe('useScanner — camera acquisition (no-camera lab flag)', () => {
   });
 
   it('requests the real camera as usual when the flag is off', async () => {
-    const stream = { getTracks: () => [] };
-    const getUserMedia = vi.fn().mockResolvedValue(stream);
-    Object.defineProperty(navigator, 'mediaDevices', {
-      configurable: true,
-      value: { getUserMedia },
-    });
+    const getUserMedia = mockCamera();
     const dispatch = vi.fn();
 
     renderScanner('REQUESTING_PERMISSIONS', dispatch);
 
     await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
     await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'PERMISSION_GRANTED' }));
+  });
+
+  it('surfaces a stream error when the granted stream refuses to play (issue #317)', async () => {
+    mockCamera();
+    const dispatch = vi.fn();
+    const video = fakeVideo(() => Promise.reject(new DOMException('blocked', 'NotAllowedError')));
+
+    renderScanner('REQUESTING_PERMISSIONS', dispatch, video);
+
+    await waitFor(() => {
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'STREAM_ERROR',
+        message: 'The camera preview could not be started. You can still enter codes manually.',
+      });
+    });
+  });
+
+  it('stays silent when playback aborts because the stream was already torn down', async () => {
+    mockCamera();
+    const dispatch = vi.fn();
+    let rejectPlay!: (reason: unknown) => void;
+    const video = fakeVideo(() => new Promise<void>((_, reject) => (rejectPlay = reject)));
+
+    const { unmount } = renderScanner('REQUESTING_PERMISSIONS', dispatch, video);
+
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'PERMISSION_GRANTED' }));
+    unmount();
+    rejectPlay(new DOMException('interrupted', 'AbortError'));
+    await Promise.resolve();
+
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'STREAM_ERROR' }));
   });
 
   it('reports no camera support when off and the browser genuinely has none (byte-identical baseline)', async () => {

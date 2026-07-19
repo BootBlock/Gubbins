@@ -124,7 +124,18 @@ export function useScanner({
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          void videoRef.current.play().catch(() => {});
+          // A granted stream still has to *play*: iOS Safari's autoplay policy can refuse, and a
+          // detached element aborts. Surfacing it beats leaving the overlay in its normal
+          // "scanning" state over a black frame the user waves a barcode at (issue #317). Guarded
+          // on the stream still being the live one, so the AbortError that teardown itself
+          // provokes (srcObject cleared) never masquerades as a failure.
+          void videoRef.current.play().catch(() => {
+            if (streamRef.current !== stream) return;
+            dispatch({
+              type: 'STREAM_ERROR',
+              message: 'The camera preview could not be started. You can still enter codes manually.',
+            });
+          });
         }
         // Best-effort: ask the camera for continuous autofocus so a barcode held at reading
         // distance stays sharp — a blurry frame is a common reason a clear code "won't scan"
