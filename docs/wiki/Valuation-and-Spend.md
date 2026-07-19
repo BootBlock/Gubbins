@@ -18,7 +18,10 @@ Each item is valued through Gubbins' valuation logic: a manual
 less [[depreciation|Warranty-and-Depreciation]]. So the total reflects *today's* worth, not just
 what you paid.
 
-There's also **valuation over time**, showing how your inventory's total value has changed.
+There's also **valuation over time**, showing how your inventory's total value has changed. It ends
+on exactly the headline total above it and reconstructs the earlier points by working backwards
+through your stock movements, valuing each one by the same rules — so the two figures always agree.
+[[Unlimited sources|Tracking-Modes]], which hold no finite value, are left out of both.
 
 ## Spend
 
