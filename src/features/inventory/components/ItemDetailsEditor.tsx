@@ -14,7 +14,14 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { fromGrams, toGrams, type WeightUnit } from '@/lib/weight';
 import { fromMm, toMm, type DimensionUnit } from '@/lib/dimensions';
 import { BarcodeScanDialog } from '@/features/scanner/components/BarcodeScanDialog';
+import { useT } from '@/features/i18n';
 import { BarcodeField } from './BarcodeField';
+import {
+  parseOptionalNumber,
+  resolveMeasureDraft,
+  type MeasureDraft,
+  type MeasureIssue,
+} from './measure-draft';
 import { useCategories } from '../categories';
 import { useUpdateItem } from '../mutations';
 import { useFieldSuggestions } from '../queries';
@@ -44,22 +51,14 @@ function dimensionToInput(mm: number | null, unit: DimensionUnit): string {
   return String(Number(fromMm(mm, unit).toFixed(6)));
 }
 
-/**
- * Derive one dimension field's draft state from its input string and stored value. `dirty`
- * compares the input against the canonical display of the stored value so the mm↔unit
- * conversion's floating-point noise never marks an untouched field dirty; `value` keeps the
- * exact stored mm when untouched (so saving a *different* field never nudges it via the
- * round-trip) and otherwise re-derives canonical mm from the entry (blank/invalid → null).
- */
-function resolveDimension(
-  input: string,
-  stored: number | null,
-  unit: DimensionUnit,
-): { readonly dirty: boolean; readonly value: number | null } {
-  const entered = input.trim() === '' ? null : Number(input);
-  const next = entered !== null && Number.isFinite(entered) && entered >= 0 ? toMm(entered, unit) : null;
-  const dirty = input.trim() !== dimensionToInput(stored, unit);
-  return { dirty, value: dirty ? next : (stored ?? null) };
+/** Derive one dimension field's draft state — {@link resolveMeasureDraft} bound to mm↔unit. */
+function resolveDimension(input: string, stored: number | null, unit: DimensionUnit): MeasureDraft {
+  return resolveMeasureDraft(
+    input,
+    stored,
+    (entered) => toMm(entered, unit),
+    (mm) => dimensionToInput(mm, unit),
+  );
 }
 
 /** Rich help for the "Unlimited supply" modifier (Phase 82). */
@@ -82,6 +81,7 @@ const HINT_UNLIMITED =
  * stored value back to null.
  */
 export function ItemDetailsEditor({ item }: { item: Item }) {
+  const t = useT();
   const update = useUpdateItem();
   const { data: categories } = useCategories();
   const { data: manufacturerSuggestions } = useFieldSuggestions('manufacturer');
@@ -135,18 +135,18 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const canBeUnlimited = item.trackingMode === 'DISCRETE';
 
   const text = (raw: string): string | null => (raw.trim().length > 0 ? raw.trim() : null);
-  const nextUnitCost = unitCost.trim() === '' ? null : Number(unitCost);
-  // Convert the entered weight (in `weightUnit`) back to canonical grams; blank/invalid → null.
-  const enteredWeight = weight.trim() === '' ? null : Number(weight);
-  const nextWeight =
-    enteredWeight !== null && Number.isFinite(enteredWeight) && enteredWeight >= 0
-      ? toGrams(enteredWeight, weightUnit)
-      : null;
-  // Compare the input string against the canonical display of the stored value so the
-  // grams↔unit conversion's floating-point noise never marks an untouched field dirty.
-  const weightDirty = weight.trim() !== weightToInput(item.weight, weightUnit);
-  // Each dimension resolves its own dirty flag + canonical-mm value (same untouched-value
-  // discipline as weight, so re-saving another field never nudges a stored dimension).
+  // A price is optional but, when entered, must be a usable non-negative number — the same
+  // rule the measurements below follow, so two adjacent numeric fields behave alike.
+  const unitCostEntry = parseOptionalNumber(unitCost);
+  // Weight resolves its dirty flag + canonical-gram value in one go; each dimension does the
+  // same against millimetres. An untouched field keeps its stored value, so re-saving another
+  // field never nudges it by the conversion's floating-point error (e.g. 1600 g via ounces).
+  const weightState = resolveMeasureDraft(
+    weight,
+    item.weight,
+    (entered) => toGrams(entered, weightUnit),
+    (grams) => weightToInput(grams, weightUnit),
+  );
   const widthState = resolveDimension(width, item.width, dimensionUnit);
   const heightState = resolveDimension(height, item.height, dimensionUnit);
   const depthState = resolveDimension(depth, item.depth, dimensionUnit);
@@ -162,11 +162,8 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     manufacturer: text(manufacturer),
     barcode: text(barcode),
     serialNumber: text(serialNumber),
-    unitCost: Number.isFinite(nextUnitCost ?? 0) ? nextUnitCost : null,
-    // Only re-derive grams from the input when the field was actually edited; an untouched
-    // weight keeps its exact stored value, so saving a *different* field never nudges it by
-    // the grams↔unit conversion's floating-point error (e.g. re-saving 1600 g via ounces).
-    weight: weightDirty ? nextWeight : (item.weight ?? null),
+    unitCost: unitCostEntry.issue === null ? unitCostEntry.value : (item.unitCost ?? null),
+    weight: weightState.value,
     width: widthState.value,
     height: heightState.value,
     depth: depthState.value,
@@ -184,13 +181,29 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     draft.barcode !== (item.barcode ?? null) ||
     draft.serialNumber !== (item.serialNumber ?? null) ||
     draft.unitCost !== (item.unitCost ?? null) ||
-    weightDirty ||
+    unitCostEntry.issue !== null ||
+    weightState.dirty ||
     widthState.dirty ||
     heightState.dirty ||
     depthState.dirty ||
     draft.categoryId !== (item.categoryId ?? null) ||
     draft.isUnlimited !== item.isUnlimited;
-  const valid = draft.name.length > 0;
+  // A bad number blocks the save and shows why, rather than quietly clearing the stored
+  // value — the failure branch of a "valid ? convert : null" guard reads as "clear this
+  // field", which is not what typing `-5` over a stored weight means (issue #345).
+  const measureIssue = (issue: MeasureIssue | null): string | undefined =>
+    issue === null
+      ? undefined
+      : issue === 'negative'
+        ? t('inventory.details.negative')
+        : t('inventory.details.notANumber');
+  const valid =
+    draft.name.length > 0 &&
+    unitCostEntry.issue === null &&
+    weightState.issue === null &&
+    widthState.issue === null &&
+    heightState.issue === null &&
+    depthState.issue === null;
 
   const save = () => update.mutate({ id: item.id, input: draft });
 
@@ -198,7 +211,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     <div className="space-y-3">
       <FormField
         label="Name"
-        error={valid ? undefined : 'Please enter a name.'}
+        error={draft.name.length > 0 ? undefined : 'Please enter a name.'}
         hint="The item’s display name — how it appears in lists, search and on labels. Renames are recorded in the activity log."
       >
         <Input value={name} onChange={(e) => setName(e.target.value)} data-testid="item-details-name" />
@@ -272,6 +285,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField
           label="Unit cost (optional)"
+          error={measureIssue(unitCostEntry.issue)}
           hint={
             'What **one unit** costs, in your base currency. Drives valuation and project ' +
             'costing.\n\nWhen set, this **manual** cost overrides the preferred supplier’s price; ' +
@@ -295,6 +309,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField
           label={`Weight (${weightUnit})`}
+          error={measureIssue(weightState.issue)}
           hint={
             'The item’s **weight** for one unit, in your chosen weight unit (change the unit in ' +
             '**Settings**). Stored independently of the unit, so switching units just re-displays ' +
@@ -318,6 +333,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
       <div className="grid gap-3 sm:grid-cols-3">
         <FormField
           label={`Width (${dimensionUnit})`}
+          error={measureIssue(widthState.issue)}
           hint={
             'The item’s **width** for one unit, in your chosen dimension unit (change the unit in ' +
             '**Settings**). Stored independently of the unit, so switching units just re-displays ' +
@@ -338,6 +354,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
         </FormField>
         <FormField
           label={`Height (${dimensionUnit})`}
+          error={measureIssue(heightState.issue)}
           hint={
             'The item’s **height** for one unit, in your chosen dimension unit (change the unit in ' +
             '**Settings**). Stored independently of the unit, so switching units just re-displays ' +
@@ -358,6 +375,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
         </FormField>
         <FormField
           label={`Depth (${dimensionUnit})`}
+          error={measureIssue(depthState.issue)}
           hint={
             'The item’s **depth** for one unit, in your chosen dimension unit (change the unit in ' +
             '**Settings**). Stored independently of the unit, so switching units just re-displays ' +

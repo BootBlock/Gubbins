@@ -332,6 +332,8 @@
   "inventory.weighCount.tareTooHeavy": "The container weighs more than the scale reading — check both figures.",
   "inventory.weighCount.grossNegative": "A scale reading cannot be negative.",
   "inventory.weighCount.tareNegative": "A container cannot weigh less than nothing.",
+  "inventory.details.negative": "This can’t be a negative number.",
+  "inventory.details.notANumber": "Enter a number, or leave this blank.",
   "inventory.weighCount.unreadable": "Enter a weight as a number.",
   "inventory.weighCount.netWeight": "Net weight {weight}",
   "inventory.weighCount.count.one": "{count} unit",

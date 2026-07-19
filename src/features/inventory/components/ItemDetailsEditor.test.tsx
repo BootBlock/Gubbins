@@ -122,6 +122,35 @@ describe('ItemDetailsEditor', () => {
     );
   });
 
+  it('refuses to save a negative weight instead of clearing the stored one (issue #345)', () => {
+    render(<ItemDetailsEditor item={{ ...item, weight: 500 }} />);
+    fireEvent.change(screen.getByTestId('item-details-weight'), { target: { value: '-5' } });
+
+    expect(screen.getByTestId('item-details-save')).toHaveProperty('disabled', true);
+    expect(screen.getByRole('alert').textContent).toMatch(/negative/i);
+    fireEvent.click(screen.getByTestId('item-details-save'));
+    expect(spies.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to save a negative dimension or unit cost', () => {
+    render(<ItemDetailsEditor item={{ ...item, width: 400 }} />);
+    fireEvent.change(screen.getByTestId('item-details-width'), { target: { value: '-1' } });
+    expect(screen.getByTestId('item-details-save')).toHaveProperty('disabled', true);
+
+    fireEvent.change(screen.getByTestId('item-details-width'), { target: { value: '400' } });
+    fireEvent.change(screen.getByLabelText('Unit cost (optional)'), { target: { value: '-2' } });
+    expect(screen.getByTestId('item-details-save')).toHaveProperty('disabled', true);
+    expect(screen.getByRole('alert').textContent).toMatch(/negative/i);
+  });
+
+  it('still clears a stored weight when the field is blanked', () => {
+    render(<ItemDetailsEditor item={{ ...item, weight: 500 }} />);
+    fireEvent.change(screen.getByTestId('item-details-weight'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('item-details-save'));
+
+    expect(spies.update.mock.calls[0][0].input).toEqual(expect.objectContaining({ weight: null }));
+  });
+
   it('refuses to save a blank name', () => {
     render(<ItemDetailsEditor item={item} />);
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: '   ' } });
