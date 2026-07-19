@@ -10,6 +10,11 @@ import { LocationRepository } from './LocationRepository';
 import { ReportRepository } from './ReportRepository';
 import { SupplierPartRepository } from './SupplierPartRepository';
 import { SupplierRepository } from './SupplierRepository';
+import {
+  buildInsuranceSchedule,
+  type ScheduleItemInput,
+  type ScheduleLocationInput,
+} from '@/features/reports/insurance-schedule';
 
 /**
  * ReportRepository — read-only §3 valuation/consumption/movement/low-stock/dead-stock
@@ -313,6 +318,146 @@ describe('ReportRepository', () => {
       // Neither the soft-deleted item nor the abstract parent contribute.
       expect(report.totalValue).toBe(0);
     });
+  });
+
+  // Issue #411 — the schedule summary is summed by the database, so the delicate money-rounding
+  // rule (`roundMoney`) is now stated in SQL as well as in the pure seam. These tests pin the two
+  // against each other: the classic tie values SQLite's own `ROUND()` gets wrong, and a randomised
+  // fixture differenced against the pure `buildInsuranceSchedule` oracle at each supported minor
+  // unit (0dp / 2dp / 3dp). A drift between the SQL and the seam fails the build, not review.
+  describe('insuranceScheduleSummary (summed in SQL)', () => {
+    /** A deterministic PRNG so a randomised fixture is reproducible rather than flaky. */
+    function mulberry32(seed: number): () => number {
+      let a = seed;
+      return () => {
+        a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    /** Read the full location set the way `insuranceScheduleSummary` does, for the pure oracle. */
+    async function allLocations(): Promise<ScheduleLocationInput[]> {
+      const rows = await driver.query<{ id: string; name: string; parent_id: string | null }>(
+        'SELECT id, name, parent_id FROM locations;',
+      );
+      return rows.map((r) => ({ id: r.id, name: r.name, parentId: r.parent_id }));
+    }
+
+    it('reproduces roundMoney half-away-from-zero on the ties SQLite ROUND() gets wrong', async () => {
+      // 1.005 / 2.675 / 8.165 are the classic cases where `value × 100` lands just below the tie:
+      // `roundMoney` corrects the scaled value at 15 significant digits and rounds each *up*, where
+      // SQLite's binary-double `ROUND()` would round one or more down and lose a penny. The SQL must
+      // match the seam, so the subtotal is 1.01 + 2.68 + 8.17 = 11.86, never 11.84/11.85.
+      const study = await locations.create({ name: 'Study' });
+      await items.create({ name: 'A', locationId: study.id, quantity: 1, unitCost: 1.005 });
+      await items.create({ name: 'B', locationId: study.id, quantity: 1, unitCost: 2.675 });
+      await items.create({ name: 'C', locationId: study.id, quantity: 1, unitCost: 8.165 });
+
+      const summary = await reports.insuranceScheduleSummary();
+      expect(summary.grandTotal).toBe(11.86);
+      expect(summary.groups.find((g) => g.locationId === study.id)?.subtotal).toBe(11.86);
+    });
+
+    // Base currency → minor unit: JPY has none (0dp), GBP two (2dp), the Bahraini dinar three (3dp).
+    // The rounding must be parameterised by the currency's decimals, so difference each precision.
+    it.each([
+      ['JPY', 0],
+      ['GBP', 2],
+      ['BHD', 3],
+    ] as const)(
+      'matches the pure schedule builder over a randomised %s (%i dp) fixture',
+      async (currency, decimals) => {
+        const repo = new ReportRepository(driver, { resolveBaseCurrency: () => currency });
+        const now = Date.UTC(2026, 6, 19);
+
+        // A small tree so grouping, nesting and ordering are all exercised, not just a flat list.
+        const garage = await locations.create({ name: 'Garage' });
+        const shelf = await locations.create({ name: 'Shelf', parentId: garage.id });
+        const study = await locations.create({ name: 'Study' });
+        const roomIds = [garage.id, shelf.id, study.id];
+
+        const rand = mulberry32(4110 + decimals);
+        const specs: ScheduleItemInput[] = [];
+        const baseSpec = {
+          serialNo: null,
+          condition: null,
+          acquiredAt: null,
+          warrantyExpiresAt: null,
+          purchasePrice: null,
+          preferredSupplierCost: null,
+        } as const;
+
+        for (let i = 0; i < 80; i++) {
+          const locationId = roomIds[Math.floor(rand() * roomIds.length)]!;
+          const quantity = Math.floor(rand() * 9) + 1;
+          // Four fractional digits so there is always something to round at 0dp/2dp/3dp, and ties
+          // (a trailing 5) are hit often across the run rather than by luck.
+          const priced = Math.round(rand() * 5_000_000) / 10_000; // up to 500.0000
+          const useCurrentValue = rand() < 0.25;
+          const currentValue = useCurrentValue ? Math.round(rand() * 9_000_000) / 10_000 : null;
+          const unitCost = useCurrentValue ? null : priced;
+          const created = await items.create({
+            name: `Asset ${i}`,
+            locationId,
+            quantity,
+            unitCost,
+            ...(currentValue === null ? {} : { currentValue }),
+          });
+          specs.push({
+            ...baseSpec,
+            id: created.id,
+            name: created.name,
+            locationId,
+            quantity,
+            unitCost,
+            currentValuePerUnit: currentValue,
+          });
+        }
+
+        // A couple priced *only* by a preferred supplier part in the base currency, so the
+        // correlated supplier-cost subquery is exercised inside the aggregate — issue #411 keeps
+        // that lookup per-row rather than moving it to a join. A blank currency reads as "base".
+        for (let i = 0; i < 3; i++) {
+          const quantity = Math.floor(rand() * 9) + 1;
+          const supplierCost = Math.round(rand() * 2_000_000) / 10_000;
+          const created = await items.create({
+            name: `Supplied ${i}`,
+            locationId: study.id,
+            quantity,
+            unitCost: null,
+          });
+          await supplierParts.create(created.id, {
+            supplier: { supplierName: 'Preferred Co' },
+            unitCost: supplierCost,
+            isPreferred: true,
+          });
+          specs.push({
+            ...baseSpec,
+            id: created.id,
+            name: created.name,
+            locationId: study.id,
+            quantity,
+            unitCost: null,
+            currentValuePerUnit: null,
+            preferredSupplierCost: supplierCost,
+          });
+        }
+
+        const expected = buildInsuranceSchedule(specs, await allLocations(), now, decimals);
+        const actual = await repo.insuranceScheduleSummary(now);
+
+        expect(actual.grandTotal).toBe(expected.grandTotal);
+        expect(actual.itemCount).toBe(expected.itemCount);
+        // Same ordered groups, each with the same asset count and subtotal to the currency's unit.
+        // The full-document builder exposes a group's size as its line count; the summary counts it
+        // directly — the two must agree.
+        expect(actual.groups.map((g) => [g.locationId, g.itemCount, g.subtotal])).toEqual(
+          expected.groups.map((g) => [g.locationId, g.lines.length, g.subtotal]),
+        );
+      },
+    );
   });
 
   describe('consumptionRate', () => {
