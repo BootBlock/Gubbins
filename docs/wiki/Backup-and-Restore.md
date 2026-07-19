@@ -90,6 +90,14 @@ You can still go ahead — a damaged copy is sometimes all that's left, and most
 are usually still readable — but it takes a second, deliberate confirmation. Either way, Gubbins
 downloads a copy of your current database first, so a restore that turns out wrong can be undone.
 
+Every `.zip` backup also carries its own packing list: how many items and images it holds, which
+optional parts were included, and a fingerprint of each one. When you pick a file to restore,
+Gubbins compares what it actually reads against that list. If a part is missing, or its contents no
+longer match the fingerprint taken when the backup was written, the file is refused and you're told
+which part is at fault — so a backup that quietly lost data can't restore as though it were complete.
+Backups made before this check existed are still perfectly usable; they're simply checked against
+their item and image counts alone.
+
 > **⚠️ Heads-up**
 > Those checks are a safety net, not a substitute for judgement. Treat a backup like any other file
 > you'd open: restore from your own archives, or from someone you trust. The same goes for a
