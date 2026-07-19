@@ -26,6 +26,7 @@ import type {
   WebhookTestCapability,
   WriteCapability,
 } from '../server.ts';
+import { healthBody, type SnapshotHealthReport } from '../snapshot-health.ts';
 import { WebhookRepository } from '@/db/repositories/WebhookRepository.ts';
 import { subscriptionToDeliveryTarget } from '../events/webhook-targets.ts';
 import { buildWebhookTestEvent } from '../events/webhook-test.ts';
@@ -125,6 +126,12 @@ export interface ApiV1Context {
   /** The HTTP method (`GET` for reads, `POST` for the opt-in write endpoints). */
   readonly method: string;
   readonly getState: () => BridgeServerState | null;
+  /**
+   * Reload health for `GET /api/v1/health`, threaded through from the server so the versioned
+   * alias reports exactly what `/health` does (issue #312). Omit and it reports a never-failed
+   * snapshot.
+   */
+  readonly getSnapshotHealth?: () => SnapshotHealthReport;
   /** Present only when writes are opted in; its absence makes every POST a `404`. */
   readonly write?: WriteCapability;
   /**
@@ -228,7 +235,7 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
 
   switch (segments[0]) {
     case 'health':
-      if (segments.length === 1) return void (await handleHealth(res, state));
+      if (segments.length === 1) return void (await handleHealth(res, state, ctx.getSnapshotHealth?.()));
       break;
     case 'search':
       if (segments.length === 1) return void (await handleSearch(res, driver, url));
@@ -663,9 +670,13 @@ function apiIndex(writable: boolean, pushable: boolean, streamable: boolean, sca
   };
 }
 
-async function handleHealth(res: ServerResponse, state: BridgeServerState): Promise<void> {
+async function handleHealth(
+  res: ServerResponse,
+  state: BridgeServerState,
+  health: SnapshotHealthReport | undefined,
+): Promise<void> {
   const itemCount = await new ItemRepository(state.driver).countByAst(emptyAst('AND'));
-  sendJson(res, 200, { ok: true, itemCount, snapshotGeneratedAt: state.snapshotGeneratedAt });
+  sendJson(res, 200, healthBody(state.snapshotGeneratedAt, itemCount, health));
 }
 
 // --- search / where (aliases of the legacy contract, same bodies) -----------------

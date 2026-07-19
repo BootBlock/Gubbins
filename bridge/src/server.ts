@@ -6,7 +6,7 @@
  * surfaces over the same query core and the same auth + rate limit:
  *
  *   - **Legacy paths** (the shipped contract the Home Assistant integration depends on):
- *       GET /health   → { ok, itemCount, snapshotGeneratedAt }
+ *       GET /health   → { ok, itemCount, snapshotGeneratedAt, + reload health }
  *       GET /search?q=&limit=  → { query, matches: ItemMatch[] }
  *       GET /where?q=          → { query, matches: WhereIsMatch[], spoken }
  *   - **Versioned API** under `/api/v1` (see `api/v1.ts`): the same three as aliases, plus
@@ -44,6 +44,7 @@ import type { HaClient } from './homeassistant/client.ts';
 import type { WebhookDeliveryLog, WebhookDeliveryRecord } from './events/webhook-log.ts';
 import type { WebhookDeliveryTarget, WebhookSecrets } from './events/webhook-targets.ts';
 import type { BridgeEvent } from './events/model.ts';
+import { healthBody, type SnapshotHealthReport } from './snapshot-health.ts';
 
 /** Whole-request timeout: a slow or stuck client is dropped rather than tying up a slot. */
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -149,6 +150,13 @@ export interface BridgeServerOptions {
    * then answers 503 rather than serving from a half-loaded DB).
    */
   readonly getState: () => BridgeServerState | null;
+  /**
+   * Reload health for `/health` (issue #312). A failed re-hydrate keeps the last good snapshot
+   * live, so without this the bridge answers from data it knows is out of date while still
+   * reporting `ok: true`. Omit and `/health` reports a never-failed snapshot — the shape stays
+   * the same, so a consumer can always read the same fields.
+   */
+  readonly getSnapshotHealth?: () => SnapshotHealthReport;
   /**
    * Optional per-client abuse guard. When present, each request is charged a token before
    * routing; an exhausted client gets `429 Too Many Requests` + `Retry-After`. Omit to
@@ -337,6 +345,7 @@ export async function handleRequest(
       await handleApiV1(res, url, {
         method: 'POST',
         getState: options.getState,
+        getSnapshotHealth: options.getSnapshotHealth,
         write: options.write,
         push: options.push,
         streamable: options.events !== undefined,
@@ -363,6 +372,7 @@ export async function handleRequest(
       await handleApiV1(res, url, {
         method: 'GET',
         getState: options.getState,
+        getSnapshotHealth: options.getSnapshotHealth,
         write: options.write,
         push: options.push,
         streamable: options.events !== undefined,
@@ -480,11 +490,7 @@ async function handleHealth(res: ServerResponse, options: BridgeServerOptions): 
   }
   // Count through the app's own search path (emptyAst → parseASTtoSQL), never bespoke SQL.
   const itemCount = await new ItemRepository(state.driver).countByAst(emptyAst('AND'));
-  sendJson(res, 200, {
-    ok: true,
-    itemCount,
-    snapshotGeneratedAt: state.snapshotGeneratedAt,
-  });
+  sendJson(res, 200, healthBody(state.snapshotGeneratedAt, itemCount, options.getSnapshotHealth?.()));
 }
 
 /** `GET /search?q=&limit=` — compact item DTOs (limit clamped by the query core). */

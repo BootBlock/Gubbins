@@ -23,6 +23,7 @@ import { createWriteExecutor } from './write.ts';
 import { ingestSnapshot } from './push.ts';
 import { detectSource, pushEnabledForSource, writesEnabledForSource } from './sqlite-source.ts';
 import { createSnapshotWatcher, type SnapshotWatcher } from './watcher.ts';
+import { summarizeSnapshotHealth } from './snapshot-health.ts';
 import packageJson from '../package.json' with { type: 'json' };
 import { createMdnsAdvertiser, type MdnsAdvertiser } from './mdns/advertise.ts';
 import { pickAdvertisedAddress, resolveMdnsPlan, sanitizeHostLabel } from './mdns/records.ts';
@@ -157,7 +158,13 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
         }
       }
     },
-    onError: (error) => console.error(`Snapshot reload failed: ${error.message}`),
+    // The count is what distinguishes a caught-mid-write blip from a reload that is genuinely
+    // stuck, so it goes in the log line as well as in `/health`. Safe to read here: the watcher
+    // binding is assigned before any hook can fire.
+    onError: (error) =>
+      console.error(
+        `Snapshot reload failed (${watcher.getReloadHealth().consecutiveFailures} in a row): ${error.message}`,
+      ),
   });
   mqtt?.start();
   await watcher.start();
@@ -198,6 +205,10 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   const server = createBridgeServer({
     token: config.token,
     getState: () => watcher.getState(),
+    // A failed re-hydrate keeps the last good snapshot serving, so `/health` reports the reload
+    // tally and drops `ok` once it crosses the configured threshold — a consumer can then degrade
+    // instead of trusting stale stock levels (issue #312).
+    getSnapshotHealth: () => summarizeSnapshotHealth(watcher.getReloadHealth(), config.staleAfterFailures),
     rateLimiter,
     write,
     push,
