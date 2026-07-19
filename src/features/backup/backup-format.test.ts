@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { zipSync, strToU8 } from 'fflate';
+import { zipSync, strToU8, strFromU8 } from 'fflate';
 import { SYNC_FORMAT_VERSION, type SyncSnapshot } from '../sync/types';
 import type { SqlRow } from '@/db/rpc/driver';
 import {
@@ -14,7 +14,9 @@ import {
   MANIFEST_ENTRY,
   DATABASE_ENTRY,
   SETTINGS_ENTRY,
+  type BackupManifest,
 } from './backup-format';
+import { CHECKSUM_ALGORITHM, checksumBytes } from './checksum';
 
 const SQLITE_HEADER = new Uint8Array([...'SQLite format 3\0'].map((c) => c.charCodeAt(0)));
 function fakeSqlite(): Uint8Array {
@@ -274,6 +276,144 @@ describe('parseBackupEntries', () => {
     entries[SETTINGS_ENTRY] = strToU8(JSON.stringify({ 'gubbins:auth': 'sneaky', 'gubbins:layout': '{}' }));
     const parsed = parseBackupEntries(entries);
     expect(parsed.settings).toEqual({ 'gubbins:layout': '{}' }); // auth stripped
+  });
+});
+
+describe('manifest cross-check (issue #201)', () => {
+  /** A complete backup, as `path → bytes`, ready to be damaged in one specific way. */
+  function builtEntries(overrides: Partial<Parameters<typeof assembleBackup>[0]> = {}) {
+    const built = assembleBackup({
+      snapshot: makeSnapshot(),
+      sqlite: fakeSqlite(),
+      images: [{ name: 'a.webp', bytes: new Uint8Array([9, 8, 7]) }],
+      settings: { 'gubbins:layout': '{}' },
+      appVersion: '1.0.0',
+      createdAt: 10,
+      ...overrides,
+    });
+    return toEntries(built.files, built.assets);
+  }
+
+  /** Re-serialise the manifest after mutating it, as a hand-edited/older backup would look. */
+  function withManifest(entries: Record<string, Uint8Array>, edit: (manifest: BackupManifest) => unknown) {
+    const manifest = JSON.parse(strFromU8(entries[MANIFEST_ENTRY]!)) as BackupManifest;
+    return { ...entries, [MANIFEST_ENTRY]: strToU8(JSON.stringify(edit(manifest) ?? manifest)) };
+  }
+
+  it('checksums every entry it wrote, and accepts an undamaged backup', () => {
+    const entries = builtEntries();
+    const manifest = JSON.parse(strFromU8(entries[MANIFEST_ENTRY]!)) as BackupManifest;
+    expect(manifest.checksums?.algorithm).toBe(CHECKSUM_ALGORITHM);
+    // Every entry bar the manifest itself, which cannot contain its own digest.
+    expect(Object.keys(manifest.checksums?.entries ?? {}).sort()).toEqual(
+      [SNAPSHOT_ENTRY, SETTINGS_ENTRY, DATABASE_ENTRY, 'images/a.webp'].sort(),
+    );
+    expect(() => parseBackupEntries(entries)).not.toThrow();
+  });
+
+  it('rejects an entry whose contents no longer match the manifest', () => {
+    const entries = builtEntries();
+    // A byte-level corruption the zip reader is perfectly happy to decode.
+    entries[DATABASE_ENTRY] = new Uint8Array([...SQLITE_HEADER, 9, 9, 9, 9]);
+    expect(() => parseBackupEntries(entries)).toThrow(/does not match the checksum/);
+  });
+
+  it('rejects a backup that lost an entry the manifest listed', () => {
+    const entries = builtEntries();
+    delete entries['images/a.webp'];
+    expect(() => parseBackupEntries(entries)).toThrow(/should contain "images\/a\.webp"/);
+  });
+
+  it('skips verification for a digest algorithm this build does not know', () => {
+    // Forward-compatibility: a safety net we cannot read must not condemn a sound backup.
+    const entries = withManifest(builtEntries(), (manifest) => ({
+      ...manifest,
+      checksums: { algorithm: 'sha3-512-from-the-future', entries: { [SNAPSHOT_ENTRY]: 'nonsense' } },
+    }));
+    expect(() => parseBackupEntries(entries)).not.toThrow();
+  });
+
+  it('rejects a snapshot with fewer items than the manifest recorded', () => {
+    // The damage class from issue #151: the snapshot parses, defaults its missing sections to
+    // empty, and would otherwise preview as internally consistent.
+    const entries = builtEntries();
+    const snapshot = JSON.parse(strFromU8(entries[SNAPSHOT_ENTRY]!)) as SyncSnapshot;
+    const truncated = {
+      ...snapshot,
+      tables: { ...snapshot.tables, items: snapshot.tables.items!.slice(0, 2) },
+    };
+    // Restamp the digest too, so it is the *count* check being exercised and not the checksum.
+    const damaged = withManifest(
+      { ...entries, [SNAPSHOT_ENTRY]: strToU8(JSON.stringify(truncated)) },
+      (m) => ({
+        ...m,
+        checksums: {
+          algorithm: CHECKSUM_ALGORITHM,
+          entries: {
+            ...m.checksums!.entries,
+            [SNAPSHOT_ENTRY]: checksumBytes(strToU8(JSON.stringify(truncated))),
+          },
+        },
+      }),
+    );
+    expect(() => parseBackupEntries(damaged)).toThrow(/should contain 5 items, but only 2 could be read/);
+  });
+
+  it('rejects a backup missing a part its manifest says it contains', () => {
+    const entries = withManifest(builtEntries(), (manifest) => ({
+      ...manifest,
+      checksums: undefined, // an older backup, checked on `contents`/`counts` alone
+    }));
+    delete entries[DATABASE_ENTRY];
+    expect(() => parseBackupEntries(entries)).toThrow(/exact database copy, but that part is missing/);
+  });
+
+  it('rejects a snapshot that lost a whole section the manifest recorded', () => {
+    const entries = builtEntries();
+    const snapshot = JSON.parse(strFromU8(entries[SNAPSHOT_ENTRY]!)) as SyncSnapshot;
+    const gutted = JSON.stringify({ ...snapshot, itemHistory: [], gaugeHistory: [] });
+    const damaged = withManifest({ ...entries, [SNAPSHOT_ENTRY]: strToU8(gutted) }, (m) => ({
+      ...m,
+      checksums: {
+        algorithm: CHECKSUM_ALGORITHM,
+        entries: { ...m.checksums!.entries, [SNAPSHOT_ENTRY]: checksumBytes(strToU8(gutted)) },
+      },
+    }));
+    expect(() => parseBackupEntries(damaged)).toThrow(/no history could be read/);
+  });
+
+  it('treats a manifest with the right kind but the wrong shape as no manifest', () => {
+    // A hand-edited or partly-overwritten manifest must not surface as a raw
+    // "Cannot read properties of undefined" from inside the integrity check.
+    for (const shape of [
+      { kind: 'gubbins-backup' }, // no contents/counts at all
+      { kind: 'gubbins-backup', contents: {}, counts: { items: 'five', images: 0 } },
+      { kind: 'gubbins-backup', contents: [], counts: { items: 5, images: 1 } },
+    ]) {
+      const entries = { ...builtEntries(), [MANIFEST_ENTRY]: strToU8(JSON.stringify(shape)) };
+      const parsed = parseBackupEntries(entries);
+      expect(parsed.manifest).toBeNull();
+      expect(parsed.snapshot.tables.items).toHaveLength(5); // the payload still restores
+    }
+  });
+
+  it('ignores a malformed digest block without condemning the backup', () => {
+    for (const checksums of [
+      { algorithm: CHECKSUM_ALGORITHM },
+      { algorithm: CHECKSUM_ALGORITHM, entries: 'nope' },
+    ]) {
+      const entries = withManifest(builtEntries(), (manifest) => ({ ...manifest, checksums }));
+      const parsed = parseBackupEntries(entries);
+      expect(parsed.manifest?.checksums).toBeUndefined();
+    }
+  });
+
+  it('still reads a backup that carries no manifest at all', () => {
+    const entries = builtEntries();
+    delete entries[MANIFEST_ENTRY];
+    const parsed = parseBackupEntries(entries);
+    expect(parsed.manifest).toBeNull();
+    expect(parsed.snapshot.tables.items).toHaveLength(5);
   });
 });
 
