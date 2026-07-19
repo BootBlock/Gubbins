@@ -34,17 +34,26 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [pending, setPending] = useState<PendingRestore | null>(null);
-  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const describeError = useErrorMessage();
   const sqliteRef = useRef<HTMLInputElement>(null);
   const archiveRef = useRef<HTMLInputElement>(null);
 
-  const run = (id: string, action: () => Promise<void>) => async () => {
+  /**
+   * Wrap a rescue action so a failure is *shown*, not just logged. This is the last-resort
+   * recovery surface: a button that silently does nothing reads as "the gentler option was
+   * tried and did not help", pushing the user on to the irreversible one. `fallback` is the
+   * action's own copy for when the thrown value has nothing human to say.
+   */
+  const run = (id: string, action: () => Promise<void>, fallback: string) => async () => {
     setBusy(id);
+    setActionError(null);
     try {
       await action();
     } catch (error) {
+      // Kept for diagnostics — the user-facing sentence is the alert below.
       console.error('[gubbins] rescue action failed', error);
+      setActionError(describeError(error, fallback));
     } finally {
       setBusy(null);
     }
@@ -53,19 +62,21 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
   const onFileChosen = (kind: PendingRestore['kind']) => (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     event.target.value = '';
-    setRestoreError(null);
+    setActionError(null);
     setPending(file ? { kind, file } : null);
   };
 
   const confirmRestore = async () => {
     if (!pending) return;
     setBusy('restore');
+    setActionError(null);
     try {
       // Both reload on success.
       if (pending.kind === 'archive') await restoreArchive(pending.file);
       else await restoreRawSqlite(pending.file);
     } catch (error) {
-      setRestoreError(describeError(error, 'Restore failed.'));
+      console.error('[gubbins] rescue action failed', error);
+      setActionError(describeError(error, 'Restore failed.'));
       setBusy(null);
       setPending(null);
     }
@@ -73,10 +84,18 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
 
   return (
     <div className="flex flex-col gap-2">
-      <Button variant="outline" onClick={run('sqlite', downloadRawSqlite)} disabled={busy !== null}>
+      <Button
+        variant="outline"
+        onClick={run('sqlite', downloadRawSqlite, 'Could not download the database file.')}
+        disabled={busy !== null}
+      >
         <DatabaseIcon /> Download raw .sqlite binary
       </Button>
-      <Button variant="outline" onClick={run('json', downloadJsonDump)} disabled={busy !== null}>
+      <Button
+        variant="outline"
+        onClick={run('json', downloadJsonDump, 'Could not export your data.')}
+        disabled={busy !== null}
+      >
         <DownloadIcon /> Export data (JSON)
       </Button>
 
@@ -130,14 +149,24 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
           </Button>
         </>
       )}
-      {restoreError ? <p className="text-sm text-destructive">{restoreError}</p> : null}
+      {/*
+       * Above the hard reset, deliberately: this is the failure the user must read *before*
+       * the irreversible option, not after it. Rendering it below would put the explanation
+       * for "the gentle rescue failed" underneath the destructive button it should steer
+       * them away from.
+       */}
+      {actionError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {actionError}
+        </p>
+      ) : null}
 
       {!allowHardReset ? null : confirmingReset ? (
         <div className="flex gap-2">
           <Button
             variant="destructive"
             className="flex-1"
-            onClick={run('reset', hardResetLocalData)}
+            onClick={run('reset', hardResetLocalData, 'Could not purge local data.')}
             disabled={busy !== null}
           >
             <ResetIcon /> Confirm — purge &amp; reload
