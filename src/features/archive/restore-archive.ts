@@ -18,6 +18,7 @@ import {
   isSqliteFile,
   overwriteOpfsDatabase,
   prepareDestructiveRestore,
+  StaleJournalError,
   type RestoreOptions,
 } from '@/app/error/safe-mode-actions';
 import { writeImageFiles, type OpfsImageFile } from '@/features/images/opfs-images';
@@ -91,8 +92,20 @@ export async function restoreArchive(file: File, options: RestoreOptions = {}): 
   await prepareDestructiveRestore(sqlite, options);
 
   await disposeDatabase();
-  await overwriteOpfsDatabase(sqlite);
+
+  // The database bytes commit before the old session's sidecars are cleared, so a
+  // `StaleJournalError` means the restore *did* land and only the cleanup failed. Finish
+  // re-hydrating the images so both halves match the archive, then surface it instead of
+  // reloading — opening the restored file beside a hot journal would roll it back (#203).
+  let staleJournal: StaleJournalError | undefined;
+  try {
+    await overwriteOpfsDatabase(sqlite);
+  } catch (error) {
+    if (!(error instanceof StaleJournalError)) throw error;
+    staleJournal = error;
+  }
   await writeImageFiles(images);
+  if (staleJournal) throw staleJournal;
 
   location.reload();
 }
