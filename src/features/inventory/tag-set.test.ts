@@ -1,0 +1,38 @@
+import { describe, it, expect } from 'vitest';
+import { projectTagSet } from './tag-set';
+
+const tag = (id: string, name: string) => ({ id, name, updatedAt: 0 });
+
+describe('projectTagSet (issue #293)', () => {
+  it('reuses the cached row for a name that is already applied', () => {
+    const cached = [tag('t1', 'fragile')];
+    expect(projectTagSet(cached, ['fragile'])).toEqual([tag('t1', 'fragile')]);
+  });
+
+  it('matches the cached row case-insensitively, keeping the submitted spelling out of it', () => {
+    const cached = [tag('t1', 'fragile')];
+    expect(projectTagSet(cached, ['FRAGILE'])).toEqual([tag('t1', 'fragile')]);
+  });
+
+  it('mints a provisional row for a genuinely new name', () => {
+    const [row] = projectTagSet([], ['heavy']);
+    expect(row?.name).toBe('heavy');
+    expect(row?.id).toBeTruthy();
+  });
+
+  it('trims, drops blanks and collapses duplicates case-insensitively', () => {
+    expect(projectTagSet([], ['  heavy  ', '', 'HEAVY', '   ']).map((t) => t.name)).toEqual(['heavy']);
+  });
+
+  it('orders by name case-insensitively, as the repository reads them back', () => {
+    expect(projectTagSet([], ['zeta', 'Alpha', 'beta']).map((t) => t.name)).toEqual([
+      'Alpha',
+      'beta',
+      'zeta',
+    ]);
+  });
+
+  it('treats a missing cache as empty', () => {
+    expect(projectTagSet(undefined, ['solo']).map((t) => t.name)).toEqual(['solo']);
+  });
+});

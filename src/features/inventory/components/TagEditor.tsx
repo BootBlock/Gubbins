@@ -44,9 +44,12 @@ export function TagEditorControl({
 
   /**
    * Append every genuinely-new name in one `onChange`. Taking a list (rather than calling a
-   * single-name `add` in a loop) is what makes a multi-tag paste correct: each call would
-   * otherwise rebuild from the same stale `names` prop, so only the last would survive — and
-   * in the bound wrappers each would fire its own racing write.
+   * single-name `add` in a loop) keeps a multi-tag paste to a single whole-set write instead
+   * of one per name.
+   *
+   * Rebuilding from the `names` prop is only safe because the bound wrappers patch it
+   * optimistically on every write (issue #293) — `names` reflects the last submitted set, not
+   * the last server read, so consecutive edits compose instead of racing.
    */
   const addAll = (raws: readonly string[]) => {
     const additions: string[] = [];
