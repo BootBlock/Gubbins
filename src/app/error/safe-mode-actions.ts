@@ -9,7 +9,9 @@
 import { downloadBlob, fileTimestamp } from '@/lib/download';
 import { resetAppShell } from '@/lib/app-shell-reset';
 import { getDatabaseDriver, disposeDatabase } from '@/db/client';
-import { DB_FILENAME } from '@/db/worker/sqlite-bootstrap';
+// From the leaf constants module, never `db/worker/sqlite-bootstrap` — that would pull the
+// whole SQLite WASM glue into this chunk for the sake of one string (issue #165).
+import { DB_FILENAME } from '@/db/db-file';
 import { inspectRestoreCandidate } from '@/db/restore-candidate';
 import { isSqliteFile } from '@/db/sqlite-header';
 import { removeImagesDirectory } from '@/features/images/opfs-images';
