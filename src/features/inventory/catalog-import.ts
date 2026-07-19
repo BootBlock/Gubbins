@@ -270,8 +270,18 @@ const catalogRowSchema = z.object({
   batchNumber: z.string().trim().optional().nullable(),
   lotNumber: z.string().trim().optional().nullable(),
   condition: conditionSchema,
-  reorderPoint: z.number().int().min(0).optional().nullable(),
-  reorderQty: z.number().int().min(0).optional().nullable(),
+  reorderPoint: z
+    .number()
+    .int('Reorder point must be a whole number.')
+    .min(0, 'Reorder point cannot be negative.')
+    .optional()
+    .nullable(),
+  reorderQty: z
+    .number()
+    .int('Reorder quantity must be a whole number.')
+    .min(0, 'Reorder quantity cannot be negative.')
+    .optional()
+    .nullable(),
   // "Unlimited supply" modifier (Phase 82); DISCRETE-only (enforced in the plan builder).
   isUnlimited: z.boolean().optional(),
 });
@@ -288,16 +298,53 @@ function rawCell(row: readonly string[], index: number | null | undefined): stri
   return value.length > 0 ? value : null;
 }
 
-function parseOptionalNumber(text: string | null): number | undefined | null {
-  if (text === null) return undefined;
-  const n = Number(text);
-  return Number.isFinite(n) ? n : undefined;
-}
+/**
+ * Grouping separators a spreadsheet may put in a number: a comma, a plain space, a
+ * non-breaking space (U+00A0) or a narrow no-break space (U+202F, the French/Nordic
+ * thousands separator).
+ */
+const GROUP_SEPARATORS = /[,\u0020\u00a0\u202f]/g;
 
-function parseOptionalInt(text: string | null): number | undefined | null {
-  if (text === null) return undefined;
-  const n = Number.parseInt(text, 10);
-  return Number.isFinite(n) ? n : undefined;
+/**
+ * A grouped-thousands number as a spreadsheet renders one by default: `1,500`,
+ * `1,234,567.25`, or the same with a space separator. Only *well-formed* grouping
+ * matches — groups of exactly three digits — so an ambiguous cell like `1,5` (a
+ * decimal comma in much of Europe) is never silently read as fifteen; it is reported
+ * as unreadable instead of guessed at.
+ */
+const GROUPED_NUMBER = /^[+-]?\d{1,3}([,\u0020\u00a0\u202f]\d{3})+(\.\d+)?$/;
+
+/** A plain decimal number, optionally signed and/or exponent-suffixed. */
+const PLAIN_NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i;
+
+/**
+ * A leading or trailing currency marker (`$1.99`, `1,99 €`) — the same symbol set the
+ * free-form line parser recognises. A price column exported by another tool routinely
+ * carries one, and the value it decorates is unambiguous, so it is stripped rather than
+ * treated as unreadable: rejecting it would drop the whole row (name, quantity and all)
+ * over a decoration.
+ */
+const CURRENCY_MARKER = /^[£$€¥]\s?|\s?[£$€¥]$/g;
+
+/**
+ * Parse one numeric cell **strictly**: the whole cell must be a number, so a
+ * partially-numeric value (`12kg`, `~12`, `n/a`) is rejected rather than truncated to
+ * its leading digits the way `parseInt` would (issue #339). Well-formed grouped
+ * thousands are accepted and the separators stripped, so a spreadsheet's default
+ * rendering of `1,500` imports as 1500 rather than 1; a currency marker on a price
+ * column from another tool is stripped too.
+ *
+ * Returns the number, or `null` when the cell is present but unreadable — the caller
+ * turns that into a row error, so the import never quietly invents a value.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function parseNumericCell(text: string): number | null {
+  const trimmed = text.trim().replace(CURRENCY_MARKER, '');
+  const candidate = GROUPED_NUMBER.test(trimmed) ? trimmed.replace(GROUP_SEPARATORS, '') : trimmed;
+  if (!PLAIN_NUMBER.test(candidate)) return null;
+  const n = Number(candidate);
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
@@ -344,35 +391,76 @@ function extractRow(row: readonly string[], mapping: ColumnMapping): ExtractedRo
   return { core, custom };
 }
 
+/** The catalog fields whose cells hold a number (the only ones {@link coerceRow} parses). */
+type NumericCatalogField = Extract<
+  CatalogField,
+  'quantity' | 'unitCost' | 'weight' | 'width' | 'height' | 'depth' | 'reorderPoint' | 'reorderQty'
+>;
+
+/** The outcome of coercing one raw row: the typed data plus any unreadable cells. */
+interface CoercedRow {
+  readonly data: CatalogRowData;
+  /**
+   * One message per numeric cell that was present but could not be read as a number.
+   * Non-empty means the row must be rejected: an unreadable cell is indistinguishable
+   * from an absent one once it reaches the schema, and "absent" silently falls back to
+   * the field's default (issue #339).
+   */
+  readonly unreadable: readonly string[];
+}
+
 /**
  * Coerce a raw string-map into a typed {@link CatalogRowData} for Zod parsing.
- * Numeric fields are converted from strings here so Zod receives the right types.
+ * Numeric fields are converted from strings here so Zod receives the right types —
+ * including non-integer values such as `1.5`, which are passed through as-is so the
+ * schema's whole-number rule reports them rather than the parser silently truncating.
  */
-function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CatalogRowData {
+function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRow {
+  const unreadable: string[] = [];
+
+  /**
+   * Read one numeric cell. An absent cell yields `undefined` ("not supplied"); an
+   * unreadable one also yields `undefined` but records a message, so the caller
+   * rejects the row instead of importing the field's default value.
+   */
+  const num = (field: NumericCatalogField): number | undefined => {
+    const text = raw[field] ?? null;
+    if (text === null) return undefined;
+    const value = parseNumericCell(text);
+    if (value === null) {
+      unreadable.push(`${CATALOG_FIELD_LABELS[field]}: "${text}" is not a number.`);
+      return undefined;
+    }
+    return value;
+  };
+
   return {
-    name: raw.name ?? undefined,
-    description: raw.description,
-    notes: raw.notes,
-    // 'sku' in the column map resolves to the `mpn` field on the item — the SKU
-    // concept maps directly to the manufacturer part number.
-    sku: raw.sku,
-    quantity: parseOptionalInt(raw.quantity ?? null) ?? undefined,
-    locationId: raw.locationId ?? undefined,
-    categoryId: raw.categoryId,
-    trackingMode: (raw.trackingMode ?? undefined) as CatalogRowData['trackingMode'],
-    mpn: raw.mpn,
-    manufacturer: raw.manufacturer,
-    unitCost: parseOptionalNumber(raw.unitCost ?? null),
-    weight: parseOptionalNumber(raw.weight ?? null),
-    width: parseOptionalNumber(raw.width ?? null),
-    height: parseOptionalNumber(raw.height ?? null),
-    depth: parseOptionalNumber(raw.depth ?? null),
-    batchNumber: raw.batchNumber,
-    lotNumber: raw.lotNumber,
-    condition: (raw.condition ?? undefined) as CatalogRowData['condition'],
-    reorderPoint: parseOptionalInt(raw.reorderPoint ?? null),
-    reorderQty: parseOptionalInt(raw.reorderQty ?? null),
-    isUnlimited: parseOptionalBool(raw.isUnlimited ?? null),
+    unreadable,
+    data: {
+      name: raw.name ?? undefined,
+      description: raw.description,
+      notes: raw.notes,
+      // 'sku' in the column map resolves to the `mpn` field on the item — the SKU
+      // concept maps directly to the manufacturer part number.
+      sku: raw.sku,
+      quantity: num('quantity'),
+      locationId: raw.locationId ?? undefined,
+      categoryId: raw.categoryId,
+      trackingMode: (raw.trackingMode ?? undefined) as CatalogRowData['trackingMode'],
+      mpn: raw.mpn,
+      manufacturer: raw.manufacturer,
+      unitCost: num('unitCost'),
+      weight: num('weight'),
+      width: num('width'),
+      height: num('height'),
+      depth: num('depth'),
+      batchNumber: raw.batchNumber,
+      lotNumber: raw.lotNumber,
+      condition: (raw.condition ?? undefined) as CatalogRowData['condition'],
+      reorderPoint: num('reorderPoint'),
+      reorderQty: num('reorderQty'),
+      isUnlimited: parseOptionalBool(raw.isUnlimited ?? null),
+    },
   };
 }
 
@@ -759,7 +847,14 @@ export function buildImportPlanFromRows(
       raw.core.locationId = options.defaultLocationId;
     }
 
-    const coerced = coerceRow(raw.core);
+    const { data: coerced, unreadable } = coerceRow(raw.core);
+
+    // A numeric cell that was supplied but can't be read is a row error, not a silent
+    // fallback to the field's default (issue #339).
+    if (unreadable.length > 0) {
+      errors.push({ sourceRow, message: unreadable.join('; ') });
+      continue;
+    }
 
     // Validate with Zod — collect errors, never throw.
     const result = catalogRowSchema.safeParse(coerced);

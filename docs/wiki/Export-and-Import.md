@@ -48,6 +48,12 @@ going through the item importer first.
 > it's serialised but asks for a quantity of 5, the review flags it rather than quietly importing
 > one unit — give each unit its own row.
 
+> **ℹ️ Note**
+> Numbers copied straight out of a spreadsheet are read as they appear, so a quantity written
+> `1,500` imports as one thousand five hundred. A cell that isn't a plain number — `12kg`, `~12`,
+> `n/a`, or a quantity with a fractional part — is flagged in the review with the column and the
+> value, rather than being imported as a rounded-down or empty figure.
+
 > **💡 Tip**
 > The fastest way to start a big inventory is to paste a list you already have — a spreadsheet
 > column, a stocktake note — and let the importer turn it into items. Then run
