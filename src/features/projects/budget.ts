@@ -24,10 +24,12 @@
  *
  * **Money is quantised once, at the summary boundary** (issue #288), through `@/lib/money` —
  * fractions and the OK/WARN/OVER classification deliberately read the *raw* figures, so a
- * threshold is never crossed by a rounding penny.
+ * threshold is never crossed by a rounding penny. Those raw comparisons go through
+ * `moneyExceeds` / `moneyReaches` rather than bare `>` / `>=`, so the drift a float SUM carries
+ * cannot decide a threshold either (issue #287).
  */
 import type { ProjectBudget, ProjectBudgetCategoryRollup } from '@/db/repositories';
-import { roundMoney } from '@/lib/money';
+import { moneyExceeds, moneyReaches, roundMoney } from '@/lib/money';
 
 /** Budget health: no budget set, comfortably under, nearing the line, or over. */
 export type BudgetStatus = 'NONE' | 'OK' | 'WARN' | 'OVER';
@@ -86,12 +88,18 @@ export interface BudgetCategorySummary {
  * non-positive limit means "no meaningful target": status is `NONE` for a null limit, and
  * for a zero/negative limit any positive spend reads as `OVER` (else `OK`). Otherwise spend
  * over the limit is `OVER`, spend at/above `warnPercent`% of it is `WARN`, else `OK`.
+ *
+ * The figures stay raw and unrounded (issue #288), but each comparison carries a sub-penny
+ * tolerance (issue #287). Both sides of the classification need it: spend that equals the
+ * budget in decimal can exceed it as a float sum, and the derived threshold drifts too — 60% of
+ * a £8.05 budget is £4.83, but computes to `4.830000000000001`, so a spend of exactly £4.83
+ * would otherwise fall short of its own warning band. Neither is a real difference in money.
  */
 export function budgetStatus(value: number, limit: number | null, warnPercent: number): BudgetStatus {
   if (limit == null) return 'NONE';
-  if (limit <= 0) return value > 0 ? 'OVER' : 'OK';
-  if (value > limit) return 'OVER';
-  if (value >= (limit * warnPercent) / 100) return 'WARN';
+  if (limit <= 0) return moneyExceeds(value, 0) ? 'OVER' : 'OK';
+  if (moneyExceeds(value, limit)) return 'OVER';
+  if (moneyReaches(value, (limit * warnPercent) / 100)) return 'WARN';
   return 'OK';
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MONEY_DECIMALS, roundMoney, sumMoney } from './money';
+import { MONEY_DECIMALS, MONEY_EPSILON, moneyExceeds, moneyReaches, roundMoney, sumMoney } from './money';
 
 describe('roundMoney', () => {
   it('rounds the ties that the old scaled Math.round got wrong', () => {
@@ -78,5 +78,47 @@ describe('sumMoney', () => {
 
   it('honours a non-default scale', () => {
     expect(sumMoney([0.0000005, 0.0000005], 6)).toBe(0.000001);
+  });
+});
+
+describe('moneyExceeds / moneyReaches', () => {
+  it('ignores the drift a float sum of decimal amounts accumulates (issue #287)', () => {
+    // Exactly £200.00 in decimal, but 200.00000000000003 as a double.
+    expect(56.2 + 71.9 + 71.9 > 200).toBe(true);
+    expect(moneyExceeds(56.2 + 71.9 + 71.9, 200)).toBe(false);
+    expect(moneyExceeds(14.3 + 17.85 + 17.85, 50)).toBe(false);
+    expect(moneyExceeds(2.1 + 0.45 + 0.45, 3)).toBe(false);
+  });
+
+  it('treats a figure short of the limit by drift alone as having reached it', () => {
+    // 60% of 8.05 is 4.83, but computes to 4.830000000000001 — which £4.83 does not
+    // reach on a bare `>=`, so a spend exactly on the threshold misses its own band.
+    const threshold = (8.05 * 60) / 100;
+    expect(4.83 >= threshold).toBe(false);
+    expect(moneyReaches(4.83, threshold)).toBe(true);
+  });
+
+  it('still sees a difference that is real money', () => {
+    expect(moneyExceeds(200.01, 200)).toBe(true);
+    expect(moneyExceeds(200, 200)).toBe(false);
+    expect(moneyReaches(199.99, 200)).toBe(false);
+    expect(moneyReaches(200, 200)).toBe(true);
+  });
+
+  it('keeps the tolerance far below the minor unit, so no penny is swallowed', () => {
+    expect(MONEY_EPSILON).toBeLessThan(10 ** -MONEY_DECIMALS / 1000);
+    expect(moneyExceeds(200.001, 200)).toBe(true);
+  });
+
+  it('widens the tolerance with magnitude, but never as far as a penny', () => {
+    // One step of a double near 1e7 is ~1.9e-9, so a fixed nanopenny would not cover it.
+    expect(moneyExceeds(10_000_000 + 1e-8, 10_000_000)).toBe(false);
+    expect(moneyExceeds(10_000_000.01, 10_000_000)).toBe(true);
+  });
+
+  it('handles negatives and zero symmetrically', () => {
+    expect(moneyExceeds(0.1 + 0.2 - 0.3, 0)).toBe(false); // 5.55e-17 is not money
+    expect(moneyExceeds(-5, 0)).toBe(false);
+    expect(moneyReaches(-5, -5)).toBe(true);
   });
 });
