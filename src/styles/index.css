@@ -2605,6 +2605,14 @@
   background-image: none;
 }
 
+/* The insurance schedule's print-only document (issue #163). It holds a *complete* artefact —
+ * the full schedule once prepared, or a room-subtotal summary — and exists purely so that what
+ * prints is never derived from the paged reading view. Hidden on screen; the `@media print`
+ * block below swaps the two over. */
+.schedule-print-doc {
+  display: none;
+}
+
 /* ── Print: the insurance / estate schedule document (feature-gap G1) ────────────────
  * The schedule screen renders with the usual design tokens on screen; when printed (or
  * "Saved as PDF") the app chrome is dropped, the page is forced to a legible light,
@@ -2636,6 +2644,23 @@
   .print-hide,
   [data-testid='offline-indicator'] {
     display: none !important;
+  }
+
+  /* The insurance schedule is read on screen a page at a time (issue #163), and a *page* of a
+   * schedule must never reach paper: an insurer or executor cannot tell a truncated schedule
+   * from a complete one. So the paged reading view is not printable at all, and the print-only
+   * document beside it — which is always a complete artefact, either the full schedule or a
+   * clearly-headed room-subtotal summary — takes its place. Making this structural means no
+   * route to the printer (the button, Ctrl+P, or the browser's own menu) can produce a partial
+   * document. Both class names are load-bearing: see InsuranceScheduleScreen.tsx. */
+  .schedule-window {
+    display: none !important;
+  }
+
+  .schedule-print-doc {
+    display: flex !important;
+    flex-direction: column;
+    gap: 1.5rem;
   }
 
   /* Force a legible black-on-white scheme independent of the on-screen (dark) theme.

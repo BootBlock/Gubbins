@@ -10,12 +10,32 @@ replacement values and totals.
 
 The schedule is grouped **by location** (room by room) and, for each item, lists:
 
-- A **photo** thumbnail, the **name** and **serial number**.
+- The **name** and **serial number**, plus an optional **photo** thumbnail.
 - **Purchase price**, **acquired date**, **warranty** and **[[condition|Condition-Grading]]**.
 - A **replacement value** per item.
 
 Each location shows a **subtotal**, and the schedule ends with a **grand total** — the headline
 figure an insurer or executor needs.
+
+### Photos are optional
+
+**Include photos** at the top of the screen adds each item's primary photo to the schedule. It is
+**off by default**, because photos are by far the largest part of a schedule: turning them on makes
+the document slower to build, much larger to save, and lowers how many items can be printed in one
+go (see *Printing* below).
+
+Turn it **on** when an adjuster needs to match the document against the actual goods; leave it
+**off** for a compact, fast, text-only record.
+
+## Browsing a large schedule
+
+The schedule is shown **a page at a time**, with the page controls at the bottom. The totals above
+the document — the asset count and the grand total — always cover the **whole** schedule, not just
+the page you are looking at, so the headline figure is right however much of the document is on
+screen.
+
+Where a room is split across pages, its heading says **"showing 5 of 240"** so a part-page is never
+mistaken for the whole room. The room's own subtotal is always its full subtotal.
 
 ## Values reflect today's worth
 
@@ -33,11 +53,33 @@ figure.
 > Give such an item its own **unit cost** to bring it back into the total. See
 > [[valuation & spend|Valuation-and-Spend]].
 
-## Printing to PDF
+## Printing
 
-The schedule is **print-styled**: printing it (your browser's Print → **Save as PDF**) drops the
-app's on-screen chrome, switches to a clean black-on-white layout, and repeats the table header
-across pages. No extra software and no PDF plugin — it uses your browser's own print.
+The schedule is **print-styled**: printing it drops the app's on-screen chrome, switches to a clean
+black-on-white layout, and repeats the table header across pages. No extra software and no PDF
+plugin — it uses your browser's own print, so **Print → Save as PDF** gives you a PDF.
+
+**Use the Print / Save as PDF button** to print the schedule. Because the document is read a page at
+a time, the button first loads *every* remaining page — you'll see its progress — and then prints
+the complete schedule. That is what makes the printed document trustworthy: what comes out is always
+the whole schedule, never the page you happened to be on.
+
+If you print straight from your browser instead (Ctrl+P, or the browser's own menu), Gubbins prints
+a **summary** — one line per room with its item count and subtotal, plus the grand total — headed
+*"Summary — room subtotals only"*. It's a useful short document in its own right, and it can never
+be mistaken for the full schedule.
+
+> **ℹ️ Note**
+> Whichever you print, the document says at the top which one it is. A printed schedule never shows
+> only part of your inventory while looking complete — an insurer or executor has no way to tell the
+> difference, so Gubbins doesn't allow it.
+
+### Very large schedules
+
+Printing has a size limit, because a very large schedule runs to thousands of pages. Above roughly
+**20,000 items** (or **2,000** with photos on), the Print button is switched off and Gubbins suggests
+**exporting** the schedule as a file instead. A file is more useful at that size anyway — it can be
+searched and re-totalled, and you can print any part of it. Turning photos off raises the limit.
 
 > **💡 Tip**
 > Generate a fresh schedule after any big purchase or revaluation and keep the PDF with your

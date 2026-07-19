@@ -9,6 +9,8 @@ import { getReportRepository } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { reportKeys } from './keys';
 import type { CatalogueScope, CataloguePartsOptions } from './parts-catalogue';
+import { scheduleSlices, type ScheduleGroupSummary, type ScheduleLine } from './insurance-schedule';
+import { MAX_PAGE_SIZE } from '@/db/repositories/constants';
 
 // The `['reports', …]` prefix is the SSOT in ./keys — every key below is built from it so
 // that invalidating the prefix (see `invalidateItems`) provably refreshes all of them.
@@ -250,16 +252,100 @@ export function useSalesAnalytics(
 }
 
 /**
- * Insurance / estate schedule (G1): the room-by-room document of every catalogued asset with
- * its replacement value. Read-only aggregation over `items` + `locations`, fetched through
- * `ReportRepository`; the print screen renders the returned DTO and offers `window.print()`.
+ * Insurance / estate schedule (G1) — the document's totals and room ordering, with no lines.
+ *
+ * Bounded by the location count rather than the asset count, so it is safe to read for any
+ * inventory size (issue #163). It is also what the screen needs first: the grand total, the
+ * room list and each room's asset count are what page navigation and the printed summary are
+ * built from.
  */
-export function useInsuranceSchedule() {
+export function useInsuranceScheduleSummary() {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'insurance-schedule', currency],
-    queryFn: () => getReportRepository().insuranceSchedule(),
+    queryKey: [...reportKeys.all, 'insurance-schedule', 'summary', currency],
+    queryFn: () => getReportRepository().insuranceScheduleSummary(),
   });
+}
+
+/**
+ * One page of the insurance schedule's lines, addressed document-wide.
+ *
+ * `scheduleSlices` maps the requested window onto per-room reads — a page straddling a room
+ * boundary becomes two — and the results are concatenated back into document order. Photos are
+ * only fetched when the reader has asked for them, which is what keeps a large schedule's
+ * payload to text (issue #163).
+ */
+export function useInsuranceSchedulePage(
+  groups: readonly ScheduleGroupSummary[] | undefined,
+  offset: number,
+  limit: number,
+  includePhotos: boolean,
+) {
+  const currency = useValuationCurrency();
+  return useQuery({
+    queryKey: [...reportKeys.all, 'insurance-schedule', 'page', offset, limit, includePhotos, currency],
+    queryFn: async () => {
+      const repo = getReportRepository();
+      const slices = scheduleSlices(groups ?? [], offset, limit);
+      const pages = await Promise.all(
+        slices.map((slice) =>
+          repo.insuranceScheduleGroupPage(
+            slice.locationId,
+            { limit: slice.limit, offset: slice.offset },
+            { includePhotos },
+          ),
+        ),
+      );
+      return slices.map((slice, i) => ({ locationId: slice.locationId, lines: pages[i]!.rows }));
+    },
+    enabled: groups !== undefined,
+    // Re-keyed as the reader pages or toggles photos; hold the previous page rather than
+    // flashing the document to a spinner.
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Load **every** line of the insurance schedule, room by room, for printing.
+ *
+ * Deliberately not a cached query. A full document is the one read whose size scales with the
+ * inventory, so it is materialised only when the reader explicitly asks to print, reported on
+ * while it loads, abortable, and dropped as soon as the print is done — rather than sat in the
+ * query cache holding megabytes of thumbnails alive (issue #163).
+ *
+ * Rooms are walked in the summary's order and each is paged at the repository ceiling, so no
+ * single read is unbounded even though the assembled result is the whole document.
+ */
+export async function loadFullScheduleLines(
+  groups: readonly ScheduleGroupSummary[],
+  includePhotos: boolean,
+  onProgress: (loaded: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<Map<string | null, ScheduleLine[]>> {
+  const repo = getReportRepository();
+  const total = groups.reduce((sum, g) => sum + g.itemCount, 0);
+  const byLocation = new Map<string | null, ScheduleLine[]>();
+  let loaded = 0;
+
+  for (const group of groups) {
+    const lines: ScheduleLine[] = [];
+    while (lines.length < group.itemCount) {
+      if (signal?.aborted) throw new DOMException('Schedule preparation cancelled', 'AbortError');
+      const page = await repo.insuranceScheduleGroupPage(
+        group.locationId,
+        { limit: MAX_PAGE_SIZE, offset: lines.length },
+        { includePhotos },
+      );
+      // A room that shrank mid-read would otherwise spin forever waiting for rows that no
+      // longer exist; the count came from a summary read a moment earlier, not this instant.
+      if (page.rows.length === 0) break;
+      lines.push(...page.rows);
+      loaded += page.rows.length;
+      onProgress(Math.min(loaded, total), total);
+    }
+    byLocation.set(group.locationId, lines);
+  }
+  return byLocation;
 }
 
 /**
