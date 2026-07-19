@@ -14,6 +14,7 @@ import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { emptyAst } from '@/db/search/ast.ts';
 import { hydrateFromFile } from './hydrate.ts';
+import { errorDetail } from './errors.ts';
 
 async function main(): Promise<void> {
   const snapshotPath = process.argv[2];
@@ -61,6 +62,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error(`\nBridge CLI failed: ${err instanceof Error ? err.message : String(err)}`);
+  console.error(`\nBridge CLI failed: ${errorDetail(err)}`);
   process.exitCode = 1;
 });

@@ -44,6 +44,7 @@ import { createWebhookDeliveryLog, type WebhookDeliveryLog } from './events/webh
 import { createWebhookTestFirer } from './events/webhook-test.ts';
 import type { WebhookTestCapability } from './server.ts';
 import { attachServerResilience, installProcessResilience, type ProcessResilience } from './resilience.ts';
+import { errorDetail, errorMessage } from './errors.ts';
 import { createMqttPublisher, type MqttPublisher } from './mqtt/publisher.ts';
 import { endpointLabel, parseMqttEndpoint, type MqttEndpoint } from './mqtt/client.ts';
 import type { Server } from 'node:http';
@@ -147,9 +148,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
               try {
                 sink.deliver([event]);
               } catch (err) {
-                console.error(
-                  `Lookup event delivery failed: ${err instanceof Error ? err.message : String(err)}`,
-                );
+                console.error(`Lookup event delivery failed: ${errorDetail(err)}`);
               }
             }
           },
@@ -170,7 +169,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
         try {
           await mqtt.publishState(state.driver, state.snapshotGeneratedAt);
         } catch (err) {
-          console.error(`MQTT state publish failed: ${err instanceof Error ? err.message : String(err)}`);
+          console.error(`MQTT state publish failed: ${errorDetail(err)}`);
         }
       }
     },
@@ -601,11 +600,7 @@ function loadWebhookConfig(config: BridgeConfig): WebhookFileConfig {
   return { targets, secrets };
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 startBridge().catch((error: unknown) => {
-  console.error(`Bridge failed to start: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`Bridge failed to start: ${errorDetail(error)}`);
   process.exitCode = 1;
 });

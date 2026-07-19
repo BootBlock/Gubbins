@@ -43,6 +43,7 @@ import type { IDatabaseDriver } from '@/db/rpc/driver';
 import type { WebhookEventView } from '@/features/webhooks/event-view.ts';
 import { subscriptionMatches } from '@/features/webhooks/matcher.ts';
 import { resolveWebhookPayload, webhookQueryParams } from '@/features/webhooks/template.ts';
+import { errorDetail, errorMessage } from '../errors.ts';
 import type { BridgeEvent } from './model.ts';
 import type { EventSink } from './pipeline.ts';
 import { buildWebhookEventView, createWebhookViewContext } from './webhook-view.ts';
@@ -388,7 +389,7 @@ export function createWebhookDeliverer(options: WebhookDelivererOptions): Webhoo
           lastDetail = res.body ?? null;
           log(`Webhook delivery got HTTP ${res.status} from ${redactUrl(plan.url)} (attempt ${attempt}).`);
         } catch (err) {
-          lastDetail = errMessage(err);
+          lastDetail = errorMessage(err);
           log(`Webhook delivery failed to ${redactUrl(plan.url)} (attempt ${attempt}): ${lastDetail}`);
         }
         if (attempt < maxAttempts) await sleep(backoffFor(attempt, baseBackoff, maxBackoff));
@@ -450,7 +451,7 @@ export function createWebhookDeliverer(options: WebhookDelivererOptions): Webhoo
     try {
       resolved = options.resolveTargets ? await options.resolveTargets(driver) : [];
     } catch (err) {
-      log(`Failed to read webhook subscriptions: ${errMessage(err)}. Using configured targets only.`);
+      log(`Failed to read webhook subscriptions: ${errorDetail(err)}. Using configured targets only.`);
     }
     const targets = [...staticTargets, ...resolved];
     if (targets.length === 0) return;
@@ -461,7 +462,7 @@ export function createWebhookDeliverer(options: WebhookDelivererOptions): Webhoo
       try {
         view = await buildWebhookEventView(event, context);
       } catch (err) {
-        log(`Failed to project webhook event ${event.id}: ${errMessage(err)}.`);
+        log(`Failed to project webhook event ${event.id}: ${errorDetail(err)}.`);
         continue;
       }
       for (const target of targets) {
@@ -478,7 +479,7 @@ export function createWebhookDeliverer(options: WebhookDelivererOptions): Webhoo
      */
     deliver(events: readonly BridgeEvent[], driver?: IDatabaseDriver): Promise<void> {
       const pending = ingest(events, driver).catch((err: unknown) => {
-        log(`Webhook intake failed: ${errMessage(err)}.`);
+        log(`Webhook intake failed: ${errorDetail(err)}.`);
       });
       // Chained so `whenIdle` waits for *every* in-flight intake, not just the latest.
       intake = intake.then(() => pending);
@@ -536,8 +537,4 @@ export function redactUrl(url: string): string {
   } catch {
     return '<url>';
   }
-}
-
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

@@ -26,6 +26,7 @@ import { loadAllowWrites, loadSnapshotPath, type Env } from '../config.ts';
 import { createSnapshotWatcher, type SnapshotWatcher } from '../watcher.ts';
 import { detectSource, writesEnabledForSource } from '../sqlite-source.ts';
 import { createWriteExecutor } from '../write.ts';
+import { errorDetail } from '../errors.ts';
 import { ALL_TOOLS, createWriteTools } from './tools.ts';
 import { runStdioServer, type StdioServer } from './stdio.ts';
 
@@ -85,6 +86,6 @@ export async function startMcpServer(env: Env = process.env): Promise<RunningMcp
 }
 
 startMcpServer().catch((error: unknown) => {
-  log(`MCP server failed to start: ${error instanceof Error ? error.message : String(error)}`);
+  log(`MCP server failed to start: ${errorDetail(error)}`);
   process.exitCode = 1;
 });

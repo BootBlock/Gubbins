@@ -23,6 +23,7 @@
  */
 import type { Server } from 'node:http';
 import type { Duplex } from 'node:stream';
+import { errorDetail } from './errors.ts';
 
 /** Faults tolerated inside {@link FAULT_WINDOW_MS} before the process gives up and restarts. */
 export const FAULT_THRESHOLD = 10;
@@ -65,15 +66,6 @@ export function createFaultTracker(options: FaultTrackerOptions = {}): FaultTrac
   };
 }
 
-/** Message for a thrown value that may not be an `Error` (a rejection can carry anything). */
-export function faultMessage(err: unknown): string {
-  if (err instanceof Error) {
-    const code = (err as NodeJS.ErrnoException).code;
-    return code === undefined ? err.message : `${err.message} (${code})`;
-  }
-  return String(err);
-}
-
 /**
  * Re-arm a **persistent** `'error'` listener on a listening server, plus a `'clientError'` handler.
  *
@@ -84,7 +76,7 @@ export function faultMessage(err: unknown): string {
  */
 export function attachServerResilience(server: Server, tracker: FaultTracker, onExit: () => void): void {
   server.on('error', (err) => {
-    console.error(`Bridge server error (the bridge is still serving): ${faultMessage(err)}`);
+    console.error(`Bridge server error (the bridge is still serving): ${errorDetail(err)}`);
     if (tracker.record(Date.now()) === 'exit') onExit();
   });
 
@@ -150,12 +142,12 @@ export function installProcessResilience(options: ProcessResilienceOptions = {})
   );
 
   process.on('uncaughtException', (err) => {
-    console.error(`Uncaught exception (the bridge is still serving): ${faultMessage(err)}`);
+    console.error(`Uncaught exception (the bridge is still serving): ${errorDetail(err)}`);
     if (tracker.record(Date.now()) === 'exit') onExit();
   });
 
   process.on('unhandledRejection', (reason) => {
-    console.error(`Unhandled promise rejection (the bridge is still serving): ${faultMessage(reason)}`);
+    console.error(`Unhandled promise rejection (the bridge is still serving): ${errorDetail(reason)}`);
     if (tracker.record(Date.now()) === 'exit') onExit();
   });
 
