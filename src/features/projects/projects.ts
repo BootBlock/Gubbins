@@ -10,7 +10,6 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  getCheckoutRepository,
   getItemRepository,
   getProjectRepository,
   type CostingMode,
@@ -183,14 +182,11 @@ export function useSetCostingMode() {
 export function useDeleteProject() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => {
-      // Return every tool still out on this project first (restoring stock/history as a normal
-      // check-in would) so deleting the project never silently strands stock still marked
-      // "out" (B4) — mirroring the contact-delete flow. The project's `ON DELETE CASCADE` then
-      // removes the now-returned checkout rows.
-      await getCheckoutRepository().checkInAllForTarget('project', id);
-      await getProjectRepository().delete(id);
-    },
+    // The delete itself returns every tool still out on this project first (restoring
+    // stock/history as a normal check-in would) so it never silently strands stock marked
+    // "out" (B4) — in the *same* transaction, so the returns can't survive a failed delete
+    // (issue #301). The project's `ON DELETE CASCADE` then removes the returned checkout rows.
+    mutationFn: (id: string) => getProjectRepository().delete(id),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: projectKeys.list() });
       void client.invalidateQueries({ queryKey: projectKeys.budgetAlerts() });

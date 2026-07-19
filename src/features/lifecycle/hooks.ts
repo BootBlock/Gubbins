@@ -11,7 +11,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   EXPIRY_SOON_WINDOW_DAYS,
   getItemRepository,
-  getLocationRepository,
   getMaintenanceRepository,
   getProjectRepository,
   type CreateItemInput,
@@ -276,45 +275,27 @@ export function useTransferStock() {
 
 // --- Cycle counting & reconciliation (spec §4.4) -------------------------------
 
-export function useReconcile() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (adjustments: readonly ReconciliationAdjustment[]) =>
-      getItemRepository().reconcile(adjustments),
-    onSettled: (updated) => {
-      invalidateItems(client);
-      updated?.forEach(
-        (item) => void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
-      );
-    },
-  });
-}
-
-/** Authorise a serialised audit: soft-delete the instances flagged missing (§4.4). */
-export function useReconcileSerialised() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (adjustments: readonly SerialisedReconciliation[]) =>
-      getItemRepository().reconcileSerialised(adjustments),
-    onSettled: (updated) => {
-      invalidateItems(client);
-      updated?.forEach(
-        (item) => void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
-      );
-    },
-  });
-}
-
 /**
- * Stamp a location's durable "last counted" timestamp (stock-take backlog G1) — called
- * once a per-location count completes, clean or reconciled, so `LocationInfoCard` and the
- * audit-day scope picker can show how long it's been since a location was verified.
+ * Authorise a whole per-location count as **one** operation (issue #301): the discrete
+ * reconciliation, the serialised presence audit and the location's "last counted" stamp all
+ * commit together. Previously these were three awaited mutations, so a failure at the second
+ * left stock adjusted, presence unreconciled and the location never stamped.
  */
-export function useMarkLocationCounted() {
+export function useAuthoriseCount() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (locationId: string) => getLocationRepository().markCounted(locationId),
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.locations() }),
+    mutationFn: (input: {
+      locationId: string;
+      quantityAdjustments: readonly ReconciliationAdjustment[];
+      serialisedAdjustments: readonly SerialisedReconciliation[];
+    }) => getItemRepository().authoriseCount(input),
+    onSettled: (result) => {
+      invalidateItems(client);
+      void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+      [...(result?.discrete ?? []), ...(result?.serialised ?? [])].forEach(
+        (item) => void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
+      );
+    },
   });
 }
 

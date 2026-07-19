@@ -306,6 +306,81 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       const bob = await contacts.resolveOrCreate('Bob');
       await expect(checkouts.checkInAllForContact(bob.id)).resolves.toBeUndefined();
     });
+
+    it('accumulates two loans of the same item planned together (issue #301)', async () => {
+      // Both returns are planned against the same pre-transaction state, so a plan that *set*
+      // the quantity rather than adding to it would silently lose one loan's units.
+      const drill = await makeItem('Drill', 5);
+      const bob = await contacts.resolveOrCreate('Bob');
+      await checkouts.checkout({ itemId: drill, contactId: bob.id, quantity: 2 });
+      await checkouts.checkout({ itemId: drill, contactId: bob.id, quantity: 1 });
+      expect((await items.getById(drill))?.quantity).toBe(2);
+
+      await checkouts.checkInAllForContact(bob.id);
+
+      expect((await items.getById(drill))?.quantity).toBe(5);
+    });
+  });
+
+  describe('borrower deletes are atomic with their returns (issue #301)', () => {
+    it('deleting a contact returns their loans in the same transaction', async () => {
+      const drill = await makeItem('Drill', 3);
+      const bob = await contacts.resolveOrCreate('Bob');
+      const loan = await checkouts.checkout({ itemId: drill, contactId: bob.id, quantity: 2 });
+      expect((await items.getById(drill))?.quantity).toBe(1);
+
+      await contacts.delete(bob.id);
+
+      expect(await contacts.getById(bob.id)).toBeUndefined();
+      expect(await checkouts.getById(loan.id)).toBeUndefined(); // cascaded away, but returned first
+      expect((await items.getById(drill))?.quantity).toBe(3);
+      const history = await items.getHistory(drill);
+      expect(history.rows.some((h) => h.action === 'CHECKED_IN')).toBe(true);
+    });
+
+    it('leaves the loans untouched when the delete itself fails', async () => {
+      const drill = await makeItem('Drill', 3);
+      const bob = await contacts.resolveOrCreate('Bob');
+      const loan = await checkouts.checkout({ itemId: drill, contactId: bob.id, quantity: 2 });
+
+      // Force the delete half to fail; the whole transaction — returns included — must roll back.
+      const original = driver.transaction.bind(driver);
+      driver.transaction = async () => {
+        throw new DbError('TRANSACTION_FAILED', 'simulated failure');
+      };
+      await expect(contacts.delete(bob.id)).rejects.toBeInstanceOf(DbError);
+      driver.transaction = original;
+
+      expect(await contacts.getById(bob.id)).toBeDefined();
+      expect((await checkouts.getById(loan.id))?.returnedAt).toBeNull();
+      expect((await items.getById(drill))?.quantity).toBe(1); // stock still out, not force-returned
+    });
+
+    it('deleting a project returns the tools still out on it', async () => {
+      const projects = new ProjectRepository(driver);
+      const saw = await makeItem('Saw', 4);
+      const project = await projects.create({ name: 'Shed rebuild' });
+      const loan = await checkouts.checkout({ itemId: saw, projectId: project.id, quantity: 3 });
+      expect((await items.getById(saw))?.quantity).toBe(1);
+
+      await projects.delete(project.id);
+
+      expect(await checkouts.getById(loan.id)).toBeUndefined();
+      expect((await items.getById(saw))?.quantity).toBe(4);
+    });
+
+    it('deleting a location returns the tools borrowed by it', async () => {
+      const locations = new LocationRepository(driver);
+      const van = await locations.create({ name: 'Van' });
+      const saw = await makeItem('Saw', 4);
+      const loan = await checkouts.checkout({ itemId: saw, locationId: van.id, quantity: 3 });
+      expect((await items.getById(saw))?.quantity).toBe(1);
+
+      await locations.delete(van.id);
+
+      expect(await checkouts.getById(loan.id)).toBeUndefined();
+      expect((await items.getById(saw))?.quantity).toBe(4);
+    });
   });
 
   describe('queries', () => {

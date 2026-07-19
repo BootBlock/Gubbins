@@ -9,6 +9,7 @@
 import { DbError } from '../../errors';
 import type { SqlValue } from '../../rpc/driver';
 import { BaseRepository } from '../base';
+import { planCheckInAllForTarget } from '../checkout-plan';
 import type { CostingMode } from '../constants';
 import { rowToBomLine, rowToProject } from '../mappers';
 import { tombstoneStatement } from '../tombstone';
@@ -147,11 +148,21 @@ export class ProjectCoreRepository extends BaseRepository {
     return this.update(id, { costingMode: mode });
   }
 
-  /** Hard delete a project; its BOM lines cascade away. Allowed under Hard Stop. */
+  /**
+   * Hard delete a project; its BOM lines cascade away. Allowed under Hard Stop.
+   *
+   * Every tool still out on the project is returned first (restoring stock and logging
+   * `CHECKED_IN` as an ordinary check-in would, B4) so the delete never strands stock marked
+   * "out". Those returns ride in **this** transaction (issue #301) rather than a preceding
+   * awaited call, so a failed delete can't leave the loans force-returned against a project
+   * that still exists.
+   */
   async delete(id: string): Promise<void> {
+    const returns = await planCheckInAllForTarget(this.driver, 'project', id, this.actorId());
     // Tombstone the deletion (Phase 11: projects is synced). BOM lines cascade locally
     // and, on a peer, from this same project tombstone, so they need none of their own.
     await this.driver.transaction([
+      ...returns,
       { sql: 'DELETE FROM projects WHERE id = ?;', params: [id] },
       tombstoneStatement('projects', id),
     ]);

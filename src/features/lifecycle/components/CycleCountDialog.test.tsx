@@ -38,14 +38,10 @@ vi.mock('@/db/repositories', () => ({
 }));
 
 // Reconcile hooks — spies resolved with [] by default; individual tests override.
-const reconcileSpy = vi.hoisted(() => vi.fn().mockResolvedValue([]));
-const reconcileSerialisedSpy = vi.hoisted(() => vi.fn().mockResolvedValue([]));
-const markCountedSpy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const authoriseCountSpy = vi.hoisted(() => vi.fn().mockResolvedValue({ discrete: [], serialised: [] }));
 
 vi.mock('../hooks', () => ({
-  useReconcile: () => ({ mutateAsync: reconcileSpy, isPending: false }),
-  useReconcileSerialised: () => ({ mutateAsync: reconcileSerialisedSpy, isPending: false }),
-  useMarkLocationCounted: () => ({ mutateAsync: markCountedSpy, isPending: false }),
+  useAuthoriseCount: () => ({ mutateAsync: authoriseCountSpy, isPending: false }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -68,9 +64,7 @@ function renderDialog(client = makeClient()) {
 
 afterEach(() => {
   cleanup();
-  reconcileSpy.mockResolvedValue([]);
-  reconcileSerialisedSpy.mockResolvedValue([]);
-  markCountedSpy.mockResolvedValue(undefined);
+  authoriseCountSpy.mockResolvedValue({ discrete: [], serialised: [] });
 });
 
 // ---------------------------------------------------------------------------
@@ -97,7 +91,7 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
   it('populates the live region with the completion message after authorise', async () => {
     // Spy resolves with 2 items so the message reads "2 adjustments".
     const fakeItem = { id: 'item-abc' };
-    reconcileSpy.mockResolvedValue([fakeItem, fakeItem]);
+    authoriseCountSpy.mockResolvedValue({ discrete: [fakeItem, fakeItem], serialised: [] });
 
     renderDialog();
 
@@ -121,7 +115,7 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
   });
 
   it('uses singular "adjustment" when exactly 1 item was reconciled', async () => {
-    reconcileSpy.mockResolvedValue([{ id: 'item-abc' }]);
+    authoriseCountSpy.mockResolvedValue({ discrete: [{ id: 'item-abc' }], serialised: [] });
 
     renderDialog();
 
@@ -141,7 +135,7 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
   });
 
   it('keeps the same live-region DOM node before and after reconciliation (no remount trap)', async () => {
-    reconcileSpy.mockResolvedValue([{ id: 'item-abc' }]);
+    authoriseCountSpy.mockResolvedValue({ discrete: [{ id: 'item-abc' }], serialised: [] });
 
     renderDialog();
 

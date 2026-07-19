@@ -8,11 +8,26 @@ import { DbError } from '../../errors';
 import type { SqlStatement } from '../../rpc/driver';
 import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
 import { placementDeltaStatements, runStockDraw, setBatchStatement, stockBatchRowId } from '../stock-batches';
+import { markCountedStatement } from '../location-count';
 import { stockRowId } from '../stock';
 import type { Item, ReconciliationAdjustment, SerialisedReconciliation } from '../types';
 import { historyStatement } from './history';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
+
+/** A planned batch of reconciliation writes plus the items they touch. */
+interface CountPlan {
+  readonly statements: SqlStatement[];
+  readonly touched: string[];
+}
+
+/** What a whole authorised count actually wrote, split by tracking mode. */
+export interface AuthorisedCount {
+  /** DISCRETE items whose on-hand quantity was reconciled. */
+  readonly discrete: Item[];
+  /** SERIALISED instances retired by the presence audit. */
+  readonly serialised: Item[];
+}
 
 export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
   return class ItemCycleCountRepository extends Base {
@@ -39,6 +54,19 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
      */
     async reconcile(adjustments: readonly ReconciliationAdjustment[]): Promise<Item[]> {
       this.assertWritable();
+      const plan = await this.planReconcile(adjustments);
+      if (plan.statements.length === 0) return [];
+      await runStockDraw(this.driver, plan.statements);
+      return this.loadTouched(plan.touched);
+    }
+
+    /**
+     * The read-and-decide half of {@link reconcile}: validate each adjustment and build the
+     * statements that absorb its variance, without executing anything. Split out so a whole
+     * count authorisation — discrete reconciliation, serialised presence audit and the
+     * location's "counted" stamp — can land in **one** transaction (issue #301).
+     */
+    private async planReconcile(adjustments: readonly ReconciliationAdjustment[]): Promise<CountPlan> {
       const statements: SqlStatement[] = [];
       const touched: string[] = [];
 
@@ -114,10 +142,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
         touched.push(adj.itemId);
       }
 
-      if (statements.length === 0) return [];
-      await runStockDraw(this.driver, statements);
-      const updated = await Promise.all(touched.map((id) => this.getById(id)));
-      return updated.filter((i): i is Item => i !== undefined);
+      return { statements, touched };
     }
 
     /**
@@ -132,6 +157,16 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
      */
     async reconcileSerialised(adjustments: readonly SerialisedReconciliation[]): Promise<Item[]> {
       this.assertWritable();
+      const plan = await this.planReconcileSerialised(adjustments);
+      if (plan.statements.length === 0) return [];
+      await runStockDraw(this.driver, plan.statements);
+      return this.loadTouched(plan.touched);
+    }
+
+    /** The read-and-decide half of {@link reconcileSerialised} — see {@link planReconcile}. */
+    private async planReconcileSerialised(
+      adjustments: readonly SerialisedReconciliation[],
+    ): Promise<CountPlan> {
       const statements: SqlStatement[] = [];
       const touched: string[] = [];
 
@@ -151,9 +186,58 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
         touched.push(adj.itemId);
       }
 
-      if (statements.length === 0) return [];
-      await runStockDraw(this.driver, statements);
-      const updated = await Promise.all(touched.map((id) => this.getById(id)));
+      return { statements, touched };
+    }
+
+    /**
+     * Authorise a whole per-location count in **one transaction** (issue #301).
+     *
+     * A count is one user action but three writes — the discrete reconciliation, the serialised
+     * presence audit, and stamping the location as counted. Running them as three awaited calls
+     * meant a failure at the second left stock adjusted, presence unreconciled and the location
+     * never stamped, with nothing to say which half applied. Planning all three up front and
+     * committing them together makes the authorisation all-or-nothing.
+     *
+     * The location is stamped even when nothing drifted: a clean count is still a completed
+     * audit, and that durable timestamp is what the audit-day picker and `LocationInfoCard`
+     * read to show how long it has been since a location was verified.
+     *
+     * The one exception is a **system** location (Unassigned): the schema's
+     * `trg_locations_protect_system_update` trigger aborts any UPDATE on one, so the stamp is
+     * simply omitted rather than failing the count. Counting the loose stock in Unassigned is a
+     * legitimate thing to do — before this was atomic it reconciled the stock and *then* raised
+     * a constraint error on the stamp, which is the worst of both.
+     */
+    async authoriseCount(input: {
+      readonly locationId: string;
+      readonly quantityAdjustments: readonly ReconciliationAdjustment[];
+      readonly serialisedAdjustments: readonly SerialisedReconciliation[];
+      readonly countedAt?: number;
+    }): Promise<AuthorisedCount> {
+      this.assertWritable();
+      const discrete = await this.planReconcile(input.quantityAdjustments);
+      const serialised = await this.planReconcileSerialised(input.serialisedAdjustments);
+      const isSystem = Boolean(
+        (
+          await this.driver.queryOne<{ is_system: number }>('SELECT is_system FROM locations WHERE id = ?;', [
+            input.locationId,
+          ])
+        )?.is_system,
+      );
+      await runStockDraw(this.driver, [
+        ...discrete.statements,
+        ...serialised.statements,
+        ...(isSystem ? [] : [markCountedStatement(input.locationId, input.countedAt ?? Date.now())]),
+      ]);
+      return {
+        discrete: await this.loadTouched(discrete.touched),
+        serialised: await this.loadTouched(serialised.touched),
+      };
+    }
+
+    /** Re-read the items a plan wrote, dropping any that vanished under a concurrent delete. */
+    private async loadTouched(ids: readonly string[]): Promise<Item[]> {
+      const updated = await Promise.all(ids.map((id) => this.getById(id)));
       return updated.filter((i): i is Item => i !== undefined);
     }
 

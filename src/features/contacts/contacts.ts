@@ -108,12 +108,10 @@ export function useUpdateContact() {
 export function useDeleteContact() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => {
-      // Return every active loan first (restoring stock/history as a normal check-in
-      // would) so deleting the contact never silently strands stock still marked "out".
-      await getCheckoutRepository().checkInAllForContact(id);
-      await getContactRepository().delete(id);
-    },
+    // The delete itself returns every active loan first (restoring stock/history as a normal
+    // check-in would) so deleting a contact never silently strands stock still marked "out" —
+    // in the *same* transaction, so the returns can't survive a failed delete (issue #301).
+    mutationFn: (id: string) => getContactRepository().delete(id),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: contactKeys.all });
       void client.invalidateQueries({ queryKey: checkoutKeys.all });

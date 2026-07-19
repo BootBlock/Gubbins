@@ -33,7 +33,8 @@ the same per-location counting engine, so a single location count and a full aud
 
 > **ℹ️ Note**
 > Gubbins remembers when each location was **last counted**, so you can see what's overdue for a
-> check and prioritise it.
+> check and prioritise it. The built-in **Unassigned** location is the one exception — you can
+> count the loose stock sitting there, but it doesn't carry a last-counted date of its own.
 
 ## Related pages
 

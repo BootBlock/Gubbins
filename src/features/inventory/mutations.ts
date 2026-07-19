@@ -24,7 +24,6 @@ import { useT, type MessageKey } from '@/features/i18n';
 import { useErrorMessage } from '@/features/errors';
 import {
   getCategoryRepository,
-  getCheckoutRepository,
   getItemRepository,
   getLocationRepository,
   getSupplierPartRepository,
@@ -686,15 +685,13 @@ export function useArchiveLocation() {
 export function useDeleteLocation() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => {
-      // Return every tool still out to this location first (restoring stock/history as a normal
-      // check-in would) so deleting the location never silently strands stock still marked
-      // "out" (B4) — mirroring the contact-delete flow. The location's `ON DELETE CASCADE` on
-      // the borrower `location_id` then removes the now-returned checkout rows. (This is the
-      // loan *target*; the delete's own SQL still nulls the distinct source_location_id.)
-      await getCheckoutRepository().checkInAllForTarget('location', id);
-      await getLocationRepository().delete(id);
-    },
+    // The delete itself returns every tool still out to this location first (restoring
+    // stock/history as a normal check-in would) so it never silently strands stock marked
+    // "out" (B4) — in the *same* transaction, so the returns can't survive a failed delete
+    // (issue #301). The location's `ON DELETE CASCADE` on the borrower `location_id` then
+    // removes the returned checkout rows. (This is the loan *target*; the delete's own SQL
+    // still nulls the distinct source_location_id.)
+    mutationFn: (id: string) => getLocationRepository().delete(id),
     onSettled: () => {
       // A delete re-parents items to Unassigned, so refresh items too.
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
