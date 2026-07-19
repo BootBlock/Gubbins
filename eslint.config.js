@@ -22,6 +22,10 @@ export default tseslint.config(
       'public/**',
       'src/routeTree.gen.ts',
       '**/*.gen.ts',
+      // Sibling checkouts of this same repo live here. Without this, `eslint .` from the
+      // primary checkout descends into every one of them — linting other branches' work
+      // (7895 files instead of 1512) and reporting findings that aren't in this tree.
+      '.claude/worktrees/**',
     ],
   },
 
@@ -112,7 +116,15 @@ export default tseslint.config(
       'jsx-a11y': jsxA11y,
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      // The two classic hook rules, enabled explicitly rather than by spreading
+      // `reactHooks.configs.recommended.rules`. As of eslint-plugin-react-hooks v7 that
+      // preset also turns on the React Compiler rule set (`set-state-in-effect`, `refs`,
+      // `purity`, `immutability`, …) — 14 rules that report 113 errors against this
+      // codebase today. Those are worth adopting, but auditing them is its own piece of
+      // work, not a dependency bump; tracked in #401 so they land deliberately.
+      // Enumerating the rules we want (instead of spreading and switching the rest off)
+      // means a future v8 can't silently re-enable a rule set nobody has triaged.
+      'react-hooks/rules-of-hooks': 'error',
       // Promote the hook-dependency check to an error: a stale/oversized dep array is a
       // real bug (missed re-render or an effect firing every render), not a style nit.
       'react-hooks/exhaustive-deps': 'error',
