@@ -32,7 +32,8 @@ import {
   WARRANTY_STATUS_LABEL,
 } from '@/features/inventory/components/inventory-ui';
 import { Thumbnail } from '@/features/inventory/components/Thumbnail';
-import { qrSvg } from '@/features/scanner/qr-code';
+import { qrSvgOrNull } from '@/features/scanner/qr-code';
+import { useT } from '@/features/i18n';
 import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { useLocations } from '@/features/inventory/queries';
 import { useProjects } from '@/features/projects/projects';
@@ -156,6 +157,7 @@ export function CatalogueScreen() {
   const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
   // Surfaced if a picked logo can't be decoded (leaves the existing logo untouched).
   const [logoError, setLogoError] = useState('');
+  const t = useT();
 
   // How the catalogue is laid out — session view choices (like the scope + column picks).
   const [groupBy, setGroupBy] = useState<CatalogueGroupBy>(DEFAULT_CATALOGUE_GROUP_BY);
@@ -259,13 +261,21 @@ export function CatalogueScreen() {
     const map = new Map<string, string>();
     for (const group of catalogue.data.groups) {
       for (const line of group.lines) {
-        map.set(line.id, qrSvg(buildItemQrUrl(line.id, baseUrl), { scale: 3, margin: 1 }));
+        // Guarded: a deep-link too long to encode (an over-long "Link host") leaves that
+        // line without a QR rather than throwing out of this render-time memo.
+        const svg = qrSvgOrNull(buildItemQrUrl(line.id, baseUrl), { scale: 3, margin: 1 });
+        if (svg) map.set(line.id, svg);
       }
     }
     return map;
     // Keyed on the boolean (not the whole `fields` Set) so toggling an unrelated column never
     // regenerates every QR.
   }, [qrColumnOn, catalogue.data, baseUrl]);
+  // The QR column is on and there are lines, but not one encoded — the deep-link is too long for
+  // any QR symbol, which only an over-long "Link host" can cause. Surface it rather than
+  // rendering a silently blank column.
+  const lineCount = catalogue.data?.groups.reduce((n, g) => n + g.lines.length, 0) ?? 0;
+  const qrTooLong = qrColumnOn && qrByLine !== null && lineCount > 0 && qrByLine.size === 0;
 
   // The @page running header + page-number CSS, injected as a <style> only when enabled.
   const pageStyle = buildCataloguePageStyle({
@@ -547,6 +557,12 @@ export function CatalogueScreen() {
             </label>
             <InfoHint content={PAPER_PREVIEW_HINT} />
           </div>
+
+          {qrTooLong ? (
+            <p role="alert" className="pt-3 text-xs text-destructive" data-testid="catalogue-qr-too-long">
+              {t('inventory.qr.tooLongCatalogue')}
+            </p>
+          ) : null}
         </Surface>
 
         {/* The document itself — optionally dressed as a white printed page for on-screen

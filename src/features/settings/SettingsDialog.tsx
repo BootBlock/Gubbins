@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useId, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   Button,
@@ -37,6 +37,7 @@ import {
 } from '@/components/icons';
 import { SCANNER_SYMBOLOGY_OPTIONS } from '@/features/scanner/scanner-formats';
 import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
+import { fitsInQr } from '@/features/scanner/qr-code';
 import { hasOcr } from '@/lib/env/feature-detection';
 import { cn } from '@/lib/utils';
 import { useFeature } from '@/features/modules/useFeature';
@@ -1446,6 +1447,8 @@ const SAMPLE_ITEM_ID = '1f0a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8';
  * blank vs. custom host is visible before anything is printed.
  */
 function LabelBaseUrlControl() {
+  const t = useT();
+  const warningId = useId();
   const stored = usePreferencesStore((s) => s.labelBaseUrl);
   const setLabelBaseUrl = usePreferencesStore((s) => s.setLabelBaseUrl);
   const [draft, setDraft] = useState(stored);
@@ -1456,6 +1459,9 @@ function LabelBaseUrlControl() {
   const resolved = resolveLabelBaseUrl(draft, origin, import.meta.env.BASE_URL);
   const example = buildItemQrUrl(SAMPLE_ITEM_ID, resolved);
   const usingDefault = draft.trim().length === 0;
+  // A host long enough to push the deep-link past the largest QR symbol would silently cost
+  // every printed code its QR, so say so here — while it can still be shortened.
+  const tooLongForQr = !fitsInQr(example);
 
   return (
     <div className="flex w-72 max-w-full flex-col gap-1.5">
@@ -1471,11 +1477,23 @@ function LabelBaseUrlControl() {
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => setLabelBaseUrl(draft)}
+        aria-invalid={tooLongForQr || undefined}
+        aria-describedby={tooLongForQr ? warningId : undefined}
       />
       <p className="break-all text-xs text-muted-foreground" data-testid="label-base-url-preview">
         {usingDefault ? 'Using this device’s address — codes link to ' : 'Codes link to '}
         <span className="font-medium text-foreground">{example}</span>
       </p>
+      {tooLongForQr ? (
+        <p
+          id={warningId}
+          role="alert"
+          className="text-xs text-destructive"
+          data-testid="label-base-url-too-long"
+        >
+          {t('settings.labelBaseUrl.tooLongForQr')}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -2,7 +2,8 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Modal, Select } from '@/components/foundry';
 import { CloseIcon, DownloadIcon, NfcIcon, PrintIcon, SuccessIcon } from '@/components/icons';
 import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
-import { qrSvg } from '@/features/scanner/qr-code';
+import { qrSvgOrNull } from '@/features/scanner/qr-code';
+import { useT } from '@/features/i18n';
 import { useNfcWrite } from '@/features/scanner/useNfcWrite';
 import { useFeature } from '@/features/modules/useFeature';
 import { code128Svg } from '../labels/code128';
@@ -30,6 +31,7 @@ export function QrCodeDialog({
   itemName: string;
   itemMpn?: string | null;
 }) {
+  const t = useT();
   const defaultSymbology = usePreferencesStore((s) => s.labelTemplate.symbology);
   const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
   // Seed from the saved default, coercing 'none' (meaningless for a single-code dialog)
@@ -67,7 +69,11 @@ export function QrCodeDialog({
   const showQr = symbology === 'qr' || symbology === 'both';
   const showBarcode = symbology === 'barcode' || symbology === 'both';
 
-  const qr = useMemo(() => (showQr ? qrSvg(url, { scale: 8, margin: 4 }) : null), [showQr, url]);
+  // Guarded encode: the deep-link's length depends on the user's "Link host" setting, so a
+  // payload that won't fit any supported symbol must degrade to an explanation (below) rather
+  // than throw out of this render.
+  const qr = useMemo(() => (showQr ? qrSvgOrNull(url, { scale: 8, margin: 4 }) : null), [showQr, url]);
+  const qrTooLong = showQr && qr === null;
   const barcode = useMemo(() => {
     if (!showBarcode) return null;
     try {
@@ -76,6 +82,8 @@ export function QrCodeDialog({
       return null;
     }
   }, [showBarcode, barcodeValue]);
+  /** Whether anything at all encoded — the print/download actions need at least one code. */
+  const hasCode = qr !== null || barcode !== null;
 
   const print = () => {
     const w = window.open('', '_blank', 'width=420,height=560');
@@ -135,6 +143,15 @@ export function QrCodeDialog({
               data-testid="item-qr"
             />
           ) : null}
+          {qrTooLong ? (
+            <p
+              role="alert"
+              data-testid="item-qr-too-long"
+              className="max-w-xs rounded-lg border border-border bg-muted/40 px-3 py-2 text-center text-sm text-muted-foreground"
+            >
+              {t('inventory.qr.tooLong')}
+            </p>
+          ) : null}
           {barcode ? (
             <div
               className="w-full max-w-xs rounded-lg bg-white p-3 [&_svg]:h-16 [&_svg]:w-full"
@@ -192,11 +209,13 @@ export function QrCodeDialog({
               {nfcStatus === 'error' ? 'Try again' : 'Write to tag'}
             </Button>
           ) : null}
-          <Button variant="outline" onClick={download}>
+          {/* Nothing encoded (e.g. a deep-link too long to fit a QR) means there is nothing to
+              download or print — leaving these live would just make them look broken. */}
+          <Button variant="outline" onClick={download} disabled={!hasCode}>
             <DownloadIcon />
             Download SVG
           </Button>
-          <Button onClick={print}>
+          <Button onClick={print} disabled={!hasCode}>
             <PrintIcon />
             Print label
           </Button>
