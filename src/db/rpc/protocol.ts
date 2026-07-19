@@ -9,6 +9,7 @@
  */
 import type { SqlParams, SqlStatement, SqlRow, SqlExecuteResult } from './driver';
 import type { SerializedDbError } from '../errors';
+import type { SnapshotMergeRequest, SnapshotMergeResult } from '@/features/sync/merge';
 
 /** Snapshot of the live database/VFS state, returned by `init` and `diagnostics`. */
 export interface DbDiagnostics {
@@ -34,6 +35,14 @@ export type DbRequest =
   | { readonly kind: 'execute'; readonly sql: string; readonly params?: SqlParams }
   | { readonly kind: 'transaction'; readonly statements: readonly SqlStatement[] }
   | { readonly kind: 'verifyBinary'; readonly bytes: Uint8Array }
+  /**
+   * Issue #173: run a whole sync merge in the worker — read the local snapshot, reconcile it
+   * against the remote, apply the plan, and return the merged snapshot to push. A coarser
+   * operation than the rest of this protocol by design: the alternative is the main thread
+   * materialising the entire database as one object and reconciling it synchronously, which
+   * freezes the UI for the duration at any real inventory size.
+   */
+  | { readonly kind: 'snapshotMerge'; readonly request: SnapshotMergeRequest }
   | { readonly kind: 'close' };
 
 /** The outcome of `verifyBinary` — an integrity check of candidate database bytes (issue #198). */
@@ -53,6 +62,8 @@ export interface DbResultMap {
   readonly transaction: null;
   /** Integrity check of candidate restore bytes, run before they overwrite anything (#198). */
   readonly verifyBinary: VerifyBinaryResult;
+  /** The merged snapshot plus the merge's counters, ready to push (#173). */
+  readonly snapshotMerge: SnapshotMergeResult;
   readonly close: null;
 }
 

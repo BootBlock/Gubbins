@@ -20,7 +20,7 @@
  * exactly matches the local row's, in memory only — nothing is written to either database, and
  * the tie-breaking rule in `lww.ts` is untouched.
  */
-import { SYNC_TABLES } from '@/db/repositories';
+import { SYNC_TABLES } from '@/db/repositories/tombstone';
 import type { SqlRow } from '@/db/rpc/driver';
 import type { SyncSnapshot } from './types';
 

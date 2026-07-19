@@ -7,7 +7,7 @@
  * UPSERT. {@link buildSchemaDictionary} reads the live column set from the database
  * (so it can never drift from the real schema); {@link sanitiseRow} is pure.
  */
-import { SYNC_EXCLUDED_COLUMNS } from '@/db/repositories';
+import { SYNC_EXCLUDED_COLUMNS } from '@/db/repositories/tombstone';
 import type { IDatabaseDriver, SqlRow } from '@/db/rpc/driver';
 import type { SchemaDictionary, SyncTable } from './types';
 

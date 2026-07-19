@@ -7,6 +7,9 @@
  * into the single atomic `BEGIN…COMMIT` of UPSERTs/DELETEs/gauge-updates/conflict-logs
  * the spec mandates. The pure {@link reconcile} engine sits between the two.
  */
+// The whole sync merge runs inside the database worker (issue #173), so these come from the
+// defining module rather than the `@/db/repositories` barrel — the barrel wires the repository
+// layer to the main thread's session/preferences stores, which have no place in the worker.
 import {
   ITEM_HISTORY_TABLE,
   ITEM_REGIONS_TABLE,
@@ -24,7 +27,7 @@ import {
   parseItemRegionEdgeId,
   parseItemTagEdgeId,
   parseLocationTagEdgeId,
-} from '@/db/repositories';
+} from '@/db/repositories/tombstone';
 // Imported from the defining module rather than the `@/db/repositories` barrel: these are read
 // at module scope, and screen tests that mock the barrel wholesale do not provide them.
 import { SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';

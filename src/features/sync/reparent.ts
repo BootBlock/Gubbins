@@ -10,7 +10,7 @@
  *    detects the loop so the engine can discard that one location move.
  * Both pure, so they are exhaustively unit-tested without a database.
  */
-import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
+import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 
 export interface LocationTargetResolution {
   /** The location id the item should end up in (its own, or Unassigned). */
