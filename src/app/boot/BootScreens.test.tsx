@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
-import { UnsupportedScreen } from './BootScreens';
+import userEvent from '@testing-library/user-event';
+import { MultiTabScreen, UnsupportedScreen } from './BootScreens';
+import { TAB_LOCK_OVERRIDE_KEY } from '@/lib/storage-keys';
 import type { SupportCause, SupportDiagnosis } from '@/lib/env/support-diagnosis';
 
 /**
@@ -27,7 +29,11 @@ const diagnosis = (cause: SupportCause): SupportDiagnosis => ({
   },
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  sessionStorage.clear();
+});
 
 describe('UnsupportedScreen', () => {
   it.each([
@@ -88,5 +94,45 @@ describe('UnsupportedScreen', () => {
     expect(footer).toHaveAttribute('href', 'https://github.com/BootBlock/Gubbins');
     expect(footer).toHaveAttribute('target', '_blank');
     expect(footer).toHaveAttribute('rel', 'noreferrer');
+  });
+});
+
+/**
+ * The single-tab guard fails closed (issue #207), so this screen now has two jobs: the familiar
+ * "another tab owns it" overlay, and an honest "we could not check" state. Only the second may
+ * offer the override that opens the database without arbitration — showing it in the first case
+ * would invite the user to open a database another tab demonstrably has.
+ */
+describe('MultiTabScreen', () => {
+  it('tells the user another tab owns the database, with no override on offer', () => {
+    render(<MultiTabScreen reason="held" whenReleased={new Promise<void>(() => {})} />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Already open elsewhere' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use this tab' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /open anyway/i })).not.toBeInTheDocument();
+  });
+
+  it('says it could not check — rather than claiming another tab is open — when arbitration failed', () => {
+    render(<MultiTabScreen reason="unavailable" whenReleased={null} />);
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Gubbins can’t check for other tabs' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload and try again' })).toBeInTheDocument();
+  });
+
+  it('offers the per-tab override only when ownership is unknown, and records it before reloading', async () => {
+    const reload = vi.fn();
+    vi.spyOn(window, 'location', 'get').mockReturnValue({
+      ...window.location,
+      reload,
+    } as unknown as Location);
+
+    render(<MultiTabScreen reason="unavailable" whenReleased={null} />);
+    await userEvent.click(screen.getByRole('button', { name: 'This is my only tab — open anyway' }));
+
+    // The choice must be persisted *before* the reload, or the fresh boot denies again.
+    expect(sessionStorage.getItem(TAB_LOCK_OVERRIDE_KEY)).toBe('1');
+    expect(reload).toHaveBeenCalled();
   });
 });
