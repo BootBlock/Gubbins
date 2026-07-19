@@ -32,6 +32,16 @@ describe('buildSpendReport', () => {
     expect(report.bySource.every((s) => s.total === 0 && s.share === 0)).toBe(true);
     expect(report.bySupplier).toEqual([]);
     expect(report.byCategory).toEqual([]);
+    expect(report.excludedForeignCurrency).toBe(0);
+  });
+
+  it('passes the caller-decided foreign-currency exclusion count through (issue #285)', () => {
+    // The seam never sees the excluded rows — that is the point — so it only carries the count,
+    // normalised to a non-negative integer so a bad caller cannot publish a nonsense figure.
+    expect(buildSpendReport([ev(5, 10)], 0, 100, 5, 3).excludedForeignCurrency).toBe(3);
+    expect(buildSpendReport([ev(5, 10)], 0, 100, 5).excludedForeignCurrency).toBe(0);
+    expect(buildSpendReport([ev(5, 10)], 0, 100, 5, -2).excludedForeignCurrency).toBe(0);
+    expect(buildSpendReport([ev(5, 10)], 0, 100, 5, 2.7).excludedForeignCurrency).toBe(2);
   });
 
   it('counts events half-open: start included, end excluded', () => {

@@ -324,7 +324,10 @@ function OrderListRow({
       </div>
       <div className="flex w-full items-center justify-between text-xs text-muted-foreground">
         <span>{po.reference ?? 'No reference'}</span>
-        <Money value={estimatedValue(po.lines)} formatters={formatters} />
+        {/* The order's own currency, not the base one: its line costs were copied verbatim from
+            the supplier's quote and are never converted, so rendering a EUR order's total under
+            the base symbol would misstate it (issue #285). Null ⇒ the base currency. */}
+        <Money value={estimatedValue(po.lines)} currency={po.currency ?? undefined} formatters={formatters} />
       </div>
     </button>
   );
@@ -550,7 +553,12 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
                       {line.unitCost != null && (
                         <>
                           {' · '}
-                          <Money value={line.unitCost} formatters={f} /> each
+                          <Money
+                            value={line.unitCost}
+                            currency={po.currency ?? undefined}
+                            formatters={f}
+                          />{' '}
+                          each
                         </>
                       )}
                     </span>

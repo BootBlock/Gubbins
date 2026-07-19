@@ -2,6 +2,7 @@ import { Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { SpendGroup, SpendReport } from '../spend-analytics';
 import { SPEND_SOURCE_LABEL } from '../spend-analytics';
+import { ForeignCurrencyNotice } from './ForeignCurrencyNotice';
 
 /** How many supplier / category rows to show before collapsing the long tail. */
 const TOP_N = 6;
@@ -59,12 +60,30 @@ function topWithOther(groups: readonly SpendGroup[]): SpendGroup[] {
  * (§2.4.3); every bar labels its amount + share in text. Distinct from the Phase-74 valuation
  * trend: this is money *out*, not inventory value.
  */
-export function SpendBreakdown({ report, formatters }: { report: SpendReport; formatters: Formatters }) {
+export function SpendBreakdown({
+  report,
+  formatters,
+  baseCurrency,
+}: {
+  report: SpendReport;
+  formatters: Formatters;
+  /** The currency every figure here is denominated in, named by the exclusion notice. */
+  baseCurrency: string;
+}) {
   if (report.total <= 0) {
     return (
-      <p className="py-6 text-center text-sm text-muted-foreground" data-testid="spend-empty">
-        No spend recorded in this window.
-      </p>
+      <div className="flex flex-col gap-3">
+        {/* Shown in the empty state too: "no spend recorded" is exactly the wrong conclusion to
+            leave standing when every order in the window was excluded for its currency. */}
+        <ForeignCurrencyNotice
+          count={report.excludedForeignCurrency}
+          baseCurrency={baseCurrency}
+          scope="orders"
+        />
+        <p className="py-6 text-center text-sm text-muted-foreground" data-testid="spend-empty">
+          No spend recorded in this window.
+        </p>
+      </div>
     );
   }
 
@@ -74,6 +93,12 @@ export function SpendBreakdown({ report, formatters }: { report: SpendReport; fo
 
   return (
     <div className="flex flex-col gap-6" data-testid="spend-breakdown">
+      <ForeignCurrencyNotice
+        count={report.excludedForeignCurrency}
+        baseCurrency={baseCurrency}
+        scope="orders"
+      />
+
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-sm text-muted-foreground">Total spend</span>
         <Money

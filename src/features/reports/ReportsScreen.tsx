@@ -490,7 +490,7 @@ export function ReportsScreen() {
               {spend.isLoading ? (
                 <CentredSpinner />
               ) : spend.data ? (
-                <SpendBreakdown report={spend.data} formatters={f} />
+                <SpendBreakdown report={spend.data} formatters={f} baseCurrency={baseCurrency} />
               ) : (
                 <p className="py-6 text-center text-sm text-destructive">
                   The spend analytics report failed to load.
