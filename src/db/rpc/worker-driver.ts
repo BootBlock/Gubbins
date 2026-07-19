@@ -27,6 +27,7 @@ import {
   type DbDiagnostics,
   type DbRequest,
   type RpcRequestEnvelope,
+  type VerifyBinaryResult,
 } from './protocol';
 import type { IDatabaseDriver, SqlExecuteResult, SqlParams, SqlRow, SqlStatement } from './driver';
 
@@ -46,6 +47,9 @@ export const RPC_TIMEOUT_MS: Readonly<Record<DbRequest['kind'], number>> = {
   query: 30_000,
   execute: 30_000,
   diagnostics: 30_000,
+  // Reads every page of the candidate file, so it scales with the database being restored —
+  // budgeted like the other whole-database operations rather than like a query.
+  verifyBinary: 300_000,
   // Deliberately the shortest: `close` is awaited by the Safe Mode reset, and a wedged worker is
   // exactly the state a user reaches for that reset in. Waiting 30s to give up on a teardown that
   // ends in `terminate()` anyway just freezes the recovery path.
@@ -98,6 +102,14 @@ export class WorkerDatabaseDriver implements IDatabaseDriver {
   /** Raw .sqlite bytes for the Safe Mode rescue (spec §3). */
   exportBinary(): Promise<Uint8Array> {
     return this.#send<Uint8Array>({ kind: 'exportBinary' });
+  }
+
+  /**
+   * Run `PRAGMA integrity_check` over candidate restore bytes (issue #198). Never opens the
+   * live database, so it answers even when the worker has never managed to boot one.
+   */
+  verifyBinary(bytes: Uint8Array): Promise<VerifyBinaryResult> {
+    return this.#send<VerifyBinaryResult>({ kind: 'verifyBinary', bytes });
   }
 
   query<TRow = SqlRow>(sql: string, params?: SqlParams): Promise<TRow[]> {

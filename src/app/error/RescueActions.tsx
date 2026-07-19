@@ -11,6 +11,7 @@ import {
 import { restoreArchive } from '@/features/archive/restore-archive';
 import { useErrorMessage } from '@/features/errors';
 import {
+  DamagedDatabaseError,
   downloadJsonDump,
   downloadRawSqlite,
   hardResetLocalData,
@@ -43,6 +44,13 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [pending, setPending] = useState<PendingRestore | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  /**
+   * The problems a rejected restore reported (issue #198). Non-null means the chosen file is a
+   * real SQLite database but a damaged one — held in state so the user can read *what* is wrong
+   * and, if they choose, override. Safe Mode must never dead-end a user whose only remaining
+   * copy is an imperfect one.
+   */
+  const [damage, setDamage] = useState<readonly string[] | null>(null);
   const describeError = useErrorMessage();
   const sqliteRef = useRef<HTMLInputElement>(null);
   const archiveRef = useRef<HTMLInputElement>(null);
@@ -71,22 +79,36 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
     const file = event.target.files?.[0] ?? null;
     event.target.value = '';
     setActionError(null);
+    setDamage(null);
     setPending(file ? { kind, file } : null);
   };
 
-  const confirmRestore = async () => {
+  /**
+   * Run the chosen restore. `force` re-runs one the pre-flight checks rejected, and is reachable
+   * only from the second confirmation shown after those problems have been displayed.
+   */
+  const confirmRestore = async (force = false) => {
     if (!pending) return;
     setBusy('restore');
     setActionError(null);
     try {
-      // Both reload on success.
-      if (pending.kind === 'archive') await restoreArchive(pending.file);
-      else await restoreRawSqlite(pending.file);
+      // Both reload on success. Each saves a restore point of the current database first, so a
+      // restore that turns out wrong can still be undone from the downloaded copy.
+      if (pending.kind === 'archive') await restoreArchive(pending.file, { force });
+      else await restoreRawSqlite(pending.file, { force });
     } catch (error) {
       console.error('[gubbins] rescue action failed', error);
+      if (error instanceof DamagedDatabaseError) {
+        // Keep the file pending: the whole point is to offer the override on the same screen. The
+        // damage panel is the `role="alert"` here, so no second copy of the same news below.
+        setDamage(error.problems);
+        setBusy(null);
+        return;
+      }
       setActionError(describeError(error, 'Restore failed.'));
       setBusy(null);
       setPending(null);
+      setDamage(null);
     }
   };
 
@@ -130,19 +152,48 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
             <span className="font-medium">{pending.file.name}</span>?
             {pending.kind === 'archive'
               ? ' This overwrites all local data and re-imports the full-resolution images.'
-              : ' This overwrites all local data.'}
+              : ' This overwrites all local data.'}{' '}
+            <strong>A copy of your current database is downloaded first</strong> so this can be undone.
           </p>
+          {/*
+           * The damage report (issue #198). Shown only after the checks have rejected the file,
+           * and it replaces the ordinary confirm button with an explicit "restore anyway" — the
+           * user has to read what is wrong before they can act on it.
+           */}
+          {damage ? (
+            <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-2">
+              <p className="font-medium">This database file is damaged — nothing has been changed:</p>
+              <ul className="mt-1 list-disc ps-5">
+                {/* Indexed keys: integrity_check happily reports the same message twice. */}
+                {damage.map((problem, index) => (
+                  <li key={index}>{problem}</li>
+                ))}
+              </ul>
+              <p className="mt-1">
+                Restoring it anyway may lose records, though SQLite can often still read most of a damaged
+                database. Your current one is saved as a restore point either way.
+              </p>
+            </div>
+          ) : null}
           <div className="flex gap-2">
             <Button
               variant="destructive"
               className="flex-1"
               data-testid="confirm-archive-restore"
-              onClick={() => void confirmRestore()}
+              onClick={() => void confirmRestore(damage !== null)}
               disabled={busy !== null}
             >
-              <RestoreIcon /> Confirm — restore &amp; reload
+              <RestoreIcon />{' '}
+              {damage ? 'Restore anyway — this may lose records' : 'Confirm — restore & reload'}
             </Button>
-            <Button variant="ghost" onClick={() => setPending(null)} disabled={busy !== null}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPending(null);
+                setDamage(null);
+              }}
+              disabled={busy !== null}
+            >
               Cancel
             </Button>
           </div>

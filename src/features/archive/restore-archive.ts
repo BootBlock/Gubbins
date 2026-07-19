@@ -14,7 +14,12 @@
  */
 import { unzipSync } from 'fflate';
 import { disposeDatabase } from '@/db/client';
-import { isSqliteFile, overwriteOpfsDatabase } from '@/app/error/safe-mode-actions';
+import {
+  isSqliteFile,
+  overwriteOpfsDatabase,
+  prepareDestructiveRestore,
+  type RestoreOptions,
+} from '@/app/error/safe-mode-actions';
 import { writeImageFiles, type OpfsImageFile } from '@/features/images/opfs-images';
 import { ARCHIVE_DB_ENTRY, ARCHIVE_IMAGES_PREFIX } from './auto-archive';
 
@@ -74,13 +79,16 @@ export function readArchive(zip: Uint8Array): ArchiveContents {
 
 /**
  * Restore a full archive (`.zip`) onto this device (§2.7 / §3). **Destructive** — the
- * caller must confirm first. Unzips the archive, overwrites the OPFS database, re-hydrates
- * the full-resolution images, then reloads so the worker re-opens the restored database.
- * Throws {@link InvalidArchiveError} for a malformed archive (before any OPFS write).
+ * caller must confirm first. Unzips the archive, checks the archived database is sound and
+ * saves a restore point of the current one (issue #198), then overwrites the OPFS database,
+ * re-hydrates the full-resolution images and reloads so the worker re-opens the restored
+ * database. Throws {@link InvalidArchiveError} for a malformed archive, or
+ * `DamagedDatabaseError` / `RestorePointError` from the pre-flight — all before any OPFS write.
  */
-export async function restoreArchive(file: File): Promise<void> {
+export async function restoreArchive(file: File, options: RestoreOptions = {}): Promise<void> {
   const zip = new Uint8Array(await file.arrayBuffer());
   const { sqlite, images } = readArchive(zip); // validates before we touch OPFS
+  await prepareDestructiveRestore(sqlite, options);
 
   await disposeDatabase();
   await overwriteOpfsDatabase(sqlite);

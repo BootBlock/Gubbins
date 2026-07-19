@@ -16,6 +16,16 @@ vi.mock('./safe-mode-actions', () => ({
   hardResetLocalData: vi.fn(),
   resetServiceWorkerOnly: vi.fn(),
   restoreRawSqlite: vi.fn(),
+  // The real class, re-declared: the component narrows on `instanceof`, so the constructor the
+  // test throws and the one it imports have to be the same object — which they are via the mock.
+  DamagedDatabaseError: class DamagedDatabaseError extends Error {
+    problems: readonly string[];
+    constructor(problems: readonly string[]) {
+      super('That database file is damaged.');
+      this.name = 'DamagedDatabaseError';
+      this.problems = problems;
+    }
+  },
 }));
 
 vi.mock('@/features/archive/restore-archive', () => ({ restoreArchive: vi.fn() }));
@@ -121,6 +131,71 @@ describe('RescueActions', () => {
     await user.click(screen.getByRole('button', { name: /reinstall app files/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Cache locked.');
+  });
+
+  describe('restoring a damaged database (issue #198)', () => {
+    /** Choose a `.sqlite` file and reach the confirmation panel. */
+    async function chooseSqliteFile(user: ReturnType<typeof userEvent.setup>) {
+      const file = new File(['irrelevant'], 'rescue.sqlite', { type: 'application/x-sqlite3' });
+      await user.upload(screen.getByTestId('restore-sqlite-input'), file);
+      return file;
+    }
+
+    it('promises a restore point before the user confirms an overwrite', async () => {
+      const user = userEvent.setup();
+      render(<RescueActions />);
+      await chooseSqliteFile(user);
+
+      expect(screen.getByText(/copy of your current database is downloaded first/i)).toBeInTheDocument();
+    });
+
+    it('shows what is wrong instead of silently overwriting good data', async () => {
+      vi.mocked(actions.restoreRawSqlite).mockRejectedValue(
+        new actions.DamagedDatabaseError(['The file looks truncated.']),
+      );
+      const user = userEvent.setup();
+      render(<RescueActions />);
+      await chooseSqliteFile(user);
+
+      await user.click(screen.getByTestId('confirm-archive-restore'));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('The file looks truncated.');
+      expect(alert).toHaveTextContent(/nothing has been changed/i);
+    });
+
+    it('offers an explicit override, since a damaged copy may be all the user has left', async () => {
+      vi.mocked(actions.restoreRawSqlite).mockRejectedValue(
+        new actions.DamagedDatabaseError(['The file looks truncated.']),
+      );
+      const user = userEvent.setup();
+      render(<RescueActions />);
+      await chooseSqliteFile(user);
+
+      await user.click(screen.getByTestId('confirm-archive-restore'));
+      await screen.findByRole('alert');
+
+      // The same button, now re-labelled — and only this second press forces the restore.
+      expect(actions.restoreRawSqlite).toHaveBeenLastCalledWith(expect.any(File), { force: false });
+      await user.click(screen.getByRole('button', { name: /restore anyway/i }));
+      expect(actions.restoreRawSqlite).toHaveBeenLastCalledWith(expect.any(File), { force: true });
+    });
+
+    it('drops the damage report when a different file is chosen', async () => {
+      vi.mocked(actions.restoreRawSqlite).mockRejectedValue(
+        new actions.DamagedDatabaseError(['The file looks truncated.']),
+      );
+      const user = userEvent.setup();
+      render(<RescueActions />);
+      await chooseSqliteFile(user);
+      await user.click(screen.getByTestId('confirm-archive-restore'));
+      await screen.findByRole('alert');
+
+      await chooseSqliteFile(user);
+
+      await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+      expect(screen.getByRole('button', { name: /confirm — restore/i })).toBeInTheDocument();
+    });
   });
 
   it('leaves the button usable after a failure so the user can retry', async () => {

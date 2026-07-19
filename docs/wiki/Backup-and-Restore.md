@@ -65,6 +65,16 @@ applying any of it, and refuses the **whole** file if it doesn't look like a gen
 if it isn't valid, was made by a newer version, or refers to data that isn't part of Gubbins, nothing
 is restored and your current inventory is left untouched.
 
+A file can also be a genuine Gubbins database and still be *damaged* — a download that was cut off
+part-way, a copy taken from a failing drive, or a cloud file that never finished syncing. Before
+restoring a raw `.sqlite` database or a full `.zip` archive from the recovery screen, Gubbins checks
+for exactly that: it confirms the file is complete, then opens it to check the data inside is intact.
+If something is wrong it says what, and nothing is overwritten.
+
+You can still go ahead — a damaged copy is sometimes all that's left, and most of the records in one
+are usually still readable — but it takes a second, deliberate confirmation. Either way, Gubbins
+downloads a copy of your current database first, so a restore that turns out wrong can be undone.
+
 > **⚠️ Heads-up**
 > Those checks are a safety net, not a substitute for judgement. Treat a backup like any other file
 > you'd open: restore from your own archives, or from someone you trust. The same goes for a

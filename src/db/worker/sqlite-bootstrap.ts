@@ -28,8 +28,23 @@ export interface BootstrapResult {
   readonly filename: string;
 }
 
+/**
+ * The SQLite WASM module, instantiated at most once per worker.
+ *
+ * Separated from {@link bootstrapDatabase} because verifying a *candidate* database
+ * (issue #198) needs the library but must never open — or require — the live OPFS one:
+ * Safe Mode is precisely where that open is what failed.
+ */
+let modulePromise: Promise<Sqlite3Static> | null = null;
+
+/** Instantiate (once) and return the SQLite WASM module. */
+export function loadSqlite3(): Promise<Sqlite3Static> {
+  modulePromise ??= sqlite3InitModule();
+  return modulePromise;
+}
+
 export async function bootstrapDatabase(): Promise<BootstrapResult> {
-  const sqlite3 = await sqlite3InitModule();
+  const sqlite3 = await loadSqlite3();
 
   // The OPFS VFS only materialises in a Worker under cross-origin isolation
   // (COOP/COEP → SharedArrayBuffer). Its absence means the environment is
