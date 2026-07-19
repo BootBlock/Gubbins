@@ -117,7 +117,16 @@ async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
     // is pre-release and does not migrate across baseline changes, so such a database would be
     // refused at the next boot (SCHEMA_STALE) — but by then the current data is already gone.
     // Backups written before the manifest carried a stamp can't be checked, so they proceed as
-    // before rather than being blocked on a missing field.
+    // before rather than being blocked on a missing field. A manifest that is *present but
+    // unreadable* is not that case: it is damage, and letting it through would mean corruption
+    // silently buys a pass through the very check that protects the live database (issue #353).
+    if (parsed.manifestUnreadable) {
+      throw new Error(
+        'This backup’s description file is damaged, so Gubbins cannot confirm its exact database ' +
+          'copy works with this build. Restore it with the “merge” mode instead, which brings your ' +
+          'records across without replacing the database file.',
+      );
+    }
     const stamp = parsed.manifest?.baselineRevision;
     if (stamp && stamp !== BASELINE_REVISION) {
       throw new Error(

@@ -98,6 +98,11 @@ which part is at fault — so a backup that quietly lost data can't restore as t
 Backups made before this check existed are still perfectly usable; they're simply checked against
 their item and image counts alone.
 
+If the packing list itself is the damaged part, Gubbins can no longer tell whether the backup's exact
+database copy suits this version — so **Replace everything** is declined rather than risked, and it
+says so before anything is touched. **Merge** still works, and brings your records across without
+replacing the database file.
+
 > **⚠️ Heads-up**
 > Those checks are a safety net, not a substitute for judgement. Treat a backup like any other file
 > you'd open: restore from your own archives, or from someone you trust. The same goes for a
