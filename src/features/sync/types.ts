@@ -174,6 +174,14 @@ export interface CollisionResolution {
   readonly winnerId: string;
   /** Tombstone instant recorded for `loserId`. */
   readonly deletedAt: number;
+  /**
+   * True when `loserId` was **already** being deleted by this merge (its tombstone arrived from a
+   * peer) and this entry exists only to run that DELETE *ahead* of `winnerId`'s INSERT, which the
+   * shared UNIQUE index would otherwise reject. It is not a naming contest, so the apply must take
+   * the plain delete path — in particular it must not repoint a retired *user*'s ledger rows at
+   * `winnerId`, which would re-attribute a deleted account's history to an unrelated one.
+   */
+  readonly hoistOnly?: boolean;
 }
 
 export interface ReconciliationPlan {

@@ -243,4 +243,48 @@ describe('§7.5 natural-key collisions (issue #187)', () => {
       expect(reconcile(local, remote, opts).collisions).toEqual([]);
     });
   });
+
+  /**
+   * The third device in the sequence, where the contest is already over. Device B resolved the
+   * "Bolts" collision and pushed the *winner* plus a *tombstone* for the loser — which this
+   * device still holds. Nothing is left to decide, but `applyPlan` runs tombstone DELETEs after
+   * the UPSERTs, so without pulling the loser's DELETE forward the winner's INSERT meets the
+   * doomed row still sitting on the UNIQUE index and the whole atomic merge aborts.
+   *
+   * This is table-agnostic (it bites tags, contacts, field_defs, every composite child), so it is
+   * pinned here on `tags` rather than only through the table that first surfaced it.
+   */
+  describe('a doomed row is deleted before the winner is inserted', () => {
+    it('hoists the DELETE when a tombstoned local row still holds the incoming key', () => {
+      const local = snapshot({ tables: { tags: [{ id: 'tagLoser', name: 'Bolts', updated_at: 10 }] } });
+      const remote: SyncSnapshot = {
+        ...snapshot({ tables: { tags: [{ id: 'tagWinner', name: 'Bolts', updated_at: 20 }] } }),
+        tombstones: [{ tableName: 'tags', id: 'tagLoser', deletedAt: 20 }],
+      };
+
+      const plan = reconcile(local, remote, opts);
+
+      // The loser is deleted by the ordinary tombstone path *and* hoisted ahead of the upsert.
+      expect(plan.localDeletes).toContainEqual({ tableName: 'tags', id: 'tagLoser', deletedAt: 20 });
+      expect(plan.collisions).toEqual([
+        { table: 'tags', loserId: 'tagLoser', winnerId: 'tagWinner', deletedAt: 20, hoistOnly: true },
+      ]);
+      // It is not a contest: the winner's upsert survives untouched.
+      expect(plan.localUpserts).toContainEqual({
+        table: 'tags',
+        row: { id: 'tagWinner', name: 'Bolts', updated_at: 20 },
+      });
+    });
+
+    it('leaves a tombstoned row alone when nothing takes its key', () => {
+      const local = snapshot({ tables: { tags: [{ id: 'tagGone', name: 'Bolts', updated_at: 10 }] } });
+      const remote: SyncSnapshot = {
+        ...snapshot({ tables: { tags: [{ id: 'tagOther', name: 'Nuts', updated_at: 20 }] } }),
+        tombstones: [{ tableName: 'tags', id: 'tagGone', deletedAt: 20 }],
+      };
+
+      const plan = reconcile(local, remote, opts);
+      expect(plan.collisions).toEqual([]);
+    });
+  });
 });

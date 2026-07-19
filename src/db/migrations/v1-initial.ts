@@ -1424,8 +1424,8 @@ const baselineStatements: SqlStatement[] = [
   // `items`, so deleting either the kit or a component prunes the edge. The
   // self-reference CHECK blocks the trivial one-hop cycle; deeper transitive cycles
   // are rejected by the repository's recursive-CTE validator (a DB CHECK cannot walk
-  // the graph). Not in SYNC_TABLES for v1 — kit definitions are device-local until the
-  // assemble/disassemble v2 work, which is when their propagation is designed.
+  // the graph). In SYNC_TABLES: an edge carries its own `updated_at` + auto-stamp trigger, so it
+  // travels with the snapshot and the portable backup by ordinary row-level LWW (issue #151).
   {
     sql: `
         CREATE TABLE kit_components (
