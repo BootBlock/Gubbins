@@ -41,6 +41,7 @@ import {
   buildCloneStatements,
   buildLocalSnapshot,
   historyInsertStatement,
+  requireColumns,
   shiftSnapshotTimestamps,
   tombstoneDeleteStatement,
 } from './snapshot';
@@ -298,7 +299,7 @@ async function cloneWithSalvage(
   const statements: SqlStatement[] = buildCloneStatements(remote, dictionary, historyPrunedBefore);
 
   for (const { table, row } of salvageRows) {
-    statements.push(upsert(table, row, dictionary[table] ?? Object.keys(row)));
+    statements.push(upsert(table, row, requireColumns(dictionary, table)));
   }
   for (const t of salvageTombstones) {
     statements.push(tombstoneDeleteStatement(t.tableName, t.id));

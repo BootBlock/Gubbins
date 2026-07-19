@@ -33,7 +33,14 @@ export type DbRequest =
   | { readonly kind: 'query'; readonly sql: string; readonly params?: SqlParams }
   | { readonly kind: 'execute'; readonly sql: string; readonly params?: SqlParams }
   | { readonly kind: 'transaction'; readonly statements: readonly SqlStatement[] }
+  | { readonly kind: 'verifyBinary'; readonly bytes: Uint8Array }
   | { readonly kind: 'close' };
+
+/** The outcome of `verifyBinary` — an integrity check of candidate database bytes (issue #198). */
+export interface VerifyBinaryResult {
+  readonly ok: boolean;
+  readonly problems: readonly string[];
+}
 
 /** Maps each request kind to its successful result type (documentation + driver casts). */
 export interface DbResultMap {
@@ -44,6 +51,8 @@ export interface DbResultMap {
   readonly query: readonly SqlRow[];
   readonly execute: SqlExecuteResult;
   readonly transaction: null;
+  /** Integrity check of candidate restore bytes, run before they overwrite anything (#198). */
+  readonly verifyBinary: VerifyBinaryResult;
   readonly close: null;
 }
 

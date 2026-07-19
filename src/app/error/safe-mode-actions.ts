@@ -7,8 +7,11 @@
  * Every action is defensive — the database may be in a poor state.
  */
 import { downloadBlob, fileTimestamp } from '@/lib/download';
+import { resetAppShell } from '@/lib/app-shell-reset';
 import { getDatabaseDriver, disposeDatabase } from '@/db/client';
 import { DB_FILENAME } from '@/db/worker/sqlite-bootstrap';
+import { inspectRestoreCandidate } from '@/db/restore-candidate';
+import { isSqliteFile } from '@/db/sqlite-header';
 import { removeImagesDirectory } from '@/features/images/opfs-images';
 
 /** Download the live database as a raw .sqlite binary (spec §3 — the key rescue). */
@@ -19,20 +22,9 @@ export async function downloadRawSqlite(): Promise<void> {
   downloadBlob(`gubbins-${fileTimestamp()}.sqlite`, new Blob([copy], { type: 'application/x-sqlite3' }));
 }
 
-/** The 16-byte magic string every SQLite 3 database file begins with. */
-const SQLITE_MAGIC = 'SQLite format 3\0';
-
-/**
- * Validate that `bytes` begins with the SQLite 3 file header (spec §3 raw restore). A
- * pure guard so a stray JSON/image file can never overwrite the live database with junk.
- */
-export function isSqliteFile(bytes: Uint8Array): boolean {
-  if (bytes.length < SQLITE_MAGIC.length) return false;
-  for (let i = 0; i < SQLITE_MAGIC.length; i += 1) {
-    if (bytes[i] !== SQLITE_MAGIC.charCodeAt(i)) return false;
-  }
-  return true;
-}
+// Re-exported so the long-standing `@/app/error/safe-mode-actions` import site keeps working;
+// the guard itself now lives beside the structural header checks it belongs with (#198).
+export { isSqliteFile } from '@/db/sqlite-header';
 
 /**
  * Overwrite the OPFS database file with raw SQLite bytes (the shared write step behind
@@ -62,16 +54,110 @@ export async function overwriteOpfsDatabase(bytes: Uint8Array): Promise<void> {
 }
 
 /**
- * Restore the database from a raw `.sqlite` binary (spec §3 — the inverse of
- * {@link downloadRawSqlite}). **Destructive** — the caller must confirm first. We dispose
- * the worker, overwrite the OPFS file with the uploaded bytes, then reload so the worker
- * re-opens the new database. Throws `InvalidRawSqliteError` for a non-SQLite file.
+ * Options shared by both destructive restores (raw `.sqlite` and full archive).
  */
-export async function restoreRawSqlite(file: File): Promise<void> {
+export interface RestoreOptions {
+  /**
+   * Proceed even though the pre-flight checks called the incoming database damaged. Set only
+   * from a second, explicit confirmation: a user whose live database is already lost may have
+   * nothing but a damaged copy, and SQLite can often still read most of one — so this stays
+   * *possible*, never silent.
+   */
+  readonly force?: boolean;
+}
+
+/**
+ * Download the current OPFS database as a restore point, immediately before something
+ * overwrites it (issue #198).
+ *
+ * The undo for a destructive restore, mirroring what `BackupDialog` does before a Replace.
+ * Reads the OPFS file **directly** rather than asking the worker to serialise it: this runs
+ * on the crash screen, where the worker is quite likely the thing that failed, and the file
+ * at `DB_FILENAME` already *is* the raw database.
+ *
+ * Returns whether anything was captured — a device with no database yet has nothing to lose,
+ * which is not a reason to block a restore. Throws when a database is present but unreadable:
+ * that *is* a reason, since overwriting it would destroy data no copy exists of.
+ */
+export async function captureRestorePoint(): Promise<boolean> {
+  const baseName = DB_FILENAME.replace(/^\//, '');
+  let root: FileSystemDirectoryHandle;
+  try {
+    root = await navigator.storage.getDirectory();
+  } catch {
+    // No OPFS at all — there is no database here for a restore to overwrite.
+    return false;
+  }
+
+  let file: File;
+  try {
+    const handle = await root.getFileHandle(baseName);
+    file = await handle.getFile();
+  } catch (error) {
+    // Only *absence* is benign. Anything else — a locked file, an I/O error — means data is
+    // there and we could not copy it, so the failure must reach the caller and stop the
+    // restore. Swallowing it here would overwrite a database with no copy behind it, which is
+    // the exact loss this function exists to prevent.
+    if (error instanceof DOMException && error.name === 'NotFoundError') return false;
+    throw error;
+  }
+  if (file.size === 0) return false;
+
+  // The `File` is already a `Blob` over the OPFS bytes, so it downloads without ever
+  // materialising the whole database in memory.
+  downloadBlob(`gubbins-restore-point-${fileTimestamp()}.sqlite`, file);
+  // Let the browser commit the download before the caller overwrites the database and
+  // reloads — a reload in the same tick can cancel an in-flight save.
+  await new Promise((resolve) => setTimeout(resolve, RESTORE_POINT_SETTLE_MS));
+  return true;
+}
+
+/** How long to let a restore-point download settle before overwriting and reloading. */
+const RESTORE_POINT_SETTLE_MS = 400;
+
+/**
+ * The steps every destructive restore shares (issue #198): prove the incoming database is
+ * sound, then secure the current one. Ordered deliberately — a file that is going to be
+ * rejected should not cost the user a download first.
+ *
+ * Throws {@link DamagedDatabaseError} (unless forced) or {@link RestorePointError}; in
+ * either case nothing has been written and the live database is untouched.
+ */
+export async function prepareDestructiveRestore(
+  sqlite: Uint8Array,
+  options: RestoreOptions = {},
+): Promise<void> {
+  // Skipped entirely when forced: the user has already been shown the verdict and chosen to
+  // proceed, so re-reading every page of a large file to discard the answer only delays them.
+  if (!options.force) {
+    const assessment = await inspectRestoreCandidate(sqlite);
+    if (assessment.status === 'damaged') {
+      throw new DamagedDatabaseError(assessment.problems);
+    }
+  }
+
+  try {
+    await captureRestorePoint();
+  } catch (error) {
+    throw new RestorePointError(error);
+  }
+}
+
+/**
+ * Restore the database from a raw `.sqlite` binary (spec §3 — the inverse of
+ * {@link downloadRawSqlite}). **Destructive** — the caller must confirm first. Checks the
+ * incoming database is sound and downloads a restore point of the current one, then disposes
+ * the worker, overwrites the OPFS file and reloads so the worker re-opens the new database.
+ * Throws `InvalidRawSqliteError` for a non-SQLite file, or `DamagedDatabaseError` for one
+ * that fails the pre-flight checks — in every failure case, before anything is overwritten.
+ */
+export async function restoreRawSqlite(file: File, options: RestoreOptions = {}): Promise<void> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (!isSqliteFile(bytes)) {
     throw new InvalidRawSqliteError('That file is not a SQLite database (bad header).');
   }
+
+  await prepareDestructiveRestore(bytes, options);
 
   await disposeDatabase();
   await overwriteOpfsDatabase(bytes);
@@ -84,6 +170,36 @@ export class InvalidRawSqliteError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'InvalidRawSqliteError';
+  }
+}
+
+/**
+ * Thrown when the incoming database is a genuine SQLite file but a damaged one — truncated,
+ * or failing `PRAGMA integrity_check`. Carries the specific problems so the user can see
+ * *why* before deciding whether to override (issue #198).
+ */
+export class DamagedDatabaseError extends Error {
+  readonly problems: readonly string[];
+
+  constructor(problems: readonly string[]) {
+    super('That database file is damaged, so restoring it would replace your data with a broken copy.');
+    this.name = 'DamagedDatabaseError';
+    this.problems = problems;
+  }
+}
+
+/**
+ * Thrown when the current database exists but could not be saved as a restore point. The
+ * restore is abandoned rather than proceeding: an overwrite with no copy behind it is the
+ * irreversible failure this whole guard exists to prevent.
+ */
+export class RestorePointError extends Error {
+  constructor(cause: unknown) {
+    super(
+      'Could not save a copy of your current database, so the restore was cancelled rather than overwrite it.',
+      { cause },
+    );
+    this.name = 'RestorePointError';
   }
 }
 
@@ -132,22 +248,30 @@ export async function hardResetLocalData(): Promise<void> {
     // OPFS unavailable — nothing to purge there.
   }
 
-  try {
-    const keys = await caches.keys();
-    await Promise.all(keys.map((key) => caches.delete(key)));
-  } catch {
-    // Cache Storage unavailable — ignore.
-  }
-
-  try {
-    const registrations = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
-    await Promise.all(registrations.map((registration) => registration.unregister()));
-  } catch {
-    // No service workers — ignore.
-  }
+  // The code half of the purge — service worker + Cache Storage — is exactly what
+  // `resetServiceWorkerOnly` does on its own; sharing it keeps the two from drifting.
+  await resetAppShell();
 
   await clearLocalAppState();
 
+  location.reload();
+}
+
+/**
+ * Discard the cached app shell and reload, **keeping every byte of the user's data**
+ * (issue #276).
+ *
+ * The recovery to reach for when the *build* is bad rather than the data: a broken
+ * deploy, a half-applied update, a stale chunk the cache-first worker keeps serving. It
+ * unregisters the service worker and empties Cache Storage, so the reload goes to the
+ * network and picks up whatever the host is currently serving — while the OPFS database,
+ * the images directory and all `gubbins:` settings are left untouched.
+ *
+ * This is strictly weaker than {@link hardResetLocalData} and is offered *first* so a
+ * cosmetic bug never costs a user their inventory.
+ */
+export async function resetServiceWorkerOnly(): Promise<void> {
+  await resetAppShell();
   location.reload();
 }
 

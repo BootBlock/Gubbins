@@ -23,9 +23,39 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Release marker, checked BEFORE the build (issue #276). With no tags at all, "what is
+      # currently deployed?" is unanswerable and "redeploy the last good build" means picking a
+      # SHA out of `git log` by eye. The deploy job tags the commit it publishes as `v<version>`
+      # — but that only stays meaningful if each new deploy carries a new version, so refuse
+      # here rather than after spending a build. Re-deploying the *same* commit is idempotent
+      # and allowed; re-deploying different code under a version already published is not.
+      - name: Check the release version is free
+        id: release
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag="v$version"
+          # Resolve to the *commit* the tag names. These are annotated tags, so `refs/tags/$tag`
+          # is the tag object's own SHA — comparing that to $GITHUB_SHA would never match, and
+          # every re-deploy would be rejected. `^{}` is the peeled ref (the commit); it only
+          # exists for annotated tags, so fall back to the plain ref for a lightweight one.
+          existing="$(git ls-remote origin "refs/tags/$tag^{}" | cut -f1)"
+          if [ -z "$existing" ]; then
+            existing="$(git ls-remote origin "refs/tags/$tag" | cut -f1)"
+          fi
+          if [ -n "$existing" ] && [ "$existing" != "$GITHUB_SHA" ]; then
+            echo "::error title=Release version already published::Tag $tag already points at $existing, but this deploy is $GITHUB_SHA. Bump \"version\" in package.json before deploying new code."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Deploying $tag from $GITHUB_SHA."
 
       - name: Set up Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
@@ -85,3 +115,33 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+  # Record what was published (issue #276). Runs only after the deploy actually succeeded, so a
+  # tag means "this commit reached production", not "someone tried". That gives the rollback
+  # story its missing first half: `git tag` lists every release, `v<version>` names the commit
+  # serving right now, and re-running this workflow against the previous tag redeploys it.
+  tag:
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Tag the deployed commit
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          # Idempotent: re-deploying the same commit re-runs this, and the pre-build check has
+          # already guaranteed any existing tag of this name points here.
+          if [ -n "$(git ls-remote --tags origin "refs/tags/$TAG" | cut -f1)" ]; then
+            echo "$TAG already recorded for this commit — nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Gubbins $VERSION — deployed to GitHub Pages by run $GITHUB_RUN_ID."
+          git push origin "refs/tags/$TAG"
+          echo "Recorded release $TAG at $GITHUB_SHA."

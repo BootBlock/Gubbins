@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { plural } from '@/lib/plural';
 import {
   Button,
   Input,
@@ -62,7 +61,7 @@ import { useFeature } from '@/features/modules/useFeature';
 import { useT } from '@/features/i18n';
 import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
 import { VisualBuilder } from '@/features/search/components/VisualBuilder';
-import { astError, useAstSearch } from '@/features/search/queries';
+import { astError, useAstCount, useAstSearch } from '@/features/search/queries';
 import {
   useApplicableStatuses,
   useInventoryItems,
@@ -371,7 +370,25 @@ function InventoryWorkspace() {
   // Discrete-pagination reads (issue #20), gated off unless the flat list is paginated: one page of
   // rows plus the filtered total that sizes the page count.
   const pageItems = useItemPage(filters, page, defaultPageSize, paginated);
-  const pageTotalCount = useItemCount(filters, paginated);
+
+  // How many items actually **match** — the number the result summary announces, and the one that
+  // sizes the page count while paginating (issue #220). It must come from a `COUNT(*)`, never from
+  // the resident rows: the infinite list trims its leading pages as the user scrolls, so a row
+  // count answers "how far have I scrolled" rather than "how much matched", and drifts without any
+  // filter having changed. The grouped view ignores the sidebar selection (it lists every
+  // location), so its count drops `locationId` to stay honest about what is on screen.
+  const countFilters = useMemo(() => {
+    if (!grouped) return filters;
+    const { locationId: _locationId, ...rest } = filters;
+    return rest;
+  }, [grouped, filters]);
+  // Neither consumer exists under a whole-collection visualisation — the summary line and the
+  // pagination control are both hidden then — so don't spend a `COUNT(*)` the map/treemap
+  // can't show. (The AST count below stays ungated: the builder panel is still on screen.)
+  const matchCount = useItemCount(countFilters, !astActive && !isVizMode);
+  const astMatchCount = useAstCount(ast, astActive);
+  const resultCount = astActive ? astMatchCount : matchCount;
+  const matchTotal = resultCount.data ?? 0;
 
   // "Show removed" reveals soft-deleted items (is_active = 0), so it only earns its place in the
   // header when the current view actually has removed items to reveal. Probe that by scoping to
@@ -451,7 +468,7 @@ function InventoryWorkspace() {
   // paginated mode, the infinite/AST read otherwise.
   const listStatus = paginated ? pageItems : active;
   // Total pages for the control, from the filtered count (only fetched while paginating).
-  const totalPages = pageCount(pageTotalCount.data ?? 0, defaultPageSize);
+  const totalPages = pageCount(matchCount.data ?? 0, defaultPageSize);
   // Snap back to page 1 whenever the query feeding the list changes (a filter or the page size), so
   // a narrowing filter can't strand the user on an out-of-range page. `filters` is memoised, so its
   // identity changes exactly when a filter dependency does.
@@ -858,7 +875,8 @@ function InventoryWorkspace() {
           <div className="pb-4" inert={!builderOpen}>
             <VisualBuilder
               resultSummary={
-                astActive ? `${flatItems.length} ${plural(flatItems.length, 'match', 'matches')}` : undefined
+                // The true match count, not the resident-page count (issue #220).
+                astActive ? t('inventory.results.builderSummary', { vars: { count: matchTotal } }) : undefined
               }
               onClose={() => setBuilderOpen(false)}
             />
@@ -945,12 +963,23 @@ function InventoryWorkspace() {
                 />
 
                 <div className="flex items-center justify-between pb-3">
-                  <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
-                    {grouped
-                      ? 'Grouped by location'
-                      : listStatus.isSuccess
-                        ? `${flatItems.length} shown${astActive ? ' (visual search)' : ''}`
-                        : 'Loading…'}
+                  {/* The one place that answers "did my filter match anything, and how much?" —
+                      so it announces the **match total**, never the resident row count (issue
+                      #220). Grouped mode carries the same total, since a grouped list is just as
+                      filtered as a flat one. */}
+                  <p
+                    className="text-sm text-muted-foreground"
+                    role="status"
+                    aria-live="polite"
+                    data-testid="inventory-result-summary"
+                  >
+                    {!resultCount.isSuccess
+                      ? t('inventory.results.loading')
+                      : grouped
+                        ? t('inventory.results.grouped', { vars: { count: matchTotal } })
+                        : astActive
+                          ? t('inventory.results.visualSearch', { vars: { count: matchTotal } })
+                          : t('inventory.results.count', { vars: { count: matchTotal } })}
                   </p>
                   {/* Only shown when it applies (removed items exist in view, or it's already on) —
                       see `showRemovedToggle`. The help badge sits outside the label so a tap on the
@@ -1158,7 +1187,7 @@ function InventoryWorkspace() {
                       pageSizeOptions={PAGE_SIZE_PRESETS}
                       minPageSize={PAGE_SIZE_BOUNDS.min}
                       maxPageSize={PAGE_SIZE_BOUNDS.max}
-                      totalItems={pageTotalCount.data ?? 0}
+                      totalItems={matchCount.data ?? 0}
                       className="px-4"
                       data-testid="inventory-pagination"
                     />

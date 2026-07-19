@@ -621,6 +621,7 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
       <PurchaseOrderLineDialog
         open={lineOpen}
         items={itemOptions}
+        orderCurrency={po.currency}
         isSaving={addLine.isPending}
         onClose={() => setLineOpen(false)}
         onSubmit={(input) => {

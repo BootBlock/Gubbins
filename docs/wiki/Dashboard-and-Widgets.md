@@ -22,6 +22,12 @@ thing they summarise (select the Low stock widget to jump to what's low, for ins
 > Put the widgets you act on most at the top. If you manage a busy loan pool, lead with overdue
 > and upcoming; if you run a parts store, lead with low stock and in-transit.
 
+> **💡 Tip**
+> Dragging isn't the only way to rearrange. While **Customise** is on, every card carries a small
+> ▲▼◀▶ cluster that nudges it one place at a time — handy on a touchscreen — and you can move a
+> selected card with the arrow keys. Each move is spoken aloud for screen-reader users ("Low stock
+> moved to column 2 of 3, row 1"), so you always know where a card landed.
+
 > **ℹ️ Note**
 > Widgets are independent, so a problem in one stays in one. If a card can't read its data or
 > can't be drawn, that card alone shows a short message and every other card carries on as

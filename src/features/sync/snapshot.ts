@@ -18,6 +18,7 @@ import {
   clearItemRegionTombstoneStatement,
   clearItemTagTombstoneStatement,
   clearLocationTagTombstoneStatement,
+  isTombstoneTable,
   itemRegionEdgeId,
   itemTagEdgeId,
   locationTagEdgeId,
@@ -125,11 +126,21 @@ export async function buildLocalSnapshot(
   const tombstoneRows = await driver.query<{ table_name: string; id: string; deleted_at: number }>(
     'SELECT table_name, id, deleted_at FROM tombstones ORDER BY deleted_at;',
   );
-  const tombstones: Tombstone[] = tombstoneRows.map((t) => ({
-    tableName: t.table_name,
-    id: t.id,
-    deletedAt: Number(t.deleted_at),
-  }));
+  // Drop any locally-stored tombstone naming a table that is not in the allow-list. Unlike an
+  // *incoming* snapshot — where an unknown name means the payload is not ours and the whole
+  // thing is refused — this is data already sitting in the local database, so refusing it would
+  // strand the device: every sync would throw at `tombstoneDeleteStatement` with nothing the
+  // user could do about it. A tombstone for a table that does not exist can never delete
+  // anything, so dropping it on read is both safe and self-healing: it stops the row being
+  // re-published to peers, and clears itself from the local set on the next TTL prune. This is
+  // what recovers a device that restored a hostile snapshot on a build predating that guard.
+  const tombstones: Tombstone[] = tombstoneRows
+    .filter((t) => isTombstoneTable(t.table_name))
+    .map((t) => ({
+      tableName: t.table_name,
+      id: t.id,
+      deletedAt: Number(t.deleted_at),
+    }));
 
   const gaugeHistory = await readGaugeHistory(driver);
   const itemTags = await readItemTags(driver);
@@ -242,6 +253,36 @@ async function readGaugeHistory(driver: IDatabaseDriver): Promise<GaugeHistoryDe
   }));
 }
 
+/**
+ * Reject a `tableName` that is not on the {@link TOMBSTONE_TABLES} allow-list.
+ *
+ * Deliberately fails the whole batch rather than skipping the offending tombstone: a snapshot
+ * carrying a name that is not a real table is not a snapshot with one bad row in it, it is a
+ * snapshot that did not come from Gubbins. Silently dropping the row would apply the *rest* of
+ * a hostile payload and report success.
+ */
+function assertTombstoneTable(tableName: string): void {
+  if (!isTombstoneTable(tableName)) {
+    throw new Error(`Refusing to apply a tombstone for an unrecognised table: ${JSON.stringify(tableName)}`);
+  }
+}
+
+/**
+ * The column set to write for `table`, from the live schema read off the database.
+ *
+ * There is deliberately **no** fallback to the incoming row's own keys. Column names are
+ * interpolated into the INSERT (SQLite cannot parameterise an identifier), so falling back to
+ * `Object.keys(row)` would let a crafted snapshot choose its own SQL fragments — the same
+ * exposure as an unvalidated tombstone `tableName`. Every caller builds its dictionary from
+ * {@link buildSchemaDictionary} over a fixed table list, so a missing entry is a programming
+ * error, and the safe response to one is to stop.
+ */
+export function requireColumns(dictionary: SchemaDictionary, table: string): readonly string[] {
+  const columns = dictionary[table];
+  if (!columns) throw new Error(`No schema dictionary entry for table: ${JSON.stringify(table)}`);
+  return columns;
+}
+
 /** Build the UPSERT for a row given its table's column set. */
 function upsertStatement(table: SyncTable, snapshotRow: SqlRow, columns: readonly string[]): SqlStatement {
   // Decode any base64 BLOB (item_images thumbnail) back to bytes for the DB write.
@@ -264,8 +305,15 @@ function upsertStatement(table: SyncTable, snapshotRow: SqlRow, columns: readonl
  * The DELETE that applies one tombstone to its table. `item_tags` edge tombstones use a
  * composite `itemId|tagId` id (the join has no `id` column), so they delete by the pair;
  * every other table deletes by primary-key `id` (Phase 11).
+ *
+ * `tableName` is checked against the {@link TOMBSTONE_TABLES} allow-list first, because it
+ * has to be interpolated (SQLite cannot parameterise an identifier) and it reaches here from
+ * parsed JSON on the restore, sync and bridge-push paths. {@link assertTombstoneTable} is the
+ * last line of defence: {@link parseBackupJson} already rejects a bad name at the boundary, so
+ * a throw here means a snapshot arrived by some other route and must not be applied.
  */
 export function tombstoneDeleteStatement(tableName: string, id: string): SqlStatement {
+  assertTombstoneTable(tableName);
   if (tableName === ITEM_TAGS_TABLE) {
     const { itemId, tagId } = parseItemTagEdgeId(id);
     return {
@@ -290,9 +338,17 @@ export function tombstoneDeleteStatement(tableName: string, id: string): SqlStat
   return { sql: `DELETE FROM ${tableName} WHERE id = ?;`, params: [id] };
 }
 
-/** Build the INSERT OR IGNORE for an append-only `item_history` row (union-by-id). */
+/**
+ * Build the INSERT OR IGNORE for an append-only `item_history` row (union-by-id).
+ *
+ * `columns` must come from the live schema — see {@link requireColumns} for why there is no
+ * fallback to the row's own keys.
+ */
 export function historyInsertStatement(row: SqlRow, columns: readonly string[] | undefined): SqlStatement {
-  const cols = (columns ?? Object.keys(row)).filter((c) => c in row);
+  if (!columns) {
+    throw new Error(`No schema dictionary entry for table: ${JSON.stringify(ITEM_HISTORY_TABLE)}`);
+  }
+  const cols = columns.filter((c) => c in row);
   const placeholders = cols.map(() => '?').join(', ');
   return {
     sql: `INSERT OR IGNORE INTO ${ITEM_HISTORY_TABLE} (${cols.join(', ')}) VALUES (${placeholders});`,
@@ -362,7 +418,7 @@ export async function applyPlan(
   // UPSERTs, parents before children.
   const upserts = [...plan.localUpserts].sort((a, b) => tableIndex(a.table) - tableIndex(b.table));
   for (const { table, row } of upserts) {
-    statements.push(upsertStatement(table, row, dictionary[table] ?? Object.keys(row)));
+    statements.push(upsertStatement(table, row, requireColumns(dictionary, table)));
   }
 
   // Issue #79: the winner now exists, so a retired user's ledger rows can follow it before
@@ -543,7 +599,7 @@ export function buildCloneStatements(
   for (const table of SYNC_TABLES) {
     for (const snapshotRow of remote.tables[table] ?? []) {
       const row = decodeRowForTable(table, snapshotRow);
-      const cols = (dictionary[table] ?? Object.keys(row)).filter((c) => c in row);
+      const cols = requireColumns(dictionary, table).filter((c) => c in row);
       statements.push({
         sql: `INSERT OR REPLACE INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')});`,
         params: cols.map((c) => row[c] as SqlValue),
@@ -604,7 +660,7 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   for (const table of SYNC_TABLES) {
     for (const snapshotRow of snapshot.tables[table] ?? []) {
       const row = decodeRowForTable(table, snapshotRow);
-      const cols = (dictionary[table] ?? Object.keys(row)).filter((c) => c in row);
+      const cols = requireColumns(dictionary, table).filter((c) => c in row);
       const updates = cols
         .filter((c) => c !== 'id')
         .map((c) => `${c} = excluded.${c}`)

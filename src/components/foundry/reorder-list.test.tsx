@@ -112,3 +112,50 @@ describe('ReorderList — keyboard focus follows a moved row', () => {
     expect(document.activeElement).toBe(screen.getByTestId('reorder-up-a'));
   });
 });
+
+describe('ReorderList — announces the new position', () => {
+  it('speaks the row and its new place after an applied move', () => {
+    render(<Harness initial={[plain('a'), plain('b'), plain('c')]} />);
+    fireEvent.click(screen.getByTestId('reorder-down-a'));
+    expect(screen.getByRole('status').textContent).toBe('a moved to position 2 of 3');
+    fireEvent.click(screen.getByTestId('reorder-down-a'));
+    expect(screen.getByRole('status').textContent).toBe('a moved to position 3 of 3');
+  });
+
+  it('stays silent when the caller does not apply the move', () => {
+    // An uncontrolled list: `onMove` is a spy, so the order never changes.
+    renderList();
+    fireEvent.click(screen.getByTestId('reorder-down-location'));
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  it('does not carry a declined move over to the next unrelated re-render', () => {
+    // The caller ignores `onMove`, but still re-renders with a fresh array (a sibling state
+    // change). The declined press must not resurface as an announcement — or a focus jump —
+    // once that unrelated update lands.
+    function Declining() {
+      const [n, setN] = useState(0);
+      return (
+        <>
+          <button type="button" data-testid="bump" onClick={() => setN(n + 1)}>
+            bump {n}
+          </button>
+          <ReorderList aria-label="Fields" items={[plain('a'), plain('b')]} onMove={() => {}} />
+        </>
+      );
+    }
+    render(<Declining />);
+    fireEvent.click(screen.getByTestId('reorder-down-a'));
+    fireEvent.click(screen.getByTestId('bump'));
+    expect(screen.getByRole('status').textContent).toBe('');
+    // Focus is left exactly where the caller put it, not yanked onto the un-moved row.
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('mounts the live region up front so the first announcement is spoken', () => {
+    // Screen readers only watch regions that already existed — the container must pre-exist
+    // and only its content change.
+    renderList();
+    expect(screen.getByRole('status')).not.toBeNull();
+  });
+});

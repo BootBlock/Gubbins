@@ -18,7 +18,11 @@
  */
 import { unzipSync, strFromU8 } from 'fflate';
 import { parseBackupJson } from '../sync/backup';
+import { FK_REFS, type FkRef } from '../sync/fk-refs';
 import type { SyncSnapshot } from '../sync/types';
+// Imported from the defining module, not the `@/db/repositories` barrel: this codec stays
+// free of the repository layer (screen tests mock that barrel wholesale).
+import { ITEM_HISTORY_TABLE } from '@/db/repositories/tombstone';
 import type { SqlRow, SqlValue } from '@/db/rpc/driver';
 import type { OpfsImageFile } from '@/features/images/opfs-images';
 import { EXPORTABLE_SETTING_KEYS, sanitiseSettingsRecord } from './backup-settings';
@@ -120,13 +124,39 @@ function isRemovedItem(row: SqlRow): boolean {
 }
 
 /**
+ * Every column of a snapshot table that points at `items(id)`, taken from the shared
+ * {@link FK_REFS} registry so this codec can never drift from the reconciliation engine's
+ * view of the schema (issue #152 — `item_relations` referenced items via
+ * `from_item_id`/`to_item_id`, which an `item_id`-only check missed entirely).
+ *
+ * `item_history` is not a synced table, so its own `item_id` reference is added here.
+ */
+const ITEM_REF_COLUMNS: ReadonlyMap<string, readonly FkRef[]> = (() => {
+  const byTable = new Map<string, readonly FkRef[]>();
+  const sources: Record<string, readonly FkRef[] | undefined> = {
+    ...FK_REFS,
+    [ITEM_HISTORY_TABLE]: [{ col: 'item_id', parent: 'items', nullable: false }],
+  };
+  for (const [table, refs] of Object.entries(sources)) {
+    const itemRefs = (refs ?? []).filter((ref) => ref.parent === 'items');
+    if (itemRefs.length > 0) byTable.set(table, itemRefs);
+  }
+  return byTable;
+})();
+
+/**
  * Shape the portable snapshot per the user's toggles. **Pure** (returns a new snapshot).
  *
  *  - `includeHistory=false` drops the activity ledger (`itemHistory`) and gauge deltas.
- *  - `includeRemovedItems=false` drops every inactive item **and every row that references
- *    it**, so the result is foreign-key-safe to import. References are by `item_id` on the
- *    child tables and the self-referential `parent_id` on `items` (single-level variants):
- *    a kept item never points at a dropped one, and no orphan child survives.
+ *  - `includeRemovedItems=false` drops every inactive item **and repairs every row that
+ *    references it**, so the result is foreign-key-safe to import. A restore applies the
+ *    whole snapshot in one transaction, so a single dangling reference aborts the *entire*
+ *    restore — the repair is what makes the file importable at all:
+ *      - a NOT-NULL reference (ON DELETE CASCADE) cannot outlive its item → drop the row;
+ *      - a nullable reference (ON DELETE SET NULL) keeps the row with the link cleared, so
+ *        a purchase-order line still records what was spent;
+ *      - the self-referential `items.parent_id` excludes variants **transitively**, so a
+ *        grandchild of a removed item goes too rather than dangling.
  */
 export function filterSnapshot(
   snapshot: SyncSnapshot,
@@ -136,6 +166,7 @@ export function filterSnapshot(
   let itemHistory = snapshot.itemHistory;
   let gaugeHistory = snapshot.gaugeHistory;
   let itemTags = snapshot.itemTags;
+  let itemRegions = snapshot.itemRegions;
 
   if (!options.includeHistory) {
     itemHistory = [];
@@ -143,35 +174,85 @@ export function filterSnapshot(
   }
 
   if (!options.includeRemovedItems) {
-    const items = snapshot.tables.items ?? [];
-    const excluded = new Set<string>();
-    for (const row of items) if (isRemovedItem(row)) excluded.add(String(row.id));
-    // Single-level variants: a child of an excluded parent must go too, else its FK dangles.
-    for (const row of items) {
-      const parent = row.parent_id;
-      if (parent != null && excluded.has(String(parent))) excluded.add(String(row.id));
-    }
+    const excluded = excludedItemIds(snapshot.tables.items ?? []);
 
-    const next: Record<string, SqlRow[]> = {};
+    const next: Record<string, readonly SqlRow[]> = {};
     for (const [table, rows] of Object.entries(snapshot.tables)) {
       next[table] =
         table === 'items'
           ? rows.filter((row) => !excluded.has(String(row.id)))
-          : rows.filter((row) => !referencesExcludedItem(row, excluded));
+          : repairRows(rows, ITEM_REF_COLUMNS.get(table), excluded);
     }
     tables = next;
-    itemHistory = itemHistory.filter((row) => !referencesExcludedItem(row, excluded));
+    itemHistory = repairRows(itemHistory, ITEM_REF_COLUMNS.get(ITEM_HISTORY_TABLE), excluded);
     itemTags = itemTags.filter((edge) => !excluded.has(edge.itemId));
+    itemRegions = itemRegions.filter((edge) => !excluded.has(edge.itemId));
     gaugeHistory = gaugeHistory.filter((delta) => !excluded.has(delta.itemId));
   }
 
-  return { ...snapshot, tables, itemHistory, gaugeHistory, itemTags };
+  return { ...snapshot, tables, itemHistory, gaugeHistory, itemTags, itemRegions };
 }
 
-/** Whether a child row points at an excluded item via its `item_id` column. */
-function referencesExcludedItem(row: SqlRow, excluded: ReadonlySet<string>): boolean {
-  const itemId = row.item_id;
-  return itemId != null && excluded.has(String(itemId));
+/**
+ * The ids that must not appear in the file: every removed item, plus — transitively — every
+ * variant beneath one, since `items.parent_id` is itself a reference to `items(id)`.
+ */
+function excludedItemIds(items: readonly SqlRow[]): ReadonlySet<string> {
+  // Index children by parent first, so the walk below costs one pass rather than re-scanning
+  // every item per level (an inventory can carry six figures of rows).
+  const childrenByParent = new Map<string, string[]>();
+  const excluded = new Set<string>();
+  for (const row of items) {
+    const id = String(row.id);
+    if (isRemovedItem(row)) excluded.add(id);
+    const parent = row.parent_id;
+    if (parent == null) continue;
+    const siblings = childrenByParent.get(String(parent));
+    if (siblings) siblings.push(id);
+    else childrenByParent.set(String(parent), [id]);
+  }
+
+  // Variants can nest, so walk the whole subtree rather than a single level: a grandchild of
+  // a removed item dangles just as badly as a child. Visiting each id at most once also makes
+  // a `parent_id` cycle (which the schema does not prevent) terminate.
+  const queue = [...excluded];
+  while (queue.length > 0) {
+    for (const child of childrenByParent.get(queue.pop()!) ?? []) {
+      if (excluded.has(child)) continue;
+      excluded.add(child);
+      queue.push(child);
+    }
+  }
+  return excluded;
+}
+
+/**
+ * Drop or repair the rows of one table so none references an excluded item. Returns the rows
+ * as-is when the table has no reference to `items` at all.
+ */
+function repairRows(
+  rows: readonly SqlRow[],
+  refs: readonly FkRef[] | undefined,
+  excluded: ReadonlySet<string>,
+): readonly SqlRow[] {
+  if (!refs) return rows;
+
+  const kept: SqlRow[] = [];
+  for (const row of rows) {
+    let next = row;
+    let drop = false;
+    for (const { col, nullable } of refs) {
+      const value = next[col];
+      if (value == null || !excluded.has(String(value))) continue;
+      if (!nullable) {
+        drop = true;
+        break;
+      }
+      next = { ...next, [col]: null };
+    }
+    if (!drop) kept.push(next);
+  }
+  return kept;
 }
 
 // --- manifest ------------------------------------------------------------------------

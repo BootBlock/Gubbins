@@ -174,7 +174,16 @@ export function Modal({
             ring is always drawn. The negative margin is cancelled by the equal padding, so no
             content shifts; it just gives an outward ring room to paint into the Surface's own
             padding. Paired with `dialog-scroll` so it only applies to the scroll-owning body. */}
-        <div className={cn('mt-5 min-h-0', scrollBody && 'dialog-scroll -ml-2 pl-2')}>{children}</div>
+        {/* `flex flex-col` (the `!scrollBody` case) is what lets a self-scrolling body *shrink*.
+            Each such dialog sizes its own frame in viewport units — RailModal asks for `74dvh`,
+            the preset picker `65vh` — and on a short viewport (a small laptop, or any display
+            zoomed in, where the header and its description also wrap taller) that exceeds what the
+            viewport-capped Surface can give it. As a plain block child it would simply spill out
+            past the Surface with no way to reach the bottom of it; as a flex item it shrinks to
+            the room actually left over and scrolls internally instead. */}
+        <div className={cn('mt-5 min-h-0', scrollBody ? 'dialog-scroll -ml-2 pl-2' : 'flex flex-col')}>
+          {children}
+        </div>
       </Surface>
     </div>,
     document.body,

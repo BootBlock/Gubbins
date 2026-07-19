@@ -27,6 +27,15 @@
     <script src="/coi-bootstrap.js"></script>
 
     <!--
+      Pre-mount recovery escape hatch (issue #276). A no-op unless the URL carries `?recover=1`,
+      in which case it discards the service worker and Cache Storage — keeping all user data —
+      and reloads onto the network copy. Loaded here, ahead of the module entry, so it still
+      works when a bad build kills the bundle before React (and therefore Safe Mode) can mount.
+      See public/recovery.js.
+    -->
+    <script src="/recovery.js"></script>
+
+    <!--
       "Wrong way in" fallback guide (see the `.gb-fallback` block inside #root below).
 
       Gubbins is a dev-server app: the page only works when served by Vite via Run.bat /

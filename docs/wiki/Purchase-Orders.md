@@ -24,6 +24,21 @@ Everywhere an order's money is shown — the order total in the list, and each l
 shown in **that order's** currency, so a `EUR` order reads in euros rather than under your base
 currency's symbol.
 
+### When a supplier quotes in a different currency
+
+A line's cost is recorded as a plain number in the **order's** currency. So if you add a line for a
+part whose [[supplier|Supplier-Parts-and-Price-History]] quotes in euros to an order priced in
+pounds, Gubbins won't copy the supplier's figure across — that number would be recorded as pounds
+without ever having been converted.
+
+Instead, the Add line dialog says so: the supplier's price breaks stay in the currency they were
+quoted in, a notice names both currencies, and the **Unit cost** field is left empty for you to
+enter what the line actually costs in the order's currency.
+
+> **💡 Tip**
+> If you buy from a supplier in their currency regularly, raise the whole order in that currency.
+> The quotes then match the order and prices fill in automatically as usual.
+
 > **⚠️ Heads-up**
 > Because those amounts can't be converted, an order in another currency is **left out** of the
 > [[spend report|Valuation-and-Spend]] rather than added to a total it doesn't match. The report
