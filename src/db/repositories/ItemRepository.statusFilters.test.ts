@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { MS_PER_DAY } from './constants';
-import { ItemRepository, buildStatusFilter } from './ItemRepository';
+import { ItemRepository, buildStatusFilter, ITEM_STATUS_FILTERS } from './ItemRepository';
 import { ContactRepository } from './ContactRepository';
 import { CheckoutRepository } from './CheckoutRepository';
 import { MaintenanceRepository } from './MaintenanceRepository';
@@ -313,6 +313,21 @@ describe('ItemRepository.list — derived-status filters', () => {
     const applicable = await items.applicableStatuses({ now });
     expect(applicable.find((s) => s.status === 'low-stock')?.count).toBe(1);
     expect(applicable.find((s) => s.status === 'out-of-stock')?.count).toBe(1);
+  });
+
+  it('counts every status in one pass over items, not a scan per status (issue #166)', async () => {
+    await seed();
+    const queryOne = vi.spyOn(driver, 'queryOne');
+    const applicable = await items.applicableStatuses({ now, locationId: null });
+    expect(applicable.length).toBeGreaterThan(1);
+    expect(queryOne).toHaveBeenCalledTimes(1);
+    const [sql] = queryOne.mock.calls[0]!;
+    // Every status is a conditional aggregate over one shared scan, so the outer `FROM items`
+    // appears once and is scoped by a single `WHERE` — a per-status `(SELECT COUNT(*) FROM
+    // items WHERE …)` subquery would re-scan the table once per candidate instead.
+    expect(sql).not.toMatch(/SELECT COUNT\(\*\) FROM items/i);
+    expect(sql).toContain('FROM items WHERE is_active = 1');
+    expect(sql.match(/SUM\(CASE WHEN/g)?.length).toBe(ITEM_STATUS_FILTERS.length);
   });
 
   it('reports no applicable statuses for an empty inventory', async () => {
