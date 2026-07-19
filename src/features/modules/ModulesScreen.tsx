@@ -12,6 +12,7 @@ import {
 import { CheckIcon, ModulesIcon, ResetIcon, SearchIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { ConfirmUsersEnableModal } from '@/features/users/components/ConfirmUsersEnableModal';
 import {
   FEATURE_GROUP_ORDER,
   FEATURE_REGISTRY,
@@ -90,6 +91,8 @@ export function ModulesScreen() {
   // Re-run the first-run chooser on demand via local mount state — flipping the persisted
   // `firstRunComplete` flag back off would wrongly re-trigger the wizard on every load.
   const [showChooser, setShowChooser] = useState(false);
+  // The feature closure staged behind the users-module confirmation, or null when it is shut.
+  const [confirmUsersEnable, setConfirmUsersEnable] = useState<readonly FeatureId[] | null>(null);
 
   const trimmedQuery = query.trim().toLowerCase();
   const matchesQuery = (feature: FeatureDef) =>
@@ -113,6 +116,20 @@ export function ModulesScreen() {
         ? closureToEnable(id, intent, FEATURE_REGISTRY)
         : closureToDisable(id, intent, FEATURE_REGISTRY)),
     ];
+
+    // Switching the users module on is the one toggle that can lock somebody out of their own
+    // data, so it gets its own confirmation, which checks that an account can still sign in
+    // (issue #79, plan §3). Switching it *off* needs no such gate — that is the safe direction,
+    // and obstructing it is precisely what would make the feature a one-way door.
+    //
+    // The closure is computed first and carried through the confirmation rather than skipped:
+    // enabling still has to switch on anything the feature depends on, or it would resolve
+    // straight back to off and the toggle would appear not to work.
+    if (id === 'users' && nextOn) {
+      setConfirmUsersEnable(closure);
+      return;
+    }
+
     const hasExtras = closure.some((other) => other !== id);
     if (!hasExtras) {
       setFeatureIntent(id, nextOn);
@@ -248,6 +265,17 @@ export function ModulesScreen() {
       ) : null}
 
       {showChooser ? <FirstRunModulesDialog onClose={() => setShowChooser(false)} /> : null}
+
+      {confirmUsersEnable ? (
+        <ConfirmUsersEnableModal
+          onCancel={() => setConfirmUsersEnable(null)}
+          onConfirm={() => {
+            // Enable the whole closure, exactly as the generic cascade path does.
+            enableAll(confirmUsersEnable);
+            setConfirmUsersEnable(null);
+          }}
+        />
+      ) : null}
     </PageContainer>
   );
 }

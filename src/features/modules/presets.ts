@@ -8,7 +8,7 @@
  * their dependencies come along automatically at read time.
  */
 import type { FeatureId } from './feature-registry';
-import { OPTIONAL_FEATURE_IDS } from './feature-registry';
+import { PRESETABLE_FEATURE_IDS } from './feature-registry';
 import type { LucideIcon } from '@/components/icons';
 import {
   CategoryIcon,
@@ -50,7 +50,9 @@ export const PRESETS: readonly Preset[] = [
     label: 'Everything',
     description: 'Every page and capability switched on — the full app (the default).',
     Icon: CustomiseIcon,
-    featureIds: OPTIONAL_FEATURE_IDS,
+    // Deliberately not every *optional* feature: an opt-in module (Users) changes how the whole
+    // app behaves, so "Everything" must not sweep it on behind the operator's back.
+    featureIds: PRESETABLE_FEATURE_IDS,
   },
   {
     id: 'minimal',

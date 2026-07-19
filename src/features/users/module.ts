@@ -5,12 +5,19 @@
  * **off** Gubbins behaves exactly as it always has — no sign-in, no permission ever refused,
  * every action attributed to the built-in Admin — and the user never meets the concept.
  *
- * It returns `false` unconditionally for now. The module's feature-registry entry, its
- * `/users` route and the admin screen that lets anyone create an account all arrive together
- * in phase 4; turning enforcement on before there is any way to administer accounts would
- * offer a door with no key cut for it. When that phase lands, this reads the modules store and
- * nothing else changes — every consumer already asks the question here.
+ * It reads the Modular UI store, so the module is switched on and off from the Modules manager
+ * like any other feature and the state lives in exactly one place. `users` is declared
+ * `defaultOff` in the feature registry: the store's usual "a feature with no stored intent is
+ * on" rule would otherwise have turned sign-in and permission enforcement on for every existing
+ * install the moment this shipped.
+ *
+ * Deliberately **not** a hook. The repository layer, `authority-refresh` and the sign-in gate
+ * all ask this question outside a render, and a second, hook-shaped copy of it is how the two
+ * answers would drift. Components that need to re-render on the toggle use
+ * `useFeature('users')` directly.
  */
+import { isFeatureEnabled } from '@/features/modules/useFeature';
+
 export function usersModuleEnabled(): boolean {
-  return false;
+  return isFeatureEnabled('users');
 }

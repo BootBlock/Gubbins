@@ -17,19 +17,37 @@ vi.mock('@/features/alerts/useAlerts', () => ({
   useAlerts: () => alertsMock(),
 }));
 
+// The real `useSignOut` reaches for a QueryClient; the sign-out behaviour itself is covered by
+// the users suite, so this test only cares that the row is offered and wired.
+const signOutMock = vi.fn();
+vi.mock('@/features/users/SignInGate', () => ({ useSignOut: () => signOutMock }));
+
 import { AppNav } from './AppNav';
 import { NAV_DESTINATIONS } from './nav-destinations';
+import { getFeature } from '@/features/modules/feature-registry';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+
+/**
+ * The destinations visible under the pristine default intent. An **opt-in** feature
+ * (`FeatureDef.defaultOff`, e.g. Users) resolves off until deliberately switched on, so its nav
+ * row is correctly absent — derived from the registry rather than hard-coded so adding a feature
+ * of either kind keeps these counts honest.
+ */
+const DEFAULT_ON_DESTINATIONS = NAV_DESTINATIONS.filter((d) => !getFeature(d.feature)?.defaultOff);
 
 beforeEach(() => {
   routerState.pathname = '/inventory';
   alertsMock.mockReturnValue({ alerts: [], allAlerts: [], isLoading: false, isError: false });
-  // Start every test from the default everything-on intent.
+  signOutMock.mockClear();
+  // Start every test from the default everything-on intent, signed out.
   useModulesStore.setState({ intent: {} });
+  useSessionStore.setState({ session: null });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {} });
+  useSessionStore.setState({ session: null });
 });
 
 function openNav() {
@@ -41,8 +59,9 @@ describe('AppNav — global navigation menu (spec §2.4.2)', () => {
     render(<AppNav />);
     openNav();
     const items = screen.getAllByRole('menuitem');
-    // Every route, plus the one external row (the Wiki) injected under Settings.
-    expect(items).toHaveLength(NAV_DESTINATIONS.length + 1);
+    // Every route that is on by default, plus the one external row (the Wiki) injected under
+    // Settings. An opt-in feature's destination is legitimately absent until it is switched on.
+    expect(items).toHaveLength(DEFAULT_ON_DESTINATIONS.length + 1);
     // The previously-unreachable screens are present from anywhere.
     for (const label of ['About', 'Settings', 'Dashboard', 'Activity']) {
       expect(screen.getByRole('menuitem', { name: new RegExp(label) })).toBeTruthy();
@@ -147,7 +166,41 @@ describe('AppNav — feature gating (Phase 2)', () => {
   it('is identical to today when everything is on (default intent)', () => {
     render(<AppNav />);
     openNav();
-    // Every destination plus the injected Wiki row — matches the default-state assertion above.
-    expect(screen.getAllByRole('menuitem')).toHaveLength(NAV_DESTINATIONS.length + 1);
+    // Every default-on destination plus the injected Wiki row — matches the assertion above.
+    expect(screen.getAllByRole('menuitem')).toHaveLength(DEFAULT_ON_DESTINATIONS.length + 1);
+  });
+
+  it('offers no sign-out while the users module is off — there is nobody to sign out as', () => {
+    render(<AppNav />);
+    openNav();
+    expect(screen.queryByTestId('app-nav-sign-out')).toBeNull();
+  });
+
+  it('offers a named sign-out once somebody is signed in', () => {
+    // Phase 3 built `useSignOut` but nothing called it, so a signed-in user had no way out —
+    // on a shared device, the whole point of signing in.
+    useModulesStore.setState({ intent: { users: true } });
+    useSessionStore.setState({
+      session: { userId: 'u1', displayName: 'Sam Okafor', signedInAt: 1 },
+    });
+
+    render(<AppNav />);
+    openNav();
+    const row = screen.getByTestId('app-nav-sign-out');
+    expect(row).toHaveTextContent('Sign out (Sam Okafor)');
+
+    fireEvent.click(row);
+    expect(signOutMock).toHaveBeenCalled();
+  });
+
+  it('hides an opt-in feature’s destination until it is switched on', () => {
+    const optIn = NAV_DESTINATIONS.filter((d) => getFeature(d.feature)?.defaultOff);
+    expect(optIn.length).toBeGreaterThan(0);
+
+    render(<AppNav />);
+    openNav();
+    for (const dest of optIn) {
+      expect(screen.queryByRole('menuitem', { name: new RegExp(dest.label) })).toBeNull();
+    }
   });
 });

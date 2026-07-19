@@ -38,6 +38,7 @@ vi.mock('@/features/alerts/useAlerts', () => ({ useAlerts: () => alertsMock() })
 
 import { DashboardScreen } from './DashboardScreen';
 import { NAV_DESTINATIONS } from '@/components/nav/nav-destinations';
+import { getFeature } from '@/features/modules/feature-registry';
 
 beforeEach(() => {
   alertsMock.mockReturnValue({ alerts: [], allAlerts: [], isLoading: false, isError: false });
@@ -52,7 +53,10 @@ describe('DashboardScreen — quick-nav grid (spec §2.4.2)', () => {
     // links; Settings is a button (it opens the Settings dialog rather than navigating), so
     // count both roles.
     const tiles = [...within(nav).getAllByRole('link'), ...within(nav).getAllByRole('button')];
-    expect(tiles).toHaveLength(NAV_DESTINATIONS.length - 1);
+    // An opt-in feature (`FeatureDef.defaultOff`, e.g. Users) is off under the default intent, so
+    // it has no tile until it is switched on — derived from the registry, not hard-coded.
+    const defaultOn = NAV_DESTINATIONS.filter((d) => !getFeature(d.feature)?.defaultOff);
+    expect(tiles).toHaveLength(defaultOn.length - 1);
     expect(within(nav).queryByText('Dashboard')).toBeNull();
   });
 

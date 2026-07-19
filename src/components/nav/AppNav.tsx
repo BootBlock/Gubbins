@@ -1,9 +1,11 @@
 import { Fragment } from 'react';
 import { useRouterState } from '@tanstack/react-router';
 import { Kbd, Menu, MenuLink, MenuAction, MenuExternalLink, MenuSeparator } from '@/components/foundry';
-import { MenuIcon, WikiIcon, ExternalLinkIcon } from '@/components/icons';
+import { MenuIcon, WikiIcon, ExternalLinkIcon, SignOutIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
-import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
+import { useSignOut } from '@/features/users/SignInGate';
+import { useSessionStore } from '@/state/stores/useSessionStore';
 import { useHotkeyHints } from '@/features/hotkeys/useHotkeyHints';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useT } from '@/features/i18n';
@@ -134,6 +136,48 @@ export function AppNav() {
           ))}
         </Fragment>
       ))}
+
+      <SignOutRow />
     </Menu>
+  );
+}
+
+/**
+ * The way out, for when somebody is signed in (issue #79, plan §3).
+ *
+ * Renders nothing at all while the users module is off, which is the state Gubbins ships in —
+ * there is nobody to sign out as, and offering it would introduce the concept to people who
+ * have never met it.
+ *
+ * It lives here rather than on the Users screen because signing out is not administration: on a
+ * shared device it is the thing the *current* person does when they walk away, and it has to be
+ * reachable from wherever they happen to be standing.
+ */
+function SignOutRow() {
+  const moduleEnabled = useFeature('users');
+  const session = useSessionStore((state) => state.session);
+
+  if (!moduleEnabled || !session) return null;
+  return <SignOutMenuItem displayName={session.displayName} />;
+}
+
+/**
+ * Split from {@link SignOutRow} so that `useSignOut` — and through it `useQueryClient` — is only
+ * called on the branch that actually renders. Calling it unconditionally would make *every*
+ * consumer of `AppNav`, which `PageHeader` mounts on every screen, require a `QueryClientProvider`
+ * even in single-user mode, where this row does not exist. The module being off must add no
+ * dependency the app did not already have.
+ */
+function SignOutMenuItem({ displayName }: { readonly displayName: string }) {
+  const t = useT();
+  const signOut = useSignOut();
+
+  return (
+    <>
+      <MenuSeparator />
+      <MenuAction icon={<SignOutIcon />} data-testid="app-nav-sign-out" onSelect={() => void signOut()}>
+        {t('nav.signOut', { vars: { name: displayName } })}
+      </MenuAction>
+    </>
   );
 }
