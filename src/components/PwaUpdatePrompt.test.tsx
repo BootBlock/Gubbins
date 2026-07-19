@@ -3,7 +3,7 @@ import { render, screen, act, cleanup, fireEvent } from '@testing-library/react'
 import { PwaUpdatePrompt } from './PwaUpdatePrompt';
 import { usePwaUpdateSnoozeStore } from '@/components/foundry/usePwaUpdateSnoozeStore';
 import type { DeployedVersion, PwaUpdateApi, PwaUpdateHandlers } from '@/components/foundry/usePwaUpdate';
-import { APP_SCHEMA_VERSION } from '@/lib/app-version';
+import { BASELINE_REVISION } from '@/db/migrations';
 
 beforeEach(() => {
   // The persist store is a module-level singleton — reset it (and its backing storage)
@@ -19,11 +19,13 @@ afterEach(() => {
 
 /**
  * Fake seam: `emitWaiting()` simulates a new worker becoming available. `fetchDeployedVersion`
- * returns the configured incoming-deploy identity; the build define pins the running build to
- * `schemaVersion` 1, so a deploy at `schemaVersion` 1 is data-compatible and any other value is
- * a data-resetting update.
+ * returns the configured incoming-deploy identity; a deploy carrying the running build's own
+ * {@link BASELINE_REVISION} is data-compatible and any other fingerprint is a data-resetting
+ * update.
  */
-function makeFakeApi(deployed: DeployedVersion | null = { version: '0.1.1', schemaVersion: 1 }) {
+function makeFakeApi(
+  deployed: DeployedVersion | null = { version: '0.1.1', baselineRevision: BASELINE_REVISION },
+) {
   let handlers: PwaUpdateHandlers | undefined;
   let deployedValue = deployed;
   const update = vi.fn(async (_reloadPage?: boolean) => {});
@@ -153,16 +155,16 @@ describe('PwaUpdatePrompt (spec §2 PWA update — no surprise reload)', () => {
 
   describe('data-safety check (issue #74)', () => {
     it('reassures when the incoming build keeps the same schema', async () => {
-      // Relative to the *running* schema version, never a hard-coded number — this constant
-      // is meant to change whenever the schema does, and the assertion is about sameness.
-      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: APP_SCHEMA_VERSION });
+      // Relative to the *running* baseline fingerprint, never a hard-coded value — it is
+      // derived from the schema and changes whenever the schema does; this is about sameness.
+      const fake = makeFakeApi({ version: '0.2.0', baselineRevision: BASELINE_REVISION });
       render(<PwaUpdatePrompt api={fake.api} />);
       await emitAndSettle(fake);
       expect(screen.getByTestId('pwa-update-prompt').textContent).toContain('stays intact');
     });
 
     it('warns that data will be reset when the incoming build changes schema', async () => {
-      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: APP_SCHEMA_VERSION + 1 });
+      const fake = makeFakeApi({ version: '0.2.0', baselineRevision: 'deadbeef' });
       render(<PwaUpdatePrompt api={fake.api} />);
       await emitAndSettle(fake);
       const prompt = screen.getByTestId('pwa-update-prompt');
@@ -184,9 +186,9 @@ describe('PwaUpdatePrompt (spec §2 PWA update — no surprise reload)', () => {
 
   describe('skip this version (issue #74)', () => {
     it('hides the prompt and records the skipped version', async () => {
-      // Relative to the *running* schema version, never a hard-coded number — this constant
-      // is meant to change whenever the schema does, and the assertion is about sameness.
-      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: APP_SCHEMA_VERSION });
+      // Relative to the *running* baseline fingerprint, never a hard-coded value — it is
+      // derived from the schema and changes whenever the schema does; this is about sameness.
+      const fake = makeFakeApi({ version: '0.2.0', baselineRevision: BASELINE_REVISION });
       render(<PwaUpdatePrompt api={fake.api} />);
       await emitAndSettle(fake);
 
@@ -199,9 +201,9 @@ describe('PwaUpdatePrompt (spec §2 PWA update — no surprise reload)', () => {
 
     it('stays hidden when the same skipped version re-announces after a reload', async () => {
       usePwaUpdateSnoozeStore.setState({ skippedVersion: '0.2.0' });
-      // Relative to the *running* schema version, never a hard-coded number — this constant
-      // is meant to change whenever the schema does, and the assertion is about sameness.
-      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: APP_SCHEMA_VERSION });
+      // Relative to the *running* baseline fingerprint, never a hard-coded value — it is
+      // derived from the schema and changes whenever the schema does; this is about sameness.
+      const fake = makeFakeApi({ version: '0.2.0', baselineRevision: BASELINE_REVISION });
       render(<PwaUpdatePrompt api={fake.api} />);
       await emitAndSettle(fake);
       expect(screen.queryByTestId('pwa-update-prompt')).toBeNull();
@@ -209,7 +211,7 @@ describe('PwaUpdatePrompt (spec §2 PWA update — no surprise reload)', () => {
 
     it('re-appears once a newer version than the skipped one is deployed', async () => {
       usePwaUpdateSnoozeStore.setState({ skippedVersion: '0.2.0' });
-      const fake = makeFakeApi({ version: '0.3.0', schemaVersion: 1 });
+      const fake = makeFakeApi({ version: '0.3.0', baselineRevision: BASELINE_REVISION });
       render(<PwaUpdatePrompt api={fake.api} />);
       await emitAndSettle(fake);
       expect(screen.getByTestId('pwa-update-prompt')).toBeTruthy();

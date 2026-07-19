@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
@@ -85,12 +86,45 @@ function spa404FallbackPlugin(): Plugin {
 }
 
 /**
- * Emit a tiny, un-hashed `version.json` at the site root carrying the build's `version` and
- * `schemaVersion` (issue #74). An already-installed build fetches this from the network when a
- * newer service worker is waiting, so it can compare the incoming deploy's `schemaVersion`
- * against its own baked-in {@link APP_SCHEMA_VERSION} and tell the user — *before* they reload —
- * whether the update keeps their data or (pre-1.0) resets it, plus its `version` so a
- * "skip this version" choice can be re-shown only when a genuinely newer version appears.
+ * Read `BASELINE_REVISION` out of the source tree by evaluating the baseline itself, in a child
+ * Node process (`scripts/baseline-revision.mjs` — which owns the module hooks needed to import
+ * the app's TypeScript). Deliberately unforgiving: a build that cannot determine its own
+ * fingerprint must fail rather than emit a manifest whose data-safety promise is unbacked.
+ *
+ * The child's stderr is inherited so a failure to evaluate the baseline surfaces as the real
+ * TypeScript/import error, rather than an opaque "Command failed" with the cause captured into
+ * an error property nobody prints.
+ */
+function readBaselineRevision(): string {
+  const script = fileURLToPath(new URL('./scripts/baseline-revision.mjs', import.meta.url));
+  const revision = execFileSync(process.execPath, [script], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'inherit'],
+  }).trim();
+  // The fingerprint is 8 hex digits (FNV-1a, see `baselineFingerprint`); anything else means the
+  // script printed something unexpected, which must not reach version.json unnoticed.
+  if (!/^[0-9a-f]{8}$/.test(revision)) {
+    throw new Error(`baseline-revision.mjs produced an unexpected fingerprint: ${JSON.stringify(revision)}`);
+  }
+  return revision;
+}
+
+/**
+ * Emit a tiny, un-hashed `version.json` at the site root carrying the build's `version`,
+ * `schemaVersion` and `baselineRevision` (issue #74). An already-installed build fetches this
+ * from the network when a newer service worker is waiting, so it can tell the user — *before*
+ * they reload — whether the update keeps their data or (pre-1.0) resets it, plus its `version`
+ * so a "skip this version" choice can be re-shown only when a genuinely newer version appears.
+ *
+ * **`baselineRevision` is what decides the data-safety promise** (issue #274). It is the
+ * fingerprint the build derives from the squashed `v1-initial` baseline's own SQL, and it is the
+ * value boot actually enforces (`assertBaselineCurrent` → `SCHEMA_STALE`). Publishing it here is
+ * the only way the banner's promise can be *true*: the project folds schema changes into the
+ * baseline, which moves the fingerprint automatically, whereas package.json's hand-maintained
+ * `schemaVersion` counter stays put unless someone remembers — failing in precisely the case it
+ * exists to catch, and telling the user their data is safe on its way to a reset screen.
+ * `schemaVersion` is still published (it is the compatibility generation the bridge speaks), but
+ * nothing decides data safety from it.
  *
  * Kept OUT of the precache glob (JSON isn't in the `globPatterns` list), so the service worker
  * never serves a stale cached copy — the app fetches it with `cache: 'no-store'` and reaches the
@@ -109,6 +143,7 @@ function versionManifestPlugin(): Plugin {
       const manifest = {
         version: pkg.version,
         schemaVersion: pkg.schemaVersion,
+        baselineRevision: readBaselineRevision(),
         releaseDate: pkg.releaseDate,
       };
       writeFileSync(resolve(outDir, 'version.json'), `${JSON.stringify(manifest, null, 2)}\n`);

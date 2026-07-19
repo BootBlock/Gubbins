@@ -15,12 +15,14 @@ export const APP_RELEASE_DATE: string = __APP_RELEASE_DATE__;
 
 /**
  * The local-database compatibility generation, single-sourced from package.json
- * (`schemaVersion`). While Gubbins is pre-release (before 1.0) the on-disk schema is not
- * migrated forward — a build whose stored-data shape changes cannot carry old data across
- * (see the boot "reset your data" screen). This integer is the signal for that: bump it in
- * package.json whenever a change alters how data is stored, so an already-installed build
- * can compare its own value against a newer deploy's and warn the user *before* they update
- * that reloading will reset their data (issue #74). Leave it unchanged for updates that don't
- * touch the schema — those keep the user's data intact.
+ * (`schemaVersion`). Bump it whenever a change alters how data is stored, so a peer that speaks
+ * this generation (the bridge — see `features/sync/bridge-version.ts`) can tell it is talking to
+ * a build it no longer matches.
+ *
+ * **It does not decide the update banner's data-safety promise** — that reads the *derived*
+ * `BASELINE_REVISION` fingerprint instead (issue #274). A hand-maintained counter fails in
+ * precisely the case that promise exists to catch: schema changes are folded into the
+ * `v1-initial` baseline, so the fingerprint moves on its own while the counter waits for someone
+ * to remember. See `components/PwaUpdatePrompt.tsx`.
  */
 export const APP_SCHEMA_VERSION: number = __APP_SCHEMA_VERSION__;

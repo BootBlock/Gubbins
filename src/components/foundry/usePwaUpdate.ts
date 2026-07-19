@@ -24,14 +24,15 @@
  * **Lab flags** (`/lab`, hidden testing screen): `pwa-update-available` swaps in
  * {@link pretendPwaUpdateApi} — no explicit `apiOverride` is passed — so the prompt appears
  * without any real deploy. `pwa-update-breaking` (only meaningful alongside the flag above)
- * makes the pretend incoming build report a `schemaVersion` one higher than
- * {@link APP_SCHEMA_VERSION}, so the prompt takes its data-safety-warning path. Both are
+ * makes the pretend incoming build report a `baselineRevision` differing from
+ * {@link BASELINE_REVISION}, so the prompt takes its data-safety-warning path. Both are
  * no-ops when an explicit `apiOverride` is supplied (component tests), keeping this
  * byte-identical to before when the flags are off.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLabFlag } from '@/state/stores/useLabStore';
-import { APP_SCHEMA_VERSION, APP_VERSION } from '@/lib/app-version';
+import { BASELINE_REVISION } from '@/db/migrations';
+import { APP_VERSION } from '@/lib/app-version';
 
 /** Callbacks the seam invokes for service-worker lifecycle transitions we surface. */
 export interface PwaUpdateHandlers {
@@ -50,8 +51,14 @@ export type PwaUpdater = (reloadPage?: boolean) => Promise<void>;
 export interface DeployedVersion {
   /** The deploy's app version (`0.MINOR.PATCH`), for the "skip this version" comparison. */
   readonly version: string;
-  /** The deploy's local-database compatibility generation (see {@link APP_SCHEMA_VERSION}). */
-  readonly schemaVersion: number;
+  /**
+   * The deploy's baseline fingerprint (see {@link BASELINE_REVISION}) — derived from the SQL of
+   * the schema it builds, and the value boot enforces. Differing from the running build's means
+   * reloading discards the database on disk, so this is what the data-safety promise rests on
+   * (issue #274). Deliberately *not* package.json's hand-maintained `schemaVersion` counter,
+   * which stays put when a schema change is folded into the baseline.
+   */
+  readonly baselineRevision: string;
 }
 
 /** Injectable seam over service-worker registration + the update handshake. */
@@ -120,8 +127,8 @@ export function browserPwaUpdateApi(): PwaUpdateApi {
  * waiting worker as soon as it's called; the returned updater has nothing real to hand off to,
  * so it just clears `needRefresh` — dismissing the prompt rather than reloading onto a
  * non-existent worker. `fetchDeployedVersion` reports the pretend build as schema-compatible
- * unless `breaking` is set, in which case it reports one generation newer than
- * {@link APP_SCHEMA_VERSION} so the prompt takes its data-safety-warning path.
+ * unless `breaking` is set, in which case it reports a baseline fingerprint differing from
+ * {@link BASELINE_REVISION} so the prompt takes its data-safety-warning path.
  */
 function pretendPwaUpdateApi(setNeedRefresh: (value: boolean) => void, breaking: boolean): PwaUpdateApi {
   return {
@@ -137,7 +144,9 @@ function pretendPwaUpdateApi(setNeedRefresh: (value: boolean) => void, breaking:
     async fetchDeployedVersion() {
       return {
         version: APP_VERSION,
-        schemaVersion: breaking ? APP_SCHEMA_VERSION + 1 : APP_SCHEMA_VERSION,
+        // Any value that isn't ours reads as "builds a different schema"; the marker suffix keeps
+        // it obviously synthetic rather than colliding with a real fingerprint.
+        baselineRevision: breaking ? `${BASELINE_REVISION}-pretend-breaking` : BASELINE_REVISION,
       };
     },
   };
@@ -150,6 +159,10 @@ function pretendPwaUpdateApi(setNeedRefresh: (value: boolean) => void, breaking:
  * belonging to the waiting worker — rather than the running build's cached copy. Any failure
  * (offline, 404, malformed JSON, or a shape we don't recognise) resolves to `null` so the
  * caller can degrade to a neutral message instead of a false "your data is safe" promise.
+ *
+ * `baselineRevision` is therefore required, not optional: a manifest without it (a deploy from
+ * before issue #274) can't answer the data-safety question, and the neutral "we can't tell"
+ * message is the only honest reading of that — never a reassurance we haven't checked.
  */
 async function fetchDeployedVersionFromNetwork(): Promise<DeployedVersion | null> {
   try {
@@ -160,10 +173,10 @@ async function fetchDeployedVersionFromNetwork(): Promise<DeployedVersion | null
       typeof data === 'object' &&
       data !== null &&
       typeof (data as { version?: unknown }).version === 'string' &&
-      typeof (data as { schemaVersion?: unknown }).schemaVersion === 'number'
+      typeof (data as { baselineRevision?: unknown }).baselineRevision === 'string'
     ) {
-      const { version, schemaVersion } = data as { version: string; schemaVersion: number };
-      return { version, schemaVersion };
+      const { version, baselineRevision } = data as { version: string; baselineRevision: string };
+      return { version, baselineRevision };
     }
     return null;
   } catch {
