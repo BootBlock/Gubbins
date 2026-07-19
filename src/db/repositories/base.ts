@@ -9,6 +9,8 @@
  */
 import { DbError } from '../errors';
 import type { IDatabaseDriver } from '../rpc/driver';
+import { can, UNRESTRICTED_AUTHORITY, type Authority } from '@/features/users/permissions';
+import type { PermissionKey } from '@/features/users/permission-registry';
 import { ADMIN_USER_ID, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './constants';
 import type { Page, PageParams } from './types';
 
@@ -45,6 +47,18 @@ export interface RepositoryOptions {
    * pass it explicitly.
    */
   readonly resolveBaseCurrency?: () => string | null;
+  /**
+   * Resolves what the current session is permitted to do (issue #79, plan §2.3).
+   *
+   * Resolved per call for the same reason as {@link resolveActor}: signing in or out, or
+   * switching the users module on, must take effect without rebuilding the repository graph.
+   *
+   * Tests omit it and get {@link UNRESTRICTED_AUTHORITY}, which is also what production
+   * passes today — the users module does not exist until phase 4, and plan §3 says
+   * single-user mode permits everything. Phase 3 changes that one arrow to the session's
+   * resolved authority and every guard below starts biting at once.
+   */
+  readonly resolveAuthority?: () => Authority;
 }
 
 export abstract class BaseRepository {
@@ -52,12 +66,14 @@ export abstract class BaseRepository {
   private readonly isWriteSuspended: () => boolean;
   private readonly resolveActor: () => string;
   private readonly resolveBaseCurrency: () => string | null;
+  private readonly resolveAuthority: () => Authority;
 
   constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
     this.driver = driver;
     this.isWriteSuspended = options.isWriteSuspended ?? (() => false);
     this.resolveActor = options.resolveActor ?? (() => ADMIN_USER_ID);
     this.resolveBaseCurrency = options.resolveBaseCurrency ?? (() => null);
+    this.resolveAuthority = options.resolveAuthority ?? (() => UNRESTRICTED_AUTHORITY);
   }
 
   /**
@@ -80,6 +96,23 @@ export abstract class BaseRepository {
     if (raw == null) return null;
     const code = raw.trim().toUpperCase();
     return /^[A-Z]{3}$/.test(code) ? code : null;
+  }
+
+  /**
+   * Refuse an operation the current session is not permitted to perform (issue #79, §2.3).
+   *
+   * This sits at the repository layer, not in the UI, for the same reason the built-in-user
+   * guards do: a check that exists only in a React component is not a check — an import, a
+   * restore or a Bridge write reaches the data without ever rendering one. Hiding a button
+   * is a courtesy; this is the boundary.
+   *
+   * It is *not* a substitute for encryption. The database is local and readable by anyone
+   * holding the device (plan §1.1), so this gates the application, not the file.
+   */
+  protected assertPermission(key: PermissionKey): void {
+    if (!can(this.resolveAuthority(), key)) {
+      throw new DbError('PERMISSION_DENIED', `You do not have permission to do this (${key}).`);
+    }
   }
 
   /**

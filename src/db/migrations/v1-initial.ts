@@ -23,6 +23,8 @@ import {
   USER_KINDS,
   WEBHOOK_METHODS,
 } from '../repositories/constants';
+import { BUILTIN_ROLES } from '@/features/users/builtin-roles';
+import { normaliseGrants } from '@/features/users/permissions';
 import type { SqlStatement } from '../rpc/driver';
 import { BASELINE_REVISION_KEY, SQL_NOW_MS, baselineFingerprint, type Migration } from './migration';
 
@@ -172,6 +174,18 @@ const baselineStatements: SqlStatement[] = [
         END;
       `,
   },
+  // The four roles Gubbins ships with (plan §2.3). Seeded here — rather than by application
+  // code on first boot — so a fresh database is complete the moment the baseline finishes,
+  // and so `users.role_id` has something to reference. Their contents come from
+  // `features/users/builtin-roles.ts`, the same module the app and the Bridge read, so the
+  // roles in a database and the roles in code cannot drift.
+  ...BUILTIN_ROLES.map((role) => ({
+    sql: `
+        INSERT INTO roles (id, name, description, permissions, is_builtin)
+        VALUES (?, ?, ?, ?, 1);
+      `,
+    params: [role.id, role.name, role.description, JSON.stringify(normaliseGrants(role.grants))],
+  })),
   {
     sql: `
         CREATE TABLE users (

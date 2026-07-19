@@ -8,6 +8,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
+import { BUILTIN_ROLES } from '@/features/users/builtin-roles';
+import { normaliseGrants } from '@/features/users/permissions';
 import { runMigrations } from '../migrations/engine';
 import { migrations } from '../migrations';
 import { ADMIN_USER_ID, SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID } from './constants';
@@ -33,6 +35,34 @@ describe('users, roles and attribution', () => {
 
   afterEach(async () => {
     await driver.close();
+  });
+
+  describe('the built-in roles (phase 2)', () => {
+    it('seeds the four shipped roles, marked built-in', async () => {
+      const page = await roles.list();
+      expect(page.rows.map((r) => r.name)).toEqual(BUILTIN_ROLES.map((r) => r.name));
+      expect(page.rows.map((r) => r.id)).toEqual(BUILTIN_ROLES.map((r) => r.id));
+      expect(page.rows.every((r) => r.isBuiltin)).toBe(true);
+    });
+
+    it('stores each role’s permissions as the engine will read them back', async () => {
+      const page = await roles.list();
+      for (const role of page.rows) {
+        const source = BUILTIN_ROLES.find((candidate) => candidate.id === role.id)!;
+        expect(role.permissions).toEqual(normaliseGrants(source.grants));
+      }
+    });
+
+    it('refuses to delete a built-in role, so no user is stranded on a missing one', async () => {
+      const administrator = (await roles.list()).rows[0];
+      await expect(roles.delete(administrator.id)).rejects.toThrow(/cannot be deleted/i);
+    });
+
+    it('allows a built-in role to be retuned, which is the documented difference from a user', async () => {
+      const stocker = (await roles.findByName('Stocker'))!;
+      const updated = await roles.update(stocker.id, { permissions: ['items:read'] });
+      expect(updated.permissions).toEqual(['items:read']);
+    });
   });
 
   describe('the built-in principals', () => {

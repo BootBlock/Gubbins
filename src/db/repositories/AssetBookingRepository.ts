@@ -74,6 +74,7 @@ export class AssetBookingRepository extends BaseRepository {
    * overlap any active booking for the same asset (hard double-booking prevention).
    */
   async create(input: CreateBookingInput): Promise<AssetBooking> {
+    this.assertPermission('bookings:write');
     this.assertWritable();
 
     const item = await this.driver.queryOne<{
@@ -114,6 +115,7 @@ export class AssetBookingRepository extends BaseRepository {
 
   /** Cancel a booking (stamp `cancelled_at`). Idempotent; a converted booking cannot cancel. */
   async cancel(id: string): Promise<AssetBooking> {
+    this.assertPermission('bookings:write');
     this.assertWritable();
     const booking = await this.requireBooking(id);
     if (booking.cancelledAt !== null) return booking; // already cancelled — idempotent
@@ -139,6 +141,8 @@ export class AssetBookingRepository extends BaseRepository {
     id: string,
     input: ConvertBookingInput = {},
   ): Promise<{ booking: AssetBooking; checkout: Checkout }> {
+    this.assertPermission('bookings:write');
+    this.assertPermission('checkouts:write');
     this.assertWritable();
     const booking = await this.requireBooking(id);
     if (booking.cancelledAt !== null) {
@@ -171,6 +175,7 @@ export class AssetBookingRepository extends BaseRepository {
 
   /** Permanently remove a booking. Tombstoned for sync (§7.2). */
   async remove(id: string): Promise<void> {
+    this.assertPermission('bookings:delete');
     await this.driver.transaction([
       { sql: 'DELETE FROM asset_bookings WHERE id = ?;', params: [id] },
       tombstoneStatement('asset_bookings', id),

@@ -49,6 +49,7 @@ export class RoleRepository extends BaseRepository {
 
   /** Create an operator-defined role. `is_builtin` is not an input — only the baseline seeds those. */
   async create(input: CreateRoleInput): Promise<Role> {
+    this.assertPermission('users:manage');
     this.assertWritable();
     const name = input.name.trim();
     if (name.length === 0) {
@@ -64,6 +65,7 @@ export class RoleRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdateRoleInput): Promise<Role> {
+    this.assertPermission('users:manage');
     this.assertWritable();
     await this.require(id);
     const sets: string[] = [];
@@ -96,6 +98,7 @@ export class RoleRepository extends BaseRepository {
    * delete a person. Bypasses the Hard Stop; records a tombstone so the deletion syncs (§7.2).
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('users:manage');
     const existing = await this.require(id);
     if (existing.isBuiltin) {
       throw new DbError(

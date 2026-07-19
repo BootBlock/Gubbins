@@ -151,6 +151,7 @@ export class PurchaseOrderRepository extends BaseRepository {
   }
 
   async create(input: CreatePurchaseOrderInput): Promise<PurchaseOrder> {
+    this.assertPermission('purchase-orders:write');
     this.assertWritable();
     // Clean the plain fields BEFORE resolving the supplier — resolving can mint a supplier row
     // outside this write, so a later rejection would strand it in the dictionary.
@@ -169,6 +170,7 @@ export class PurchaseOrderRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdatePurchaseOrderInput): Promise<PurchaseOrder> {
+    this.assertPermission('purchase-orders:write');
     this.assertWritable();
     await this.require(id);
     const sets: string[] = [];
@@ -201,6 +203,7 @@ export class PurchaseOrderRepository extends BaseRepository {
    * ORDERED on an order that already has receipts immediately re-derives to PARTIAL / RECEIVED.
    */
   async setStatus(id: string, status: 'DRAFT' | 'ORDERED' | 'CANCELLED'): Promise<PurchaseOrder> {
+    this.assertPermission('purchase-orders:write');
     this.assertWritable();
     await this.require(id);
 
@@ -223,6 +226,7 @@ export class PurchaseOrderRepository extends BaseRepository {
 
   /** Delete a PO (its lines cascade). Bypasses the Hard Stop; tombstoned for sync (§7.2). */
   async delete(id: string): Promise<void> {
+    this.assertPermission('purchase-orders:delete');
     // Tombstone the lines too so a peer drops them rather than re-downloading orphans.
     const lineIds = await this.driver.query<{ id: string }>(
       'SELECT id FROM purchase_order_lines WHERE po_id = ?;',
@@ -258,6 +262,7 @@ export class PurchaseOrderRepository extends BaseRepository {
   }
 
   async addLine(poId: string, input: CreatePurchaseOrderLineInput): Promise<PurchaseOrderLine> {
+    this.assertPermission('purchase-orders:write');
     this.assertWritable();
     await this.require(poId);
     const id = crypto.randomUUID();
@@ -279,6 +284,7 @@ export class PurchaseOrderRepository extends BaseRepository {
   }
 
   async updateLine(lineId: string, input: UpdatePurchaseOrderLineInput): Promise<PurchaseOrderLine> {
+    this.assertPermission('purchase-orders:write');
     this.assertWritable();
     await this.requireLine(lineId);
     const sets: string[] = [];
@@ -312,6 +318,7 @@ export class PurchaseOrderRepository extends BaseRepository {
 
   /** Remove a line. Bypasses the Hard Stop; tombstoned for sync (§7.2). */
   async removeLine(lineId: string): Promise<void> {
+    this.assertPermission('purchase-orders:write');
     await this.driver.transaction([
       { sql: 'DELETE FROM purchase_order_lines WHERE id = ?;', params: [lineId] },
       tombstoneStatement('purchase_order_lines', lineId),
@@ -331,6 +338,8 @@ export class PurchaseOrderRepository extends BaseRepository {
     lineId: string,
     opts: { locationId?: string; quantity?: number; batch?: BatchIdentity } = {},
   ): Promise<PurchaseOrderLine> {
+    this.assertPermission('purchase-orders:write');
+    this.assertPermission('stock:write');
     this.assertWritable();
     const line = await this.requireLine(lineId);
 
@@ -400,6 +409,8 @@ export class PurchaseOrderRepository extends BaseRepository {
     lineId: string,
     opts: { locationId?: string; quantity?: number } = {},
   ): Promise<PurchaseOrderLine> {
+    this.assertPermission('purchase-orders:write');
+    this.assertPermission('stock:write');
     this.assertWritable();
     const line = await this.requireLine(lineId);
 
@@ -527,6 +538,7 @@ export class PurchaseOrderRepository extends BaseRepository {
    * explicitly set ORDERED when the orders have been sent).
    */
   async createDraftFromReorderPlan(groups: readonly ReorderPlanGroup[]): Promise<PurchaseOrderWithLines[]> {
+    this.assertPermission('purchase-orders:write');
     this.assertWritable();
     const created: PurchaseOrderWithLines[] = [];
 

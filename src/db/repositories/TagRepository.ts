@@ -152,6 +152,7 @@ export class TagRepository extends BaseRepository {
    * resulting additions are Hard-Stop gated. Runs atomically.
    */
   async setForItem(itemId: string, names: readonly string[]): Promise<void> {
+    this.assertPermission('items:write');
     await this.applyTagSet(ITEM_BINDING, itemId, names);
   }
 
@@ -160,6 +161,7 @@ export class TagRepository extends BaseRepository {
    * {@link setForItem}, sharing the same dictionary and low-friction auto-create).
    */
   async setForLocation(locationId: string, names: readonly string[]): Promise<void> {
+    this.assertPermission('locations:write');
     await this.applyTagSet(LOCATION_BINDING, locationId, names);
   }
 
@@ -170,6 +172,7 @@ export class TagRepository extends BaseRepository {
    * resolved tag. A growth-write, so gated by the storage Hard Stop.
    */
   async create(name: string): Promise<Tag> {
+    this.assertPermission('tags:write');
     const trimmed = name.trim();
     if (trimmed.length === 0) throw new Error('A tag name cannot be empty.');
     const [existing] = await this.matchTagsByName([trimmed]);
@@ -186,6 +189,7 @@ export class TagRepository extends BaseRepository {
    * growth-write, so not Hard-Stop gated.
    */
   async rename(id: string, name: string): Promise<void> {
+    this.assertPermission('tags:write');
     const trimmed = name.trim();
     if (trimmed.length === 0) throw new Error('A tag name cannot be empty.');
     const clash = await this.driver.queryOne<{ id: string }>(
@@ -202,6 +206,7 @@ export class TagRepository extends BaseRepository {
    * tombstone deletes it (and cascades its edges) on every peer. Frees space, so not gated.
    */
   async remove(id: string): Promise<void> {
+    this.assertPermission('tags:delete');
     await this.driver.transaction([
       { sql: 'DELETE FROM tags WHERE id = ?;', params: [id] },
       tombstoneStatement('tags', id),
@@ -215,6 +220,7 @@ export class TagRepository extends BaseRepository {
    * source tag's tombstone cascades its old edges away everywhere. A growth-write, so gated.
    */
   async merge(sourceId: string, targetId: string): Promise<void> {
+    this.assertPermission('tags:write');
     if (sourceId === targetId) return;
     this.assertWritable();
     const statements: SqlStatement[] = [];

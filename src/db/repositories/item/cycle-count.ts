@@ -53,6 +53,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
      * down FEFO across the placement's lots.
      */
     async reconcile(adjustments: readonly ReconciliationAdjustment[]): Promise<Item[]> {
+      this.assertPermission('stock:write');
       this.assertWritable();
       const plan = await this.planReconcile(adjustments);
       if (plan.statements.length === 0) return [];
@@ -156,6 +157,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
      * Write-gated.
      */
     async reconcileSerialised(adjustments: readonly SerialisedReconciliation[]): Promise<Item[]> {
+      this.assertPermission('stock:write');
       this.assertWritable();
       const plan = await this.planReconcileSerialised(adjustments);
       if (plan.statements.length === 0) return [];
@@ -214,6 +216,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       readonly serialisedAdjustments: readonly SerialisedReconciliation[];
       readonly countedAt?: number;
     }): Promise<AuthorisedCount> {
+      this.assertPermission('stock:write');
       this.assertWritable();
       const discrete = await this.planReconcile(input.quantityAdjustments);
       const serialised = await this.planReconcileSerialised(input.serialisedAdjustments);

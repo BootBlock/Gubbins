@@ -86,6 +86,7 @@ export class StorageRepository extends BaseRepository {
    * remote history row older than `history_pruned_before`.
    */
   async pruneHistoryBefore(cutoff: number): Promise<number> {
+    this.assertPermission('audit:delete');
     const result = await this.driver.execute('DELETE FROM item_history WHERE created_at < ?;', [cutoff]);
     await this.driver.execute(
       'UPDATE sync_meta SET history_pruned_before = MAX(history_pruned_before, ?) WHERE id = 1;',
@@ -149,6 +150,9 @@ export class StorageRepository extends BaseRepository {
    * An UPDATE, but it *reclaims* space, so it deliberately bypasses the Hard Stop —
    * blocking it would trap the very locked-out user §7.6 exists to rescue. Local-only:
    * never propagated to cloud sync (§7.6.3 B).
+   *
+   * Unguarded by a permission check on purpose: this is internal storage housekeeping the app
+   * runs on its own behalf, not a user action anyone chooses to perform (issue #79, §2.3).
    */
   async markImageDowngraded(id: string, owner: DowngradableOwner, at: number = Date.now()): Promise<void> {
     // `owner` comes from the closed DowngradableOwner union, never from user input, so it is

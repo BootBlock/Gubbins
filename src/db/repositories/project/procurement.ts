@@ -29,6 +29,7 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
      * defaults to the full requirement and is clamped to it. NONE clears the hold.
      */
     async setReservation(lineId: string, status: ReservationStatus, qty?: number): Promise<ProjectBomLine> {
+      this.assertPermission('projects:write');
       this.assertWritable();
       const { line } = await this.requireLine(lineId);
 
@@ -73,6 +74,7 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
      * marking incoming stock as arriving (the "In Transit" liminal state, §4).
      */
     async setProcurement(lineId: string, status: ProcurementStatus): Promise<ProjectBomLine> {
+      this.assertPermission('projects:write');
       this.assertWritable();
       const { line } = await this.requireLine(lineId);
 
@@ -109,6 +111,8 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
       lineId: string,
       opts: { locationId?: string; quantity?: number; batch?: BatchIdentity } = {},
     ): Promise<ProjectBomLine> {
+      this.assertPermission('projects:write');
+      this.assertPermission('stock:write');
       this.assertWritable();
       const { line } = await this.requireLine(lineId);
 

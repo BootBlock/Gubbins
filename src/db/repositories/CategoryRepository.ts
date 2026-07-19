@@ -128,6 +128,7 @@ export class CategoryRepository extends BaseRepository {
   }
 
   async create(input: CreateCategoryInput): Promise<Category> {
+    this.assertPermission('categories:write');
     this.assertWritable();
     const name = input.name.trim();
     if (name.length === 0) {
@@ -155,6 +156,7 @@ export class CategoryRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdateCategoryInput): Promise<Category> {
+    this.assertPermission('categories:write');
     this.assertWritable();
     await this.requireCategory(id);
     // Plain LWW columns (no history action): assemble only the provided fields so an update
@@ -212,6 +214,7 @@ export class CategoryRepository extends BaseRepository {
    * Permitted under the storage Hard Stop (it frees space).
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('categories:delete');
     await this.driver.transaction([
       { sql: 'DELETE FROM categories WHERE id = ?;', params: [id] },
       tombstoneStatement('categories', id),
@@ -298,6 +301,7 @@ export class CategoryRepository extends BaseRepository {
    * that passes the predicate has no children.
    */
   async deleteUnusedFieldDef(defId: string): Promise<boolean> {
+    this.assertPermission('categories:write');
     this.assertWritable();
     await this.driver.transaction([
       {
@@ -501,6 +505,7 @@ export class CategoryRepository extends BaseRepository {
    * `UNIQUE (category_id, def_id)` — a category uses each definition at most once.
    */
   async addField(categoryId: string, input: CreateCategoryFieldInput): Promise<CategoryField> {
+    this.assertPermission('categories:write');
     this.assertWritable();
     await this.requireCategory(categoryId);
     const { name, fieldType, options } = this.validateFieldInput(input);
@@ -542,6 +547,7 @@ export class CategoryRepository extends BaseRepository {
    * "Manufacturer" are the same field, so a rename must move both together.
    */
   async updateField(fieldId: string, input: UpdateCategoryFieldInput): Promise<CategoryField> {
+    this.assertPermission('categories:write');
     this.assertWritable();
     const existing = await this.requireField(fieldId);
 
@@ -646,6 +652,7 @@ export class CategoryRepository extends BaseRepository {
    * other categories or locations may still use it, and one still exists to be re-picked.
    */
   async deleteField(fieldId: string): Promise<void> {
+    this.assertPermission('categories:write');
     const field = await this.driver.queryOne<{ def_id: string; category_id: string }>(
       'SELECT def_id, category_id FROM category_fields WHERE id = ?;',
       [fieldId],
@@ -737,6 +744,7 @@ export class CategoryRepository extends BaseRepository {
    * definition id the value rows key on.
    */
   async setItemFieldValues(itemId: string, values: Readonly<Record<string, string | null>>): Promise<void> {
+    this.assertPermission('items:write');
     this.assertWritable();
     const entries = Object.entries(values);
     if (entries.length === 0) return;
@@ -883,6 +891,7 @@ export class CategoryRepository extends BaseRepository {
     locationId: string,
     input: SetLocationFieldValueInput,
   ): Promise<LocationFieldValue | null> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     const def = await this.driver.queryOne<FieldDefRow>('SELECT * FROM field_defs WHERE id = ?;', [
       input.defId,
@@ -926,6 +935,7 @@ export class CategoryRepository extends BaseRepository {
    * default). Tombstoned, since `location_field_values` is synced.
    */
   async removeLocationFieldValue(locationId: string, defId: string): Promise<void> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     const existing = await this.driver.queryOne<{ id: string }>(
       'SELECT id FROM location_field_values WHERE location_id = ? AND def_id = ?;',

@@ -37,6 +37,7 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
      * the next sync instead of being resurrected from a peer (§7.2).
      */
     async setAliases(itemId: string, aliases: readonly string[]): Promise<ItemAlias[]> {
+      this.assertPermission('items:write');
       this.assertWritable();
       await this.require(itemId);
 
@@ -87,6 +88,7 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
      * A no-op write returns the item unchanged without logging.
      */
     async applyScrape(id: string, write: ScrapeApplyInput): Promise<Item> {
+      this.assertPermission('items:write');
       this.assertWritable();
       const existing = await this.require(id);
 

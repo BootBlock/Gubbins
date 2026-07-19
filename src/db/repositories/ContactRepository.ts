@@ -64,6 +64,7 @@ export class ContactRepository extends BaseRepository {
   }
 
   async create(input: CreateContactInput): Promise<Contact> {
+    this.assertPermission('contacts:write');
     this.assertWritable();
     const name = input.name.trim();
     if (name.length === 0) {
@@ -93,6 +94,7 @@ export class ContactRepository extends BaseRepository {
    * concurrent create surfaces as a constraint error, which we resolve by re-reading.
    */
   async resolveOrCreate(name: string): Promise<Contact> {
+    this.assertPermission('contacts:write');
     const existing = await this.findByName(name);
     if (existing) return existing;
     try {
@@ -105,6 +107,7 @@ export class ContactRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdateContactInput): Promise<Contact> {
+    this.assertPermission('contacts:write');
     this.assertWritable();
     await this.require(id);
     const sets: string[] = [];
@@ -155,6 +158,7 @@ export class ContactRepository extends BaseRepository {
    * with no way to tell which half applied.
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('contacts:delete');
     const returns = await planCheckInAllForTarget(this.driver, 'contact', id, this.actorId());
     await this.driver.transaction([
       ...returns,

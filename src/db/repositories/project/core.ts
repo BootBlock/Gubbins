@@ -77,6 +77,7 @@ export class ProjectCoreRepository extends BaseRepository {
   }
 
   async create(input: CreateProjectInput): Promise<Project> {
+    this.assertPermission('projects:write');
     this.assertWritable();
     const name = input.name.trim();
     if (name.length === 0) {
@@ -98,6 +99,7 @@ export class ProjectCoreRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdateProjectInput): Promise<Project> {
+    this.assertPermission('projects:write');
     this.assertWritable();
     await this.requireProject(id);
 
@@ -140,11 +142,13 @@ export class ProjectCoreRepository extends BaseRepository {
 
   /** Set or clear (null) the project's overall budget (§4 budgeting). */
   async setBudget(id: string, budget: number | null): Promise<Project> {
+    this.assertPermission('projects:write');
     return this.update(id, { budget });
   }
 
   /** Set just the BOM costing mode (spec §4 toggle). */
   async setCostingMode(id: string, mode: CostingMode): Promise<Project> {
+    this.assertPermission('projects:write');
     return this.update(id, { costingMode: mode });
   }
 
@@ -158,6 +162,7 @@ export class ProjectCoreRepository extends BaseRepository {
    * that still exists.
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('projects:delete');
     const returns = await planCheckInAllForTarget(this.driver, 'project', id, this.actorId());
     // Tombstone the deletion (Phase 11: projects is synced). BOM lines cascade locally
     // and, on a peer, from this same project tombstone, so they need none of their own.

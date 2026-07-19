@@ -44,6 +44,7 @@ export function withGauge<TBase extends Constructor<ItemCoreRepository>>(Base: T
      * disagreeing, which §7.3 replay then spreads to every device.
      */
     async adjustGauge(id: string, adjustment: GaugeAdjustment): Promise<Item> {
+      this.assertPermission('stock:write');
       this.assertWritable();
       const existing = await this.require(id);
       if (existing.trackingMode !== 'CONSUMABLE_GAUGE' || !existing.gauge) {
@@ -107,6 +108,7 @@ export function withGauge<TBase extends Constructor<ItemCoreRepository>>(Base: T
      * the repository contract and is exercised by the gauge tests.)
      */
     async weighInGauge(id: string, grossWeightOnScale: number): Promise<Item> {
+      this.assertPermission('stock:write');
       const existing = await this.require(id);
       if (existing.trackingMode !== 'CONSUMABLE_GAUGE' || !existing.gauge) {
         throw new DbError('SQLITE_CONSTRAINT', 'Weigh-in applies only to CONSUMABLE_GAUGE items.');
@@ -138,6 +140,7 @@ export function withGauge<TBase extends Constructor<ItemCoreRepository>>(Base: T
      * level — to preserve the delta-CRDT invariant (§7.3).
      */
     async reconfigureGauge(id: string, change: GaugeConfigChange): Promise<Item> {
+      this.assertPermission('stock:write');
       this.assertWritable();
       const existing = await this.require(id);
       if (existing.trackingMode !== 'CONSUMABLE_GAUGE' || !existing.gauge) {

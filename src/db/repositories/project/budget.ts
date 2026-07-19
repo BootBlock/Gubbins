@@ -174,6 +174,7 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
       projectId: string,
       input: CreateBudgetCategoryInput,
     ): Promise<ProjectBudgetCategory> {
+      this.assertPermission('projects:write');
       this.assertWritable();
       await this.requireProject(projectId);
       const name = normaliseText(input.name);
@@ -195,6 +196,7 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
       categoryId: string,
       input: UpdateBudgetCategoryInput,
     ): Promise<ProjectBudgetCategory> {
+      this.assertPermission('projects:write');
       this.assertWritable();
       await this.requireCategory(categoryId);
 
@@ -232,6 +234,7 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
      * for sync (§7.2); on a peer the `category_id` FK_REFS guard clears dangling references.
      */
     async removeBudgetCategory(categoryId: string): Promise<void> {
+      this.assertPermission('projects:write');
       await this.driver.transaction([
         { sql: 'DELETE FROM project_budget_categories WHERE id = ?;', params: [categoryId] },
         tombstoneStatement('project_budget_categories', categoryId),
@@ -253,6 +256,7 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
     }
 
     async addExpense(projectId: string, input: CreateExpenseInput): Promise<ProjectExpense> {
+      this.assertPermission('projects:write');
       this.assertWritable();
       await this.requireProject(projectId);
       const amount = requireAmount(input.amount);
@@ -272,6 +276,7 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
     }
 
     async updateExpense(expenseId: string, input: UpdateExpenseInput): Promise<ProjectExpense> {
+      this.assertPermission('projects:write');
       this.assertWritable();
       const { expense } = await this.requireExpense(expenseId);
 
@@ -302,6 +307,7 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
 
     /** Remove an expense. Tombstoned for sync (§7.2). */
     async removeExpense(expenseId: string): Promise<void> {
+      this.assertPermission('projects:write');
       await this.driver.transaction([
         { sql: 'DELETE FROM project_expenses WHERE id = ?;', params: [expenseId] },
         tombstoneStatement('project_expenses', expenseId),

@@ -44,6 +44,7 @@ export function withTestRecords<TBase extends Constructor<ItemCoreRepository>>(B
      * defaults to now. Write-gated (it grows storage).
      */
     async recordTestResult(itemId: string, input: RecordTestResultInput): Promise<TestRecord> {
+      this.assertPermission('items:write');
       this.assertWritable();
       await this.require(itemId); // shared precondition: a record against a missing item throws
 
@@ -97,6 +98,7 @@ export function withTestRecords<TBase extends Constructor<ItemCoreRepository>>(B
      * never held would wrongly instruct peers to delete it), mirroring `removeRelation`.
      */
     async removeTestRecord(recordId: string): Promise<void> {
+      this.assertPermission('items:write');
       if (!(await this.getTestRecord(recordId))) return;
       const statements: SqlStatement[] = [
         { sql: 'DELETE FROM test_records WHERE id = ?;', params: [recordId] },
