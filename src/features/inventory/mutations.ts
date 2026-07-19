@@ -54,6 +54,12 @@ type ItemListData = InfiniteData<Page<Item>, number>;
 /** Snapshot of every cached item-list slice, for rollback. */
 type ListSnapshot = Array<[readonly unknown[], ItemListData | undefined]>;
 
+/** Everything {@link patchItem} touches, captured so `onError` can put it all back (issue #295). */
+type ItemSnapshot = {
+  lists: ListSnapshot;
+  detail: { key: readonly unknown[]; data: Item | undefined };
+};
+
 const itemListFilter = {
   // Match only the infinite list queries — exactly ['inventory','items','list',filters].
   // The count query (…,'list',filters,'count') has length 5 and holds a number,
@@ -81,14 +87,49 @@ function patchItem(client: QueryClient, id: string, patch: (item: Item) => Item)
   client.setQueryData<Item | undefined>(inventoryKeys.item(id), (item) => (item ? patch(item) : item));
 }
 
-/** Cancel in-flight list fetches and snapshot them so onError can restore. */
-async function snapshotLists(client: QueryClient): Promise<ListSnapshot> {
-  await client.cancelQueries(itemListFilter);
-  return client.getQueriesData<ItemListData>(itemListFilter);
+/**
+ * Cancel every in-flight fetch {@link patchItem} writes over, and snapshot those slices so
+ * `onError` can restore them (issue #295).
+ *
+ * This must cover the **detail** query as well as the lists: an outstanding `useItem(id)` refetch
+ * that is not cancelled resolves *after* `onMutate` has patched, and overwrites the optimistic
+ * value with the pre-write one — the detail card visibly snaps back the moment the user taps ±.
+ * The detail slice is snapshotted for the same reason, so a failed write does not leave it
+ * holding a number that never happened: the rapid-tap adjusts skip their compensating
+ * `invalidateQueries` mid-burst, so until the burst ends nothing else would correct it.
+ *
+ * Cancellation is `exact` on purpose. `itemHistory(id)` is a *child* of the detail key, and an
+ * item's Activity Log is not something this write patches — a prefix cancel would abort a
+ * perfectly good history fetch alongside the one slice that needs it.
+ */
+async function snapshotItem(client: QueryClient, id: string): Promise<ItemSnapshot> {
+  const detailKey = inventoryKeys.item(id);
+  await Promise.all([
+    client.cancelQueries(itemListFilter),
+    client.cancelQueries({ queryKey: detailKey, exact: true }),
+  ]);
+  return {
+    lists: client.getQueriesData<ItemListData>(itemListFilter),
+    detail: { key: detailKey, data: client.getQueryData<Item>(detailKey) },
+  };
 }
 
-function restoreLists(client: QueryClient, snapshot: ListSnapshot | undefined): void {
-  snapshot?.forEach(([key, data]) => client.setQueryData(key, data));
+/**
+ * Put back everything {@link snapshotItem} captured.
+ *
+ * Restoring a *snapshot* rather than un-applying a delta means a failure mid-burst also discards
+ * any later tap's patch — tap A (10→11) failing while tap B (11→12) is still in flight leaves the
+ * cache reading 10 until B settles. That is the established trade-off of the list rollback this
+ * sits beside, and it self-corrects: `inventoryKeys.item(id)` is a descendant of the `items()`
+ * prefix, so the `invalidateItems` on the burst's final settle refetches the detail either way.
+ */
+function restoreItem(client: QueryClient, snapshot: ItemSnapshot | undefined): void {
+  if (!snapshot) return;
+  snapshot.lists.forEach(([key, data]) => client.setQueryData(key, data));
+  // An undefined snapshot means the detail was never cached, so `patchItem` left it alone and
+  // there is nothing to undo — which matters because `setQueryData(key, undefined)` is a no-op
+  // in TanStack Query rather than a clear, and so could not have undone it anyway.
+  if (snapshot.detail.data !== undefined) client.setQueryData(snapshot.detail.key, snapshot.detail.data);
 }
 
 /**
@@ -201,12 +242,12 @@ export function useUpdateItem() {
     mutationFn: ({ id, input }: { id: string; input: UpdateItemInput }) =>
       getItemRepository().update(id, input),
     onMutate: async ({ id, input }) => {
-      const lists = await snapshotLists(client);
+      const snapshot = await snapshotItem(client, id);
       patchItem(client, id, (item) => ({ ...item, ...stripUndefined(input) }));
-      return { lists };
+      return { snapshot };
     },
     onError: (e, _v, ctx) => {
-      restoreLists(client, ctx?.lists);
+      restoreItem(client, ctx?.snapshot);
       reportFailure(e);
     },
     onSettled: (_d, _e, { id }) => {
@@ -330,12 +371,12 @@ export function useMoveItem() {
     mutationFn: ({ id, locationId }: { id: string; locationId: string }) =>
       getItemRepository().move(id, locationId),
     onMutate: async ({ id, locationId }) => {
-      const lists = await snapshotLists(client);
+      const snapshot = await snapshotItem(client, id);
       patchItem(client, id, (item) => ({ ...item, locationId }));
-      return { lists };
+      return { snapshot };
     },
     onError: (e, _v, ctx) => {
-      restoreLists(client, ctx?.lists);
+      restoreItem(client, ctx?.snapshot);
       reportFailure(e);
     },
     onSettled: () => {
@@ -356,12 +397,12 @@ export function useAdjustQuantity() {
     mutationFn: ({ id, delta, note }: { id: string; delta: number; note?: string }) =>
       getItemRepository().adjustQuantity(id, delta, note),
     onMutate: async ({ id, delta }) => {
-      const lists = await snapshotLists(client);
+      const snapshot = await snapshotItem(client, id);
       patchItem(client, id, (item) => ({ ...item, quantity: Math.max(0, item.quantity + delta) }));
-      return { lists };
+      return { snapshot };
     },
     onError: (e, _v, ctx) => {
-      restoreLists(client, ctx?.lists);
+      restoreItem(client, ctx?.snapshot);
       reportFailure(e);
     },
     onSettled: (_d, _e, { id }) => {
@@ -389,14 +430,14 @@ export function useAdjustGauge() {
     mutationFn: ({ id, adjustment }: { id: string; adjustment: GaugeAdjustment }) =>
       getItemRepository().adjustGauge(id, adjustment),
     onMutate: async ({ id, adjustment }) => {
-      const lists = await snapshotLists(client);
+      const snapshot = await snapshotItem(client, id);
       patchItem(client, id, (item) =>
         item.gauge ? withGaugeNet(item, item.gauge.currentNetValue + adjustment.delta) : item,
       );
-      return { lists };
+      return { snapshot };
     },
     onError: (e, _v, ctx) => {
-      restoreLists(client, ctx?.lists);
+      restoreItem(client, ctx?.snapshot);
       reportFailure(e);
     },
     onSettled: (_d, _e, { id }) => {
@@ -435,12 +476,12 @@ export function useSoftDeleteItem() {
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) => getItemRepository().softDelete(id, note),
     onMutate: async ({ id }) => {
-      const lists = await snapshotLists(client);
+      const snapshot = await snapshotItem(client, id);
       patchItem(client, id, (item) => ({ ...item, isActive: false }));
-      return { lists };
+      return { snapshot };
     },
     onError: (e, _v, ctx) => {
-      restoreLists(client, ctx?.lists);
+      restoreItem(client, ctx?.snapshot);
       reportFailure(e);
     },
     onSettled: () => {

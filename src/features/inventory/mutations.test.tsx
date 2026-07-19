@@ -38,6 +38,7 @@ import {
   useSoftDeleteItem,
   useUpdateItem,
 } from './mutations';
+import { inventoryKeys } from './queries';
 
 function wrapper({ children }: { children: ReactNode }) {
   // Retries off so a rejected write settles once, immediately — the toast is the assertion,
@@ -184,5 +185,79 @@ describe('optimistic item writes surface their rollback', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(screen.queryByTestId('toast')).toBeNull();
+  });
+});
+
+/**
+ * The optimistic patch writes the item's **detail** slice as well as the lists, so the snapshot
+ * that guards it has to cover the detail slice too (issue #295). Without that, an in-flight
+ * `useItem(id)` refetch resolves over the optimistic value — the card snaps back the moment the
+ * user taps ± — and a failed write leaves the detail cache holding a number that never happened
+ * for as long as the burst lasts, because the rapid-tap adjusts skip their compensating
+ * invalidation until the last write settles.
+ */
+describe('optimistic item writes guard the detail cache', () => {
+  const DETAIL_KEY = inventoryKeys.item('item-1');
+  const CACHED = { id: 'item-1', name: 'Widget', quantity: 10 };
+
+  /** A wrapper whose client the test can inspect, seeded with a cached detail slice. */
+  function withClient() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(DETAIL_KEY, CACHED);
+    return {
+      client,
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>
+          <ToastProvider>{children}</ToastProvider>
+        </QueryClientProvider>
+      ),
+    };
+  }
+
+  it('rolls the detail slice back when the write fails', async () => {
+    // Rejected on demand rather than immediately, so the optimistic value is observable in
+    // between — otherwise the final assertion could pass without any patch ever landing.
+    let failWrite = () => {};
+    repo.adjustQuantity.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          failWrite = () => reject(new DbError('SQLITE_BUSY', 'database is locked'));
+        }),
+    );
+    const { client, wrapper: local } = withClient();
+
+    const { result } = renderHook(() => useAdjustQuantity(), { wrapper: local });
+    act(() => result.current.mutate({ id: 'item-1', delta: 5 }));
+    await waitFor(() => expect(client.getQueryData(DETAIL_KEY)).toMatchObject({ quantity: 15 }));
+
+    act(() => failWrite());
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(client.getQueryData(DETAIL_KEY)).toEqual(CACHED);
+  });
+
+  it('cancels an in-flight detail fetch so it cannot clobber the optimistic value', async () => {
+    repo.adjustQuantity.mockResolvedValue(undefined);
+    const { client, wrapper: local } = withClient();
+
+    // A background refetch already outstanding when the user taps, resolving to the pre-tap
+    // quantity — exactly the response that used to land on top of the optimistic patch.
+    let settleRefetch = () => {};
+    const refetch = client.fetchQuery({
+      queryKey: DETAIL_KEY,
+      queryFn: () => new Promise((resolve) => (settleRefetch = () => resolve(CACHED))),
+    });
+
+    const { result } = renderHook(() => useAdjustQuantity(), { wrapper: local });
+    act(() => result.current.mutate({ id: 'item-1', delta: 5 }));
+    await waitFor(() => expect(client.getQueryData(DETAIL_KEY)).toMatchObject({ quantity: 15 }));
+
+    act(() => settleRefetch());
+    await refetch.catch(() => {});
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // Still the optimistic value: the stale fetch was cancelled, not merely raced.
+    expect(client.getQueryData(DETAIL_KEY)).toMatchObject({ quantity: 15 });
   });
 });
