@@ -203,6 +203,15 @@ export const STORAGE_KEYS = [
     eraseGroup: 'local-ui',
     backupIncluded: false,
   },
+  {
+    key: 'gubbins:clock-skew',
+    store: 'useClockSkewStore',
+    storage: 'local',
+    eraseGroup: 'local-ui',
+    // Never backed up: it describes *this* device's clock error, so restoring it onto another
+    // machine would apply a correction for a fault that device does not have.
+    backupIncluded: false,
+  },
 
   // --- Deliberately outside the Danger Zone -----------------------------------------
   {

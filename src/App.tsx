@@ -14,6 +14,7 @@ import { useApplyTheme } from '@/features/settings/useApplyTheme';
 import { useApplyLanguage } from '@/features/i18n';
 import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
 import { ClockOverrideBadge } from '@/features/lab/ClockOverrideBadge';
+import { ClockSkewBadge } from '@/features/clock-skew/ClockSkewBadge';
 
 /**
  * Application composition root (spec §2.1, §2.2, §3).
@@ -51,6 +52,11 @@ export function App() {
                   counts as expired/overdue everywhere. Renders nothing in normal use. Outside
                   BootGate so it shows even on the boot screens, which are date-driven too. */}
               <ClockOverrideBadge />
+              {/* Says so on screen when *this device's* clock is materially wrong (#326). Gubbins
+                  corrects for the error rather than judging on it, but a silent correction would
+                  leave the app disagreeing with the taskbar clock for no visible reason. Renders
+                  nothing when the clock is trustworthy. */}
+              <ClockSkewBadge />
               <BootGate>
                 <RouterProvider router={router} />
                 {/* Path A2: receives an Amazon active-tab scrape and opens the reviewable

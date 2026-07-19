@@ -5,6 +5,7 @@ import { App } from './App';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { applyAppearance } from '@/features/settings/theme';
 import { startLabClock } from '@/features/lab/lab-clock';
+import { startClockSkew } from '@/features/clock-skew/clock-skew';
 import { completeGoogleAuthRedirect } from '@/features/sync/providers/google-oauth';
 
 // Complete an in-progress Google Drive sign-in *before* the hash router mounts: this lifts
@@ -35,6 +36,12 @@ completeGoogleAuthRedirect();
 // as the app mounts, so an offset applied later would leave them answering for the wrong day.
 // A no-op — and the real clock — unless the override has been set from the hidden lab screen.
 startLabClock();
+
+// Correct a *wrong* device clock before the first render, for exactly the same reason (#326):
+// those same date-driven queries would otherwise answer on a system clock that may be days out,
+// marking unexpired stock expired and firing maintenance early. The persisted correction applies
+// synchronously; a fresh measurement refines it in the background without blocking boot.
+startClockSkew();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
