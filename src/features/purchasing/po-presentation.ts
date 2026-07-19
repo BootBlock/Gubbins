@@ -6,6 +6,7 @@
  * per the pure-.ts-seam split.
  */
 import type { PurchaseOrderStatus } from '@/db/repositories';
+import { sumMoney } from '@/lib/money';
 
 export interface PoStatusPresentation {
   readonly label: string;
@@ -36,7 +37,12 @@ export function totalReceived(lines: readonly { receivedQty: number }[]): number
   return lines.reduce((sum, l) => sum + Math.max(0, l.receivedQty), 0);
 }
 
-/** Estimated order value across a set of lines (ordered qty × unit cost where priced). */
+/**
+ * Estimated order value across a set of lines (ordered qty × unit cost where priced).
+ *
+ * Lines extend at full precision and the **total** is quantised once (issue #288), so the figure
+ * shown against an order matches what its lines actually come to rather than carrying float drift.
+ */
 export function estimatedValue(lines: readonly { orderedQty: number; unitCost: number | null }[]): number {
-  return lines.reduce((sum, l) => sum + (l.unitCost != null ? Math.max(0, l.orderedQty) * l.unitCost : 0), 0);
+  return sumMoney(lines.map((l) => (l.unitCost != null ? Math.max(0, l.orderedQty) * l.unitCost : 0)));
 }

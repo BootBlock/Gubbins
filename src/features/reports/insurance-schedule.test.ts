@@ -224,4 +224,37 @@ describe('buildInsuranceSchedule', () => {
     expect(last.lines.map((l) => l.name)).toEqual(['X', 'Y']);
     expect(last.subtotal).toBe(10);
   });
+
+  // Issue #288: an insurer checks this document with a calculator, so each rung must sum the
+  // rung below it exactly as printed.
+  describe('monetary rounding', () => {
+    it('adds up line → subtotal → grand total with no float drift', () => {
+      const schedule = buildInsuranceSchedule(
+        [
+          item({ id: 'a', locationId: 'garage', quantity: 3, unitCost: 0.1 }),
+          item({ id: 'b', locationId: 'garage', quantity: 3, unitCost: 0.1 }),
+          item({ id: 'c', locationId: 'attic', quantity: 7, unitCost: 0.1 }),
+        ],
+        LOCATIONS,
+        NOW,
+      );
+      const garage = schedule.groups.find((g) => g.locationId === 'garage')!;
+      const attic = schedule.groups.find((g) => g.locationId === 'attic')!;
+      expect(garage.lines.map((l) => l.replacementValue)).toEqual([0.3, 0.3]);
+      expect(garage.subtotal).toBe(0.6);
+      expect(attic.subtotal).toBe(0.7);
+      expect(schedule.grandTotal).toBe(1.3);
+    });
+
+    it('quantises a line whose extended value is not a whole penny', () => {
+      const schedule = buildInsuranceSchedule(
+        [item({ id: 'a', locationId: 'garage', quantity: 3, unitCost: 1.005 })],
+        LOCATIONS,
+        NOW,
+      );
+      // 3 × 1.005 = 3.015 → 3.02 (half away from zero), not 3.01.
+      expect(schedule.groups[0]!.lines[0]!.replacementValue).toBe(3.02);
+      expect(schedule.grandTotal).toBe(3.02);
+    });
+  });
 });

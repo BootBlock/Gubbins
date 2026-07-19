@@ -80,6 +80,7 @@ import {
   type PartsCatalogue,
 } from '@/features/reports/parts-catalogue';
 import { THUMBNAIL_SUBQUERY } from './item/sql';
+import { roundMoney } from '@/lib/money';
 import {
   buildReorderPlan,
   type ReorderPlanGroup,
@@ -1157,7 +1158,10 @@ export class ReportRepository extends BaseRepository {
       // Prefer the metadata quantity; fall back to the ledger delta's magnitude.
       const quantity = meta.quantity ?? Math.abs(Number(r.quantity_delta ?? 0));
       const unitCost = meta.unitCostAtSale;
-      const cost = unitCost === null ? null : unitCost * quantity;
+      // The line's proceeds were quantised to the minor unit when the sale was recorded, so its
+      // cost is quantised the same way here — otherwise the margin subtracts an unrounded
+      // subtrahend from a rounded minuend and lands a penny out (issue #288).
+      const cost = unitCost === null ? null : roundMoney(unitCost * quantity);
       return {
         instant: Number(r.instant),
         kind: r.action === 'WRITTEN_OFF' ? 'WRITTEN_OFF' : 'SOLD',

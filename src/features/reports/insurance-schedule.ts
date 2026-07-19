@@ -15,8 +15,13 @@
  * replacement cost — the clean forward-hook for G9 (manual current / market value) so an
  * appreciating asset can be scheduled at today's worth. Until G9 lands nothing populates
  * it and valuation falls back to the replacement-cost seam.
+ *
+ * **The figures add up as printed** (issue #288). A schedule is a document someone checks with a
+ * calculator, so each rung is quantised through `@/lib/money` and sums the rung below it in its
+ * rounded form: line → location subtotal → grand total.
  */
 import { effectiveUnitCost, type ValuedUnit } from './reports';
+import { roundMoney, sumMoney } from '@/lib/money';
 import { effectiveUnitValue } from '@/features/inventory/valuation';
 import { warrantyStatus, type WarrantyStatus } from '@/features/inventory/asset-lifecycle';
 import type { Condition } from '@/db/repositories/constants';
@@ -184,7 +189,7 @@ function toLine(item: ScheduleItemInput, now: number): ScheduleLine {
       },
       now,
     ),
-    replacementValue: qty * Math.max(0, unitValue),
+    replacementValue: roundMoney(qty * Math.max(0, unitValue)),
     thumbnail: item.thumbnail ?? null,
   };
 }
@@ -225,7 +230,10 @@ export function buildInsuranceSchedule(
     lines: ScheduleLine[],
   ): ScheduleLocationGroup => {
     const sorted = [...lines].sort(byName);
-    const subtotal = sorted.reduce((sum, l) => sum + l.replacementValue, 0);
+    // A schedule is read as a column of figures that must add up, so each rung sums the rung
+    // below it *as printed*: lines are already quantised by `toLine`, and the subtotal is their
+    // sum rounded once (issue #288). An insurer adding the lines by hand gets this subtotal.
+    const subtotal = sumMoney(sorted.map((l) => l.replacementValue));
     return { locationId, locationPath, depth, lines: sorted, subtotal };
   };
 
@@ -240,7 +248,7 @@ export function buildInsuranceSchedule(
     groups.push(makeGroup(null, UNASSIGNED_GROUP_LABEL, 0, unassigned));
   }
 
-  const grandTotal = groups.reduce((sum, g) => sum + g.subtotal, 0);
+  const grandTotal = sumMoney(groups.map((g) => g.subtotal));
   const itemCount = groups.reduce((sum, g) => sum + g.lines.length, 0);
   return { groups, grandTotal, itemCount, generatedAt: now };
 }

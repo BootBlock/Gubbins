@@ -13,7 +13,14 @@ import {
   type TabularExportFormat,
   type TabularExportResult,
 } from '@/features/export/tabular-export';
+import { roundMoney } from '@/lib/money';
 import { PROCUREMENT_STATUS_LABELS, RESERVATION_STATUS_LABELS } from './components/projects-ui';
+
+/**
+ * Decimal places a BOM line's extended cost keeps — six, not the currency default, so a
+ * sub-penny per-part price survives the export. See {@link lineCost}.
+ */
+const BOM_LINE_COST_DECIMALS = 6;
 
 /** Display name for a BOM line's part — mirrors the on-screen BOM table's fallback chain. */
 function partLabel(line: ProjectBomLine): string {
@@ -21,13 +28,19 @@ function partLabel(line: ProjectBomLine): string {
 }
 
 /**
- * The line's total cost under its captured snapshot (`required × unit cost`), rounded to
- * strip binary-float noise (`0.1 × 3`) so a spreadsheet shows a clean currency figure.
- * Null when the line has no cost snapshot.
+ * The line's total cost under its captured snapshot (`required × unit cost`), rounded to strip
+ * binary-float noise (`0.1 × 3`) so a spreadsheet shows a clean figure. Null when the line has
+ * no cost snapshot.
+ *
+ * Deliberately quantised at {@link BOM_LINE_COST_DECIMALS}, not the 2dp the rest of the app
+ * uses: an electronics BOM is routinely priced in fractions of a penny per part, so rounding a
+ * line to the minor unit here would round genuine precision out of the export rather than just
+ * float noise. It shares the one unbiased rounder (issue #288) — only the scale differs, and it
+ * differs for a stated reason.
  */
 function lineCost(line: ProjectBomLine): number | null {
   if (line.unitCostSnapshot == null) return null;
-  return Math.round(line.unitCostSnapshot * line.requiredQty * 1e6) / 1e6;
+  return roundMoney(line.unitCostSnapshot * line.requiredQty, BOM_LINE_COST_DECIMALS);
 }
 
 /**
