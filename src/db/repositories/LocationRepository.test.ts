@@ -387,4 +387,89 @@ describe('LocationRepository', () => {
     await expect(locations.setDefault(UNASSIGNED_LOCATION_ID)).rejects.toBeInstanceOf(DbError);
     await expect(locations.setArchived(UNASSIGNED_LOCATION_ID, true)).rejects.toBeInstanceOf(DbError);
   });
+
+  /**
+   * The reported counts come from the trigger-maintained `location_item_counts` cache rather
+   * than an aggregate over `items` (issue #167), so the thing worth testing is not any single
+   * number but that the cache never drifts from the aggregate it replaced. Every test here
+   * drives a lifecycle step and then re-derives the truth from `items` to compare against.
+   */
+  describe('item counts', () => {
+    /** Ground truth: what the old `LEFT JOIN items … GROUP BY l.id` aggregate would have said. */
+    async function expectCountsMatchItems(): Promise<void> {
+      const truth = await driver.query<{ location_id: string; n: number }>(
+        'SELECT location_id, COUNT(*) AS n FROM items WHERE is_active = 1 GROUP BY location_id;',
+      );
+      const expected = new Map(truth.map((row) => [row.location_id, row.n]));
+      const rows = await locations.listAll();
+      // Asserted as a whole map, so a count that leaks onto the *wrong* location fails too —
+      // a per-location spot check would miss it.
+      expect(Object.fromEntries(rows.map((l) => [l.id, l.itemCount]))).toEqual(
+        Object.fromEntries(rows.map((l) => [l.id, expected.get(l.id) ?? 0])),
+      );
+    }
+
+    it('tracks creates, moves, soft deletes, restores and hard deletes', async () => {
+      const shelf = await locations.create({ name: 'Shelf' });
+      const bin = await locations.create({ name: 'Bin' });
+
+      const a = await items.create({ name: 'A', locationId: shelf.id });
+      const b = await items.create({ name: 'B', locationId: shelf.id });
+      await items.create({ name: 'C', locationId: bin.id });
+      await expectCountsMatchItems();
+      expect((await locations.listAll()).find((l) => l.id === shelf.id)?.itemCount).toBe(2);
+
+      // A move must decrement the origin and increment the destination, not just one side.
+      await items.move(a.id, bin.id);
+      await expectCountsMatchItems();
+
+      // Soft delete leaves the row in place with `is_active = 0`, so only the flag tells the
+      // counter to drop it — and the undo has to put it back.
+      await items.softDelete(b.id);
+      await expectCountsMatchItems();
+      await items.restore(b.id);
+      await expectCountsMatchItems();
+
+      await items.hardDelete(b.id);
+      await expectCountsMatchItems();
+    });
+
+    it('does not double-count an item soft-deleted and then moved', async () => {
+      // The move of an inactive item is the case a naive decrement/increment pair gets wrong:
+      // the item is not in either location's count, so neither side may change.
+      const from = await locations.create({ name: 'From' });
+      const to = await locations.create({ name: 'To' });
+      const item = await items.create({ name: 'Ghost', locationId: from.id });
+
+      await items.softDelete(item.id);
+      await items.move(item.id, to.id);
+      await expectCountsMatchItems();
+
+      const rows = await locations.listAll();
+      expect(rows.find((l) => l.id === from.id)?.itemCount).toBe(0);
+      expect(rows.find((l) => l.id === to.id)?.itemCount).toBe(0);
+
+      // Restoring it in its new home counts it there, and only there.
+      await items.restore(item.id);
+      await expectCountsMatchItems();
+      expect((await locations.listAll()).find((l) => l.id === to.id)?.itemCount).toBe(1);
+    });
+
+    it('follows items re-parented to Unassigned when their location is deleted', async () => {
+      const doomed = await locations.create({ name: 'Doomed' });
+      await items.create({ name: 'Stranded', locationId: doomed.id });
+
+      await locations.delete(doomed.id);
+      await expectCountsMatchItems();
+
+      const unassigned = (await locations.listAll()).find((l) => l.id === UNASSIGNED_LOCATION_ID);
+      expect(unassigned?.itemCount).toBe(1);
+      // The deleted location's cache row goes with it rather than lingering as a stray.
+      const orphans = await driver.query<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM location_item_counts WHERE location_id = ?;',
+        [doomed.id],
+      );
+      expect(orphans[0]?.n).toBe(0);
+    });
+  });
 });
