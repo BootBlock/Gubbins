@@ -35,6 +35,25 @@ describe('parseMoneyNumber', () => {
     expect(parseMoneyNumber('1.234')).toBe(1234);
   });
 
+  it('keeps a high-precision unit price, which is never grouping (issue #340)', () => {
+    // Component distributors quote four decimal places; a 4+ digit tail cannot be a
+    // thousands group, so it must read as a fraction rather than being inflated.
+    expect(parseMoneyNumber('0.0012')).toBe(0.0012);
+    expect(parseMoneyNumber('4.9557')).toBe(4.9557);
+    expect(parseMoneyNumber('0,0012')).toBe(0.0012);
+  });
+
+  it('reads a three-decimal fraction as a fraction when it cannot be grouping (issue #340)', () => {
+    // A leading "0" is never a thousands-group lead, so these are sub-penny prices, not
+    // grouped integers — 0.005 must not become 5.
+    expect(parseMoneyNumber('0.005')).toBe(0.005);
+    expect(parseMoneyNumber('0,005')).toBe(0.005);
+    // Nor is a four-digit lead: 1234.567 was already unambiguous.
+    expect(parseMoneyNumber('1234.567')).toBe(1234.567);
+    // ...but a well-formed group still groups.
+    expect(parseMoneyNumber('1.500')).toBe(1500);
+  });
+
   it('handles multiple same-type separators with a decimal tail', () => {
     expect(parseMoneyNumber('1,234,56')).toBe(1234.56); // grouping + decimal, both commas
     expect(parseMoneyNumber('1.234.567')).toBe(1234567); // pure grouping, three dots

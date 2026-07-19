@@ -104,10 +104,24 @@ export function detectCurrency(text: string): string | undefined {
  *
  * Handles both decimal conventions: when both `.` and `,` appear, the **right-most** is the
  * decimal separator and the other is grouping; when only one separator appears, a trailing
- * run of exactly three digits is read as grouping (`1,234` → 1234), while one or two trailing
- * digits are a decimal fraction (`12,99` → 12.99). This is the standard receipt heuristic and
- * keeps mixed UK/EU scans correct.
+ * run of exactly three digits sitting on well-formed groups is read as grouping (`1,234` → 1234),
+ * while any other tail is a decimal fraction (`12,99` → 12.99, `0.0012` → 0.0012,
+ * `0.005` → 0.005). This is the standard receipt heuristic and keeps mixed UK/EU scans correct,
+ * without rounding away the sub-penny unit prices component distributors quote.
  */
+/**
+ * Do these separator-delimited parts look like a **grouped** integer (`1,234,567`) rather than a
+ * decimal fraction? Grouping is only plausible when the leading part is one to three digits and
+ * does not start with a redundant zero, and every part after it is exactly three digits. The
+ * leading-zero test is what keeps `0.005` a price of half a penny instead of the 5 that reading
+ * `005` as a thousands group would produce.
+ */
+function isGrouped(parts: readonly string[]): boolean {
+  if (parts.length < 2) return false;
+  if (!/^[1-9]\d{0,2}$/.test(parts[0]!)) return false;
+  return parts.slice(1).every((part) => /^\d{3}$/.test(part));
+}
+
 export function parseMoneyNumber(token: string): number | null {
   const cleaned = token.replace(new RegExp(`[${CURRENCY_SYMBOLS}\\s]`, 'g'), '');
   if (!/\d/.test(cleaned)) return null;
@@ -129,14 +143,17 @@ export function parseMoneyNumber(token: string): number | null {
     const sep = lastComma >= 0 ? ',' : '.';
     const frac = digitsAndSeps.length - digitsAndSeps.lastIndexOf(sep) - 1;
     const parts = digitsAndSeps.split(sep);
-    if (frac === 1 || frac === 2) {
-      // A one/two-digit tail is the decimal fraction; everything before it is grouping —
-      // so the last part is the fraction and the rest concatenate into the integer.
+    if (frac === 0 || (frac === 3 && isGrouped(parts))) {
+      // A trailing separator is noise, and a three-digit tail sitting on well-formed groups is
+      // a thousands separator (`1,234`) — either way it is not a decimal point, so drop it.
+      normalised = parts.join('');
+    } else {
+      // Any other tail is the decimal fraction, and everything before it is grouping — so the
+      // last part is the fraction and the rest concatenate into the integer. Tails of four or
+      // more digits matter: a component unit price is routinely quoted to four decimal places
+      // (`0.0012`), and reading that as grouping would inflate it a thousandfold.
       const fraction = parts.pop() ?? '';
       normalised = `${parts.join('')}.${fraction}`;
-    } else {
-      // Otherwise the separator is grouping (or noise) — drop every occurrence.
-      normalised = parts.join('');
     }
   } else {
     normalised = digitsAndSeps;

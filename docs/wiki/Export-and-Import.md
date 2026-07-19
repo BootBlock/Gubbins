@@ -53,6 +53,13 @@ going through the item importer first.
 > `1,500` imports as one thousand five hundred. A cell that isn't a plain number — `12kg`, `~12`,
 > `n/a`, or a quantity with a fractional part — is flagged in the review with the column and the
 > value, rather than being imported as a rounded-down or empty figure.
+>
+> Every importer reads numbers by the same rule, whichever decimal convention your spreadsheet
+> uses: `£1,234.56` and `1.234,56 €` both mean the same price, and prices quoted to four decimal
+> places keep their precision. Where a lone separator could be read either way, a group of exactly
+> three digits is treated as thousands (`1,500` is fifteen hundred) and anything else as a decimal
+> (`1,50` is one and a half) — so if your figures use a comma decimal, check the review preview
+> before importing.
 
 > **💡 Tip**
 > The fastest way to start a big inventory is to paste a list you already have — a spreadsheet
