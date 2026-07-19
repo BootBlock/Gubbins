@@ -33,6 +33,26 @@ time, so you can see trends and spot where costs concentrate.
 > Accurate valuation and spend depend on items having **prices** and **acquired dates**. The
 > [[data hygiene|Data-Hygiene]] report flags records missing them, so you can fill the gaps.
 
+## Prices in another currency
+
+Every total on the Reports screen is in your **base currency** (set in Settings). A
+[[supplier part|Supplier-Parts-and-Price-History]] can record its price in a different currency —
+a part quoted in `JPY`, say — and Gubbins stores and shows that price exactly as you entered it.
+It never converts between currencies, because it holds no exchange rates.
+
+That means a price in another currency **can't be added to a base-currency total**: `9800` yen is
+not `9800` pounds, and treating it as though it were would silently inflate the figure. So Gubbins
+leaves those items out of the valuation totals instead, and tells you it has done so — a notice
+above the breakdown says how many items were left out.
+
+To bring an item back into the totals, either give it its own **unit cost** (a manual cost always
+wins, and is read as base currency), or record the supplier's price in your base currency.
+
+> **⚠️ Heads-up**
+> The same rule applies to the [[insurance schedule|Insurance-and-Estate-Schedule]], where the
+> notice prints with the document — so anyone reading the schedule can see that some items
+> aren't counted in the grand total.
+
 ## Related pages
 
 - **[[Reports overview|Reports-Overview]]** — the full suite.

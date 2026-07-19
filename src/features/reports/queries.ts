@@ -63,9 +63,24 @@ export const SPEND_BUCKETS = 15;
  */
 export const SALES_BUCKETS = 15;
 
+/**
+ * The user's base currency, folded into the query key of every report whose figures depend on
+ * it (issue #284).
+ *
+ * Those reports value stock from supplier prices, and a supplier price quoted in a currency
+ * other than the base one is excluded rather than mis-summed — so the base currency is an
+ * *input* to the numbers, not just to how they are formatted. Without it in the key, switching
+ * currency in Settings would re-label a cached total that was computed under the old currency's
+ * exclusions, which is exactly the kind of quietly-wrong figure this is all guarding against.
+ */
+function useValuationCurrency(): string {
+  return usePreferencesStore((s) => s.baseCurrency);
+}
+
 export function useInventoryValue() {
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'inventory-value'],
+    queryKey: [...reportKeys.all, 'inventory-value', currency],
     queryFn: () => getReportRepository().inventoryValue(),
   });
 }
@@ -127,8 +142,9 @@ export function useOutOfStockCount(options: { enabled?: boolean } = {}) {
 export function useDeadStock(sinceDays?: number) {
   const preferred = usePreferencesStore((s) => s.deadStockDays);
   const effective = sinceDays ?? preferred;
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'dead-stock', effective],
+    queryKey: [...reportKeys.all, 'dead-stock', effective, currency],
     queryFn: () => getReportRepository().deadStock(effective),
   });
 }
@@ -147,15 +163,17 @@ export function useDeadStockPolicy(itemId: string) {
 }
 
 export function useAbcAnalysis() {
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'abc', ABC_WINDOW_DAYS],
+    queryKey: [...reportKeys.all, 'abc', ABC_WINDOW_DAYS, currency],
     queryFn: () => getReportRepository().abcAnalysis(ABC_WINDOW_DAYS),
   });
 }
 
 export function useTurnover(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'turnover', windowDays],
+    queryKey: [...reportKeys.all, 'turnover', windowDays, currency],
     queryFn: () => getReportRepository().turnover(windowDays),
     // The window toggle re-keys this query; hold the previous window's table on screen
     // while the new one loads so toggling never flashes the panel to a spinner and back.
@@ -164,15 +182,17 @@ export function useTurnover(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
 }
 
 export function useStockAging() {
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'stock-aging'],
+    queryKey: [...reportKeys.all, 'stock-aging', currency],
     queryFn: () => getReportRepository().stockAging(),
   });
 }
 
 export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'valuation-trend', windowDays, VALUATION_TREND_POINTS],
+    queryKey: [...reportKeys.all, 'valuation-trend', windowDays, VALUATION_TREND_POINTS, currency],
     queryFn: () => getReportRepository().valuationTrend(windowDays, VALUATION_TREND_POINTS),
     // Re-keyed by the same analytics window toggle — keep the previous sparkline visible
     // while the new window loads (flicker-free, mirrors useTurnover above).
@@ -181,8 +201,9 @@ export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW)
 }
 
 export function useDataHygiene(staleDays: number = DATA_HYGIENE_STALE_DAYS) {
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'data-hygiene', staleDays],
+    queryKey: [...reportKeys.all, 'data-hygiene', staleDays, currency],
     queryFn: () => getReportRepository().dataHygiene(staleDays),
   });
 }
@@ -234,8 +255,9 @@ export function useSalesAnalytics(
  * `ReportRepository`; the print screen renders the returned DTO and offers `window.print()`.
  */
 export function useInsuranceSchedule() {
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'insurance-schedule'],
+    queryKey: [...reportKeys.all, 'insurance-schedule', currency],
     queryFn: () => getReportRepository().insuranceSchedule(),
   });
 }
@@ -251,12 +273,26 @@ export function useInsuranceSchedule() {
  */
 export function usePartsCatalogue(scope: CatalogueScope | null, options: CataloguePartsOptions = {}) {
   const { includePhotos = false, groupBy, sortBy } = options;
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'parts-catalogue', scope, includePhotos, groupBy, sortBy],
+    queryKey: [...reportKeys.all, 'parts-catalogue', scope, includePhotos, groupBy, sortBy, currency],
     queryFn: () => getReportRepository().partsCatalogue(scope!, { includePhotos, groupBy, sortBy }),
     enabled: scope !== null,
     // Re-keyed as the reader changes scope/grouping/columns; keep the previous document on screen
     // while the new one loads instead of flashing to a spinner.
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * How many items are left unvalued because their preferred supplier price is quoted in a
+ * currency other than the base one (issue #284). Drives the notice on the valuation card and
+ * the insurance schedule, so an excluded price is visible rather than a silent gap in a total.
+ */
+export function useForeignCurrencyCostCount() {
+  const currency = useValuationCurrency();
+  return useQuery({
+    queryKey: [...reportKeys.all, 'foreign-currency-cost-count', currency],
+    queryFn: () => getReportRepository().foreignCurrencyCostCount(),
   });
 }

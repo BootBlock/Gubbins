@@ -28,17 +28,36 @@ export interface RepositoryOptions {
    * pass {@link SYSTEM_USER_ID} explicitly at the call site instead of relying on this.
    */
   readonly resolveActor?: () => string;
+  /**
+   * Resolves the user's **base currency** — the single ISO-4217 currency every valuation
+   * total is expressed in (issue #284). A supplier part records the currency its price was
+   * quoted in, and Gubbins holds no exchange rates, so a price quoted in anything other than
+   * the base currency cannot be summed into a total; the valuation queries use this to
+   * recognise (and exclude) those prices rather than adding them as if they were base-currency
+   * figures.
+   *
+   * Resolved per call rather than captured once, for the same reason as {@link resolveActor}:
+   * changing the base currency in Settings must take effect without rebuilding the repository
+   * graph. Production wires it in `repositories/index.ts` to the preferences store.
+   *
+   * Tests omit it and get `null` — "base currency unknown", which disables the exclusion so
+   * existing fixtures value exactly as they did before. Tests covering the mixed-currency rule
+   * pass it explicitly.
+   */
+  readonly resolveBaseCurrency?: () => string | null;
 }
 
 export abstract class BaseRepository {
   protected readonly driver: IDatabaseDriver;
   private readonly isWriteSuspended: () => boolean;
   private readonly resolveActor: () => string;
+  private readonly resolveBaseCurrency: () => string | null;
 
   constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
     this.driver = driver;
     this.isWriteSuspended = options.isWriteSuspended ?? (() => false);
     this.resolveActor = options.resolveActor ?? (() => ADMIN_USER_ID);
+    this.resolveBaseCurrency = options.resolveBaseCurrency ?? (() => null);
   }
 
   /**
@@ -48,6 +67,19 @@ export abstract class BaseRepository {
    */
   protected actorId(): string {
     return this.resolveActor();
+  }
+
+  /**
+   * The base currency to value in, as a normalised upper-case ISO-4217 code, or `null` when it
+   * is unknown or not a well-formed code. Normalising here (rather than at each call site) is
+   * what makes it safe to embed in a SQL fragment: only three ASCII letters can ever come back,
+   * so there is no quoting or injection surface. See {@link RepositoryOptions.resolveBaseCurrency}.
+   */
+  protected baseCurrency(): string | null {
+    const raw = this.resolveBaseCurrency();
+    if (raw == null) return null;
+    const code = raw.trim().toUpperCase();
+    return /^[A-Z]{3}$/.test(code) ? code : null;
   }
 
   /**

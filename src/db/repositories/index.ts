@@ -10,6 +10,7 @@ import { getDatabaseDriver } from '../client';
 import { ADMIN_USER_ID } from './constants';
 import { isWriteSuspended } from '@/features/storage/tiers';
 import { useStorageStore } from '@/state/stores/useStorageStore';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { AssetBookingRepository } from './AssetBookingRepository';
 import { AttachmentRepository } from './AttachmentRepository';
 import { CategoryRepository } from './CategoryRepository';
@@ -148,6 +149,7 @@ let roleRepository: RoleRepository | null = null;
 const productionOptions: RepositoryOptions = {
   isWriteSuspended: () => isWriteSuspended(useStorageStore.getState().tier),
   resolveActor: () => ADMIN_USER_ID,
+  resolveBaseCurrency: () => usePreferencesStore.getState().baseCurrency,
 };
 
 export function getUserRepository(): UserRepository {

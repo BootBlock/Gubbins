@@ -11,7 +11,9 @@ import {
   WARRANTY_STATUS_COLOR_CLASS,
   WARRANTY_STATUS_LABEL,
 } from '@/features/inventory/components/inventory-ui';
-import { useInsuranceSchedule } from './queries';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { ForeignCurrencyNotice } from './components/ForeignCurrencyNotice';
+import { useForeignCurrencyCostCount, useInsuranceSchedule } from './queries';
 import type { InsuranceSchedule, ScheduleLine, ScheduleLocationGroup } from './insurance-schedule';
 
 /**
@@ -78,6 +80,11 @@ export function InsuranceScheduleScreen() {
 /** The document body: a title/metadata band, the room groups, and a grand-total footer. */
 function ScheduleDocument({ schedule, formatters }: { schedule: InsuranceSchedule; formatters: Formatters }) {
   const f = formatters;
+  // Sits inside the printed document, not the app chrome: a schedule is read by an insurer or
+  // executor who has no way of knowing that stock priced in another currency was left out of
+  // the grand total, so the caveat has to travel with the paper (#284).
+  const excluded = useForeignCurrencyCostCount();
+  const baseCurrency = usePreferencesStore((s) => s.baseCurrency);
   return (
     <>
       <header className="flex flex-col gap-1 border-b border-border pb-4">
@@ -96,6 +103,8 @@ function ScheduleDocument({ schedule, formatters }: { schedule: InsuranceSchedul
           />
         </p>
       </header>
+
+      <ForeignCurrencyNotice count={excluded.data} baseCurrency={baseCurrency} />
 
       {schedule.groups.map((group) => (
         <ScheduleGroup key={group.locationId ?? 'unassigned'} group={group} formatters={f} />

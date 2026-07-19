@@ -47,6 +47,13 @@ spot when a supplier's price has crept up.
 > Supplier prices feed [[valuation and spend|Valuation-and-Spend]] reporting and inform the
 > [[reorder|Reorder-and-Shopping-List]] and [[purchase order|Purchase-Orders]] flows.
 
+> **⚠️ Heads-up**
+> A supplier part can be priced in **any currency**, and Gubbins shows it exactly as entered — it
+> never converts. Because of that, a price in anything other than your base currency **can't be
+> counted in valuation totals**, and the item is left out of them (the reports say how many).
+> Give the item its own **unit cost** if you need it counted. See
+> [[valuation & spend|Valuation-and-Spend]].
+
 ## Related pages
 
 - **[[Suppliers]]** — the shared list of who you buy from: rename, merge and remove.

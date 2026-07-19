@@ -120,17 +120,46 @@ function notUnlimited(col: string): string {
 }
 
 /**
+ * SQL predicate matching a `supplier_parts` row whose price is denominated in the user's base
+ * currency, and is therefore summable into a valuation total (issue #284).
+ *
+ * A supplier part's `currency` is free ISO-4217 text the user sets per supplier, and it is
+ * stored and shown **verbatim — never converted**, because Gubbins holds no exchange rates (no
+ * rate column, no rate-capture timestamp, nothing). Adding a ¥9,800 part to a £ total as
+ * "9800" is not an approximation, it is a wrong number — and on the insurance schedule it is a
+ * wrong number in a document a user may hand to an insurer. So a foreign-currency price is
+ * excluded from valuation rather than silently mis-summed, mirroring the same refusal
+ * `price-refresh` already makes when asked for the cheapest of mixed-currency quotes.
+ *
+ * `NULL`/empty means "base currency" (the column's documented convention), so those always
+ * match. `baseCurrency` is null when unknown, which disables the filter entirely — an unknown
+ * base cannot tell foreign from domestic, and failing open preserves the previous behaviour
+ * rather than blanking every total.
+ *
+ * Assumes the enclosing query aliases `supplier_parts` as `sp` (both callers do); a different
+ * alias fails loudly as an unknown-column error rather than quietly matching nothing.
+ */
+function inBaseCurrencySql(baseCurrency: string): string {
+  // `baseCurrency` is normalised to three ASCII letters by `BaseRepository.baseCurrency()`,
+  // so this interpolation carries no quoting or injection surface.
+  return `(sp.currency IS NULL OR sp.currency = '' OR UPPER(TRIM(sp.currency)) = '${baseCurrency}')`;
+}
+
+/**
  * Correlated subquery yielding the **preferred** supplier part's `unit_cost` for an item
- * (NULL when none is marked or the preferred row is unpriced). Feeds the `preferredSupplierCost`
+ * (NULL when none is marked, the preferred row is unpriced, or its price is in a currency
+ * other than the base — see {@link inBaseCurrencySql}). Feeds the `preferredSupplierCost`
  * fallback so valuation honours the Phase-60 cost precedence — a manual `items.unit_cost` wins,
  * else the preferred supplier cost — resolved in one place by `effectiveUnitCost`
  * (`@/features/reports/reports`). `col` is the qualified item-id column to correlate on. At most
  * one preferred row exists per item (repository invariant); the `ORDER BY` is a defensive
  * tiebreak for a malformed multi-preferred state.
  */
-function preferredSupplierCostSql(col: string): string {
+function preferredSupplierCostSql(col: string, baseCurrency: string | null): string {
   return `(SELECT sp.unit_cost FROM supplier_parts sp
-             WHERE sp.item_id = ${col} AND sp.is_preferred = 1
+             WHERE sp.item_id = ${col} AND sp.is_preferred = 1${
+               baseCurrency === null ? '' : ` AND ${inBaseCurrencySql(baseCurrency)}`
+             }
              ORDER BY sp.updated_at DESC LIMIT 1)`;
 }
 
@@ -150,6 +179,40 @@ function preferredSupplierNameSql(col: string): string {
 
 export class ReportRepository extends BaseRepository {
   /**
+   * How many active items hold a **preferred supplier price quoted in another currency** and no
+   * value of their own to fall back on — so {@link preferredSupplierCostSql} declines that price
+   * and the item is left unvalued (issue #284).
+   *
+   * "No value of their own" means neither a manual `unit_cost` nor a manual `current_value`:
+   * either one wins over the supplier price outright (`effectiveUnitValue` → `effectiveUnitCost`),
+   * so an item carrying one is valued correctly no matter what currency its supplier quotes in.
+   * Counting those would raise a false alarm about a total that is in fact complete — the exact
+   * failure this notice exists to prevent, pointed the other way.
+   *
+   * This is the number the screens surface. Excluding a foreign price is the only correct thing
+   * to do without exchange rates, but doing it silently would swap a visible overstatement for
+   * an invisible understatement — worst of all on the insurance schedule. Reporting the count
+   * lets the user fix it (set a manual cost, or re-quote the part in the base currency) instead
+   * of trusting a total that quietly omits stock.
+   *
+   * Returns 0 when the base currency is unknown, since nothing is excluded in that case.
+   */
+  async foreignCurrencyCostCount(): Promise<number> {
+    const base = this.baseCurrency();
+    if (base === null) return 0;
+    const row = await this.driver.queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n
+         FROM items i
+        WHERE i.is_active = 1 AND i.unit_cost IS NULL AND i.current_value IS NULL
+          AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')}
+          AND EXISTS (SELECT 1 FROM supplier_parts sp
+                       WHERE sp.item_id = i.id AND sp.is_preferred = 1 AND sp.unit_cost IS NOT NULL
+                         AND NOT ${inBaseCurrencySql(base)});`,
+    );
+    return row?.n ?? 0;
+  }
+
+  /**
    * Inventory valuation (§3): the overall `SUM(quantity × effectiveUnitCost)`, the count of
    * unpriced active items, and the value broken down **by category** and **by location**.
    * The headline + category breakdown read `items.quantity` (the item's whole on-hand
@@ -157,6 +220,9 @@ export class ReportRepository extends BaseRepository {
    * across drawers is valued where it physically sits. Active, non-parent items only.
    */
   async inventoryValue(): Promise<InventoryValueReport> {
+    // The base currency valuation totals are expressed in, resolved once per report so a
+    // change mid-report can never split one total across two currencies (#284).
+    const base = this.baseCurrency();
     // Headline + per-category: one row per active, non-parent item with its category.
     const itemRows = await this.driver.query<{
       category_id: string | null;
@@ -168,7 +234,7 @@ export class ReportRepository extends BaseRepository {
     }>(
       `SELECT i.category_id AS category_id, c.name AS category_name, i.quantity AS quantity, i.unit_cost AS unit_cost,
               i.current_value AS current_value,
-              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
+              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
          FROM items i
          LEFT JOIN categories c ON c.id = i.category_id
         WHERE i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
@@ -200,7 +266,7 @@ export class ReportRepository extends BaseRepository {
     }>(
       `SELECT s.location_id AS location_id, l.name AS location_name, s.quantity AS quantity, i.unit_cost AS unit_cost,
               i.current_value AS current_value,
-              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
+              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
          FROM item_stock s
          JOIN items i ON i.id = s.item_id
          LEFT JOIN locations l ON l.id = s.location_id
@@ -234,6 +300,7 @@ export class ReportRepository extends BaseRepository {
    * the preferred supplier cost, via {@link preferredSupplierCostSql}).
    */
   async insuranceSchedule(now: number = nowMs()): Promise<InsuranceSchedule> {
+    const base = this.baseCurrency();
     const itemRows = await this.driver.query<{
       id: string;
       name: string;
@@ -254,7 +321,7 @@ export class ReportRepository extends BaseRepository {
               items.purchase_price AS purchase_price,
               items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
               items.location_id AS location_id,
-              ${preferredSupplierCostSql('items.id')} AS preferred_supplier_cost,
+              ${preferredSupplierCostSql('items.id', base)} AS preferred_supplier_cost,
               ${THUMBNAIL_SUBQUERY}
          FROM items
         WHERE items.is_active = 1 AND ${notAVariantParent('items.id')} AND ${notUnlimited('items.is_unlimited')};`,
@@ -305,6 +372,7 @@ export class ReportRepository extends BaseRepository {
     options: CataloguePartsOptions = {},
     now: number = nowMs(),
   ): Promise<PartsCatalogue> {
+    const base = this.baseCurrency();
     const filter = await this.catalogueScopeFilter(scope);
     // An empty ad-hoc selection resolves to nothing — short-circuit rather than emit an
     // `IN ()` (a syntax error) or fetch the whole catalogue.
@@ -345,7 +413,7 @@ export class ReportRepository extends BaseRepository {
               items.mpn AS mpn, items.manufacturer AS manufacturer,
               ${preferredSupplierNameSql('items.id')} AS supplier_name,
               items.unit_cost AS unit_cost,
-              ${preferredSupplierCostSql('items.id')} AS preferred_supplier_cost,
+              ${preferredSupplierCostSql('items.id', base)} AS preferred_supplier_cost,
               items.purchase_price AS purchase_price,
               items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
               items.notes AS notes,
@@ -619,6 +687,7 @@ export class ReportRepository extends BaseRepository {
    * short-circuits before the location tree is ever read.
    */
   async deadStock(sinceDays: number, now: number = nowMs()): Promise<DeadStockReport> {
+    const base = this.baseCurrency();
     const rows = await this.driver.query<{
       id: string;
       name: string;
@@ -631,7 +700,7 @@ export class ReportRepository extends BaseRepository {
       dead_stock_mode: DeadStockMode;
     }>(
       `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
-              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
+              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               i.created_at AS created_at,
               i.location_id AS location_id,
               i.dead_stock_mode AS dead_stock_mode,
@@ -787,6 +856,7 @@ export class ReportRepository extends BaseRepository {
    * year (the annual definition); `now` defaults to the wall clock.
    */
   async abcAnalysis(windowDays: number = DEFAULT_ABC_WINDOW_DAYS, now: number = nowMs()): Promise<AbcReport> {
+    const base = this.baseCurrency();
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
     const rows = await this.driver.query<{
       id: string;
@@ -798,7 +868,7 @@ export class ReportRepository extends BaseRepository {
       // `-SUM(quantity_delta)` over the negative (stock-out) deltas is the positive consumed
       // magnitude; COALESCE keeps an item that never moved at 0 rather than NULL.
       `SELECT i.id AS id, i.name AS name, i.unit_cost AS unit_cost,
-              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
+              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               COALESCE((SELECT -SUM(h.quantity_delta) FROM item_history h
                          WHERE h.item_id = i.id AND h.created_at >= ? AND h.created_at < ?
                            AND h.quantity_delta < 0), 0) AS consumed
@@ -825,6 +895,7 @@ export class ReportRepository extends BaseRepository {
    * quantity, the consumed magnitude and that net delta. `now` defaults to the wall clock.
    */
   async turnover(windowDays: number, now: number = nowMs()): Promise<TurnoverReport> {
+    const base = this.baseCurrency();
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
     const rows = await this.driver.query<{
       id: string;
@@ -836,7 +907,7 @@ export class ReportRepository extends BaseRepository {
       net_delta: number;
     }>(
       `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
-              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
+              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               COALESCE((SELECT -SUM(h.quantity_delta) FROM item_history h
                          WHERE h.item_id = i.id AND h.created_at >= ? AND h.created_at < ?
                            AND h.quantity_delta < 0), 0) AS consumed,
@@ -866,6 +937,7 @@ export class ReportRepository extends BaseRepository {
    * active, non-parent items holding stock are aged. `now` defaults to the wall clock.
    */
   async stockAging(now: number = nowMs()): Promise<StockAgingReport> {
+    const base = this.baseCurrency();
     const rows = await this.driver.query<{
       id: string;
       name: string;
@@ -877,7 +949,7 @@ export class ReportRepository extends BaseRepository {
       last_inbound_at: number | null;
     }>(
       `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
-              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
+              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               i.acquired_at AS acquired_at, i.created_at AS created_at,
               ( SELECT MAX(h.created_at) FROM item_history h
                  WHERE h.item_id = i.id AND h.quantity_delta > 0 ) AS last_inbound_at
@@ -911,6 +983,7 @@ export class ReportRepository extends BaseRepository {
     points: number,
     now: number = nowMs(),
   ): Promise<ValuationTrendReport> {
+    const base = this.baseCurrency();
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
 
     // Current total value — the anchor the trend is reconstructed backward from.
@@ -920,7 +993,7 @@ export class ReportRepository extends BaseRepository {
       preferred_supplier_cost: number | null;
     }>(
       `SELECT i.quantity AS quantity, i.unit_cost AS unit_cost,
-              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
+              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
          FROM items i
         WHERE i.is_active = 1 AND ${notAVariantParent('i.id')};`,
     );
@@ -940,7 +1013,7 @@ export class ReportRepository extends BaseRepository {
       preferred_supplier_cost: number | null;
     }>(
       `SELECT h.created_at AS created_at, h.quantity_delta AS quantity_delta,
-              i.unit_cost AS unit_cost, ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
+              i.unit_cost AS unit_cost, ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
          FROM item_history h
          JOIN items i ON i.id = h.item_id
         WHERE h.created_at > ? AND h.created_at <= ?
@@ -970,6 +1043,7 @@ export class ReportRepository extends BaseRepository {
    * the wall clock; `staleDays` sets the "no activity for this long" cutoff.
    */
   async dataHygiene(staleDays: number, now: number = nowMs()): Promise<HygieneReport> {
+    const base = this.baseCurrency();
     const rows = await this.driver.query<{
       id: string;
       name: string;
@@ -984,7 +1058,7 @@ export class ReportRepository extends BaseRepository {
     }>(
       `SELECT i.id AS id, i.name AS name, i.mpn AS mpn, i.category_id AS category_id,
               i.location_id AS location_id, i.unit_cost AS unit_cost,
-              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
+              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               (EXISTS (SELECT 1 FROM item_images im WHERE im.item_id = i.id)) AS has_photo,
               (EXISTS (SELECT 1 FROM item_history h WHERE h.item_id = i.id AND h.action = 'RECONCILED')) AS ever_counted,
               COALESCE((SELECT MAX(h.created_at) FROM item_history h WHERE h.item_id = i.id), i.created_at) AS last_activity_at
