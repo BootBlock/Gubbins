@@ -5,8 +5,9 @@
  * by the codec) and applies it in one of two modes the user picks per restore:
  *
  *  - **merge** — non-destructive: UPSERT every record from the backup over the current data
- *    (re-creating anything deleted since, keeping records the backup doesn't carry). Uses the
- *    portable snapshot via {@link restoreSnapshot}.
+ *    (re-creating anything deleted since, keeping records the backup doesn't carry, and never
+ *    removing a live record because the backup considered it deleted). Uses the portable
+ *    snapshot via {@link restoreSnapshot}.
  *  - **replace** — a true point-in-time restore: make the device match the backup exactly.
  *    Prefers the exact `.sqlite` copy when present (overwrite OPFS, like the archive restore);
  *    otherwise wipes and clones from the portable snapshot.
@@ -26,7 +27,7 @@ import {
   SYNC_TABLES,
 } from '@/features/sync/snapshot';
 import { ITEM_HISTORY_TABLE } from '@/db/repositories';
-import { overwriteOpfsDatabase } from '@/app/error/safe-mode-actions';
+import { overwriteOpfsDatabase, StaleJournalError } from '@/app/error/safe-mode-actions';
 import { writeImageFiles } from '@/features/images/opfs-images';
 import { BASELINE_REVISION } from '@/db/migrations';
 import { readBackupFile, type ParsedBackup } from './backup-format';
@@ -117,7 +118,16 @@ async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
     // is pre-release and does not migrate across baseline changes, so such a database would be
     // refused at the next boot (SCHEMA_STALE) — but by then the current data is already gone.
     // Backups written before the manifest carried a stamp can't be checked, so they proceed as
-    // before rather than being blocked on a missing field.
+    // before rather than being blocked on a missing field. A manifest that is *present but
+    // unreadable* is not that case: it is damage, and letting it through would mean corruption
+    // silently buys a pass through the very check that protects the live database (issue #353).
+    if (parsed.manifestUnreadable) {
+      throw new Error(
+        'This backup’s description file is damaged, so Gubbins cannot confirm its exact database ' +
+          'copy works with this build. Restore it with the “merge” mode instead, which brings your ' +
+          'records across without replacing the database file.',
+      );
+    }
     const stamp = parsed.manifest?.baselineRevision;
     if (stamp && stamp !== BASELINE_REVISION) {
       throw new Error(
@@ -127,8 +137,18 @@ async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
       );
     }
     await disposeDatabase();
-    await overwriteOpfsDatabase(parsed.sqlite);
+    // A `StaleJournalError` lands *after* the new bytes commit, so the images still belong
+    // beside them — write them, then let the failure through so the caller reports it rather
+    // than reloading into a journal replay (#203).
+    let staleJournal: StaleJournalError | undefined;
+    try {
+      await overwriteOpfsDatabase(parsed.sqlite);
+    } catch (error) {
+      if (!(error instanceof StaleJournalError)) throw error;
+      staleJournal = error;
+    }
     if (parsed.images.length > 0) await writeImageFiles(parsed.images);
+    if (staleJournal) throw staleJournal;
     return true;
   }
 

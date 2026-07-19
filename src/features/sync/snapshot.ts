@@ -27,16 +27,12 @@ import {
 } from '@/db/repositories';
 // Imported from the defining module rather than the `@/db/repositories` barrel: these are read
 // at module scope, and screen tests that mock the barrel wholesale do not provide them.
-import {
-  ADMIN_USER_ID,
-  IN_TRANSIT_LOCATION_ID,
-  SYSTEM_USER_ID,
-  UNASSIGNED_LOCATION_ID,
-} from '@/db/repositories/constants';
+import { SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import { historyStatement } from '@/db/repositories/item/history';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
 import { buildSchemaDictionary } from './schema-dictionary';
+import { ALWAYS_PRESENT_ROW_IDS, repairSnapshotIntegrity } from './snapshot-integrity';
 import type {
   GaugeHistoryDelta,
   ItemRegionEdge,
@@ -96,16 +92,14 @@ const WIPE_FILTER: Partial<Record<SyncTable, string>> = {
  * The rows {@link TABLE_FILTER} excludes, identified by their **id** rather than by the column
  * the filter tests (issue #197).
  *
- * Both sets are seeded with these exact constant ids on every device, so the id is the one
- * property a rescue read can rely on: it is stable across every revision of the pre-release
- * baseline, whereas `locations.is_system` / `users.kind` are columns a differently-shaped
- * database may simply not have. Used only by the best-effort fallback below — the normal path
- * still filters in SQL.
+ * Shared with the §405 integrity repair as {@link ALWAYS_PRESENT_ROW_IDS}, because the two uses
+ * are the same fact read in opposite directions: these rows are excluded from the snapshot
+ * precisely *because* every device already has them, which is also why the repair must never
+ * mistake one for an absent parent. Identified by id since that is the one property a rescue
+ * read can rely on — it is stable across every revision of the pre-release baseline, whereas
+ * `locations.is_system` / `users.kind` are columns a differently-shaped database may not have.
  */
-const PROTECTED_ROW_IDS: Partial<Record<SyncTable, readonly string[]>> = {
-  locations: [UNASSIGNED_LOCATION_ID, IN_TRANSIT_LOCATION_ID],
-  users: [SYSTEM_USER_ID, ADMIN_USER_ID],
-};
+const PROTECTED_ROW_IDS = ALWAYS_PRESENT_ROW_IDS;
 
 /**
  * Read every row of `table` in `key` order, a page at a time, under an optional filter.
@@ -231,12 +225,17 @@ export async function buildLocalSnapshot(
   generatedAt = Date.now(),
   options: BuildSnapshotOptions = {},
 ): Promise<SyncSnapshot> {
+  // Parts that could not be read at all (rescue mode only). An empty table here means "unknown",
+  // not "no rows", and the §405 repair below must not mistake the two — see `RepairOptions`.
+  const unreadableTables = new Set<string>();
+
   /** Read one part of the snapshot, degrading to `empty` when the caller asked us to. */
   const attempt = async <T>(part: string, read: () => Promise<T>, empty: T): Promise<T> => {
     if (!options.skipUnreadable) return read();
     try {
       return await read();
     } catch (error) {
+      unreadableTables.add(part);
       options.onSkipped?.(part, error);
       return empty;
     }
@@ -278,17 +277,25 @@ export async function buildLocalSnapshot(
   const itemRegions = await attempt(ITEM_REGIONS_TABLE, () => readItemRegions(driver), []);
   const itemHistory = await attempt(ITEM_HISTORY_TABLE, () => readItemHistory(driver), []);
 
-  return {
-    formatVersion: SYNC_FORMAT_VERSION,
-    generatedAt,
-    tables,
-    tombstones,
-    gaugeHistory,
-    itemTags,
-    locationTags,
-    itemRegions,
-    itemHistory,
-  };
+  // Issue #405: the reads above are not one point-in-time view — each is its own unisolated
+  // query, so a concurrent write can land a child row whose parent was read a moment too early.
+  // A restore applies the whole snapshot in one transaction and `OR IGNORE` does not cover
+  // FOREIGN KEY, so a single such orphan would abort it entirely. Repair here, where the data is
+  // still ours, rather than leaving every apply path to cope.
+  return repairSnapshotIntegrity(
+    {
+      formatVersion: SYNC_FORMAT_VERSION,
+      generatedAt,
+      tables,
+      tombstones,
+      gaugeHistory,
+      itemTags,
+      locationTags,
+      itemRegions,
+      itemHistory,
+    },
+    { unreadableTables },
+  );
 }
 
 /**
@@ -429,9 +436,9 @@ function upsertStatement(table: SyncTable, snapshotRow: SqlRow, columns: readonl
 }
 
 /**
- * The DELETE that applies one tombstone to its table. `item_tags` edge tombstones use a
- * composite `itemId|tagId` id (the join has no `id` column), so they delete by the pair;
- * every other table deletes by primary-key `id` (Phase 11).
+ * The `(table, WHERE …)` pair identifying the row one tombstone refers to. The three membership
+ * joins use a composite `a|b` id (they have no `id` column), so they match on the pair; every
+ * other table matches by primary-key `id` (Phase 11).
  *
  * `tableName` is checked against the {@link TOMBSTONE_TABLES} allow-list first, because it
  * has to be interpolated (SQLite cannot parameterise an identifier) and it reaches here from
@@ -439,30 +446,77 @@ function upsertStatement(table: SyncTable, snapshotRow: SqlRow, columns: readonl
  * last line of defence: {@link parseBackupJson} already rejects a bad name at the boundary, so
  * a throw here means a snapshot arrived by some other route and must not be applied.
  */
-export function tombstoneDeleteStatement(tableName: string, id: string): SqlStatement {
+function tombstoneRowMatch(
+  tableName: string,
+  id: string,
+): { table: string; where: string; params: SqlValue[] } {
   assertTombstoneTable(tableName);
   if (tableName === ITEM_TAGS_TABLE) {
     const { itemId, tagId } = parseItemTagEdgeId(id);
-    return {
-      sql: `DELETE FROM ${ITEM_TAGS_TABLE} WHERE item_id = ? AND tag_id = ?;`,
-      params: [itemId, tagId],
-    };
+    return { table: ITEM_TAGS_TABLE, where: 'item_id = ? AND tag_id = ?', params: [itemId, tagId] };
   }
   if (tableName === LOCATION_TAGS_TABLE) {
     const { locationId, tagId } = parseLocationTagEdgeId(id);
     return {
-      sql: `DELETE FROM ${LOCATION_TAGS_TABLE} WHERE location_id = ? AND tag_id = ?;`,
+      table: LOCATION_TAGS_TABLE,
+      where: 'location_id = ? AND tag_id = ?',
       params: [locationId, tagId],
     };
   }
   if (tableName === ITEM_REGIONS_TABLE) {
     const { itemId, regionId } = parseItemRegionEdgeId(id);
     return {
-      sql: `DELETE FROM ${ITEM_REGIONS_TABLE} WHERE item_id = ? AND region_id = ?;`,
+      table: ITEM_REGIONS_TABLE,
+      where: 'item_id = ? AND region_id = ?',
       params: [itemId, regionId],
     };
   }
-  return { sql: `DELETE FROM ${tableName} WHERE id = ?;`, params: [id] };
+  return { table: tableName, where: 'id = ?', params: [id] };
+}
+
+/** The DELETE that applies one tombstone to its table — see {@link tombstoneRowMatch}. */
+export function tombstoneDeleteStatement(tableName: string, id: string): SqlStatement {
+  const { table, where, params } = tombstoneRowMatch(tableName, id);
+  return { sql: `DELETE FROM ${table} WHERE ${where};`, params };
+}
+
+/**
+ * Record one of a backup's tombstones **only if the row is absent here** (issue #202).
+ *
+ * A merge restore promises to be non-destructive, so a deletion the backup carries must not
+ * remove a row that is live on this device: it was either kept deliberately or re-created since
+ * the backup was taken, and "keep anything you've added since" covers both. Where the row really
+ * is gone the tombstone is adopted as usual, so this device knows about the deletion and
+ * propagates it at the next sync.
+ *
+ * Runs after the snapshot's upserts, so a row the backup carries *and* tombstones resolves in
+ * favour of the row — the tombstone is skipped rather than deleting what was just restored.
+ *
+ * A tombstone already held here keeps the **later** `deleted_at` of the two. Both sides agree the
+ * row is gone, so the question is only when — and taking the backup's older instant would push
+ * the tombstone back below the sync watermark that decides what still needs sending, silently
+ * stranding a deletion this device had yet to propagate (and ageing it towards the TTL prune).
+ */
+function conditionalTombstoneStatement(tableName: string, id: string, deletedAt: number): SqlStatement {
+  const { table, where, params } = tombstoneRowMatch(tableName, id);
+  return {
+    sql:
+      'INSERT INTO tombstones (table_name, id, deleted_at) ' +
+      `SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM ${table} WHERE ${where}) ` +
+      'ON CONFLICT(table_name, id) DO UPDATE SET ' +
+      'deleted_at = MAX(tombstones.deleted_at, excluded.deleted_at);',
+    params: [tableName, id, deletedAt, ...params],
+  };
+}
+
+/** Clear one local tombstone, so a row this restore re-creates is not re-deleted at the next sync. */
+function clearTombstoneStatement(tableName: string, id: string): SqlStatement {
+  return { sql: 'DELETE FROM tombstones WHERE table_name = ? AND id = ?;', params: [tableName, id] };
+}
+
+/** Set key for "this device holds a tombstone for (table, id)". `\0` cannot occur in either part. */
+function tombstoneKey(tableName: string, id: string): string {
+  return `${tableName}\0${id}`;
 }
 
 /**
@@ -780,12 +834,19 @@ export function buildCloneStatements(
  * carried set: the Activity Ledger (`item_history`, unioned by id), the M:N membership
  * (`item_tags`, unioned then pruned by the backup's edge tombstones) and images
  * (`item_images` thumbnails, base64-decoded) now restore too. Full-res OPFS bytes are
- * still excluded (§4.2 strict isolation — the §4.5 vault / raw export carry those). The
- * backup's tombstone view replaces the local one so an imported row is not re-deleted by
- * a stale local tombstone on the next sync.
+ * still excluded (§4.2 strict isolation — the §4.5 vault / raw export carry those).
+ *
+ * The two deletion views are **merged**, not swapped (issue #202): local tombstones survive
+ * except where this restore re-creates the very row they deleted, and the backup's tombstones
+ * are adopted only for rows that are absent here — so a merge neither removes a live row nor
+ * forgets a deletion made since the backup was taken.
  */
 export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSnapshot): Promise<void> {
   const dictionary = await buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+  const localTombstones = await driver.query<{ table_name: string; id: string }>(
+    'SELECT table_name, id FROM tombstones;',
+  );
+  const held = new Set(localTombstones.map((t) => tombstoneKey(t.table_name, t.id)));
   const statements: SqlStatement[] = [];
 
   for (const table of SYNC_TABLES) {
@@ -829,15 +890,39 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
     });
   }
 
-  // Adopt the backup's deletion view: clear local tombstones, apply the backup's
-  // (item_tags edge tombstones delete by the composite pair, not an id).
-  statements.push({ sql: 'DELETE FROM tombstones;' });
+  // Merge the two deletion views rather than adopting the backup's wholesale (issue #202).
+  //
+  // Local tombstones are kept: clearing them would discard every deletion made since the backup
+  // was taken, and on a synced setup those rows would then come back from a peer at the next sync
+  // — the record that would have propagated the deletion having been thrown away. Only the ones
+  // this restore deliberately contradicts are cleared, namely a tombstone for a row the snapshot
+  // re-creates, which would otherwise re-delete it moments later.
+  //
+  // The backup's tombstones are adopted, but only where the row is genuinely absent here — see
+  // {@link conditionalTombstoneStatement}. Merge is advertised as non-destructive, so an id the
+  // backup considered deleted must not take a live local row with it.
+  // Only an id this device actually holds a tombstone for can need clearing, and `tombstones` is
+  // small (TTL-pruned) next to a full backup — so the held set is read once and the restore emits
+  // a DELETE only where one matches, rather than a no-op probe per restored row. `held` was read
+  // before the transaction opened; a tombstone recorded in that window is simply left in place,
+  // which is the safe direction (a deletion is kept, never silently dropped).
+  const clearIfHeld = (tableName: string, id: string) => {
+    if (held.has(tombstoneKey(tableName, id))) statements.push(clearTombstoneStatement(tableName, id));
+  };
+  for (const table of SYNC_TABLES) {
+    for (const row of snapshot.tables[table] ?? []) clearIfHeld(table, String(row.id));
+  }
+  for (const { itemId, tagId } of snapshot.itemTags ?? []) {
+    clearIfHeld(ITEM_TAGS_TABLE, itemTagEdgeId(itemId, tagId));
+  }
+  for (const { locationId, tagId } of snapshot.locationTags ?? []) {
+    clearIfHeld(LOCATION_TAGS_TABLE, locationTagEdgeId(locationId, tagId));
+  }
+  for (const { itemId, regionId } of snapshot.itemRegions ?? []) {
+    clearIfHeld(ITEM_REGIONS_TABLE, itemRegionEdgeId(itemId, regionId));
+  }
   for (const t of snapshot.tombstones) {
-    statements.push(tombstoneDeleteStatement(t.tableName, t.id));
-    statements.push({
-      sql: 'INSERT OR REPLACE INTO tombstones (table_name, id, deleted_at) VALUES (?, ?, ?);',
-      params: [t.tableName, t.id, t.deletedAt],
-    });
+    statements.push(conditionalTombstoneStatement(t.tableName, t.id, t.deletedAt));
   }
 
   await driver.transaction(statements);

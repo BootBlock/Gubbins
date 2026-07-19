@@ -413,7 +413,70 @@ describe('manifest cross-check (issue #201)', () => {
     delete entries[MANIFEST_ENTRY];
     const parsed = parseBackupEntries(entries);
     expect(parsed.manifest).toBeNull();
+    expect(parsed.manifestUnreadable).toBe(false); // an old backup, not a damaged one
     expect(parsed.snapshot.tables.items).toHaveLength(5);
+  });
+});
+
+describe('manifest field validation (issue #353)', () => {
+  function builtEntries() {
+    const built = assembleBackup({
+      snapshot: makeSnapshot(),
+      sqlite: fakeSqlite(),
+      images: [],
+      settings: null,
+      appVersion: '1.0.0',
+      baselineRevision: 'abc12345',
+      createdAt: 10,
+    });
+    return toEntries(built.files, built.assets);
+  }
+
+  /** Re-serialise the manifest with one field replaced, as a hand-edited backup would look. */
+  function withField(field: string, value: unknown) {
+    const entries = builtEntries();
+    const manifest = JSON.parse(strFromU8(entries[MANIFEST_ENTRY]!)) as Record<string, unknown>;
+    return { ...entries, [MANIFEST_ENTRY]: strToU8(JSON.stringify({ ...manifest, [field]: value })) };
+  }
+
+  it('accepts a well-formed manifest and reports it as readable', () => {
+    const parsed = parseBackupEntries(builtEntries());
+    expect(parsed.manifest?.appVersion).toBe('1.0.0');
+    expect(parsed.manifest?.createdAt).toBe(10);
+    expect(parsed.manifest?.baselineRevision).toBe('abc12345');
+    expect(parsed.manifestUnreadable).toBe(false);
+  });
+
+  it.each([
+    ['formatVersion', 'one'],
+    ['formatVersion', 1.5],
+    ['appVersion', 3],
+    ['createdAt', '2026-01-01'],
+    ['createdAt', Number.NaN],
+    ['createdAt', 1e21], // beyond what `new Date()` can represent — the preview would show nothing
+    // The one that gates a destructive restore: a non-string stamp neither matches the build's
+    // revision nor reads as "this backup predates the field".
+    ['baselineRevision', 7],
+    ['baselineRevision', { revision: 'abc12345' }],
+    ['baselineRevision', null],
+  ])('drops a manifest whose %s is %o, and flags it as damaged', (field, value) => {
+    const parsed = parseBackupEntries(withField(field, value));
+    expect(parsed.manifest).toBeNull();
+    expect(parsed.manifestUnreadable).toBe(true);
+    expect(parsed.snapshot.tables.items).toHaveLength(5); // the payload still restores by merge
+  });
+
+  it('flags an unparseable manifest as damaged rather than absent', () => {
+    const entries = { ...builtEntries(), [MANIFEST_ENTRY]: strToU8('{ not json') };
+    const parsed = parseBackupEntries(entries);
+    expect(parsed.manifest).toBeNull();
+    expect(parsed.manifestUnreadable).toBe(true);
+  });
+
+  it('keeps no stray properties from the file', () => {
+    const parsed = parseBackupEntries(withField('somethingElse', 'ignored'));
+    expect(parsed.manifest).not.toBeNull();
+    expect('somethingElse' in parsed.manifest!).toBe(false);
   });
 });
 

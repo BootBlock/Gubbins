@@ -50,6 +50,12 @@ There are two ways to restore:
   there. Non-destructive.
 - **Replace** — wipe the current data and restore the backup *exactly*. Destructive.
 
+> **ℹ️ Note**
+> **Merge** only ever adds or updates — it never removes a record you still have, even one the
+> backup was taken after you'd deleted. Deletions you've made since are remembered too, so
+> [[Cloud Sync|Cloud-Sync]] won't bring those records back from another device. Do expect a merge
+> to restore records that *are* in the backup but you've since deleted — that's the point of it.
+
 > **⚠️ Heads-up**
 > **Replace** overwrites everything currently in Gubbins. It's deliberately well-guarded — an
 > automatic restore-point is taken first, you get an impact preview and a storage-space check, and
@@ -99,6 +105,11 @@ longer match the fingerprint taken when the backup was written, the file is refu
 which part is at fault — so a backup that quietly lost data can't restore as though it were complete.
 Backups made before this check existed are still perfectly usable; they're simply checked against
 their item and image counts alone.
+
+If the packing list itself is the damaged part, Gubbins can no longer tell whether the backup's exact
+database copy suits this version — so **Replace everything** is declined rather than risked, and it
+says so before anything is touched. **Merge** still works, and brings your records across without
+replacing the database file.
 
 > **⚠️ Heads-up**
 > Those checks are a safety net, not a substitute for judgement. Treat a backup like any other file

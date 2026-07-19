@@ -383,8 +383,19 @@ export function assembleBackup(sources: BackupSources): BackupArtifacts {
 
 /** The decoded contents of a backup, ready for {@link import('./restore-backup').restoreBackup}. */
 export interface ParsedBackup {
-  /** The manifest when present; null for a `.zip` that carries `backup.json` but no manifest. */
+  /**
+   * The manifest when it read cleanly; null both for a `.zip` that carries `backup.json` but no
+   * manifest, and for one whose manifest was damaged — {@link manifestUnreadable} separates them.
+   */
   readonly manifest: BackupManifest | null;
+  /**
+   * True when the container *did* carry a `manifest.json` that could not be read as a valid
+   * manifest (issue #353). `manifest: null` alone cannot tell the two apart, and the difference
+   * matters: a backup written before manifests existed is trusted through the schema gate on an
+   * exact-`.sqlite` restore, whereas a damaged one must not be — dropping the manifest would
+   * otherwise turn corruption into a silent bypass of the check that protects the live database.
+   */
+  readonly manifestUnreadable: boolean;
   /** The portable snapshot (always present and version-validated). */
   readonly snapshot: SyncSnapshot;
   /** Exact `.sqlite` bytes when the backup carried them (validated as a real SQLite file). */
@@ -417,6 +428,14 @@ function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
+/** The widest epoch-ms `new Date()` can represent; beyond it every read is `Invalid Date`. */
+const MAX_TIMESTAMP = 8.64e15;
+
+/** A timestamp the preview can actually render as a date. */
+function isTimestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= MAX_TIMESTAMP;
+}
+
 /**
  * The digest block, or undefined when absent or malformed.
  *
@@ -442,6 +461,12 @@ function parseChecksums(value: unknown): BackupManifest['checksums'] {
  * partly-overwritten manifest carrying the right `kind` but no `counts` would otherwise fail
  * with a raw `Cannot read properties of undefined` instead of a message the user can act on.
  * Anything that isn't a well-formed manifest is treated as no manifest at all.
+ *
+ * Every field is checked and the result rebuilt from scratch — a correct `kind` says only that
+ * the file claims to be ours, never that the rest of it is intact (issue #353). Dropping a
+ * damaged manifest is safe for the *preview*, but it must not quietly disarm the schema gate
+ * that {@link import('./restore-backup')} applies before an exact-`.sqlite` overwrite, so
+ * {@link parseBackupEntries} refuses that path whenever a manifest was present but unreadable.
  */
 function parseManifest(entries: Record<string, Uint8Array>): BackupManifest | null {
   const raw = entries[MANIFEST_ENTRY];
@@ -454,7 +479,11 @@ function parseManifest(entries: Record<string, Uint8Array>): BackupManifest | nu
   }
   if (!isRecord(parsed) || parsed.kind !== BACKUP_MANIFEST_KIND) return null;
 
-  const { contents, counts } = parsed;
+  const { formatVersion, appVersion, createdAt, baselineRevision, contents, counts } = parsed;
+  if (!isCount(formatVersion) || typeof appVersion !== 'string' || !isTimestamp(createdAt)) return null;
+  // Optional, but only ever a string when written: a stamp of any other type is damage, and it
+  // gates a destructive restore, so it can never be shrugged off as "this backup predates it".
+  if (baselineRevision !== undefined && typeof baselineRevision !== 'string') return null;
   if (!isRecord(contents) || !isRecord(counts)) return null;
   // Whole, non-negative counts only: a `NaN` or fractional count would fail its own cross-check
   // and report "should contain NaN items", which tells the user nothing.
@@ -462,10 +491,13 @@ function parseManifest(entries: Record<string, Uint8Array>): BackupManifest | nu
 
   // Rebuilt field by field rather than spread-and-patched, so a malformed `checksums` (or any
   // other stray property) cannot survive into the value the integrity check reads.
-  const { checksums: _rawChecksums, ...rest } = parsed;
   const checksums = parseChecksums(parsed.checksums);
   return {
-    ...(rest as unknown as BackupManifest),
+    kind: BACKUP_MANIFEST_KIND,
+    formatVersion,
+    appVersion,
+    createdAt,
+    ...(baselineRevision !== undefined ? { baselineRevision } : {}),
     contents: {
       snapshot: true,
       rawSqlite: contents.rawSqlite === true,
@@ -600,7 +632,14 @@ export function parseBackupEntries(entries: Record<string, Uint8Array>): ParsedB
   const manifest = parseManifest(entries);
   verifyBackupIntegrity({ manifest, entries, snapshot, images });
 
-  return { manifest, snapshot, sqlite: sqliteRaw, images, settings };
+  return {
+    manifest,
+    manifestUnreadable: manifest === null && entries[MANIFEST_ENTRY] !== undefined,
+    snapshot,
+    sqlite: sqliteRaw,
+    images,
+    settings,
+  };
 }
 
 /**

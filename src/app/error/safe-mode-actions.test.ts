@@ -19,7 +19,9 @@ import {
   RestorePointError,
   captureRestorePoint,
   isSqliteFile,
+  overwriteOpfsDatabase,
   restoreRawSqlite,
+  StaleJournalError,
 } from './safe-mode-actions';
 import { SQLITE_MAGIC } from '@/db/sqlite-header';
 
@@ -38,10 +40,24 @@ function sqliteFile(): File {
 }
 
 /**
- * Install a fake OPFS root. `size` is the live database's byte count; `'absent'` is a device
- * with no database yet, and `'unreadable'` is one whose database is there but cannot be read.
+ * Where an overwrite can be made to fail. `write` and `close` are the two halves of the OPFS
+ * write — real quota errors usually surface at `close()`, once the staged bytes are committed,
+ * so both must be covered. `remove` is a sidecar deletion failing *after* those bytes landed.
  */
-function mockOpfs(size: number | 'absent' | 'unreadable'): void {
+type OpfsFailure = 'write' | 'close' | 'remove';
+
+/**
+ * Install a fake OPFS root, returning what it saw in order — so a test can assert that the
+ * new bytes are written before any sidecar is deleted (#203).
+ *
+ * `size` is the live database's byte count; `'absent'` is a device with no database yet, and
+ * `'unreadable'` is one whose database is there but cannot be read.
+ */
+function mockOpfs(size: number | 'absent' | 'unreadable', options: { failAt?: OpfsFailure } = {}): string[] {
+  const events: string[] = [];
+  const failWith = (message: string, name: string) => {
+    throw new DOMException(message, name);
+  };
   const getFileHandle = vi.fn(async (_name: string, opts?: { create?: boolean }) => {
     // Only the read path can be missing/unreadable; the overwrite always opens with `create`.
     if (!opts?.create) {
@@ -50,12 +66,27 @@ function mockOpfs(size: number | 'absent' | 'unreadable'): void {
     }
     return {
       getFile: async () => new File([new Uint8Array(typeof size === 'number' ? size : 0)], 'gubbins.sqlite3'),
-      createWritable: async () => ({ write: vi.fn(), close: vi.fn() }),
+      createWritable: async () => ({
+        write: vi.fn(async () => {
+          if (options.failAt === 'write') failWith('Quota exceeded.', 'QuotaExceededError');
+          events.push('write');
+        }),
+        close: vi.fn(async () => {
+          if (options.failAt === 'close') failWith('Quota exceeded.', 'QuotaExceededError');
+          events.push('close');
+        }),
+        abort: vi.fn(async () => events.push('abort')),
+      }),
     };
   });
-  vi.stubGlobal('navigator', {
-    storage: { getDirectory: async () => ({ getFileHandle, removeEntry: vi.fn() }) },
+  const removeEntry = vi.fn(async (name: string) => {
+    // A sidecar that isn't there is the normal case after a clean shutdown, not a failure.
+    if (options.failAt === 'remove') failWith('Access denied.', 'NoModificationAllowedError');
+    if (name.endsWith('-shm')) failWith('No such file.', 'NotFoundError');
+    events.push(`remove:${name}`);
   });
+  vi.stubGlobal('navigator', { storage: { getDirectory: async () => ({ getFileHandle, removeEntry }) } });
+  return events;
 }
 
 beforeEach(() => {
@@ -161,6 +192,55 @@ describe('restoreRawSqlite (issue #198)', () => {
     const json = new File(['{"formatVersion":1}'], 'backup.json');
     await expect(restoreRawSqlite(json)).rejects.toThrow(/not a SQLite database/);
     expect(inspectRestoreCandidate).not.toHaveBeenCalled();
+  });
+});
+
+describe('overwriteOpfsDatabase (issue #203)', () => {
+  it('writes and commits the new bytes before it clears the journal sidecars', async () => {
+    // A hot rollback journal is the only thing that can repair the current database, so it
+    // must outlive every step that could still fail. The `-shm` removal is absent here, which
+    // is the ordinary case after a clean shutdown rather than a failure.
+    const events = mockOpfs(4096);
+
+    await overwriteOpfsDatabase(sqliteBytes());
+
+    expect(events).toEqual([
+      'write',
+      'close',
+      'remove:gubbins.sqlite3-journal',
+      'remove:gubbins.sqlite3-wal',
+    ]);
+  });
+
+  it.each(['write', 'close'] as const)(
+    'leaves the sidecars intact and aborts when the new bytes fail at %s()',
+    async (failAt) => {
+      // `close()` matters most: OPFS stages the write, so a quota error normally lands there.
+      const events = mockOpfs(4096, { failAt });
+
+      await expect(overwriteOpfsDatabase(sqliteBytes())).rejects.toThrow(/quota/i);
+
+      // Nothing was deleted: the database is un-updated, not destroyed.
+      expect(events.filter((event) => event.startsWith('remove:'))).toEqual([]);
+      expect(events).toContain('abort');
+    },
+  );
+
+  it('raises a sidecar removal that fails for a reason other than absence', async () => {
+    // The new database is on disk but an old journal survives beside it — replaying that over
+    // the fresh file is exactly the corruption the caller must not reload into.
+    mockOpfs(4096, { failAt: 'remove' });
+
+    await expect(overwriteOpfsDatabase(sqliteBytes())).rejects.toBeInstanceOf(StaleJournalError);
+  });
+
+  it('names the sidecar it could not remove, and keeps the cause', async () => {
+    mockOpfs(4096, { failAt: 'remove' });
+
+    await expect(overwriteOpfsDatabase(sqliteBytes())).rejects.toMatchObject({
+      sidecar: 'gubbins.sqlite3-journal',
+      cause: expect.objectContaining({ name: 'NoModificationAllowedError' }),
+    });
   });
 });
 
