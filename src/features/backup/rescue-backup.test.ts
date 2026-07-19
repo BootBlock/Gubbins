@@ -10,6 +10,7 @@ import { createRescueBackup } from './build-backup';
 import { MANIFEST_ENTRY, SNAPSHOT_ENTRY, type BackupManifest } from './backup-format';
 import { BASELINE_REVISION, BASELINE_REVISION_KEY } from '@/db/migrations';
 import type { IDatabaseDriver, SqlParams, SqlRow } from '@/db/rpc/driver';
+import { pageOf } from '@/test/drivers/keyset-page';
 
 const mockGetDriver = vi.fn<() => IDatabaseDriver>();
 vi.mock('@/db/client', () => ({
@@ -30,9 +31,7 @@ function fakeDriver(readable: Record<string, SqlRow[]>): IDatabaseDriver {
     const table = /FROM\s+([A-Za-z_][A-Za-z0-9_]*)/i.exec(sql)?.[1] ?? '';
     const rows = readable[table];
     if (!rows) throw new Error(`no such table: ${table}`);
-    const [limit, offset] = (params as number[] | undefined) ?? [];
-    if (typeof limit === 'number' && typeof offset === 'number') return rows.slice(offset, offset + limit);
-    return rows;
+    return pageOf(rows, params);
   };
   return {
     query: query as IDatabaseDriver['query'],
