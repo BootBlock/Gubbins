@@ -208,6 +208,10 @@ export interface OffThreadSnapshotMerge {
  *
  * This is what callers should use; {@link runSnapshotMerge} is the implementation both sides
  * of the bridge share.
+ *
+ * The storage Hard Stop is *not* applied here: as the module note says, it belongs to the
+ * orchestrator, and `./sync-engine` already runs a §7.4 pre-flight check — a fresh
+ * `estimateStorage()` that aborts the pass at the *critical* threshold, before any of this.
  */
 export function mergeSnapshot(
   driver: IDatabaseDriver,

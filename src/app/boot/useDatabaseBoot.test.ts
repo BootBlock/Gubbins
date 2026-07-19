@@ -30,6 +30,8 @@ vi.mock('@/state/stores/useStorageStore', () => ({
       startMonitoring: () => {},
     }),
   },
+  // Boot installs this as the bulk-write Hard Stop (issue #200); the mock only has to exist.
+  storageWriteGate: () => Promise.resolve(),
 }));
 
 import { useDatabaseBoot } from './useDatabaseBoot';

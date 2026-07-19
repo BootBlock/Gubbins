@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import { parseCsv } from '@/features/import/tabular';
 import { parseAmountCell } from '@/features/import/columns';
+import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { TrackingMode } from '@/db/repositories/constants';
@@ -981,6 +982,11 @@ export interface CatalogApplyResult {
  * `WRITE_SUSPENDED` the row is recorded as skipped rather than crashing the whole
  * import — the caller's mutation hook surfaces the error to the UI.
  *
+ * That per-row guard reads quota telemetry that is only refreshed periodically, though, and an
+ * import is exactly the operation that can consume the remaining quota inside one poll window
+ * (issue #200). So the import re-measures once up front via {@link ensureStorageWritable}, which
+ * throws before any row is attempted if that fresh reading is at the locked tier.
+ *
  * Rows that appear in `plan.errors` are already invalid and are NOT applied; only
  * the valid `create` and `update` entries are processed.
  *
@@ -1002,6 +1008,7 @@ export async function applyCatalogImportPlan(
   repo: CatalogItemRepository,
   categories?: CatalogCategoryRepository,
 ): Promise<CatalogApplyResult> {
+  await ensureStorageWritable();
   const rows: ApplyRowResult[] = [];
 
   if (repo.createMany && plan.create.length > 0) {

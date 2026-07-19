@@ -33,6 +33,7 @@ import {
 import { SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import { historyStatement } from '@/db/repositories/item/history';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
+import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
 import { buildSchemaDictionary } from './schema-dictionary';
 import { ALWAYS_PRESENT_ROW_IDS, repairSnapshotIntegrity } from './snapshot-integrity';
@@ -557,6 +558,9 @@ function reparentHistoryStatement(itemId: string): SqlStatement {
  * parent→child (FK-safe), then deletes child→parent (each delete also records the
  * winning tombstone locally), then the §7.3 gauge corrections, then the §7.5.2
  * re-parent conflict logs.
+ *
+ * The storage Hard Stop for a merge is applied by `mergeSnapshot` (issue #200), not here: this
+ * function runs inside the database worker (issue #173), which has no quota telemetry to consult.
  */
 export async function applyPlan(
   driver: IDatabaseDriver,
@@ -845,6 +849,10 @@ export function buildCloneStatements(
  * forgets a deletion made since the backup was taken.
  */
 export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSnapshot): Promise<void> {
+  // A merge restore only ever adds, so it observes the storage Hard Stop (issue #200). The
+  // destructive "replace" restore deliberately does not: it wipes before it clones, and is one
+  // of the routes out of a full device.
+  await ensureStorageWritable();
   const dictionary = await buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
   const localTombstones = await driver.query<{ table_name: string; id: string }>(
     'SELECT table_name, id FROM tombstones;',
