@@ -188,16 +188,8 @@ export const MAINTENANCE_BASIS_LABELS: Record<MaintenanceBasis, string> = {
   USAGE: 'Usage-based',
 };
 
-/** Convert a UNIX-ms instant to the `yyyy-MM-dd` string an `<input type="date">` wants. */
-export function toDateInputValue(ms: number | null): string {
-  if (ms === null) return '';
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
-/** Parse a `yyyy-MM-dd` date-input value to a UNIX-ms instant (midnight UTC), or null. */
-export function fromDateInputValue(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return null;
-  const ms = Date.parse(trimmed);
-  return Number.isFinite(ms) ? ms : null;
-}
+/**
+ * Date-input conversions live in `@/lib/date-input` so every feature shares one midnight
+ * convention; re-exported here for the inventory call sites that already import them.
+ */
+export { toDateInputValue, fromDateInputValue } from '@/lib/date-input';
