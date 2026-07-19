@@ -143,12 +143,21 @@ export function useBudgetAlerts(options: { enabled?: boolean } = {}) {
 
 // --- write helpers -------------------------------------------------------------
 
-/** Invalidate every derived view of a single project (lines, costing, shopping, budget). */
-function invalidateProject(client: ReturnType<typeof useQueryClient>, projectId: string): void {
-  void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) });
-  void client.invalidateQueries({ queryKey: projectKeys.list() });
-  // Budget figures feed the cross-project dashboard alerts feed too.
-  void client.invalidateQueries({ queryKey: projectKeys.budgetAlerts() });
+/**
+ * Invalidate every derived view of a single project (lines, costing, shopping, budget).
+ *
+ * Returns the settled refetch so an `onSettled` that awaits it keeps the mutation `pending`
+ * until the fresh rows have landed (issue #303). A guard that lifts the moment the write
+ * resolves still exposes the caller to stale props — the BOM row would re-enable its actions
+ * while `receivedQty` and the outstanding remainder are a refetch behind.
+ */
+function invalidateProject(client: ReturnType<typeof useQueryClient>, projectId: string): Promise<void> {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: projectKeys.detail(projectId) }),
+    client.invalidateQueries({ queryKey: projectKeys.list() }),
+    // Budget figures feed the cross-project dashboard alerts feed too.
+    client.invalidateQueries({ queryKey: projectKeys.budgetAlerts() }),
+  ]).then(() => undefined);
 }
 
 // --- projects ------------------------------------------------------------------
@@ -329,9 +338,10 @@ export function useSetReservation(projectId: string) {
     mutationFn: ({ lineId, status, qty }: { lineId: string; status: ReservationStatus; qty?: number }) =>
       getProjectRepository().setReservation(lineId, status, qty),
     onSettled: (_data, _err, vars) => {
-      invalidateProject(client, projectId);
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(vars.lineId) });
+      // Awaited: the row's controls stay locked until the refreshed line lands (issue #303).
+      return invalidateProject(client, projectId);
     },
   });
 }
@@ -342,10 +352,11 @@ export function useSetProcurement(projectId: string) {
     mutationFn: ({ lineId, status }: { lineId: string; status: ProcurementStatus }) =>
       getProjectRepository().setProcurement(lineId, status),
     onSettled: () => {
-      invalidateProject(client, projectId);
       invalidateItems(client);
       // Refresh the dashboard "arriving" feed and per-item incoming totals (Phase 20).
       void client.invalidateQueries({ queryKey: inventoryKeys.inTransit() });
+      // Awaited: the row's controls stay locked until the refreshed line lands (issue #303).
+      return invalidateProject(client, projectId);
     },
   });
 }
@@ -365,10 +376,12 @@ export function useReceiveLine(projectId: string) {
       batch?: { batchNumber: string | null; lotNumber: string | null; expiryDate: number | null };
     }) => getProjectRepository().receiveLine(lineId, { locationId, quantity, batch }),
     onSettled: () => {
-      invalidateProject(client, projectId);
       invalidateItems(client);
       // Received stock leaves the "arriving" feed and the item's incoming total (Phase 20).
       void client.invalidateQueries({ queryKey: inventoryKeys.inTransit() });
+      // Awaited: the receive control stays locked until the refreshed line lands, so the
+      // outstanding remainder it re-seeds from is never a refetch behind (issue #303).
+      return invalidateProject(client, projectId);
     },
   });
 }
@@ -457,7 +470,7 @@ export function useCreateProjectFromBom() {
     },
     onSettled: (data) => {
       void client.invalidateQueries({ queryKey: projectKeys.list() });
-      if (data) invalidateProject(client, data.projectId);
+      return data ? invalidateProject(client, data.projectId) : undefined;
     },
   });
 }
@@ -469,10 +482,10 @@ export function useFinaliseAssembly(projectId: string) {
   return useMutation({
     mutationFn: (input: FinaliseAssemblyInput) => getProjectRepository().finaliseAssembly(projectId, input),
     onSettled: () => {
-      invalidateProject(client, projectId);
       // Assembly creates/moves/consumes items and may create a location.
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+      return invalidateProject(client, projectId);
     },
   });
 }

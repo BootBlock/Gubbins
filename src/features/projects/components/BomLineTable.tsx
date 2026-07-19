@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Input, Select, Tooltip } from '@/components/foundry';
+import { Button, Input, Select, Spinner, Tooltip } from '@/components/foundry';
 import { DeleteIcon, TruckIcon, WarningIcon } from '@/components/icons';
 import {
   PROCUREMENT_STATUSES,
@@ -31,9 +31,15 @@ export interface ReceiveBatch {
  */
 function ReceiveControl({
   line,
+  pending,
+  busy,
   onReceive,
 }: {
   line: ProjectBomLine;
+  /** A receipt is in flight anywhere in the table — every receive control locks (issue #303). */
+  pending: boolean;
+  /** …and *this* is the line being received, so only this control shows the wait. */
+  busy: boolean;
   onReceive: (qty: number, batch?: ReceiveBatch) => void;
 }) {
   const outstanding = outstandingQty(line);
@@ -87,9 +93,16 @@ function ReceiveControl({
           variant="outline"
           className="size-8"
           aria-label="Receive into stock"
+          disabled={pending}
           onClick={() => onReceive(clamped, batch)}
         >
-          <TruckIcon className="text-glyph-success" />
+          {busy ? (
+            // Decorative: the button's own `aria-label` already names the action, so a second
+            // `role="status"` live region would just announce an unattributed "Loading".
+            <Spinner decorative className="size-4" />
+          ) : (
+            <TruckIcon className="text-glyph-success" />
+          )}
         </Button>
       </Tooltip>
     </div>
@@ -101,6 +114,13 @@ function ReceiveControl({
  * Actual) and procurement (Ordered → In-Transit → Received) controls inline. The
  * "In Transit" state is the liminal procurement space of §4; an In-Transit line can
  * be received into stock whole or in partial instalments (Phase 24).
+ *
+ * Every action locks while its mutation is in flight (issue #303). Receiving is the
+ * consequential one — a second click before the first receipt settles would book the
+ * arriving quantity into stock twice — but the guard is applied uniformly rather than
+ * left to per-action reasoning about which writes happen to be idempotent. A mutation's
+ * `isPending` is shared by the whole table, so it *locks* every row but the wait is only
+ * *shown* on the row it was fired from (matched on the mutation's `variables`).
  */
 export function BomLineTable({ projectId, lines }: { projectId: string; lines: readonly ProjectBomLine[] }) {
   const setReservation = useSetReservation(projectId);
@@ -203,6 +223,7 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
                     className="h-8 text-xs"
                     value={line.reservationStatus}
                     aria-label="Reservation status"
+                    disabled={setReservation.isPending}
                     onChange={(value) =>
                       setReservation.mutate({ lineId: line.id, status: value as ReservationStatus })
                     }
@@ -218,6 +239,7 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
                       className="h-8 text-xs"
                       value={line.procurementStatus}
                       aria-label="Procurement status"
+                      disabled={setProcurement.isPending}
                       onChange={(value) =>
                         setProcurement.mutate({ lineId: line.id, status: value as ProcurementStatus })
                       }
@@ -230,6 +252,8 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
                       <ReceiveControl
                         key={line.receivedQty}
                         line={line}
+                        pending={receiveLine.isPending}
+                        busy={receiveLine.isPending && receiveLine.variables?.lineId === line.id}
                         onReceive={(quantity, batch) =>
                           receiveLine.mutate({ lineId: line.id, quantity, batch })
                         }
@@ -248,9 +272,14 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
                         variant="ghost"
                         className="size-8"
                         aria-label="Remove line"
+                        disabled={removeLine.isPending}
                         onClick={() => removeLine.mutate(line.id)}
                       >
-                        <DeleteIcon className="text-glyph-danger" />
+                        {removeLine.isPending && removeLine.variables === line.id ? (
+                          <Spinner decorative className="size-4" />
+                        ) : (
+                          <DeleteIcon className="text-glyph-danger" />
+                        )}
                       </Button>
                     </span>
                   </Tooltip>

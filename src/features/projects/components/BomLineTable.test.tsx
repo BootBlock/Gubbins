@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ProjectBomLine } from '@/db/repositories';
 
 /**
@@ -17,13 +18,25 @@ const h = vi.hoisted(() => ({
     string,
     { id: string; fromItemId: string; toItemId: string; kind: string; otherItemName: string }[]
   >(),
+  /**
+   * Per-mutation in-flight state, so the guard can be driven one action at a time (issue #303)
+   * — a shared flag would let a control wired to the *wrong* mutation still pass. `variables`
+   * mirrors what TanStack exposes for the in-flight call, which is how the table decides which
+   * row shows the wait.
+   */
+  receive: { isPending: false, variables: undefined as { lineId: string } | undefined },
+  remove: { isPending: false, variables: undefined as string | undefined },
+  reservationPending: false,
+  procurementPending: false,
+  receiveMutate: vi.fn(),
+  removeMutate: vi.fn(),
 }));
 
 vi.mock('../projects', () => ({
-  useRemoveBomLine: () => ({ mutate: vi.fn() }),
-  useSetProcurement: () => ({ mutate: vi.fn() }),
-  useSetReservation: () => ({ mutate: vi.fn() }),
-  useReceiveLine: () => ({ mutate: vi.fn() }),
+  useRemoveBomLine: () => ({ mutate: h.removeMutate, ...h.remove }),
+  useSetProcurement: () => ({ mutate: vi.fn(), isPending: h.procurementPending }),
+  useSetReservation: () => ({ mutate: vi.fn(), isPending: h.reservationPending }),
+  useReceiveLine: () => ({ mutate: h.receiveMutate, ...h.receive }),
 }));
 vi.mock('@/features/inventory/queries', () => ({
   useItemsRelations: () => ({ data: h.relationsByItem }),
@@ -74,6 +87,12 @@ function apRequiresInjector() {
 
 beforeEach(() => {
   h.relationsByItem = new Map();
+  h.receive = { isPending: false, variables: undefined };
+  h.remove = { isPending: false, variables: undefined };
+  h.reservationPending = false;
+  h.procurementPending = false;
+  h.receiveMutate.mockClear();
+  h.removeMutate.mockClear();
 });
 afterEach(cleanup);
 
@@ -160,5 +179,76 @@ describe('BomLineTable — hard-dependency flag (issue #70)', () => {
       />,
     );
     expect(screen.queryByTestId('bom-missing-requirement-line-3')).toBeNull();
+  });
+});
+
+/**
+ * The in-flight guard (issue #303). Receiving is the consequential action — a second click
+ * before the first receipt settles books the arriving quantity into stock twice — so every
+ * row action locks while its mutation is in flight rather than reasoning per-action.
+ */
+describe('BomLineTable — in-flight guard (issue #303)', () => {
+  const inTransit = (id = 'line-1') => makeLine({ id, procurementStatus: 'IN_TRANSIT', requiredQty: 5 });
+
+  it('leaves the row actions live when nothing is in flight', async () => {
+    const user = userEvent.setup();
+    render(<BomLineTable projectId="proj-1" lines={[inTransit()]} />);
+
+    expect(screen.getByLabelText('Receive into stock')).toBeEnabled();
+    expect(screen.getByLabelText('Remove line')).toBeEnabled();
+    expect(screen.getByLabelText('Reservation status')).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByLabelText('Procurement status')).not.toHaveAttribute('aria-disabled');
+
+    await user.click(screen.getByLabelText('Receive into stock'));
+    expect(h.receiveMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it('locks receiving while a receipt is in flight, so a second click cannot fire', async () => {
+    h.receive = { isPending: true, variables: { lineId: 'line-1' } };
+    const user = userEvent.setup();
+    render(<BomLineTable projectId="proj-1" lines={[inTransit()]} />);
+
+    expect(screen.getByLabelText('Receive into stock')).toBeDisabled();
+    await user.click(screen.getByLabelText('Receive into stock'));
+    expect(h.receiveMutate).not.toHaveBeenCalled();
+
+    // Each control is wired to its own mutation — a receipt must not lock the rest of the row.
+    expect(screen.getByLabelText('Remove line')).toBeEnabled();
+    expect(screen.getByLabelText('Reservation status')).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('locks removal while a removal is in flight, so a second click cannot fire', async () => {
+    h.remove = { isPending: true, variables: 'line-1' };
+    const user = userEvent.setup();
+    render(<BomLineTable projectId="proj-1" lines={[inTransit()]} />);
+
+    expect(screen.getByLabelText('Remove line')).toBeDisabled();
+    await user.click(screen.getByLabelText('Remove line'));
+    expect(h.removeMutate).not.toHaveBeenCalled();
+
+    expect(screen.getByLabelText('Receive into stock')).toBeEnabled();
+  });
+
+  it.each([
+    ['Reservation status', () => (h.reservationPending = true)],
+    ['Procurement status', () => (h.procurementPending = true)],
+  ])('locks the %s control while its own status write is in flight', (label, setPending) => {
+    setPending();
+    render(<BomLineTable projectId="proj-1" lines={[inTransit()]} />);
+    expect(screen.getByLabelText(label)).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('locks every row but shows the wait only on the line being acted on', () => {
+    h.remove = { isPending: true, variables: 'line-2' };
+    render(<BomLineTable projectId="proj-1" lines={[inTransit('line-1'), inTransit('line-2')]} />);
+
+    // The guard is table-wide (one mutation state), so both remove buttons lock…
+    const [first, second] = screen.getAllByLabelText('Remove line');
+    expect(first).toBeDisabled();
+    expect(second).toBeDisabled();
+    // …but only line-2 swaps its icon for the spinner, so the table does not read as if the
+    // whole bill of materials were being deleted.
+    expect(first.querySelector('.animate-spin')).toBeNull();
+    expect(second.querySelector('.animate-spin')).not.toBeNull();
   });
 });
