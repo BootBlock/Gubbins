@@ -80,6 +80,7 @@ export class WebhookRepository extends BaseRepository {
    * unknown method softens to `POST`. Write-gated (it grows storage).
    */
   async create(input: CreateWebhookInput): Promise<WebhookSubscription> {
+    this.assertPermission('bridge:write');
     this.assertWritable();
     const plan = planWebhookSubscription(input);
     if (!plan.ok) {
@@ -121,6 +122,7 @@ export class WebhookRepository extends BaseRepository {
    * setting the other in a single update is the supported way to switch between them.
    */
   async update(id: string, input: UpdateWebhookInput): Promise<WebhookSubscription> {
+    this.assertPermission('bridge:write');
     this.assertWritable();
     const existing = await this.require(id);
 
@@ -202,6 +204,7 @@ export class WebhookRepository extends BaseRepository {
    * recorded (tombstoning an id this device never held would wrongly instruct peers to delete it).
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('bridge:write');
     if (!(await this.getById(id))) return;
     await this.driver.transaction([
       { sql: 'DELETE FROM webhooks WHERE id = ?;', params: [id] },

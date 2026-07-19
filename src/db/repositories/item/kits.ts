@@ -164,6 +164,7 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
      * the end. Write-gated. Returns the refreshed component list.
      */
     async addKitComponent(kitId: string, componentItemId: string, quantity: number): Promise<KitComponent[]> {
+      this.assertPermission('items:write');
       this.assertWritable();
       const qty = Math.max(1, Math.floor(quantity));
       await this.assertKitLinkValid(kitId, componentItemId);
@@ -181,6 +182,7 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
      * component list for the owning kit.
      */
     async updateKitComponentQty(id: string, quantity: number): Promise<KitComponent[]> {
+      this.assertPermission('items:write');
       this.assertWritable();
       const qty = Math.max(1, Math.floor(quantity));
       const row = await this.driver.queryOne<{ kit_item_id: string }>(
@@ -199,6 +201,7 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
      * refreshed component list for the owning kit.
      */
     async removeKitComponent(id: string): Promise<KitComponent[]> {
+      this.assertPermission('items:write');
       this.assertWritable();
       const row = await this.driver.queryOne<{ kit_item_id: string }>(
         'SELECT kit_item_id FROM kit_components WHERE id = ?;',
@@ -224,6 +227,8 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
      * is never over-drawn. Write-gated. Returns the updated kit.
      */
     async assemble(kitId: string, count: number, options: AssembleOptions = {}): Promise<Item> {
+      this.assertPermission('items:write');
+      this.assertPermission('stock:write');
       this.assertWritable();
       const n = assertWholeCount(count, 'assemble');
       const kit = await this.require(kitId);
@@ -307,6 +312,8 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
      * Rejected unless the kit has at least `count` on hand. Write-gated. Returns the updated kit.
      */
     async disassemble(kitId: string, count: number): Promise<Item> {
+      this.assertPermission('items:write');
+      this.assertPermission('stock:write');
       this.assertWritable();
       const n = assertWholeCount(count, 'disassemble');
       const kit = await this.require(kitId);

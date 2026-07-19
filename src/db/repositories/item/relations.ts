@@ -128,6 +128,7 @@ export function withRelations<TBase extends Constructor<ItemCoreRepository>>(Bas
      * row unchanged rather than duplicating it. Write-gated (it grows storage).
      */
     async addRelation(input: AddRelationInput): Promise<ItemRelation> {
+      this.assertPermission('items:write');
       this.assertWritable();
 
       const plan = planRelation(input.fromItemId, input.toItemId, input.kind);
@@ -156,6 +157,7 @@ export function withRelations<TBase extends Constructor<ItemCoreRepository>>(Bas
      * never held would wrongly instruct peers to delete it).
      */
     async removeRelation(relationId: string): Promise<void> {
+      this.assertPermission('items:write');
       if (!(await this.getRelation(relationId))) return;
       const statements: SqlStatement[] = [
         { sql: 'DELETE FROM item_relations WHERE id = ?;', params: [relationId] },

@@ -29,6 +29,7 @@ export function withRevaluations<TBase extends Constructor<ItemCoreRepository>>(
      * storage).
      */
     async recordRevaluation(itemId: string, input: RecordRevaluationInput): Promise<Revaluation> {
+      this.assertPermission('items:write');
       this.assertWritable();
       await this.require(itemId); // shared precondition: a revaluation of a missing item throws
 

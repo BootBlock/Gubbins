@@ -33,6 +33,10 @@ export type DbErrorCode =
   | 'WORKER_TIMEOUT'
   // The storage Hard Stop (§7.6.1): writes are suspended at the locked tier.
   | 'WRITE_SUSPENDED'
+  // The signed-in user's role does not permit this operation (issue #79, plan §2.3). Raised
+  // by the repository layer, never by SQLite — permissions gate the app, not the file, since
+  // a local database is readable by anyone holding the device (plan §1.1).
+  | 'PERMISSION_DENIED'
   | 'UNKNOWN';
 
 /** Plain, structured-clone-safe representation sent over the worker bridge. */

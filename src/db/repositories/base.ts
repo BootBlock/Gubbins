@@ -9,6 +9,8 @@
  */
 import { DbError } from '../errors';
 import type { IDatabaseDriver } from '../rpc/driver';
+import { can, UNRESTRICTED_AUTHORITY, type Authority } from '@/features/users/permissions';
+import type { PermissionKey } from '@/features/users/permission-registry';
 import { ADMIN_USER_ID, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './constants';
 import type { Page, PageParams } from './types';
 
@@ -45,6 +47,39 @@ export interface RepositoryOptions {
    * pass it explicitly.
    */
   readonly resolveBaseCurrency?: () => string | null;
+  /**
+   * Resolves what the current session is permitted to do (issue #79, plan §2.3).
+   *
+   * Resolved per call for the same reason as {@link resolveActor}: signing in or out, or
+   * switching the users module on, must take effect without rebuilding the repository graph.
+   *
+   * Tests omit it and get {@link UNRESTRICTED_AUTHORITY}, which is also what production
+   * passes today — the users module does not exist until phase 4, and plan §3 says
+   * single-user mode permits everything. Phase 3 changes that one arrow to the session's
+   * resolved authority and every guard below starts biting at once.
+   */
+  readonly resolveAuthority?: () => Authority;
+}
+
+/**
+ * Options for a **collaborator** repository — one repository constructs privately to do part
+ * of its own job, never one a caller reaches directly.
+ *
+ * Such a call has already been authorised by the public method that made it, so it runs
+ * unrestricted. Passing the caller's authority through instead would make a permission
+ * transitively demand every subject its implementation happens to touch: checking a tool out
+ * to a new borrower would require `contacts:write` on top of `checkouts:write`, and creating
+ * a purchase order would require `suppliers:write` — refusing a role the action it was
+ * explicitly granted, with an error naming a subject the user never mentioned.
+ *
+ * This is the authority-side counterpart to the actor seam's explicit `SYSTEM_USER_ID`: both
+ * exist so an internal call can say "this is the app acting on its own behalf, not the user
+ * reaching for a second capability". Everything else — the Hard Stop, the actor, the base
+ * currency — is passed through unchanged, so the collaborator still attributes its writes to
+ * the right person and still refuses to grow storage at the locked tier.
+ */
+export function collaboratorOptions(options: RepositoryOptions): RepositoryOptions {
+  return { ...options, resolveAuthority: () => UNRESTRICTED_AUTHORITY };
 }
 
 export abstract class BaseRepository {
@@ -52,12 +87,14 @@ export abstract class BaseRepository {
   private readonly isWriteSuspended: () => boolean;
   private readonly resolveActor: () => string;
   private readonly resolveBaseCurrency: () => string | null;
+  private readonly resolveAuthority: () => Authority;
 
   constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
     this.driver = driver;
     this.isWriteSuspended = options.isWriteSuspended ?? (() => false);
     this.resolveActor = options.resolveActor ?? (() => ADMIN_USER_ID);
     this.resolveBaseCurrency = options.resolveBaseCurrency ?? (() => null);
+    this.resolveAuthority = options.resolveAuthority ?? (() => UNRESTRICTED_AUTHORITY);
   }
 
   /**
@@ -80,6 +117,23 @@ export abstract class BaseRepository {
     if (raw == null) return null;
     const code = raw.trim().toUpperCase();
     return /^[A-Z]{3}$/.test(code) ? code : null;
+  }
+
+  /**
+   * Refuse an operation the current session is not permitted to perform (issue #79, §2.3).
+   *
+   * This sits at the repository layer, not in the UI, for the same reason the built-in-user
+   * guards do: a check that exists only in a React component is not a check — an import, a
+   * restore or a Bridge write reaches the data without ever rendering one. Hiding a button
+   * is a courtesy; this is the boundary.
+   *
+   * It is *not* a substitute for encryption. The database is local and readable by anyone
+   * holding the device (plan §1.1), so this gates the application, not the file.
+   */
+  protected assertPermission(key: PermissionKey): void {
+    if (!can(this.resolveAuthority(), key)) {
+      throw new DbError('PERMISSION_DENIED', `You do not have permission to do this (${key}).`);
+    }
   }
 
   /**

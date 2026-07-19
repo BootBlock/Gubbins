@@ -64,6 +64,7 @@ export class UserRepository extends BaseRepository {
    * (phase 3), and a user without one is a legitimate end state (plan §1.1).
    */
   async create(input: CreateUserInput): Promise<User> {
+    this.assertPermission('users:manage');
     this.assertWritable();
     const username = input.username.trim();
     if (username.length === 0) {
@@ -80,6 +81,7 @@ export class UserRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdateUserInput): Promise<User> {
+    this.assertPermission('users:manage');
     this.assertWritable();
     const existing = await this.require(id);
     this.assertNotBuiltin(existing, 'modified');
@@ -131,6 +133,7 @@ export class UserRepository extends BaseRepository {
    * space. Records a tombstone in the same transaction so the deletion syncs (§7.2).
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('users:manage');
     const existing = await this.require(id);
     this.assertNotBuiltin(existing, 'deleted');
     await this.driver.transaction([

@@ -15,7 +15,7 @@
  */
 import { DbError } from '../errors';
 import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
-import { BaseRepository, type RepositoryOptions } from './base';
+import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import type { BorrowerType, CheckoutStatus, Condition } from './constants';
 import { ContactRepository } from './ContactRepository';
 import { borrowerColumn, planCheckIn, planCheckInAllForTarget } from './checkout-plan';
@@ -105,7 +105,7 @@ export class CheckoutRepository extends BaseRepository {
 
   constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
     super(driver, options);
-    this.contacts = new ContactRepository(driver, options);
+    this.contacts = new ContactRepository(driver, collaboratorOptions(options));
   }
 
   async getById(id: string): Promise<Checkout | undefined> {
@@ -119,6 +119,7 @@ export class CheckoutRepository extends BaseRepository {
    * is decremented; gauge items cannot be borrowed as discrete units.
    */
   async checkout(input: CheckoutItemInput): Promise<Checkout> {
+    this.assertPermission('checkouts:write');
     this.assertWritable();
 
     const item = await this.driver.queryOne<{
@@ -277,6 +278,7 @@ export class CheckoutRepository extends BaseRepository {
    * Leaving `condition` unset never touches the item, preserving the fast one-tap return.
    */
   async checkIn(checkoutId: string, options: CheckInOptions = {}): Promise<Checkout> {
+    this.assertPermission('checkouts:write');
     // The reads and the statement building live in `checkout-plan` so a borrower delete can
     // splice the very same return into its own transaction (issue #301).
     const statements = await planCheckIn(this.driver, checkoutId, this.actorId(), options);
@@ -299,6 +301,7 @@ export class CheckoutRepository extends BaseRepository {
    * open loan to extend.
    */
   async renew(checkoutId: string, options: { dueDate: number | null }): Promise<Checkout> {
+    this.assertPermission('checkouts:write');
     const existing = await this.driver.queryOne<CheckoutRow>('SELECT * FROM checkouts WHERE id = ?;', [
       checkoutId,
     ]);
@@ -344,6 +347,7 @@ export class CheckoutRepository extends BaseRepository {
    * so the returns and the delete succeed or fail together.
    */
   async checkInAllForTarget(type: BorrowerType, id: string): Promise<void> {
+    this.assertPermission('checkouts:write');
     const statements = await planCheckInAllForTarget(this.driver, type, id, this.actorId());
     if (statements.length > 0) await this.driver.transaction(statements);
   }
@@ -354,6 +358,7 @@ export class CheckoutRepository extends BaseRepository {
    * the same planned returns into its own transaction; see `ContactRepository.delete`.
    */
   async checkInAllForContact(contactId: string): Promise<void> {
+    this.assertPermission('checkouts:write');
     await this.checkInAllForTarget('contact', contactId);
   }
 
