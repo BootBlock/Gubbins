@@ -12,7 +12,14 @@ import {
 import { CooldownMap, COOLDOWN_WINDOW_MS } from './cooldown';
 import { initialScannerState, scannerReducer, isStreaming, type ScannerState } from './scanner-machine';
 import { dueDateFromDays, daysUntil, dueStatus, isOverdue, MS_PER_DAY } from './due-date';
-import { encodeQr, qrSvg, QrError } from './qr-code';
+import {
+  BinaryBitmap,
+  DecodeHintType,
+  HybridBinarizer,
+  QRCodeReader,
+  RGBLuminanceSource,
+} from '@zxing/library';
+import { encodeQr, qrSvg, qrSvgOrNull, fitsInQr, MAX_QR_BYTES, QrError } from './qr-code';
 import { emptyQueue, queueReducer } from './queue-reducer';
 
 const UUID = '00000000-0000-4000-8000-0000000000ab';
@@ -293,10 +300,94 @@ describe('QR encoder (§2.4.3 lean, §5)', () => {
     expect(a.modules).toEqual(b.modules);
   });
 
-  it('renders an SVG and rejects an over-large payload', () => {
+  it('renders an SVG and rejects a payload past the version-10 ceiling', () => {
     const svg = qrSvg(`https://example.com/Gubbins/#/inventory?item=${UUID}`);
     expect(svg.startsWith('<svg')).toBe(true);
     expect(svg).toContain('<path');
-    expect(() => encodeQr('x'.repeat(200))).toThrow(QrError);
+    expect(() => encodeQr('x'.repeat(MAX_QR_BYTES + 1))).toThrow(QrError);
+  });
+
+  // Issue #329: the deep-link base comes from the user's "Link host" setting, so a long
+  // host must still encode. Versions 7–10 carry an extra 18-bit version-information block.
+  it('encodes payloads up to the ceiling, using versions 7–10 for long links', () => {
+    expect(encodeQr('x'.repeat(MAX_QR_BYTES)).version).toBe(10);
+    // A realistically long host (a Tailscale name) used to throw at the version-6 ceiling.
+    const long = `https://gubbins-workshop.remote-access.example.com/apps/gubbins/#/inventory?item=${UUID}`;
+    expect(long.length).toBeGreaterThan(106);
+    expect(encodeQr(long).version).toBeGreaterThanOrEqual(7);
+  });
+
+  it('sizes and reserves the version-information block correctly at v7+', () => {
+    const m = encodeQr('x'.repeat(MAX_QR_BYTES));
+    expect(m.size).toBe(10 * 4 + 17); // 57×57
+    // The 18-bit block sits in two 3×6 strips; the two copies must be transposes of
+    // each other, which only holds if both were placed from the same bits.
+    for (let i = 0; i < 18; i += 1) {
+      const near = m.size - 11 + (i % 3);
+      const far = Math.floor(i / 3);
+      expect(m.modules[near][far]).toBe(m.modules[far][near]);
+    }
+  });
+
+  // MAX_QR_BYTES is derived from the version table, so this pins the two to each other: a
+  // payload at the ceiling must encode, and one byte past it must not.
+  it('reports a ceiling that exactly matches what the encoder accepts', () => {
+    expect(() => encodeQr('x'.repeat(MAX_QR_BYTES))).not.toThrow();
+    expect(() => encodeQr('x'.repeat(MAX_QR_BYTES + 1))).toThrow(QrError);
+  });
+
+  it('degrades to null instead of throwing when a payload cannot fit', () => {
+    expect(qrSvgOrNull('x'.repeat(MAX_QR_BYTES + 1))).toBeNull();
+    expect(qrSvgOrNull('https://example.com/')).toContain('<svg');
+    expect(fitsInQr('x'.repeat(MAX_QR_BYTES))).toBe(true);
+    expect(fitsInQr('x'.repeat(MAX_QR_BYTES + 1))).toBe(false);
+    // Multi-byte characters count as their UTF-8 length, not their code-unit count.
+    expect(fitsInQr('é'.repeat(MAX_QR_BYTES))).toBe(false);
+  });
+});
+
+/**
+ * The structural assertions above can't tell a *correct* symbol from a self-consistent but
+ * undecodable one — a wrong version-information or block-layout entry produces a matrix that
+ * looks fine and scans as nothing. So round-trip our own output through zxing (already a
+ * dependency, used by the fallback scan engine) and require the payload back verbatim.
+ */
+describe('QR encoder — round-trips through a real decoder (issue #329)', () => {
+  /** Render a matrix to the packed-RGB bitmap zxing's RGBLuminanceSource expects. */
+  function decodeQr(text: string): string {
+    const m = encodeQr(text);
+    const quiet = 4;
+    const scale = 4;
+    const dim = (m.size + quiet * 2) * scale;
+    const pixels = new Int32Array(dim * dim).fill(0xffffff);
+    for (let r = 0; r < m.size; r += 1) {
+      for (let c = 0; c < m.size; c += 1) {
+        if (!m.modules[r][c]) continue;
+        for (let dy = 0; dy < scale; dy += 1) {
+          for (let dx = 0; dx < scale; dx += 1) {
+            pixels[((r + quiet) * scale + dy) * dim + ((c + quiet) * scale + dx)] = 0x000000;
+          }
+        }
+      }
+    }
+    const bitmap = new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(pixels, dim, dim)));
+    const hints = new Map();
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    return new QRCodeReader().decode(bitmap, hints).getText();
+  }
+
+  it.each([
+    ['a short string (v1)', 'HI'],
+    ['a default deep-link', `https://example.com/Gubbins/#/inventory?item=${UUID}`],
+    // The case from the issue: a long "Link host" that used to exceed the v6 ceiling.
+    [
+      'a long custom host (v7+)',
+      `https://gubbins-workshop.remote-access.example.com/apps/gubbins/#/inventory?item=${UUID}`,
+    ],
+    ['a v8-sized payload', 'y'.repeat(140)],
+    ['a v9-sized payload', 'y'.repeat(170)],
+    ['the maximum payload (v10)', 'x'.repeat(MAX_QR_BYTES)],
+  ])('decodes %s back to the original text', (_label, payload) => {
+    expect(decodeQr(payload)).toBe(payload);
   });
 });

@@ -46,6 +46,23 @@ off in one go — perfect for labelling a new storage system or a batch of asset
 > whether or not the camera capability is enabled, and any phone camera app can open the deep
 > link.
 
+## Choosing the address labels point to
+
+A printed code carries a full web address, so a label is only useful if the device scanning it can
+reach that address. By default Gubbins uses whatever address you opened the app from — which is
+fine day to day, but a label printed from `localhost`, or from one machine's own network address,
+won't open on a phone.
+
+**Settings → Labels & QR codes → Link host** sets the address printed codes point to instead. Leave
+it blank to use the current address, or enter a stable name every device can reach — for example
+`http://gubbins.local`. The preview underneath shows the exact link a code will carry, so you can
+check it before printing anything.
+
+> **⚠️ Heads-up**
+> A QR code can only hold so much text. If the host you enter is long enough to push the link past
+> that limit, Gubbins says so directly under the field — shorten the name or address and the
+> warning clears. Labels printed while the warning shows would come out without a QR code.
+
 ## Related pages
 
 - **[[Camera scanning|Camera-Scanning]]** — scanning the codes you print, and tapping NFC tags.

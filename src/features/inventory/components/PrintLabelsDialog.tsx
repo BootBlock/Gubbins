@@ -4,11 +4,13 @@ import { Banner, Button, Modal, Select, type SelectProps } from '@/components/fo
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
+import { useT } from '@/features/i18n';
 import {
   LABEL_COLUMNS_BOUNDS,
   LABEL_SYMBOLOGY_OPTIONS,
   normaliseLabelTemplate,
   templateHasBarcode,
+  templateHasQr,
   type LabelSymbology,
   type LabelTemplate,
 } from '../labels/label-template';
@@ -52,6 +54,7 @@ export function PrintLabelsDialog({
   onClose: () => void;
   items: readonly LabelItem[];
 }) {
+  const t = useT();
   const storedTemplate = usePreferencesStore((s) => s.labelTemplate);
   const setLabelTemplate = usePreferencesStore((s) => s.setLabelTemplate);
   const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
@@ -74,6 +77,9 @@ export function PrintLabelsDialog({
 
   const cells = useMemo(() => toLabelCells(items, baseUrl, template), [items, baseUrl, template]);
   const truncated = items.length > MAX_LABELS;
+  // The template asks for QR codes but none encoded — the deep-link is too long, which only the
+  // "Link host" setting can cause. Say so here rather than printing a sheet of code-less labels.
+  const qrTooLong = templateHasQr(template) && cells.length > 0 && cells.every((c) => c.qrSvg === null);
   const dirty = useMemo(
     () => JSON.stringify(template) !== JSON.stringify(normaliseLabelTemplate(storedTemplate)),
     [template, storedTemplate],
@@ -102,6 +108,12 @@ export function PrintLabelsDialog({
         {truncated ? (
           <Banner tone="warning">
             {items.length} items selected — printing the first {MAX_LABELS}.
+          </Banner>
+        ) : null}
+
+        {qrTooLong ? (
+          <Banner tone="warning" data-testid="labels-qr-too-long">
+            {t('inventory.qr.tooLongLabels')}
           </Banner>
         ) : null}
 

@@ -5,7 +5,7 @@
  * The Phase-49 sheet printed a fixed grid of QR-plus-name labels. This generalises it
  * to a {@link LabelTemplate}: the chosen symbology (QR / Code 128 barcode / both /
  * none), the selected text fields, and the columns-per-sheet. The lean hand-rolled
- * encoders are reused — {@link qrSvg} (§2.4.3 native/no-bloat) and {@link code128Svg}
+ * encoders are reused — {@link qrSvgOrNull} (§2.4.3 native/no-bloat) and {@link code128Svg}
  * — and the canonical deep-link payload {@link buildItemQrUrl}.
  *
  * All logic here is pure and unit-tested: {@link toLabelCells} resolves each item to a
@@ -14,7 +14,7 @@
  * returns a complete, self-contained HTML document the thin DOM glue merely prints.
  */
 import { buildItemQrUrl } from '@/features/scanner/scan-payload';
-import { qrSvg } from '@/features/scanner/qr-code';
+import { qrSvgOrNull } from '@/features/scanner/qr-code';
 import { code128Svg } from './code128';
 import {
   DEFAULT_LABEL_TEMPLATE,
@@ -105,15 +105,17 @@ export function resolveCell(spec: LabelSpec, template: LabelTemplate): LabelCell
 
 /**
  * Render the QR and/or barcode SVGs for a deep-link + barcode value under a template.
- * Barcode encoding is guarded: an un-encodable value (it should already be sanitised
- * by {@link labelBarcodeValue}) degrades to "no barcode" rather than throwing.
+ * Both encoders are guarded: an un-encodable value degrades to "no code" rather than
+ * throwing. That matters most for the QR, whose payload length depends on the
+ * user-supplied "Link host" — this runs inside a render-time `useMemo`, so a throw here
+ * would take the whole print dialog down.
  */
 function renderCodes(
   url: string,
   barcodeValue: string,
   template: LabelTemplate,
 ): { qrSvg: string | null; barcodeSvg: string | null; barcodeValue: string | null } {
-  const qr = templateHasQr(template) ? qrSvg(url, { scale: 4, margin: 2 }) : null;
+  const qr = templateHasQr(template) ? qrSvgOrNull(url, { scale: 4, margin: 2 }) : null;
   let barcode: string | null = null;
   let value: string | null = null;
   if (templateHasBarcode(template) && barcodeValue.length > 0) {
