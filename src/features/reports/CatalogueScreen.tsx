@@ -737,7 +737,7 @@ function CatalogueGroupSection({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto">
+      <div className="catalogue-table-scroll overflow-x-auto">
         <table className="catalogue-table w-full text-sm">
           <caption className="sr-only">{hasHeading ? `Items in ${group.groupLabel}` : 'Items'}</caption>
           <thead>

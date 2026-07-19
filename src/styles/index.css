@@ -2629,10 +2629,33 @@
     background: transparent !important;
   }
 
+  /* On screen each table sits in a horizontal scroller so a wide column set stays reachable.
+   * Paper has no scrollbar to drag: a scroll container prints only its visible box and
+   * silently crops whatever sat off to the right, so the reader loses the last columns with
+   * nothing to indicate the loss. Undo the scroller for print and let the table lay out
+   * against the page box instead. */
+  .schedule-table-scroll,
+  .catalogue-table-scroll {
+    overflow: visible !important;
+  }
+
   .schedule-table,
   .catalogue-table {
     width: 100%;
     border-collapse: collapse;
+  }
+
+  /* Belt-and-braces against a table wider than the ~182mm printable area: `width: 100%`
+   * only compresses down to the table's min-content width, and the catalogue lets the
+   * reader tick many optional columns (serial, MPN, manufacturer, …) whose values are often
+   * single unbreakable tokens. Those set a hard floor that pushes the right-hand columns off
+   * the page. Allowing a mid-token break removes the floor so the columns compress and wrap
+   * rather than overflowing. */
+  .schedule-table th,
+  .schedule-table td,
+  .catalogue-table th,
+  .catalogue-table td {
+    overflow-wrap: anywhere;
   }
 
   /* Repeat the column headers at the top of every printed page of a long room. */
