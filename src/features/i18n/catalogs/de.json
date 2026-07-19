@@ -332,6 +332,8 @@
   "inventory.weighCount.tareTooHeavy": "Der Behälter wiegt mehr als der Messwert der Waage — prüfen Sie beide Angaben.",
   "inventory.weighCount.grossNegative": "Ein Messwert der Waage kann nicht negativ sein.",
   "inventory.weighCount.tareNegative": "Ein Behälter kann nicht weniger als nichts wiegen.",
+  "inventory.details.negative": "Dies darf keine negative Zahl sein.",
+  "inventory.details.notANumber": "Geben Sie eine Zahl ein oder lassen Sie das Feld leer.",
   "inventory.weighCount.unreadable": "Geben Sie ein Gewicht als Zahl ein.",
   "inventory.weighCount.netWeight": "Nettogewicht {weight}",
   "inventory.weighCount.count.one": "{count} Stück",
