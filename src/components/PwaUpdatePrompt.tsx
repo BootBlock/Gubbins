@@ -3,7 +3,7 @@ import { Banner, Button } from '@/components/foundry';
 import { usePwaUpdate, type DeployedVersion, type PwaUpdateApi } from '@/components/foundry/usePwaUpdate';
 import { usePwaUpdateSnoozeStore } from '@/components/foundry/usePwaUpdateSnoozeStore';
 import { RefreshIcon, WarningIcon } from '@/components/icons';
-import { APP_SCHEMA_VERSION } from '@/lib/app-version';
+import { BASELINE_REVISION } from '@/db/migrations';
 import { compareVersions } from '@/lib/version-compare';
 import { useT } from '@/features/i18n';
 
@@ -20,10 +20,16 @@ import { useT } from '@/features/i18n';
  * **Data-safety check (issue #74).** While Gubbins is pre-release (before 1.0) the on-disk
  * schema is not migrated forward, so *some* updates reset the user's data — and the banner must
  * not promise otherwise. When a worker is waiting the prompt fetches the incoming deploy's
- * {@link DeployedVersion} and compares its `schemaVersion` against the running build's
- * {@link APP_SCHEMA_VERSION}: matching → the reassuring "your data stays intact" copy; differing
+ * {@link DeployedVersion} and compares its `baselineRevision` against the running build's
+ * {@link BASELINE_REVISION}: matching → the reassuring "your data stays intact" copy; differing
  * → a warning that reloading will reset saved data (so the user can back up first); and if the
  * deploy's manifest can't be read, a neutral message that makes no promise either way.
+ *
+ * The comparison uses the *derived* baseline fingerprint — the same value boot enforces before
+ * it throws `SCHEMA_STALE` — rather than package.json's hand-maintained `schemaVersion` counter
+ * (issue #274). Schema changes are folded into the `v1-initial` baseline, which moves the
+ * fingerprint automatically; the counter only moves if someone remembers, so a forgotten bump
+ * would have shown "your data stays intact" to every user on their way to a reset screen.
  *
  * A user who isn't ready to reload has two ways out: dismiss ("remind me later") snoozes it for
  * ~8h via {@link usePwaUpdateSnoozeStore}; "Skip this version" hides it for this specific version
@@ -91,8 +97,9 @@ export function PwaUpdatePrompt({ api }: { api?: PwaUpdateApi }) {
   if (skipped) return null;
 
   // `deployed == null` covers both "still loading" and "couldn't determine" — both make no
-  // promise about the data. A known deploy is compatible only when its schema matches ours.
-  const willResetData = deployed != null && deployed.schemaVersion !== APP_SCHEMA_VERSION;
+  // promise about the data. A known deploy is compatible only when it builds the same baseline
+  // we do, which is exactly the check boot makes before it refuses the database on disk.
+  const willResetData = deployed != null && deployed.baselineRevision !== BASELINE_REVISION;
   const bodyKey = willResetData
     ? 'pwa.update.body.reset'
     : deployed != null

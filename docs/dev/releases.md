@@ -23,8 +23,11 @@ release history, and the newest tag names the build currently being served.
 ### Cutting a release
 
 1. Bump `version` (and `releaseDate`) in `package.json`. Bump `schemaVersion` too if the change
-   is a breaking pre-1.0 schema change — the update banner reads it to decide whether it can
-   promise the user's data survives.
+   is a breaking pre-1.0 schema change — that is the compatibility generation the bridge speaks.
+
+   The **update banner** needs nothing bumped: it decides whether it can promise the user's data
+   survives from the `baselineRevision` the build derives from the schema itself and publishes in
+   `version.json`, which moves on its own whenever the `v1-initial` baseline changes (issue #274).
 2. Land it on `main`.
 3. Run the deploy workflow.
 

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 import { usePwaUpdate, type PwaUpdateApi, type PwaUpdateHandlers } from './usePwaUpdate';
 import { useLabStore } from '@/state/stores/useLabStore';
-import { APP_SCHEMA_VERSION } from '@/lib/app-version';
+import { BASELINE_REVISION } from '@/db/migrations';
 
 const CLEAN_LAB = { flags: {} } as const;
 
@@ -166,14 +166,14 @@ describe('usePwaUpdate — lab flags (`pwa-update-available` / `pwa-update-break
     const { result } = renderHook(() => usePwaUpdate());
     const deployed = await result.current.fetchDeployedVersion();
     expect(deployed).not.toBeNull();
-    expect(deployed?.schemaVersion).toBe(APP_SCHEMA_VERSION);
+    expect(deployed?.baselineRevision).toBe(BASELINE_REVISION);
   });
 
-  it('reports a newer schemaVersion when pwa-update-breaking is also on', async () => {
+  it('reports a differing baselineRevision when pwa-update-breaking is also on', async () => {
     useLabStore.setState({ flags: { 'pwa-update-available': true, 'pwa-update-breaking': true } });
     const { result } = renderHook(() => usePwaUpdate());
     const deployed = await result.current.fetchDeployedVersion();
-    expect(deployed?.schemaVersion).toBe(APP_SCHEMA_VERSION + 1);
+    expect(deployed?.baselineRevision).not.toBe(BASELINE_REVISION);
   });
 
   it('pwa-update-breaking alone (without pwa-update-available) does nothing', async () => {
