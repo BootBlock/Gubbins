@@ -27,6 +27,46 @@
 export const MONEY_DECIMALS = 2;
 
 /**
+ * How far two currency figures may differ and still count as the same amount.
+ *
+ * Comparisons deliberately read *raw*, unrounded figures (see the module note above), which
+ * leaves them exposed to the drift a float SUM accumulates: `56.20 + 71.90 + 71.90` is exactly
+ * £200.00 in decimal but `200.00000000000003` as a double, so a bare `spent > budget` reports a
+ * project that spent its budget to the penny as **over** it (issue #287).
+ *
+ * A nanopenny is the right floor for that tolerance from both directions: many orders of
+ * magnitude above the drift a realistic chain of currency arithmetic accumulates, and many
+ * orders below the smallest difference that is real money. Comparing rounded figures instead
+ * would fix the drift but reintroduce the error #288 avoided — a spend of 199.996 quantises to
+ * 200.00 and would cross a threshold it has not actually reached.
+ */
+export const MONEY_EPSILON = 1e-9;
+
+/**
+ * The floor is not enough on its own, because drift scales with magnitude: one step of a
+ * double near £10,000,000 is already about 1.9e-9, so a large budget could accumulate past a
+ * fixed nanopenny. Widening the tolerance in proportion keeps it ahead of the representation
+ * while staying far under a penny for any amount this app will hold (at £10,000,000 it is a
+ * hundredth of a penny).
+ */
+const RELATIVE_TOLERANCE = 1e-12;
+
+/** How far either figure may drift, given the magnitude being compared against. */
+function tolerance(limit: number): number {
+  return Math.max(MONEY_EPSILON, Math.abs(limit) * RELATIVE_TOLERANCE);
+}
+
+/** Whether `value` is meaningfully greater than `limit` — drift alone never qualifies. */
+export function moneyExceeds(value: number, limit: number): boolean {
+  return value > limit + tolerance(limit);
+}
+
+/** Whether `value` has reached `limit` — a figure short of it by drift alone still counts. */
+export function moneyReaches(value: number, limit: number): boolean {
+  return value >= limit - tolerance(limit);
+}
+
+/**
  * Round `value` to `decimals` places, **half away from zero**.
  *
  * Two things make this different from the `Math.round(n * 100) / 100` it replaces:

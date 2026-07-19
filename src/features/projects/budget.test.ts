@@ -47,6 +47,23 @@ describe('budgetStatus', () => {
     expect(budgetStatus(50, 100, 40)).toBe('WARN'); // tight: warn from 40%
     expect(budgetStatus(50, 100, 100)).toBe('OK'); // loose: only warn at 100%
   });
+
+  it('does not read spend that only drifts past the budget as OVER (issue #287)', () => {
+    // 56.20 + 71.90 + 71.90 is exactly £200.00 in decimal, but 200.00000000000003 as a sum.
+    expect(budgetStatus(56.2 + 71.9 + 71.9, 200, 80)).toBe('WARN');
+    expect(budgetStatus(14.3 + 17.85 + 17.85, 50, 80)).toBe('WARN');
+    expect(budgetStatus(2.1 + 0.45 + 0.45, 3, 80)).toBe('WARN');
+  });
+
+  it('warns on spend that lands exactly on a threshold the float multiply overshoots', () => {
+    // 60% of 8.05 is £4.83, but computes to 4.830000000000001.
+    expect(budgetStatus(4.83, 8.05, 60)).toBe('WARN');
+  });
+
+  it('does not read float residue against a zero limit as spend (issue #287)', () => {
+    // Expenses that cancel to nothing leave 5.55e-17, which is not money spent.
+    expect(budgetStatus(0.1 + 0.2 - 0.3, 0, 80)).toBe('OK');
+  });
 });
 
 describe('projectBudgetHealth', () => {
@@ -101,6 +118,21 @@ describe('projectBudgetHealth', () => {
       over: false,
       warn: false,
     });
+  });
+
+  it('does not flag over for spend that only drifts past the budget (issue #287)', () => {
+    // 56.20 + 71.90 committed plus 71.90 manual is exactly £200.00 in decimal.
+    expect(
+      projectBudgetHealth(
+        {
+          budget: 200,
+          committedFromBom: 56.2 + 71.9,
+          manualExpenseTotal: 71.9,
+          estimatedCost: 56.2 + 71.9,
+        },
+        warnPercent,
+      ),
+    ).toEqual({ over: false, warn: true });
   });
 });
 
@@ -174,6 +206,26 @@ describe('summariseBudget', () => {
     expect(s.categories[0]).toMatchObject({ name: 'Parts', remaining: 120, status: 'OK' });
     expect(s.categories[1]).toMatchObject({ name: 'Shipping', remaining: -10, status: 'OVER' });
     expect(s.uncategorisedExpenseTotal).toBe(20);
+  });
+
+  it('reports exact-to-budget spend as on budget, not over (issue #287)', () => {
+    const s = summariseBudget(
+      facts({ budget: 200, committedFromBom: 56.2 + 71.9, manualExpenseTotal: 71.9, estimatedCost: 0 }),
+      80,
+    );
+    expect(s.totalSpent).toBe(200);
+    expect(s.remaining).toBe(0);
+    expect(s.status).toBe('WARN');
+  });
+
+  it('does not flag a category over its allocation on drift alone (issue #287)', () => {
+    const s = summariseBudget(
+      facts({
+        categories: [{ id: 'c1', name: 'Parts', amount: 200, spent: 56.2 + 71.9 + 71.9, position: 0 }],
+      }),
+      80,
+    );
+    expect(s.categories[0]).toMatchObject({ spent: 200, remaining: 0, status: 'WARN' });
   });
 });
 
