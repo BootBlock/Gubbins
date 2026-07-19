@@ -959,6 +959,7 @@
   "inventory.writeError.heading.gauge": "Couldn’t adjust the gauge",
   "inventory.writeError.heading.delete": "Couldn’t delete the item",
   "inventory.writeError.reverted": "Your change has been undone.",
+  "media.fullResDisabled": "Storage is critically full, so new photos are saved as thumbnails only. Free some space to keep full-resolution images again.",
   "db.error.busy": "The database is busy right now. Try again in a moment.",
   "db.error.full": "There is no storage space left on this device. Free up some space, then try again.",
   "db.error.readOnly": "The database is read-only, so this change could not be saved.",

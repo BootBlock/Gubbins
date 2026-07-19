@@ -70,15 +70,16 @@ export class LocationPhotoRepository extends BaseRepository {
     const id = crypto.randomUUID();
     await this.driver.execute(
       `INSERT INTO location_photos
-         (id, location_id, caption, thumbnail_blob, full_res_opfs_path,
+         (id, location_id, caption, thumbnail_blob, full_res_opfs_path, full_res_downgraded_at,
           natural_width, natural_height, position)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         input.locationId,
         input.caption ?? null,
         input.thumbnailBlob,
         path,
+        input.fullResDowngradedAt ?? null,
         input.naturalWidth,
         input.naturalHeight,
         input.position ?? 0,

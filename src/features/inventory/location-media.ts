@@ -4,7 +4,8 @@
  * The add-hook runs the same §4.2.3 pipeline as item images — compress → write the raw WebP
  * to OPFS → store only the path + thumbnail via the worker — and cleans up the orphaned OPFS
  * file if the database write fails afterwards. Removal deletes the record first, then the raw
- * file it pointed at.
+ * file it pointed at. The OPFS write shares `full-res-policy` with item images, so a critically
+ * full origin refuses it here too and the photo is stored thumbnail-only.
  *
  * The extra step over `media.ts` is that a photo records its **natural dimensions**: region
  * geometry is normalised, so the overlay needs the aspect ratio before the full-resolution
@@ -18,7 +19,9 @@ import {
   type UpdateLocationRegionInput,
 } from '@/db/repositories';
 import { processImageFile } from '@/features/images/compression';
-import { deleteImageFile, saveImageFile } from '@/features/images/opfs-images';
+import { placeFullResImage } from '@/features/images/full-res-policy';
+import { deleteImageFile } from '@/features/images/opfs-images';
+import { useStorageStore } from '@/state/stores/useStorageStore';
 import { inventoryKeys } from './queries';
 
 // --- Photos ---------------------------------------------------------------------
@@ -81,13 +84,18 @@ export function useAddLocationPhoto() {
     }) => {
       const { fullRes, thumbnailBytes } = await processImageFile(file);
       const { width, height } = await readDimensions(fullRes);
-      const fullResOpfsPath = await saveImageFile(fullRes);
+      // Read the tier at submit time, not at render: a poll may have moved it since.
+      const { fullResOpfsPath, fullResDowngradedAt } = await placeFullResImage(
+        fullRes,
+        useStorageStore.getState().tier,
+      );
       try {
         return await getLocationPhotoRepository().addPhoto({
           locationId,
           caption: caption ?? null,
           thumbnailBlob: thumbnailBytes,
           fullResOpfsPath,
+          fullResDowngradedAt,
           naturalWidth: width,
           naturalHeight: height,
         });

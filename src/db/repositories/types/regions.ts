@@ -59,6 +59,11 @@ export interface CreateLocationPhotoInput {
   readonly caption?: string | null;
   readonly thumbnailBlob: Uint8Array | null;
   readonly fullResOpfsPath: string;
+  /**
+   * Set when the row is created *without* its full-resolution file — the storage tier
+   * refused the write (§7.6.1), so only the thumbnail exists. Omit/null in the normal case.
+   */
+  readonly fullResDowngradedAt?: number | null;
   readonly naturalWidth: number;
   readonly naturalHeight: number;
   readonly position?: number;
