@@ -20,6 +20,7 @@
 import { watch, type FSWatcher } from 'node:fs';
 import path from 'node:path';
 import { hydrateFromFile } from './hydrate.ts';
+import { HEALTHY_RELOAD, type SnapshotReloadHealth } from './snapshot-health.ts';
 import type { BridgeServerState } from './server.ts';
 
 /** Quiet-period after the last filesystem event before a re-hydrate is attempted. */
@@ -49,6 +50,12 @@ export interface SnapshotWatcher {
   reload(): Promise<void>;
   /** The current state, or null until the first successful hydrate. */
   getState(): BridgeServerState | null;
+  /**
+   * How the recent reloads went. A failed reload keeps the last good state live, so this tally is
+   * the only way a caller can tell that {@link getState} is answering from a snapshot known to be
+   * out of date — `/health` reports it (issue #312).
+   */
+  getReloadHealth(): SnapshotReloadHealth;
   /** Stop watching and close the current driver. */
   stop(): Promise<void>;
 }
@@ -61,6 +68,7 @@ export function createSnapshotWatcher(options: SnapshotWatcherOptions): Snapshot
   const base = path.basename(absPath);
 
   let state: BridgeServerState | null = null;
+  let health: SnapshotReloadHealth = HEALTHY_RELOAD;
   let watcher: FSWatcher | null = null;
   let debounceTimer: NodeJS.Timeout | null = null;
   // Serialise reloads: if events arrive while one is in flight, coalesce into a single
@@ -74,18 +82,33 @@ export function createSnapshotWatcher(options: SnapshotWatcherOptions): Snapshot
       return;
     }
     reloading = true;
+    // Only a failure to *load* means the served data is out of date; a post-swap hook that
+    // rejects still leaves a fresh snapshot live, so it must not mark the snapshot stale.
+    let swapped = false;
     try {
       // Build the new driver to completion BEFORE swapping — atomicity.
       const { driver, snapshot } = await hydrateFromFile(absPath);
       const previous = state;
       state = { driver, snapshotGeneratedAt: toIso(snapshot.generatedAt) };
+      swapped = true;
+      health = { consecutiveFailures: 0, lastError: null, lastErrorAt: null, lastSuccessAt: nowIso() };
       if (previous) await safeClose(previous.driver);
       // Awaited: a post-swap consumer reads `driver` here while it is guaranteed live (the
       // next reload only closes it once this reload — and thus this hook — has completed).
       await options.onReload?.(state);
     } catch (error) {
-      // File briefly absent / partial write / bad JSON: keep the last good state.
-      options.onError?.(asError(error));
+      // File briefly absent / partial write / bad JSON: keep the last good state, and count the
+      // failure so `/health` can stop claiming to be serving current data (issue #312).
+      const failure = asError(error);
+      if (!swapped) {
+        health = {
+          consecutiveFailures: health.consecutiveFailures + 1,
+          lastError: failure.message,
+          lastErrorAt: nowIso(),
+          lastSuccessAt: health.lastSuccessAt,
+        };
+      }
+      options.onError?.(failure);
     } finally {
       reloading = false;
       if (reloadQueued) {
@@ -121,6 +144,10 @@ export function createSnapshotWatcher(options: SnapshotWatcherOptions): Snapshot
       return state;
     },
 
+    getReloadHealth(): SnapshotReloadHealth {
+      return health;
+    },
+
     async stop(): Promise<void> {
       if (debounceTimer) {
         clearTimeout(debounceTimer);
@@ -149,6 +176,11 @@ async function safeClose(driver: BridgeServerState['driver']): Promise<void> {
 function toIso(generatedAt: number): string | null {
   const date = new Date(generatedAt);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/** Wall-clock stamp for a reload outcome, in the same ISO-8601 shape as `snapshotGeneratedAt`. */
+function nowIso(): string {
+  return new Date().toISOString();
 }
 
 function asError(error: unknown): Error {

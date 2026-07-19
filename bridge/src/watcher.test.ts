@@ -96,6 +96,52 @@ describe('createSnapshotWatcher (HA-3)', () => {
     expect(await itemCount(watcher)).toBe(4);
   });
 
+  it('counts consecutive reload failures and clears the tally on the next success', async () => {
+    await writeFile(snapshotPath, fixtureText);
+    watcher = createSnapshotWatcher({ snapshotPath, onError: () => {} });
+    await watcher.reload();
+    expect(watcher.getReloadHealth().consecutiveFailures).toBe(0);
+    const firstSuccessAt = watcher.getReloadHealth().lastSuccessAt;
+    expect(firstSuccessAt).not.toBeNull();
+
+    // Two failed reloads: the served snapshot stays live but the tally climbs.
+    await rm(snapshotPath, { force: true });
+    await watcher.reload();
+    await watcher.reload();
+    const failed = watcher.getReloadHealth();
+    expect(failed.consecutiveFailures).toBe(2);
+    expect(failed.lastError).toBeTruthy();
+    expect(failed.lastErrorAt).not.toBeNull();
+    // The last *successful* load is untouched, and the old data is still being served.
+    expect(failed.lastSuccessAt).toBe(firstSuccessAt);
+    expect(await itemCount(watcher)).toBe(4);
+
+    // A good file resets the tally.
+    await writeFile(snapshotPath, modifiedSnapshot());
+    await watcher.reload();
+    const recovered = watcher.getReloadHealth();
+    expect(recovered.consecutiveFailures).toBe(0);
+    expect(recovered.lastError).toBeNull();
+    expect(recovered.lastErrorAt).toBeNull();
+    expect(await itemCount(watcher)).toBe(3);
+  });
+
+  it('does not count a rejecting post-swap hook as a stale snapshot', async () => {
+    await writeFile(snapshotPath, fixtureText);
+    // The data loaded fine; only the consumer downstream of the swap failed, so the served
+    // snapshot is current and the failure tally must stay at zero.
+    watcher = createSnapshotWatcher({
+      snapshotPath,
+      onReload: () => Promise.reject(new Error('sink unavailable')),
+      onError: () => {},
+    });
+    await watcher.reload();
+
+    expect(watcher.getReloadHealth().consecutiveFailures).toBe(0);
+    expect(watcher.getReloadHealth().lastSuccessAt).not.toBeNull();
+    expect(await itemCount(watcher)).toBe(4);
+  });
+
   it('picks up a real filesystem change via fs.watch', async () => {
     await writeFile(snapshotPath, fixtureText);
     watcher = createSnapshotWatcher({ snapshotPath, debounceMs: 30 });

@@ -138,7 +138,7 @@ byte-for-byte identical success bodies, so existing consumers keep working uncha
 
 | Endpoint (alias of) | Returns |
 | --- | --- |
-| `GET /health` (`/api/v1/health`) | `{ ok, itemCount, snapshotGeneratedAt }` — liveness + a cheap snapshot summary. |
+| `GET /health` (`/api/v1/health`) | `{ ok, itemCount, snapshotGeneratedAt, … }` — liveness + a cheap snapshot summary + [snapshot freshness](#snapshot-freshness-and-health). |
 | `GET /search?q=<query>&limit=<n>` (`/api/v1/search`) | `{ query, matches: ItemMatch[] }` — compact item DTOs (`id`, `name`, `quantity`, `locationName`, `mpn`, `manufacturer`). `limit` is clamped to `[1, 25]`. |
 | `GET /where?q=<query>` (`/api/v1/where`) | `{ query, matches: WhereIsMatch[], spoken }` — per-location breakdown plus one spoken British-English sentence for a voice assistant. |
 
@@ -150,6 +150,32 @@ refused with `415` rather than having its body read as JSON. `q` accepts the
 app's full search grammar (`field:value`, `cap:key>n`, `AND`/`OR`/parentheses) as well as a
 casual phrase like `M3 screws`. The unversioned paths keep a flat `{ "error": "<message>" }`
 body; the versioned API uses the structured envelope described next.
+
+### Snapshot freshness and health
+
+The bridge re-reads the snapshot whenever the app writes a new one. If that re-read fails —
+the file is briefly absent, half-written, corrupt, or unreadable — the **last good snapshot
+stays live** so reads keep working. That is the right trade-off for availability, but it means
+the bridge can be answering from data that is out of date, so `/health` says so:
+
+| Field | Meaning |
+| --- | --- |
+| `ok` | `false` once the snapshot is stale. **This is a data verdict, not liveness** — treat `false` as "don't trust these numbers". |
+| `snapshotStale` | Reloads have failed enough times in a row to call the served data stale. |
+| `reloadFailures` | Consecutive failed reloads since the last successful one. |
+| `lastReloadError` | Why the most recent reload failed (paths removed), or `null`. |
+| `lastReloadErrorAt` | When it failed, or `null`. |
+| `lastReloadAt` | When the served snapshot was last loaded successfully, or `null`. |
+
+The status stays `200` — the bridge is up and this is a successful health *report*. (A bridge
+that has never loaded a snapshot at all still answers `503`.) A single failure is normal — a
+snapshot is not written atomically, so catching one mid-write happens and self-heals — which is
+why the verdict needs a few in a row. The threshold is `GUBBINS_BRIDGE_STALE_AFTER_FAILURES`
+(default `3`); set it to `0` to keep the counters but never flip `ok`.
+
+Consumers that poll `/health` — a Home Assistant availability template, a dashboard, a monitor
+— should key off `ok` so they degrade to *unavailable* rather than displaying confidently stale
+stock levels.
 
 ---
 
@@ -193,7 +219,7 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/calendar.ics` | A read-only iCalendar feed of Gubbins' time-bearing facts (loan due-backs, bookings, maintenance, warranty) that any calendar app can **subscribe** to. See [Calendar subscription](#calendar-subscription). |
 | `GET /api/v1/activity.rss` (`.atom`, `.json`) | A read-only syndication feed of the recent activity log (RSS 2.0 / Atom 1.0 / JSON Feed 1.1) any feed reader can **subscribe** to. See [Feeds & metrics](#feeds--metrics). |
 | `GET /metrics` | A Prometheus/OpenMetrics text exposition of the aggregate inventory counts (root path, not under `/api/v1`). See [Feeds & metrics](#feeds--metrics). |
-| `GET /api/v1/health` | `{ ok, itemCount, snapshotGeneratedAt }` (alias of `/health`). |
+| `GET /api/v1/health` | `{ ok, itemCount, snapshotGeneratedAt, … }` (alias of `/health`; see [snapshot freshness](#snapshot-freshness-and-health)). |
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
 | `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=&fields=&include=&$orderby=&$filter=` | Paginated item summaries (`ItemSummary`). Supports [field selection](#field-selection--extended-fields) and [OData-style options](#odata-style-query-options) (`$orderby`, `$filter`, …). |
@@ -1481,6 +1507,7 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this is `on`.** HTTP writes use the same bearer token + rate limit; the MCP tools are gated by process launch (stdio carries no token). |
 | `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**, independent of writes; JSON source only. Same bearer token + rate limit. |
 | `GUBBINS_BRIDGE_MAX_PUSH_BYTES` | no | `67108864` | Hard cap (bytes) on a pushed snapshot; default 64 MiB. An over-large push is rejected with `413`. Lower it on a constrained host. |
+| `GUBBINS_BRIDGE_STALE_AFTER_FAILURES` | no | `3` | Consecutive failed snapshot reloads before [`/health`](#snapshot-freshness-and-health) reports the served data as stale (`ok: false`). `0` keeps the counters but never flips `ok`. |
 | `GUBBINS_BRIDGE_EVENTS` | no | `off` | Enable the opt-in read-only [SSE event stream](#events-webhooks--sse-opt-in) at `GET /api/v1/events`. **Off by default** (the path is `404` when off). Implied by `GUBBINS_BRIDGE_WEBHOOKS`. Same bearer token + rate limit. |
 | `GUBBINS_BRIDGE_LOOKUP_EVENTS` | no | `off` | Also emit the **read-triggered** [`lookup.resolved` event](#lookup-events--read-triggered-opt-in-separate-flag) when a "where is X?" lookup resolves. **Off by default and deliberately NOT implied by `GUBBINS_BRIDGE_EVENTS`** — it publishes the search text, so it is its own explicit choice. Needs a sink (SSE / webhooks / MQTT) to reach. |
 | `GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS` | no | `3000` | Window (ms) in which repeated **equivalent** lookups emit once. Clamped to `[0, 600000]`; `0` disables debouncing. |

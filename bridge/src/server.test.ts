@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from './hydrate.ts';
 import { createBridgeServer, requestBase, type BridgeServerState } from './server.ts';
 import { createRateLimiter } from './rate-limit.ts';
+import { HEALTHY_RELOAD, summarizeSnapshotHealth } from './snapshot-health.ts';
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
 const TOKEN = 'placeholder-token-for-tests';
@@ -54,6 +55,63 @@ describe('GET /health', () => {
     expect(body.ok).toBe(true);
     expect(body.itemCount).toBe(4);
     expect(typeof body.snapshotGeneratedAt).toBe('string');
+  });
+
+  it('reports a fresh snapshot when no reload-health accessor is wired', async () => {
+    const body = await (await get('/health')).json();
+    expect(body).toMatchObject({
+      snapshotStale: false,
+      reloadFailures: 0,
+      lastReloadError: null,
+      lastReloadErrorAt: null,
+      lastReloadAt: null,
+    });
+  });
+
+  // Issue #312: a failed re-hydrate keeps the last good snapshot serving, so /health has to stop
+  // claiming `ok` once the data is knowingly out of date — otherwise a dashboard renders stale
+  // stock levels as if they were current.
+  it('drops ok and reports the failures once the snapshot has gone stale', async () => {
+    let report = summarizeSnapshotHealth(HEALTHY_RELOAD);
+    const stale = createBridgeServer({
+      token: TOKEN,
+      getState: () => ({
+        driver: hydrated.driver,
+        snapshotGeneratedAt: new Date(hydrated.snapshot.generatedAt).toISOString(),
+      }),
+      getSnapshotHealth: () => report,
+    });
+    await new Promise<void>((resolve) => stale.listen(0, '127.0.0.1', resolve));
+    const { port } = stale.address() as AddressInfo;
+    const health = (path: string) =>
+      fetch(`http://127.0.0.1:${port}${path}`, { headers: { authorization: `Bearer ${TOKEN}` } }).then((r) =>
+        r.json(),
+      );
+
+    try {
+      expect(await health('/health')).toMatchObject({ ok: true, snapshotStale: false });
+
+      report = summarizeSnapshotHealth({
+        consecutiveFailures: 3,
+        lastError: "ENOENT: no such file or directory, open '/srv/gubbins-sync.json'",
+        lastErrorAt: '2026-07-19T10:05:00.000Z',
+        lastSuccessAt: '2026-07-19T10:00:00.000Z',
+      });
+      const expected = {
+        ok: false,
+        snapshotStale: true,
+        reloadFailures: 3,
+        // The path is redacted: a response never carries the operator's directory layout.
+        lastReloadError: "ENOENT: no such file or directory, open '<path>'",
+        lastReloadErrorAt: '2026-07-19T10:05:00.000Z',
+        lastReloadAt: '2026-07-19T10:00:00.000Z',
+      };
+      // Both surfaces agree — the versioned alias is not allowed to be more optimistic.
+      expect(await health('/health')).toMatchObject(expected);
+      expect(await health('/api/v1/health')).toMatchObject(expected);
+    } finally {
+      await new Promise<void>((resolve) => stale.close(() => resolve()));
+    }
   });
 });
 

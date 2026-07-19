@@ -24,6 +24,9 @@
  *                                  "push to bridge"). OFF by default, independent of writes.
  *   GUBBINS_BRIDGE_MAX_PUSH_BYTES (optional) — hard cap on a pushed snapshot's size in bytes;
  *                                  defaults to {@link DEFAULT_MAX_PUSH_BYTES} (64 MiB).
+ *   GUBBINS_BRIDGE_STALE_AFTER_FAILURES (optional) — consecutive failed snapshot reloads before
+ *                                  /health reports the served data as stale (`ok: false`);
+ *                                  defaults to 3. `0` disables the verdict (counters still shown).
  *   GUBBINS_BRIDGE_EVENTS         (optional) — enable the read-only SSE event stream at
  *                                  GET /api/v1/events. Off by default; implied by _WEBHOOKS.
  *   GUBBINS_BRIDGE_LOOKUP_EVENTS  (optional) — also emit the READ-triggered `lookup.resolved`
@@ -66,6 +69,7 @@
  */
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC, type RateLimiterOptions } from './rate-limit.ts';
 import { DEFAULT_LOOKUP_DEBOUNCE_MS, MAX_LOOKUP_DEBOUNCE_MS } from './events/lookup.ts';
+import { DEFAULT_STALE_AFTER_FAILURES } from './snapshot-health.ts';
 
 /** Default bind address: loopback only, so the bridge is **not** LAN-reachable unless
  * the operator deliberately opts in via {@link LAN_HOST}. */
@@ -124,6 +128,15 @@ export interface BridgeConfig {
   readonly allowPush: boolean;
   /** Hard cap (bytes) on a pushed snapshot body. Defaults to {@link DEFAULT_MAX_PUSH_BYTES}. */
   readonly maxPushBytes: number;
+  /**
+   * Consecutive failed snapshot reloads before `/health` stops claiming the served data is
+   * current (`ok: false` plus the failure counters). Defaults to
+   * {@link DEFAULT_STALE_AFTER_FAILURES}; `0` disables the verdict without hiding the counters.
+   *
+   * A failed reload deliberately keeps the last good snapshot live, so this is what stops the
+   * bridge from silently serving inventory it knows is out of date.
+   */
+  readonly staleAfterFailures: number;
   /**
    * Whether the operator opted into the read-only **event stream** (`GUBBINS_BRIDGE_EVENTS=on`)
    * — the EI-1 `GET /api/v1/events` SSE feed. **Off by default.** Also implied by {@link webhooks}
@@ -288,6 +301,16 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
       ),
     ),
   );
+  // How many consecutive failed reloads before `/health` admits the data is stale. `0` opts out
+  // of the verdict entirely — the counters are still reported, `ok` just never flips for it.
+  const staleAfterFailures = Math.floor(
+    parsePositive(
+      env.GUBBINS_BRIDGE_STALE_AFTER_FAILURES,
+      DEFAULT_STALE_AFTER_FAILURES,
+      'GUBBINS_BRIDGE_STALE_AFTER_FAILURES',
+      { allowZero: true },
+    ),
+  );
   const webhooksFile = (env.GUBBINS_BRIDGE_WEBHOOKS_FILE ?? '').trim() || undefined;
   const webhooksInline = (env.GUBBINS_BRIDGE_WEBHOOKS_TARGETS ?? '').trim() || undefined;
   const webhooksSecretsInline = (env.GUBBINS_BRIDGE_WEBHOOKS_SECRETS ?? '').trim() || undefined;
@@ -358,6 +381,7 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
     allowWrites,
     allowPush,
     maxPushBytes,
+    staleAfterFailures,
     events,
     lookupEvents,
     lookupEventsDebounceMs,
