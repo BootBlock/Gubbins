@@ -19,6 +19,7 @@ import {
   splitGrant,
   type PermissionSubject,
 } from '../permission-registry';
+import { builtinRoleDescription, builtinRoleName } from '../builtin-role-labels';
 import {
   fromGrantModel,
   isKeyTicked,
@@ -57,8 +58,11 @@ function actionLabelKey(action: string): MessageKey {
 export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFormDialogProps) {
   const t = useT();
   const everythingHintId = useId();
-  const [name, setName] = useState(role?.name ?? '');
-  const [description, setDescription] = useState(role?.description ?? '');
+  // Seeded with the *translated* text for a still-default built-in role: an operator should edit
+  // the wording they can actually read. Saving it back untouched is folded to the shipped English
+  // by `toStoredRoleText` at the call site, so an unchanged save leaves the row translatable.
+  const [name, setName] = useState(role ? builtinRoleName(role, t) : '');
+  const [description, setDescription] = useState(role ? (builtinRoleDescription(role, t) ?? '') : '');
   const [model, setModel] = useState<RoleGrantModel>(() => toGrantModel(role?.permissions ?? []));
 
   const trimmedName = name.trim();

@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { Banner, Button, Checkbox, FormField, Input, Modal, SelectField } from '@/components/foundry';
 import { useT } from '@/features/i18n';
 import type { Role, User } from '@/db/repositories/types';
+import { builtinRoleName } from '../builtin-role-labels';
 
 export interface UserFormValues {
   readonly username: string;
@@ -60,7 +61,7 @@ export function UserFormDialog({ user, roles, busy, error, onSubmit, onClose }: 
 
   const roleOptions = [
     { value: '', label: t('users.form.role.none') },
-    ...roles.map((role) => ({ value: role.id, label: role.name })),
+    ...roles.map((role) => ({ value: role.id, label: builtinRoleName(role, t) })),
   ];
 
   return (
