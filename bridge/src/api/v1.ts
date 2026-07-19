@@ -172,6 +172,12 @@ export interface ApiV1Context {
   readonly webhookTest?: WebhookTestCapability;
   /** The parsed POST body (undefined for GET). */
   readonly body?: ParsedBody;
+  /**
+   * The id of the user whose API token authorised this request (issue #79, plan §1.3) — the
+   * actor every write is attributed to. Present on POSTs; the server resolves it before routing,
+   * so a request that reaches a write handler has always been identified.
+   */
+  readonly actorUserId?: string;
 }
 
 /**
@@ -593,8 +599,14 @@ async function handleWrite(res: ServerResponse, segments: string[], ctx: ApiV1Co
     ...(parsed.note !== undefined ? { note: parsed.note } : {}),
   };
 
+  // The server identifies every caller before routing, so this is set on any POST that gets
+  // here; the guard keeps the attribution requirement honest rather than defaulting silently.
+  if (ctx.actorUserId === undefined) {
+    return void sendError(res, 401, 'unauthorized', 'Unauthorised', { v1: true });
+  }
+
   try {
-    sendJson(res, 200, await ctx.write.execute(op));
+    sendJson(res, 200, await ctx.write.execute(op, ctx.actorUserId));
   } catch (err) {
     if (err instanceof WriteError) {
       sendError(res, err.status, err.code, err.message, { v1: true });

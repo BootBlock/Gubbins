@@ -21,7 +21,7 @@ A few optional features exist precisely to move data. Each is opt-in and stays u
 | **[[Cloud sync\|Cloud-Sync]]** | Keeps devices in step | Through *your own* folder or Drive; no Gubbins server in between |
 | **[[Backup & restore\|Backup-and-Restore]]** | Portable copy of your data | A file *you* save, where *you* choose |
 | **[[Export & import\|Export-and-Import]]** | Open-format data out/in | Only what you export leaves |
-| **[[Bridge\|Bridge-Overview]]** | Exposes data to other tools | You run it; loopback-only + token by default; read-only unless you allow writes |
+| **[[Bridge\|Bridge-Overview]]** | Exposes data to other tools | You run it; loopback-only by default, and every caller presents an [[API token\|Bridge-API-Tokens]] that can only do what its owning account can; read-only unless you allow writes |
 | **[[Webhooks]]** (delivered by the bridge) | Calls a URL you chose when something changes | Off until you add one; goes only where you point it. Sign it so your receiver can confirm it's genuine — and prefer a secret held by the bridge, since one stored on the webhook travels with your synced data |
 | **[[MQTT publishing\|Webhooks-MQTT-and-iCal]]** (part of the bridge) | Pushes stock counts and per-location details to your broker | Off until you enable it; goes to *your* broker. Note this one **pushes** rather than waiting to be asked — including every [[custom field\|Custom-Fields-and-Capabilities]] on a location |
 | **[[Scraping\|Scraping-Supplier-Data]]** | Reads a supplier web page | Only when *you* trigger it, via the trusted companion extension |
@@ -35,8 +35,9 @@ A few optional features exist precisely to move data. Each is opt-in and stays u
 > - Keep a **[[backup|Backup-and-Restore]]** — local-first means *you* hold the only copy.
 > - [[Install|Installing-Gubbins]] the app and grant **persistent storage** so the browser won't
 >   evict your data.
-> - If you run the **[[bridge|Running-the-Bridge]]**, treat its token like a password, keep the
->   default loopback bind, and leave write-back off unless you need it.
+> - If you run the **[[bridge|Running-the-Bridge]]**, treat its
+>   [[API tokens|Bridge-API-Tokens]] like passwords, give each integration its own account with a
+>   narrow role, keep the default loopback bind, and leave write-back off unless you need it.
 
 > **⚠️ Heads-up**
 > The flip side of local-first is that **you** are responsible for your data's safety. There's no

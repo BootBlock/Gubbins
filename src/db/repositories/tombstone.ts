@@ -47,6 +47,11 @@ export const SYNC_TABLES = [
   // to an actor, so an UPSERT batch can never present a child ahead of its parent.
   'roles', // independent dictionary — referenced by users.role_id
   'users', // FK → roles (SET NULL); referenced by item_history.actor_user_id
+  // FK → users (CASCADE) — the per-user Bridge credentials (issue #79, plan §1.3). Syncing it
+  // IS the delivery mechanism, exactly as for `webhooks` below: the bridge owns no database and
+  // resolves a presented token against the snapshot it hydrates, so a token excluded here could
+  // never authenticate. Only the hash travels, never the token.
+  'api_tokens',
   'locations',
   'categories',
   'field_defs', // independent dictionary (issue #97 — the global custom-field vocabulary; ordered before every table that references a definition)

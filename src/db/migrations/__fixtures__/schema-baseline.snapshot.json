@@ -3,6 +3,18 @@
   "objects": [
     {
       "type": "index",
+      "name": "idx_api_tokens_token_hash",
+      "tbl_name": "api_tokens",
+      "sql": "CREATE UNIQUE INDEX idx_api_tokens_token_hash ON api_tokens(token_hash)"
+    },
+    {
+      "type": "index",
+      "name": "idx_api_tokens_user_id",
+      "tbl_name": "api_tokens",
+      "sql": "CREATE INDEX idx_api_tokens_user_id ON api_tokens(user_id)"
+    },
+    {
+      "type": "index",
       "name": "idx_asset_bookings_item_id",
       "tbl_name": "asset_bookings",
       "sql": "CREATE INDEX idx_asset_bookings_item_id ON asset_bookings(item_id, start_date)"
@@ -435,6 +447,12 @@
     },
     {
       "type": "table",
+      "name": "api_tokens",
+      "tbl_name": "api_tokens",
+      "sql": "CREATE TABLE api_tokens (\n          id           TEXT    PRIMARY KEY NOT NULL,\n          user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n          -- Operator-facing label (\"Home Assistant\", \"Kitchen tablet\") so a token can be\n          -- recognised — and revoked — without anyone having to reveal it.\n          name         TEXT    NOT NULL,\n          -- Lowercase hex SHA-256 of the token. UNIQUE so a presented token resolves by\n          -- indexed lookup rather than a scan-and-compare over every row.\n          token_hash   TEXT    NOT NULL,\n          -- The token's first few characters, kept in the clear purely so the list can show\n          -- *which* token a row is. Far too short to narrow the secret meaningfully.\n          token_prefix TEXT    NOT NULL,\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
+    },
+    {
+      "type": "table",
       "name": "app_meta",
       "tbl_name": "app_meta",
       "sql": "CREATE TABLE app_meta (\n          key        TEXT    PRIMARY KEY NOT NULL,\n          value      TEXT,\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
@@ -750,6 +768,12 @@
       "name": "items_fts_au",
       "tbl_name": "items",
       "sql": "CREATE TRIGGER items_fts_au AFTER UPDATE ON items BEGIN\n          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer, barcode, serial_number)\n          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer, old.barcode, old.serial_number);\n          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer, barcode, serial_number) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer, new.barcode, new.serial_number);\n        END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_api_tokens_updated_at",
+      "tbl_name": "api_tokens",
+      "sql": "CREATE TRIGGER trg_api_tokens_updated_at\n    AFTER UPDATE ON api_tokens\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE api_tokens SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -1071,6 +1095,101 @@
     }
   ],
   "tables": {
+    "api_tokens": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "token_hash",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "token_prefix",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 1,
+          "name": "idx_api_tokens_token_hash",
+          "unique": 1,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 0,
+          "name": "idx_api_tokens_user_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 2,
+          "name": "sqlite_autoindex_api_tokens_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
     "app_meta": {
       "columns": [
         {

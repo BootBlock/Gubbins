@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebhookRepository } from '@/db/repositories/WebhookRepository.ts';
 import type { CreateWebhookInput } from '@/db/repositories/types';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
+import { mintTestToken } from '../fixtures/test-identity.ts';
 import { createBridgeServer, type BridgeServerState, type WebhookTestCapability } from '../server.ts';
 import { createWebhookDeliveryLog, type WebhookDeliveryLog } from './webhook-log.ts';
 import { createWebhookTestFirer } from './webhook-test.ts';
@@ -27,15 +28,20 @@ import type { WebhookSecrets } from './webhook-targets.ts';
 import type { FetchLike } from './webhook.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-snapshot.json', import.meta.url);
-const TOKEN = 'placeholder-token-for-tests';
+let TOKEN = '';
 const PATH = '/api/v1/webhooks/test';
-const auth = { Authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' };
+// A function, not a constant: the token is minted in `beforeAll`, so a value captured at module
+// load would be the empty string.
+const auth = () => ({ Authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' });
 
 let hydrated: HydrateResult;
 let state: BridgeServerState;
 
 beforeAll(async () => {
   hydrated = await hydrateFromJson(await readFile(fileURLToPath(FIXTURE_URL), 'utf8'));
+  // A caller is identified by a per-user token now, so the test mints one for the built-in
+  // Admin (unrestricted, like the old shared token) against the hydrated fixture.
+  TOKEN = await mintTestToken(hydrated.driver);
   state = { driver: hydrated.driver, snapshotGeneratedAt: null };
 });
 
@@ -94,7 +100,6 @@ async function startServer(options: ServerOptions = {}) {
         };
 
   const server = createBridgeServer({
-    token: TOKEN,
     getState: () => state,
     webhookDeliveries: deliveryLog,
     ...(webhookTest !== undefined ? { webhookTest } : {}),
@@ -106,7 +111,7 @@ async function startServer(options: ServerOptions = {}) {
     async fire(body: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
       const res = await fetch(`http://127.0.0.1:${port}${PATH}`, {
         method: 'POST',
-        headers: auth,
+        headers: auth(),
         body: typeof body === 'string' ? body : JSON.stringify(body),
       });
       return { status: res.status, json: (await res.json()) as Record<string, unknown> };

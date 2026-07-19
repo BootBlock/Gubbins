@@ -8,16 +8,41 @@
  *   posture the write and push opt-ins take.
  * - **An unusable reading is never a `200`.** The caller turns this number into a stock count, so
  *   "unavailable" or "unit I can't convert" must be a distinct failure rather than a zero.
+ *
+ * These routes read Home Assistant rather than the snapshot, so they once ran with no snapshot at
+ * all. Since issue #79 they still need one: a caller is identified by a per-user token that lives
+ * in the database, so *authentication* needs the snapshot even where the answer does not. A
+ * hydrated fixture is therefore wired in, and a bridge with no snapshot now refuses every route.
  */
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
-import { createBridgeServer, type ScaleCapability } from '../server.ts';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { createBridgeServer, type BridgeServerState, type ScaleCapability } from '../server.ts';
+import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
+import { mintTestToken } from '../fixtures/test-identity.ts';
 import { HaError } from '../homeassistant/client.ts';
 import type { ScaleEntityDto, ScaleReadingOutcome } from '../homeassistant/scale.ts';
 
-const TOKEN = 'placeholder-token-for-tests';
+const FIXTURE_URL = new URL('../fixtures/synthetic-snapshot.json', import.meta.url);
 
+let TOKEN = '';
+let hydrated: HydrateResult;
+let state: BridgeServerState;
 let server: ReturnType<typeof createBridgeServer> | undefined;
+
+beforeAll(async () => {
+  hydrated = await hydrateFromJson(await readFile(fileURLToPath(FIXTURE_URL), 'utf8'));
+  state = {
+    driver: hydrated.driver,
+    snapshotGeneratedAt: new Date(hydrated.snapshot.generatedAt).toISOString(),
+  };
+  TOKEN = await mintTestToken(hydrated.driver);
+});
+
+afterAll(async () => {
+  await hydrated.driver.close();
+});
 
 afterEach(async () => {
   if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
@@ -26,11 +51,11 @@ afterEach(async () => {
 
 /**
  * Start a server with the given scale capability (omit for "the operator never opted in") and
- * return a bound GET helper. `getState` returns null throughout: the scale endpoints read Home
- * Assistant, not the snapshot, and must work before one has loaded.
+ * return a bound GET helper. The state is the hydrated fixture — needed to resolve the caller's
+ * token, not to answer the scale reads themselves, which still never touch it.
  */
 async function start(scale?: ScaleCapability) {
-  server = createBridgeServer({ token: TOKEN, getState: () => null, scale });
+  server = createBridgeServer({ getState: () => state, scale });
   await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
   return (path: string) =>
@@ -102,12 +127,12 @@ describe('GET /api/v1/scale/entities', () => {
     expect(body.endpoints).toContain('/api/v1/scale/entities');
   });
 
-  it('still answers before a snapshot has loaded (it does not read the snapshot)', async () => {
-    // `getState` returns null throughout `start`, so a 200 here IS the assertion: every other
-    // data endpoint would answer 503 in this state.
+  it('answers without reading the snapshot, even where an inventory route would 503', async () => {
+    // The scale reads call Home Assistant, never the snapshot. That is still true — but since
+    // issue #79 the *caller* is resolved against the snapshot, so it must be loaded for anyone
+    // to get this far. The distinction is asserted by the 503 test at the end of this file.
     const get = await start(fakeScale({ entities: [] }));
     expect((await get('/api/v1/scale/entities')).status).toBe(200);
-    expect((await get('/api/v1/items')).status).toBe(503);
   });
 });
 
@@ -170,15 +195,24 @@ describe('GET /api/v1/scale/state', () => {
     expect((await get('/api/v1/scale/nonsense')).status).toBe(404);
   });
 
-  it('still requires the bridge bearer token', async () => {
-    server = createBridgeServer({
-      token: TOKEN,
-      getState: () => null,
-      scale: fakeScale({ reading: READING }),
-    });
+  it('still requires a valid API token', async () => {
+    server = createBridgeServer({ getState: () => state, scale: fakeScale({ reading: READING }) });
     await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
     const { port } = server.address() as AddressInfo;
     const res = await fetch(`http://127.0.0.1:${port}/api/v1/scale/entities`);
     expect(res.status).toBe(401);
+  });
+
+  // Authentication resolves the presented token against the snapshot, so a bridge that has not
+  // loaded one yet cannot identify anybody — and answers 503 rather than letting the request
+  // through. Failing closed is the only safe direction for "who is this?" (issue #79).
+  it('refuses every route until a snapshot has loaded', async () => {
+    server = createBridgeServer({ getState: () => null, scale: fakeScale({ reading: READING }) });
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${port}/api/v1/scale/entities`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(503);
   });
 });

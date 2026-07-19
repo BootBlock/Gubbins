@@ -35,6 +35,7 @@ const errorSchema: JsonValue = {
           enum: [
             'bad_request',
             'unauthorized',
+            'forbidden',
             'not_found',
             'method_not_allowed',
             'too_many_requests',
@@ -277,15 +278,26 @@ function feedOperation(summary: string, mediaType: string, example: string): Jso
   };
 }
 
-/** Standard error responses reused across operations. */
+/**
+ * Standard error responses reused across operations.
+ *
+ * Asking for `401` implies `403`: since issue #79 every authenticated route can also refuse a
+ * *known* caller whose role does not reach it, and listing the two together at every call site
+ * would be noise that one operation would eventually be missing.
+ */
 const errorResponses = (...codes: number[]): JsonValue => {
+  const requested = codes.includes(401) ? [...codes, 403] : codes;
   const all: Record<number, JsonValue> = {
     400: response('Bad request — missing or invalid parameter.', '#/components/schemas/Error'),
     401: {
-      description: 'Missing or invalid bearer token.',
+      description: 'Missing, unknown or revoked API token.',
       headers: { 'WWW-Authenticate': { schema: { type: 'string' }, description: 'Bearer' } },
       content: jsonContent('#/components/schemas/Error'),
     },
+    403: response(
+      "The token is valid, but its owner's role does not permit this route.",
+      '#/components/schemas/Error',
+    ),
     404: response('Resource not found.', '#/components/schemas/Error'),
     413: response(
       'The pushed snapshot exceeded the configured maximum size (GUBBINS_BRIDGE_MAX_PUSH_BYTES).',
@@ -315,7 +327,7 @@ const errorResponses = (...codes: number[]): JsonValue => {
     },
   };
   const out: Record<string, JsonValue> = {};
-  for (const code of codes) {
+  for (const code of requested) {
     const value = all[code];
     if (value !== undefined) out[String(code)] = value;
   }
@@ -1202,7 +1214,10 @@ export const openapiDocument: JsonValue = {
       bearerAuth: {
         type: 'http',
         scheme: 'bearer',
-        description: 'The shared GUBBINS_BRIDGE_TOKEN, sent as "Authorization: Bearer <token>".',
+        description:
+          'A per-user API token minted in the Gubbins app (Users → a user → API tokens), sent as ' +
+          '"Authorization: Bearer <token>". The bridge resolves it to that user and enforces ' +
+          'their permissions on every route; a route their role does not reach is a 403.',
       },
     },
     schemas: {

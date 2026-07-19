@@ -3,13 +3,17 @@
  *
  * The HTTP server (`server.ts`) and snapshot watcher (`watcher.ts`) are configured
  * entirely from the environment so **no secret or local path is ever committed**: the
- * bearer token and the snapshot path live in a git-ignored `.env` (see `.env.example`
+ * snapshot path and the outbound credentials live in a git-ignored `.env` (see `.env.example`
  * for the placeholder shape), loaded at startup by `serve.mjs`.
+ *
+ * There is deliberately **no inbound bearer token here any more** (issue #79, plan §1.3).
+ * Callers authenticate with per-user tokens minted in the app, which reach the bridge in the
+ * synced snapshot and resolve to a user and their permissions — see `identity.ts`. Access is
+ * therefore granted and revoked in the app, not by editing a `.env` and restarting.
  *
  * Pure and side-effect-free: it only reads the record handed to it (defaulting to
  * `process.env`) and never touches disk or the network — so it is trivially testable.
  *
- *   GUBBINS_BRIDGE_TOKEN          (required) — shared bearer token Home Assistant must send.
  *   GUBBINS_SNAPSHOT_PATH         (required) — absolute path to the synced gubbins-sync.json.
  *   GUBBINS_BRIDGE_HOST           (optional) — bind address; defaults to 127.0.0.1 (local).
  *   GUBBINS_BRIDGE_PORT           (optional) — TCP port; defaults to 8787.
@@ -94,8 +98,6 @@ export interface BridgeConfig {
   readonly host: string;
   /** TCP port in `[1, 65535]`. */
   readonly port: number;
-  /** Shared bearer token required on every request. Never logged, never committed. */
-  readonly token: string;
   /** Absolute path to the synced `gubbins-sync.json` snapshot the watcher reads. */
   readonly snapshotPath: string;
   /**
@@ -270,11 +272,6 @@ export type Env = Readonly<Record<string, string | undefined>>;
  * deployment fails loudly at startup rather than serving unauthenticated.
  */
 export function loadConfig(env: Env = process.env): BridgeConfig {
-  const token = (env.GUBBINS_BRIDGE_TOKEN ?? '').trim();
-  if (token.length === 0) {
-    throw new Error('GUBBINS_BRIDGE_TOKEN is required (set it in a git-ignored .env — see .env.example).');
-  }
-
   const snapshotPath = loadSnapshotPath(env);
 
   const host = (env.GUBBINS_BRIDGE_HOST ?? '').trim() || DEFAULT_HOST;
@@ -373,7 +370,6 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   return {
     host,
     port,
-    token,
     snapshotPath,
     rateLimit,
     mdns,

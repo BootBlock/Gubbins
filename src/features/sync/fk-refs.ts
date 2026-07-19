@@ -35,6 +35,10 @@ export const FK_REFS: Partial<Record<SyncTable, readonly FkRef[]>> = {
   // mirroring the column's ON DELETE SET NULL (issue #79). Dropping the user instead would
   // delete an account because a role was renamed away on another device.
   users: [{ col: 'role_id', parent: 'roles', nullable: true }],
+  // A Bridge credential cannot outlive the account it speaks for (issue #79, plan §1.3):
+  // the column is NOT NULL / ON DELETE CASCADE, so a token whose user did not survive the
+  // merge is dropped rather than left resolving to nobody.
+  api_tokens: [{ col: 'user_id', parent: 'users', nullable: false }],
   // Per-location stock ledger (Phase 25). item_id mirrors the cascade children above —
   // drop a placement whose item was removed. location_id drops an *incoming* placement at
   // a removed location (it would trip the location's RESTRICT FK); the device's *own*

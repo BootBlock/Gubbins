@@ -12,15 +12,17 @@
  */
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
+  getApiTokenRepository,
   getRoleRepository,
   getUserRepository,
+  type CreateApiTokenInput,
   type CreateRoleInput,
   type CreateUserInput,
   type UpdateRoleInput,
   type UpdateUserInput,
 } from '@/db/repositories';
 import { refreshAuthority } from './authority-refresh';
-import { roleKeys, userKeys } from './queries';
+import { apiTokenKeys, roleKeys, userKeys } from './queries';
 
 /**
  * Re-resolve the current session, then drop every cached user/role read.
@@ -103,5 +105,34 @@ export function useDeleteRole() {
   return useMutation({
     mutationFn: (id: string) => getRoleRepository().delete(id),
     onSuccess: () => refreshAfterWrite(client),
+  });
+}
+
+/**
+ * Mint a Bridge API token (issue #79, plan §1.3).
+ *
+ * Returns the plaintext alongside the stored row — the caller's one and only chance to show it,
+ * since only a hash is kept. Deliberately **not** routed through {@link refreshAfterWrite}: a
+ * token grants no authority its owner does not already have, so nothing about the signed-in
+ * session's permissions can have changed, and re-resolving them would be work with no effect.
+ */
+export function useMintApiToken() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateApiTokenInput) => getApiTokenRepository().mint(input),
+    onSuccess: (_result, input) => client.invalidateQueries({ queryKey: apiTokenKeys.byUser(input.userId) }),
+  });
+}
+
+/**
+ * Revoke a Bridge API token. Same reasoning as minting: it changes what a *credential* can do,
+ * never what the signed-in user may do, so the authority is left alone.
+ */
+export function useRevokeApiToken() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { readonly id: string; readonly userId: string }) =>
+      getApiTokenRepository().revoke(id),
+    onSuccess: (_result, { userId }) => client.invalidateQueries({ queryKey: apiTokenKeys.byUser(userId) }),
   });
 }

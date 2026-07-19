@@ -143,7 +143,9 @@ export function mapPushResponse(status: number, payload: unknown, url: string): 
     case 401:
       return {
         ok: false,
-        message: 'The bridge rejected the access token. Check it matches GUBBINS_BRIDGE_TOKEN.',
+        message:
+          'The bridge did not recognise the access token. It may have been mistyped, or revoked — ' +
+          'create a new one in Users → the account → API tokens.',
       };
     case 404:
       return {

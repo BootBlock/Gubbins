@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
+import { mintTestToken } from '../fixtures/test-identity.ts';
 import { createBridgeServer, type BridgeServerState } from '../server.ts';
 import {
   createWebhookDeliveryLog,
@@ -21,7 +22,7 @@ import {
 } from './webhook-log.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-snapshot.json', import.meta.url);
-const TOKEN = 'placeholder-token-for-tests';
+let TOKEN = '';
 const PATH = '/api/v1/webhooks/deliveries';
 
 let hydrated: HydrateResult;
@@ -29,6 +30,9 @@ let state: BridgeServerState;
 
 beforeAll(async () => {
   hydrated = await hydrateFromJson(await readFile(fileURLToPath(FIXTURE_URL), 'utf8'));
+  // A caller is identified by a per-user token now, so the test mints one for the built-in
+  // Admin (unrestricted, like the old shared token) against the hydrated fixture.
+  TOKEN = await mintTestToken(hydrated.driver);
   state = { driver: hydrated.driver, snapshotGeneratedAt: null };
 });
 
@@ -54,7 +58,7 @@ function delivery(overrides: Partial<WebhookDeliveryInput> = {}): WebhookDeliver
 }
 
 async function startServer(webhookDeliveries?: WebhookDeliveryLog) {
-  const server = createBridgeServer({ token: TOKEN, getState: () => state, webhookDeliveries });
+  const server = createBridgeServer({ getState: () => state, webhookDeliveries });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
   return {
@@ -65,7 +69,9 @@ async function startServer(webhookDeliveries?: WebhookDeliveryLog) {
   };
 }
 
-const auth = { Authorization: `Bearer ${TOKEN}` };
+// A function, not a constant: the token is minted in `beforeAll`, so a value captured at module
+// load would be the empty string.
+const auth = () => ({ Authorization: `Bearer ${TOKEN}` });
 
 describe('GET /api/v1/webhooks/deliveries', () => {
   it('is a 404 when webhooks are not enabled — the feature is invisible, not empty', async () => {
@@ -73,7 +79,7 @@ describe('GET /api/v1/webhooks/deliveries', () => {
     // not look alike, so this is a 404 rather than a 200 with an empty list.
     const { baseUrl, stop } = await startServer();
     try {
-      const res = await fetch(`${baseUrl}${PATH}`, { headers: auth });
+      const res = await fetch(`${baseUrl}${PATH}`, { headers: auth() });
       expect(res.status).toBe(404);
     } finally {
       await stop();
@@ -95,7 +101,7 @@ describe('GET /api/v1/webhooks/deliveries', () => {
   it('returns an empty page and a zero cursor before anything has been delivered', async () => {
     const { baseUrl, stop } = await startServer(createWebhookDeliveryLog());
     try {
-      const res = await fetch(`${baseUrl}${PATH}`, { headers: auth });
+      const res = await fetch(`${baseUrl}${PATH}`, { headers: auth() });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ deliveries: [], latestSeq: 0 });
     } finally {
@@ -110,7 +116,7 @@ describe('GET /api/v1/webhooks/deliveries', () => {
 
     const { baseUrl, stop } = await startServer(log);
     try {
-      const body = (await (await fetch(`${baseUrl}${PATH}`, { headers: auth })).json()) as {
+      const body = (await (await fetch(`${baseUrl}${PATH}`, { headers: auth() })).json()) as {
         deliveries: Array<{ eventId: string; outcome: string; seq: number }>;
         latestSeq: number;
       };
@@ -127,20 +133,20 @@ describe('GET /api/v1/webhooks/deliveries', () => {
     log.record(delivery({ eventId: 'hist-0001' }));
     const { baseUrl, stop } = await startServer(log);
     try {
-      const first = (await (await fetch(`${baseUrl}${PATH}`, { headers: auth })).json()) as {
+      const first = (await (await fetch(`${baseUrl}${PATH}`, { headers: auth() })).json()) as {
         latestSeq: number;
       };
 
       // Nothing new: an empty page, but the cursor still comes back so the poller can advance.
       const quiet = (await (
-        await fetch(`${baseUrl}${PATH}?since=${first.latestSeq}`, { headers: auth })
+        await fetch(`${baseUrl}${PATH}?since=${first.latestSeq}`, { headers: auth() })
       ).json()) as { deliveries: unknown[]; latestSeq: number };
       expect(quiet.deliveries).toEqual([]);
       expect(quiet.latestSeq).toBe(first.latestSeq);
 
       log.record(delivery({ eventId: 'hist-0002' }));
       const next = (await (
-        await fetch(`${baseUrl}${PATH}?since=${first.latestSeq}`, { headers: auth })
+        await fetch(`${baseUrl}${PATH}?since=${first.latestSeq}`, { headers: auth() })
       ).json()) as { deliveries: Array<{ eventId: string }> };
       expect(next.deliveries.map((d) => d.eventId)).toEqual(['hist-0002']);
     } finally {
@@ -153,12 +159,12 @@ describe('GET /api/v1/webhooks/deliveries', () => {
     for (let i = 0; i < 250; i++) log.record(delivery({ eventId: `hist-${i}` }));
     const { baseUrl, stop } = await startServer(log);
     try {
-      const page = (await (await fetch(`${baseUrl}${PATH}?limit=2`, { headers: auth })).json()) as {
+      const page = (await (await fetch(`${baseUrl}${PATH}?limit=2`, { headers: auth() })).json()) as {
         deliveries: unknown[];
       };
       expect(page.deliveries).toHaveLength(2);
 
-      const clamped = (await (await fetch(`${baseUrl}${PATH}?limit=9999`, { headers: auth })).json()) as {
+      const clamped = (await (await fetch(`${baseUrl}${PATH}?limit=9999`, { headers: auth() })).json()) as {
         deliveries: unknown[];
       };
       expect(clamped.deliveries).toHaveLength(200);
@@ -171,7 +177,7 @@ describe('GET /api/v1/webhooks/deliveries', () => {
     const { baseUrl, stop } = await startServer(createWebhookDeliveryLog());
     try {
       for (const query of ['?since=abc', '?since=-1', '?limit=0', '?limit=nope']) {
-        const res = await fetch(`${baseUrl}${PATH}${query}`, { headers: auth });
+        const res = await fetch(`${baseUrl}${PATH}${query}`, { headers: auth() });
         expect(res.status).toBe(400);
         expect(((await res.json()) as { error: { code: string } }).error.code).toBe('bad_request');
       }
@@ -183,8 +189,8 @@ describe('GET /api/v1/webhooks/deliveries', () => {
   it('404s an unknown path below /webhooks rather than falling through', async () => {
     const { baseUrl, stop } = await startServer(createWebhookDeliveryLog());
     try {
-      expect((await fetch(`${baseUrl}/api/v1/webhooks`, { headers: auth })).status).toBe(404);
-      expect((await fetch(`${baseUrl}/api/v1/webhooks/subscriptions`, { headers: auth })).status).toBe(404);
+      expect((await fetch(`${baseUrl}/api/v1/webhooks`, { headers: auth() })).status).toBe(404);
+      expect((await fetch(`${baseUrl}/api/v1/webhooks/subscriptions`, { headers: auth() })).status).toBe(404);
     } finally {
       await stop();
     }

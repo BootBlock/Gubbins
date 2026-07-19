@@ -16,14 +16,21 @@ To run the bridge you need three things:
    (`gubbins-sync.json`) or a raw `.sqlite` copy. It watches the file and re-reads it when it
    changes, so it stays current as you sync. If a re-read ever fails, it keeps answering from the
    last good copy rather than going dark — and tells you, as below.
-2. **A secret token** — set a long, random token. Every request must present it, so only you (and
-   the tools you configure) can query the bridge.
+2. **An [[API token|Bridge-API-Tokens]]** — mint one in the app under **Users → an account →
+   API tokens**. Every request must present one, and it can only do what its owning account can
+   do. There's nothing token-shaped to configure on the bridge itself: tokens travel with your
+   data, so minting and revoking happen entirely in Gubbins.
 3. **Start it** — run the read-only HTTP server. By default it binds **loopback only**
    (`127.0.0.1`), so it isn't reachable from other machines unless you deliberately change that.
 
 Once it's up, you query it over HTTP with your token, or wire it into
 [[Home Assistant|Home-Assistant-Integration]], an [[AI assistant|AI-Assistant-Query-MCP]], your
 [[calendar|Webhooks-MQTT-and-iCal]], and more.
+
+> **ℹ️ Note**
+> A freshly started bridge refuses **every** request until it has read your data — that's where
+> the tokens live, so until then it has no way to tell who is asking. It sorts itself out as soon
+> as it picks up your [[snapshot|Cloud-Sync]]; if it doesn't, the file is the thing to check.
 
 ## Checking it's serving current data
 
@@ -96,14 +103,21 @@ The bridge **can't modify your inventory** by default — it's a window onto you
 in. Write-back (letting an assistant adjust stock, say) is a separate, explicit opt-in, and even
 then it goes through Gubbins' safe merge so it can't cause drift.
 
+There are two gates, and both have to let a request through. Whoever runs the bridge decides which
+capabilities exist at all; the caller's account then decides how much of that they may use. So
+turning writes on doesn't hand write access to everyone holding a token — a read-only account
+stays read-only.
+
 > **⚠️ Heads-up**
-> Keep the **token** secret and out of any file you commit or share — this is a **public**
-> project, and a leaked token plus an exposed bind would let others read your data. The safe
-> default is loopback-only with a strong token. See [[Privacy & security|Privacy-and-Security]].
+> Keep an [[API token|Bridge-API-Tokens]] secret and out of any file you commit or share — this is
+> a **public** project, and a leaked token plus an exposed bind would let others read your data.
+> The safe default is loopback-only, with each integration on its own narrow account. See
+> [[Privacy & security|Privacy-and-Security]].
 
 ## Related pages
 
 - **[[Bridge overview|Bridge-Overview]]** — what the bridge is and its safety model.
+- **[[Bridge API tokens|Bridge-API-Tokens]]** — minting, revoking and scoping access.
 - **[[Home Assistant integration|Home-Assistant-Integration]]**,
   **[[AI assistant query (MCP)|AI-Assistant-Query-MCP]]**,
   **[[Webhooks]]**, **[[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]** — what to do with it.

@@ -16,9 +16,11 @@ TypeScript directly (no build step) on Node ≥ 23.6 — but see the
 [FTS5 caveat](#requirements) below: the **v23.x line never got FTS5** support, so in practice
 you need Node **≥ 24** (or the **22.16+ LTS** line).
 
-> **Status:** Complete and stable. The bridge serves bearer-token-protected, **read-only-by-
-> default** surfaces and re-hydrates automatically when the snapshot changes, rate-limited per
-> client. What it exposes, at a glance:
+> **Status:** Complete and stable. The bridge serves **read-only-by-default** surfaces, gated by
+> a **per-user API token minted in the app**, and re-hydrates automatically when the snapshot
+> changes, rate-limited per client. Every request is resolved to the user who owns the presented
+> token and answered only within that user's permissions — see
+> [Identities & permissions](#identities--permissions). What it exposes, at a glance:
 >
 > - **Read (always on):** the original `GET /health`, `/search`, `/where`; an additive,
 >   OpenAPI-described [`/api/v1`](#versioned-rest-api-apiv1) surface (items, locations,
@@ -52,30 +54,101 @@ checkout of this repository. From the **repository root**:
 npm install                       # once — the bridge borrows the root toolchain, no deps of its own
 
 cp bridge/.env.example bridge/.env   # then edit bridge/.env (it is git-ignored)
-#  - set GUBBINS_BRIDGE_TOKEN to a long random string
 #  - point GUBBINS_SNAPSHOT_PATH at your synced gubbins-sync.json
+#  (there is NO token setting — tokens are minted in the app, see below)
 
 node bridge/serve.mjs             # starts the read-only HTTP server (loopback by default)
 ```
 
-Generate a token with anything that produces a long random string, e.g.:
+**Mint a token in the app.** There is no shared token in the environment any more. In Gubbins,
+go to **Users → the account the integration should act as → API tokens → New token**. The
+plaintext token is shown **once**; copy it then, because only a hash is stored and it cannot be
+shown again. It reaches the bridge through the snapshot the bridge already watches, so no restart
+and no `.env` edit is needed — and revoking it in the app withdraws access the same way.
+
+> **⚠️ A brand-new bridge answers `401` to everything until a token exists and the snapshot
+> carrying it has loaded.** That is the safe default, not a fault. See
+> [Identities & permissions](#identities--permissions).
+
+Then query it (replace `<YOUR_TOKEN>` with the token you minted):
 
 ```bash
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-```
-
-Then query it (replace `<token>` with your `GUBBINS_BRIDGE_TOKEN`):
-
-```bash
-curl -H "Authorization: Bearer <token>" "http://127.0.0.1:8787/health"
-curl -H "Authorization: Bearer <token>" "http://127.0.0.1:8787/where?q=M3%20screws"
-curl -H "Authorization: Bearer <token>" "http://127.0.0.1:8787/search?q=ESP32&limit=3"
+curl -H "Authorization: Bearer <YOUR_TOKEN>" "http://127.0.0.1:8787/health"
+curl -H "Authorization: Bearer <YOUR_TOKEN>" "http://127.0.0.1:8787/where?q=M3%20screws"
+curl -H "Authorization: Bearer <YOUR_TOKEN>" "http://127.0.0.1:8787/search?q=ESP32&limit=3"
 ```
 
 The server **binds `127.0.0.1` (loopback only) by default** — it is not reachable from the
 LAN. To wire it into Home Assistant, follow [`../homeassistant/README.md`](../homeassistant/README.md).
 To run it as a long-lived service, see [Docker](#run-with-docker) or
 [systemd](#run-with-systemd) below.
+
+---
+
+## Identities & permissions
+
+The bridge does not have a password of its own. **A caller is a user**: the token it presents was
+minted in the app against one account, and the bridge resolves it to that account, resolves that
+account's role through the app's **own** permission engine, and answers only what that role
+permits. A write is then attributed to that user in the Activity Ledger — the log says *who*,
+not just *the bridge*.
+
+Three consequences worth internalising before you configure anything:
+
+- **A token carries its owner's permissions, and nothing more.** Give a narrow integration its
+  own account with a narrow role and it can only ever do that much, however the token leaks. The
+  operator grants remote access at all with `bridge:read` / `bridge:write`, so a role can be
+  allowed to work in the app while being withheld from the bridge entirely.
+- **Authentication requires a loaded snapshot.** The bridge owns no database — the tokens reach
+  it in the same synced snapshot as everything else. Until the first snapshot loads there is
+  nothing to resolve a token *against*, so **every** route (including the `/api/v1/scale/*`
+  reads, which previously answered before a snapshot existed) returns `503` with a `Retry-After`.
+  Failing closed is the only safe direction when the question is *who is this*.
+- **The env capability flags remain the outer bound.** Permissions only ever *narrow* what the
+  operator enabled. A route disabled by `GUBBINS_BRIDGE_ALLOW_WRITES` (or `_ALLOW_PUSH`,
+  `_EVENTS`, `_WEBHOOKS`, `_HA`, …) is still a `404` for everyone, however permissive their role.
+  There is no role that can switch a capability on.
+
+### Status codes
+
+| Code | Meaning |
+| --- | --- |
+| `401` `unauthorized` | No token, or a token that matches nothing live — unknown, mistyped, or **revoked**. Revocation is a hard delete, so a revoked token is simply a token that no longer exists. |
+| `403` `forbidden` | The token is valid and its owner is known, but their role does not permit **this** route. Nothing is wrong with the credential; the answer will not change until the role does. |
+| `503` `snapshot_unavailable` | No snapshot loaded yet, so no identity can be resolved. Retry per `Retry-After`. |
+| `404` | The route is disabled by an env flag (or genuinely does not exist). Deliberately indistinguishable — a disabled capability is invisible rather than advertised. |
+
+Both `401` and `403` are described in the [OpenAPI spec](#openapi-spec).
+
+### What each route requires
+
+Every route requires `bridge:read` or `bridge:write` — the capability of using the bridge at all
+— **plus** the permission for the subject it actually exposes. All of them, not any of them:
+
+| Route | Requires |
+| --- | --- |
+| `GET /health`, `/api/v1`, `/api/v1/openapi.json`, `/api/v1/$metadata`, `/api/v1/health`, `/api/v1/events`, `/api/v1/scale/*` | `bridge:read` |
+| `GET /search`, `/where`, `/metrics`, `/api/v1/{search,where,items,items.csv,capabilities}` | `bridge:read` + `items:read` |
+| `GET /api/v1/locations…` | `bridge:read` + `locations:read` |
+| `GET /api/v1/categories…` | `bridge:read` + `categories:read` |
+| `GET /api/v1/calendar.ics` | `bridge:read` + `bookings:read` |
+| `GET /api/v1/activity.{rss,atom,json}` | `bridge:read` + `audit:view` |
+| `GET /api/v1/webhooks/deliveries` | `bridge:read` + `settings:read` |
+| `POST /api/v1/webhooks/test` | `bridge:write` + `settings:write` |
+| `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` | `bridge:write` + `stock:write` |
+| `POST /api/v1/snapshot` | `bridge:write` + `sync:write` |
+
+A few of these are deliberate rather than obvious. The **calendar** feed publishes asset
+bookings, so it is gated on `bookings:read`, not `items:read`. The **syndication feeds** publish
+the Activity Ledger — the audit trail — so they need `audit:view`, which is what makes "only
+some people may read the history" expressible at all. The **stock adjust** endpoints need
+`stock:write` rather than `items:write`, because changing how much there is of something is not
+editing the item record.
+
+> **ℹ️ The MCP stdio server carries no credential at all.** Its trust boundary is the OS process
+> (see [MCP server](#mcp-server-for-llmagent-tools)), so there is no token to resolve and no
+> identity to enforce; its writes are attributed to the **System** user. Anything able to launch
+> it with the write flag set can adjust stock — configure it accordingly.
 
 ---
 
@@ -129,7 +202,7 @@ How the raw `.sqlite` path works (and why it is safe):
 
 ## HTTP API (read-only)
 
-All endpoints are **GET-only** and require the bearer token. The contract is stable —
+All endpoints are **GET-only** and require an [API token](#identities--permissions). The contract is stable —
 the Home Assistant integration depends on it.
 
 These three unversioned paths are **permanent, stable aliases** of their `/api/v1`
@@ -142,9 +215,12 @@ byte-for-byte identical success bodies, so existing consumers keep working uncha
 | `GET /search?q=<query>&limit=<n>` (`/api/v1/search`) | `{ query, matches: ItemMatch[] }` — compact item DTOs (`id`, `name`, `quantity`, `locationName`, `mpn`, `manufacturer`). `limit` is clamped to `[1, 25]`. |
 | `GET /where?q=<query>` (`/api/v1/where`) | `{ query, matches: WhereIsMatch[], spoken }` — per-location breakdown plus one spoken British-English sentence for a voice assistant. |
 
-Status codes: `401` (missing/wrong token), `400` (missing or over-long `q`, max 200 chars),
+Status codes: `401` (missing/unknown/revoked token), `403` (valid token, but the owner's role
+does not permit that route — see [Identities & permissions](#identities--permissions)), `400`
+(missing or over-long `q`, max 200 chars),
 `404` (unknown path), `405` (non-GET), `429` (rate-limited — see [below](#rate-limiting)),
-`503` (no snapshot loaded yet, with a `Retry-After`), `500` (generic — never leaks
+`503` (no snapshot loaded yet — so no identity can be resolved either — with a `Retry-After`),
+`500` (generic — never leaks
 internals). A `POST` that declares a `Content-Type` other than `application/json` is
 refused with `415` rather than having its body read as JSON. `q` accepts the
 app's full search grammar (`field:value`, `cap:key>n`, `AND`/`OR`/parentheses) as well as a
@@ -184,7 +260,8 @@ stock levels.
 For **any** application (not just Home Assistant), the bridge exposes a versioned, documented,
 read-only REST API under `/api/v1`. It is **purely additive** — it does not change or replace
 the three paths above — and is described by a committed [OpenAPI 3 spec](#openapi-spec).
-Same auth (bearer token) and same per-IP [rate limit](#rate-limiting) as everything else;
+Same auth ([per-user API token](#identities--permissions)) and same per-IP
+[rate limit](#rate-limiting) as everything else;
 every endpoint is **GET-only** and strictly read-only.
 
 ### Conventions
@@ -196,7 +273,7 @@ every endpoint is **GET-only** and strictly read-only.
   benign `true` on an exact-boundary last page — fetch the next page to confirm).
 - **Errors** use a structured, machine-readable envelope:
   `{ "error": { "code": "not_found", "message": "…" } }`. Codes: `bad_request`,
-  `unauthorized`, `not_found`, `method_not_allowed`, `unsupported_media_type`,
+  `unauthorized`, `forbidden`, `not_found`, `method_not_allowed`, `unsupported_media_type`,
   `too_many_requests`, `snapshot_unavailable`, `internal_error`.
 - **Field selection** — the item endpoints accept `fields` (return only the named fields) and
   `include` (add extended fields on top of the default payload). See
@@ -239,7 +316,7 @@ repositories and the single parameterised `parseASTtoSQL` — no bespoke SQL, no
 ### Examples
 
 ```bash
-TOKEN=<your GUBBINS_BRIDGE_TOKEN>
+TOKEN=<YOUR_TOKEN>          # minted in the app: Users -> an account -> API tokens
 BASE=http://127.0.0.1:8787/api/v1
 
 curl -H "Authorization: Bearer $TOKEN" "$BASE"                       # discovery index
@@ -251,7 +328,9 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/capabilities"          # the cap: 
 curl -H "Authorization: Bearer $TOKEN" "$BASE/openapi.json"          # the spec
 ```
 
-(Ids such as `item-esp32` / `cat-electronics` above are from the synthetic test fixture.)
+(Ids such as `item-esp32` / `cat-electronics` above are from the synthetic test fixture.) Each of
+these needs `items:read` / `locations:read` / `categories:read` as appropriate — a token whose
+owner lacks one gets a `403` for that route and keeps working for the rest.
 
 ### Field selection & extended fields
 
@@ -456,7 +535,7 @@ single page, and it honours the same `$filter`/`$search`/`$orderby`/`location`/`
 > This endpoint exists for the one thing the app can't do: a **refreshable** pull over HTTP.
 
 Point Excel/Power BI **From Web** (not the OData connector — see the note above) at the URL for a
-refreshable table; `Web.Contents` lets you attach the bearer token as a header:
+refreshable table; `Web.Contents` lets you attach the token as a bearer header:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items.csv?\$filter=quantity gt 0&\$orderby=name" -o items.csv
@@ -485,18 +564,23 @@ duplicating it. A source with no data simply contributes nothing — an empty in
 valid, event-free calendar.
 
 **Subscribing (the token-in-URL trade-off).** A calendar client subscribing by URL **cannot send
-an `Authorization` header**, so — for this path *only* — the bearer token may be supplied as a
+an `Authorization` header**, so — for this path *only* — the token may be supplied as a
 `token` query parameter:
 
 ```
-http://127.0.0.1:8787/api/v1/calendar.ics?token=<YOUR_GUBBINS_BRIDGE_TOKEN>
+http://127.0.0.1:8787/api/v1/calendar.ics?token=<YOUR_TOKEN>
 ```
 
 A token in a URL is a weaker posture than a header (URLs get logged by proxies and saved in
 history), so this is deliberately scoped to the calendar path — every other endpoint still
 requires the header. Keep the bridge's default **loopback** bind (or a trusted LAN) in mind, and
 treat the subscribe URL as a secret. The `Authorization: Bearer` header still works too (e.g.
-`curl`), and a dedicated read-only calendar token is a possible future refinement.
+`curl`).
+
+> **💡 Mint the subscribe URL's token against a narrow account.** Because the token in the URL
+> is a *user's* token, it can do everything that user can — so a calendar subscription is a good
+> reason to give the integration its own account whose role holds little beyond `bridge:read` and
+> `bookings:read`. Revoke it in the app and the URL stops working immediately.
 
 **Per-type feeds.** Add `?type=` to subscribe to just one (or a comma-separated subset) of the
 sources — handy for a separate "maintenance" calendar:
@@ -522,7 +606,9 @@ dashboards.
 Two cheap, standards-based **read** surfaces for the same self-hosted audience: a human "what
 changed" feed for any reader, and machine metrics for a Prometheus/Grafana home-lab. Both are
 **read-only pulls** (like `calendar.ics` / `items.csv`), so — like those — they carry **no
-`GUBBINS_BRIDGE_*` flag**; they are always available and gated only by the bearer token.
+`GUBBINS_BRIDGE_*` flag**; they are always available, gated by the caller's
+[token and permissions](#identities--permissions) — `items:read` for `/metrics`, `audit:view`
+for the activity feeds.
 
 **Syndication feeds.** `GET /api/v1/activity.rss` (plus `.atom` and `.json`) render the recent
 cross-item **activity log** — the same `item_history` projection the app's Activity screen shows —
@@ -573,7 +659,7 @@ scrape_configs:
     metrics_path: /metrics
     authorization:
       type: Bearer
-      credentials: "<your GUBBINS_BRIDGE_TOKEN>"   # or credentials_file: /etc/prometheus/gubbins.token
+      credentials: "<YOUR_TOKEN>"   # or credentials_file: /etc/prometheus/gubbins.token
     static_configs:
       - targets: ["127.0.0.1:8787"]
 ```
@@ -610,8 +696,10 @@ GUBBINS_SNAPSHOT_PATH=/path/to/your/synced/gubbins-sync.json node bridge/mcp.mjs
 
 It reuses the same atomic snapshot watcher, so it answers from fresh data as the snapshot
 changes. **Transport posture:** stdio is the launched process's own pipe — its trust boundary
-is the OS process, so there is **no network bearer token** (only `GUBBINS_SNAPSHOT_PATH` is
-required). All diagnostic logging goes to **stderr**; stdout carries only the protocol.
+is the OS process, so it carries **no credential at all** (only `GUBBINS_SNAPSHOT_PATH` is
+required): there is no API token to present, no user to resolve, and therefore no permission
+check. Anything it writes is attributed to the **System** user. All diagnostic logging goes to
+**stderr**; stdout carries only the protocol.
 
 ### Wiring it into an MCP client
 
@@ -749,9 +837,11 @@ The same source restriction applies: writes need a **JSON snapshot** source and 
 a raw `.sqlite` one (no sync channel to round-trip through), in which case the server logs why
 and stays read-only.
 
-> **⚠️ Understand the trust boundary before enabling this.** Unlike the HTTP API, stdio has
-> **no bearer token** — the boundary is the OS process, so *anything able to launch this server
-> with the flag set can adjust your stock*, with no second credential. That is fine for an MCP
+> **⚠️ Understand the trust boundary before enabling this.** Unlike the HTTP API — where a
+> request is a *user* whose role is enforced and whose writes are attributed to them — stdio has
+> **no credential at all**: the boundary is the OS process, so *anything able to launch this
+> server with the flag set can adjust your stock*, with no second credential and no permission
+> check, and the adjustment is recorded against the System user. That is fine for an MCP
 > client you configured yourself and reasonable for a local agent you trust; it is not a
 > permission system. Leave the flag off in the client config unless you actively want an agent
 > writing, and note that an agent can be steered by the content it reads. Writes are never
@@ -782,9 +872,14 @@ by default** and must be deliberately enabled.
 ### Enabling it
 
 Set **`GUBBINS_BRIDGE_ALLOW_WRITES=on`**. When off, the write paths return `404` (the feature is
-invisible). When on, writes use the **same bearer token and rate limit** as reads, and the server
+invisible). When on, writes use the **same tokens and rate limit** as reads, and the server
 logs a clear "Writes ENABLED" line at startup. Keeping the bridge on the `127.0.0.1` default is
 the safest posture; enabling writes **and** binding `0.0.0.0` is a deliberate double opt-in.
+
+The flag is the **outer** bound, not the whole gate: with it on, a caller still needs
+`bridge:write` + `stock:write` to adjust stock, and the adjustment is attributed to that token's
+owner in the Activity Ledger. A read-only role holding a token gets a `403` here and carries on
+reading. See [Identities & permissions](#identities--permissions).
 
 Writes require a **JSON snapshot** source — they are **refused for a raw `.sqlite` source** (which
 has no sync channel to round-trip through), so the write paths stay `404` there even with this set.
@@ -802,14 +897,15 @@ object `{ "delta": <number>, "note"?: "<string>" }`; the response is the updated
 | `POST /api/v1/items/{id}/adjust-gauge` | `{ delta, note? }` | Adjust a **CONSUMABLE_GAUGE** item's net value by a signed amount (clamped to `[0, capacity]`). |
 
 Status codes: `200` (updated item), `400` (malformed body / non-numeric `delta`), `401`
-(missing/wrong token), `404` (writes disabled, or no such item), `422` (`unprocessable` — the
+(missing/unknown/revoked token), `403` (the owner's role lacks `bridge:write` or `stock:write`),
+`404` (writes disabled, or no such item), `422` (`unprocessable` — the
 change was rejected, e.g. quantity below zero or the wrong tracking mode), `429` (rate-limited),
 `503` (snapshot briefly unavailable). The `/api/v1` index reports `"writable": true|false`.
 
 ### Example
 
 ```bash
-TOKEN=<your GUBBINS_BRIDGE_TOKEN>
+TOKEN=<YOUR_TOKEN>          # its owner needs bridge:write + stock:write
 BASE=http://127.0.0.1:8787/api/v1
 
 # Check out two of an item (synthetic fixture id):
@@ -841,8 +937,9 @@ opt-ins).
 ### Enabling it
 
 Set **`GUBBINS_BRIDGE_ALLOW_PUSH=on`**. When off, `POST /api/v1/snapshot` returns `404` (the
-feature is invisible). When on, push uses the **same bearer token and rate limit** as reads, and
-the server logs a clear "Snapshot push ENABLED" line at startup. Like writes, push requires a
+feature is invisible). When on, push uses the **same tokens and rate limit** as reads — and needs
+`bridge:write` + `sync:write`, replacing the whole snapshot being a sync operation rather than a
+stock edit — and the server logs a clear "Snapshot push ENABLED" line at startup. Like writes, push requires a
 **JSON snapshot** source — it is **refused for a raw `.sqlite` source** (which is not the PWA sync
 channel), so the path stays `404` there even with this set.
 
@@ -856,7 +953,8 @@ the cap on a constrained host (a Pi/NAS on an SD card).
 | --- | --- | --- |
 | `POST /api/v1/snapshot` | The versioned backup JSON (the bytes `snapshotToBackupJson` produces). | Validates and **atomically replaces** the served snapshot; the watcher re-hydrates it. Returns `{ ok, formatVersion, generatedAt }`. |
 
-Status codes: `200` (accepted), `400` (malformed/non-JSON body), `401` (missing/wrong token),
+Status codes: `200` (accepted), `400` (malformed/non-JSON body), `401` (missing/unknown/revoked
+token), `403` (the owner's role lacks `bridge:write` or `sync:write`),
 `404` (push disabled, or a `.sqlite` source), `413` (`payload_too_large` — body over the cap),
 `422` (`unprocessable` — a snapshot from a newer Gubbins build), `429` (rate-limited). The
 `/api/v1` index reports `"pushable": true|false`.
@@ -864,8 +962,9 @@ Status codes: `200` (accepted), `400` (malformed/non-JSON body), `401` (missing/
 ### From the PWA
 
 Open **Cloud Sync & backups** in the app, fill in the bridge **URL** and **token** under "Push to
-bridge", and press **Push now**. The URL/token are stored on that device only (never synced, never
-committed). The MCP server stays **read-only** — push is HTTP-only, by design.
+bridge", and press **Push now** — the token being one you minted under **Users → an account →
+API tokens**, whose owner holds `bridge:write` + `sync:write`. The URL/token are stored on that
+device only (never synced, never committed). The MCP server stays **read-only** — push is HTTP-only, by design.
 
 ## Events, webhooks & SSE (opt-in)
 
@@ -1022,8 +1121,9 @@ list enforced at delivery — there is one list, and it cannot drift.
 
 #### `GET /api/v1/webhooks/deliveries` — the delivery log
 
-The app's only window onto what its subscriptions actually did. It uses the **same bearer token and
-rate limit** as every other endpoint, and takes two optional query parameters:
+The app's only window onto what its subscriptions actually did. It uses the **same tokens and
+rate limit** as every other endpoint (needing `bridge:read` + `settings:read`, since it reports on
+configuration rather than inventory), and takes two optional query parameters:
 
 | Parameter | Meaning |
 | --- | --- |
@@ -1031,7 +1131,7 @@ rate limit** as every other endpoint, and takes two optional query parameters:
 | `limit` | Cap the page size (a positive integer, clamped to **200**, which is also the default). |
 
 ```bash
-curl -H "Authorization: Bearer <YOUR_BRIDGE_TOKEN>" \
+curl -H "Authorization: Bearer <YOUR_TOKEN>" \
   "http://127.0.0.1:8787/api/v1/webhooks/deliveries?since=0&limit=50"
 ```
 
@@ -1053,10 +1153,12 @@ request header or query string**; the URL is reduced to its origin and path.
 
 #### `POST /api/v1/webhooks/test` — fire a test event
 
-Backs the app's "Send test event". Post the id of one app-configured subscription:
+Backs the app's "Send test event". It needs `bridge:write` + `settings:write` — firing no
+inventory change, but making the bridge issue an outbound request on the operator's behalf. Post
+the id of one app-configured subscription:
 
 ```bash
-curl -X POST -H "Authorization: Bearer <YOUR_BRIDGE_TOKEN>" \
+curl -X POST -H "Authorization: Bearer <YOUR_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{"subscriptionId":"<SUBSCRIPTION_ID>"}' \
   http://127.0.0.1:8787/api/v1/webhooks/test
@@ -1080,13 +1182,20 @@ filter excluded the synthetic event). Three failure codes mean genuinely differe
 ### SSE event stream
 
 `GET /api/v1/events` holds the connection open and writes each event as a `data: <json>\n\n` frame
-(with an `id:` line for resumption and periodic `: heartbeat` comments), using the **same bearer
-token + rate limit** as every endpoint. Enable it with **`GUBBINS_BRIDGE_EVENTS=on`** — and it is
+(with an `id:` line for resumption and periodic `: heartbeat` comments), using the **same tokens
++ rate limit** as every endpoint (`bridge:read`). Enable it with **`GUBBINS_BRIDGE_EVENTS=on`** — and it is
 also implied by `GUBBINS_BRIDGE_WEBHOOKS=on` (the two share one pipeline). When neither is on the
 path is a `404`.
 
+> **One caveat on revocation.** The caller is identified when the request arrives, which is the
+> right granularity everywhere except here: this response stays open indefinitely, so a stream
+> authorised *before* a token was revoked keeps delivering until the connection drops. Every new
+> request — including the reconnect an `EventSource` makes on its own — is refused immediately.
+> Tearing streams down on each re-hydration would close the gap and would also disconnect every
+> consumer on each ordinary sync, which is a worse trade for a read-only feed of change events.
+
 ```bash
-curl -N -H "Authorization: Bearer $GUBBINS_BRIDGE_TOKEN" http://127.0.0.1:8787/api/v1/events
+curl -N -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8787/api/v1/events
 ```
 
 Resume after a disconnect with the standard `Last-Event-ID` header, or a `?lastEventId=<id>` query
@@ -1407,8 +1516,14 @@ answered on the first attempt.
 | `GET /api/v1/scale/entities` | `{ entities: [{ entityId, name, unit }] }` — every entity reporting a convertible mass unit, for the app's scale picker. |
 | `GET /api/v1/scale/state?entity_id=…` | `{ entityId, grams, value, unit, lastUpdated }` — the current reading, reconciled to canonical **grams**. |
 
-Both use the same bearer token and rate limit as every other endpoint, and both answer before a
-snapshot has loaded (they read Home Assistant, not your inventory).
+Both use the same tokens and rate limit as every other endpoint, and both require `bridge:read`
+(they read Home Assistant, not your inventory, so no subject permission applies).
+
+> **⚠️ These two no longer answer before a snapshot has loaded.** They used to — reading Home
+> Assistant rather than your inventory, they needed no data of their own. But identifying the
+> caller does: the tokens live in the snapshot, so until it loads there is nobody to
+> authenticate and these paths answer `503` like everything else. See
+> [Identities & permissions](#identities--permissions).
 
 ### Units, and why an unknown one is refused
 
@@ -1437,42 +1552,53 @@ works exactly as it does for a typed figure.
 ## Permission & security matrix
 
 This is the **single authoritative list** of what the bridge can do and how you turn each
-capability on. The design rule is **read-only by default, per-capability opt-in**: with **no
-`GUBBINS_BRIDGE_*` capability flag set**, the bridge only ever *reads* your snapshot and
-*serves* token-gated read endpoints — it never writes your inventory and never connects out.
-Each capability below is a **separate, deliberate opt-in** that defaults **off** and is **logged
-as an explicit choice at startup**, so what you've enabled is always visible in the logs.
+capability on. There are **two independent gates**, and both must let a request through:
 
-**Always on (no flag) — token-gated reads only.** These are pure read *pulls*; they cannot
-mutate inventory and open no outbound connection, so they carry no opt-in flag and are gated
-solely by the bearer token (the calendar and feeds additionally accept the token as a `?token=`
-query parameter — see their sections):
+1. **What the operator enabled** — the `GUBBINS_BRIDGE_*` capability flags, set in the
+   environment where the bridge runs. The design rule is **read-only by default,
+   per-capability opt-in**: with **no capability flag set**, the bridge only ever *reads* your
+   snapshot and *serves* read endpoints — it never writes your inventory and never connects out.
+   Each capability below is a **separate, deliberate opt-in** that defaults **off** and is
+   **logged as an explicit choice at startup**, so what you've enabled is always visible.
+2. **Who is asking** — the [identity behind the presented API token](#identities--permissions)
+   and the permissions their role holds. This gate can only ever **narrow** the first: a route
+   the operator disabled is a `404` for everyone, however permissive the role.
 
-| Surface | Path | Notes |
-| --- | --- | --- |
-| REST API + discovery/OpenAPI | `GET /health`, `/search`, `/where`, `/api/v1/*` | Read-only; field-selection + OData-style options. |
-| Custom-field values | `GET /api/v1/{items,locations}…?include=fields` | Read-only; **opt-in per request** — your custom fields are returned only when a caller asks with `include=fields`, never in a default payload. |
-| CSV export | `GET /api/v1/items.csv` | Refreshable spreadsheet pull. |
-| Calendar subscription | `GET /api/v1/calendar.ics` | `?token=` accepted (calendar clients can't send headers). |
-| Syndication feeds | `GET /api/v1/activity.{rss,atom,json}` | `?token=` accepted. |
-| Prometheus metrics | `GET /metrics` | Header-only token (no `?token=`). |
-| MCP server | stdio (`mcp.mjs`) | No network token — trust boundary is the OS process. |
+So the flags describe the bridge's *maximum* reach, and the caller's role describes their share
+of it. The two are set in different places by design: the operator's choices live where the
+bridge runs and need a restart; the caller's live in the app and take effect as soon as the
+change reaches the snapshot.
+
+**Always on (no flag) — reads only.** These are pure read *pulls*; they cannot mutate inventory
+and open no outbound connection, so they carry no opt-in flag. Each is still gated on its
+caller's permissions (the calendar and feeds additionally accept the token as a `?token=` query
+parameter — see their sections):
+
+| Surface | Path | Requires | Notes |
+| --- | --- | --- | --- |
+| REST API + discovery/OpenAPI | `GET /health`, `/search`, `/where`, `/api/v1/*` | `bridge:read` + the route's subject | Read-only; field-selection + OData-style options. See [what each route requires](#what-each-route-requires). |
+| Custom-field values | `GET /api/v1/{items,locations}…?include=fields` | as the underlying route | Read-only; **opt-in per request** — your custom fields are returned only when a caller asks with `include=fields`, never in a default payload. |
+| CSV export | `GET /api/v1/items.csv` | `bridge:read` + `items:read` | Refreshable spreadsheet pull. |
+| Calendar subscription | `GET /api/v1/calendar.ics` | `bridge:read` + `bookings:read` | `?token=` accepted (calendar clients can't send headers). |
+| Syndication feeds | `GET /api/v1/activity.{rss,atom,json}` | `bridge:read` + `audit:view` | `?token=` accepted. The feeds publish the audit trail, hence `audit:view`. |
+| Prometheus metrics | `GET /metrics` | `bridge:read` + `items:read` | Header-only token (no `?token=`). |
+| MCP server | stdio (`mcp.mjs`) | — | **No credential and no permission check** — the trust boundary is the OS process; writes are attributed to the System user. |
 
 **Opt-in capabilities — each its own flag, all default `off`.** "Writes inventory?" means the
 capability can change your stock (always via the app's own §7.3 sync merge — never bespoke SQL);
 "Direction" is whether the capability serves *in*, sends *out*, or advertises on the LAN:
 
-| Flag (`GUBBINS_BRIDGE_…`) | Turns on | Direction | Writes inventory? | Secret — where it lives |
+| Flag (`GUBBINS_BRIDGE_…`) | Turns on | Direction | Writes inventory? | Caller must also hold / secrets |
 | --- | --- | --- | --- | --- |
-| `ALLOW_WRITES` | [Limited stock writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge`, plus the matching [MCP write tools](#write-tools-opt-in) (JSON source only). | inbound (HTTP + MCP stdio) | **Yes** — check-in/out & gauge adjust, round-tripped through the sync merge. | None new — HTTP reuses `GUBBINS_BRIDGE_TOKEN`; the MCP tools have **no token** (stdio's boundary is the OS process), so enabling this trusts whoever can launch the server. |
-| `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | Replaces the **whole** served snapshot atomically (no SQL). | None new — reuses the token. |
-| `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | None new — reuses the token. |
-| `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled; with MQTT on, also to the transient [`gubbins/locate`](#the-locate-topic-where-is-x-for-automations) topic. | outbound (push) | No — it is a read; nothing is written. | None new — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
-| `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). Targets are the webhooks configured **in the app** (read from the snapshot the bridge already hydrates) merged with the operator's file/env list. Adds the read-only `GET /api/v1/webhooks/deliveries` log and `POST /api/v1/webhooks/test` (fires a synthetic event at one subscription through the real delivery path). | outbound (push) | No — an event never mutates inventory. | Signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `GUBBINS_BRIDGE_WEBHOOKS_SECRETS` / `.env` only. An app-configured webhook may name a secret held here (`secret_ref`) so its value never enters the database; an **unresolvable** ref drops that subscription rather than delivering it unsigned. Delivery to loopback/private/metadata addresses is **refused** unless `GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on`. |
+| `ALLOW_WRITES` | [Limited stock writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge`, plus the matching [MCP write tools](#write-tools-opt-in) (JSON source only). | inbound (HTTP + MCP stdio) | **Yes** — check-in/out & gauge adjust, round-tripped through the sync merge, attributed over HTTP to the token's owner. | `bridge:write` + `stock:write` over HTTP — the flag opens the route, the role decides who may use it. The MCP tools have **no credential and no permission check** (stdio's boundary is the OS process), so enabling this trusts whoever can launch the server. No new operator secret. |
+| `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | Replaces the **whole** served snapshot atomically (no SQL). | `bridge:write` + `sync:write`. No new operator secret. |
+| `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | `bridge:read`. No new operator secret. |
+| `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled; with MQTT on, also to the transient [`gubbins/locate`](#the-locate-topic-where-is-x-for-automations) topic. | outbound (push) | No — it is a read; nothing is written. | Nothing beyond the lookup itself — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
+| `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). Targets are the webhooks configured **in the app** (read from the snapshot the bridge already hydrates) merged with the operator's file/env list. Adds the read-only `GET /api/v1/webhooks/deliveries` log and `POST /api/v1/webhooks/test` (fires a synthetic event at one subscription through the real delivery path). | outbound (push) | No — an event never mutates inventory. | `bridge:read` + `settings:read` for the delivery log; `bridge:write` + `settings:write` to fire a test. Signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `GUBBINS_BRIDGE_WEBHOOKS_SECRETS` / `.env` only. An app-configured webhook may name a secret held here (`secret_ref`) so its value never enters the database; an **unresolvable** ref drops that subscription rather than delivering it unsigned. Delivery to loopback/private/metadata addresses is **refused** unless `GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on`. |
 | `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). Location state includes that location's [custom-field values as attributes](#location-attributes-your-custom-fields) — **all of them, automatically, with no separate flag**, so enabling `MQTT` is what consents to publishing them. | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
 | `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`), including the location attributes above. | outbound (push) | No. | None new (uses the MQTT connection above). |
-| `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state}`, so "count by weight" can read a scale entity. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
-| `MDNS` | [mDNS / zeroconf advertising](#mdns--zeroconf-discovery) so HA can auto-discover the bridge (auto-skipped on the loopback default). | LAN advertisement | No — announcement only. | **None** — the token is **never** advertised. |
+| `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state}`, so "count by weight" can read a scale entity. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | `bridge:read`. Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
+| `MDNS` | [mDNS / zeroconf advertising](#mdns--zeroconf-discovery) so HA can auto-discover the bridge (auto-skipped on the loopback default). | LAN advertisement | No — announcement only. | **None** — no credential is **ever** advertised. |
 
 Notes that apply across the table:
 
@@ -1481,9 +1607,13 @@ Notes that apply across the table:
   see [Data sources](#data-sources-json-snapshot-or-raw-sqlite).
 - **No secret is ever advertised, logged, or committed.** Signing secrets and broker credentials
   live only in the git-ignored `.env` / `webhooks.json`; `.env.example` and `webhooks.example.json`
-  hold placeholders only. The bearer token and item data are never written to the logs.
+  hold placeholders only. API tokens and item data are never written to the logs, and the bridge
+  stores only a **hash** of each token, never the token itself.
 - **Enabling an outbound/write capability and binding the LAN (`GUBBINS_BRIDGE_HOST=0.0.0.0`) is a
   deliberate double opt-in.** The safest posture keeps the bridge on the `127.0.0.1` default.
+- **Access is granted and withdrawn in the app, not here.** No flag in this table mints, widens or
+  revokes a caller's access — that is a token and a role, both managed in Gubbins, both taking
+  effect as soon as the change reaches this bridge's snapshot.
 
 The full environment-variable reference (including the non-capability tuning knobs — host, port,
 rate limits, topic prefixes, byte caps) follows.
@@ -1494,9 +1624,14 @@ The server is configured **entirely from the environment**, so no secret or loca
 ever committed. `serve.mjs` loads a git-ignored `bridge/.env` if present, otherwise it reads
 the ambient process environment (so systemd/Docker can supply the values instead).
 
+> **ℹ️ There is no inbound token setting.** Callers authenticate with a
+> [per-user API token minted in the app](#identities--permissions), which reaches the bridge in
+> the snapshot it already watches — so granting or revoking access needs neither an `.env` edit
+> nor a restart. The only credentials configured here are the *outbound* ones the bridge presents
+> to your broker and to Home Assistant.
+
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `GUBBINS_BRIDGE_TOKEN` | **yes** | — | Shared bearer token every request must send. Generate a long random value; never commit it. |
 | `GUBBINS_SNAPSHOT_PATH` | **yes** | — | Absolute path to the data source: either the synced `gubbins-sync.json` the PWA writes, **or** a raw exported `.sqlite` database. The kind is auto-detected (extension + magic bytes) — see [Data sources](#data-sources-json-snapshot-or-raw-sqlite). |
 | `GUBBINS_BRIDGE_HOST` | no | `127.0.0.1` | Bind address. `127.0.0.1` = loopback only. Set `0.0.0.0` to **deliberately** expose on the LAN (logged as a warning). |
 | `GUBBINS_BRIDGE_PORT` | no | `8787` | TCP port. |
@@ -1504,11 +1639,11 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_RATE_REFILL` | no | `1` | Per-client sustained rate (requests/second) once the burst is spent. |
 | `GUBBINS_BRIDGE_MDNS` | no | `off` | Advertise over mDNS so Home Assistant can auto-discover the bridge. `on` to enable. Carries **no secret**; only meaningful when LAN-exposed (auto-skipped on the loopback default). See [mDNS / zeroconf discovery](#mdns--zeroconf-discovery). |
 | `GUBBINS_BRIDGE_MDNS_NAME` | no | `Gubbins Bridge` | Service instance name shown in a discovery browser. |
-| `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this is `on`.** HTTP writes use the same bearer token + rate limit; the MCP tools are gated by process launch (stdio carries no token). |
-| `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**, independent of writes; JSON source only. Same bearer token + rate limit. |
+| `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this is `on`.** HTTP writes additionally need the caller to hold `bridge:write` + `stock:write`; the MCP tools are gated by process launch alone (stdio carries no credential). |
+| `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**, independent of writes; JSON source only. Same rate limit; the caller needs `bridge:write` + `sync:write`. |
 | `GUBBINS_BRIDGE_MAX_PUSH_BYTES` | no | `67108864` | Hard cap (bytes) on a pushed snapshot; default 64 MiB. An over-large push is rejected with `413`. Lower it on a constrained host. |
 | `GUBBINS_BRIDGE_STALE_AFTER_FAILURES` | no | `3` | Consecutive failed snapshot reloads before [`/health`](#snapshot-freshness-and-health) reports the served data as stale (`ok: false`). `0` keeps the counters but never flips `ok`. |
-| `GUBBINS_BRIDGE_EVENTS` | no | `off` | Enable the opt-in read-only [SSE event stream](#events-webhooks--sse-opt-in) at `GET /api/v1/events`. **Off by default** (the path is `404` when off). Implied by `GUBBINS_BRIDGE_WEBHOOKS`. Same bearer token + rate limit. |
+| `GUBBINS_BRIDGE_EVENTS` | no | `off` | Enable the opt-in read-only [SSE event stream](#events-webhooks--sse-opt-in) at `GET /api/v1/events`. **Off by default** (the path is `404` when off). Implied by `GUBBINS_BRIDGE_WEBHOOKS`. Same rate limit; the caller needs `bridge:read`. |
 | `GUBBINS_BRIDGE_LOOKUP_EVENTS` | no | `off` | Also emit the **read-triggered** [`lookup.resolved` event](#lookup-events--read-triggered-opt-in-separate-flag) when a "where is X?" lookup resolves. **Off by default and deliberately NOT implied by `GUBBINS_BRIDGE_EVENTS`** — it publishes the search text, so it is its own explicit choice. Needs a sink (SSE / webhooks / MQTT) to reach. |
 | `GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS` | no | `3000` | Window (ms) in which repeated **equivalent** lookups emit once. Clamped to `[0, 600000]`; `0` disables debouncing. |
 | `GUBBINS_BRIDGE_WEBHOOKS` | no | `off` | Enable opt-in signed [outbound webhooks](#events-webhooks--sse-opt-in). **Off by default**; also lights up the event stream (shared pipeline). A webhook never mutates inventory. |
@@ -1562,7 +1697,7 @@ The `version=` value is the **Gubbins release the checkout is on** (e.g. `1.2.0`
 has no version of its own to advertise. See [Updating the bridge](#updating-the-bridge).
 
 > **No secret is ever advertised.** The TXT record carries only the API path/version for
-> identification — **never** the bearer token. Home Assistant still prompts for the token in
+> identification — **never** a credential. Home Assistant still prompts for the API token in
 > its UI; discovery only pre-fills the host and port. See
 > [`../homeassistant/README.md`](../homeassistant/README.md) for the HA side.
 
@@ -1699,9 +1834,18 @@ The bridge is designed to be safe by construction; this is the checklist it sati
   `parseASTtoSQL`. SQL is **never string-built** from user input, so there is no injection
   surface; the bridge imports that translator rather than forking it, so its semantics can't
   drift from the app's.
-- **Token required on every request.** A shared bearer token is checked in **constant time**
-  (`timingSafeEqual`); a missing or wrong token is a `401`. The token lives only in a
-  git-ignored `.env` (or the systemd/Docker environment), never in the repo.
+- **An identified caller on every request.** Every request must present an
+  [API token minted in the app](#identities--permissions); the bridge resolves it to the user who
+  owns it and enforces that user's permissions on the route. A missing, unknown or revoked token
+  is a `401`; a valid token whose owner's role doesn't cover the route is a `403`. Only a
+  **SHA-256 hash** of each token is ever stored, so a snapshot or backup cannot yield a usable
+  credential, and revocation is a hard delete that propagates like any other deletion. The bridge
+  holds no inbound credential in its environment at all.
+- **Authentication fails closed.** Until the first snapshot has loaded there is nothing to resolve
+  a token against, so every route — including the Home Assistant scale reads — answers `503`
+  rather than being let through.
+- **Capability flags bound what permissions can reach.** A route the operator disabled is a `404`
+  for every caller, whatever their role; permissions only ever narrow the operator's choices.
 - **Local-bind by default.** The server binds `127.0.0.1` unless you set
   `GUBBINS_BRIDGE_HOST=0.0.0.0`, which it logs as a deliberate LAN-exposure choice.
 - **No PII in logs or errors.** Logs are limited to lifecycle lines (bound address, snapshot
@@ -1730,7 +1874,7 @@ requests (default 60), then is held to `GUBBINS_BRIDGE_RATE_REFILL` requests/sec
 `Retry-After` header. The key is the socket's source IP — client-supplied
 `X-Forwarded-For` is deliberately **not** trusted, so the limit can't be forged away. Set
 `GUBBINS_BRIDGE_RATE_CAPACITY=0` to disable it and rely solely on the LAN/firewall. This is
-a backstop, not the security boundary — the token and the loopback default are.
+a backstop, not the security boundary — the identity check and the loopback default are.
 
 ## Layout
 
@@ -1756,7 +1900,7 @@ bridge/
     query.ts            # read-only query core: searchItems / whereIs (transport-agnostic)
     spoken.ts           # pure spoken-answer shaper (the voice UX)
     version.ts          # the bridge's reported build — read from the repo-root package.json, never hand-maintained
-    config.ts           # env-driven host/port/token/snapshot-path/rate-limit (pure, injectable)
+    config.ts           # env-driven host/port/snapshot-path/rate-limit (pure, injectable)
     rate-limit.ts       # pure per-IP token-bucket abuse guard (injectable clock)
     server.ts           # node:http server (legacy paths + auth/rate-limit; delegates /api/v1; POST writes)
     write.ts            # opt-in limited writes: apply via app repos → write merged snapshot back (peer-device)
@@ -1837,7 +1981,6 @@ docker build -f bridge/Dockerfile -t gubbins-bridge .
 
 docker run --rm \
   -p 127.0.0.1:8787:8787 \
-  -e GUBBINS_BRIDGE_TOKEN=your-long-random-token \
   -e GUBBINS_SNAPSHOT_PATH=/data/gubbins-sync.json \
   -v /path/to/synced/folder/gubbins-sync.json:/data/gubbins-sync.json:ro \
   gubbins-bridge
@@ -1845,9 +1988,11 @@ docker run --rm \
 
 Notes:
 
-- The **token and snapshot are passed at run time**, never baked into the image. A
-  repo-root [`.dockerignore`](../.dockerignore) keeps any real `.env`, snapshot, or
-  `.sqlite` out of the build context as a safety net.
+- **No inbound credential goes into the container at all** — callers present an
+  [API token minted in the app](#identities--permissions), which arrives in the mounted
+  snapshot. The snapshot path (and any outbound broker / Home Assistant credentials) are passed
+  at run time, never baked into the image. A repo-root [`.dockerignore`](../.dockerignore) keeps
+  any real `.env`, snapshot, or `.sqlite` out of the build context as a safety net.
 - Mount the snapshot **read-only** (`:ro`) — the bridge only ever reads it.
 - Inside the container the process binds `0.0.0.0` (so Docker's port mapping works at all);
   keep it host-local by publishing to `127.0.0.1:8787:8787` as above. To let Home Assistant
@@ -1857,7 +2002,8 @@ Notes:
 
 An example unit ships as [`gubbins-bridge.service`](gubbins-bridge.service). In short: put a
 checkout at `/opt/gubbins`, create `/etc/gubbins-bridge.env` (from `.env.example`, `chmod
-640`, holds the token), copy the unit to `/etc/systemd/system/`, then:
+640`, holds the snapshot path and any outbound credentials), copy the unit to
+`/etc/systemd/system/`, then:
 
 ```bash
 sudo systemctl daemon-reload
@@ -1918,7 +2064,7 @@ carries no `version` field: a second, hand-edited number could only ever drift, 
 Ask the running bridge directly:
 
 ```bash
-curl -H "Authorization: Bearer $GUBBINS_BRIDGE_TOKEN" http://127.0.0.1:8787/api/v1
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8787/api/v1
 ```
 
 ```jsonc

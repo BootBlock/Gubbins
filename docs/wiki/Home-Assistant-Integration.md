@@ -97,9 +97,10 @@ device that writes back through Gubbins' safe [[merge|Cloud-Sync]] so it can't c
 Write-back is **off by default**.
 
 > **⚠️ Heads-up**
-> Exposing the bridge to Home Assistant means it's reachable on your LAN. Use a strong
-> [[token|Running-the-Bridge]], keep write-back off unless you need it, and treat the whole setup
-> as trusted-network only. See [[Privacy & security|Privacy-and-Security]].
+> Exposing the bridge to Home Assistant means it's reachable on your LAN. Give it its own
+> [[API token|Bridge-API-Tokens]] on an account with a narrow role, keep write-back off unless you
+> need it, and treat the whole setup as trusted-network only. See
+> [[Privacy & security|Privacy-and-Security]].
 
 ## Related pages
 

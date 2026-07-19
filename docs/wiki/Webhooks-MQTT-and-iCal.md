@@ -78,8 +78,14 @@ Gubbins deadlines then sit alongside the rest of your schedule, updating as your
 
 > **⚠️ Heads-up**
 > These surfaces can send your data outward (to a webhook target, an MQTT broker, a calendar
-> service). Each is opt-in, token-protected, and best kept to trusted destinations and your local
-> network. See [[Privacy & security|Privacy-and-Security]].
+> service). Each is opt-in, reachable only with an [[API token|Bridge-API-Tokens]] whose owner has
+> permission for it, and best kept to trusted destinations and your local network. See
+> [[Privacy & security|Privacy-and-Security]].
+
+> **💡 Tip**
+> A calendar subscription carries its token in the URL, which is easier to leak than a normal
+> request. Mint that one against an account whose role does little beyond read bookings — see
+> [[Bridge API tokens|Bridge-API-Tokens]].
 
 ## Related pages
 

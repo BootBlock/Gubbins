@@ -5,6 +5,8 @@
  */
 import { currentGrossWeight, percentageRemaining } from './gauge';
 import type {
+  ApiToken,
+  ApiTokenRow,
   Role,
   RoleRow,
   User,
@@ -807,6 +809,22 @@ export function rowToRole(row: RoleRow): Role {
     description: row.description,
     permissions: parsePermissions(row.permissions),
     isBuiltin: row.is_builtin === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Map an `api_tokens` row to its DTO. `token_hash` is deliberately dropped rather than
+ * mapped, exactly as the password triple is above: {@link ApiToken} has no field for it, so
+ * it cannot leak through anything that consumes a mapped token (issue #79, plan §1.3).
+ */
+export function rowToApiToken(row: ApiTokenRow): ApiToken {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    tokenPrefix: row.token_prefix,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

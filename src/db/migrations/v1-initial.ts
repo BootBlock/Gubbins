@@ -289,6 +289,45 @@ const baselineStatements: SqlStatement[] = [
       `,
     params: [ADMIN_USER_ID, ADMIN_USER_USERNAME, ADMIN_USER_DISPLAY_NAME],
   },
+  // --- Bridge API tokens (issue #79, plan §1.3) ----------------------------------
+  //
+  // A per-user credential the Bridge resolves to an identity, replacing the single shared
+  // `GUBBINS_BRIDGE_TOKEN`. It lives in the database — and therefore in the sync snapshot —
+  // for the same reason `webhooks` does: syncing it *is* the delivery mechanism. The Bridge
+  // owns no database of its own; it hydrates the snapshot, so a token excluded from it could
+  // never authenticate anything.
+  //
+  // Only the **hash** is stored, never the token itself. Unlike a password this is a plain
+  // SHA-256 rather than PBKDF2: the secret is 256 bits of CSPRNG output, so there is no
+  // dictionary or guess to slow down, and the Bridge must resolve one on every single request
+  // — a 600k-iteration KDF there would be a self-inflicted denial of service. See
+  // `features/users/api-token.ts` for the full reasoning.
+  //
+  // `ON DELETE CASCADE` is deliberate and differs from `item_history.actor_user_id`, which
+  // re-points to System. History is a record of what happened and must outlive the person; a
+  // credential is authority *to act*, and must die with the account it speaks for.
+  {
+    sql: `
+        CREATE TABLE api_tokens (
+          id           TEXT    PRIMARY KEY NOT NULL,
+          user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          -- Operator-facing label ("Home Assistant", "Kitchen tablet") so a token can be
+          -- recognised — and revoked — without anyone having to reveal it.
+          name         TEXT    NOT NULL,
+          -- Lowercase hex SHA-256 of the token. UNIQUE so a presented token resolves by
+          -- indexed lookup rather than a scan-and-compare over every row.
+          token_hash   TEXT    NOT NULL,
+          -- The token's first few characters, kept in the clear purely so the list can show
+          -- *which* token a row is. Far too short to narrow the secret meaningfully.
+          token_prefix TEXT    NOT NULL,
+          created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+  },
+  { sql: `CREATE UNIQUE INDEX idx_api_tokens_token_hash ON api_tokens(token_hash);` },
+  { sql: `CREATE INDEX idx_api_tokens_user_id ON api_tokens(user_id);` },
+  { sql: updatedAtTrigger('api_tokens') },
   {
     sql: `
         CREATE TABLE categories (

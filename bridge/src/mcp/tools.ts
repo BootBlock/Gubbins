@@ -279,6 +279,11 @@ export function findTool(name: string): McpTool | undefined {
  * the HTTP write endpoints use ({@link createWriteExecutor}) — it re-reads the snapshot fresh,
  * applies the change through the app's own repository, and writes the merged snapshot back
  * atomically.
+ *
+ * Deliberately takes **no actor**, unlike the HTTP executor: the MCP transport is the local
+ * process's own stdio and carries no credential at all, so there is no identity to attribute a
+ * write to. The composition root binds it to the System user explicitly (see `mcp/serve.ts`) —
+ * naming that choice once, in the open, rather than letting each call site default to it.
  */
 export type WriteExecutor = (op: WriteOperation) => Promise<ItemDetailDto>;
 

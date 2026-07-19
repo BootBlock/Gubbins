@@ -31,7 +31,6 @@
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
-import { SYSTEM_USER_ID } from '@/db/repositories/constants';
 import { DbError } from '@/db/errors';
 import type { Item } from '@/db/repositories/types';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
@@ -91,17 +90,27 @@ export class WriteError extends Error {
  * on a missing item or a domain rejection; the recompute/`updated_at`/ledger writes are exactly
  * the app's, so the resulting snapshot is LWW/Delta-CRDT-correct by construction.
  */
-export async function applyOperation(driver: IDatabaseDriver, op: WriteOperation): Promise<Item> {
+export async function applyOperation(
+  driver: IDatabaseDriver,
+  op: WriteOperation,
+  actorUserId: string,
+): Promise<Item> {
   // Enforce the note bound here, in the shared core, so every surface that mutates through this
   // function honours it — rather than each transport re-checking it (and one of them forgetting).
   if (op.note !== undefined && op.note.length > MAX_NOTE_LENGTH) {
     throw new WriteError(422, 'unprocessable', `A note may be at most ${MAX_NOTE_LENGTH} characters.`);
   }
 
-  // The Bridge has no signed-in user, so every ledger row it writes is attributed to the
-  // System user explicitly rather than inheriting the repository's Admin default (issue #79,
-  // plan §2.4). Phase 5 replaces this with the identity behind the presented API token.
-  const items = new ItemRepository(driver, { resolveActor: () => SYSTEM_USER_ID });
+  // Every ledger row is attributed to the owner of the API token that authorised the request
+  // (issue #79, plan §1.3) — the actor is a required argument precisely so this cannot silently
+  // fall back to System, as it did while the bridge had only a shared token to go on.
+  //
+  // The authority is deliberately left unrestricted here: the server has already checked, before
+  // routing, that this user's role permits the route. Re-resolving it against the private
+  // write-time driver would ask the same question twice of a *second* hydration of the snapshot,
+  // and a repository guard tripping mid-write would surface as an opaque 500 rather than the 403
+  // the caller should have had.
+  const items = new ItemRepository(driver, { resolveActor: () => actorUserId });
 
   // Explicit existence check first, so a missing item is a clean 404 rather than the
   // repository's generic SQLITE_CONSTRAINT ("Item … does not exist."), which it raises for
@@ -151,6 +160,8 @@ const defaultIo: WriteIo = {
 export interface ExecuteWriteOptions {
   readonly snapshotPath: string;
   readonly op: WriteOperation;
+  /** The id of the user whose token authorised the write; the actor the ledger records. */
+  readonly actorUserId: string;
   /** Override any IO method (tests inject an in-memory file). */
   readonly io?: Partial<WriteIo>;
 }
@@ -179,7 +190,7 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<ItemDe
   }
 
   try {
-    await applyOperation(driver, options.op);
+    await applyOperation(driver, options.op, options.actorUserId);
     const detail = await loadItemDetail(driver, options.op.itemId);
     // The item was present a moment ago (applyOperation checked); guard defensively anyway.
     if (detail === null) throw new WriteError(404, 'not_found', 'No such item.');
@@ -201,12 +212,12 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<ItemDe
 export function createWriteExecutor(
   snapshotPath: string,
   io?: Partial<WriteIo>,
-): (op: WriteOperation) => Promise<ItemDetailDto> {
+): (op: WriteOperation, actorUserId: string) => Promise<ItemDetailDto> {
   let tail: Promise<unknown> = Promise.resolve();
-  return (op) => {
+  return (op, actorUserId) => {
     const result = tail.then(
-      () => executeWrite({ snapshotPath, op, io }),
-      () => executeWrite({ snapshotPath, op, io }),
+      () => executeWrite({ snapshotPath, op, actorUserId, io }),
+      () => executeWrite({ snapshotPath, op, actorUserId, io }),
     );
     // Keep the chain progressing whatever the outcome, without leaking an unhandled rejection.
     tail = result.then(

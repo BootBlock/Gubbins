@@ -218,7 +218,6 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   const scale = ha ? { client: ha.client } : undefined;
 
   const server = createBridgeServer({
-    token: config.token,
     getState: () => watcher.getState(),
     // A failed re-hydrate keeps the last good snapshot serving, so `/health` reports the reload
     // tally and drops `ok` once it crosses the configured threshold — a consumer can then degrade

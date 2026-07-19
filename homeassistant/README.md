@@ -22,9 +22,10 @@ the only data path; this integration only issues `GET` requests.
 
 > **Prerequisite — the bridge must be running first.** Set up and start the bridge as
 > described in [`../bridge/README.md`](../bridge/README.md) ("Run the read-only HTTP
-> server"). You will need the **host**, **port** and **`GUBBINS_BRIDGE_TOKEN`** you
-> configured there. If Home Assistant runs on a *different* machine from the bridge, start
-> the bridge with `GUBBINS_BRIDGE_HOST=0.0.0.0` so HA can reach it over the LAN.
+> server"). You will need the bridge's **host** and **port**, plus an **API token** minted
+> in the Gubbins app (Users → an account → API tokens). If Home Assistant runs on a
+> *different* machine from the bridge, start the bridge with `GUBBINS_BRIDGE_HOST=0.0.0.0`
+> so HA can reach it over the LAN.
 
 ---
 
@@ -86,11 +87,13 @@ Then restart Home Assistant.
    - **Host** — where the bridge runs, e.g. `127.0.0.1` (same machine as HA) or the
      bridge's LAN IP / hostname, e.g. `homeassistant.local` or `192.0.2.10`.
    - **Port** — the bridge port (default `8787`).
-   - **Access token** — your `GUBBINS_BRIDGE_TOKEN`.
+   - **Access token** — an API token from Gubbins (Users → an account → API tokens). It is
+     shown once when created, so copy it then.
 4. The integration calls `GET /health` to verify the connection and token before saving.
    - *"Could not reach the bridge"* → check host/port and that the bridge is running (and
      that it binds `0.0.0.0` if HA is on another machine).
-   - *"The bridge rejected the token"* → the token doesn't match `GUBBINS_BRIDGE_TOKEN`.
+   - *"The bridge did not recognise the token"* → it was mistyped, or it has been revoked in
+     the Gubbins app. Create a fresh one and paste that; the bridge needs no restart.
 
 ### 3. Wire the voice sentences into Assist
 
@@ -270,7 +273,7 @@ your (private, never-committed) `secrets.yaml`.
 whole header value so the word `Bearer` stays out of `configuration.yaml`:
 
 ```yaml
-gubbins_bridge_token_header: "Bearer replace-with-your-GUBBINS_BRIDGE_TOKEN"
+gubbins_bridge_token_header: "Bearer <YOUR_TOKEN>"
 ```
 
 **2. `configuration.yaml`:**
@@ -371,55 +374,60 @@ sensor:
 ## Manual test recipe
 
 Home Assistant integrations aren't unit-tested in this repo (no HA test harness here), so
-verify end-to-end against the **synthetic fixture** that ships with the bridge:
+verify end-to-end against a snapshot of your own:
 
-1. **Start the bridge against the fixture** (loopback, with a throwaway token):
+1. **Mint a token and start the bridge against your synced snapshot** (loopback).
+
+   The bridge identifies callers by API tokens that live in your data, so it needs a snapshot
+   containing one. Create a token in the app first (Users → an account → API tokens) and let
+   it sync, then point the bridge at that snapshot. The committed synthetic fixture carries no
+   tokens, so a bridge serving it answers `401` to everything by design.
 
    ```bash
-   # from the repo root; the fixture has only made-up parts
-   GUBBINS_BRIDGE_TOKEN=test-token-123 \
-   GUBBINS_SNAPSHOT_PATH=bridge/src/fixtures/synthetic-snapshot.json \
+   # from the repo root
+   GUBBINS_SNAPSHOT_PATH=/path/to/your/gubbins-sync.json \
    node bridge/serve.mjs
    ```
 
-2. **Sanity-check the API** the integration will call (the fixture has made-up parts —
-   `M3 x 10 Hex Bolt`, `M3 Nylon Washer`, a multi-location `ESP32 Dev Board`):
+   Export `TOKEN=<the token you created>` in your shell so the commands below can use it.
+
+2. **Sanity-check the API** the integration will call, using an item you know is there:
 
    ```bash
-   curl -H "Authorization: Bearer test-token-123" \
-     "http://127.0.0.1:8787/where?q=M3%20bolt"
-   # → { "query": "M3 bolt", "matches": [...], "spoken": "Your M3 x 10 Hex Bolt is in Drawer A — 42 in stock." }
+   curl -H "Authorization: Bearer $TOKEN" \
+     "http://127.0.0.1:8787/where?q=<something%20in%20your%20inventory>"
+   # → { "query": "…", "matches": [...], "spoken": "Your … is in … — N in stock." }
    ```
 
-3. **Configure the integration** (Option A) with host `127.0.0.1`, port `8787`, token
-   `test-token-123`. The form should save without error (this exercises `/health` + auth).
+3. **Configure the integration** (Option A) with host `127.0.0.1`, port `8787`, and the token
+   you created. The form should save without error (this exercises `/health` + auth).
 
 4. **Wire the sentences** (copy `custom_sentences/en/gubbins.yaml`, restart HA).
 
-5. **Ask Assist** *"Where are my M3 bolt?"* (or *"Where is my M3 bolt?"*) — you should hear
-   *"Your M3 x 10 Hex Bolt is in Drawer A — 42 in stock."* Try *"Where is my ESP32 dev
-   board?"* for the multi-location phrasing.
+5. **Ask Assist** *"Where are my …?"* for something in your inventory — you should hear the
+   bridge's sentence back, e.g. *"Your M3 x 10 Hex Bolt is in Drawer A — 42 in stock."* Ask
+   about an item stocked in two places for the multi-location phrasing.
 
 6. **Failure paths** (should speak a friendly line, never a stack trace):
    - Stop the bridge, ask again → *"Sorry, I couldn't reach the Gubbins inventory bridge
      just now."*
-   - Restart the bridge with a different `GUBBINS_BRIDGE_TOKEN` (don't update HA) and ask
+   - Revoke the token in Gubbins (Users → the account → API tokens), let it sync, and ask
      again → *"Sorry, the Gubbins inventory bridge rejected my access token…"*
 
-7. **(Optional) Writes — `gubbins.adjust_quantity`.** Copy the fixture somewhere writable and
-   restart the bridge with writes enabled (the fixture in the repo should stay unmodified):
+7. **(Optional) Writes — `gubbins.adjust_quantity`.** Copy the snapshot somewhere writable and
+   restart the bridge with writes enabled (so the original stays unmodified):
 
    ```bash
-   cp bridge/src/fixtures/synthetic-snapshot.json /tmp/gubbins-sync.json
-   GUBBINS_BRIDGE_TOKEN=test-token-123 \
+   cp /path/to/your/gubbins-sync.json /tmp/gubbins-sync.json
    GUBBINS_SNAPSHOT_PATH=/tmp/gubbins-sync.json \
    GUBBINS_BRIDGE_ALLOW_WRITES=on \
    node bridge/serve.mjs
    ```
 
-   Then call *Developer Tools → Actions → `gubbins.adjust_quantity`* with `item_id: item-m3-bolt`,
-   `delta: -2`. The quantity drops from 42 to 40 (re-run the `where` curl to confirm), and
-   `/tmp/gubbins-sync.json` gains a `QUANTITY_CHANGE` activity-log entry. With writes **off** (the
+   Then call *Developer Tools → Actions → `gubbins.adjust_quantity`* with the `item_id` of a
+   discrete item and `delta: -2`. Its quantity drops by two (re-run the `where` curl to
+   confirm), `/tmp/gubbins-sync.json` gains a `QUANTITY_CHANGE` activity-log entry, and that
+   entry is attributed to **the account whose token you used**. With writes **off** (the
    default), the service errors with *"The Gubbins bridge has writes disabled…"* and nothing
    changes.
 
@@ -435,7 +443,6 @@ To exercise the mDNS / zeroconf path end-to-end (HA isn't unit-testable here):
    subnet — mDNS is link-local and does not cross routed networks):
 
    ```bash
-   GUBBINS_BRIDGE_TOKEN=test-token-123 \
    GUBBINS_SNAPSHOT_PATH=bridge/src/fixtures/synthetic-snapshot.json \
    GUBBINS_BRIDGE_HOST=0.0.0.0 \
    GUBBINS_BRIDGE_MDNS=on \
@@ -450,7 +457,7 @@ To exercise the mDNS / zeroconf path end-to-end (HA isn't unit-testable here):
 
 3. In Home Assistant, open **Settings → Devices & services**. Within a minute a **Gubbins
    Inventory** discovered card should appear. Click **Configure**; the host/port are
-   pre-filled — enter the token (`test-token-123` for this fixture) to finish.
+   pre-filled — enter the token you minted in Gubbins to finish.
 
 > If no card appears, mDNS is likely blocked between the two hosts (VLAN, Wi-Fi client
 > isolation, or HA OS without the discovery add-on). Fall back to **Add integration →

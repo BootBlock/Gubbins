@@ -34,8 +34,10 @@ other change, so your other devices pick them up normally.
 
 > **⚠️ Heads-up**
 > This is off by default, and worth a moment's thought before switching on. Unlike the bridge's
-> web API, an MCP assistant doesn't present a token — anything able to start the server with
-> writes enabled can adjust your stock. Turn it on only for an assistant you trust on a machine
+> web API — where every caller presents an [[API token|Bridge-API-Tokens]] and is held to that
+> account's permissions — an MCP assistant presents nothing at all: anything able to start the
+> server with writes enabled can adjust your stock, and the change is recorded against the system
+> rather than a person. Turn it on only for an assistant you trust on a machine
 > you control, and bear in mind that an assistant can be influenced by whatever it reads. Ask it
 > to confirm before it adjusts anything.
 
@@ -47,7 +49,7 @@ other change, so your other devices pick them up normally.
 > **⚠️ Heads-up**
 > An AI assistant wired to the bridge can read your inventory. Only connect assistants you trust,
 > keep the bridge [[read-only|Running-the-Bridge]] unless you deliberately need writes, and protect
-> the [[token|Running-the-Bridge]]. See [[Privacy & security|Privacy-and-Security]].
+> your [[API tokens|Bridge-API-Tokens]]. See [[Privacy & security|Privacy-and-Security]].
 
 ## Related pages
 

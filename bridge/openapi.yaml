@@ -70,12 +70,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiIndex"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -104,12 +110,18 @@ paths:
               schema:
                 type: "object"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -139,12 +151,18 @@ paths:
               schema:
                 type: "string"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -182,12 +200,18 @@ paths:
                 lastReloadErrorAt: null
                 lastReloadAt: "2025-06-27T06:13:21.000Z"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -294,12 +318,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -355,12 +385,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -540,12 +576,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -610,12 +652,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -688,12 +736,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -757,12 +811,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -822,12 +882,18 @@ paths:
                 type: "string"
               example: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n  <channel>\n    <title>Gubbins activity</title>\n    <item>\n      <title>ESP32 Dev Board — Quantity changed</title>\n      <guid isPermaLink=\"false\">urn:gubbins:activity:hist-0007</guid>\n    </item>\n  </channel>\n</rss>\n"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -887,12 +953,18 @@ paths:
                 type: "string"
               example: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<feed xmlns=\"http://www.w3.org/2005/Atom\">\n  <title>Gubbins activity</title>\n  <entry>\n    <title>ESP32 Dev Board — Quantity changed</title>\n    <id>urn:gubbins:activity:hist-0007</id>\n  </entry>\n</feed>\n"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -952,12 +1024,18 @@ paths:
                 type: "string"
               example: "{\n  \"version\": \"https://jsonfeed.org/version/1.1\",\n  \"title\": \"Gubbins activity\",\n  \"items\": [\n    { \"id\": \"urn:gubbins:activity:hist-0007\", \"title\": \"ESP32 Dev Board — Quantity changed\" }\n  ]\n}\n"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -999,12 +1077,18 @@ paths:
                 type: "string"
               example: "# HELP gubbins_items_total Total active items in the inventory.\n# TYPE gubbins_items_total gauge\ngubbins_items_total 4\n# HELP gubbins_low_stock_items Active items at or below their low-stock threshold.\n# TYPE gubbins_low_stock_items gauge\ngubbins_low_stock_items 1\n"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1091,12 +1175,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1175,12 +1265,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1271,12 +1367,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1362,12 +1464,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1477,12 +1585,18 @@ paths:
                   pagination:
                     $ref: "#/components/schemas/Pagination"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1563,12 +1677,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Location"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1644,12 +1764,18 @@ paths:
                   pagination:
                     $ref: "#/components/schemas/Pagination"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1697,12 +1823,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/CategoryDetail"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1779,12 +1911,18 @@ paths:
                   pagination:
                     $ref: "#/components/schemas/Pagination"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1834,12 +1972,18 @@ paths:
                 type: "string"
               example: "id: hist-0007\ndata: {\"id\":\"hist-0007\",\"type\":\"item.low_stock\",\"occurredAt\":\"2025-06-27T06:13:20.000Z\",\"data\":{\"itemId\":\"item-esp32\",\"itemName\":\"ESP32 Dev Board\",\"action\":\"QUANTITY_CHANGE\",\"kind\":\"stock\",\"label\":\"Quantity changed\",\"detail\":\"Checked out 4.\",\"delta\":\"−4\",\"quantityDelta\":-4,\"netValueDelta\":null,\"item\":null}}\n\n"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -1922,12 +2066,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -2014,12 +2164,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -2099,12 +2255,18 @@ paths:
                   name: "Workshop scale"
                   unit: "kg"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -2180,12 +2342,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
-          description: "Missing or invalid bearer token."
+          description: "Missing, unknown or revoked API token."
           headers:
             WWW-Authenticate:
               schema:
                 type: "string"
               description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
@@ -2214,7 +2382,7 @@ components:
     bearerAuth:
       type: "http"
       scheme: "bearer"
-      description: "The shared GUBBINS_BRIDGE_TOKEN, sent as \"Authorization: Bearer <token>\"."
+      description: "A per-user API token minted in the Gubbins app (Users → a user → API tokens), sent as \"Authorization: Bearer <token>\". The bridge resolves it to that user and enforces their permissions on every route; a route their role does not reach is a 403."
   schemas:
     Error:
       type: "object"
@@ -2232,6 +2400,7 @@ components:
               enum:
               - "bad_request"
               - "unauthorized"
+              - "forbidden"
               - "not_found"
               - "method_not_allowed"
               - "too_many_requests"

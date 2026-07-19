@@ -235,8 +235,9 @@ Full instructions (Node / Docker / systemd, every config option, the security mo
 
    ```sh
    cp bridge/.env.example bridge/.env      # then edit bridge/.env (it is git-ignored)
-   #  - GUBBINS_BRIDGE_TOKEN   → a long random string (your shared secret; never commit it)
    #  - GUBBINS_SNAPSHOT_PATH  → the gubbins-sync.json (or .sqlite) from step 1
+   # There is no token to set here: callers authenticate with an API token minted in the app
+   # (Users → an account → API tokens), which reaches the bridge with your synced data.
    node bridge/serve.mjs                    # starts on http://127.0.0.1:8787 (loopback by default)
    ```
 

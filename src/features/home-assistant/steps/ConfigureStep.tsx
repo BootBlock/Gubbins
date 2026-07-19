@@ -163,14 +163,13 @@ export function ConfigureStep() {
           ) : outcome === 'token' ? (
             <BranchPanel>
               <p className="text-sm text-muted-foreground">
-                The bridge is reachable, but the token you entered doesn't match the bridge's{' '}
-                <code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_TOKEN</code>. They must be
-                byte-for-byte identical.
+                The bridge is reachable, but it doesn't recognise the token you entered. Either it was
+                mistyped, or it has been revoked in Gubbins.
               </p>
               <Banner tone="warning" icon={<WarningIcon />}>
-                Watch for a trailing space or a truncated paste. If in doubt, generate a fresh token on the
-                "Access token" step, set it on the bridge (and restart the bridge), then enter the same value
-                here.
+                Watch for a trailing space or a truncated paste. If in doubt, create a fresh token in Users →
+                the account → API tokens and paste that one here. There is nothing to change on the bridge and
+                nothing to restart — it picks the new token up with the next sync.
               </Banner>
             </BranchPanel>
           ) : null}
