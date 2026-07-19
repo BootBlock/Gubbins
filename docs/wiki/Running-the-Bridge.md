@@ -45,6 +45,22 @@ caught it mid-write.
 > always current. That way a broken data feed shows as *unavailable* instead of quietly displaying
 > yesterday's stock levels as if they were today's.
 
+## When something goes wrong while it's running
+
+The bridge is built to **stay up**. An occasional problem — a hiccup reaching your MQTT broker, a
+momentary shortage of system resources, a malformed request from something scanning your network —
+is written to its log and then shrugged off. It keeps serving, so an integration that depends on it
+doesn't quietly go dead.
+
+If problems keep arriving in quick succession, the bridge takes the opposite view: something is
+wrong that it can't recover from on its own, so it logs why and **stops**. Run it under something
+that restarts it automatically — a Docker restart policy, a systemd service, or the Home Assistant
+add-on — and it comes back on a clean slate without anyone noticing.
+
+> **💡 Tip**
+> If the bridge restarts repeatedly, its log holds the reason. The most common causes are a
+> snapshot file it can no longer read and a broker or Home Assistant address it can never reach.
+
 ## Read-only unless you say otherwise
 
 The bridge **can't modify your inventory** by default — it's a window onto your data, not a way
