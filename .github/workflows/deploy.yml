@@ -12,10 +12,13 @@ permissions:
   pages: write
   id-token: write
 
-# Only one deploy at a time; a newer run supersedes an in-flight one.
+# Only one deploy at a time. A newer run *queues* behind an in-flight one rather than
+# cancelling it: `actions/deploy-pages` killed mid-flight can leave the Pages deployment
+# in a failed or indeterminate state instead of being cleanly superseded, and this is the
+# only publish path for the app. Letting the first run finish is the safe ordering.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:

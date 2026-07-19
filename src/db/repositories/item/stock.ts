@@ -208,6 +208,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       quantity: number,
       batchKey?: string,
     ): Promise<Item> {
+      this.assertPermission('stock:write');
       this.assertWritable();
       const existing = await this.require(itemId);
       if (existing.trackingMode !== 'DISCRETE') {
@@ -279,6 +280,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
      * SERIALISED items are fixed at 1; gauge items use `adjustGauge`.
      */
     async adjustQuantity(id: string, delta: number, note?: string): Promise<Item> {
+      this.assertPermission('stock:write');
       this.assertWritable();
       const existing = await this.require(id);
       if (existing.trackingMode !== 'DISCRETE') {
@@ -322,6 +324,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
      * exactly like a checkout, but never return. Write-gated.
      */
     async sell(input: SellItemInput): Promise<Item> {
+      this.assertPermission('stock:write');
       this.assertWritable();
       const draw = await this.resolveOutboundDraw(
         input.itemId,
@@ -366,6 +369,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
      * optional reason and a cost snapshot (→ the sales report's write-off total). Write-gated.
      */
     async writeOff(input: WriteOffItemInput): Promise<Item> {
+      this.assertPermission('stock:write');
       this.assertWritable();
       const draw = await this.resolveOutboundDraw(
         input.itemId,

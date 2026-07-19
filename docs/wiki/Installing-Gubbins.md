@@ -80,6 +80,12 @@ If you're not ready to update, you have two choices on the banner:
 - **Skip this version** — sits out this particular version for good. The banner stays away until an
   even newer version is released, then reappears so you can decide again.
 
+> **ℹ️ Note**
+> If you have Gubbins open in more than one tab or window, only the one you chose **Reload now**
+> in switches over straight away. The others keep working on the old version until they need a
+> part of the app they haven't loaded yet, at which point they refresh themselves onto the new
+> version — you may see a brief reload as that happens.
+
 > **⚠️ Heads-up**
 > Skipping or postponing a reset-warning update doesn't remove the risk — it just delays it. Keep
 > your own [[backups|Backup-and-Restore]] until Gubbins reaches 1.0, after which updates will always

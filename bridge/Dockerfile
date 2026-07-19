@@ -26,10 +26,15 @@ FROM node:24-slim
 
 WORKDIR /app
 
-# The only two things the bridge needs at runtime: its own package, and the app's pure
-# source modules it imports via `@/`. No node_modules — the bridge has zero runtime deps.
+# The only things the bridge needs at runtime: its own package, and the app's pure source
+# modules it imports via `@/`. No node_modules — the bridge has zero runtime deps.
 COPY bridge/ ./bridge/
 COPY src/ ./src/
+
+# The repository manifest, which is where the bridge reads the version it reports over the
+# API and mDNS (bridge/src/version.ts — it has no version of its own). Without this the
+# image would start and then be unable to say which build it is.
+COPY package.json ./package.json
 
 # Run as the image's built-in unprivileged user, never root.
 USER node

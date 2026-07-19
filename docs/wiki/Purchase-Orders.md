@@ -14,6 +14,21 @@ Raise a PO against a supplier — entering the supplier's name — and add the i
 you're ordering. The ordered stock is now **on its way** — Gubbins tracks it as **in transit** so
 you can see what's inbound.
 
+## Ordering in another currency
+
+An order can record its own **currency** — an ISO code such as `USD`. Leave it blank and the order
+is in your base currency (set in Settings). Gubbins stores that currency exactly as you entered it
+and **never converts** between currencies, because it holds no exchange rates.
+
+Everywhere an order's money is shown — the order total in the list, and each line's price — it is
+shown in **that order's** currency, so a `EUR` order reads in euros rather than under your base
+currency's symbol.
+
+> **⚠️ Heads-up**
+> Because those amounts can't be converted, an order in another currency is **left out** of the
+> [[spend report|Valuation-and-Spend]] rather than added to a total it doesn't match. The report
+> says how many orders it left out.
+
 ## Importing a purchase list
 
 If the list of what you're buying already exists somewhere else — a supplier's basket export, a

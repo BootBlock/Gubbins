@@ -17,7 +17,7 @@
  * record a tombstone in the same transaction so the deletion syncs (§7.2).
  */
 import { DbError } from '../errors';
-import { BaseRepository, type RepositoryOptions } from './base';
+import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import { rowToSupplierPart, rowToSupplierPartPriceHistory } from './mappers';
 import { SupplierRepository } from './SupplierRepository';
 import { tombstoneStatement } from './tombstone';
@@ -114,7 +114,7 @@ export class SupplierPartRepository extends BaseRepository {
 
   constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
     super(driver, options);
-    this.suppliers = new SupplierRepository(driver, options);
+    this.suppliers = new SupplierRepository(driver, collaboratorOptions(options));
   }
 
   async getById(id: string): Promise<SupplierPart | undefined> {
@@ -167,6 +167,7 @@ export class SupplierPartRepository extends BaseRepository {
   }
 
   async create(itemId: string, input: CreateSupplierPartInput): Promise<SupplierPart> {
+    this.assertPermission('suppliers:write');
     this.assertWritable();
     const wantsPreferred = input.isPreferred === true;
     // Validate BEFORE resolving the supplier: resolving can mint a new supplier row, and it is
@@ -219,6 +220,7 @@ export class SupplierPartRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdateSupplierPartInput): Promise<SupplierPart> {
+    this.assertPermission('suppliers:write');
     this.assertWritable();
     const existing = await this.require(id);
 
@@ -333,6 +335,7 @@ export class SupplierPartRepository extends BaseRepository {
    * cleared rows lets their LWW updated_at advance so the de-selection propagates on sync.
    */
   async setPreferred(id: string): Promise<void> {
+    this.assertPermission('suppliers:write');
     this.assertWritable();
     const part = await this.require(id);
     // Bare SETs leave updated_at unchanged so the §7.1 auto-stamp trigger re-stamps every
@@ -354,6 +357,7 @@ export class SupplierPartRepository extends BaseRepository {
    * advance so the de-selection propagates on sync.
    */
   async setPriceSource(id: string): Promise<void> {
+    this.assertPermission('suppliers:write');
     this.assertWritable();
     const part = await this.require(id);
     await this.driver.transaction([
@@ -370,6 +374,7 @@ export class SupplierPartRepository extends BaseRepository {
    * and reports the cheapest. Clears whichever row (if any) is currently pinned for the item.
    */
   async clearPriceSource(itemId: string): Promise<void> {
+    this.assertPermission('suppliers:write');
     this.assertWritable();
     await this.driver.execute(
       'UPDATE supplier_parts SET is_price_source = 0 WHERE item_id = ? AND is_price_source = 1;',
@@ -379,6 +384,10 @@ export class SupplierPartRepository extends BaseRepository {
 
   /** Delete a supplier part. Bypasses the Hard Stop; tombstoned for sync (§7.2). */
   async delete(id: string): Promise<void> {
+    // A supplier part is a child record of a supplier, not a supplier — removing one edits the
+    // supplier's catalogue rather than deleting the entity, so this is `write` (the same rule
+    // that puts `AttachmentRepository.remove` under `items:write`).
+    this.assertPermission('suppliers:write');
     await this.driver.transaction([
       { sql: 'DELETE FROM supplier_parts WHERE id = ?;', params: [id] },
       tombstoneStatement('supplier_parts', id),

@@ -113,10 +113,17 @@ export function buildValuationTrendCsv(report: ValuationTrendReport): string {
 /**
  * Spend CSV: the by-source / by-supplier / by-category breakdowns then the time buckets, each row
  * tagged by dimension, with a leading window total. `share` is a 0..1 fraction (blank for buckets).
+ *
+ * When orders were excluded for being priced in another currency (issue #285), an `Excluded` row
+ * records how many, directly under the total it is missing from — an exported figure is read away
+ * from the screen that would otherwise have carried the warning.
  */
 export function buildSpendCsv(report: SpendReport): string {
   const rows: unknown[][] = [];
   rows.push(['Total', '', report.total, 1]);
+  if (report.excludedForeignCurrency > 0) {
+    rows.push(['Excluded', 'Purchase orders in another currency', report.excludedForeignCurrency, '']);
+  }
   for (const s of report.bySource) rows.push(['Source', SPEND_SOURCE_LABEL[s.source], s.total, s.share]);
   for (const g of report.bySupplier) rows.push(['Supplier', g.name, g.total, g.share]);
   for (const g of report.byCategory) rows.push(['Category', g.name, g.total, g.share]);

@@ -31,6 +31,7 @@ import { WebhookRepository } from '@/db/repositories/WebhookRepository.ts';
 import { subscriptionToDeliveryTarget } from '../events/webhook-targets.ts';
 import { buildWebhookTestEvent } from '../events/webhook-test.ts';
 import { redactUrl } from '../events/webhook.ts';
+import { BRIDGE_VERSION, BRIDGE_SCHEMA_VERSION } from '../version.ts';
 import { HaError } from '../homeassistant/client.ts';
 import {
   SUPPORTED_HA_WEIGHT_UNITS,
@@ -627,7 +628,21 @@ function parseAdjustBody(
 function apiIndex(writable: boolean, pushable: boolean, streamable: boolean, scalable: boolean): unknown {
   return {
     name: 'Gubbins Bridge API',
+    /**
+     * The **API contract** version — what these endpoints promise. Deliberately distinct from
+     * `bridge` below, which says which *build* is answering: the contract can stay at 1.0.0
+     * across many releases of the software that implements it.
+     */
     version: '1.0.0',
+    /**
+     * Which build of Gubbins this bridge is (issue #282). A client that knows its own version
+     * can compare these to spot a checkout left behind by a `git pull` that never happened —
+     * the bridge has no auto-update, so drift is otherwise completely invisible.
+     */
+    bridge: {
+      version: BRIDGE_VERSION,
+      schemaVersion: BRIDGE_SCHEMA_VERSION,
+    },
     openapi: `${API_V1_BASE}/openapi.json`,
     /** Whether this bridge has the opt-in write endpoints enabled (read-only when false). */
     writable,

@@ -7,6 +7,13 @@ import { applyAppearance } from '@/features/settings/theme';
 import { startLabClock } from '@/features/lab/lab-clock';
 import { startClockSkew } from '@/features/clock-skew/clock-skew';
 import { completeGoogleAuthRedirect } from '@/features/sync/providers/google-oauth';
+import { installStaleChunkRecovery } from '@/lib/stale-chunk-reload';
+
+// Watch for a lazily-imported screen whose code the host no longer serves — the state a tab is
+// left in when a *different* tab applies an update and the newly-activated worker drops the old
+// build's chunks (#279). Subscribed before the app mounts so even the first route is covered;
+// the tab reloads onto the current build rather than white-screening.
+installStaleChunkRecovery();
 
 // Complete an in-progress Google Drive sign-in *before* the hash router mounts: this lifts
 // any OAuth token fragment out of the URL (storing the token) so the router never tries to

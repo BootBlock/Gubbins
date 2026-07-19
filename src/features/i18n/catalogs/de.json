@@ -1123,5 +1123,15 @@
   "reports.foreignCurrency.heading.one": "{count} Artikel ist in diesen Summen nicht enthalten",
   "reports.foreignCurrency.heading.other": "{count} Artikel sind in diesen Summen nicht enthalten",
   "reports.foreignCurrency.body.one": "Sein Preis wird von einem Lieferanten in einer anderen Währung als {currency} angegeben, und Gubbins rechnet Währungen niemals um. Geben Sie dem Artikel einen eigenen Stückpreis oder erfassen Sie den Lieferantenpreis in {currency}, damit er mitgezählt wird.",
-  "reports.foreignCurrency.body.other": "Ihre Preise werden von Lieferanten in einer anderen Währung als {currency} angegeben, und Gubbins rechnet Währungen niemals um. Geben Sie diesen Artikeln eigene Stückpreise oder erfassen Sie die Lieferantenpreise in {currency}, damit sie mitgezählt werden."
+  "reports.foreignCurrency.body.other": "Ihre Preise werden von Lieferanten in einer anderen Währung als {currency} angegeben, und Gubbins rechnet Währungen niemals um. Geben Sie diesen Artikeln eigene Stückpreise oder erfassen Sie die Lieferantenpreise in {currency}, damit sie mitgezählt werden.",
+  "reports.spendForeignCurrency.heading.one": "{count} Bestellung ist in diesen Ausgaben nicht enthalten",
+  "reports.spendForeignCurrency.heading.other": "{count} Bestellungen sind in diesen Ausgaben nicht enthalten",
+  "reports.spendForeignCurrency.body.one": "Sie ist in einer anderen Währung als {currency} erfasst, und Gubbins rechnet Währungen niemals um. Ihr Betrag fehlt daher in der Gesamtsumme sowie in den Auswertungen nach Lieferant und Kategorie. Erfassen Sie die Bestellung in {currency}, damit sie mitgezählt wird.",
+  "reports.spendForeignCurrency.body.other": "Sie sind in einer anderen Währung als {currency} erfasst, und Gubbins rechnet Währungen niemals um. Ihre Beträge fehlen daher in der Gesamtsumme sowie in den Auswertungen nach Lieferant und Kategorie. Erfassen Sie diese Bestellungen in {currency}, damit sie mitgezählt werden.",
+  "sync.bridge.build.heading": "Ihre Bridge ist veraltet",
+  "sync.bridge.build.schemaBehind": "Ihre Bridge läuft mit {bridgeVersion} und speichert Daten anders als diese App ({appVersion}). Sie liefert möglicherweise falsche Ergebnisse, bis Sie sie aktualisieren und neu starten.",
+  "sync.bridge.build.behind": "Ihre Bridge läuft mit {bridgeVersion} und ist damit älter als diese App ({appVersion}). Sie liest Ihre Daten weiterhin korrekt, sollte aber bei Gelegenheit aktualisiert werden.",
+  "sync.bridge.build.unknown": "Ihre Bridge ist zu alt, um ihre Version zu melden. Aktualisieren Sie sie und starten Sie sie neu, damit sie zu dieser App ({appVersion}) passt.",
+  "sync.bridge.build.aheadHeading": "Ihre Bridge ist neuer als diese App",
+  "sync.bridge.build.ahead": "Ihre Bridge läuft mit {bridgeVersion}, diese App mit {appVersion}. Laden Sie Gubbins neu, um aufzuholen."
 }

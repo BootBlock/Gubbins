@@ -23,6 +23,7 @@ import {
   FolderSyncIcon,
   SyncIcon,
   VoiceIcon,
+  InfoIcon,
   WarningIcon,
 } from '@/components/icons';
 import { hasFileSystemAccess } from '@/lib/env/feature-detection';
@@ -33,6 +34,9 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { BackupDialog } from '@/features/backup/BackupDialog';
 import { consumeRestoreNotice } from '@/features/backup/restore-backup';
 import { buildPushSnapshotJson, pushSnapshotToBridge } from './push-to-bridge';
+import { checkBridgeBuild, type BridgeBuildCheckResult } from './bridge-build-check';
+import type { BridgeVersionStatus } from './bridge-version';
+import { useT } from '@/features/i18n';
 import { MemoryCloudProvider } from './providers/memory-provider';
 import {
   connectFileSystemProvider,
@@ -56,6 +60,23 @@ import { SyncConflictsDialog } from './SyncConflictsDialog';
 import { useErrorMessage } from '@/features/errors';
 
 /**
+ * The catalog key describing each out-of-date verdict (issue #282). An explicit map rather than
+ * an interpolated key, so the typed `t()` seam can still check every one of them exists.
+ */
+const BRIDGE_BUILD_MESSAGE_KEYS = {
+  'schema-behind': 'sync.bridge.build.schemaBehind',
+  behind: 'sync.bridge.build.behind',
+  ahead: 'sync.bridge.build.ahead',
+  unknown: 'sync.bridge.build.unknown',
+} as const satisfies Record<Exclude<BridgeVersionStatus, 'current'>, string>;
+
+/**
+ * The verdicts that are a note rather than a warning: the bridge is reading the data correctly,
+ * it is just not the same release. Everything else may be misreading it, which is louder.
+ */
+const BRIDGE_BUILD_INFORMATIONAL = new Set<BridgeVersionStatus>(['behind', 'ahead']);
+
+/**
  * The Cloud Sync & File System Access hub (spec §2 Initial Handshake, §7, Phase 7).
  *
  * Hosts the provider-agnostic handshake (an in-memory test provider and a File System
@@ -67,6 +88,7 @@ export function SyncScreen() {
   const client = useQueryClient();
   const auth = useAuthStore();
   const fmt = useFormatters();
+  const t = useT();
   const { bridgeUrl, bridgeToken, setBridgeUrl, setBridgeToken } = usePreferencesStore();
   const [connected, setConnected] = useState(getActiveProvider() !== null);
   const [busy, setBusy] = useState(false);
@@ -83,11 +105,34 @@ export function SyncScreen() {
   // Push-to-bridge outcome shown inline beside the "Push now" button (rather than a
   // top-of-page banner far from where the user is looking).
   const [pushResult, setPushResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // Issue #282: whether the configured bridge is as up-to-date as this app. The bridge has no
+  // auto-update, so a checkout left behind by a `git pull` that never happened is otherwise
+  // completely invisible from here.
+  const [buildCheck, setBuildCheck] = useState<BridgeBuildCheckResult | null>(null);
 
   // Surface a one-off success message after a backup restore reloaded the app.
   useEffect(() => {
     const restored = consumeRestoreNotice();
     if (restored) setNotice(restored);
+  }, []);
+
+  // Ask the configured bridge which build it is, once on arrival (issue #282).
+  //
+  // Read from the store rather than the render-scope values so this is genuinely mount-only:
+  // keying it on the URL/token fields would fire a request at a half-typed host on every
+  // keystroke. An unreachable bridge simply yields no opinion — the screen already has its own
+  // way of saying "we couldn't reach it", and two messages for one problem is noise.
+  useEffect(() => {
+    const { bridgeUrl: url, bridgeToken: token } = usePreferencesStore.getState();
+    if (url.trim() === '' || token.trim() === '') return;
+
+    let cancelled = false;
+    void checkBridgeBuild(url, token, (u, init) => fetch(u, init)).then((outcome) => {
+      if (!cancelled) setBuildCheck(outcome);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const fsSupported = hasFileSystemAccess();
@@ -243,6 +288,12 @@ export function SyncScreen() {
         fetchImpl: (url, init) => fetch(url, init),
       });
       setPushResult({ ok: result.ok, message: result.message });
+      // A successful push just proved the bridge is reachable, so re-read its build: this is
+      // the moment a stale bridge matters most, and it also picks up a bridge the user has
+      // updated and restarted since the screen mounted.
+      if (result.ok) {
+        setBuildCheck(await checkBridgeBuild(bridgeUrl, bridgeToken, (u, init) => fetch(u, init)));
+      }
     } catch (err) {
       setPushResult({ ok: false, message: describeError(err, 'Push failed.') });
     } finally {
@@ -495,6 +546,36 @@ export function SyncScreen() {
             Follow the step-by-step guide to run the bridge, connect Home Assistant, and generate the access
             token — it walks you through every choice.
           </Banner>
+          {/* Issue #282: the bridge never updates itself, so a checkout left behind is invisible
+            unless we say so. Shown here, beside the connection it is about, rather than as a
+            top-of-page banner. Silent when the bridge is current or unreachable. */}
+          {buildCheck?.ok && buildCheck.status !== 'current' ? (
+            <Banner
+              // Only a bridge that may be *misreading* the data warrants a warning; a bridge that
+              // is merely a release behind (or ahead) is reading it correctly, so it stays a note.
+              tone={BRIDGE_BUILD_INFORMATIONAL.has(buildCheck.status) ? 'info' : 'warning'}
+              icon={
+                BRIDGE_BUILD_INFORMATIONAL.has(buildCheck.status) ? (
+                  <InfoIcon aria-hidden="true" />
+                ) : (
+                  <WarningIcon aria-hidden="true" />
+                )
+              }
+              heading={
+                buildCheck.status === 'ahead'
+                  ? t('sync.bridge.build.aheadHeading')
+                  : t('sync.bridge.build.heading')
+              }
+              data-testid="bridge-build-notice"
+            >
+              {t(BRIDGE_BUILD_MESSAGE_KEYS[buildCheck.status], {
+                vars: {
+                  bridgeVersion: buildCheck.bridge?.version ?? '',
+                  appVersion: buildCheck.app.version,
+                },
+              })}
+            </Banner>
+          ) : null}
           <Surface className="space-y-4 p-4">
             <FormField
               label="Bridge URL"

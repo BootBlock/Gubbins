@@ -78,6 +78,7 @@ export class WishlistRepository extends BaseRepository {
    * clear message); an unknown priority softens to `NONE`. Write-gated (it grows storage).
    */
   async create(input: CreateWishlistInput): Promise<WishlistEntry> {
+    this.assertPermission('wishlist:write');
     this.assertWritable();
     const plan = planWishlistEntry(input);
     if (!plan.ok) {
@@ -99,6 +100,7 @@ export class WishlistRepository extends BaseRepository {
    * softens to `NONE`. Write-gated (an edit can grow storage). Returns the updated entry.
    */
   async update(id: string, input: UpdateWishlistInput): Promise<WishlistEntry> {
+    this.assertPermission('wishlist:write');
     this.assertWritable();
     await this.require(id);
 
@@ -145,6 +147,7 @@ export class WishlistRepository extends BaseRepository {
    * instruct peers to delete it).
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('wishlist:delete');
     if (!(await this.getById(id))) return;
     await this.driver.transaction([
       { sql: 'DELETE FROM wishlist WHERE id = ?;', params: [id] },

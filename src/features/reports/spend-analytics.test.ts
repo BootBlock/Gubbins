@@ -32,6 +32,16 @@ describe('buildSpendReport', () => {
     expect(report.bySource.every((s) => s.total === 0 && s.share === 0)).toBe(true);
     expect(report.bySupplier).toEqual([]);
     expect(report.byCategory).toEqual([]);
+    expect(report.excludedForeignCurrency).toBe(0);
+  });
+
+  it('passes the caller-decided foreign-currency exclusion count through (issue #285)', () => {
+    // The seam never sees the excluded rows — that is the point — so it only carries the count,
+    // normalised to a non-negative integer so a bad caller cannot publish a nonsense figure.
+    expect(buildSpendReport([ev(5, 10)], 0, 100, 5, 3).excludedForeignCurrency).toBe(3);
+    expect(buildSpendReport([ev(5, 10)], 0, 100, 5).excludedForeignCurrency).toBe(0);
+    expect(buildSpendReport([ev(5, 10)], 0, 100, 5, -2).excludedForeignCurrency).toBe(0);
+    expect(buildSpendReport([ev(5, 10)], 0, 100, 5, 2.7).excludedForeignCurrency).toBe(2);
   });
 
   it('counts events half-open: start included, end excluded', () => {
@@ -161,7 +171,8 @@ describe('buildSpendReport', () => {
         0,
         100,
         2,
-        0,
+        0, // excludedForeignCurrency
+        0, // decimals — JPY
       );
       // Raw 300.75 → whole yen, half away from zero; a JPY total is never written with a fraction.
       expect(report.total).toBe(301);
@@ -179,7 +190,8 @@ describe('buildSpendReport', () => {
         0,
         100,
         1,
-        3,
+        0, // excludedForeignCurrency
+        3, // decimals — BHD
       );
       // At the default 2dp this would publish 1.00 and discard a fils the amount genuinely has.
       expect(report.total).toBe(1.001);

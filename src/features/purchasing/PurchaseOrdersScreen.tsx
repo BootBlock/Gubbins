@@ -26,6 +26,7 @@ import { WishlistTab } from './WishlistTab';
 import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
+import { moneyDecimals } from '@/lib/money';
 import { useInventoryItems, useLocations, useSupplierPartsForItems } from '@/features/inventory/queries';
 import { preferredSupplierPart } from '@/features/inventory/supplier-cost';
 import type { LocationOption } from '@/features/inventory/components/LocationSelect';
@@ -68,8 +69,9 @@ type PoTab = 'orders' | 'reorder' | 'wishlist';
  */
 export function PurchaseOrdersScreen() {
   const f = useFormatters();
-  // The base currency's minor unit (issue #292). Resolved once for the whole list — it is the
-  // same for every order, and every row would otherwise re-derive it on each render.
+  // The base currency's minor unit (issue #292), resolved once for the whole list rather than
+  // per row. It is only the *fallback*: an order quoted in its own currency (issue #285) is
+  // totalled at that currency's minor unit instead.
   const currencyDecimals = f.currencyFractionDigits();
   const t = useT();
   const ordersQuery = usePurchaseOrders();
@@ -200,7 +202,7 @@ export function PurchaseOrdersScreen() {
                   po={po}
                   active={po.id === selected}
                   formatters={f}
-                  decimals={currencyDecimals}
+                  baseDecimals={currencyDecimals}
                   onSelect={() => setSelectedId(po.id)}
                 />
               ))
@@ -303,14 +305,14 @@ function OrderListRow({
   po,
   active,
   formatters,
-  decimals,
+  baseDecimals,
   onSelect,
 }: {
   po: PurchaseOrderWithLines;
   active: boolean;
   formatters: Formatters;
   /** The base currency's minor unit, resolved once by the list rather than per row (issue #292). */
-  decimals: number;
+  baseDecimals: number;
   onSelect: () => void;
 }) {
   const t = useT();
@@ -331,8 +333,17 @@ function OrderListRow({
       </div>
       <div className="flex w-full items-center justify-between text-xs text-muted-foreground">
         <span>{po.reference ?? 'No reference'}</span>
-        {/* Totalled at the base currency's minor unit, not a flat 2dp (issue #292). */}
-        <Money value={estimatedValue(po.lines, decimals)} formatters={formatters} />
+        {/* The order's own currency, not the base one: its line costs were copied verbatim from
+            the supplier's quote and are never converted, so rendering a EUR order's total under
+            the base symbol would misstate it (issue #285). Null ⇒ the base currency.
+            The total is quantised to that same currency's minor unit rather than a flat 2dp
+            (issue #292) — a yen-quoted order totals in whole yen even under a sterling base, so
+            the figure agrees with the symbol it is rendered under. */}
+        <Money
+          value={estimatedValue(po.lines, po.currency ? moneyDecimals(po.currency) : baseDecimals)}
+          currency={po.currency ?? undefined}
+          formatters={formatters}
+        />
       </div>
     </button>
   );
@@ -558,7 +569,12 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
                       {line.unitCost != null && (
                         <>
                           {' · '}
-                          <Money value={line.unitCost} formatters={f} /> each
+                          <Money
+                            value={line.unitCost}
+                            currency={po.currency ?? undefined}
+                            formatters={f}
+                          />{' '}
+                          each
                         </>
                       )}
                     </span>

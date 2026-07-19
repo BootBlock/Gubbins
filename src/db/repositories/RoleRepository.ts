@@ -6,6 +6,13 @@
  * arrives with the permission engine in phase 2, and keeping storage agnostic means the
  * registry can grow without a schema change.
  *
+ * Grants are canonicalised through `normaliseGrants` on the way in — trimmed, de-duplicated
+ * and ordered — so a role written here is stored in exactly the shape the baseline seeds the
+ * built-in ones with, and a padded `" items:write "` can never persist as a grant that
+ * silently matches nothing. Grants this build does not recognise are deliberately *kept*: a
+ * newer peer may hold a key this one has never heard of, and editing the role here must not
+ * strip it.
+ *
  * Built-in roles are **editable but not deletable** (plan §2.3) — an operator may retune what
  * "Stocker" grants, but removing it outright would strand every user assigned to it. As with
  * users, that guard is enforced here *and* by `trg_roles_protect_builtin_delete`.
@@ -13,6 +20,7 @@
  * `roles` participates in synchronisation, so a hard delete records a tombstone in the same
  * transaction (§7.2).
  */
+import { normaliseGrants } from '@/features/users/permissions';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { rowToRole } from './mappers';
@@ -49,6 +57,7 @@ export class RoleRepository extends BaseRepository {
 
   /** Create an operator-defined role. `is_builtin` is not an input — only the baseline seeds those. */
   async create(input: CreateRoleInput): Promise<Role> {
+    this.assertPermission('users:manage');
     this.assertWritable();
     const name = input.name.trim();
     if (name.length === 0) {
@@ -58,12 +67,13 @@ export class RoleRepository extends BaseRepository {
     await this.driver.execute(
       `INSERT INTO roles (id, name, description, permissions, is_builtin)
        VALUES (?, ?, ?, ?, 0);`,
-      [id, name, input.description?.trim() || null, JSON.stringify(input.permissions ?? [])],
+      [id, name, input.description?.trim() || null, JSON.stringify(normaliseGrants(input.permissions ?? []))],
     );
     return (await this.getById(id))!;
   }
 
   async update(id: string, input: UpdateRoleInput): Promise<Role> {
+    this.assertPermission('users:manage');
     this.assertWritable();
     await this.require(id);
     const sets: string[] = [];
@@ -82,7 +92,7 @@ export class RoleRepository extends BaseRepository {
     }
     if (input.permissions !== undefined) {
       sets.push('permissions = ?');
-      params.push(JSON.stringify(input.permissions));
+      params.push(JSON.stringify(normaliseGrants(input.permissions)));
     }
     if (sets.length > 0) {
       await this.driver.execute(`UPDATE roles SET ${sets.join(', ')} WHERE id = ?;`, [...params, id]);
@@ -96,6 +106,7 @@ export class RoleRepository extends BaseRepository {
    * delete a person. Bypasses the Hard Stop; records a tombstone so the deletion syncs (§7.2).
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('users:manage');
     const existing = await this.require(id);
     if (existing.isBuiltin) {
       throw new DbError(

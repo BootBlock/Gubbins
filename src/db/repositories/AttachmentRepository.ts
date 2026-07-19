@@ -42,6 +42,7 @@ export class AttachmentRepository extends BaseRepository {
   }
 
   async add(input: CreateAttachmentInput): Promise<ItemAttachment> {
+    this.assertPermission('items:write');
     this.assertWritable();
     const value = this.validateValue(input.kind, input.value);
     const id = crypto.randomUUID();
@@ -57,6 +58,7 @@ export class AttachmentRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdateAttachmentInput): Promise<ItemAttachment> {
+    this.assertPermission('items:write');
     this.assertWritable();
     const existing = await this.requireById(id);
 
@@ -95,6 +97,7 @@ export class AttachmentRepository extends BaseRepository {
 
   /** Delete an attachment record. Permitted under the Hard Stop (frees space). */
   async remove(id: string): Promise<void> {
+    this.assertPermission('items:write');
     // Tombstone the deletion atomically so it propagates on the next sync (Phase 11).
     await this.driver.transaction([
       { sql: 'DELETE FROM item_attachments WHERE id = ?;', params: [id] },

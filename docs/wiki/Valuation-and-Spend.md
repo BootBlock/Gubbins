@@ -18,7 +18,10 @@ Each item is valued through Gubbins' valuation logic: a manual
 less [[depreciation|Warranty-and-Depreciation]]. So the total reflects *today's* worth, not just
 what you paid.
 
-There's also **valuation over time**, showing how your inventory's total value has changed.
+There's also **valuation over time**, showing how your inventory's total value has changed. It ends
+on exactly the headline total above it and reconstructs the earlier points by working backwards
+through your stock movements, valuing each one by the same rules — so the two figures always agree.
+[[Unlimited sources|Tracking-Modes]], which hold no finite value, are left out of both.
 
 ## Spend
 
@@ -47,6 +50,12 @@ above the breakdown says how many items were left out.
 
 To bring an item back into the totals, either give it its own **unit cost** (a manual cost always
 wins, and is read as base currency), or record the supplier's price in your base currency.
+
+**Spend works the same way.** A [[purchase order|Purchase-Orders]] carries its own currency, so an
+order placed in `USD` is left out of the spend total — and out of the by-supplier and by-category
+breakdowns — rather than added to your base-currency figures as though the numbers matched. A notice
+above the spend breakdown says how many orders were left out. Record an order in your base currency
+to include it.
 
 > **⚠️ Heads-up**
 > The same rule applies to the [[insurance schedule|Insurance-and-Estate-Schedule]], where the

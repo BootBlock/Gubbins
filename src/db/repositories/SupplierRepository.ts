@@ -81,6 +81,7 @@ export class SupplierRepository extends BaseRepository {
   }
 
   async create(input: CreateSupplierInput): Promise<Supplier> {
+    this.assertPermission('suppliers:write');
     this.assertWritable();
     const name = normaliseSupplierName(input.name);
     const key = supplierNameKey(name);
@@ -102,6 +103,7 @@ export class SupplierRepository extends BaseRepository {
    * a concurrent create surfaces as a constraint error, which we resolve by re-reading.
    */
   async resolveOrCreate(name: string): Promise<Supplier> {
+    this.assertPermission('suppliers:write');
     const existing = await this.findByName(name);
     if (existing) return existing;
     try {
@@ -118,6 +120,7 @@ export class SupplierRepository extends BaseRepository {
    * supplier goes through, so no caller can put an unreconciled name into the database.
    */
   async resolveRef(ref: SupplierRef): Promise<string> {
+    this.assertPermission('suppliers:write');
     if ('supplierId' in ref) {
       await this.require(ref.supplierId);
       return ref.supplierId;
@@ -126,6 +129,7 @@ export class SupplierRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdateSupplierInput): Promise<Supplier> {
+    this.assertPermission('suppliers:write');
     this.assertWritable();
     await this.require(id);
     const sets: string[] = [];
@@ -179,6 +183,7 @@ export class SupplierRepository extends BaseRepository {
    * where deleting drops the parts and leaves the orders naming no supplier at all.
    */
   async merge(sourceId: string, targetId: string): Promise<Supplier> {
+    this.assertPermission('suppliers:write');
     this.assertWritable();
     if (sourceId === targetId) {
       throw new DbError('SQLITE_CONSTRAINT', 'Cannot merge a supplier into itself.');
@@ -208,6 +213,7 @@ export class SupplierRepository extends BaseRepository {
    * duplicate rather than discard the supplier. Records a tombstone so the deletion syncs (§7.2).
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('suppliers:delete');
     await this.driver.transaction([
       { sql: 'DELETE FROM suppliers WHERE id = ?;', params: [id] },
       tombstoneStatement('suppliers', id),

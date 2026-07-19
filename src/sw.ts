@@ -233,8 +233,12 @@ async function respond(request: Request): Promise<Response> {
   try {
     return withIsolationHeaders(await fetch(request));
   } catch {
-    const fallback = await cache.match(INDEX_URL, { ignoreSearch: true });
-    if (fallback) return withIsolationHeaders(fallback);
+    // Offline, and nothing cached. This is only ever a *subresource* — a navigation has already
+    // been answered from the precached shell above, and if that shell were missing this same
+    // lookup could not find it either. Handing the shell to a script or image request answers a
+    // 200 with HTML, which the browser rejects on MIME type anyway while hiding the real cause,
+    // so fail cleanly instead: that is what lets the app recognise a missing chunk and reload
+    // onto the current build (see lib/stale-chunk-reload.ts).
     return Response.error();
   }
 }

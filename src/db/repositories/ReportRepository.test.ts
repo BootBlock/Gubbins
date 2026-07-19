@@ -832,6 +832,47 @@ describe('ReportRepository', () => {
       expect(report.startValue).toBe(30); // higher before the consumption
       expect(report.changeValue).toBe(-10);
     });
+
+    it('anchors on the same total as the valuation headline (issue #289)', async () => {
+      const now = Date.now();
+      // A revalued collectible: the manual current value wins over its cost, on both figures.
+      await items.create({ name: 'Collectible', quantity: 1, unitCost: 40, currentValue: 900 });
+      // An unlimited source holds no finite value, so neither figure counts it.
+      await items.create({ name: 'Mains water', quantity: 500, unitCost: 2, isUnlimited: true });
+
+      const headline = (await reports.inventoryValue()).totalValue;
+      const trend = await reports.valuationTrend(30, 4, now);
+      expect(headline).toBe(900);
+      expect(trend.endValue).toBe(headline);
+    });
+
+    it('values in-window movements the same way it values the anchor (issue #289)', async () => {
+      const now = Date.now();
+      const item = await items.create({
+        name: 'Collectible',
+        quantity: 1,
+        unitCost: 40,
+        currentValue: 900,
+      });
+      // A −1 consumption mid-window is worth £900, not the £40 replacement cost, so the
+      // reconstructed start value is the £1,800 the headline would have reported back then.
+      await addHistory(item.id, -1, now - 15 * MS_PER_DAY);
+
+      const report = await reports.valuationTrend(30, 4, now);
+      expect(report.endValue).toBe(900);
+      expect(report.startValue).toBe(1800);
+    });
+
+    it('leaves unlimited sources out of the reconstructed movements (issue #289)', async () => {
+      const now = Date.now();
+      const water = await items.create({ name: 'Mains water', quantity: 500, unitCost: 2 });
+      await addHistory(water.id, -100, now - 15 * MS_PER_DAY);
+      await driver.execute('UPDATE items SET is_unlimited = 1 WHERE id = ?;', [water.id]);
+
+      const report = await reports.valuationTrend(30, 4, now);
+      expect(report.endValue).toBe(0);
+      expect(report.startValue).toBe(0);
+    });
   });
 
   describe('dataHygiene', () => {
@@ -1029,6 +1070,144 @@ describe('ReportRepository', () => {
       expect(report.eventCount).toBe(0);
       expect(report.bySupplier).toEqual([]);
       expect(report.bySource.every((s) => s.total === 0)).toBe(true);
+      expect(report.excludedForeignCurrency).toBe(0);
+    });
+
+    it('excludes a purchase order priced in another currency, and reports the count (issue #285)', async () => {
+      // Gubbins holds no exchange rates, so a $500 order and a £500 order are not £1,000 —
+      // in the headline, nor in the by-supplier and by-category totals that recompose it.
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      await driver.execute("INSERT INTO categories (id, name) VALUES ('cat-r', 'Resistors');");
+      await driver.execute(
+        `INSERT INTO items (id, name, location_id, category_id, quantity)
+         VALUES ('it-1', 'Resistor', ?, 'cat-r', 1);`,
+        [UNASSIGNED_LOCATION_ID],
+      );
+
+      const home = await suppliers.resolveOrCreate('Home Co');
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at, currency) VALUES ('po-gbp', ?, 'RECEIVED', ?, 'GBP');",
+        [home.id, day(-5)],
+      );
+      await driver.execute(
+        `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
+         VALUES ('pol-gbp', 'po-gbp', 'it-1', 1, 1, 500);`,
+      );
+
+      const abroad = await suppliers.resolveOrCreate('Stateside Inc');
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at, currency) VALUES ('po-usd', ?, 'RECEIVED', ?, 'USD');",
+        [abroad.id, day(-4)],
+      );
+      await driver.execute(
+        `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
+         VALUES ('pol-usd', 'po-usd', 'it-1', 1, 1, 500);`,
+      );
+
+      const report = await gbp.spendAnalytics(90, 10, NOW);
+      expect(report.total).toBe(500); // the £ order only — never £1,000
+      expect(report.eventCount).toBe(1);
+      expect(report.bySupplier.map((g) => [g.name, g.total])).toEqual([['Home Co', 500]]);
+      expect(report.byCategory.map((g) => [g.name, g.total])).toEqual([['Resistors', 500]]);
+      // …and the omission is reported rather than left as a silent hole in the total.
+      expect(report.excludedForeignCurrency).toBe(1);
+    });
+
+    it('counts an order as base-currency when its code is blank, or scruffily cased (issue #285)', async () => {
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      await driver.execute(
+        "INSERT INTO items (id, name, location_id, quantity) VALUES ('it-1', 'Resistor', ?, 1);",
+        [UNASSIGNED_LOCATION_ID],
+      );
+      const rs = await suppliers.resolveOrCreate('RS');
+      // NULL (the documented "base currency" convention), and a padded lower-case code.
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at) VALUES ('po-null', ?, 'RECEIVED', ?);",
+        [rs.id, day(-5)],
+      );
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at, currency) VALUES ('po-scruffy', ?, 'RECEIVED', ?, ' gbp ');",
+        [rs.id, day(-4)],
+      );
+      for (const po of ['po-null', 'po-scruffy']) {
+        await driver.execute(
+          `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
+           VALUES (?, ?, 'it-1', 1, 1, 10);`,
+          [`pol-${po}`, po],
+        );
+      }
+
+      const report = await gbp.spendAnalytics(90, 10, NOW);
+      expect(report.total).toBe(20);
+      expect(report.excludedForeignCurrency).toBe(0);
+    });
+
+    it('does not count a foreign order whose supplier was deleted as currency-excluded (issue #285)', async () => {
+      // Spend resolves suppliers with an inner join, so an order that lost its supplier
+      // (ON DELETE SET NULL) contributes nothing whatever its currency. Counting it would claim
+      // money is missing that the currency filter never removed.
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      await driver.execute(
+        "INSERT INTO items (id, name, location_id, quantity) VALUES ('it-1', 'Resistor', ?, 1);",
+        [UNASSIGNED_LOCATION_ID],
+      );
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at, currency) VALUES ('po-orphan', NULL, 'RECEIVED', ?, 'USD');",
+        [day(-4)],
+      );
+      await driver.execute(
+        `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
+         VALUES ('pol-orphan', 'po-orphan', 'it-1', 1, 1, 500);`,
+      );
+
+      const report = await gbp.spendAnalytics(90, 10, NOW);
+      expect(report.total).toBe(0);
+      expect(report.excludedForeignCurrency).toBe(0);
+    });
+
+    it('treats a whitespace-only currency code as the base currency (issue #285)', async () => {
+      // A blank code names no currency. Sync and import can land one the entry dialogs would
+      // have trimmed away, and dropping the order for it would understate spend for no reason.
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      await driver.execute(
+        "INSERT INTO items (id, name, location_id, quantity) VALUES ('it-1', 'Resistor', ?, 1);",
+        [UNASSIGNED_LOCATION_ID],
+      );
+      const rs = await suppliers.resolveOrCreate('RS');
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at, currency) VALUES ('po-blank', ?, 'RECEIVED', ?, '   ');",
+        [rs.id, day(-4)],
+      );
+      await driver.execute(
+        `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
+         VALUES ('pol-blank', 'po-blank', 'it-1', 1, 1, 40);`,
+      );
+
+      const report = await gbp.spendAnalytics(90, 10, NOW);
+      expect(report.total).toBe(40);
+      expect(report.excludedForeignCurrency).toBe(0);
+    });
+
+    it('excludes nothing when the base currency is unknown (issue #285)', async () => {
+      // An unknown base cannot tell foreign from domestic; failing open preserves the previous
+      // behaviour rather than blanking every total — and nothing is claimed to be excluded.
+      await driver.execute(
+        "INSERT INTO items (id, name, location_id, quantity) VALUES ('it-1', 'Resistor', ?, 1);",
+        [UNASSIGNED_LOCATION_ID],
+      );
+      const abroad = await suppliers.resolveOrCreate('Stateside Inc');
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at, currency) VALUES ('po-usd', ?, 'RECEIVED', ?, 'USD');",
+        [abroad.id, day(-4)],
+      );
+      await driver.execute(
+        `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
+         VALUES ('pol-usd', 'po-usd', 'it-1', 1, 1, 500);`,
+      );
+
+      const report = await reports.spendAnalytics(90, 10, NOW);
+      expect(report.total).toBe(500);
+      expect(report.excludedForeignCurrency).toBe(0);
     });
   });
 

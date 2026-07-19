@@ -24,6 +24,7 @@ import {
   type DeadStockMode,
 } from './constants';
 import { buildAncestorChain } from '@/features/inventory/location-inheritance';
+import { effectiveUnitValue } from '@/features/inventory/valuation';
 import {
   resolveDeadStockPolicy,
   type DeadStockLocationPolicy,
@@ -120,29 +121,32 @@ function notUnlimited(col: string): string {
 }
 
 /**
- * SQL predicate matching a `supplier_parts` row whose price is denominated in the user's base
- * currency, and is therefore summable into a valuation total (issue #284).
+ * SQL predicate matching a currency column denominated in the user's base currency, and therefore
+ * summable into a total (issue #284; extended to purchase orders by issue #285).
  *
- * A supplier part's `currency` is free ISO-4217 text the user sets per supplier, and it is
- * stored and shown **verbatim — never converted**, because Gubbins holds no exchange rates (no
- * rate column, no rate-capture timestamp, nothing). Adding a ¥9,800 part to a £ total as
+ * A `currency` — on a supplier part or on a purchase order — is free ISO-4217 text the user sets,
+ * and it is stored and shown **verbatim — never converted**, because Gubbins holds no exchange
+ * rates (no rate column, no rate-capture timestamp, nothing). Adding a ¥9,800 part to a £ total as
  * "9800" is not an approximation, it is a wrong number — and on the insurance schedule it is a
  * wrong number in a document a user may hand to an insurer. So a foreign-currency price is
  * excluded from valuation rather than silently mis-summed, mirroring the same refusal
  * `price-refresh` already makes when asked for the cheapest of mixed-currency quotes.
  *
- * `NULL`/empty means "base currency" (the column's documented convention), so those always
- * match. `baseCurrency` is null when unknown, which disables the filter entirely — an unknown
- * base cannot tell foreign from domestic, and failing open preserves the previous behaviour
- * rather than blanking every total.
+ * `NULL`/blank means "base currency" (the columns' documented convention), so those always
+ * match — blank is tested after `TRIM`, since a whitespace-only code names no currency and can
+ * reach the column through a sync merge or an import, neither of which trims the way the entry
+ * dialogs do. `baseCurrency` is null when unknown, which disables the filter entirely — an
+ * unknown base cannot tell foreign from domestic, and failing open preserves the previous
+ * behaviour rather than blanking every total.
  *
- * Assumes the enclosing query aliases `supplier_parts` as `sp` (both callers do); a different
- * alias fails loudly as an unknown-column error rather than quietly matching nothing.
+ * `col` is the qualified currency column to test (`sp.currency`, `po.currency`); passing one the
+ * enclosing query does not expose fails loudly as an unknown-column error rather than quietly
+ * matching nothing.
  */
-function inBaseCurrencySql(baseCurrency: string): string {
+function inBaseCurrencySql(col: string, baseCurrency: string): string {
   // `baseCurrency` is normalised to three ASCII letters by `BaseRepository.baseCurrency()`,
   // so this interpolation carries no quoting or injection surface.
-  return `(sp.currency IS NULL OR sp.currency = '' OR UPPER(TRIM(sp.currency)) = '${baseCurrency}')`;
+  return `(${col} IS NULL OR TRIM(${col}) = '' OR UPPER(TRIM(${col})) = '${baseCurrency}')`;
 }
 
 /**
@@ -158,7 +162,7 @@ function inBaseCurrencySql(baseCurrency: string): string {
 function preferredSupplierCostSql(col: string, baseCurrency: string | null): string {
   return `(SELECT sp.unit_cost FROM supplier_parts sp
              WHERE sp.item_id = ${col} AND sp.is_preferred = 1${
-               baseCurrency === null ? '' : ` AND ${inBaseCurrencySql(baseCurrency)}`
+               baseCurrency === null ? '' : ` AND ${inBaseCurrencySql('sp.currency', baseCurrency)}`
              }
              ORDER BY sp.updated_at DESC LIMIT 1)`;
 }
@@ -207,7 +211,7 @@ export class ReportRepository extends BaseRepository {
           AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')}
           AND EXISTS (SELECT 1 FROM supplier_parts sp
                        WHERE sp.item_id = i.id AND sp.is_preferred = 1 AND sp.unit_cost IS NOT NULL
-                         AND NOT ${inBaseCurrencySql(base)});`,
+                         AND NOT ${inBaseCurrencySql('sp.currency', base)});`,
     );
     return row?.n ?? 0;
   }
@@ -972,11 +976,22 @@ export class ReportRepository extends BaseRepository {
   /**
    * Valuation over time (§3 advanced analytics): the total inventory value reconstructed across
    * the trailing `windowDays` at `points` evenly-spaced samples, for a sparkline. The current
-   * total (`SUM(quantity × effectiveUnitCost)`) anchors the line; the pure
-   * {@link buildValuationTrend} helper reverses the value-tagged ledger from it. Each in-window
-   * `item_history` quantity delta is costed by its item here (so the single cost-precedence rule
-   * stays in {@link effectiveUnitCost}). Active, non-parent items only. `now` defaults to the
-   * wall clock.
+   * total anchors the line; the pure {@link buildValuationTrend} helper reverses the value-tagged
+   * ledger from it. Each in-window `item_history` quantity delta is valued by its item here (so
+   * the single cost-precedence rule stays in {@link effectiveUnitCost}).
+   *
+   * The anchor and every event are valued through exactly the same rules as
+   * {@link inventoryValue}'s headline — a manual `current_value` wins over the replacement cost
+   * (`effectiveUnitValue`), and unlimited sources are excluded because they hold no finite value.
+   * Both figures sit side by side on the Reports screen and flow into the same export, so any
+   * divergence between them reads as a contradiction rather than a different measure (issue #289).
+   *
+   * Both the anchor and the in-window events use each item's value **as it stands today** — no
+   * historical value snapshots are consulted, so an item revalued (or re-costed) mid-window has
+   * its earlier movements priced at the new figure. That is the deliberate trade: it is what makes
+   * the right-hand endpoint land exactly on the headline, and the alternative (replaying the
+   * revaluation log per event) would draw a line that no longer ends where the headline says the
+   * inventory is worth. Active, non-parent items only. `now` defaults to the wall clock.
    */
   async valuationTrend(
     windowDays: number,
@@ -990,17 +1005,19 @@ export class ReportRepository extends BaseRepository {
     const itemRows = await this.driver.query<{
       quantity: number;
       unit_cost: number | null;
+      current_value: number | null;
       preferred_supplier_cost: number | null;
     }>(
-      `SELECT i.quantity AS quantity, i.unit_cost AS unit_cost,
+      `SELECT i.quantity AS quantity, i.unit_cost AS unit_cost, i.current_value AS current_value,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
          FROM items i
-        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')};`,
+        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
     );
     const currentValue = summariseValuation(
       itemRows.map((r) => ({
         quantity: r.quantity,
         unitCost: r.unit_cost,
+        currentValue: r.current_value,
         preferredSupplierCost: r.preferred_supplier_cost,
       })),
     ).totalValue;
@@ -1010,22 +1027,29 @@ export class ReportRepository extends BaseRepository {
       created_at: number;
       quantity_delta: number;
       unit_cost: number | null;
+      current_value: number | null;
       preferred_supplier_cost: number | null;
     }>(
       `SELECT h.created_at AS created_at, h.quantity_delta AS quantity_delta,
-              i.unit_cost AS unit_cost, ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
+              i.unit_cost AS unit_cost, i.current_value AS current_value,
+              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
          FROM item_history h
          JOIN items i ON i.id = h.item_id
         WHERE h.created_at > ? AND h.created_at <= ?
           AND h.quantity_delta IS NOT NULL AND h.quantity_delta <> 0
-          AND i.is_active = 1 AND ${notAVariantParent('i.id')};`,
+          AND i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
       [windowStart, now],
     );
     const events: ValuationEvent[] = eventRows.map((r) => ({
       createdAt: r.created_at,
       valueDelta:
         r.quantity_delta *
-        effectiveUnitCost({ unitCost: r.unit_cost, preferredSupplierCost: r.preferred_supplier_cost }),
+        // Same precedence as the anchor: a manual current value wins over the replacement cost,
+        // so reversing the ledger lands on a past total measured the same way as today's.
+        effectiveUnitValue(
+          r.current_value,
+          effectiveUnitCost({ unitCost: r.unit_cost, preferredSupplierCost: r.preferred_supplier_cost }),
+        ),
     }));
 
     return buildValuationTrend(currentValue, events, windowStart, now, points);
@@ -1093,11 +1117,24 @@ export class ReportRepository extends BaseRepository {
    * repository only fetches the raw events. No schema change. Distinct from the Phase-74
    * valuation-trend (that tracks inventory *value*; this tracks *money out*). `now` defaults to the
    * wall clock.
+   *
+   * **Purchase orders priced in another currency are excluded, not converted** (issue #285). A PO
+   * carries its own `currency`, stored verbatim and never converted, so summing a $500 order into
+   * a £ total would report a spend figure that is simply wrong — in the headline, and in the
+   * by-supplier and by-category breakdowns alike. They are left out on the same terms as a foreign
+   * supplier price ({@link inBaseCurrencySql}), and the count is reported on the report so the
+   * screen can show what was omitted rather than quietly understating the spend.
    */
   async spendAnalytics(windowDays: number, buckets: number, now: number = nowMs()): Promise<SpendReport> {
     const windowEnd = now;
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
     const events: SpendEvent[] = [];
+    // Resolved once per report so a change mid-report cannot split one total across two
+    // currencies, exactly as `inventoryValue` does (#284).
+    const base = this.baseCurrency();
+    // Half-open window on the order's effective date, shared by the spend query and the
+    // excluded-order count so the two can never disagree about what "in the window" means.
+    const poWindowSql = `COALESCE(po.ordered_at, po.created_at) >= ? AND COALESCE(po.ordered_at, po.created_at) < ?`;
 
     // 1. Received purchase-order lines, dated by the order (no per-line receipt timestamp exists).
     const poRows = await this.driver.query<{
@@ -1123,7 +1160,7 @@ export class ReportRepository extends BaseRepository {
          LEFT JOIN items i ON i.id = l.item_id
          LEFT JOIN categories c ON c.id = i.category_id
         WHERE l.received_qty > 0 AND l.unit_cost IS NOT NULL
-          AND COALESCE(po.ordered_at, po.created_at) >= ? AND COALESCE(po.ordered_at, po.created_at) < ?;`,
+          AND ${poWindowSql}${base === null ? '' : ` AND ${inBaseCurrencySql('po.currency', base)}`};`,
       [windowStart, windowEnd],
     );
     for (const r of poRows) {
@@ -1191,7 +1228,37 @@ export class ReportRepository extends BaseRepository {
       });
     }
 
-    return buildSpendReport(events, windowStart, windowEnd, buckets, this.moneyDecimals());
+    // How many in-window orders the currency filter dropped. Every condition the spend query
+    // applies *other* than the currency one is repeated here — the window, the supplier join, and
+    // the "has a received, priced line" test — so the count names exactly the orders whose money
+    // the currency filter removed, and no others. In particular the `suppliers` join must stay an
+    // inner one: an order whose supplier has been deleted (`supplier_id` SET NULL) contributes no
+    // spend regardless of its currency, so counting it here would report money as missing that was
+    // never in the total to begin with. 0 when the base currency is unknown, since nothing was
+    // excluded in that case.
+    let excludedForeignCurrency = 0;
+    if (base !== null) {
+      const row = await this.driver.queryOne<{ n: number }>(
+        `SELECT COUNT(*) AS n
+           FROM purchase_orders po
+           JOIN suppliers s ON s.id = po.supplier_id
+          WHERE ${poWindowSql}
+            AND NOT ${inBaseCurrencySql('po.currency', base)}
+            AND EXISTS (SELECT 1 FROM purchase_order_lines l
+                         WHERE l.po_id = po.id AND l.received_qty > 0 AND l.unit_cost IS NOT NULL);`,
+        [windowStart, windowEnd],
+      );
+      excludedForeignCurrency = row?.n ?? 0;
+    }
+
+    return buildSpendReport(
+      events,
+      windowStart,
+      windowEnd,
+      buckets,
+      excludedForeignCurrency,
+      this.moneyDecimals(),
+    );
   }
 
   /**

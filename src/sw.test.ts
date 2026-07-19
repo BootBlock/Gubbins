@@ -27,8 +27,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  */
 
 type InstallHandler = (event: { waitUntil: (p: Promise<unknown>) => void }) => void;
+type FetchHandler = (event: { request: Request; respondWith: (r: Promise<Response>) => void }) => void;
 
 let installHandler: InstallHandler | undefined;
+let fetchHandler: FetchHandler | undefined;
+let cacheMatch: ReturnType<typeof vi.fn>;
 let skipWaitingSpy: ReturnType<typeof vi.fn>;
 let cacheAddAll: ReturnType<typeof vi.fn>;
 let addEventListenerSpy: ReturnType<typeof vi.spyOn>;
@@ -36,10 +39,11 @@ let addEventListenerSpy: ReturnType<typeof vi.spyOn>;
 /** Stub the worker-global surface sw.ts touches at import time and during `install`. */
 function stubServiceWorkerGlobals(activeWorker: unknown) {
   cacheAddAll = vi.fn().mockResolvedValue(undefined);
+  cacheMatch = vi.fn().mockResolvedValue(undefined);
   const fakeCache = {
     addAll: cacheAddAll,
     keys: vi.fn().mockResolvedValue([]),
-    match: vi.fn().mockResolvedValue(undefined),
+    match: cacheMatch,
     delete: vi.fn().mockResolvedValue(true),
   };
   vi.stubGlobal('caches', {
@@ -57,11 +61,13 @@ function stubServiceWorkerGlobals(activeWorker: unknown) {
   });
 
   installHandler = undefined;
+  fetchHandler = undefined;
   addEventListenerSpy = vi.spyOn(globalThis, 'addEventListener').mockImplementation(((
     type: string,
     handler,
   ) => {
     if (type === 'install') installHandler = handler as InstallHandler;
+    if (type === 'fetch') fetchHandler = handler as FetchHandler;
   }) as typeof globalThis.addEventListener);
 }
 
@@ -106,5 +112,68 @@ describe('src/sw.ts — install handler (fresh install vs. genuine update)', () 
 
     expect(cacheAddAll).toHaveBeenCalled();
     expect(skipWaitingSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The offline fallback (#279). With nothing cached and the network unreachable, handing the app
+ * shell to a *navigation* is the whole point of an offline-first PWA — but handing that same HTML
+ * to a script request answers a 200 whose body the browser rejects on MIME type, masking the real
+ * cause. A subresource must fail cleanly so the app's stale-chunk recovery (lib/stale-chunk-reload)
+ * can recognise a missing chunk and reload onto the current build.
+ */
+describe('src/sw.ts — offline fallback (app shell is for navigations only)', () => {
+  /**
+   * A minimal stand-in for the request. `new Request(url, { mode: 'navigate' })` is forbidden by
+   * the Fetch spec — only the browser may mint a navigation request — so the handler's inputs
+   * (`method` / `mode` / `url`) are supplied directly.
+   */
+  function fakeRequest(url: string, mode: RequestMode): Request {
+    return { method: 'GET', mode, url } as Request;
+  }
+
+  /** Run one request through the worker's fetch handler with the network down. */
+  async function respondOffline(request: Request): Promise<Response> {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    await import('./sw');
+    let response: Promise<Response> | undefined;
+    fetchHandler!({
+      request,
+      respondWith: (r) => {
+        response = r;
+      },
+    });
+    return await response!;
+  }
+
+  it('still serves the precached app shell for a navigation', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' });
+    cacheMatch.mockResolvedValue(
+      new Response('<!doctype html>', { headers: { 'Content-Type': 'text/html' } }),
+    );
+
+    const response = await respondOffline(fakeRequest('https://example.test/Gubbins/items', 'navigate'));
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toContain('<!doctype html>');
+  });
+
+  it('fails an uncached script request cleanly rather than answering it with the app shell', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' });
+    // The shell is in the cache, but only ever answers a request for it *by name* — a chunk that
+    // has been pruned must not be handed HTML dressed as JavaScript.
+    cacheMatch.mockImplementation((key: unknown) =>
+      Promise.resolve(
+        typeof key === 'string'
+          ? new Response('<!doctype html>', { headers: { 'Content-Type': 'text/html' } })
+          : undefined,
+      ),
+    );
+
+    const response = await respondOffline(
+      fakeRequest('https://example.test/Gubbins/assets/items-abc123.js', 'cors'),
+    );
+
+    expect(response.type).toBe('error');
   });
 });
