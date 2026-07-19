@@ -38,6 +38,7 @@ import { useFeature } from '@/features/modules/useFeature';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { BUILTIN_USER_IDS } from '@/db/repositories/constants';
 import type { Role, User } from '@/db/repositories/types';
+import { builtinRoleDescription, builtinRoleName, toStoredRoleText } from './builtin-role-labels';
 import { useApiTokens, useRoles, useUsers } from './queries';
 import {
   useClearUserPassword,
@@ -100,7 +101,10 @@ export function UsersScreen() {
 
   const users = usersQuery.data?.rows ?? [];
   const roles = rolesQuery.data?.rows ?? [];
-  const roleName = (id: string | null): string | null => roles.find((role) => role.id === id)?.name ?? null;
+  const roleName = (id: string | null): string | null => {
+    const role = roles.find((candidate) => candidate.id === id);
+    return role ? builtinRoleName(role, t) : null;
+  };
 
   const onError = (error: unknown): void => setFormError(errorMessage(error, t('users.error.generic')));
 
@@ -159,8 +163,12 @@ export function UsersScreen() {
     };
 
     if (editing) {
+      // The editor showed a built-in role's text translated, so an untouched form must be folded
+      // back to the shipped English — otherwise saving it unchanged would pin the row to whichever
+      // language happened to be active and it would never translate again.
+      const stored = toStoredRoleText(editing, values, t);
       updateRole.mutate(
-        { id: editing.id, input: values },
+        { id: editing.id, input: { ...values, ...stored } },
         { onSuccess: done(t('roles.announce.saved', { vars: { name: values.name } })), onError },
       );
       return;
@@ -581,6 +589,9 @@ function RoleRow({
   readonly onDelete: () => void;
 }) {
   const t = useT();
+  // A built-in role reads from the catalog only while its row still holds the shipped English;
+  // once an operator has renamed it, their wording is what shows, in every language.
+  const description = builtinRoleDescription(role, t);
 
   return (
     <Surface className="flex flex-wrap items-center gap-3 p-3">
@@ -590,16 +601,14 @@ function RoleRow({
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-foreground">{role.name}</span>
+          <span className="text-sm font-medium text-foreground">{builtinRoleName(role, t)}</span>
           {role.isBuiltin ? (
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
               {t('roles.row.builtin')}
             </span>
           ) : null}
         </div>
-        {role.description ? (
-          <p className="truncate text-xs text-muted-foreground">{role.description}</p>
-        ) : null}
+        {description ? <p className="truncate text-xs text-muted-foreground">{description}</p> : null}
         <p className="text-xs text-muted-foreground">
           {t('roles.row.members', { vars: { count: memberCount } })}
         </p>

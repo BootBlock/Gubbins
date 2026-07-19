@@ -7,6 +7,8 @@ import { LAB_FLAGS } from '@/features/lab/lab-flags';
 import { DENSITY_MODES } from '@/features/inventory/view-modes';
 import { GROUP_MODES } from '@/features/inventory/grouping';
 import { SORT_MODES } from '@/features/inventory/sorting';
+import { BUILTIN_ROLES } from '@/features/users/builtin-roles';
+import { builtinRoleDescriptionKey, builtinRoleNameKey } from '@/features/users/builtin-role-labels';
 import { EN_CATALOG } from './messages';
 
 /**
@@ -67,6 +69,18 @@ describe('catalog ↔ registry drift', () => {
   it('every sort mode label equals its message key in the English catalog', () => {
     for (const mode of SORT_MODES) {
       expect(EN_CATALOG[mode.labelKey], `sort mode ${mode.value}`).toBe(mode.label);
+    }
+  });
+
+  // The built-in roles are the sharpest case: their catalog value is not merely a duplicate of the
+  // seeded English, it is what `builtinRoleName` compares the *stored* row against to decide the
+  // row is still untouched. Let those drift and every built-in role silently stops translating.
+  it('every built-in role name and description equals its message key in the English catalog', () => {
+    for (const role of BUILTIN_ROLES) {
+      expect(EN_CATALOG[builtinRoleNameKey(role.id)], `role ${role.id} name`).toBe(role.name);
+      expect(EN_CATALOG[builtinRoleDescriptionKey(role.id)], `role ${role.id} description`).toBe(
+        role.description,
+      );
     }
   });
 

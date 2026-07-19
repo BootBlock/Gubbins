@@ -23,6 +23,11 @@ people are assigned to them.
 
 Add your own with **Add role** whenever none of these quite fits.
 
+> **ℹ️ Note**
+> These four are shown in your [[interface language|Language-and-Region]]. Rename one — or rewrite
+> its description — and your own wording is what Gubbins shows from then on, whatever language you
+> switch to.
+
 ## How permissions are described
 
 Permissions are a grid: a **row for each area** of Gubbins and a **column for each action**.
