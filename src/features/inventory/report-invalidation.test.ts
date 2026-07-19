@@ -44,7 +44,15 @@ describe('invalidateItems', () => {
 
     invalidateItems(client);
 
-    expect(invalidated).toEqual([[...inventoryKeys.items()], [...reportKeys.all]]);
+    // `item-attention` joined the sweep with the #166 status-count split. It is a sibling of
+    // `items()` rather than a child, so the broad helper has to name it explicitly — which is
+    // exactly the drift risk this test exists to catch. The narrow `invalidateItemStock`, which
+    // omits it on purpose, is pinned in `invalidate.test.ts`.
+    expect(invalidated).toEqual([
+      [...inventoryKeys.items()],
+      [...inventoryKeys.itemAttention()],
+      [...reportKeys.all],
+    ]);
   });
 });
 
@@ -69,6 +77,17 @@ describe('item invalidation call sites', () => {
     const offenders = sourceFiles(SRC)
       .filter((path) => !path.endsWith(join('features', 'inventory', 'invalidate.ts')))
       .filter((path) => readFileSync(path, 'utf8').includes('queryKey: inventoryKeys.items()'));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('never invalidate the item-attention prefix outside the seam either (#166)', () => {
+    // The split only pays off while `item-attention` is swept solely by the two helpers. A
+    // call site reaching for the raw prefix would either re-broaden a stock write or, worse,
+    // sweep it *without* `items()` and leave the halves disagreeing.
+    const offenders = sourceFiles(SRC)
+      .filter((path) => !path.endsWith(join('features', 'inventory', 'invalidate.ts')))
+      .filter((path) => readFileSync(path, 'utf8').includes('queryKey: inventoryKeys.itemAttention()'));
 
     expect(offenders).toEqual([]);
   });

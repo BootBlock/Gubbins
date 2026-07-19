@@ -47,7 +47,7 @@ import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
 import { resolveItemTagNames, type BulkEditSpec } from './bulk-edit';
 import { clonedFieldValues, clonedSupplierPartInput, planItemClone } from './clone';
-import { invalidateItems } from './invalidate';
+import { invalidateItems, invalidateItemStock } from './invalidate';
 
 type ItemListData = InfiniteData<Page<Item>, number>;
 
@@ -411,8 +411,12 @@ export function useAdjustQuantity() {
       // before a later tap's write had landed and snap the displayed quantity back to a
       // stale value mid-burst. `isMutating === 1` means this is the only adjust still in
       // flight, i.e. the burst is over (TanStack's awaited-optimistic-update pattern).
+      //
+      // The narrow `invalidateItemStock` is correct here because this write moves nothing but
+      // the item's stock level: the status counts it can change (low / out of stock) sit under
+      // `items()` and are swept, while the six it cannot are left cached (issue #166).
       if (client.isMutating({ mutationKey: ADJUST_QUANTITY_KEY }) === 1) {
-        invalidateItems(client);
+        invalidateItemStock(client);
       }
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
@@ -442,9 +446,10 @@ export function useAdjustGauge() {
     },
     onSettled: (_d, _e, { id }) => {
       // As with quantity: only the last of a rapid burst refetches, so an earlier tap's
-      // refetch can't snap the gauge back to a stale value before a later write lands.
+      // refetch can't snap the gauge back to a stale value before a later write lands — and
+      // likewise this moves only the gauge's stock level, so the narrow sweep applies (#166).
       if (client.isMutating({ mutationKey: ADJUST_GAUGE_KEY }) === 1) {
-        invalidateItems(client);
+        invalidateItemStock(client);
       }
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
@@ -495,7 +500,12 @@ export function useRestoreItem() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => getItemRepository().restore(id),
-    onSettled: () => invalidateItems(client),
+    onSettled: () => {
+      invalidateItems(client);
+      // Restoring puts the item back into its location's count, exactly as soft-deleting took
+      // it out — so the sidebar tree needs the same refresh the delete already asked for.
+      void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+    },
   });
 }
 

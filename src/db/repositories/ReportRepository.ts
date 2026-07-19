@@ -81,6 +81,7 @@ import {
   type PartsCatalogue,
 } from '@/features/reports/parts-catalogue';
 import { THUMBNAIL_SUBQUERY } from './item/sql';
+import { notAVariantParentSql } from './item/attention-sql';
 import { roundMoney } from '@/lib/money';
 import {
   buildReorderPlan,
@@ -103,13 +104,14 @@ const DEFAULT_ABC_WINDOW_DAYS = 365;
 
 /**
  * SQL fragment excluding abstract variant **parents** (an item that has children holds no
- * stock of its own — its variants do), mirroring `listLowStock`. `col` is the qualified id
- * column to test (e.g. `i.id` in a joined query). Keeps the headline/category valuation,
- * the low-stock count and the dead-stock query in agreement.
+ * stock of its own — its variants do), mirroring `listLowStock`. Keeps the headline/category
+ * valuation, the low-stock count and the dead-stock query in agreement.
+ *
+ * Aliases the shared {@link notAVariantParentSql} rather than restating the SQL, so the
+ * reports and the attention feeds can never drift on what "abstract parent" means — see that
+ * function for why it is a correlated `NOT EXISTS` and not a `NOT IN` subquery.
  */
-function notAVariantParent(col: string): string {
-  return `${col} NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)`;
-}
+const notAVariantParent = notAVariantParentSql;
 
 /**
  * SQL fragment excluding unlimited-supply items (Phase 82) from valuation and dead-stock:
@@ -576,7 +578,7 @@ export class ReportRepository extends BaseRepository {
       `SELECT COUNT(*) AS n FROM items
         WHERE is_active = 1
           AND is_unlimited = 0
-          AND id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
+          AND ${notAVariantParent('items.id')}
           AND (
             (tracking_mode = 'DISCRETE'
                AND COALESCE(reorder_point, ?) > 0
@@ -606,7 +608,7 @@ export class ReportRepository extends BaseRepository {
       `SELECT COUNT(*) AS n FROM items
         WHERE is_active = 1
           AND is_unlimited = 0
-          AND ${notAVariantParent('id')}
+          AND ${notAVariantParent('items.id')}
           AND (
             (tracking_mode = 'DISCRETE' AND quantity <= 0)
             OR (tracking_mode = 'CONSUMABLE_GAUGE' AND gross_capacity > 0 AND current_net_value <= 0)
@@ -807,7 +809,7 @@ export class ReportRepository extends BaseRepository {
           AND i.is_unlimited = 0
           AND COALESCE(i.reorder_point, ?) > 0
           AND i.quantity <= COALESCE(i.reorder_point, ?)
-          AND i.id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
+          AND ${notAVariantParent('i.id')}
         ORDER BY (CAST(i.quantity AS REAL) / MAX(COALESCE(i.reorder_point, ?), 1)) ASC,
                  i.name COLLATE NOCASE ASC;`,
       [qty, qty, qty, qty],

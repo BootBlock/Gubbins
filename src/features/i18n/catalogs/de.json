@@ -959,6 +959,7 @@
   "inventory.writeError.heading.gauge": "Füllstand konnte nicht angepasst werden",
   "inventory.writeError.heading.delete": "Artikel konnte nicht gelöscht werden",
   "inventory.writeError.reverted": "Ihre Änderung wurde rückgängig gemacht.",
+  "media.fullResDisabled": "Der Speicher ist nahezu voll, daher werden neue Fotos nur als Vorschaubild gespeichert. Geben Sie Speicherplatz frei, um wieder Bilder in voller Auflösung zu sichern.",
   "db.error.busy": "Die Datenbank ist gerade beschäftigt. Versuchen Sie es gleich noch einmal.",
   "db.error.full": "Auf diesem Gerät ist kein Speicherplatz mehr frei. Geben Sie Speicherplatz frei und versuchen Sie es erneut.",
   "db.error.readOnly": "Die Datenbank ist schreibgeschützt, daher konnte diese Änderung nicht gespeichert werden.",

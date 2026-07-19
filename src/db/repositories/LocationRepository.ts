@@ -33,13 +33,25 @@ interface LocationCountRow extends LocationRow {
   readonly item_count: number;
 }
 
+/**
+ * Every location with its live (active) item count (issue #167).
+ *
+ * The count comes from the trigger-maintained `location_item_counts` cache rather than an
+ * aggregate over `items`. The obvious spelling — `LEFT JOIN items … GROUP BY l.id` — scans the
+ * whole items table, and since most item writes invalidate the sidebar tree that scan ran on
+ * every create, move and delete. Reading the counter makes it a bounded join over the location
+ * hierarchy instead, independent of how many items exist.
+ *
+ * `COALESCE` covers a location with no counter row: the cache only gains one when a location
+ * first holds an item, so "no row" and "zero" are the same statement.
+ */
 const SELECT_WITH_COUNT = `
   SELECT l.id, l.name, l.parent_id, l.is_system, l.description, l.color,
          l.kind, l.capacity, l.is_default, l.archived_at, l.last_counted_at,
          l.dead_stock_mode, l.dead_stock_days, l.updated_at,
-         COUNT(i.id) AS item_count
+         COALESCE(c.item_count, 0) AS item_count
   FROM locations l
-  LEFT JOIN items i ON i.location_id = l.id AND i.is_active = 1
+  LEFT JOIN location_item_counts c ON c.location_id = l.id
 `;
 
 /**
@@ -78,7 +90,6 @@ export class LocationRepository extends BaseRepository {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<LocationCountRow>(
       `${SELECT_WITH_COUNT}
-       GROUP BY l.id
        ORDER BY l.is_system DESC, l.name COLLATE NOCASE ASC
        LIMIT ? OFFSET ?;`,
       [limit, offset],
@@ -100,7 +111,6 @@ export class LocationRepository extends BaseRepository {
   async listAll(): Promise<LocationWithCount[]> {
     const rows = await this.driver.query<LocationCountRow>(
       `${SELECT_WITH_COUNT}
-       GROUP BY l.id
        ORDER BY l.is_system DESC, l.name COLLATE NOCASE ASC;`,
     );
     return rows.map(toWithCount);
@@ -115,7 +125,6 @@ export class LocationRepository extends BaseRepository {
   async getTree(): Promise<LocationTreeNode[]> {
     const rows = await this.driver.query<LocationCountRow>(
       `${SELECT_WITH_COUNT}
-       GROUP BY l.id
        ORDER BY l.is_system DESC, l.name COLLATE NOCASE ASC;`,
     );
     return buildTree(rows.map(toWithCount));

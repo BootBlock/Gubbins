@@ -30,8 +30,9 @@ function filenameOf(path: string): string | undefined {
  * path (e.g. `images/3f2c….webp`) for storage via the ImageRepository.
  */
 export async function saveImageFile(blob: Blob, extension = 'webp'): Promise<string> {
+  const path = reserveImagePath(extension);
   const dir = await imagesDirectory(true);
-  const filename = `${crypto.randomUUID()}.${extension}`;
+  const filename = filenameOf(path)!;
   const handle = await dir.getFileHandle(filename, { create: true });
   const writable = await handle.createWritable();
   try {
@@ -39,7 +40,20 @@ export async function saveImageFile(blob: Blob, extension = 'webp'): Promise<str
   } finally {
     await writable.close();
   }
-  return `${IMAGES_DIR}/${filename}`;
+  return path;
+}
+
+/**
+ * Mint the relative path a full-resolution file *would* occupy, without writing anything.
+ *
+ * Used when the storage tier refuses the full-resolution write (see `full-res-policy`): the
+ * `full_res_opfs_path` column is NOT NULL, so a thumbnail-only row still needs a well-formed
+ * path — one that points at a file which does not exist, exactly like a row Storage Triage has
+ * already downgraded. Callers **must** pair this with `full_res_downgraded_at`, or the row
+ * claims a full-resolution image it never had.
+ */
+export function reserveImagePath(extension = 'webp'): string {
+  return `${IMAGES_DIR}/${crypto.randomUUID()}.${extension}`;
 }
 
 /**

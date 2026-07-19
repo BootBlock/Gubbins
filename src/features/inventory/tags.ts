@@ -4,9 +4,11 @@
  * Assigning tags auto-creates unknown ones (low-friction, §4), so writes refresh
  * both the item's tags and the global dictionary.
  */
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getTagRepository } from '@/db/repositories';
 import type { Tag } from '@/db/repositories/types/tags';
+import { bucketIds, mergeBucketMaps } from './id-buckets';
 import { inventoryKeys } from './queries';
 import { invalidateItems } from './invalidate';
 import { projectTagSet } from './tag-set';
@@ -61,21 +63,32 @@ export function useItemTags(itemId: string | undefined) {
  * Tags for a window of on-screen items (issue #84 — the item-card Tags field), grouped into
  * itemId → tag names. Only runs when the Tags field is visible (`enabled`), mirroring the
  * custom-field-values batch, so cards that don't show tags never pay for the fetch.
+ *
+ * Read one fixed-size id bucket at a time rather than one query for the whole window, so a
+ * scrolling list reads each item's tags exactly once instead of re-reading every resident id
+ * on every page (issue #169 — see {@link bucketIds}).
  */
 export function useItemsTags(itemIds: readonly string[], enabled = true) {
-  return useQuery({
-    queryKey: inventoryKeys.itemsTags(itemIds),
-    queryFn: async () => {
-      const rows = await getTagRepository().listForItems(itemIds);
-      const map = new Map<string, string[]>();
-      for (const { itemId, name } of rows) {
-        const list = map.get(itemId);
-        if (list) list.push(name);
-        else map.set(itemId, [name]);
-      }
-      return map as ReadonlyMap<string, readonly string[]>;
-    },
-    enabled: enabled && itemIds.length > 0,
+  const buckets = useMemo(() => bucketIds(itemIds), [itemIds]);
+  return useQueries({
+    queries: buckets.map((bucket) => ({
+      queryKey: inventoryKeys.itemsTags(bucket),
+      queryFn: async () => {
+        const rows = await getTagRepository().listForItems(bucket);
+        const map = new Map<string, string[]>();
+        for (const { itemId, name } of rows) {
+          const list = map.get(itemId);
+          if (list) list.push(name);
+          else map.set(itemId, [name]);
+        }
+        return map as ReadonlyMap<string, readonly string[]>;
+      },
+      enabled,
+      // Only the partly-filled tail bucket ever re-keys; hold its last tags in place while
+      // it reloads so those cards don't flicker empty.
+      placeholderData: (prev: ReadonlyMap<string, readonly string[]> | undefined) => prev,
+    })),
+    combine: (results) => ({ data: mergeBucketMaps(results.map((r) => r.data)) }),
   });
 }
 

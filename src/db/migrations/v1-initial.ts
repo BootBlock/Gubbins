@@ -1797,6 +1797,97 @@ const baselineStatements: SqlStatement[] = [
   {
     sql: `CREATE INDEX idx_item_regions_region_id ON item_regions(region_id);`,
   },
+
+  // --- Per-location live item counts (issue #167) ---------------------------------
+  // The sidebar tree shows an item count beside every location, and it used to derive them
+  // with `locations LEFT JOIN items … GROUP BY l.id` — an aggregate over the *whole* items
+  // table. Most item writes invalidate the tree, so the count of every location was recomputed
+  // from scratch on each create, move and delete: O(items) work on a hot path that only ever
+  // needs O(locations) numbers.
+  //
+  // This is the counter that replaces it, maintained incrementally by the triggers below so a
+  // read is a bounded join and a write touches one row. It is **derived state, not data**:
+  // nothing else may write it, it is not synced, and it carries no timestamps — a peer's copy
+  // of a count would be meaningless, and the triggers re-derive it from whatever rows a
+  // restore or a sync apply lands in `items`.
+  //
+  // Deliberately **no foreign key** to `locations`. A restore inserts tables in an order this
+  // table has no say in, so an FK here could abort one (see the snapshot FK-integrity work) for
+  // a row that is pure cache. A count for a location that no longer exists is instead swept by
+  // the locations delete trigger, and unreachable anyway — every read starts from `locations`.
+  {
+    sql: `
+        CREATE TABLE location_item_counts (
+          location_id TEXT    PRIMARY KEY NOT NULL,
+          item_count  INTEGER NOT NULL DEFAULT 0,
+          CHECK (item_count >= 0)
+        ) STRICT;
+      `,
+  },
+  // Seeds the counter from whatever is already in `items`. A no-op on a fresh database (the
+  // baseline builds an empty one), but it keeps the table's contents a pure function of `items`
+  // at every point in the DDL rather than something that only becomes true once a trigger fires.
+  {
+    sql: `
+        INSERT INTO location_item_counts (location_id, item_count)
+        SELECT location_id, COUNT(*) FROM items WHERE is_active = 1 GROUP BY location_id;
+      `,
+  },
+  {
+    sql: `
+        CREATE TRIGGER trg_location_item_counts_ins
+        AFTER INSERT ON items
+        FOR EACH ROW WHEN NEW.is_active = 1
+        BEGIN
+          INSERT INTO location_item_counts (location_id, item_count) VALUES (NEW.location_id, 1)
+          ON CONFLICT (location_id) DO UPDATE SET item_count = item_count + 1;
+        END;
+      `,
+  },
+  {
+    sql: `
+        CREATE TRIGGER trg_location_item_counts_del
+        AFTER DELETE ON items
+        FOR EACH ROW WHEN OLD.is_active = 1
+        BEGIN
+          UPDATE location_item_counts
+          SET item_count = MAX(item_count - 1, 0)
+          WHERE location_id = OLD.location_id;
+        END;
+      `,
+  },
+  // An update only matters when it changes which bucket the row belongs to — its location, or
+  // whether it counts at all (`is_active`, i.e. the soft delete and its undo). Both sides are
+  // guarded so a move between two locations decrements the old and increments the new, while a
+  // soft delete in place only decrements.
+  {
+    sql: `
+        CREATE TRIGGER trg_location_item_counts_upd
+        AFTER UPDATE ON items
+        FOR EACH ROW WHEN OLD.location_id IS NOT NEW.location_id OR OLD.is_active IS NOT NEW.is_active
+        BEGIN
+          UPDATE location_item_counts
+          SET item_count = MAX(item_count - 1, 0)
+          WHERE OLD.is_active = 1 AND location_id = OLD.location_id;
+
+          INSERT INTO location_item_counts (location_id, item_count)
+          SELECT NEW.location_id, 1 WHERE NEW.is_active = 1
+          ON CONFLICT (location_id) DO UPDATE SET item_count = item_count + 1;
+        END;
+      `,
+  },
+  // Keeps the cache from outliving what it counts. Locations are deleted rarely and re-parent
+  // their items to Unassigned first, so by the time this fires the count is already 0.
+  {
+    sql: `
+        CREATE TRIGGER trg_location_item_counts_sweep
+        AFTER DELETE ON locations
+        FOR EACH ROW
+        BEGIN
+          DELETE FROM location_item_counts WHERE location_id = OLD.id;
+        END;
+      `,
+  },
 ];
 
 /** The fingerprint of the DDL above — see {@link baselineFingerprint}. */

@@ -33,7 +33,9 @@ export { ITEM_SORT_FIELDS } from './item/sql';
 export {
   ITEM_STATUS_FILTERS,
   STATUS_FILTER_FEATURE,
+  STOCK_DEPENDENT_STATUSES,
   isItemStatusFilter,
+  isStockDependentStatus,
   buildStatusFilter,
   type ItemStatusFilter,
 } from './item/status-filter';
