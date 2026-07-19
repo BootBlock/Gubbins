@@ -5,6 +5,7 @@
  * path. Kept free of the DOM/repositories so the serialisation is unit-tested directly;
  * the wizard wires these to its existing `download` side-effect.
  */
+import { stripFloatNoise } from '@/lib/float-noise';
 import type { ConsumptionRateReport, DeadStockReport, InventoryValueReport, MovementReport } from './reports';
 import type { AbcReport } from './abc-analysis';
 import type { TurnoverReport } from './turnover';
@@ -26,10 +27,14 @@ export type ReportCsvKind =
   | 'DATA_HYGIENE'
   | 'SPEND';
 
-/** RFC-4180 cell quoting (mirrors the items-CSV exporter). */
+/**
+ * RFC-4180 cell quoting (mirrors the items-CSV exporter). Numeric cells shed their
+ * binary-float noise first (issue #291) so a summed valuation reads `0.3`, not
+ * `0.30000000000000004`.
+ */
 function cell(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const text = String(value);
+  const text = typeof value === 'number' ? String(stripFloatNoise(value)) : String(value);
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
