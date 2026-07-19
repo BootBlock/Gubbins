@@ -1,21 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, FormField, Input, Modal, SelectField, Spinner, useToast } from '@/components/foundry';
 import type { ProjectBudgetCategory, ProjectExpense } from '@/db/repositories';
+import { fromDateInputValue, toDateInputValue, todayDateInputValue } from '@/lib/date-input';
 import { useAddExpense, useUpdateExpense } from '../projects';
-
-/** Convert a UNIX-ms timestamp to a `yyyy-mm-dd` value for a date input (local time). */
-function toDateInput(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-/** Parse a `yyyy-mm-dd` date input back to UNIX-ms (local midnight); null when blank/invalid. */
-function fromDateInput(value: string): number | null {
-  if (!value) return null;
-  const ms = new Date(`${value}T00:00:00`).getTime();
-  return Number.isFinite(ms) ? ms : null;
-}
 
 /**
  * Add or edit a manual expense in a project's spend ledger (spec §4 budgeting). Captures a
@@ -46,7 +33,7 @@ export function ExpenseDialog({
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [incurred, setIncurred] = useState(() => toDateInput(Date.now()));
+  const [incurred, setIncurred] = useState(() => todayDateInputValue());
   const [error, setError] = useState<string | undefined>();
 
   useEffect(() => {
@@ -55,7 +42,7 @@ export function ExpenseDialog({
     setDescription(expense?.description ?? '');
     setAmount(expense ? String(expense.amount) : '');
     setCategoryId(expense?.categoryId ?? '');
-    setIncurred(toDateInput(expense?.incurredAt ?? Date.now()));
+    setIncurred(expense ? toDateInputValue(expense.incurredAt) : todayDateInputValue());
   }, [open, expense]);
 
   const submit = () => {
@@ -68,7 +55,7 @@ export function ExpenseDialog({
       description: description.trim() || null,
       amount: parsed,
       categoryId: categoryId || null,
-      incurredAt: fromDateInput(incurred) ?? Date.now(),
+      incurredAt: fromDateInputValue(incurred) ?? Date.now(),
     };
     const onSuccess = () => {
       show({
