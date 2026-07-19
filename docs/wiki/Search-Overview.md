@@ -51,6 +51,18 @@ Search combines with the other ways to narrow the list:
 > box and status chips — so you're always looking at exactly one query's results, never a
 > confusing mix.
 
+## How many matched
+
+Directly above the list, Gubbins tells you how many items your current search and filters match
+— for example **“128 items match”**. That figure is the *total* across everything that matched,
+not just the rows currently on screen, so it stays put as you scroll and only changes when you
+actually change a filter. It reads the same when the list is [[grouped by location|Inventory-Views]]
+or driven by the **Visual search** panel.
+
+Because it's announced as a live status, screen-reader users hear the new total each time a
+filter changes — the quickest way to tell whether a query narrowed too far, or matched nothing
+at all.
+
 ## Related pages
 
 - **[[Capabilities|Custom-Fields-and-Capabilities]]** — searchable, weighted attributes with
