@@ -28,7 +28,7 @@
  * Ratios (`share`, `marginPct`) are deliberately computed from the raw totals: they are
  * fractions, not amounts.
  */
-import { roundMoney } from '@/lib/money';
+import { MONEY_DECIMALS, roundMoney } from '@/lib/money';
 
 /** The two outbound kinds this report folds together. */
 export type SalesKind = 'SOLD' | 'WRITTEN_OFF';
@@ -125,12 +125,20 @@ const UNCATEGORISED = 'Uncategorised';
  * tallied in `unitsWithoutCost`; margin is therefore always proceeds-of-costed-sales minus their
  * COGS, never overstated by unpriced stock. Write-offs never contribute proceeds or COGS — their
  * cost is surfaced separately as `writeOffValue`.
+ *
+ * @param decimals Places every published amount is quantised to — the reporting currency's
+ * **minor unit**, not a flat 2dp (issue #292). A yen has no minor unit and a Bahraini dinar has
+ * three, so a hard-coded 2 would book half a yen of margin the currency cannot express, then
+ * display it rounded and disagree with itself. The caller resolves this from the base currency
+ * (`BaseRepository.moneyDecimals()`); it defaults to {@link MONEY_DECIMALS} so a caller that has
+ * no currency to hand — and every existing test — behaves exactly as before.
  */
 export function buildSalesReport(
   events: readonly SalesEvent[],
   windowStart: number,
   windowEnd: number,
   bucketCount: number,
+  decimals: number = MONEY_DECIMALS,
 ): SalesReport {
   const count = Math.max(1, Math.floor(bucketCount));
   const span = Math.max(1, windowEnd - windowStart);
@@ -197,25 +205,25 @@ export function buildSalesReport(
   // Every figure above accumulated at full precision; the published totals are quantised here,
   // once, at the boundary (issue #288). Rounding per line and summing rounded lines would make
   // three sales of 3 units at 0.10 total 0.8999999999999999 rather than 0.90.
-  const totalProceeds = roundMoney(proceeds);
-  const totalCogs = roundMoney(cogs);
+  const totalProceeds = roundMoney(proceeds, decimals);
+  const totalCogs = roundMoney(cogs, decimals);
   // Margin is derived from the two figures the report *publishes*, not from the raw difference,
   // so the three amounts a reader sees side by side actually subtract. Taking `roundMoney(raw
   // proceeds − raw cogs)` instead would reintroduce the very defect this seam removes: proceeds
   // 0.005 and cost 0.004 publish as 0.01 and 0.00, which no reader can reconcile with a 0.00
-  // margin. The outer round mops up the float noise in a difference of two 2dp values.
-  const margin = roundMoney(totalProceeds - totalCogs);
+  // margin. The outer round mops up the float noise in a difference of two quantised values.
+  const margin = roundMoney(totalProceeds - totalCogs, decimals);
 
   const byCategory: SalesGroup[] = [...categoryTotals.entries()]
     .map(([id, { name, proceeds: p, cogs: c }]) => {
-      const groupProceeds = roundMoney(p);
-      const groupCogs = roundMoney(c);
+      const groupProceeds = roundMoney(p, decimals);
+      const groupCogs = roundMoney(c, decimals);
       return {
         id,
         name,
         proceeds: groupProceeds,
         cogs: groupCogs,
-        margin: roundMoney(groupProceeds - groupCogs),
+        margin: roundMoney(groupProceeds - groupCogs, decimals),
         // The share stays a ratio of the raw totals — it is a fraction, not an amount, and
         // dividing rounded pennies would visibly skew a small category's percentage.
         share: share(p, proceeds),
@@ -238,19 +246,19 @@ export function buildSalesReport(
     unitsSold,
     saleCount,
     unitsWithoutCost,
-    writeOffValue: roundMoney(writeOffValue),
+    writeOffValue: roundMoney(writeOffValue, decimals),
     writeOffUnits,
     writeOffCount,
     buckets: buckets.map((b) => {
-      const bucketProceeds = roundMoney(b.proceeds);
-      const bucketCogs = roundMoney(b.cogs);
+      const bucketProceeds = roundMoney(b.proceeds, decimals);
+      const bucketCogs = roundMoney(b.cogs, decimals);
       return {
         start: b.start,
         end: b.end,
         proceeds: bucketProceeds,
         cogs: bucketCogs,
         // Derived from the published pair, exactly like the headline margin.
-        margin: roundMoney(bucketProceeds - bucketCogs),
+        margin: roundMoney(bucketProceeds - bucketCogs, decimals),
       };
     }),
     byCategory,

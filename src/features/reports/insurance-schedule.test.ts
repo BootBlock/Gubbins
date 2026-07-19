@@ -257,4 +257,43 @@ describe('buildInsuranceSchedule', () => {
       expect(schedule.grandTotal).toBe(3.02);
     });
   });
+
+  // Issue #292: the scale is the currency's minor unit, not a flat 2dp.
+  describe('currency minor unit', () => {
+    it('quantises every rung to whole units for a 0-decimal currency (JPY)', () => {
+      const schedule = buildInsuranceSchedule(
+        [
+          item({ id: 'a', locationId: 'garage', quantity: 3, unitCost: 100.5 }),
+          item({ id: 'b', locationId: 'garage', quantity: 1, unitCost: 200.4 }),
+          item({ id: 'c', locationId: 'attic', quantity: 2, unitCost: 50.25 }),
+        ],
+        LOCATIONS,
+        NOW,
+        0,
+      );
+      const garage = schedule.groups.find((g) => g.locationId === 'garage')!;
+      const attic = schedule.groups.find((g) => g.locationId === 'attic')!;
+      // 3 × 100.5 = 301.5 → 302 (half away from zero); a JPY line cannot hold half a yen.
+      expect(garage.lines.map((l) => l.replacementValue)).toEqual([302, 200]);
+      // The #288 guarantee still holds at this scale: each rung sums the rung below as printed.
+      expect(garage.subtotal).toBe(502);
+      expect(attic.subtotal).toBe(101);
+      expect(schedule.grandTotal).toBe(603);
+      expect(schedule.grandTotal).toBe(garage.subtotal + attic.subtotal);
+    });
+
+    it('preserves the third digit for a 3-decimal currency (BHD)', () => {
+      const schedule = buildInsuranceSchedule(
+        [item({ id: 'a', locationId: 'garage', quantity: 3, unitCost: 1.0005 })],
+        LOCATIONS,
+        NOW,
+        3,
+      );
+      // 3 × 1.0005 = 3.0015 → 3.002. At the default 2dp this would flatten to 3.00 and discard
+      // a fils the amount genuinely has.
+      expect(schedule.groups[0]!.lines[0]!.replacementValue).toBe(3.002);
+      expect(schedule.groups[0]!.subtotal).toBe(3.002);
+      expect(schedule.grandTotal).toBe(3.002);
+    });
+  });
 });

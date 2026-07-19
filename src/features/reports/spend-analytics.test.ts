@@ -149,4 +149,43 @@ describe('buildSpendReport', () => {
     expect(report.total).toBeGreaterThanOrEqual(0);
     expect(report.bySource.every((s) => Number.isFinite(s.share))).toBe(true);
   });
+
+  // Issue #292: the scale is the currency's minor unit, not a flat 2dp.
+  describe('currency minor unit', () => {
+    it('quantises every published amount to whole units for a 0-decimal currency (JPY)', () => {
+      const report = buildSpendReport(
+        [
+          ev(10, 100.5, { supplier: 'RS', categoryId: 'c1', categoryName: 'Resistors' }),
+          ev(60, 200.25, { supplier: 'Mouser', categoryId: 'c2', categoryName: 'Caps' }),
+        ],
+        0,
+        100,
+        2,
+        0,
+      );
+      // Raw 300.75 → whole yen, half away from zero; a JPY total is never written with a fraction.
+      expect(report.total).toBe(301);
+      expect(report.buckets.map((b) => b.total)).toEqual([101, 200]);
+      expect(report.bySupplier.map((g) => g.total)).toEqual([200, 101]);
+      expect(report.byCategory.map((g) => g.total)).toEqual([200, 101]);
+      expect(report.bySource.find((s) => s.source === 'PURCHASE_ORDER')!.total).toBe(301);
+      // Shares stay ratios of the raw totals, unaffected by the coarser scale.
+      expect(report.bySource.find((s) => s.source === 'PURCHASE_ORDER')!.share).toBe(1);
+    });
+
+    it('preserves the third digit for a 3-decimal currency (BHD)', () => {
+      const report = buildSpendReport(
+        [ev(10, 1.0005, { supplier: 'RS', categoryId: 'c1', categoryName: 'Resistors' })],
+        0,
+        100,
+        1,
+        3,
+      );
+      // At the default 2dp this would publish 1.00 and discard a fils the amount genuinely has.
+      expect(report.total).toBe(1.001);
+      expect(report.buckets[0]!.total).toBe(1.001);
+      expect(report.bySupplier[0]!.total).toBe(1.001);
+      expect(report.byCategory[0]!.total).toBe(1.001);
+    });
+  });
 });

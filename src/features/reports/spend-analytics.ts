@@ -19,7 +19,7 @@
  * figure published here goes through `@/lib/money`, so the headline total, the buckets and the
  * breakdowns cannot drift a penny apart. Shares stay ratios of the raw totals.
  */
-import { roundMoney } from '@/lib/money';
+import { MONEY_DECIMALS, roundMoney } from '@/lib/money';
 
 /** The three spend sources, each composed from data already stored. */
 export type SpendSource = 'PURCHASE_ORDER' | 'PROJECT_EXPENSE' | 'ACQUISITION';
@@ -128,12 +128,20 @@ const UNCATEGORISED = 'Uncategorised';
  * a stable order; a null supplier/category collapses into a single catch-all group. `bySource`
  * always lists all three sources in {@link SPEND_SOURCES} order (0 when none). Every `share` uses a
  * divide-by-zero-safe guard.
+ *
+ * @param decimals Places every published amount is quantised to — the reporting currency's
+ * **minor unit**, not a flat 2dp (issue #292). A yen has no minor unit and a Bahraini dinar has
+ * three, so a hard-coded 2 invents precision a JPY total cannot hold and discards a digit a BHD
+ * total genuinely has. The caller resolves this from the base currency
+ * (`BaseRepository.moneyDecimals()`); it defaults to {@link MONEY_DECIMALS} so a caller that has
+ * no currency to hand — and every existing test — behaves exactly as before.
  */
 export function buildSpendReport(
   events: readonly SpendEvent[],
   windowStart: number,
   windowEnd: number,
   bucketCount: number,
+  decimals: number = MONEY_DECIMALS,
 ): SpendReport {
   const count = Math.max(1, Math.floor(bucketCount));
   const span = Math.max(1, windowEnd - windowStart);
@@ -191,14 +199,14 @@ export function buildSpendReport(
   // Shares stay ratios of the raw totals — a fraction is not an amount.
   const bySource: SpendSourceTotal[] = SPEND_SOURCES.map((source) => {
     const sourceTotal = sourceTotals.get(source) ?? 0;
-    return { source, total: roundMoney(sourceTotal), share: share(sourceTotal, total) };
+    return { source, total: roundMoney(sourceTotal, decimals), share: share(sourceTotal, total) };
   });
 
   const bySupplier: SpendGroup[] = [...supplierTotals.entries()]
     .map(([id, { name, total: groupTotal }]) => ({
       id,
       name,
-      total: roundMoney(groupTotal),
+      total: roundMoney(groupTotal, decimals),
       share: share(groupTotal, total),
     }))
     .sort(byTotalThenName);
@@ -207,7 +215,7 @@ export function buildSpendReport(
     .map(([id, { name, total: groupTotal }]) => ({
       id,
       name,
-      total: roundMoney(groupTotal),
+      total: roundMoney(groupTotal, decimals),
       share: share(groupTotal, total),
     }))
     .sort(byTotalThenName);
@@ -215,9 +223,13 @@ export function buildSpendReport(
   return {
     windowStart,
     windowEnd,
-    total: roundMoney(total),
+    total: roundMoney(total, decimals),
     eventCount,
-    buckets: buckets.map((b) => ({ start: b.start, end: b.end, total: roundMoney(b.total) })),
+    buckets: buckets.map((b) => ({
+      start: b.start,
+      end: b.end,
+      total: roundMoney(b.total, decimals),
+    })),
     bySource,
     bySupplier,
     byCategory,

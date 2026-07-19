@@ -196,4 +196,61 @@ describe('buildSalesReport', () => {
       expect(alpha.share).toBeCloseTo(0.001, 6);
     });
   });
+
+  // Issue #292: the scale is the currency's minor unit, not a flat 2dp.
+  describe('currency minor unit', () => {
+    it('quantises to whole units for a 0-decimal currency (JPY), keeping margin exact', () => {
+      const report = buildSalesReport(
+        [
+          ev(10, { proceeds: 100.5, cost: 40.4, categoryId: 'a', categoryName: 'Alpha' }),
+          ev(30, { proceeds: 200.25, cost: 10.1, categoryId: 'b', categoryName: 'Bravo' }),
+        ],
+        0,
+        100,
+        2,
+        0,
+      );
+      // Raw 300.75 / 50.5 → whole yen, half away from zero. A JPY figure cannot hold a fraction,
+      // so publishing 300.75 would be a total the currency is never written in.
+      expect(report.proceeds).toBe(301);
+      expect(report.cogs).toBe(51);
+      // The #288 guarantee still holds at this scale: the published figures subtract exactly.
+      expect(report.margin).toBe(250);
+      expect(report.margin).toBe(report.proceeds - report.cogs);
+      for (const bucket of report.buckets) {
+        expect(Number.isInteger(bucket.proceeds)).toBe(true);
+        expect(bucket.margin).toBe(bucket.proceeds - bucket.cogs);
+      }
+      for (const group of report.byCategory) {
+        expect(Number.isInteger(group.proceeds)).toBe(true);
+        expect(group.margin).toBe(group.proceeds - group.cogs);
+      }
+    });
+
+    it('preserves the third digit for a 3-decimal currency (BHD)', () => {
+      const report = buildSalesReport(
+        [ev(10, { proceeds: 1.0005, cost: 0.0004, categoryId: 'a', categoryName: 'Alpha' })],
+        0,
+        100,
+        1,
+        3,
+      );
+      // At the default 2dp this would publish 1.00 and discard a fils the amount genuinely has.
+      expect(report.proceeds).toBe(1.001);
+      expect(report.cogs).toBe(0);
+      expect(report.margin).toBe(1.001);
+      expect(report.byCategory[0]!.proceeds).toBe(1.001);
+    });
+
+    it('rounds the write-off value to the minor unit too', () => {
+      const report = buildSalesReport(
+        [ev(10, { kind: 'WRITTEN_OFF', quantity: 3, cost: 100.5 })],
+        0,
+        100,
+        1,
+        0,
+      );
+      expect(report.writeOffValue).toBe(101);
+    });
+  });
 });

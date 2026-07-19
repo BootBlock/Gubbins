@@ -6,7 +6,7 @@
  * per the pure-.ts-seam split.
  */
 import type { PurchaseOrderStatus } from '@/db/repositories';
-import { sumMoney } from '@/lib/money';
+import { MONEY_DECIMALS, sumMoney } from '@/lib/money';
 
 export interface PoStatusPresentation {
   readonly label: string;
@@ -42,7 +42,19 @@ export function totalReceived(lines: readonly { receivedQty: number }[]): number
  *
  * Lines extend at full precision and the **total** is quantised once (issue #288), so the figure
  * shown against an order matches what its lines actually come to rather than carrying float drift.
+ *
+ * @param decimals How many places to quantise that total to — the *currency's* minor unit, not a
+ * flat two (issue #292). An order priced in yen has no sub-unit at all, so a 2dp total advertises
+ * a half-yen the order cannot be placed for; one priced in Bahraini dinars is written to three, and
+ * a 2dp total would silently drop a fils per order. Callers pass
+ * `useFormatters().currencyFractionDigits()`; the default keeps the pre-#292 behaviour.
  */
-export function estimatedValue(lines: readonly { orderedQty: number; unitCost: number | null }[]): number {
-  return sumMoney(lines.map((l) => (l.unitCost != null ? Math.max(0, l.orderedQty) * l.unitCost : 0)));
+export function estimatedValue(
+  lines: readonly { orderedQty: number; unitCost: number | null }[],
+  decimals: number = MONEY_DECIMALS,
+): number {
+  return sumMoney(
+    lines.map((l) => (l.unitCost != null ? Math.max(0, l.orderedQty) * l.unitCost : 0)),
+    decimals,
+  );
 }

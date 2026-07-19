@@ -31,7 +31,9 @@ export function BudgetSection({ projectId }: { projectId: string }) {
     );
   }
 
-  const summary = summariseBudget(budgetQuery.data, warnPercent);
+  // Quantise to the base currency's minor unit (issue #292), so the figures are on the same scale
+  // as the `Money` renderer beside them rather than a flat 2dp.
+  const summary = summariseBudget(budgetQuery.data, warnPercent, fmt.currencyFractionDigits());
   const money = (n: number) => <Money value={n} formatters={fmt} />;
   const hasBudget = summary.budget != null;
   const categories = categoriesQuery.data ?? [];

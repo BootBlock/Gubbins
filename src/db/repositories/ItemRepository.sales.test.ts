@@ -84,6 +84,33 @@ describe('ItemRepository — sell & write-off', () => {
     expect(written!.metadata).toMatchObject({ quantity: 2, reason: 'Damaged', unitCostAtSale: 3 });
   });
 
+  it('books the sale total on the base currency’s minor unit, not a flat 2dp (issue #292)', async () => {
+    const drawer = await locations.create({ name: 'Drawer A' });
+    // The issue's worked example under a 0-decimal base currency: 3 × ¥100.5 is ¥301.5, and half
+    // a yen is not an amount that can be paid — it must book, and report, as a whole ¥302.
+    const yen = new ItemRepository(driver, { resolveBaseCurrency: () => 'JPY' });
+    const item = await items.create({ name: 'Widget', quantity: 10, locationId: drawer.id });
+
+    await yen.sell({ itemId: item.id, quantity: 3, unitSalePrice: 100.5 });
+
+    const sold = (await items.getHistory(item.id)).rows.find((h) => h.action === 'SOLD');
+    expect(sold!.netValueDelta).toBe(302);
+    expect(sold!.metadata).toMatchObject({ saleTotal: 302 });
+  });
+
+  it('keeps a 3-decimal base currency’s third digit rather than flattening it (issue #292)', async () => {
+    const drawer = await locations.create({ name: 'Drawer A' });
+    const dinar = new ItemRepository(driver, { resolveBaseCurrency: () => 'BHD' });
+    const item = await items.create({ name: 'Widget', quantity: 10, locationId: drawer.id });
+
+    await dinar.sell({ itemId: item.id, quantity: 3, unitSalePrice: 1.234 });
+
+    // 3.702 exactly — quantising to 2dp would have booked 3.70 and lost a fils.
+    expect((await items.getHistory(item.id)).rows.find((h) => h.action === 'SOLD')!.netValueDelta).toBe(
+      3.702,
+    );
+  });
+
   it('refuses to sell a non-DISCRETE item', async () => {
     const drawer = await locations.create({ name: 'Drawer A' });
     const serial = await items.create({ name: 'Camera', trackingMode: 'SERIALISED', locationId: drawer.id });

@@ -1,5 +1,44 @@
 import { describe, expect, it } from 'vitest';
-import { MONEY_DECIMALS, MONEY_EPSILON, moneyExceeds, moneyReaches, roundMoney, sumMoney } from './money';
+import {
+  MONEY_DECIMALS,
+  MONEY_EPSILON,
+  moneyDecimals,
+  moneyExceeds,
+  moneyReaches,
+  roundMoney,
+  sumMoney,
+} from './money';
+
+describe('moneyDecimals', () => {
+  it('reports each currency’s real minor unit, not a flat 2 (issue #292)', () => {
+    expect(moneyDecimals('GBP')).toBe(2);
+    expect(moneyDecimals('USD')).toBe(2);
+    expect(moneyDecimals('EUR')).toBe(2);
+    expect(moneyDecimals('JPY')).toBe(0); // the yen has no subunit in circulation
+    expect(moneyDecimals('BHD')).toBe(3); // 1000 fils to the dinar
+  });
+
+  it('normalises case and surrounding whitespace', () => {
+    expect(moneyDecimals(' jpy ')).toBe(0);
+  });
+
+  it('falls back to the default for an absent or malformed code rather than throwing', () => {
+    expect(moneyDecimals(null)).toBe(MONEY_DECIMALS);
+    expect(moneyDecimals(undefined)).toBe(MONEY_DECIMALS);
+    expect(moneyDecimals('')).toBe(MONEY_DECIMALS);
+    expect(moneyDecimals('not-a-code')).toBe(MONEY_DECIMALS);
+    // Well-formed but unassigned: `Intl` accepts it and reports the generic 2.
+    expect(moneyDecimals('XBT')).toBe(MONEY_DECIMALS);
+  });
+
+  it('drives roundMoney to the scale the currency can actually hold', () => {
+    // The issue's worked example: 3 × ¥100.5 is 301.5, which is not a payable amount.
+    expect(roundMoney(301.5, moneyDecimals('JPY'))).toBe(302);
+    expect(roundMoney(301.5, moneyDecimals('GBP'))).toBe(301.5);
+    expect(roundMoney(1.2345, moneyDecimals('BHD'))).toBe(1.235);
+    expect(roundMoney(1.2345, moneyDecimals('GBP'))).toBe(1.23);
+  });
+});
 
 describe('roundMoney', () => {
   it('rounds the ties that the old scaled Math.round got wrong', () => {

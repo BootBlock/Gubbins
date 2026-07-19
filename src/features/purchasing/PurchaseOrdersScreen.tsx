@@ -68,6 +68,9 @@ type PoTab = 'orders' | 'reorder' | 'wishlist';
  */
 export function PurchaseOrdersScreen() {
   const f = useFormatters();
+  // The base currency's minor unit (issue #292). Resolved once for the whole list — it is the
+  // same for every order, and every row would otherwise re-derive it on each render.
+  const currencyDecimals = f.currencyFractionDigits();
   const t = useT();
   const ordersQuery = usePurchaseOrders();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -197,6 +200,7 @@ export function PurchaseOrdersScreen() {
                   po={po}
                   active={po.id === selected}
                   formatters={f}
+                  decimals={currencyDecimals}
                   onSelect={() => setSelectedId(po.id)}
                 />
               ))
@@ -299,11 +303,14 @@ function OrderListRow({
   po,
   active,
   formatters,
+  decimals,
   onSelect,
 }: {
   po: PurchaseOrderWithLines;
   active: boolean;
   formatters: Formatters;
+  /** The base currency's minor unit, resolved once by the list rather than per row (issue #292). */
+  decimals: number;
   onSelect: () => void;
 }) {
   const t = useT();
@@ -324,7 +331,8 @@ function OrderListRow({
       </div>
       <div className="flex w-full items-center justify-between text-xs text-muted-foreground">
         <span>{po.reference ?? 'No reference'}</span>
-        <Money value={estimatedValue(po.lines)} formatters={formatters} />
+        {/* Totalled at the base currency's minor unit, not a flat 2dp (issue #292). */}
+        <Money value={estimatedValue(po.lines, decimals)} formatters={formatters} />
       </div>
     </button>
   );
