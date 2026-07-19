@@ -11,7 +11,6 @@ import { PassThrough } from 'node:stream';
 import {
   attachServerResilience,
   createFaultTracker,
-  faultMessage,
   installProcessResilience,
   FAULT_THRESHOLD,
   FAULT_WINDOW_MS,
@@ -57,20 +56,6 @@ describe('createFaultTracker', () => {
     for (let i = 0; i < FAULT_THRESHOLD * 2; i += 1) {
       expect(spaced.record(i * FAULT_WINDOW_MS)).toBe('continue');
     }
-  });
-});
-
-describe('faultMessage', () => {
-  it('includes the errno code when there is one', () => {
-    const err: NodeJS.ErrnoException = new Error('too many open files');
-    err.code = 'EMFILE';
-    expect(faultMessage(err)).toBe('too many open files (EMFILE)');
-  });
-
-  it('describes a plain Error and a non-Error rejection reason', () => {
-    expect(faultMessage(new Error('boom'))).toBe('boom');
-    expect(faultMessage('just a string')).toBe('just a string');
-    expect(faultMessage(undefined)).toBe('undefined');
   });
 });
 

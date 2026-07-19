@@ -16,6 +16,7 @@
  * this point: hydration is the only write.
  */
 import { readFile } from 'node:fs/promises';
+import { errorMessage } from './errors.ts';
 import { migrations } from '@/db/migrations';
 import { runMigrations } from '@/db/migrations/engine';
 import type { MigrationReport } from '@/db/migrations';
@@ -70,7 +71,7 @@ export async function hydrateFromFile(path: string): Promise<HydrateResult> {
   try {
     text = await readFile(path, 'utf8');
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = errorMessage(err);
     throw new Error(`Could not read the snapshot file at "${path}": ${reason}`);
   }
   return hydrateFromJson(text);
