@@ -14,6 +14,7 @@
  */
 
 import { hasOcr } from '@/lib/env/feature-detection';
+import { ocrAssetRoot } from './ocr-asset-cache';
 
 export { hasOcr };
 
@@ -63,7 +64,9 @@ export function ocrAssetPaths(
   corePath: string;
   langPath: string;
 } {
-  const root = `${base.replace(/\/?$/, '/')}ocr/`;
+  // Shared with the service worker's runtime cache, so the URLs the engine fetches are exactly
+  // the ones the worker recognises and keeps for offline use ({@link ./ocr-asset-cache}).
+  const root = ocrAssetRoot(base);
   return {
     workerPath: `${root}worker.min.js`,
     corePath: root,

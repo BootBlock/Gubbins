@@ -27,7 +27,13 @@ better) — selectable in Settings.
 > **⚠️ Heads-up**
 > OCR is **opt-in** and its engine is downloaded separately the first time you use it, to keep
 > the app small and fast for people who don't need it. Turn it on under **Settings → Scanning &
-> labels**.
+> labels**. That first download needs a connection and is a few megabytes — but it's kept after
+> that, so later scans reuse it rather than downloading it again.
+
+> **ℹ️ Note**
+> Once the engine has been downloaded, OCR keeps working **offline** — handy in a garage,
+> workshop or storage unit with no signal. Switching accuracy tier fetches that tier's model the
+> first time you use it, so pick the one you want while you still have a connection.
 
 > **ℹ️ Note**
 > Like everything in Gubbins, this is offline and private — the recognition happens locally and
