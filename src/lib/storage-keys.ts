@@ -78,6 +78,13 @@ export const EMOJI_PICKER_SIZE_KEY = 'gubbins:emoji-picker-size';
 export const STALE_CHUNK_RELOAD_KEY = 'gubbins:stale-chunk-reload';
 
 /**
+ * Records that the user chose to open the database in this tab even though the single-tab
+ * guard could not arbitrate (see `db/tab-lock.ts`). Defined here for the same reason as the
+ * two keys above — it is written directly rather than through a Zustand `persist` name.
+ */
+export const TAB_LOCK_OVERRIDE_KEY = 'gubbins:tab-lock-override';
+
+/**
  * Every `gubbins:` key, in rough order of how user-visible it is. Keep this list exhaustive:
  * the coverage test compares it against the literals in `src/`.
  *
@@ -263,6 +270,14 @@ export const STORAGE_KEYS = [
     eraseGroup: null,
     backupIncluded: false,
     note: 'sessionStorage, not localStorage — a one-shot "this tab already reloaded to recover" marker that dies with the tab.',
+  },
+  {
+    key: TAB_LOCK_OVERRIDE_KEY,
+    store: 'db/tab-lock',
+    storage: 'session',
+    eraseGroup: null,
+    backupIncluded: false,
+    note: 'sessionStorage, not localStorage — the single-tab guard fails closed, and this records the user overriding it for *this* tab. It must die with the tab, or one override would disarm the guard permanently.',
   },
   {
     key: 'gubbins:db-tab',

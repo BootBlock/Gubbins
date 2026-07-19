@@ -53,6 +53,15 @@ That's the one-time setup Gubbins does on your first visit, and it normally fini
 a moment. If it lingers, press **Reload**. If it then reports a different cause, follow the advice
 it gives — see [[Supported browsers|Installing-Gubbins]].
 
+**Gubbins says it's already open elsewhere, or that it can't check for other tabs.**
+Your data can only be open in one tab or window at a time — that's what keeps two copies of Gubbins
+from writing over each other. If it says Gubbins is **already open elsewhere**, close the other tab
+and this one switches over by itself. If instead it says it **can't check** for other tabs, the
+browser didn't answer when Gubbins asked; **Reload and try again** usually clears it. Gubbins stops
+rather than guessing, so if you're certain no other tab has Gubbins open, choose **This is my only
+tab — open anyway** to carry on. That choice applies to that tab only and is forgotten once you
+close it.
+
 **Gubbins says it lost its connection to my data, or that the database took too long to respond.**
 Gubbins keeps your data in a background component of the page, and very occasionally that component
 stops — a browser reclaiming memory is the usual reason. When it does, Gubbins tells you instead of
