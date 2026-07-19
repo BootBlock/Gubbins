@@ -45,3 +45,27 @@ describe('ScannerViewfinder — camera failure', () => {
     expect(screen.getByText('Scanning…')).toBeInTheDocument();
   });
 });
+
+describe('ScannerViewfinder — waiting for permission', () => {
+  it('announces the wait as well as drawing it', () => {
+    renderViewfinder({ status: 'REQUESTING_PERMISSIONS', error: null });
+
+    expect(screen.getByRole('status')).toHaveTextContent('Requesting camera access…');
+  });
+
+  it('keeps the status region mounted before there is anything to say', () => {
+    // The region has to pre-exist the message: one inserted at the moment its text appears is
+    // frequently never announced, so mounting it with the message would defeat the point.
+    renderViewfinder({ status: 'IDLE', error: null });
+
+    const region = screen.getByRole('status');
+    expect(region).toBeInTheDocument();
+    expect(region).toBeEmptyDOMElement();
+  });
+
+  it('keeps the empty region out of flow so it cannot shift the centred video', () => {
+    renderViewfinder({ status: 'STREAM_ACTIVE', error: null });
+
+    expect(screen.getByRole('status')).toHaveClass('absolute');
+  });
+});
