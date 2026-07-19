@@ -822,16 +822,33 @@ describe('parseNumericCell (issue #339)', () => {
     expect(parseNumericCell('1.99 €')).toBe(1.99);
   });
 
-  it('rejects a partially-numeric or ambiguous cell instead of guessing', () => {
-    // `parseInt` would have read these as 12, 12, 1 and 1 respectively.
+  it('rejects a partially-numeric cell instead of truncating it', () => {
+    // `parseInt` would have read the first two as 12.
     expect(parseNumericCell('12kg')).toBeNull();
     expect(parseNumericCell('12 units')).toBeNull();
-    expect(parseNumericCell('1,5')).toBeNull(); // decimal comma vs. grouping — never guessed
-    expect(parseNumericCell('1,50')).toBeNull();
     expect(parseNumericCell('abc')).toBeNull();
     expect(parseNumericCell('~12')).toBeNull();
     expect(parseNumericCell('n/a')).toBeNull();
     expect(parseNumericCell('')).toBeNull();
+  });
+
+  it('resolves a comma decimal the way the other importers do (issue #340)', () => {
+    // A lone comma was previously reported as too ambiguous to read. It is now settled by
+    // the shared heuristic instead, so one file imports the same through every importer:
+    // a three-digit group is grouping, any other tail is a decimal fraction.
+    expect(parseNumericCell('1,5')).toBe(1.5);
+    expect(parseNumericCell('1,50')).toBe(1.5);
+    expect(parseNumericCell('1.234,56')).toBe(1234.56);
+    expect(parseNumericCell('£1,234.56')).toBe(1234.56);
+    // ...and grouping still groups, so issue #339's cases are unchanged.
+    expect(parseNumericCell('1,500')).toBe(1500);
+    expect(parseNumericCell('1 500')).toBe(1500);
+    expect(parseNumericCell('1,234,567.25')).toBe(1234567.25);
+  });
+
+  it('keeps a sub-penny unit price intact (issue #340)', () => {
+    expect(parseNumericCell('0.005')).toBe(0.005);
+    expect(parseNumericCell('0.0012')).toBe(0.0012);
   });
 });
 
@@ -883,5 +900,36 @@ describe('buildCatalogImportPlan — numeric cells (issue #339)', () => {
     expect(plan.errors).toEqual([]);
     expect(plan.create[0]!.input.quantity).toBe(0);
     expect(plan.create[0]!.input.unitCost).toBeNull();
+  });
+});
+
+describe('buildCatalogImportPlan — one numeric rule for every importer (issue #340)', () => {
+  it('imports a eurozone supplier CSV with its prices intact', () => {
+    const csv = ['name,quantity,unitCost', 'Widerstand,2,"1,50"', 'Kondensator,1,"1.234,56 €"'].join('\r\n');
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create.map((r) => r.input.unitCost)).toEqual([1.5, 1234.56]);
+  });
+
+  it('reads a UK-convention price the same way', () => {
+    const csv = 'name,unitCost\r\nResistor,"£1,234.56"';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.input.unitCost).toBe(1234.56);
+  });
+
+  it('keeps a sub-penny unit cost rather than inflating it', () => {
+    const csv = 'name,unitCost\r\nSMD resistor,0.005';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.input.unitCost).toBe(0.005);
+  });
+
+  it('reads a comma-decimal weight and dimension too, not just price', () => {
+    const csv = 'name,weight,width\r\nBracket,"12,5","3,25"';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.input.weight).toBe(12.5);
+    expect(plan.create[0]!.input.width).toBe(3.25);
   });
 });

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { cellAsAmount, cellAsCount, cellAt, headerKey, mapColumns } from './columns';
+import {
+  cellAsAmount,
+  cellAsCount,
+  cellAt,
+  headerKey,
+  mapColumns,
+  parseAmountCell,
+  parseCountCell,
+} from './columns';
 
 describe('headerKey', () => {
   it('lower-cases and strips everything that is not a letter or digit', () => {
@@ -61,6 +69,39 @@ describe('cellAt', () => {
 
   it('is null when the row is shorter than the index', () => {
     expect(cellAt(row, 9)).toBeNull();
+  });
+});
+
+describe('parseAmountCell (the shared numeric rule — issue #340)', () => {
+  it('resolves both decimal conventions and strips a currency marker', () => {
+    expect(parseAmountCell('1,50')).toBe(1.5);
+    expect(parseAmountCell('£1,234.56')).toBe(1234.56);
+    expect(parseAmountCell('1.234,56 €')).toBe(1234.56);
+    expect(parseAmountCell('1 500')).toBe(1500);
+  });
+
+  it('accepts an explicit sign and exponent notation', () => {
+    expect(parseAmountCell('+5')).toBe(5);
+    expect(parseAmountCell('1e3')).toBe(1000);
+    expect(parseAmountCell('-2.5E-4')).toBe(-0.00025);
+  });
+
+  it('rejects a cell that is not wholly a number, rather than truncating it', () => {
+    expect(parseAmountCell('1.5 kg')).toBeNull();
+    expect(parseAmountCell('n/a')).toBeNull();
+    expect(parseAmountCell('')).toBeNull();
+  });
+});
+
+describe('parseCountCell (the shared numeric rule — issue #340)', () => {
+  it('rounds an amount, so a spreadsheet-formatted integer survives', () => {
+    expect(parseCountCell('2.0')).toBe(2);
+    expect(parseCountCell('1,000')).toBe(1000);
+  });
+
+  it('keeps the leading integer of a unit-suffixed quantity, unlike an amount', () => {
+    expect(parseCountCell('3 pcs')).toBe(3);
+    expect(parseAmountCell('3 pcs')).toBeNull();
   });
 });
 

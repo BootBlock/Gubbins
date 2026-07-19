@@ -70,37 +70,67 @@ export function cellAt(row: readonly string[], index: number | undefined): strin
 /** A quantity written with a trailing unit, e.g. `"3 pcs"`, `"10 units"`, `"2x"`. */
 const LEADING_INTEGER_RE = /^(\d+)\b/;
 
+/** A number in exponent form (`1e3`, `-2.5E-4`), which the money heuristic does not read. */
+const EXPONENT_NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)e[+-]?\d+$/i;
+
 /**
- * Read a cell as a positive whole count (a quantity), falling back to `fallback` when the
- * column is absent, blank or not a positive number.
+ * Parse cell **text** as a monetary or measured amount, or `null` when it isn't a number.
+ *
+ * Currency symbols and both decimal conventions (`"£1,234.56"`, `"1.234,56"`, `"1,50"`) are
+ * resolved by the shared {@link parseMoneyNumber} receipt heuristic — the same one the OCR
+ * prefill uses. Space-class thousands separators (`"1 500"`, including the non-breaking and
+ * narrow-no-break spaces a spreadsheet emits) fall out of that heuristic's whitespace
+ * stripping; an explicit `+` sign and exponent notation are handled here, since a number is a
+ * number however the exporting tool chose to write it.
+ *
+ * This and {@link parseCountCell} are the numeric-cell rule for **every** importer — the
+ * `(row, index)` readers below are thin wrappers, and the item-catalogue importer parses its
+ * cells through them too, so one importer cannot read numbers by a different rule to another
+ * (issue #340).
+ */
+export function parseAmountCell(raw: string): number | null {
+  const signed = raw.trim().replace(/^\+/, '');
+  if (EXPONENT_NUMBER.test(signed)) return Number(signed);
+  return parseMoneyNumber(signed);
+}
+
+/**
+ * Parse cell **text** as a whole count, or `null` when it isn't a number at all.
  *
  * A decimal or grouped figure (`"1,000"`, `"2.0"`) is read as an amount and rounded, because
  * spreadsheets routinely format an integer quantity that way. A figure written with a trailing
- * unit (`"3 pcs"`) keeps its leading integer, which is what a hand-written parts list means. A
- * zero or negative count is treated as unusable and takes the fallback rather than producing a
- * line the database's `ordered_qty > 0` check would reject.
+ * unit (`"3 pcs"`) keeps its leading integer, which is what a hand-written parts list means —
+ * the one place a count is read more loosely than an amount, where an amount would rather
+ * report `"1.5 kg"` than silently drop its fraction.
+ */
+export function parseCountCell(raw: string): number | null {
+  // A unit suffix ("3 pcs") defeats the amount reader, so fall back to the leading integer.
+  const suffixed = LEADING_INTEGER_RE.exec(raw.trim());
+  const parsed = parseAmountCell(raw) ?? (suffixed ? Number.parseInt(suffixed[1]!, 10) : null);
+  return parsed === null ? null : Math.round(parsed);
+}
+
+/**
+ * Read a cell as a positive whole count (a quantity), falling back to `fallback` when the
+ * column is absent, blank or not a positive number. A zero or negative count is treated as
+ * unusable and takes the fallback rather than producing a line the database's `ordered_qty > 0`
+ * check would reject. The parsing rule itself is {@link parseCountCell}.
  */
 export function cellAsCount(row: readonly string[], index: number | undefined, fallback: number): number {
   const raw = cellAt(row, index);
   if (raw === null) return fallback;
-  // A unit suffix ("3 pcs") defeats the amount reader, so take the leading integer first.
-  const suffixed = LEADING_INTEGER_RE.exec(raw);
-  const parsed = parseMoneyNumber(raw) ?? (suffixed ? Number.parseInt(suffixed[1]!, 10) : null);
+  const parsed = parseCountCell(raw);
   if (parsed === null) return fallback;
-  const rounded = Math.round(parsed);
-  return rounded > 0 ? rounded : fallback;
+  return parsed > 0 ? parsed : fallback;
 }
 
 /**
  * Read a cell as a non-negative monetary amount, or `null` when absent, blank, unparseable or
- * negative. Currency symbols and both decimal conventions (`"£1,234.56"`, `"1.234,56"`) are
- * handled by the shared {@link parseMoneyNumber} receipt heuristic — the same one the OCR
- * prefill uses — so a pasted supplier basket and a photographed receipt read prices
- * identically.
+ * negative. The parsing rule itself is {@link parseAmountCell}.
  */
 export function cellAsAmount(row: readonly string[], index: number | undefined): number | null {
   const raw = cellAt(row, index);
   if (raw === null) return null;
-  const parsed = parseMoneyNumber(raw);
+  const parsed = parseAmountCell(raw);
   return parsed !== null && parsed >= 0 ? parsed : null;
 }

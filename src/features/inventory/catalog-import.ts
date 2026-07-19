@@ -16,6 +16,7 @@
  */
 import { z } from 'zod';
 import { parseCsv } from '@/features/import/tabular';
+import { parseAmountCell } from '@/features/import/columns';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { TrackingMode } from '@/db/repositories/constants';
@@ -299,40 +300,20 @@ function rawCell(row: readonly string[], index: number | null | undefined): stri
 }
 
 /**
- * Grouping separators a spreadsheet may put in a number: a comma, a plain space, a
- * non-breaking space (U+00A0) or a narrow no-break space (U+202F, the French/Nordic
- * thousands separator).
- */
-const GROUP_SEPARATORS = /[,\u0020\u00a0\u202f]/g;
-
-/**
- * A grouped-thousands number as a spreadsheet renders one by default: `1,500`,
- * `1,234,567.25`, or the same with a space separator. Only *well-formed* grouping
- * matches — groups of exactly three digits — so an ambiguous cell like `1,5` (a
- * decimal comma in much of Europe) is never silently read as fifteen; it is reported
- * as unreadable instead of guessed at.
- */
-const GROUPED_NUMBER = /^[+-]?\d{1,3}([,\u0020\u00a0\u202f]\d{3})+(\.\d+)?$/;
-
-/** A plain decimal number, optionally signed and/or exponent-suffixed. */
-const PLAIN_NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i;
-
-/**
- * A leading or trailing currency marker (`$1.99`, `1,99 €`) — the same symbol set the
- * free-form line parser recognises. A price column exported by another tool routinely
- * carries one, and the value it decorates is unambiguous, so it is stripped rather than
- * treated as unreadable: rejecting it would drop the whole row (name, quantity and all)
- * over a decoration.
- */
-const CURRENCY_MARKER = /^[£$€¥]\s?|\s?[£$€¥]$/g;
-
-/**
- * Parse one numeric cell **strictly**: the whole cell must be a number, so a
- * partially-numeric value (`12kg`, `~12`, `n/a`) is rejected rather than truncated to
- * its leading digits the way `parseInt` would (issue #339). Well-formed grouped
- * thousands are accepted and the separators stripped, so a spreadsheet's default
- * rendering of `1,500` imports as 1500 rather than 1; a currency marker on a price
- * column from another tool is stripped too.
+ * Parse one numeric cell, by the same rule every other importer uses (issue #340).
+ *
+ * The whole cell must be a number, so a partially-numeric value (`12kg`, `~12`, `n/a`) is
+ * rejected rather than truncated to its leading digits the way `parseInt` would (issue #339).
+ * Beyond that the policy is {@link parseAmountCell}'s: grouped thousands read at full value
+ * (`1,500` → 1500, `1 500` → 1500), a currency marker on a price column is stripped rather
+ * than dropping a whole row over a decoration, and a comma decimal reads as a decimal
+ * (`1,50` → 1.5) so a eurozone supplier's CSV imports its prices here exactly as it does
+ * through the BOM and purchase-list importers.
+ *
+ * A lone separator is the one genuinely ambiguous case — `1,500` is 1500 in the UK and 1.5
+ * in Germany. It is settled by the shared heuristic (a three-digit group is grouping, any
+ * other tail is a fraction) rather than reported, so a single file cannot import differently
+ * depending on which importer reads it. That consistency is the point of issue #340.
  *
  * Returns the number, or `null` when the cell is present but unreadable — the caller
  * turns that into a row error, so the import never quietly invents a value.
@@ -340,11 +321,7 @@ const CURRENCY_MARKER = /^[£$€¥]\s?|\s?[£$€¥]$/g;
  * @internal Exported for unit tests only.
  */
 export function parseNumericCell(text: string): number | null {
-  const trimmed = text.trim().replace(CURRENCY_MARKER, '');
-  const candidate = GROUPED_NUMBER.test(trimmed) ? trimmed.replace(GROUP_SEPARATORS, '') : trimmed;
-  if (!PLAIN_NUMBER.test(candidate)) return null;
-  const n = Number(candidate);
-  return Number.isFinite(n) ? n : null;
+  return parseAmountCell(text);
 }
 
 /**
