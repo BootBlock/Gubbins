@@ -77,7 +77,13 @@ export function ScannerViewfinder({
         <div className="absolute inset-0 grid place-items-center p-6">
           <Surface className="max-w-sm space-y-3 p-6 text-center text-foreground">
             <CameraOffIcon className="mx-auto size-8 text-muted-foreground" aria-hidden />
-            <p className="text-sm">{error}</p>
+            {/* The camera failing is the one thing a screen-reader user cannot see for
+                themselves — the viewfinder looks identical either way. `role="alert"` is
+                announced on insertion, so entering ERROR_STATE reads the reason out rather
+                than leaving the user pointing a dead camera at a code. */}
+            <p role="alert" className="text-sm">
+              {error}
+            </p>
             <Button onClick={onRetry}>Try the camera again</Button>
           </Surface>
         </div>
