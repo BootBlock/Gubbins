@@ -14,6 +14,17 @@ import {
 import { buildHygieneReport } from './data-hygiene';
 
 describe('report CSV builders', () => {
+  it('valuation CSV writes a summed value without binary-float noise (issue #291)', () => {
+    const csv = buildValuationCsv({
+      totalValue: 0.1 + 0.2,
+      totalQuantity: 2,
+      unpricedItemCount: 0,
+      byCategory: [{ id: 'a', name: 'Caps', value: 0.1 + 0.2, quantity: 2 }],
+      byLocation: [],
+    });
+    expect(csv.split('\r\n')[1]).toBe('Category,Caps,2,0.3');
+  });
+
   it('valuation CSV tags each row by dimension and quotes names with commas', () => {
     const csv = buildValuationCsv({
       totalValue: 30,

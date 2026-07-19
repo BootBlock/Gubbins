@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { strFromU8, unzipSync } from 'fflate';
 import {
   buildTabularExport,
   toCsv,
@@ -26,6 +27,12 @@ const rows: readonly Row[] = [
   { a: 'plain', b: 1 },
   { a: 'has, comma', b: null },
 ];
+
+/** A single numeric column carrying a value with binary-float noise (issue #291). */
+const NOISY_COLUMNS: readonly TabularColumn<{ readonly v: number }>[] = [
+  { header: 'Value', value: (r) => r.v },
+];
+const NOISY_ROWS: readonly { readonly v: number }[] = [{ v: 0.1 + 0.2 }];
 
 describe('toCsv / toDelimited', () => {
   it('joins headers and rows with CRLF and RFC-4180 quoting', () => {
@@ -190,6 +197,16 @@ describe('buildTabularExport', () => {
     expect(html).toContain('<p class="caption">2 rows</p>');
   });
 
+  it('strips binary-float noise from numeric cells in every format (issue #291)', async () => {
+    for (const format of ['csv', 'tsv', 'markdown', 'html', 'txt', 'json'] as const) {
+      const content = (await buildTabularExport(format, NOISY_COLUMNS, NOISY_ROWS, meta)).content as string;
+      // Match the whole numeric run so a merely-shorter artefact (0.29999999999999) fails too.
+      expect(content).toMatch(/(^|[^\d.])0\.3([^\d]|$)/);
+    }
+    const json = (await buildTabularExport('json', NOISY_COLUMNS, NOISY_ROWS, meta)).content as string;
+    expect((JSON.parse(json) as { Value: number }[])[0]!.Value).toBe(0.3);
+  });
+
   it('produces a non-empty XLSX byte array (a PK zip) via the lazy module', async () => {
     const result = await buildTabularExport('xlsx', columns, rows, meta);
     expect(result.content).toBeInstanceOf(Uint8Array);
@@ -197,5 +214,12 @@ describe('buildTabularExport', () => {
     // Every zip (and therefore every .xlsx) starts with the local-file-header magic "PK\x03\x04".
     expect(bytes[0]).toBe(0x50);
     expect(bytes[1]).toBe(0x4b);
+  });
+
+  it('writes XLSX numeric cells without binary-float noise (issue #291)', async () => {
+    const result = await buildTabularExport('xlsx', NOISY_COLUMNS, NOISY_ROWS, meta);
+    const sheet = strFromU8(unzipSync(result.content as Uint8Array)['xl/worksheets/sheet1.xml']!);
+    expect(sheet).toContain('<v>0.3</v>');
+    expect(sheet).not.toContain('0.30000000000000004');
   });
 });

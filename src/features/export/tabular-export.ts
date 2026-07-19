@@ -8,6 +8,8 @@
  * unit-tested in one place. Kept free of React, repositories and the DOM.
  */
 
+import { stripFloatNoise } from '@/lib/float-noise';
+
 /** A cell's raw value before serialisation; null / undefined render as an empty cell. */
 export type TabularCell = string | number | boolean | null | undefined;
 
@@ -18,9 +20,14 @@ export interface TabularColumn<T> {
   readonly value: (row: T) => TabularCell;
 }
 
-/** Normalise a cell to its string form; null / undefined become an empty string. */
+/**
+ * Normalise a cell to its string form; null / undefined become an empty string. Numbers
+ * lose their binary-float noise first (issue #291), so a computed money figure reads
+ * `0.3` rather than `0.30000000000000004` in every text format.
+ */
 function cellText(value: TabularCell): string {
-  return value === null || value === undefined ? '' : String(value);
+  if (value === null || value === undefined) return '';
+  return typeof value === 'number' ? String(stripFloatNoise(value)) : String(value);
 }
 
 /**
@@ -65,8 +72,9 @@ export function toTsv<T>(columns: readonly TabularColumn<T>[], rows: readonly T[
 
 /**
  * Serialise rows to a pretty-printed JSON array — one object per row keyed by column
- * header, with the raw cell values preserved (numbers stay numbers, booleans stay
- * booleans, null / undefined become `null`) so the file is faithful and machine-readable.
+ * header, with the raw cell values preserved (numbers stay numbers — minus their binary-float
+ * noise — booleans stay booleans, null / undefined become `null`) so the file is faithful
+ * and machine-readable.
  *
  * @internal Exported for unit tests only.
  */
@@ -75,7 +83,8 @@ export function toJson<T>(columns: readonly TabularColumn<T>[], rows: readonly T
     const object: Record<string, string | number | boolean | null> = {};
     for (const column of columns) {
       const value = column.value(row);
-      object[column.header] = value === undefined ? null : value;
+      object[column.header] =
+        typeof value === 'number' ? stripFloatNoise(value) : value === undefined ? null : value;
     }
     return object;
   });

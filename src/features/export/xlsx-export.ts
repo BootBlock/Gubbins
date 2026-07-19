@@ -11,6 +11,7 @@
  * preserved as native cell types so a spreadsheet treats them as such. Pure (no DOM).
  */
 import { strToU8, zipSync } from 'fflate';
+import { stripFloatNoise } from '@/lib/float-noise';
 import type { TabularCell, TabularColumn, TabularDocumentMeta } from './tabular-export';
 
 /** Escape a value for XML text content or a double-quoted attribute. */
@@ -31,7 +32,9 @@ function columnLetter(index: number): string {
 function cellXml(value: TabularCell, reference: string): string {
   if (value === null || value === undefined || value === '') return `<c r="${reference}"/>`;
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return `<c r="${reference}"><v>${value}</v></c>`;
+    // Written as the shortest round-tripping decimal, minus binary-float noise, so the
+    // cell a spreadsheet shows matches the figure the app shows (issue #291).
+    return `<c r="${reference}"><v>${stripFloatNoise(value)}</v></c>`;
   }
   if (typeof value === 'boolean') {
     return `<c r="${reference}" t="b"><v>${value ? 1 : 0}</v></c>`;
