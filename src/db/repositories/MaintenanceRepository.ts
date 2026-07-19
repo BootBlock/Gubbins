@@ -185,6 +185,7 @@ export class MaintenanceRepository extends BaseRepository {
 
   /** Create a maintenance schedule for an item (spec §4.3). Write-gated. */
   async create(input: CreateMaintenanceInput): Promise<MaintenanceSchedule> {
+    this.assertPermission('maintenance:write');
     this.assertWritable();
     const name = input.name.trim();
     if (name.length === 0) {
@@ -243,6 +244,7 @@ export class MaintenanceRepository extends BaseRepository {
    * The ledger note is composed upstream. Write-gated (it grows the ledger).
    */
   async logPerformed(id: string, now: number, note: string): Promise<MaintenanceSchedule> {
+    this.assertPermission('maintenance:write');
     this.assertWritable();
     const schedule = await this.requireSchedule(id);
     await this.driver.transaction([
@@ -260,6 +262,7 @@ export class MaintenanceRepository extends BaseRepository {
 
   /** Accrue usage against a USAGE schedule's counter (spec §4.3). Write-gated. */
   async addUsage(id: string, amount: number): Promise<MaintenanceSchedule> {
+    this.assertPermission('maintenance:write');
     this.assertWritable();
     const schedule = await this.requireSchedule(id);
     if (schedule.basis !== 'USAGE') {
@@ -287,6 +290,7 @@ export class MaintenanceRepository extends BaseRepository {
    * it bypasses the storage Hard Stop.
    */
   async remove(id: string): Promise<void> {
+    this.assertPermission('maintenance:delete');
     const statements: SqlStatement[] = [
       { sql: 'DELETE FROM maintenance_schedules WHERE id = ?;', params: [id] as SqlValue[] },
       tombstoneStatement('maintenance_schedules', id),

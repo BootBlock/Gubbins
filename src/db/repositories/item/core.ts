@@ -163,6 +163,7 @@ export class ItemCoreRepository extends BaseRepository {
   }
 
   async create(input: CreateItemInput): Promise<Item> {
+    this.assertPermission('items:write');
     this.assertWritable();
     const resolved = resolveCreate(input);
     const id = crypto.randomUUID();
@@ -187,6 +188,7 @@ export class ItemCoreRepository extends BaseRepository {
    * which suits a pre-validated dry-run plan. Returns the created items in input order.
    */
   async createMany(inputs: readonly CreateItemInput[]): Promise<Item[]> {
+    this.assertPermission('items:write');
     this.assertWritable();
     if (inputs.length === 0) return [];
 
@@ -217,6 +219,7 @@ export class ItemCoreRepository extends BaseRepository {
    * of 1 (or omitted) yields a single instance #1. Write-gated.
    */
   async createSerialised(input: CreateItemInput): Promise<Item[]> {
+    this.assertPermission('items:write');
     this.assertWritable();
     const count = Math.max(1, Math.floor(input.count ?? 1));
     const resolved = resolveCreate({ ...input, trackingMode: 'SERIALISED' });
@@ -269,6 +272,7 @@ export class ItemCoreRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdateItemInput): Promise<Item> {
+    this.assertPermission('items:write');
     this.assertWritable();
     const existing = await this.require(id);
 
@@ -536,6 +540,7 @@ export class ItemCoreRepository extends BaseRepository {
    * stock to a second location while keeping the rest where it is.
    */
   async move(id: string, locationId: string): Promise<Item> {
+    this.assertPermission('items:write');
     this.assertWritable();
     const existing = await this.require(id);
     if (existing.locationId === locationId) return existing;
@@ -558,6 +563,7 @@ export class ItemCoreRepository extends BaseRepository {
 
   /** Soft delete: mark inactive, preserving history (spec §4). Allowed when locked. */
   async softDelete(id: string, note?: string): Promise<Item> {
+    this.assertPermission('items:delete');
     const existing = await this.require(id);
     if (!existing.isActive) return existing;
     await this.driver.transaction([
@@ -570,6 +576,7 @@ export class ItemCoreRepository extends BaseRepository {
   }
 
   async restore(id: string): Promise<Item> {
+    this.assertPermission('items:write');
     this.assertWritable();
     const existing = await this.require(id);
     if (existing.isActive) return existing;
@@ -586,6 +593,7 @@ export class ItemCoreRepository extends BaseRepository {
    * transaction so the deletion propagates on the next sync (§7.2).
    */
   async hardDelete(id: string): Promise<void> {
+    this.assertPermission('items:delete');
     await this.driver.transaction([
       { sql: 'DELETE FROM items WHERE id = ?;', params: [id] },
       tombstoneStatement('items', id),

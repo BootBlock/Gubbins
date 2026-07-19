@@ -9,6 +9,7 @@
 import { getDatabaseDriver } from '../client';
 import { ADMIN_USER_ID } from './constants';
 import { isWriteSuspended } from '@/features/storage/tiers';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { AssetBookingRepository } from './AssetBookingRepository';
@@ -145,11 +146,18 @@ let roleRepository: RoleRepository | null = null;
  * there is no session to read and plan §3 specifies that single-user mode acts as Admin — which
  * is exactly what the app does today, just now recorded. Phase 3 replaces this one arrow with a
  * session lookup and every write in the app follows, with no call site changed.
+ *
+ * Authority resolves the same way, and for the same reason: with the users module absent
+ * every caller is unrestricted, so the guards throughout the repository layer are inert and
+ * the app behaves exactly as it did before permissions existed. Phase 3 swaps this arrow for
+ * `resolveAuthority({ moduleEnabled, user, grants })` and the guards begin to bite —
+ * deliberately one change, in one place, rather than a switch threaded through call sites.
  */
 const productionOptions: RepositoryOptions = {
   isWriteSuspended: () => isWriteSuspended(useStorageStore.getState().tier),
   resolveActor: () => ADMIN_USER_ID,
   resolveBaseCurrency: () => usePreferencesStore.getState().baseCurrency,
+  resolveAuthority: () => UNRESTRICTED_AUTHORITY,
 };
 
 export function getUserRepository(): UserRepository {

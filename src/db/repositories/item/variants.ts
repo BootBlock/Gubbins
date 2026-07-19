@@ -35,6 +35,7 @@ export function withVariants<TBase extends Constructor<ItemCoreRepository>>(Base
      * brand-new id cannot create a cycle. Write-gated.
      */
     async createVariant(parentId: string, input: CreateItemInput): Promise<Item> {
+      this.assertPermission('items:write');
       this.assertWritable();
       const id = crypto.randomUUID();
       await this.assertVariantLinkValid(id, parentId);
@@ -51,6 +52,7 @@ export function withVariants<TBase extends Constructor<ItemCoreRepository>>(Base
      * variant too (it carries its sub-tree along). Write-gated.
      */
     async setParent(childId: string, parentId: string | null): Promise<Item> {
+      this.assertPermission('items:write');
       this.assertWritable();
       const child = await this.require(childId);
       if (parentId === child.parentId) return child;

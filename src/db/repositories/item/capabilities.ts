@@ -35,6 +35,7 @@ export function withCapabilities<TBase extends Constructor<ItemCoreRepository>>(
      * per key, so re-setting the same key overwrites it. Write-gated (it grows storage).
      */
     async setCapability(itemId: string, input: SetCapabilityInput): Promise<Capability> {
+      this.assertPermission('items:write');
       this.assertWritable();
       await this.require(itemId);
 
@@ -111,6 +112,7 @@ export function withCapabilities<TBase extends Constructor<ItemCoreRepository>>(
 
     /** Remove a capability by key (case-insensitive). Deletions bypass the Hard Stop. */
     async removeCapability(itemId: string, key: string): Promise<void> {
+      this.assertPermission('items:write');
       await this.driver.execute('DELETE FROM capabilities WHERE item_id = ? AND key = ? COLLATE NOCASE;', [
         itemId,
         key.trim(),

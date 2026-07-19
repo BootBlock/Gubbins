@@ -56,6 +56,7 @@ export class LocationPhotoRepository extends BaseRepository {
 
   /** Insert one photo record. Write-gated (it grows storage). */
   async addPhoto(input: CreateLocationPhotoInput): Promise<LocationPhoto> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     const path = input.fullResOpfsPath.trim();
     if (path.length === 0) {
@@ -91,6 +92,7 @@ export class LocationPhotoRepository extends BaseRepository {
 
   /** Rename/re-caption a photo. */
   async updatePhotoCaption(id: string, caption: string | null): Promise<void> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     await this.driver.execute('UPDATE location_photos SET caption = ? WHERE id = ?;', [caption, id]);
   }
@@ -105,6 +107,7 @@ export class LocationPhotoRepository extends BaseRepository {
    * longer exists.
    */
   async removePhoto(id: string): Promise<string | undefined> {
+    this.assertPermission('locations:write');
     const row = await this.driver.queryOne<{ full_res_opfs_path: string }>(
       'SELECT full_res_opfs_path FROM location_photos WHERE id = ?;',
       [id],
@@ -149,6 +152,7 @@ export class LocationPhotoRepository extends BaseRepository {
   }
 
   async addRegion(input: CreateLocationRegionInput): Promise<LocationRegion> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     const name = input.name.trim();
     if (name.length === 0) {
@@ -172,6 +176,7 @@ export class LocationPhotoRepository extends BaseRepository {
    * reinterpreted as a polygon, so changing shape means deleting and redrawing.
    */
   async updateRegion(id: string, input: UpdateLocationRegionInput): Promise<void> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     const sets: string[] = [];
     const params: (string | number | null)[] = [];
@@ -206,6 +211,7 @@ export class LocationPhotoRepository extends BaseRepository {
    * explicitly here for the same reason as {@link removePhoto}.
    */
   async removeRegion(id: string): Promise<void> {
+    this.assertPermission('locations:write');
     const links = await this.driver.query<{ item_id: string }>(
       'SELECT item_id FROM item_regions WHERE region_id = ?;',
       [id],
@@ -258,6 +264,7 @@ export class LocationPhotoRepository extends BaseRepository {
    * than being re-deleted by the peer's tombstone.
    */
   async linkItem(itemId: string, regionId: string): Promise<void> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     await this.driver.transaction([
       {
@@ -270,6 +277,7 @@ export class LocationPhotoRepository extends BaseRepository {
 
   /** Remove an item from a region, tombstoning the edge so the deletion propagates. */
   async unlinkItem(itemId: string, regionId: string): Promise<void> {
+    this.assertPermission('locations:write');
     await this.driver.transaction([
       {
         sql: 'DELETE FROM item_regions WHERE item_id = ? AND region_id = ?;',

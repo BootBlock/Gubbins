@@ -86,6 +86,7 @@ export class StorageRepository extends BaseRepository {
    * remote history row older than `history_pruned_before`.
    */
   async pruneHistoryBefore(cutoff: number): Promise<number> {
+    this.assertPermission('audit:delete');
     const result = await this.driver.execute('DELETE FROM item_history WHERE created_at < ?;', [cutoff]);
     await this.driver.execute(
       'UPDATE sync_meta SET history_pruned_before = MAX(history_pruned_before, ?) WHERE id = 1;',
@@ -149,8 +150,14 @@ export class StorageRepository extends BaseRepository {
    * An UPDATE, but it *reclaims* space, so it deliberately bypasses the Hard Stop —
    * blocking it would trap the very locked-out user §7.6 exists to rescue. Local-only:
    * never propagated to cloud sync (§7.6.3 B).
+   *
+   * Permission-gated as `settings:write` (issue #79, §2.3): despite the housekeeping framing,
+   * the only caller is the user-chosen "downgrade images" storage-triage action, and the
+   * re-encode it records is irreversible. Its sibling triage action (`pruneHistoryBefore`)
+   * is gated for the same reason.
    */
   async markImageDowngraded(id: string, owner: DowngradableOwner, at: number = Date.now()): Promise<void> {
+    this.assertPermission('settings:write');
     // `owner` comes from the closed DowngradableOwner union, never from user input, so it is
     // safe to interpolate as a table name — the driver cannot bind an identifier.
     await this.driver.execute(`UPDATE ${owner} SET full_res_downgraded_at = ? WHERE id = ?;`, [at, id]);

@@ -66,6 +66,7 @@ export class TarePresetRepository extends BaseRepository {
    * clear message); an unknown kind softens to `OTHER`. Write-gated (it grows storage).
    */
   async create(input: CreateTarePresetInput): Promise<SavedTarePreset> {
+    this.assertPermission('settings:write');
     this.assertWritable();
     const plan = planTarePreset(input);
     if (!plan.ok) {
@@ -87,6 +88,7 @@ export class TarePresetRepository extends BaseRepository {
    * softens to `OTHER`. Write-gated (an edit can grow storage). Returns the updated entry.
    */
   async update(id: string, input: UpdateTarePresetInput): Promise<SavedTarePreset> {
+    this.assertPermission('settings:write');
     this.assertWritable();
     await this.require(id);
 
@@ -131,6 +133,7 @@ export class TarePresetRepository extends BaseRepository {
    * wrongly instruct peers to delete it).
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('settings:write');
     if (!(await this.getById(id))) return;
     await this.driver.transaction([
       { sql: 'DELETE FROM tare_presets WHERE id = ?;', params: [id] },

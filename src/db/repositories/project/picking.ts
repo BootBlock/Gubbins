@@ -71,6 +71,7 @@ export function withPicking<TBase extends Constructor<ProjectCoreRepository>>(Ba
      * `updated_at` trigger stamps the change so it syncs LWW like any other line edit.
      */
     async setPicked(lineId: string, picked: boolean): Promise<ProjectBomLine> {
+      this.assertPermission('projects:write');
       this.assertWritable();
       await this.requireLine(lineId);
       await this.driver.execute('UPDATE project_bom_lines SET picked = ? WHERE id = ?;', [

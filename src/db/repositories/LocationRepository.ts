@@ -122,6 +122,7 @@ export class LocationRepository extends BaseRepository {
   }
 
   async create(input: CreateLocationInput): Promise<Location> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     const name = input.name.trim();
     if (name.length === 0) {
@@ -186,6 +187,7 @@ export class LocationRepository extends BaseRepository {
    * INSERT + single-default-demotion invariants we want to reuse verbatim.
    */
   async createPath(input: CreateLocationInput): Promise<Location[]> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     const { ancestors, leaves } = parseLocationBranch(input.name);
     if (leaves.length === 0) {
@@ -214,6 +216,7 @@ export class LocationRepository extends BaseRepository {
   }
 
   async update(id: string, input: UpdateLocationInput): Promise<Location> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     await this.assertMutable(id);
 
@@ -316,11 +319,13 @@ export class LocationRepository extends BaseRepository {
    * locations may never be the default.
    */
   async setDefault(id: string): Promise<Location> {
+    this.assertPermission('locations:write');
     return this.update(id, { isDefault: true });
   }
 
   /** Soft-archive a location (hide it from the tree/pickers) or restore it. */
   async setArchived(id: string, archived: boolean): Promise<Location> {
+    this.assertPermission('locations:write');
     return this.update(id, { archivedAt: archived ? Date.now() : null });
   }
 
@@ -337,6 +342,7 @@ export class LocationRepository extends BaseRepository {
    * omits the stamp rather than failing the whole count over it (issue #301).
    */
   async markCounted(id: string, at: number = Date.now()): Promise<Location> {
+    this.assertPermission('locations:write');
     this.assertWritable();
     await this.assertMutable(id);
     const { sql, params } = markCountedStatement(id, at);
@@ -355,6 +361,7 @@ export class LocationRepository extends BaseRepository {
    * can't leave those loans force-returned against a location that still exists.
    */
   async delete(id: string): Promise<void> {
+    this.assertPermission('locations:delete');
     const location = await this.getById(id);
     if (!location) return;
     if (location.isSystem) {

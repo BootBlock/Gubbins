@@ -41,6 +41,7 @@ export function withBomLines<TBase extends Constructor<ProjectCoreRepository>>(B
      * or some descriptive text.
      */
     async addLine(projectId: string, input: CreateBomLineInput): Promise<ProjectBomLine> {
+      this.assertPermission('projects:write');
       this.assertWritable();
       await this.requireProject(projectId);
 
@@ -95,6 +96,7 @@ export function withBomLines<TBase extends Constructor<ProjectCoreRepository>>(B
     }
 
     async updateLine(lineId: string, input: UpdateBomLineInput): Promise<ProjectBomLine> {
+      this.assertPermission('projects:write');
       this.assertWritable();
       await this.requireLine(lineId);
 
@@ -120,6 +122,7 @@ export function withBomLines<TBase extends Constructor<ProjectCoreRepository>>(B
     }
 
     async removeLine(lineId: string): Promise<void> {
+      this.assertPermission('projects:write');
       // Tombstone the line deletion (Phase 11: project_bom_lines is synced).
       await this.driver.transaction([
         { sql: 'DELETE FROM project_bom_lines WHERE id = ?;', params: [lineId] },

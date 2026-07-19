@@ -27,6 +27,7 @@ export class ImageRepository extends BaseRepository {
 
   /** Insert one image record. Write-gated (it grows storage). */
   async add(input: CreateImageInput): Promise<ItemImage> {
+    this.assertPermission('items:write');
     this.assertWritable();
     const path = input.fullResOpfsPath.trim();
     if (path.length === 0) {
@@ -47,6 +48,7 @@ export class ImageRepository extends BaseRepository {
    * raw file from the file system. Permitted under the Hard Stop (frees space).
    */
   async remove(id: string): Promise<string | undefined> {
+    this.assertPermission('items:write');
     const row = await this.driver.queryOne<{ full_res_opfs_path: string }>(
       'SELECT full_res_opfs_path FROM item_images WHERE id = ?;',
       [id],
