@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { OCR_ASSET_CACHE } from './features/inventory/ocr/ocr-asset-cache';
 
 /**
  * Unit coverage for the service worker's `install` handler (spec §2.2.6) — previously
@@ -30,24 +31,30 @@ type InstallHandler = (event: { waitUntil: (p: Promise<unknown>) => void }) => v
 type FetchHandler = (event: { request: Request; respondWith: (r: Promise<Response>) => void }) => void;
 
 let installHandler: InstallHandler | undefined;
+let activateHandler: InstallHandler | undefined;
 let fetchHandler: FetchHandler | undefined;
 let cacheMatch: ReturnType<typeof vi.fn>;
 let skipWaitingSpy: ReturnType<typeof vi.fn>;
 let cacheAddAll: ReturnType<typeof vi.fn>;
+let cachePut: ReturnType<typeof vi.fn>;
+let cachesOpen: ReturnType<typeof vi.fn>;
 let addEventListenerSpy: ReturnType<typeof vi.spyOn>;
 
 /** Stub the worker-global surface sw.ts touches at import time and during `install`. */
 function stubServiceWorkerGlobals(activeWorker: unknown) {
   cacheAddAll = vi.fn().mockResolvedValue(undefined);
   cacheMatch = vi.fn().mockResolvedValue(undefined);
+  cachePut = vi.fn().mockResolvedValue(undefined);
   const fakeCache = {
     addAll: cacheAddAll,
     keys: vi.fn().mockResolvedValue([]),
     match: cacheMatch,
+    put: cachePut,
     delete: vi.fn().mockResolvedValue(true),
   };
+  cachesOpen = vi.fn().mockResolvedValue(fakeCache);
   vi.stubGlobal('caches', {
-    open: vi.fn().mockResolvedValue(fakeCache),
+    open: cachesOpen,
     keys: vi.fn().mockResolvedValue([]),
     delete: vi.fn().mockResolvedValue(true),
   });
@@ -62,12 +69,14 @@ function stubServiceWorkerGlobals(activeWorker: unknown) {
 
   installHandler = undefined;
   fetchHandler = undefined;
+  activateHandler = undefined;
   addEventListenerSpy = vi.spyOn(globalThis, 'addEventListener').mockImplementation(((
     type: string,
     handler,
   ) => {
     if (type === 'install') installHandler = handler as InstallHandler;
     if (type === 'fetch') fetchHandler = handler as FetchHandler;
+    if (type === 'activate') activateHandler = handler as InstallHandler;
   }) as typeof globalThis.addEventListener);
 }
 
@@ -175,5 +184,107 @@ describe('src/sw.ts — offline fallback (app shell is for navigations only)', (
     );
 
     expect(response.type).toBe('error');
+  });
+});
+
+/**
+ * The OCR runtime cache (#159). Tesseract's worker, WASM cores and language models are several MB
+ * and deliberately excluded from the precache, so before this they were re-fetched on every use —
+ * leaving an opt-in feature unusable offline however often it had been used, in exactly the
+ * no-signal context the app is built for, and re-downloading megabytes on metered connections.
+ */
+describe('src/sw.ts — OCR assets are cached at runtime, in their own cache', () => {
+  function fakeRequest(url: string): Request {
+    return { method: 'GET', mode: 'cors', url } as Request;
+  }
+
+  /** An OCR asset URL under whatever base this worker is deployed at. */
+  function ocrAsset(name: string): string {
+    return new URL(`ocr/${name}`, globalThis.location.href).href;
+  }
+
+  /** Run one request through the worker's fetch handler with a given network outcome. */
+  async function respondWith(request: Request, network: () => Promise<Response>): Promise<Response> {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => network()),
+    );
+    await import('./sw');
+    let response: Promise<Response> | undefined;
+    fetchHandler!({
+      request,
+      respondWith: (r) => {
+        response = r;
+      },
+    });
+    return await response!;
+  }
+
+  it('stores a freshly-fetched OCR asset in the dedicated OCR cache, not the precache', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' });
+
+    const response = await respondWith(
+      fakeRequest(ocrAsset('worker.min.js')),
+      async () => new Response('/* tesseract worker */', { headers: { 'Content-Type': 'text/javascript' } }),
+    );
+
+    expect(response.status).toBe(200);
+    // Exactly one cache is opened, and it is the OCR one — the precache must stay holding
+    // precisely the manifest set its `activate` prune assumes.
+    expect(cachesOpen).toHaveBeenCalledExactlyOnceWith(OCR_ASSET_CACHE);
+    expect(cachePut).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves a previously-used OCR asset offline, without touching the network', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' });
+    cacheMatch.mockResolvedValue(new Response('/* tesseract worker */'));
+    const network = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+
+    const response = await respondWith(fakeRequest(ocrAsset('tessdata-fast/eng.traineddata')), network);
+
+    expect(response.status).toBe(200);
+    expect(network).not.toHaveBeenCalled();
+    expect(cachePut).not.toHaveBeenCalled();
+  });
+
+  it('does not cache a failed fetch, so one bad response cannot poison the feature', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' });
+
+    const response = await respondWith(
+      fakeRequest(ocrAsset('worker.min.js')),
+      async () => new Response('not found', { status: 404 }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(cachePut).not.toHaveBeenCalled();
+  });
+
+  it('keeps the OCR cache when a new version activates', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' });
+    const deleted: string[] = [];
+    vi.stubGlobal('caches', {
+      open: cachesOpen,
+      keys: vi
+        .fn()
+        .mockResolvedValue(['gubbins-precache-v1', OCR_ASSET_CACHE, 'gubbins-ocr-assets-0.0.0-old']),
+      delete: vi.fn((key: string) => {
+        deleted.push(key);
+        return Promise.resolve(true);
+      }),
+    });
+    await import('./sw');
+
+    let waited: Promise<unknown> | undefined;
+    activateHandler!({
+      waitUntil: (p) => {
+        waited = p;
+      },
+    });
+    await waited;
+
+    expect(deleted).not.toContain(OCR_ASSET_CACHE);
+    // A superseded generation (an older Tesseract) IS swept, so stale assets never linger against
+    // the storage quota — and a mismatched worker is never served to the newly-bundled library.
+    expect(deleted).toContain('gubbins-ocr-assets-0.0.0-old');
   });
 });

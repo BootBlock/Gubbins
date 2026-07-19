@@ -19,6 +19,7 @@ import {
   pruneStaleShares,
   SHARE_INBOX_CACHE,
 } from './features/share/share-inbox';
+import { OCR_ASSET_CACHE, isOcrAssetUrl } from './features/inventory/ocr/ocr-asset-cache';
 import {
   REMINDER_CLICK_MESSAGE,
   REMINDER_SYNC_MESSAGE,
@@ -149,13 +150,15 @@ sw.addEventListener('notificationclick', (event) => {
 sw.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      // Keep the app-shell precache and the share inbox; drop any superseded cache. The share
-      // inbox holds an in-flight "Share to Gubbins" payload the page has not yet consumed, so an
-      // update that activates between the share POST and the draft opening must not discard it.
+      // Keep the app-shell precache, the share inbox and the OCR runtime cache; drop any
+      // superseded cache. The share inbox holds an in-flight "Share to Gubbins" payload the page
+      // has not yet consumed, so an update that activates between the share POST and the draft
+      // opening must not discard it. The OCR cache is what keeps the opt-in, precache-excluded
+      // OCR assets available offline (#159); its name carries the Tesseract generation, so an
+      // upgrade is swept here as a *superseded* cache rather than served stale.
       const keys = await caches.keys();
-      await Promise.all(
-        keys.filter((key) => key !== CACHE && key !== SHARE_INBOX_CACHE).map((key) => caches.delete(key)),
-      );
+      const keep = new Set([CACHE, SHARE_INBOX_CACHE, OCR_ASSET_CACHE]);
+      await Promise.all(keys.filter((key) => !keep.has(key)).map((key) => caches.delete(key)));
       await pruneStalePrecache();
       // Reclaim any share that was stashed but never consumed (its landing tab was dismissed),
       // while keeping a just-stashed, still-in-flight share.
@@ -172,9 +175,10 @@ sw.addEventListener('activate', (event) => {
  * cache — superseded chunks would otherwise linger forever, growing CacheStorage on
  * each deploy and eating into the same storage quota the app meters (spec §7.6).
  *
- * `respond()` never writes to the cache, so it holds exactly the precached set:
- * anything no longer named by the current manifest is stale and safe to delete. URLs
- * are resolved against `sw.location` — the identical base `addAll` uses — so the
+ * `respond()` never writes to *this* cache — the one thing it does cache at runtime, the OCR
+ * assets, goes to its own {@link OCR_ASSET_CACHE} precisely so this stays true — so it holds
+ * exactly the precached set: anything no longer named by the current manifest is stale and safe
+ * to delete. URLs are resolved against `sw.location` — the identical base `addAll` uses — so the
  * comparison matches the cached requests regardless of relative/absolute manifest form.
  */
 async function pruneStalePrecache(): Promise<void> {
@@ -219,6 +223,11 @@ async function handleShareTarget(request: Request): Promise<Response> {
 }
 
 async function respond(request: Request): Promise<Response> {
+  // The opt-in OCR assets are precache-excluded (they are several MB), so they get their own
+  // cache-first runtime cache — otherwise the feature is unusable offline however often it has
+  // been used, and re-downloads megabytes on every use (#159).
+  if (isOcrAssetUrl(new URL(request.url), sw.location.href)) return respondOcrAsset(request);
+
   const cache = await caches.open(CACHE);
 
   // SPA navigations resolve to the precached app shell (offline-first).
@@ -239,6 +248,36 @@ async function respond(request: Request): Promise<Response> {
     // 200 with HTML, which the browser rejects on MIME type anyway while hiding the real cause,
     // so fail cleanly instead: that is what lets the app recognise a missing chunk and reload
     // onto the current build (see lib/stale-chunk-reload.ts).
+    return Response.error();
+  }
+}
+
+/**
+ * Serve a staged OCR asset cache-first, populating {@link OCR_ASSET_CACHE} on the way through.
+ *
+ * Cache-first rather than stale-while-revalidate: these files are large, unhashed and change only
+ * with a Tesseract upgrade — which mints a new cache name — so a background revalidation would
+ * re-download megabytes on a metered connection to learn nothing. A response is only stored when
+ * it is a complete 200: `cache.put` rejects a 206, and caching an error page would poison the
+ * feature until the next generation bump.
+ *
+ * The `put` is **awaited** rather than fired and forgotten: once the response promise settles the
+ * browser is free to terminate this worker, which would abandon a half-written multi-megabyte
+ * entry and leave the asset uncached — the exact bug this function exists to fix. There is no
+ * `event` here to hold open with `waitUntil`, so awaiting is what keeps the worker alive.
+ */
+async function respondOcrAsset(request: Request): Promise<Response> {
+  const cache = await caches.open(OCR_ASSET_CACHE);
+  const cached = await cache.match(request);
+  if (cached) return withIsolationHeaders(cached);
+
+  try {
+    const response = await fetch(request);
+    if (response.status === 200) await cache.put(request, response.clone());
+    return withIsolationHeaders(response);
+  } catch {
+    // Offline with nothing cached: the engine has never run here. Fail cleanly so the OCR
+    // dialog surfaces its own "assets unavailable" path rather than a mis-typed app shell.
     return Response.error();
   }
 }
