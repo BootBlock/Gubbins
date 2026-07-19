@@ -38,18 +38,16 @@ import {
 import {
   bucketMovement,
   effectiveUnitCost,
-  groupValuation,
   selectDeadStock,
+  sortValueGroups,
   summariseConsumption,
-  summariseValuation,
   type ConsumptionRateReport,
   type DeadStockCandidate,
   type DeadStockReport,
   type InventoryValueReport,
-  type ItemValuationRow,
   type MovementEvent,
   type MovementReport,
-  type ValuationRow,
+  type ValueGroupTotals,
 } from '@/features/reports/reports';
 import { classifyAbc, type AbcInput, type AbcReport } from '@/features/reports/abc-analysis';
 import { summariseTurnover, type TurnoverInput, type TurnoverReport } from '@/features/reports/turnover';
@@ -191,6 +189,49 @@ function preferredSupplierCostSql(col: string, baseCurrency: string | null): str
 }
 
 /**
+ * SQL expression for an item's **effective per-unit value** — the exact rule the pure
+ * `effectiveUnitValue(currentValue, effectiveUnitCost(item))` seam applies in JavaScript, in the
+ * order it applies it: a manual `current_value` wins (a 0 is a deliberate "worth nothing" mark),
+ * else a manual `unit_cost`, else the preferred supplier cost, else 0 (genuinely unpriced). A
+ * negative figure is not a usable price, matching `usablePrice`, so it falls through.
+ *
+ * The one thing it does not restate is that helper's finiteness test: `normaliseUnitCost`,
+ * `normaliseCurrentValue` and the supplier-part writer's `cleanCost` all reject a non-finite price
+ * outright, so no infinity can be stored to be read back here, and testing for one in SQL would
+ * cost a second evaluation of the correlated cost lookup for no reachable case.
+ *
+ * It exists so the valuation aggregates can be summed **by the database** (issue #170) instead of
+ * shipping one row per item to the worker and folding them in JS: a `GROUP BY` over a 100k-item
+ * inventory returns the ~50 rows the screen actually shows. The rule is stated twice as a result —
+ * here and in the pure seam other reports still use — so `ReportRepository.test.ts` pins the
+ * precedence cases (manual value, manual cost, supplier fallback, unpriced, zero) against real
+ * SQLite to keep the two from drifting.
+ *
+ * `alias` is the qualified `items` alias to read; {@link preferredSupplierCostSql} is inlined once
+ * (never twice) so the correlated lookup is evaluated at most once per row.
+ */
+function effectiveUnitValueSql(alias: string, baseCurrency: string | null): string {
+  return `CASE
+            WHEN ${alias}.current_value IS NOT NULL AND ${alias}.current_value >= 0 THEN ${alias}.current_value
+            WHEN ${alias}.unit_cost IS NOT NULL AND ${alias}.unit_cost >= 0 THEN ${alias}.unit_cost
+            ELSE MAX(COALESCE(${preferredSupplierCostSql(`${alias}.id`, baseCurrency)}, 0), 0)
+          END`;
+}
+
+/** One already-summed valuation group as the `GROUP BY` queries return it. */
+interface ValuationGroupRow {
+  group_id: string | null;
+  group_name: string | null;
+  quantity: number;
+  value: number;
+}
+
+/** Adapt a raw grouped row to the pure {@link sortValueGroups} input shape. */
+function toValueGroupTotals(row: ValuationGroupRow): ValueGroupTotals {
+  return { id: row.group_id, name: row.group_name, value: row.value, quantity: row.quantity };
+}
+
+/**
  * Correlated subquery yielding the **preferred** supplier part's supplier name for an item
  * (NULL when none is marked), for the parts-catalogue "Supplier" column. The name lives on
  * `suppliers` — a supplier part only references it — so this joins through `supplier_id`;
@@ -245,74 +286,51 @@ export class ReportRepository extends BaseRepository {
    * The headline + category breakdown read `items.quantity` (the item's whole on-hand
    * count); the location breakdown reads the per-location `item_stock` ledger so stock split
    * across drawers is valued where it physically sits. Active, non-parent items only.
+   *
+   * Both breakdowns are summed **in SQL** (issue #170): the queries return one row per category
+   * and per location — a few dozen — rather than one per item, so the report costs the same to
+   * fetch at 100k items as at 100. The headline is the category rollup re-summed, which is why
+   * it can never disagree with the breakdown beside it.
    */
   async inventoryValue(): Promise<InventoryValueReport> {
     // The base currency valuation totals are expressed in, resolved once per report so a
     // change mid-report can never split one total across two currencies (#284).
     const base = this.baseCurrency();
-    // Headline + per-category: one row per active, non-parent item with its category.
-    const itemRows = await this.driver.query<{
-      category_id: string | null;
-      category_name: string | null;
-      quantity: number;
-      unit_cost: number | null;
-      current_value: number | null;
-      preferred_supplier_cost: number | null;
-    }>(
-      `SELECT i.category_id AS category_id, c.name AS category_name, i.quantity AS quantity, i.unit_cost AS unit_cost,
-              i.current_value AS current_value,
-              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
-         FROM items i
-         LEFT JOIN categories c ON c.id = i.category_id
-        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
-    );
+    const unitValue = effectiveUnitValueSql('i', base);
 
-    const itemValuations: ItemValuationRow[] = itemRows.map((r) => ({
-      quantity: r.quantity,
-      unitCost: r.unit_cost,
-      currentValue: r.current_value,
-      preferredSupplierCost: r.preferred_supplier_cost,
-    }));
-    const categoryRows: ValuationRow[] = itemRows.map((r) => ({
-      groupId: r.category_id,
-      groupName: r.category_name,
-      quantity: r.quantity,
-      unitCost: r.unit_cost,
-      currentValue: r.current_value,
-      preferredSupplierCost: r.preferred_supplier_cost,
-    }));
+    // Headline + per-category: `items.quantity` (the whole on-hand count) grouped by category.
+    // The unpriced count is per *item*, so it belongs to this query and not the location one —
+    // an item split across three drawers is one unpriced item, not three.
+    const categoryRows = await this.driver.query<ValuationGroupRow & { unpriced: number }>(
+      `SELECT group_id, group_name,
+              SUM(qty) AS quantity, SUM(qty * unit_value) AS value,
+              SUM(CASE WHEN unit_value > 0 THEN 0 ELSE 1 END) AS unpriced
+         FROM (SELECT i.category_id AS group_id, c.name AS group_name,
+                      MAX(i.quantity, 0) AS qty, ${unitValue} AS unit_value
+                 FROM items i
+                 LEFT JOIN categories c ON c.id = i.category_id
+                WHERE i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')})
+        GROUP BY group_id, group_name;`,
+    );
 
     // Per-location: the `item_stock` ledger (where stock actually sits), valued by the item.
-    const stockRows = await this.driver.query<{
-      location_id: string;
-      location_name: string | null;
-      quantity: number;
-      unit_cost: number | null;
-      current_value: number | null;
-      preferred_supplier_cost: number | null;
-    }>(
-      `SELECT s.location_id AS location_id, l.name AS location_name, s.quantity AS quantity, i.unit_cost AS unit_cost,
-              i.current_value AS current_value,
-              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
-         FROM item_stock s
-         JOIN items i ON i.id = s.item_id
-         LEFT JOIN locations l ON l.id = s.location_id
-        WHERE i.is_active = 1 AND s.quantity > 0 AND ${notUnlimited('i.is_unlimited')};`,
+    const locationRows = await this.driver.query<ValuationGroupRow>(
+      `SELECT group_id, group_name, SUM(qty) AS quantity, SUM(qty * unit_value) AS value
+         FROM (SELECT s.location_id AS group_id, l.name AS group_name,
+                      MAX(s.quantity, 0) AS qty, ${unitValue} AS unit_value
+                 FROM item_stock s
+                 JOIN items i ON i.id = s.item_id
+                 LEFT JOIN locations l ON l.id = s.location_id
+                WHERE i.is_active = 1 AND s.quantity > 0 AND ${notUnlimited('i.is_unlimited')})
+        GROUP BY group_id, group_name;`,
     );
-    const locationRows: ValuationRow[] = stockRows.map((r) => ({
-      groupId: r.location_id,
-      groupName: r.location_name,
-      quantity: r.quantity,
-      unitCost: r.unit_cost,
-      currentValue: r.current_value,
-      preferredSupplierCost: r.preferred_supplier_cost,
-    }));
 
-    const headline = summariseValuation(itemValuations);
     return {
-      ...headline,
-      byCategory: groupValuation(categoryRows),
-      byLocation: groupValuation(locationRows),
+      totalValue: categoryRows.reduce((sum, r) => sum + r.value, 0),
+      totalQuantity: categoryRows.reduce((sum, r) => sum + r.quantity, 0),
+      unpricedItemCount: categoryRows.reduce((sum, r) => sum + r.unpriced, 0),
+      byCategory: sortValueGroups(categoryRows.map(toValueGroupTotals)),
+      byLocation: sortValueGroups(locationRows.map(toValueGroupTotals)),
     };
   }
 
@@ -1119,26 +1137,16 @@ export class ReportRepository extends BaseRepository {
     const base = this.baseCurrency();
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
 
-    // Current total value — the anchor the trend is reconstructed backward from.
-    const itemRows = await this.driver.query<{
-      quantity: number;
-      unit_cost: number | null;
-      current_value: number | null;
-      preferred_supplier_cost: number | null;
-    }>(
-      `SELECT i.quantity AS quantity, i.unit_cost AS unit_cost, i.current_value AS current_value,
-              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
+    // Current total value — the anchor the trend is reconstructed backward from. Summed by the
+    // database over the same predicates and the same value rule as the {@link inventoryValue}
+    // headline (issue #170), so the right-hand endpoint lands exactly on the headline figure
+    // beside it rather than merely near it.
+    const anchor = await this.driver.queryOne<{ total: number | null }>(
+      `SELECT SUM(MAX(i.quantity, 0) * (${effectiveUnitValueSql('i', base)})) AS total
          FROM items i
         WHERE i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
     );
-    const currentValue = summariseValuation(
-      itemRows.map((r) => ({
-        quantity: r.quantity,
-        unitCost: r.unit_cost,
-        currentValue: r.current_value,
-        preferredSupplierCost: r.preferred_supplier_cost,
-      })),
-    ).totalValue;
+    const currentValue = anchor?.total ?? 0;
 
     // Value-tagged ledger events inside the window (half-open at the start; inclusive of now).
     const eventRows = await this.driver.query<{

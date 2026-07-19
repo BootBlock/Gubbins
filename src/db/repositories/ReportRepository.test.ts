@@ -75,6 +75,57 @@ describe('ReportRepository', () => {
       expect(unassigned).toMatchObject({ value: 0, quantity: 5 });
     });
 
+    it('applies the same value precedence in SQL as the pure seam does (issue #170)', async () => {
+      // The totals are summed by the database, so the precedence rule is stated in SQL as well
+      // as in `effectiveUnitValue`/`effectiveUnitCost`. Pin every branch of it here so the two
+      // statements cannot drift: manual value wins, else manual cost, else the preferred
+      // supplier cost, else unpriced — and a deliberate zero is a value, not a price.
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const supplierPriced = await items.create({
+        name: 'Fallback',
+        locationId: shelf.id,
+        quantity: 2,
+        unitCost: null,
+      });
+      await supplierParts.create(supplierPriced.id, {
+        supplier: { supplierName: 'Preferred Co' },
+        unitCost: 3,
+        isPreferred: true,
+      });
+      // A manual current value outranks both the manual cost and the supplier's price.
+      const revalued = await items.create({
+        name: 'Revalued',
+        locationId: shelf.id,
+        quantity: 2,
+        unitCost: 10,
+        currentValue: 25,
+      });
+      await supplierParts.create(revalued.id, {
+        supplier: { supplierName: 'Preferred Co' },
+        unitCost: 99,
+        isPreferred: true,
+      });
+      // A current value of 0 is "worth nothing" — it wins over the cost and reads as unpriced.
+      await items.create({
+        name: 'Worthless',
+        locationId: shelf.id,
+        quantity: 4,
+        unitCost: 8,
+        currentValue: 0,
+      });
+      await items.create({ name: 'Unpriced', locationId: shelf.id, quantity: 1, unitCost: null });
+
+      const report = await reports.inventoryValue();
+      expect(report.totalValue).toBe(56); // 2×3 + 2×25 + 4×0 + 1×0
+      expect(report.totalQuantity).toBe(9);
+      expect(report.unpricedItemCount).toBe(2); // the zero-valued item and the unpriced one
+      // The breakdown beside the headline is the same arithmetic, not a second opinion.
+      expect(report.byLocation.find((g) => g.id === shelf.id)).toMatchObject({
+        value: 56,
+        quantity: 9,
+      });
+    });
+
     it('values an item with no manual cost at its preferred supplier cost (Phase-60 precedence)', async () => {
       const shelf = await locations.create({ name: 'Shelf A' });
       // No manual unitCost: valuation must fall back to the preferred supplier part's cost.
