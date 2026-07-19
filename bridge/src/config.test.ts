@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_HOST, DEFAULT_MAX_PUSH_BYTES, DEFAULT_PORT, isLanExposed, loadConfig } from './config.ts';
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC } from './rate-limit.ts';
 import { DEFAULT_LOOKUP_DEBOUNCE_MS, MAX_LOOKUP_DEBOUNCE_MS } from './events/lookup.ts';
+import { DEFAULT_STALE_AFTER_FAILURES } from './snapshot-health.ts';
 
 const VALID: Record<string, string> = {
   GUBBINS_BRIDGE_TOKEN: 'placeholder-token-for-tests',
@@ -25,6 +26,7 @@ describe('loadConfig (HA-3)', () => {
       allowWrites: false,
       allowPush: false,
       maxPushBytes: DEFAULT_MAX_PUSH_BYTES,
+      staleAfterFailures: DEFAULT_STALE_AFTER_FAILURES,
       events: false,
       lookupEvents: false,
       lookupEventsDebounceMs: DEFAULT_LOOKUP_DEBOUNCE_MS,
@@ -187,6 +189,15 @@ describe('loadConfig (HA-3)', () => {
     expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_MAX_PUSH_BYTES: '1048576' }).maxPushBytes).toBe(1048576);
     expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_MAX_PUSH_BYTES: '0' })).toThrow(
       /GUBBINS_BRIDGE_MAX_PUSH_BYTES/,
+    );
+  });
+
+  it('defaults the stale-reload threshold, allows an override, and allows opting out with 0', () => {
+    expect(loadConfig(VALID).staleAfterFailures).toBe(DEFAULT_STALE_AFTER_FAILURES);
+    expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_STALE_AFTER_FAILURES: '10' }).staleAfterFailures).toBe(10);
+    expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_STALE_AFTER_FAILURES: '0' }).staleAfterFailures).toBe(0);
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_STALE_AFTER_FAILURES: 'lots' })).toThrow(
+      /GUBBINS_BRIDGE_STALE_AFTER_FAILURES/,
     );
   });
 

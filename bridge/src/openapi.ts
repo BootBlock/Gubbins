@@ -476,12 +476,17 @@ export const openapiDocument: JsonValue = {
     '/api/v1/health': {
       get: {
         tags: ['meta'],
-        summary: 'Liveness and a cheap snapshot summary',
+        summary: 'Liveness, a cheap snapshot summary, and snapshot freshness',
         responses: {
           200: response('Health summary.', '#/components/schemas/Health', {
             ok: true,
             itemCount: 4,
             snapshotGeneratedAt: '2025-06-27T06:13:20.000Z',
+            snapshotStale: false,
+            reloadFailures: 0,
+            lastReloadError: null,
+            lastReloadErrorAt: null,
+            lastReloadAt: '2025-06-27T06:13:21.000Z',
           }),
           ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
         },
@@ -1232,11 +1237,41 @@ export const openapiDocument: JsonValue = {
       },
       Health: {
         type: 'object',
-        required: ['ok', 'itemCount', 'snapshotGeneratedAt'],
+        required: [
+          'ok',
+          'itemCount',
+          'snapshotGeneratedAt',
+          'snapshotStale',
+          'reloadFailures',
+          'lastReloadError',
+          'lastReloadErrorAt',
+          'lastReloadAt',
+        ],
         properties: {
-          ok: { type: 'boolean' },
+          ok: {
+            type: 'boolean',
+            description:
+              'False once the snapshot is stale — the bridge is still answering, but from data it ' +
+              'knows is out of date. Treat a false value as "do not trust these numbers".',
+          },
           itemCount: { type: 'integer' },
           snapshotGeneratedAt: { type: 'string', nullable: true, format: 'date-time' },
+          snapshotStale: {
+            type: 'boolean',
+            description: 'Reloads have failed enough times in a row to call the served data stale.',
+          },
+          reloadFailures: {
+            type: 'integer',
+            description: 'Consecutive failed snapshot reloads since the last successful one.',
+          },
+          lastReloadError: { type: 'string', nullable: true, description: 'Why the last reload failed.' },
+          lastReloadErrorAt: { type: 'string', nullable: true, format: 'date-time' },
+          lastReloadAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'When the served snapshot was last loaded successfully.',
+          },
         },
       },
       ItemMatch: {
