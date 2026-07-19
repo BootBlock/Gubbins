@@ -358,6 +358,45 @@ describe('CommandPalette', () => {
       );
     });
 
+    it('reports a failed Move and keeps the chosen location so it can be retried', async () => {
+      // Raw SQLite text, so the panel's own copy is what the user sees (the error seam only
+      // prefers a thrown message when it was authored for a human).
+      moveMutateAsync.mockRejectedValueOnce(new Error('SQLITE_CONSTRAINT: constraint failed'));
+      await openActions();
+      fireEvent.click(screen.getByRole('combobox', { name: 'Move to location' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Shelf B' }));
+      fireEvent.click(screen.getByTestId('command-palette-move'));
+
+      const alert = await screen.findByTestId('command-palette-action-error');
+      expect(alert.getAttribute('role')).toBe('alert');
+      expect(alert.textContent).toContain('Could not move 10k resistor.');
+      // No success announcement, and the picker still holds the target — one click retries.
+      expect(screen.getByTestId('command-palette-action-notice').textContent).toBe('');
+      expect(screen.getByRole('combobox', { name: 'Move to location' }).textContent).toContain('Shelf B');
+
+      fireEvent.click(screen.getByTestId('command-palette-move'));
+      await waitFor(() => expect(moveMutateAsync).toHaveBeenCalledTimes(2));
+      // The retry succeeded: the error clears and the success notice takes its place.
+      await waitFor(() => expect(screen.queryByTestId('command-palette-action-error')).toBeNull());
+      expect(screen.getByTestId('command-palette-action-notice').textContent).toContain(
+        'Moved 10k resistor to Shelf B.',
+      );
+    });
+
+    it('reports a failed Check out and keeps the contact name so it can be retried', async () => {
+      // An authored sentence wins over the panel's fallback — the user gets the specific reason.
+      checkoutMutateAsync.mockRejectedValueOnce(new Error('Not enough stock on hand.'));
+      await openActions();
+      fireEvent.change(screen.getByTestId('command-palette-checkout-contact'), {
+        target: { value: 'Ada' },
+      });
+      fireEvent.click(screen.getByTestId('command-palette-checkout'));
+
+      const alert = await screen.findByTestId('command-palette-action-error');
+      expect(alert.textContent).toContain('Not enough stock on hand.');
+      expect((screen.getByTestId('command-palette-checkout-contact') as HTMLInputElement).value).toBe('Ada');
+    });
+
     it('hides Check out when the Contacts module is off, keeping Move + Open details', async () => {
       useModulesStore.getState().setFeatureIntent('contacts', false);
       await openActions();

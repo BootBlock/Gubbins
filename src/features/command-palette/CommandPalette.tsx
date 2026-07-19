@@ -44,6 +44,7 @@ import { PALETTE_DESTINATIONS, type PaletteDestination } from '@/components/nav/
 import { useHotkeyHints } from '@/features/hotkeys/useHotkeyHints';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
+import { useErrorMessage } from '@/features/errors';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryItems, useItem, useLocations } from '@/features/inventory/queries';
 import { useMoveItem } from '@/features/inventory/mutations';
@@ -389,7 +390,8 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
  * - **Open details** — the palette's original jump-to-item, kept as the primary.
  *
  * The item's full record is loaded here (via {@link useItem}) so the controls can adapt to its
- * tracking mode; every outcome is announced through a {@link LiveRegion} for assistive tech.
+ * tracking mode; a success is announced through a {@link LiveRegion} for assistive tech, and a
+ * failed write is shown in the panel (and announced) rather than being left to reject silently.
  */
 function ItemActions({
   item,
@@ -408,9 +410,12 @@ function ItemActions({
   const checkout = useCheckoutItem();
   const contactsEnabled = useFeature('contacts');
 
+  const describeError = useErrorMessage();
+
   const [moveTarget, setMoveTarget] = useState('');
   const [contactName, setContactName] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Land focus on Back when the panel opens, so the whole panel is keyboard-reachable from a
   // known anchor and Escape/Back has an obvious visible home.
@@ -420,18 +425,37 @@ function ItemActions({
 
   const data = detail.data ?? null;
 
+  // Both writes report their failure rather than rejecting into an unobserved promise: the
+  // panel keeps what you typed/picked so the retry is one click, and the error replaces the
+  // previous outcome so a stale success notice never sits beside a failed attempt.
   const moveHere = async () => {
     if (moveTarget === '') return;
     const name = locationRows.find((l) => l.id === moveTarget)?.name ?? 'the location';
-    await move.mutateAsync({ id: item.id, locationId: moveTarget });
+    setError(null);
+    try {
+      await move.mutateAsync({ id: item.id, locationId: moveTarget });
+    } catch (e) {
+      setNotice(null);
+      setError(describeError(e, `Could not move ${item.name}.`));
+      return;
+    }
     setNotice(`Moved ${item.name} to ${name}.`);
     setMoveTarget('');
   };
 
   const checkOut = async () => {
     const contact = contactName.trim();
-    if (contact.length === 0) return;
-    await checkout.mutateAsync({ itemId: item.id, contactName: contact });
+    // The Enter shortcut on the contact field bypasses the button's `disabled`, so the guard
+    // against a double-fire has to live here too — a second write must not slip through.
+    if (contact.length === 0 || checkout.isPending) return;
+    setError(null);
+    try {
+      await checkout.mutateAsync({ itemId: item.id, contactName: contact });
+    } catch (e) {
+      setNotice(null);
+      setError(describeError(e, `Could not check ${item.name} out.`));
+      return;
+    }
     setNotice(`Checked out ${item.name} to ${contact}.`);
     setContactName('');
   };
@@ -543,6 +567,14 @@ function ItemActions({
           <Spinner className="size-4" /> Loading…
         </div>
       )}
+
+      {/* A failed write says so in the panel; `role="alert"` also announces it, so it is not
+        repeated in the LiveRegion below (which carries successes only). */}
+      {error ? (
+        <p role="alert" className="text-sm text-destructive" data-testid="command-palette-action-error">
+          {error}
+        </p>
+      ) : null}
 
       {/* Announce each action's outcome for assistive tech — the panel's SR channel. */}
       <LiveRegion data-testid="command-palette-action-notice">
