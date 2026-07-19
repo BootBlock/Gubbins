@@ -15,6 +15,11 @@ Just about every meaningful change is logged: creating and editing items, stock 
 [[sales and write-offs|Sales-and-Disposals]], [[cycle-count reconciliations|Cycle-Counts-and-Audit-Day]],
 revaluations, servicing, and more.
 
+Every entry is also recorded against **who** made it. On a single-person setup that's always the
+built-in **Admin** account, so it isn't something you need to think about. Turn on
+[[accounts|Users-and-Accounts]] and each entry carries the name of the person who made the change
+instead.
+
 - The **global Activity feed** shows everything across your inventory, newest first.
 - Each **item's Activity tab** shows just that item's history — a complete story of one thing.
 

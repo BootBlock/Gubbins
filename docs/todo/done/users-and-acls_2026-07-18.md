@@ -1,8 +1,8 @@
 # Users & ACLs — implementation plan
 
-> **Status:** 🟢 ACTIVE — phases 1 (schema, built-in users, attribution), 2 (permission engine),
-> 3 (authentication & session), 4 (module, gating & admin UI) and 5 (Bridge per-user tokens)
-> shipped; phase 6 (wiki & i18n sweep) next.
+> **Status:** ✅ COMPLETE — all six phases shipped: 1 (schema, built-in users, attribution),
+> 2 (permission engine), 3 (authentication & session), 4 (module, gating & admin UI),
+> 5 (Bridge per-user tokens) and 6 (wiki & i18n sweep).
 
 Gubbins has no concept of a user. Every action is anonymous, `item_history` records *what*
 happened but never *who*, and the Bridge authenticates with a single all-or-nothing bearer
@@ -387,6 +387,38 @@ and confirmation every string added across phases 1–5 exists in both `en.json`
 
 Strings are added via `t()` **in the phase that introduces them**, not deferred to phase 6 — the
 catalog tests enforce full `de.json` coverage, so a deferred translation fails that phase's build.
+
+#### Phase 6 as built
+
+- **Three new wiki pages** — `Users-and-Accounts`, `Roles-and-Permissions` and `Signing-In` — in a
+  new **Users & access** sidebar group, plus generated captures of the Users screen, the role
+  editor and the sign-in gate. The Bridge token page is phase 5's and is cross-linked rather than
+  duplicated.
+- **§1.1's honesty requirement is stated on four pages, not one.** A password gating the app while
+  leaving the database readable is exactly the kind of thing a reader infers wrongly from silence,
+  so it appears wherever someone might form the belief: the two new pages that discuss passwords,
+  `Privacy-and-Security` (a dedicated section) and `How-Your-Data-Is-Stored`. Pages that made
+  now-inaccurate claims were corrected rather than left — `Privacy-and-Security` opened with "no
+  account", and `First-Run-and-Quick-Start` said skipping the chooser "keeps everything on", which
+  an opt-in module makes untrue.
+- **The catalogs needed no repair.** Every key added across phases 1–5 was already present in both
+  `en.json` and `de.json` with a real translation, with matching `{placeholder}` sets and the
+  `nav.users` label byte-identical to its registry entry — the per-phase rule plus the build-enforced
+  catalog tests did their job, and the sweep confirmed rather than fixed.
+- **One genuine i18n gap was found and deferred deliberately** ([#406]): the built-in roles' names
+  and descriptions are seeded database rows rendered raw, so they stay English in a German UI.
+  Fixing it needs a translate-only-if-still-default lookup keyed by the built-in role id — a real
+  seam, not a `t()` swap, since an operator may have renamed the role — and `builtin-roles.ts`
+  cannot simply be edited because that shifts the baseline fingerprint and resets existing
+  databases.
+- **The screenshot harness needed three fixes** to reach these screens, all of which bit the
+  pre-existing steps too: the first-run chooser must be *waited* for rather than probed once (on a
+  fast machine the app reaches "Add item" before it mounts, and its overlay then swallows every
+  click), a module's control is a Select of On/Off rather than a switch, and the run now closes the
+  browser on a deadline — the app's workers can decline to shut down, which previously left a
+  finished run hanging indefinitely with every image already written.
+
+[#406]: https://github.com/BootBlock/Gubbins/issues/406
 
 ## 5. Risks
 

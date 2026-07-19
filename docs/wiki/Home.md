@@ -23,6 +23,7 @@ start with the three pages below; otherwise jump straight to a section from the 
 | **Inventory** | [[Items]], [[Tracking modes\|Tracking-Modes]], [[Locations & stock\|Locations-and-Stock]], [[Batches & lots\|Batches-and-Lots]], [[Variants\|Variants-and-SKUs]], [[Kits\|Kits-and-Bundles]], [[Custom fields\|Custom-Fields-and-Capabilities]] |
 | **Asset lifecycle** | [[Warranty & depreciation\|Warranty-and-Depreciation]], [[Maintenance\|Maintenance-and-Servicing]], [[Cycle counts\|Cycle-Counts-and-Audit-Day]], [[Insurance schedule\|Insurance-and-Estate-Schedule]] |
 | **People & time** | [[Contacts]], [[Loans\|Loans-Check-Out-and-In]], [[Bookings]] |
+| **Users & access** | [[Users & accounts\|Users-and-Accounts]], [[Roles & permissions\|Roles-and-Permissions]], [[Signing in\|Signing-In]] |
 | **Search** | [[Search overview\|Search-Overview]], [[Visual builder\|Visual-Query-Builder]], [[Text syntax\|Text-Query-Syntax]], [[Natural language\|Natural-Language-Search]] |
 | **Scanning & labels** | [[Camera scanning\|Camera-Scanning]], [[QR & labels\|QR-Codes-and-Label-Printing]], [[OCR\|Receipt-and-Label-OCR]] |
 | **Purchasing & projects** | [[Projects & BOM\|Projects-and-BOM]], [[Purchase orders\|Purchase-Orders]], [[Reorder\|Reorder-and-Shopping-List]], [[Wishlist]], [[Suppliers]] |

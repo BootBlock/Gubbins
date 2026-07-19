@@ -21,6 +21,9 @@ explanation.
 | **Loan** | An item temporarily *out* with a contact. See [[Loans\|Loans-Check-Out-and-In]]. |
 | **Booking** | A future reservation of an item for a contact. See [[Bookings]]. |
 | **Contact** | A person or organisation you lend to or borrow from. See [[Contacts]]. |
+| **Account** | Someone who *uses* this copy of Gubbins, as opposed to a contact, who is someone you record. Optional. See [[Users & accounts\|Users-and-Accounts]]. |
+| **Role** | A named set of permissions given to one or more accounts. See [[Roles & permissions\|Roles-and-Permissions]]. |
+| **Permission** | Allowance to do one action (view, change, delete) in one area of Gubbins. See [[Roles & permissions\|Roles-and-Permissions]]. |
 | **Project** | A build with a bill of materials and budget. See [[Projects & BOM\|Projects-and-BOM]]. |
 | **BOM** | Bill of materials — a parts list. A *project's* BOM covers one build; a *reusable* one is a [[kit\|Kits-and-Bundles]]. See [[Projects & BOM\|Projects-and-BOM]]. |
 | **Purchase order (PO)** | A tracked order to a supplier. See [[Purchase orders\|Purchase-Orders]]. |

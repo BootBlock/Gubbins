@@ -17,6 +17,13 @@ Because it's all local:
 - **It's private.** Your inventory doesn't exist on anyone else's computer. See
   [[Privacy & security|Privacy-and-Security]].
 
+> **ℹ️ Note**
+> The database is stored **unencrypted**. That's what makes it portable and recoverable — you can
+> [[export the raw file|Export-and-Import]] and open it with any SQLite tool. It also means that
+> turning on [[sign-in|Signing-In]] guards the *app*, not the file: anyone with access to this
+> device's files can read your inventory regardless. If the data itself needs protecting, that's a
+> job for your device's passcode and disk encryption.
+
 > **⚠️ Heads-up**
 > Because the data is stored *by your browser*, clearing your browser's site data for Gubbins —
 > or an aggressive "free up space" cleanup — can remove it. Keep a **[[backup|Backup-and-Restore]]**,
