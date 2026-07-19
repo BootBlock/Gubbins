@@ -5,8 +5,9 @@
  * by the codec) and applies it in one of two modes the user picks per restore:
  *
  *  - **merge** — non-destructive: UPSERT every record from the backup over the current data
- *    (re-creating anything deleted since, keeping records the backup doesn't carry). Uses the
- *    portable snapshot via {@link restoreSnapshot}.
+ *    (re-creating anything deleted since, keeping records the backup doesn't carry, and never
+ *    removing a live record because the backup considered it deleted). Uses the portable
+ *    snapshot via {@link restoreSnapshot}.
  *  - **replace** — a true point-in-time restore: make the device match the backup exactly.
  *    Prefers the exact `.sqlite` copy when present (overwrite OPFS, like the archive restore);
  *    otherwise wipes and clones from the portable snapshot.

@@ -219,4 +219,90 @@ describe('backup → restore round-trip (§2)', () => {
 
     await driver2.close();
   });
+
+  /**
+   * Issue #202: a merge restore is advertised as non-destructive, so the backup's deletion view
+   * is merged with the local one instead of replacing it. A tombstone the backup carries must
+   * not remove a row that is live here, and a deletion made since the backup must survive — on a
+   * synced setup, dropping the local tombstone would let a peer resurrect the row.
+   */
+  it('issue #202: a merge keeps a live local row the backup considered deleted', async () => {
+    const doomed = await items.create({
+      name: 'Deleted before the backup',
+      locationId: UNASSIGNED_LOCATION_ID,
+    });
+    await items.hardDelete(doomed.id);
+    const backup = await buildBackupJson(driver); // carries a tombstone for `doomed`
+
+    // The row comes back locally under the same id (as it would from a peer, or by undo).
+    await driver.execute('INSERT INTO items (id, name, location_id) VALUES (?, ?, ?);', [
+      doomed.id,
+      'Back again',
+      UNASSIGNED_LOCATION_ID,
+    ]);
+    await driver.execute('DELETE FROM tombstones WHERE table_name = ? AND id = ?;', ['items', doomed.id]);
+
+    await restoreFromBackupJson(driver, backup);
+
+    expect((await items.getById(doomed.id))?.name).toBe('Back again');
+    // …and no tombstone was adopted for it, or the next sync would delete it anyway.
+    const adopted = await driver.query('SELECT id FROM tombstones WHERE table_name = ? AND id = ?;', [
+      'items',
+      doomed.id,
+    ]);
+    expect(adopted).toEqual([]);
+  });
+
+  it('issue #202: a merge preserves a deletion made since the backup was taken', async () => {
+    const removed = await items.create({
+      name: 'Deleted after the backup',
+      locationId: UNASSIGNED_LOCATION_ID,
+    });
+    const other = await items.create({ name: 'Untouched', locationId: UNASSIGNED_LOCATION_ID });
+    const backup = await buildBackupJson(driver); // carries both rows, no tombstones
+
+    await items.hardDelete(removed.id);
+    await restoreFromBackupJson(driver, backup);
+
+    // The row itself is re-created — that is what a merge restore is for — but only because the
+    // backup carries it, and its tombstone is cleared so the restore is not immediately undone.
+    expect((await items.getById(removed.id))?.name).toBe('Deleted after the backup');
+    expect((await items.getById(other.id))?.name).toBe('Untouched');
+
+    // A deletion the backup knows nothing about is a different matter: it must still be recorded.
+    const orphan = await items.create({ name: 'Never in the backup', locationId: UNASSIGNED_LOCATION_ID });
+    await items.hardDelete(orphan.id);
+    await restoreFromBackupJson(driver, backup);
+    const kept = await driver.query('SELECT id FROM tombstones WHERE table_name = ? AND id = ?;', [
+      'items',
+      orphan.id,
+    ]);
+    expect(kept).toHaveLength(1);
+  });
+
+  // Both sides agree the row is gone, so only the instant is in question — and rewinding it to
+  // the backup's older one would drop the tombstone below the watermark that decides what still
+  // needs syncing, stranding a deletion this device had yet to propagate.
+  it('issue #202: adopting a tombstone keeps the later deletion instant', async () => {
+    const gone = await items.create({ name: 'Deleted on both devices', locationId: UNASSIGNED_LOCATION_ID });
+    await items.hardDelete(gone.id);
+    await driver.execute('UPDATE tombstones SET deleted_at = ? WHERE table_name = ? AND id = ?;', [
+      9000,
+      'items',
+      gone.id,
+    ]);
+
+    const backup = JSON.stringify({
+      formatVersion: 1,
+      tables: {},
+      tombstones: [{ tableName: 'items', id: gone.id, deletedAt: 1000 }],
+    });
+    await restoreFromBackupJson(driver, backup);
+
+    const [row] = await driver.query<{ deleted_at: number }>(
+      'SELECT deleted_at FROM tombstones WHERE table_name = ? AND id = ?;',
+      ['items', gone.id],
+    );
+    expect(row?.deleted_at).toBe(9000);
+  });
 });
