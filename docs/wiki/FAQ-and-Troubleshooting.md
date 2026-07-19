@@ -143,6 +143,14 @@ JSON export) and then reset to continue. Once Gubbins reaches 1.0, updates will 
 > Take a [[backup|Backup-and-Restore]] regularly while Gubbins is pre-1.0, so a schema reset never
 > costs you more than the changes since your last backup.
 
+**What if the file I restore turns out to be broken?**
+Gubbins checks a raw `.sqlite` database or `.zip` archive before restoring it — that it arrived
+complete, and that the data inside is intact — so a half-finished download or a copy from a failing
+drive is caught and explained rather than quietly replacing good data. If you want to go ahead with a
+damaged file anyway, you can, after a second confirmation. And whichever you choose, a copy of your
+current database is downloaded first, so you can always get back to where you started. See
+[[Backup & restore|Backup-and-Restore]].
+
 **Gubbins says "Device clock is wrong". What does that mean?**
 Gubbins decides a great many things from the date: whether stock has passed its best-before,
 whether a loan is overdue, whether an item is due for a service, and whether stock has gone idle.

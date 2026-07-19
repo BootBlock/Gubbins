@@ -13,6 +13,7 @@
  * next begins.
  */
 import { bootstrapDatabase, readDiagnostics, type BootstrapResult } from './sqlite-bootstrap';
+import { verifySqliteBinary } from './verify-binary';
 import { DbError } from '../errors';
 import type { BindingSpec } from '@sqlite.org/sqlite-wasm';
 import type { RpcRequestEnvelope, RpcResponseEnvelope, DbRequest } from '../rpc/protocol';
@@ -50,6 +51,13 @@ async function dispatch(request: DbRequest): Promise<unknown> {
       bootPromise = null;
     }
     return null;
+  }
+
+  // Deliberately ahead of `ensureBoot`: verifying candidate restore bytes must work when the
+  // live database cannot be opened at all, which is the very state Safe Mode restores from
+  // (issue #198). It opens only its own transient in-memory copy.
+  if (request.kind === 'verifyBinary') {
+    return verifySqliteBinary(request.bytes);
   }
 
   const active = await ensureBoot();
