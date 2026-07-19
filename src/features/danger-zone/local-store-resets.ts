@@ -28,6 +28,7 @@ import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { useMilestonesStore } from '@/state/stores/useMilestonesStore';
+import { useClockSkewStore } from '@/state/stores/useClockSkewStore';
 import { useSavedSearchesStore } from '@/features/search/useSavedSearchesStore';
 import { useDismissedAlertsStore } from '@/features/alerts/useDismissedAlertsStore';
 import { useNotifiedRemindersStore } from '@/features/alerts/useNotifiedRemindersStore';
@@ -74,6 +75,10 @@ export const LOCAL_STORE_RESETS: Readonly<Record<string, (() => void) | null>> =
   'gubbins:location-expansion': toDefaults(useLocationExpansionStore),
   'gubbins:audit-session': toDefaults(useAuditSessionStore),
   'gubbins:milestones': toDefaults(useMilestonesStore),
+  // Resetting the store also un-corrects the evaluation clock: `startClockSkew` subscribes to
+  // `skewMs`, so clearing it here pushes 0 straight through to `setClockSkewMs`. The next boot
+  // re-measures and re-applies a correction if the device clock really is wrong.
+  'gubbins:clock-skew': toDefaults(useClockSkewStore),
 
   // Read from storage on demand, so the erase already took effect — there is no retained copy to
   // reset, and no later write that could resurrect the removed value.

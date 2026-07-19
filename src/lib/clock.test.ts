@@ -1,8 +1,18 @@
 import { describe, expect, it, afterEach, vi } from 'vitest';
-import { clockOffsetMs, isClockShifted, nowDate, nowMs, offsetForDate, setClockOffsetMs } from './clock';
+import {
+  clockOffsetMs,
+  clockSkewMs,
+  isClockShifted,
+  nowDate,
+  nowMs,
+  offsetForDate,
+  setClockOffsetMs,
+  setClockSkewMs,
+} from './clock';
 
 afterEach(() => {
   setClockOffsetMs(0);
+  setClockSkewMs(0);
   vi.useRealTimers();
 });
 
@@ -35,6 +45,33 @@ describe('clock', () => {
     expect(clockOffsetMs()).toBe(0);
   });
 
+  describe('skew correction (#326)', () => {
+    it('corrects nowMs for a wrong device clock', () => {
+      setClockSkewMs(-604_800_000); // a device running a week fast
+      expect(clockSkewMs()).toBe(-604_800_000);
+      expect(nowMs() - Date.now()).toBeCloseTo(-604_800_000, -2);
+    });
+
+    it('composes with the lab offset rather than replacing it', () => {
+      setClockSkewMs(-3_600_000);
+      setClockOffsetMs(86_400_000);
+      expect(nowMs() - Date.now()).toBeCloseTo(82_800_000, -2);
+    });
+
+    it('keeps a corrected clock distinguishable from a pretending one', () => {
+      // A device whose clock is merely wrong must not be badged as being in lab test mode.
+      setClockSkewMs(-3_600_000);
+      expect(isClockShifted()).toBe(false);
+      expect(clockOffsetMs()).toBe(0);
+    });
+
+    it('ignores a non-finite skew rather than poisoning every comparison with NaN', () => {
+      setClockSkewMs(Number.NaN);
+      expect(clockSkewMs()).toBe(0);
+      expect(Number.isFinite(nowMs())).toBe(true);
+    });
+  });
+
   describe('offsetForDate', () => {
     it('moves the calendar date while preserving the time of day', () => {
       const from = new Date(2026, 6, 18, 14, 30, 15, 250); // 18 Jul 2026, 14:30:15.250
@@ -47,6 +84,16 @@ describe('clock', () => {
       const from = new Date(2026, 6, 18, 9, 0, 0);
       const shifted = new Date(from.getTime() + offsetForDate('2020-01-01', from));
       expect([shifted.getFullYear(), shifted.getMonth() + 1, shifted.getDate()]).toEqual([2020, 1, 1]);
+    });
+
+    it('lands on the chosen date even when a skew correction is active (#326)', () => {
+      // The offset is added *on top of* the skew inside nowMs, so measuring it from the raw
+      // clock double-counted the device's error: a machine three days fast picked 24 December
+      // and the app then believed it was the 21st.
+      setClockSkewMs(-3 * 86_400_000);
+      setClockOffsetMs(offsetForDate('2026-12-24'));
+      const believed = nowDate();
+      expect([believed.getFullYear(), believed.getMonth() + 1, believed.getDate()]).toEqual([2026, 12, 24]);
     });
 
     it('is zero for the current date', () => {

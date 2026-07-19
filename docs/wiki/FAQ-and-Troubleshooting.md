@@ -118,6 +118,28 @@ JSON export) and then reset to continue. Once Gubbins reaches 1.0, updates will 
 > Take a [[backup|Backup-and-Restore]] regularly while Gubbins is pre-1.0, so a schema reset never
 > costs you more than the changes since your last backup.
 
+**Gubbins says "Device clock is wrong". What does that mean?**
+Gubbins decides a great many things from the date: whether stock has passed its best-before,
+whether a loan is overdue, whether an item is due for a service, and whether stock has gone idle.
+All of those answers come from your device's own clock — so if that clock is wrong, the answers are
+wrong too, and nothing on screen would look unusual.
+
+To stop that happening, Gubbins checks your device's clock against the time reported by the server
+it was loaded from. If the two disagree by more than a few minutes, it **corrects the difference
+itself** — expiry, overdue and service dates are then judged against the real time rather than your
+device's idea of it — and shows a small marker at the bottom of the screen so you know the
+correction is being applied. The marker tells you which way your clock runs (for example, that your
+device reads three hours ahead).
+
+Nothing is broken, and your data is untouched: the correction only affects *judgements* about dates,
+never the dates recorded against your items. The fix is to correct your device's clock — on most
+systems, turning on "set time automatically" in the date and time settings is enough. Once it agrees
+again, the marker disappears on the next launch.
+
+> **ℹ️ Note**
+> Gubbins can only make this check when it can reach the network. Offline, it keeps using the last
+> correction it worked out, so a device with a known-wrong clock still judges dates correctly.
+
 > **💡 Tip**
 > Whatever the issue, a recent [[backup|Backup-and-Restore]] is the best safety net — take one
 > before big changes and you can always get back to a known-good state.
