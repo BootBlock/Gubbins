@@ -16,7 +16,8 @@ import { diagnoseCriticalSupport, type SupportDiagnosis } from '@/lib/env/suppor
 import { acquireDatabaseTabLock, type TabLockDenial } from '@/db/tab-lock';
 import { bootDatabase, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
-import { useStorageStore } from '@/state/stores/useStorageStore';
+import { storageWriteGate, useStorageStore } from '@/state/stores/useStorageStore';
+import { setStorageWriteGate } from '@/features/storage/write-gate';
 import { labFlag } from '@/state/stores/useLabStore';
 
 export type BootState =
@@ -96,6 +97,12 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
     const storage = useStorageStore.getState();
     void storage.requestPersistence();
     storage.startMonitoring();
+
+    // Issue #200: arm the Hard Stop for the bulk write paths that build their own statements
+    // and never pass through a repository (sync merge, snapshot restore, catalog import).
+    // Registered rather than imported by those modules, because the Bridge shares them and has
+    // neither a quota nor these stores — see `features/storage/write-gate.ts`.
+    setStorageWriteGate(storageWriteGate);
 
     // DEV-only test seam (stripped from production builds): the real-browser smoke
     // (§8.5.5) can force a storage tier to drive the §7.6 Triage Dashboard, which is

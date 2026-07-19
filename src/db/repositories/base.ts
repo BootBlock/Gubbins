@@ -9,6 +9,7 @@
  */
 import { moneyDecimals } from '@/lib/money';
 import { DbError } from '../errors';
+import { writeSuspendedError } from '@/features/storage/write-gate';
 import type { IDatabaseDriver } from '../rpc/driver';
 import { can, UNRESTRICTED_AUTHORITY, type Authority } from '@/features/users/permissions';
 import type { PermissionKey } from '@/features/users/permission-registry';
@@ -150,14 +151,13 @@ export abstract class BaseRepository {
   /**
    * Refuse a storage-growing write at the locked tier (the Hard Stop, §7.6.1).
    * Deletions (which free space) must bypass this guard.
+   *
+   * This covers writes that go through a repository. The bulk paths that build their own
+   * statements and call `driver.transaction` directly gate themselves with the asynchronous
+   * `ensureStorageWritable()` (issue #200) — same Hard Stop, same error.
    */
   protected assertWritable(): void {
-    if (this.isWriteSuspended()) {
-      throw new DbError(
-        'WRITE_SUSPENDED',
-        'Storage is full (Hard Stop): new writes are suspended. Delete items or free space to continue.',
-      );
-    }
+    if (this.isWriteSuspended()) throw writeSuspendedError();
   }
 
   /** Clamp caller pagination to the strict RPC ceiling (spec §2.1). */

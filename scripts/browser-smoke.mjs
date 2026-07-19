@@ -3371,6 +3371,9 @@ try {
         Date.now = () => realNow() + offset;
         const store = /** @type {any} */ (window).__storageStore;
         if (!store) throw new Error('storage store test seam missing (not a DEV build?)');
+        // Stop the poll first (issue #200): near the ceiling it re-measures every 15s, and a
+        // real measurement would overwrite the forced tier part-way through this flow.
+        store.getState().stopMonitoring();
         store.setState({
           tier: 'critical',
           ratio: 0.93,
