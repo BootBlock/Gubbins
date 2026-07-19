@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { Item, ItemHistoryEntry } from '@/db/repositories';
+import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import {
-  BACKUP_FORMAT_VERSION,
+  JSON_EXPORT_FORMAT_VERSION,
   buildCatalogCsv,
   buildItemsCsv,
-  buildJsonBackup,
+  buildJsonExport,
   buildProjectMasterNote,
   buildProjectVault,
   buildVault,
@@ -37,12 +38,20 @@ function makeItem(overrides: Partial<Item> = {}): Item {
 }
 
 describe('export-data builders', () => {
-  it('builds a versioned JSON backup', () => {
-    const json = buildJsonBackup({ items: [makeItem()], contacts: [], checkouts: [] }, 1234);
+  it('builds a versioned JSON data export', () => {
+    const json = buildJsonExport({ items: [makeItem()], contacts: [], checkouts: [] }, 1234);
     const parsed = JSON.parse(json);
-    expect(parsed.formatVersion).toBe(BACKUP_FORMAT_VERSION);
+    expect(parsed.formatVersion).toBe(JSON_EXPORT_FORMAT_VERSION);
     expect(parsed.exportedAt).toBe(1234);
     expect(parsed.items).toHaveLength(1);
+  });
+
+  // Issue #153: the file must say what it is. Without the marker it parses as a valid but
+  // empty backup snapshot, so an import silently succeeds having brought nothing in.
+  it('marks the JSON export as a data extract, not a restorable backup', () => {
+    const parsed = JSON.parse(buildJsonExport({ items: [], contacts: [], checkouts: [] }));
+    expect(parsed.kind).toBe(JSON_EXPORT_KIND);
+    expect(parsed.note).toMatch(/cannot import this file back/i);
   });
 
   it('builds CSV with RFC-4180 quoting', () => {

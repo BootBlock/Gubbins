@@ -17,6 +17,7 @@
  */
 import type { CloudProvider } from '../provider';
 import { parseBackupJson, snapshotToBackupJson } from '../backup';
+import { REMOTE_CORRUPT_MESSAGE, SyncRemoteUnreadableError } from '../sync-errors';
 import type { SyncSnapshot } from '../types';
 import {
   findSnapshotFileId,
@@ -49,13 +50,26 @@ export class GoogleDriveCloudProvider implements CloudProvider {
     return null;
   }
 
+  /**
+   * Read the shared snapshot, or `null` only when `appDataFolder` genuinely holds no
+   * snapshot file. Issue #196: a file that exists but reads back empty or unparseable
+   * raises {@link SyncRemoteUnreadableError} rather than answering `null`, because `null`
+   * sends the engine down the first-publish branch and replaces the shared copy with this
+   * device's state.
+   */
   async fetchSnapshot(): Promise<SyncSnapshot | null> {
     const id = await findSnapshotFileId(this.api);
     this.fileId = id;
     if (!id) return null;
     const text = await readSnapshotText(this.api, id);
-    if (text.trim().length === 0) return null;
-    return parseBackupJson(text);
+    // Drive holds a file, so something is there — an empty or part-written read is a
+    // transient failure, never an empty remote.
+    if (text.trim().length === 0) throw new SyncRemoteUnreadableError(REMOTE_CORRUPT_MESSAGE);
+    try {
+      return parseBackupJson(text);
+    } catch (err) {
+      throw new SyncRemoteUnreadableError(REMOTE_CORRUPT_MESSAGE, { cause: err });
+    }
   }
 
   async pushSnapshot(snapshot: SyncSnapshot): Promise<void> {

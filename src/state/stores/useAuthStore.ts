@@ -33,7 +33,20 @@ export const useAuthStore = create<AuthStore>()(
       providerLabel: null,
       connectedAt: null,
       lastSyncedAt: null,
-      setProvider: (providerId, providerLabel) => set({ providerId, providerLabel, connectedAt: Date.now() }),
+      // Connecting a *different* remote clears `lastSyncedAt`: it records when this device last
+      // synced through the connection it currently holds, so carrying it across to a new folder
+      // or account would claim a sync that never happened with that remote. Issue #196 reads it
+      // to tell "the shared copy has gone missing" apart from "this remote is simply new".
+      setProvider: (providerId, providerLabel) =>
+        set((state) => ({
+          providerId,
+          providerLabel,
+          connectedAt: Date.now(),
+          lastSyncedAt:
+            state.providerId === providerId && state.providerLabel === providerLabel
+              ? state.lastSyncedAt
+              : null,
+        })),
       markSynced: (at = Date.now()) => set({ lastSyncedAt: at }),
       disconnect: () => set({ providerId: null, providerLabel: null, connectedAt: null, lastSyncedAt: null }),
     }),

@@ -53,6 +53,15 @@ That's the one-time setup Gubbins does on your first visit, and it normally fini
 a moment. If it lingers, press **Reload**. If it then reports a different cause, follow the advice
 it gives — see [[Supported browsers|Installing-Gubbins]].
 
+**Gubbins says it's already open elsewhere, or that it can't check for other tabs.**
+Your data can only be open in one tab or window at a time — that's what keeps two copies of Gubbins
+from writing over each other. If it says Gubbins is **already open elsewhere**, close the other tab
+and this one switches over by itself. If instead it says it **can't check** for other tabs, the
+browser didn't answer when Gubbins asked; **Reload and try again** usually clears it. Gubbins stops
+rather than guessing, so if you're certain no other tab has Gubbins open, choose **This is my only
+tab — open anyway** to carry on. That choice applies to that tab only and is forgotten once you
+close it.
+
 **Gubbins says it lost its connection to my data, or that the database took too long to respond.**
 Gubbins keeps your data in a background component of the page, and very occasionally that component
 stops — a browser reclaiming memory is the usual reason. When it does, Gubbins tells you instead of
@@ -136,10 +145,20 @@ Gubbins is still in early, rapid development (before version **1.0**). As new fe
 shape of the local database changes — and while it's this young, those changes aren't migrated
 automatically. When an update needs a newer database than your device has, Gubbins can't carry your
 existing data forward, so it asks you to start fresh. **This is expected before 1.0**, not a bug or
-data corruption. On that screen you can back up your data first (download a raw `.sqlite` copy or a
-JSON export) and then reset to continue. Once Gubbins reaches 1.0, updates will preserve your data.
+data corruption. Once Gubbins reaches 1.0, updates will preserve your data.
+
+**Before you reset, press "Back up everything (.zip)" on that screen.** That builds an ordinary
+Gubbins backup out of the database Gubbins couldn't open, and it is the copy you can bring back
+afterwards: once the app starts again, restore it from **Settings → Backup & Restore → Restore**
+using **Merge**, which re-applies your records onto the new database shape. The screen tells you
+what the backup captured, and names anything the old database wouldn't give up.
 
 > **⚠️ Heads-up**
+> The other two downloads on that screen — the raw `.sqlite` copy and the JSON export — are for
+> keeping or inspecting elsewhere (a SQLite browser, a text editor). Neither can be restored into
+> Gubbins after a schema reset, because both are in the shape of the old database. Take the `.zip`.
+
+> **💡 Tip**
 > Take a [[backup|Backup-and-Restore]] regularly while Gubbins is pre-1.0, so a schema reset never
 > costs you more than the changes since your last backup.
 

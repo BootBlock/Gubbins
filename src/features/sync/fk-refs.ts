@@ -87,6 +87,16 @@ export const FK_REFS: Partial<Record<SyncTable, readonly FkRef[]>> = {
     { col: 'from_item_id', parent: 'items', nullable: false },
     { col: 'to_item_id', parent: 'items', nullable: false },
   ],
+  // Kit → component definition edges (issue #151). BOTH endpoints are ON DELETE CASCADE /
+  // NOT NULL, so an incoming edge whose kit *or* whose component did not survive the merge is
+  // dropped — the same shape as item_relations above. Unlike item_relations its id is a random
+  // UUID rather than derived from the pair, so two devices adding the same component to the same
+  // kit produce two ids for one edge; that `UNIQUE (kit_item_id, component_item_id)` collision is
+  // settled by the §7.5 natural-key pass (see `unique-keys.ts`) before the merge applies.
+  kit_components: [
+    { col: 'kit_item_id', parent: 'items', nullable: false },
+    { col: 'component_item_id', parent: 'items', nullable: false },
+  ],
   // Per-instance test / calibration / service records (feature-gap G7). item_id mirrors the
   // item-child cascade above — drop an incoming record whose item did not survive the merge
   // (ON DELETE CASCADE, NOT NULL), exactly like revaluations.

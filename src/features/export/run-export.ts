@@ -52,7 +52,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
   buildCatalogCsv,
   buildItemsCsv,
-  buildJsonBackup,
+  buildJsonExport,
   buildProjectVault,
   buildVault,
   type CatalogCustomFieldColumn,
@@ -314,7 +314,7 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   if (format === 'JSON') {
     const [contacts, checkouts] = await Promise.all([collectContacts(), collectCheckouts(items)]);
     const name = `gubbins-export${suffix}-${stamp()}.json`;
-    const json = buildJsonBackup({ items, contacts, checkouts });
+    const json = buildJsonExport({ items, contacts, checkouts });
     download(new Blob([json], { type: 'application/json' }), name);
     return name;
   }

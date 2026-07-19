@@ -7,6 +7,7 @@ import { RescueActions } from '@/app/error/RescueActions';
 import { labFlag } from '@/state/stores/useLabStore';
 import { useT, type MessageKey } from '@/features/i18n';
 import type { SupportCause, SupportDiagnosis } from '@/lib/env/support-diagnosis';
+import { setTabLockOverride, type TabLockDenial } from '@/db/tab-lock';
 import type { DbError, DbErrorCode } from '@/db/errors';
 
 /** The public project home, linked from the boot-screen footer. */
@@ -231,9 +232,19 @@ export function UnsupportedScreen({ diagnosis }: { diagnosis: SupportDiagnosis }
   );
 }
 
-export function MultiTabScreen({ whenReleased }: { whenReleased: Promise<void> }) {
+export function MultiTabScreen({
+  reason,
+  whenReleased,
+}: {
+  reason: TabLockDenial;
+  whenReleased: Promise<void> | null;
+}) {
+  const t = useT();
+
   // Automatically take over once the owning tab releases the database (spec §2.2.7).
+  // There is nothing to wait on when the guard could not arbitrate at all.
   useEffect(() => {
+    if (!whenReleased) return;
     let active = true;
     void whenReleased.then(() => {
       if (active) location.reload();
@@ -243,20 +254,37 @@ export function MultiTabScreen({ whenReleased }: { whenReleased: Promise<void> }
     };
   }, [whenReleased]);
 
+  // `unavailable` means we could not *tell* whether another tab owns the database. The guard
+  // fails closed, so say so honestly rather than claiming another tab is open, and give the
+  // user the one thing they know and we don't: whether this really is the only tab.
+  const unavailable = reason === 'unavailable';
+
   return (
     <BootShell
       accent="warning"
       icon={<DuplicateTabIcon />}
-      title="Already open elsewhere"
-      subtitle="Gubbins is running in another tab or window."
+      title={t(unavailable ? 'boot.multiTab.unknown.title' : 'boot.multiTab.title')}
+      subtitle={t(unavailable ? 'boot.multiTab.unknown.lede' : 'boot.multiTab.lede')}
+      testId="boot-multi-tab"
     >
       <p className="text-center text-sm text-muted-foreground">
-        Your database can only be open in one place at a time, to protect it. Close the other tab — we will
-        switch over here automatically.
+        {t(unavailable ? 'boot.multiTab.unknown.body' : 'boot.multiTab.body')}
       </p>
       <Button variant="outline" className="mt-5 w-full" onClick={() => location.reload()}>
-        Use this tab
+        {t(unavailable ? 'boot.multiTab.tryAgain' : 'boot.multiTab.useThisTab')}
       </Button>
+      {unavailable ? (
+        <Button
+          variant="ghost"
+          className="mt-2 w-full"
+          onClick={() => {
+            setTabLockOverride();
+            location.reload();
+          }}
+        >
+          {t('boot.multiTab.openAnyway')}
+        </Button>
+      ) : null}
     </BootShell>
   );
 }
@@ -313,9 +341,12 @@ export function BootErrorScreen({ error }: { error: DbError }) {
             fresh.
           </p>
           <p className="mt-2">
-            This is <span className="font-medium text-foreground">expected</span> before 1.0. Back up your
-            data below if you'd like to keep a copy, then reset to continue. Once Gubbins reaches 1.0, updates
-            will preserve your data.
+            This is <span className="font-medium text-foreground">expected</span> before 1.0. To keep your
+            data, take the <span className="font-medium text-foreground">Back up everything (.zip)</span> copy
+            below <span className="font-medium text-foreground">before</span> resetting — that is the one you
+            can restore afterwards, from Settings → Backup &amp; Restore using{' '}
+            <span className="font-medium text-foreground">Merge</span>. Then reset to continue. Once Gubbins
+            reaches 1.0, updates will preserve your data.
           </p>
         </div>
       ) : null}

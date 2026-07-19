@@ -57,6 +57,21 @@ There are two ways to restore:
 > Take a backup before any big change — a large import, a bulk edit, or a Replace restore. The
 > automatic restore-point has your back, but your own recent `.zip` is the surest safety net.
 
+## Backing up when Gubbins won't start
+
+If Gubbins can't open your database — most often because an update changed its shape while Gubbins
+is still pre-1.0 — the recovery screen offers **Back up everything (.zip)**. It builds a normal
+backup out of the database as it stands, so you're never asked to reset without a copy you can
+bring back.
+
+Restore it with **Merge** once Gubbins starts again. Merge re-applies your records onto the new
+database shape, which is exactly what's needed after a reset; **Replace** would put the old database
+file back and run into the same problem, so Gubbins refuses that combination and says so.
+
+> **ℹ️ Note**
+> Because the database is in an unexpected shape, a part of it occasionally can't be read. The
+> screen names anything left out, so you know what the file holds before you rely on it.
+
 ## Only restore files you trust
 
 A backup file describes changes to make to your inventory — including which entries to remove — so
@@ -74,6 +89,14 @@ If something is wrong it says what, and nothing is overwritten.
 You can still go ahead — a damaged copy is sometimes all that's left, and most of the records in one
 are usually still readable — but it takes a second, deliberate confirmation. Either way, Gubbins
 downloads a copy of your current database first, so a restore that turns out wrong can be undone.
+
+Every `.zip` backup also carries its own packing list: how many items and images it holds, which
+optional parts were included, and a fingerprint of each one. When you pick a file to restore,
+Gubbins compares what it actually reads against that list. If a part is missing, or its contents no
+longer match the fingerprint taken when the backup was written, the file is refused and you're told
+which part is at fault — so a backup that quietly lost data can't restore as though it were complete.
+Backups made before this check existed are still perfectly usable; they're simply checked against
+their item and image counts alone.
 
 > **⚠️ Heads-up**
 > Those checks are a safety net, not a substitute for judgement. Treat a backup like any other file

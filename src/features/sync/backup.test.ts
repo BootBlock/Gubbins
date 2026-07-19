@@ -9,6 +9,7 @@ import {
   TagRepository,
   UNASSIGNED_LOCATION_ID,
 } from '@/db/repositories';
+import { buildJsonExport } from '@/features/export/export-data';
 import { buildBackupJson, parseBackupJson, restoreFromBackupJson } from './backup';
 
 describe('backup parse/validate (§2)', () => {
@@ -25,6 +26,105 @@ describe('backup parse/validate (§2)', () => {
     const snap = parseBackupJson('{"formatVersion":1}');
     expect(snap.tables).toEqual({});
     expect(snap.tombstones).toEqual([]);
+  });
+
+  // Issue #153: the export wizard's JSON is a read-only extract. It carries a formatVersion
+  // and no `tables`, so it would otherwise parse as a valid *empty* snapshot and import
+  // nothing while reporting success.
+  it('issue #153: refuses a JSON data export by name instead of importing nothing', () => {
+    const dataExport = buildJsonExport({ items: [], contacts: [], checkouts: [] });
+    expect(() => parseBackupJson(dataExport)).toThrow(/data export, not a backup/i);
+  });
+
+  // Files exported before the marker existed carry no `kind`, so the shape must catch them.
+  it('issue #153: refuses an unmarked legacy data export by its shape', () => {
+    const legacy = '{"formatVersion":1,"exportedAt":1,"items":[],"contacts":[],"checkouts":[]}';
+    expect(() => parseBackupJson(legacy)).toThrow(/data export, not a backup/i);
+  });
+
+  // The guard must not catch a real backup of an empty database: it has a `tables` section.
+  it('issue #153: still accepts a real snapshot of an empty database', () => {
+    const snap = parseBackupJson('{"formatVersion":1,"tables":{},"items":[]}');
+    expect(snap.tables).toEqual({});
+  });
+});
+
+// Issue #351: every section used to be asserted into its structured type straight from
+// JSON.parse, with only `?? []` guarding against `undefined`. A wrong-typed section then
+// surfaced downstream as a raw TypeError or a driver bind error rather than a message the
+// user can act on. This is not a local-file-only path — a shared sync folder feeds it too.
+describe('backup envelope validation (issue #351)', () => {
+  const envelope = (section: string) => `{"formatVersion":1,"tables":{},${section}}`;
+  const malformed = /not in the expected format/i;
+
+  it.each([
+    ['tables is a string', '{"formatVersion":1,"tables":"hello"}'],
+    ['a table section is a string', envelope('"tables":{"items":"hello"}')],
+    ['a table row is an array', '{"formatVersion":1,"tables":{"items":[[]]}}'],
+    ['a table row value is an object', '{"formatVersion":1,"tables":{"items":[{"id":{}}]}}'],
+    ['a table section is null', '{"formatVersion":1,"tables":{"items":null}}'],
+    ['itemHistory is an object', envelope('"itemHistory":{}')],
+    ['an itemHistory row is a string', envelope('"itemHistory":["x"]')],
+    ['itemTags is a string', envelope('"itemTags":"x"')],
+    ['an itemTags edge is missing a field', envelope('"itemTags":[{"itemId":"a"}]')],
+    ['an itemTags field is not a string', envelope('"itemTags":[{"itemId":"a","tagId":7}]')],
+    ['a locationTags edge is malformed', envelope('"locationTags":[{"locationId":"a","tagId":null}]')],
+    ['an itemRegions edge is malformed', envelope('"itemRegions":[{"itemId":"a","regionId":[]}]')],
+    ['gaugeHistory is a number', envelope('"gaugeHistory":3')],
+    [
+      'a gauge delta amount is a string',
+      envelope('"gaugeHistory":[{"id":"a","itemId":"b","netValueDelta":"5","createdAt":1}]'),
+    ],
+    [
+      'a gauge delta timestamp is absent',
+      envelope('"gaugeHistory":[{"id":"a","itemId":"b","netValueDelta":5}]'),
+    ],
+  ])('rejects a snapshot where %s', (_label, json) => {
+    expect(() => parseBackupJson(json)).toThrow(malformed);
+  });
+
+  it('still accepts a well-formed snapshot carrying every section', () => {
+    const snap = parseBackupJson(
+      '{"formatVersion":1,"tables":{"items":[{"id":"i1","name":"Bolt","quantity":2,"archived":null}]},' +
+        '"itemHistory":[{"id":"h1","item_id":"i1"}],"itemTags":[{"itemId":"i1","tagId":"t1"}],' +
+        '"locationTags":[{"locationId":"l1","tagId":"t1"}],"itemRegions":[{"itemId":"i1","regionId":"r1"}],' +
+        '"gaugeHistory":[{"id":"g1","itemId":"i1","netValueDelta":-1.5,"createdAt":123}]}',
+    );
+    expect(snap.itemTags).toEqual([{ itemId: 'i1', tagId: 't1' }]);
+    expect(snap.gaugeHistory).toHaveLength(1);
+    expect(snap.itemHistory).toHaveLength(1);
+  });
+
+  // `1e308` is ordinary, finite JSON, so a bare `typeof === 'number'` waves it through — but it is
+  // outside the range `Date` can represent, and the bridge formats this stamp with `toISOString()`,
+  // which throws a RangeError on an Invalid Date. The stamp is cosmetic, so fall back rather than
+  // refuse the backup.
+  it('replaces a generatedAt outside the representable Date range', () => {
+    const snap = parseBackupJson('{"formatVersion":1,"tables":{},"generatedAt":1e308}');
+    expect(Number.isNaN(new Date(snap.generatedAt).getTime())).toBe(false);
+    expect(() => new Date(snap.generatedAt).toISOString()).not.toThrow();
+  });
+
+  it('keeps a generatedAt that is a usable instant', () => {
+    const snap = parseBackupJson('{"formatVersion":1,"tables":{},"generatedAt":1751000000000}');
+    expect(snap.generatedAt).toBe(1751000000000);
+  });
+
+  // A gauge delta's createdAt is ordered and surfaced as a date, so it takes the same range check.
+  it('rejects a gauge delta timestamp outside the representable Date range', () => {
+    expect(() =>
+      parseBackupJson(
+        envelope('"gaugeHistory":[{"id":"a","itemId":"b","netValueDelta":1,"createdAt":1e308}]'),
+      ),
+    ).toThrow(malformed);
+  });
+
+  // Older backups predate these sections entirely; absent must still mean empty, not a rejection.
+  it('still accepts a legacy snapshot with none of the optional sections', () => {
+    const snap = parseBackupJson('{"formatVersion":1,"tables":{}}');
+    expect(snap.gaugeHistory).toEqual([]);
+    expect(snap.itemRegions).toEqual([]);
+    expect(snap.itemHistory).toEqual([]);
   });
 });
 

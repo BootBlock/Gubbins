@@ -11,6 +11,7 @@
 import { hasFileSystemAccess } from '@/lib/env/feature-detection';
 import type { CloudProvider } from '../provider';
 import { parseBackupJson, snapshotToBackupJson } from '../backup';
+import { REMOTE_CORRUPT_MESSAGE, REMOTE_UNREADABLE_MESSAGE, SyncRemoteUnreadableError } from '../sync-errors';
 import type { SyncSnapshot } from '../types';
 import {
   forgetSyncDirectory,
@@ -33,6 +34,15 @@ interface FsDirectoryHandle extends PersistableDirectoryHandle {
   getFileHandle(name: string, options?: { create?: boolean }): Promise<FsFileHandle>;
 }
 
+/**
+ * True when `err` is the File System Access API's "this entry does not exist" — the one
+ * failure that really does mean an empty remote. Matched on `name` rather than `instanceof
+ * DOMException` because the same shape is thrown by test doubles and by non-DOM hosts.
+ */
+function isNotFound(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'NotFoundError';
+}
+
 export class FileSystemCloudProvider implements CloudProvider {
   readonly id = 'file-system';
   readonly label: string;
@@ -51,15 +61,33 @@ export class FileSystemCloudProvider implements CloudProvider {
     return null;
   }
 
+  /**
+   * Read the shared snapshot, or `null` **only** when the folder genuinely holds none yet.
+   *
+   * Issue #196: every other failure raises {@link SyncRemoteUnreadableError} instead of
+   * answering `null`. `null` sends the engine down the first-publish branch, which replaces
+   * the shared file with this device's state — so swallowing a transient read failure (a
+   * cloud-drive placeholder not yet materialised, a file locked mid-write by another device,
+   * a half-written push, corrupt JSON) silently discards every record that only lives on the
+   * other devices, and reports success. Only a `NotFoundError` — the file is not in the
+   * directory at all — is a true empty remote.
+   */
   async fetchSnapshot(): Promise<SyncSnapshot | null> {
+    let text: string;
     try {
       const handle = await this.dir.getFileHandle(this.fileName);
-      const text = await (await handle.getFile()).text();
-      if (text.trim().length === 0) return null;
+      text = await (await handle.getFile()).text();
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw new SyncRemoteUnreadableError(REMOTE_UNREADABLE_MESSAGE, { cause: err });
+    }
+    // A zero-byte file is not an empty remote: `pushSnapshot` truncates before writing, so
+    // this is what an interrupted push leaves behind.
+    if (text.trim().length === 0) throw new SyncRemoteUnreadableError(REMOTE_CORRUPT_MESSAGE);
+    try {
       return parseBackupJson(text);
-    } catch {
-      // No file yet (or unreadable) → an empty remote.
-      return null;
+    } catch (err) {
+      throw new SyncRemoteUnreadableError(REMOTE_CORRUPT_MESSAGE, { cause: err });
     }
   }
 

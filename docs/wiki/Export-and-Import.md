@@ -10,6 +10,8 @@ Inventory **More** menu.
 
 Get your data out in whichever form suits:
 
+- **JSON data export** — your items, contacts and loans as one structured file, for scripts and
+  other tools.
 - **Markdown vault** — a folder of readable Markdown files (one per item), with **full-resolution
   images** extracted alongside. Great for archiving or reading outside Gubbins.
 - **Raw `.sqlite`** — the database file itself, for anyone who wants the data directly.
@@ -17,6 +19,12 @@ Get your data out in whichever form suits:
 
 Exports can be **scoped** — the whole inventory, a single item, or a
 [[project's|Projects-and-BOM]] sub-folder.
+
+> **⚠️ Heads-up** An export is a one-way trip *out* of Gubbins — it is not a backup. The
+> **JSON data export** in particular cannot be loaded back in, and Gubbins will tell you so if
+> you try to restore from one. To make a file you can actually restore from, use
+> [[Backup & restore|Backup-and-Restore]] instead. If you want a round-trip through a
+> spreadsheet, the **Catalogue CSV** re-imports without any manual column mapping.
 
 A [[project's bill of materials|Projects-and-BOM]] and the
 [[reorder / shopping list|Reorder-and-Shopping-List]] each export on their own, straight from

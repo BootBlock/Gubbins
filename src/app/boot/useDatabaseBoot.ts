@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { checkCriticalSupport } from '@/lib/env/feature-detection';
 import { diagnoseCriticalSupport, type SupportDiagnosis } from '@/lib/env/support-diagnosis';
-import { acquireDatabaseTabLock } from '@/db/tab-lock';
+import { acquireDatabaseTabLock, type TabLockDenial } from '@/db/tab-lock';
 import { bootDatabase, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
 import { useStorageStore } from '@/state/stores/useStorageStore';
@@ -22,7 +22,11 @@ import { labFlag } from '@/state/stores/useLabStore';
 export type BootState =
   | { readonly status: 'starting' }
   | { readonly status: 'unsupported'; readonly diagnosis: SupportDiagnosis }
-  | { readonly status: 'multi-tab'; readonly whenReleased: Promise<void> }
+  | {
+      readonly status: 'multi-tab';
+      readonly reason: TabLockDenial;
+      readonly whenReleased: Promise<void> | null;
+    }
   | { readonly status: 'ready'; readonly result: DbBootResult }
   | { readonly status: 'error'; readonly error: DbError };
 
@@ -76,10 +80,11 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
     return;
   }
 
-  // 2. Single-tab guard — must precede opening the OPFS database.
+  // 2. Single-tab guard — must precede opening the OPFS database. It fails closed, so this
+  // also catches "we could not tell": the screen explains that and offers an override.
   const lock = await acquireDatabaseTabLock();
   if (!lock.acquired) {
-    commit({ status: 'multi-tab', whenReleased: lock.whenReleased });
+    commit({ status: 'multi-tab', reason: lock.reason, whenReleased: lock.whenReleased });
     return;
   }
 

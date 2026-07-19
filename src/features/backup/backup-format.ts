@@ -16,7 +16,7 @@
  * gathers the raw pieces (snapshot, sqlite bytes, OPFS images, settings) and the worker
  * zips/unzips; everything *decided* about the format lives here.
  */
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzipSync, strFromU8, strToU8 } from 'fflate';
 import { parseBackupJson } from '../sync/backup';
 import { FK_REFS, type FkRef } from '../sync/fk-refs';
 import type { SyncSnapshot } from '../sync/types';
@@ -26,6 +26,7 @@ import { ITEM_HISTORY_TABLE } from '@/db/repositories/tombstone';
 import type { SqlRow, SqlValue } from '@/db/rpc/driver';
 import type { OpfsImageFile } from '@/features/images/opfs-images';
 import { EXPORTABLE_SETTING_KEYS, sanitiseSettingsRecord } from './backup-settings';
+import { CHECKSUM_ALGORITHM, checksumBytes } from './checksum';
 import { DEFAULT_SETTINGS_GROUPS, type SettingsGroupSelection } from './settings-groups';
 
 /** Bump when the *container* layout changes incompatibly (independent of the snapshot's own version). */
@@ -101,10 +102,21 @@ export interface BackupManifest {
     readonly history: boolean;
     readonly removedItems: boolean;
   };
-  /** Headline counts for the preview. */
+  /** Headline counts for the preview — and, on restore, cross-checked against the payload. */
   readonly counts: {
     readonly items: number;
     readonly images: number;
+  };
+  /**
+   * A digest of every other entry in the container (issue #201). Optional: backups written
+   * before this field existed simply omit it, and are checked against the manifest's `counts`
+   * and `contents` alone. See {@link import('./checksum')} for what this does and doesn't prove.
+   */
+  readonly checksums?: {
+    /** Digest algorithm — an unrecognised one is skipped rather than treated as a failure. */
+    readonly algorithm: string;
+    /** Zip entry path → digest of the bytes stored at that path. */
+    readonly entries: Readonly<Record<string, string>>;
   };
 }
 
@@ -272,6 +284,8 @@ export function buildManifest(input: {
   readonly imageCount: number;
   readonly hasSqlite: boolean;
   readonly hasSettings: boolean;
+  /** Digest of every entry bar the manifest itself; omitted only by the format's own tests. */
+  readonly checksums?: Readonly<Record<string, string>>;
 }): BackupManifest {
   return {
     kind: BACKUP_MANIFEST_KIND,
@@ -291,6 +305,7 @@ export function buildManifest(input: {
       items: input.snapshot.tables.items?.length ?? 0,
       images: input.imageCount,
     },
+    ...(input.checksums ? { checksums: { algorithm: CHECKSUM_ALGORITHM, entries: input.checksums } } : {}),
   };
 }
 
@@ -325,29 +340,41 @@ export function assembleBackup(sources: BackupSources): BackupArtifacts {
     removedItems: (sources.snapshot.tables.items ?? []).some(isRemovedItem),
   };
 
-  const manifest = buildManifest({
-    snapshot: sources.snapshot,
-    selection,
-    appVersion: sources.appVersion,
-    baselineRevision: sources.baselineRevision,
-    createdAt: sources.createdAt,
-    imageCount: sources.images.length,
-    hasSqlite: sources.sqlite !== null,
-    hasSettings: sources.settings !== null,
-  });
-
+  // Entries first, manifest last: the manifest records a digest of everything else in the
+  // container, so it can only be written once the rest of the payload is final.
   const files: Record<string, string> = {
-    [MANIFEST_ENTRY]: JSON.stringify(manifest, null, 2),
     [SNAPSHOT_ENTRY]: JSON.stringify(sources.snapshot, null, 2),
   };
   if (sources.settings) files[SETTINGS_ENTRY] = JSON.stringify(sources.settings, null, 2);
 
   const assets: Record<string, Uint8Array> = {};
   if (sources.sqlite) assets[DATABASE_ENTRY] = sources.sqlite;
+  let imageCount = 0;
   for (const image of sources.images) {
     if (image.name.includes('/')) continue; // never nest; keep the flat images/<name> layout
     assets[`${IMAGES_PREFIX}${image.name}`] = image.bytes;
+    imageCount += 1;
   }
+
+  const checksums: Record<string, string> = {};
+  // Text entries are zipped through `strToU8`, so digest the same UTF-8 bytes the reader sees.
+  for (const [path, text] of Object.entries(files)) checksums[path] = checksumBytes(strToU8(text));
+  for (const [path, bytes] of Object.entries(assets)) checksums[path] = checksumBytes(bytes);
+
+  const manifest = buildManifest({
+    snapshot: sources.snapshot,
+    selection,
+    appVersion: sources.appVersion,
+    baselineRevision: sources.baselineRevision,
+    createdAt: sources.createdAt,
+    // Counted from the entries actually written, not from `sources.images` — a nested name is
+    // skipped above, and a manifest that over-counts would fail its own cross-check on restore.
+    imageCount,
+    hasSqlite: sources.sqlite !== null,
+    hasSettings: sources.settings !== null,
+    checksums,
+  });
+  files[MANIFEST_ENTRY] = JSON.stringify(manifest, null, 2);
 
   return { files, assets, manifest };
 }
@@ -380,15 +407,155 @@ function looksLikeSqlite(bytes: Uint8Array): boolean {
   return true;
 }
 
-/** Parse a manifest blob, returning null when absent/foreign rather than throwing. */
+/** A plain non-array object, the shape every nested manifest section must have. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** A usable headline count: a whole, non-negative number. */
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+/**
+ * The digest block, or undefined when absent or malformed.
+ *
+ * A block we cannot read is dropped rather than rejected: it is the backup's safety net, not its
+ * payload, and refusing an otherwise-sound file over an unreadable net is the worse outcome. The
+ * `counts`/`contents` cross-checks still apply.
+ */
+function parseChecksums(value: unknown): BackupManifest['checksums'] {
+  if (!isRecord(value) || typeof value.algorithm !== 'string' || !isRecord(value.entries)) return undefined;
+  const entries: Record<string, string> = {};
+  for (const [path, digest] of Object.entries(value.entries)) {
+    if (typeof digest !== 'string') return undefined; // a partly-readable block proves nothing
+    entries[path] = digest;
+  }
+  return { algorithm: value.algorithm, entries };
+}
+
+/**
+ * Parse a manifest blob, returning null when absent/foreign rather than throwing.
+ *
+ * The manifest is parsed JSON from a file the user chose, so its *shape* is as untrusted as its
+ * values: {@link verifyBackupIntegrity} reads nested sections off it, and a hand-edited or
+ * partly-overwritten manifest carrying the right `kind` but no `counts` would otherwise fail
+ * with a raw `Cannot read properties of undefined` instead of a message the user can act on.
+ * Anything that isn't a well-formed manifest is treated as no manifest at all.
+ */
 function parseManifest(entries: Record<string, Uint8Array>): BackupManifest | null {
   const raw = entries[MANIFEST_ENTRY];
   if (!raw) return null;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(strFromU8(raw)) as Partial<BackupManifest>;
-    return parsed.kind === BACKUP_MANIFEST_KIND ? (parsed as BackupManifest) : null;
+    parsed = JSON.parse(strFromU8(raw));
   } catch {
     return null;
+  }
+  if (!isRecord(parsed) || parsed.kind !== BACKUP_MANIFEST_KIND) return null;
+
+  const { contents, counts } = parsed;
+  if (!isRecord(contents) || !isRecord(counts)) return null;
+  // Whole, non-negative counts only: a `NaN` or fractional count would fail its own cross-check
+  // and report "should contain NaN items", which tells the user nothing.
+  if (!isCount(counts.items) || !isCount(counts.images)) return null;
+
+  // Rebuilt field by field rather than spread-and-patched, so a malformed `checksums` (or any
+  // other stray property) cannot survive into the value the integrity check reads.
+  const { checksums: _rawChecksums, ...rest } = parsed;
+  const checksums = parseChecksums(parsed.checksums);
+  return {
+    ...(rest as unknown as BackupManifest),
+    contents: {
+      snapshot: true,
+      rawSqlite: contents.rawSqlite === true,
+      images: contents.images === true,
+      settings: contents.settings === true,
+      history: contents.history === true,
+      removedItems: contents.removedItems === true,
+    },
+    counts: { items: counts.items, images: counts.images },
+    ...(checksums ? { checksums } : {}),
+  };
+}
+
+/**
+ * Cross-check a backup's payload against the manifest that describes it (issue #201).
+ *
+ * Zip decoding only proves the container's *structure* survived — fflate needs no more than an
+ * intact end-of-central-directory record, so an entry that lost its contents, or a snapshot
+ * that lost whole sections, decodes perfectly happily. `parseBackupJson` then defaults every
+ * missing section to empty, and the restore preview reports the *snapshot's* own numbers, so a
+ * backup that quietly lost data previews as internally consistent. The manifest is the only
+ * independent record of what the file is supposed to hold, so it is what we check against.
+ *
+ * Throws {@link InvalidBackupError} on the first discrepancy; a backup with no manifest (or a
+ * manifest from before a given field existed) is checked only as far as it can be.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function verifyBackupIntegrity(input: {
+  readonly manifest: BackupManifest | null;
+  readonly entries: Record<string, Uint8Array>;
+  readonly snapshot: SyncSnapshot;
+  readonly images: readonly OpfsImageFile[];
+}): void {
+  const { manifest, entries, snapshot, images } = input;
+  if (!manifest) return;
+
+  // Digests first: they name the damaged entry, where a count mismatch only says something is off.
+  // An algorithm this build doesn't know is skipped rather than failed — a checksum is a safety
+  // net, and refusing an otherwise-sound backup over an unreadable one would be a worse outcome.
+  if (manifest.checksums && manifest.checksums.algorithm === CHECKSUM_ALGORITHM) {
+    for (const [path, expected] of Object.entries(manifest.checksums.entries)) {
+      const bytes = entries[path];
+      if (!bytes) {
+        throw new InvalidBackupError(
+          `This backup is incomplete: it should contain "${path}", but that part is missing. The file was probably damaged or only partly downloaded.`,
+        );
+      }
+      if (checksumBytes(bytes) !== expected) {
+        throw new InvalidBackupError(
+          `This backup is damaged: "${path}" does not match the checksum recorded when the backup was created. Restoring it could lose data, so try another copy.`,
+        );
+      }
+    }
+  }
+
+  if (manifest.contents.rawSqlite && !entries[DATABASE_ENTRY]) {
+    throw new InvalidBackupError(
+      'This backup is incomplete: it says it contains an exact database copy, but that part is missing.',
+    );
+  }
+  if (manifest.contents.settings && !entries[SETTINGS_ENTRY]) {
+    throw new InvalidBackupError(
+      'This backup is incomplete: it says it contains your settings, but that part is missing.',
+    );
+  }
+
+  const items = snapshot.tables.items?.length ?? 0;
+  if (manifest.counts.items !== items) {
+    throw new InvalidBackupError(
+      `This backup is damaged: it should contain ${manifest.counts.items} items, but only ${items} could be read. Restoring it would lose the rest, so try another copy.`,
+    );
+  }
+  if (manifest.counts.images !== images.length) {
+    throw new InvalidBackupError(
+      `This backup is damaged: it should contain ${manifest.counts.images} images, but ${images.length} were found.`,
+    );
+  }
+
+  // The content flags are derived from the snapshot when a backup is written, so a section that
+  // emptied out between then and now is loss — exactly what an empty-defaulting parse hides.
+  if (manifest.contents.history && snapshot.itemHistory.length === 0 && snapshot.gaugeHistory.length === 0) {
+    throw new InvalidBackupError(
+      'This backup is damaged: it says it contains your history, but no history could be read from it.',
+    );
+  }
+  if (manifest.contents.removedItems && !(snapshot.tables.items ?? []).some(isRemovedItem)) {
+    throw new InvalidBackupError(
+      'This backup is damaged: it says it contains removed items, but none could be read from it.',
+    );
   }
 }
 
@@ -430,7 +597,10 @@ export function parseBackupEntries(entries: Record<string, Uint8Array>): ParsedB
     }
   }
 
-  return { manifest: parseManifest(entries), snapshot, sqlite: sqliteRaw, images, settings };
+  const manifest = parseManifest(entries);
+  verifyBackupIntegrity({ manifest, entries, snapshot, images });
+
+  return { manifest, snapshot, sqlite: sqliteRaw, images, settings };
 }
 
 /**

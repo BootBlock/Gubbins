@@ -10,7 +10,8 @@ import { persist } from 'zustand/middleware';
 import { adoptUnversioned, normaliseBoolean, normaliseOneOf } from '@/lib/persisted-state';
 
 /**
- * JSON = §2 versioned backup; CSV = items spreadsheet; VAULT = §4.5 Markdown zip;
+ * JSON = a versioned data extract (not a restorable backup — issue #153);
+ * CSV = items spreadsheet; VAULT = §4.5 Markdown zip;
  * REPORTS = a §3 aggregate report CSV (Phase 61);
  * CATALOG_CSV = a catalog-ready CSV that round-trips through the import wizard (Phase 67).
  */

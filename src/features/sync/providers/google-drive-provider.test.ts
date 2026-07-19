@@ -3,6 +3,7 @@ import { GoogleDriveCloudProvider, makeDriveApi } from './google-drive-provider'
 import { GoogleApiError } from './google-drive-api';
 import { storeGoogleToken, clearGoogleToken } from './google-oauth';
 import { snapshotToBackupJson } from '../backup';
+import { SyncRemoteUnreadableError } from '../sync-errors';
 import type { SyncSnapshot } from '../types';
 
 const snapshot: SyncSnapshot = {
@@ -105,9 +106,13 @@ describe('GoogleDriveCloudProvider', () => {
     expect(drive.peek()).toBe(snapshotToBackupJson(updated));
   });
 
-  it('treats an empty remote file as no snapshot', async () => {
+  // Issue #196: a file that exists but reads back empty is a failed/part-written read, not an
+  // empty remote — answering null there would publish this device's data over the shared copy.
+  it('raises rather than treating an existing-but-empty file as no snapshot', async () => {
     const { api } = fakeDrive('   ');
-    expect(await new GoogleDriveCloudProvider(api).fetchSnapshot()).toBeNull();
+    await expect(new GoogleDriveCloudProvider(api).fetchSnapshot()).rejects.toBeInstanceOf(
+      SyncRemoteUnreadableError,
+    );
   });
 });
 

@@ -80,8 +80,19 @@ The practical test: **would you build this again from the same list?** If yes, m
 it's this job, this repair, this build, make it a project. The two don't currently share a parts
 list — a project BOM can't be filled in from a kit definition, or vice versa.
 
+## Kits on your other devices
+
+Kit definitions travel with the rest of your data: they're included in
+[[cloud sync|Cloud-Sync]], so a kit you build on your desktop shows up on your phone, and in the
+[[backup file|Backup-and-Restore]], so restoring brings your kits back with everything else.
+
+> **ℹ️ Note**
+> If two devices add the *same* component to the *same* kit while offline, the merge keeps one
+> line rather than duplicating it — whichever edit was made most recently sets the quantity.
+
 ## Related pages
 
 - **[[Projects & BOM|Projects-and-BOM]]** — for one-off builds with budgets.
+- **[[Cloud sync|Cloud-Sync]]** — keeping kits and everything else in step across devices.
 - **[[Variants & SKUs|Variants-and-SKUs]]** — grouping the same product's flavours.
 - **[[Reorder & shopping list|Reorder-and-Shopping-List]]** — keeping components in stock.

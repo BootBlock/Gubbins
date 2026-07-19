@@ -24,6 +24,13 @@
  * The tiebreak is not cosmetic: both devices run this same pure resolution over the same
  * pair, so the choice **must not depend on which side is "local"**. A local-wins tie would
  * have each device keep its own row and re-push it forever.
+ *
+ * Not every entry this emits is a contest. A *third* device receives the peer's tombstone for
+ * the loser alongside the winner's row, so there is nothing left to decide — but because
+ * `applyPlan` orders tombstone DELETEs after the UPSERTs, the doomed row is still holding the
+ * natural key when the winner's INSERT runs, and the constraint aborts the merge exactly as
+ * before. Those are emitted as `hoistOnly` resolutions: they carry no verdict and retire
+ * nothing, they only pull the already-decided DELETE forward. See `doomedByKey` below.
  */
 import type { SqlRow } from '@/db/rpc/driver';
 import { foldName } from '@/lib/name-fold';
@@ -109,6 +116,11 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
   { table: 'location_field_values', columns: ['location_id', 'def_id'], nocase: [], references: [] },
   { table: 'item_field_values', columns: ['item_id', 'def_id'], nocase: [], references: [] },
   { table: 'capabilities', columns: ['item_id', 'key'], nocase: ['key'], references: [] },
+  // Kit → component edges (issue #151). Unlike `item_relations` (absent above because its id is
+  // derived from its endpoints) a kit edge carries a random UUID, so two devices adding the same
+  // component to the same kit invent two ids for one `UNIQUE (kit_item_id, component_item_id)`
+  // pair. Nothing references a kit edge, so the loser is simply retired.
+  { table: 'kit_components', columns: ['kit_item_id', 'component_item_id'], nocase: [], references: [] },
   // §4 Universal Alias Mapping — the one table whose text collisions were always resolved.
   { table: 'item_aliases', columns: ['alias'], nocase: ['alias'], references: [] },
 ];
@@ -194,7 +206,9 @@ function resolveTable(
   collisions: CollisionResolution[],
 ): Map<string, string> {
   const rekey = new Map<string, string>();
-  const deletedIds = new Set(localDeletes.filter((d) => d.tableName === spec.table).map((d) => d.id));
+  const deletedAtById = new Map<string, number>();
+  for (const d of localDeletes) if (d.tableName === spec.table) deletedAtById.set(d.id, d.deletedAt);
+  const deletedIds = new Set(deletedAtById.keys());
 
   // Ids this merge already upserts: their pending row supersedes the stored one, so seeding
   // the stored values too would have a row collide with its own update.
@@ -204,10 +218,25 @@ function resolveTable(
   const byKey = new Map<string, Candidate>();
   const droppedUpserts = new Set<number>();
 
+  /**
+   * Local rows this merge *deletes*, by natural key. They do not compete for the key — they are
+   * on their way out — but they still **hold** it at the moment the upserts run, because
+   * `applyPlan` orders tombstone DELETEs after the UPSERTs. So a winner arriving to take a key a
+   * doomed row still occupies would trip the UNIQUE index and abort the whole atomic merge. This
+   * is the third-device shape of issue #187: a peer already retired the loser, so its tombstone
+   * arrives *alongside* the winner and no collision is detected here. Recording it as a
+   * `hoistOnly` resolution is what pulls the loser's DELETE ahead of the winner's INSERT.
+   */
+  const doomedByKey = new Map<string, string>();
+
   // Surviving local rows stake their claim on the natural key first.
   for (const row of local.tables[spec.table] ?? []) {
     const id = String(row.id);
-    if (deletedIds.has(id) || upsertedIds.has(id)) continue;
+    if (upsertedIds.has(id)) continue;
+    if (deletedIds.has(id)) {
+      doomedByKey.set(keyOf(spec, row), id);
+      continue;
+    }
     byKey.set(keyOf(spec, row), { id, updatedAt: applyOffset(num(row.updated_at), offset) });
   }
 
@@ -223,6 +252,21 @@ function resolveTable(
     const held = byKey.get(key);
 
     if (held === undefined || held.id === candidate.id) {
+      // Free the key from any doomed row still sitting on it (see `doomedByKey`). Not a
+      // contest — the row is already tombstoned — so it takes no `rekey` entry and nothing is
+      // repointed at the newcomer; the record exists purely to order the DELETE first. The row
+      // cannot be this candidate itself: an id this merge upserts never enters `doomedByKey`.
+      const doomed = doomedByKey.get(key);
+      if (doomed !== undefined) {
+        doomedByKey.delete(key);
+        collisions.push({
+          table: spec.table,
+          loserId: doomed,
+          winnerId: candidate.id,
+          deletedAt: deletedAtById.get(doomed)!,
+          hoistOnly: true,
+        });
+      }
       byKey.set(key, candidate);
       continue;
     }

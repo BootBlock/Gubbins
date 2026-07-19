@@ -36,6 +36,7 @@ import { forceLwwTies } from './lww-tie-override';
 import type { CloudProvider } from './provider';
 import { reconcile } from './reconcile';
 import { buildSchemaDictionary } from './schema-dictionary';
+import { REMOTE_MISSING_MESSAGE, SyncRemoteMissingError } from './sync-errors';
 import {
   applyPlan,
   buildCloneStatements,
@@ -149,6 +150,13 @@ export interface RunSyncOptions {
    * pre-Phase-14 "trust the local clock" behaviour. The UI wires {@link httpTimeSource}.
    */
   readonly serverTime?: () => Promise<number | null>;
+  /**
+   * Issue #196: permit a first-publish push even though this device has synced before, i.e.
+   * accept that the shared snapshot is gone and republish this device's data as the new one.
+   * **Destructive to the shared copy** — the sync screen only sets it after the user has
+   * confirmed, never automatically.
+   */
+  readonly allowRemoteReset?: boolean;
 }
 
 /**
@@ -187,9 +195,19 @@ export async function runSync(
 
   const dictionary = await buildSchemaDictionary(driver, DICTIONARY_TABLES);
   const rawRemote = await provider.fetchSnapshot();
+  const meta = await readSyncMeta(driver);
 
   // First publish: no remote yet — just push our state, normalised to server time.
   if (rawRemote === null) {
+    // Issue #196: "no remote" is only credible when this device has never synced. Once it
+    // has, the shared snapshot demonstrably existed, so its absence means it went missing
+    // (wrong folder reconnected, file trashed, a cloud drive that hasn't populated) — and
+    // publishing over it would replace the shared state with just this device's, discarding
+    // everything that only lives on the others. Refuse; the user can confirm a deliberate
+    // republish via `allowRemoteReset`.
+    if (meta.lastSyncTimestamp > 0 && !options.allowRemoteReset) {
+      throw new SyncRemoteMissingError(REMOTE_MISSING_MESSAGE);
+    }
     const snapshot = await buildLocalSnapshot(driver, effectiveNow);
     await provider.pushSnapshot(shiftSnapshotTimestamps(snapshot, offset));
     const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
@@ -202,8 +220,6 @@ export async function runSync(
   // clone and everything written to the DB all operate in one consistent frame (§7.3.1). The
   // pushed snapshot is converted back to server time at each push below.
   const remote = shiftSnapshotTimestamps(rawRemote, -offset);
-
-  const meta = await readSyncMeta(driver);
 
   // --- §7.2 TTL edge: full clone with Pre-Wipe Salvage --------------------------
   if (needsFullResync(meta.lastSyncTimestamp, effectiveNow, ttlMs)) {

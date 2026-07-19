@@ -30,12 +30,25 @@ vi.mock('./safe-mode-actions', () => ({
 
 vi.mock('@/features/archive/restore-archive', () => ({ restoreArchive: vi.fn() }));
 
+vi.mock('@/features/backup/build-backup', () => ({ createRescueBackup: vi.fn() }));
+
 vi.mock('@/features/errors', () => ({
   useErrorMessage: () => (error: unknown, fallback: string) =>
     error instanceof Error && error.message ? error.message : fallback,
 }));
 
 const actions = await import('./safe-mode-actions');
+const { createRescueBackup } = await import('@/features/backup/build-backup');
+
+/** A successful rescue backup, with whatever counts / omissions a test needs. */
+function backupResult(overrides: { items?: number; images?: number; skipped?: readonly string[] } = {}) {
+  return {
+    filename: 'gubbins-rescue-backup-20260101-000000.zip',
+    size: 1024,
+    skipped: overrides.skipped ?? [],
+    manifest: { counts: { items: overrides.items ?? 3, images: overrides.images ?? 0 } },
+  } as unknown as Awaited<ReturnType<typeof createRescueBackup>>;
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -195,6 +208,55 @@ describe('RescueActions', () => {
 
       await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
       expect(screen.getByRole('button', { name: /confirm — restore/i })).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * Issue #197: the screen's own advice ends in a purge, so it has to hand out something the
+   * app can read back. Before this, both downloads on offer were dead ends — a `.sqlite` the
+   * restore guard refuses after a schema change, and a JSON dump nothing imports.
+   */
+  describe('the restorable backup', () => {
+    it('offers a backup and says where it can be restored from', async () => {
+      render(<RescueActions />);
+
+      expect(screen.getByRole('button', { name: /back up everything/i })).toBeInTheDocument();
+      expect(screen.getByText(/Backup & Restore/i)).toBeInTheDocument();
+    });
+
+    it('reports what the backup actually captured', async () => {
+      vi.mocked(createRescueBackup).mockResolvedValue(backupResult({ items: 42, images: 7 }));
+      const user = userEvent.setup();
+      render(<RescueActions />);
+
+      await user.click(screen.getByRole('button', { name: /back up everything/i }));
+
+      const status = await screen.findByRole('status');
+      expect(status).toHaveTextContent('42 items');
+      expect(status).toHaveTextContent('7 images');
+    });
+
+    it('names anything the failed database would not give up, rather than claiming success', async () => {
+      vi.mocked(createRescueBackup).mockResolvedValue(
+        backupResult({ skipped: ['categories', 'tombstones'] }),
+      );
+      const user = userEvent.setup();
+      render(<RescueActions />);
+
+      await user.click(screen.getByRole('button', { name: /back up everything/i }));
+
+      // A partial backup the user believes is complete is how data is lost at the next step.
+      expect(await screen.findByRole('status')).toHaveTextContent('categories, tombstones');
+    });
+
+    it('surfaces a backup that could not be built at all', async () => {
+      vi.mocked(createRescueBackup).mockRejectedValue(new Error('Database unreadable.'));
+      const user = userEvent.setup();
+      render(<RescueActions />);
+
+      await user.click(screen.getByRole('button', { name: /back up everything/i }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Database unreadable.');
     });
   });
 
