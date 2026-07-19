@@ -69,6 +69,27 @@ restore your version instead of losing it.
 > same-field clashes appear; a device simply catching up on newer changes is not a conflict and is
 > never listed.
 
+## When the shared copy can't be read
+
+Your devices meet through a single **shared copy** of your inventory — a file in the folder or
+Drive account you connected. Sometimes it can't be read at the moment you sync: your cloud tool
+may still be downloading it, another device may be part-way through writing it, or you may have
+reconnected the wrong folder or account.
+
+Gubbins **stops** the sync and tells you, rather than pressing on. This matters because carrying on
+would mean uploading *this* device's inventory as the shared copy — and anything that existed only
+on your other devices would be gone from it. Waiting a moment and syncing again is almost always
+all that's needed.
+
+If the shared copy has genuinely disappeared — you emptied the folder, or deleted the file — the
+message offers **Publish this device's data**, which starts a new shared copy from what's on this
+device. Use it only when you're sure: it can't bring back records that lived solely on the other
+devices.
+
+> **💡 Tip**
+> Before publishing a fresh shared copy, sync your *other* devices first if you can, or take a
+> [[backup|Backup-and-Restore]] from them. That way the new shared copy starts complete.
+
 > **💡 Tip**
 > The local-folder option is the most flexible: point it at any folder your existing cloud tool
 > already syncs, and Gubbins rides on top of the service you already trust.

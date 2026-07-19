@@ -23,7 +23,15 @@ export interface CloudProvider {
    */
   getServerTime(): Promise<number | null>;
 
-  /** Download the remote snapshot, or `null` when the remote has none yet. */
+  /**
+   * Download the remote snapshot, or `null` when the remote genuinely has none yet.
+   *
+   * `null` is a **claim that the remote is empty**, not a catch-all for failure: the engine
+   * answers it by publishing this device's state over the remote (§7.3 first publish). An
+   * adapter that cannot tell the two apart must raise `SyncRemoteUnreadableError` (see
+   * `./sync-errors`) rather than return `null` (issue #196) — otherwise a transient read
+   * failure silently discards whatever only lived on the other devices.
+   */
   fetchSnapshot(): Promise<SyncSnapshot | null>;
 
   /** Upload the merged snapshot, replacing the remote state (§7.3 step 4). */

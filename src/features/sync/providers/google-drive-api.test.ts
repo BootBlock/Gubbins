@@ -29,8 +29,10 @@ describe('findSnapshotFileId', () => {
     const [url, init] = fetchImpl.mock.calls[0];
     expect(String(url)).toContain('spaces=appDataFolder');
     expect(String(url)).toContain('drive/v3/files');
-    // The query is scoped to the snapshot file name.
+    // The query is scoped to the snapshot file name, and excludes trashed files — a binned
+    // copy must not answer as the live snapshot (issue #196).
     expect(decodeURIComponent(String(url))).toContain("name='gubbins-sync.json'");
+    expect(decodeURIComponent(String(url))).toContain('trashed=false');
     // Bearer auth attached.
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer ya29.TEST');
   });

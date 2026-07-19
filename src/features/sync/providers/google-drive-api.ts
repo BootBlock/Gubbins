@@ -53,13 +53,22 @@ async function authedFetch(api: DriveApi, url: string, init: RequestInit = {}): 
   return res;
 }
 
-/** Find the snapshot file's id under `appDataFolder`, or `null` when it doesn't exist yet. */
+/**
+ * Find the snapshot file's id under `appDataFolder`, or `null` when it doesn't exist yet.
+ *
+ * Issue #196: the query excludes trashed files and asks for several matches, newest first.
+ * Without `trashed=false` a file the user emptied into the bin still answers the query, and
+ * with `pageSize: 1` it could be the *only* answer even when a live snapshot sits beside it —
+ * either way sync would reconcile against the wrong copy. `null` here is the one signal the
+ * engine reads as "no shared snapshot", so it has to mean exactly that.
+ */
 export async function findSnapshotFileId(api: DriveApi): Promise<string | null> {
   const params = new URLSearchParams({
     spaces: 'appDataFolder',
-    q: `name='${SNAPSHOT_NAME}'`,
+    q: `name='${SNAPSHOT_NAME}' and trashed=false`,
     fields: 'files(id)',
-    pageSize: '1',
+    orderBy: 'modifiedTime desc',
+    pageSize: '10',
   });
   const res = await authedFetch(api, `${DRIVE_FILES}?${params.toString()}`);
   const json = (await res.json()) as { files?: { id?: string }[] };
