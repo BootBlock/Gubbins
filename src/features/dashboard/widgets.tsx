@@ -112,6 +112,7 @@ function WidgetShell({
   tone = 'quiet',
   loading = false,
   error = false,
+  errorMessage,
   children,
 }: {
   icon: ReactNode;
@@ -120,6 +121,8 @@ function WidgetShell({
   tone?: Tone;
   loading?: boolean;
   error?: boolean;
+  /** Overrides the default "couldn't load" copy — e.g. the crash fallback's wording. */
+  errorMessage?: string;
   children: ReactNode;
 }) {
   const t = useT();
@@ -138,7 +141,7 @@ function WidgetShell({
       </div>
       <div className="mt-2 space-y-1">
         {error ? (
-          <p className="text-xs text-warning">{t('dashboard.widget.error')}</p>
+          <p className="text-xs text-warning">{errorMessage ?? t('dashboard.widget.error')}</p>
         ) : loading ? (
           <WidgetSkeleton />
         ) : (
@@ -146,6 +149,22 @@ function WidgetShell({
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * Stand-in for a widget whose *render* crashed (as opposed to whose query failed) — the
+ * fallback `DashboardGrid` hands to the per-tile {@link ContainedErrorBoundary} (issue #313).
+ *
+ * Deliberately the same {@link WidgetShell} the tile would have drawn, so the board keeps its
+ * layout and the tile stays identifiable by its own icon and title; only the body is replaced.
+ */
+export function WidgetCrashFallback({ icon, title }: { icon: ReactNode; title: string }) {
+  const t = useT();
+  return (
+    <WidgetShell icon={icon} title={title} error errorMessage={t('dashboard.widget.crashed')}>
+      {null}
+    </WidgetShell>
   );
 }
 

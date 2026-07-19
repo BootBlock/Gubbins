@@ -46,7 +46,14 @@ import {
   type NudgeDirection,
   type WidgetPlacement,
 } from './dashboard-layout';
-import { DASHBOARD_WIDGET_IDS, useHealthyWidgetIds, widgetById, type WidgetDefinition } from './widgets';
+import {
+  DASHBOARD_WIDGET_IDS,
+  useHealthyWidgetIds,
+  widgetById,
+  WidgetCrashFallback,
+  type WidgetDefinition,
+} from './widgets';
+import { ContainedErrorBoundary } from '@/app/error/ContainedErrorBoundary';
 
 const ARROW_DIRECTIONS: Record<string, NudgeDirection> = {
   ArrowUp: 'up',
@@ -402,8 +409,20 @@ function WidgetTile({
       ? ({ animationDelay: `${revealStaggerMs(index)}ms` } as CSSProperties)
       : undefined;
 
+  const title = t(def.titleKey);
+  // Widgets are independent by design and each fetches its own data, so a render crash in one
+  // — a malformed row, an unexpected shape — has no business taking the rest of the board with
+  // it. Contain it to this tile and draw the shell's error state in place of the body (#313).
+  const body = (
+    <ContainedErrorBoundary
+      what={`dashboard widget "${def.id}"`}
+      fallback={<WidgetCrashFallback icon={def.icon} title={title} />}
+    >
+      <Body />
+    </ContainedErrorBoundary>
+  );
+
   if (editing) {
-    const title = t(def.titleKey);
     return (
       <Surface
         ref={nodeRef}
@@ -444,9 +463,7 @@ function WidgetTile({
           </Tooltip>
         </div>
         {/* Disable inner links/hover while arranging the board. */}
-        <div className="pointer-events-none">
-          <Body />
-        </div>
+        <div className="pointer-events-none">{body}</div>
         {/* Touch/click move controls — the drag-free, accessible way to reorder (issue #11).
             Arrow keys do the same for a physical keyboard. */}
         <BoardMoveButtons
@@ -478,7 +495,7 @@ function WidgetTile({
         armed && revealed && 'animate-rise',
       )}
     >
-      <Body />
+      {body}
     </Surface>
   );
 

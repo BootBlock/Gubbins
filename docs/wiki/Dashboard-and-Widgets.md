@@ -22,6 +22,12 @@ thing they summarise (select the Low stock widget to jump to what's low, for ins
 > Put the widgets you act on most at the top. If you manage a busy loan pool, lead with overdue
 > and upcoming; if you run a parts store, lead with low stock and in-transit.
 
+> **ℹ️ Note**
+> Widgets are independent, so a problem in one stays in one. If a card can't read its data or
+> can't be drawn, that card alone shows a short message and every other card carries on as
+> normal. The same is true of the inventory list: an item that can't be displayed becomes a
+> single placeholder card or row rather than blanking the list.
+
 ## Hide cards with nothing to report
 
 If you'd rather the dashboard stayed quiet when all is well, turn on **Hide cards with nothing to
