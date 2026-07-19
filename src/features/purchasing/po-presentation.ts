@@ -46,3 +46,42 @@ export function totalReceived(lines: readonly { receivedQty: number }[]): number
 export function estimatedValue(lines: readonly { orderedQty: number; unitCost: number | null }[]): number {
   return sumMoney(lines.map((l) => (l.unitCost != null ? Math.max(0, l.orderedQty) * l.unitCost : 0)));
 }
+
+/**
+ * Normalise a stored ISO currency code to compare it: trimmed and upper-cased, with blank and
+ * `null` alike collapsing to `null`. `null` is the "base currency" convention both
+ * `purchase_orders.currency` and `supplier_parts.currency` document, and a whitespace-only code
+ * names no currency either — a distinction the SQL side makes the same way (issue #285).
+ */
+export function normaliseCurrencyCode(code: string | null | undefined): string | null {
+  const trimmed = (code ?? '').trim().toUpperCase();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+/**
+ * Whether a supplier's quote is denominated differently from the order it would be added to
+ * (issue #285).
+ *
+ * A purchase-order line stores a bare number whose currency is the **order's** — so copying a
+ * supplier's €12.00 into a GBP order records "12.00 GBP", a wrong figure by the exchange rate,
+ * and Gubbins holds no rates to convert with. Both sides resolve their blank-means-base
+ * convention against `baseCurrency` first, so a EUR quote on an order with no code of its own is
+ * correctly a mismatch (the order is in the base currency), and a blank quote against a blank
+ * order is not.
+ *
+ * With an unknown base (`null`), only two *explicit* and differing codes can be judged a
+ * mismatch: an unknown base cannot tell whether a blank means the same currency as a stated one,
+ * and guessing would raise a false alarm on every line. This mirrors the repository's
+ * fail-open-on-unknown-base rule.
+ */
+export function isCurrencyMismatch(
+  supplierCurrency: string | null | undefined,
+  orderCurrency: string | null | undefined,
+  baseCurrency: string | null | undefined,
+): boolean {
+  const base = normaliseCurrencyCode(baseCurrency);
+  const supplier = normaliseCurrencyCode(supplierCurrency) ?? base;
+  const order = normaliseCurrencyCode(orderCurrency) ?? base;
+  if (supplier === null || order === null) return false;
+  return supplier !== order;
+}

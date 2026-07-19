@@ -26,6 +26,7 @@ vi.mock('@/lib/useFormatters', () => ({
 }));
 
 import { PurchaseOrderLineDialog } from './PurchaseOrderLineDialog';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 const onSubmit = vi.fn();
 const onClose = vi.fn();
@@ -53,9 +54,16 @@ const overridden: LineItemOption = {
   currency: null,
 };
 
-function renderDialog(items: LineItemOption[] = [withBreaks]) {
+function renderDialog(items: LineItemOption[] = [withBreaks], orderCurrency: string | null = null) {
   return render(
-    <PurchaseOrderLineDialog open items={items} isSaving={false} onSubmit={onSubmit} onClose={onClose} />,
+    <PurchaseOrderLineDialog
+      open
+      items={items}
+      orderCurrency={orderCurrency}
+      isSaving={false}
+      onSubmit={onSubmit}
+      onClose={onClose}
+    />,
   );
 }
 
@@ -70,6 +78,9 @@ function selectItem(name: string) {
 beforeEach(() => {
   onSubmit.mockReset();
   onClose.mockReset();
+  // The base currency is locale-guessed by default; pin it so "is this quote foreign?" is
+  // deterministic rather than dependent on the machine running the suite.
+  usePreferencesStore.setState({ baseCurrency: 'GBP' });
 });
 afterEach(cleanup);
 
@@ -193,6 +204,72 @@ describe('PurchaseOrderLineDialog — quantity price breaks (issue #37)', () => 
       description: null,
       orderedQty: 100,
       unitCost: 0.075,
+    });
+  });
+});
+
+describe('PurchaseOrderLineDialog — supplier/order currency mismatch (issue #285)', () => {
+  /** The same part, but quoted by a supplier who prices in euros. */
+  const euroQuoted: LineItemOption = { ...withBreaks, currency: 'EUR' };
+
+  it('warns, and refuses to auto-fill the cost, when the quote is in another currency', () => {
+    // A line stores a bare number read as the order's currency, so copying €0.10 into a GBP
+    // order would record "0.10 GBP" — wrong by the exchange rate, with no rate to convert by.
+    renderDialog([euroQuoted], 'GBP');
+    selectItem('Resistor 10k');
+
+    const notice = screen.getByTestId('po-line-currency-mismatch');
+    expect(notice.textContent).toContain('EUR');
+    expect(notice.textContent).toContain('GBP');
+    expect(costInput().value).toBe('');
+  });
+
+  it('treats an order with no code of its own as the base currency', () => {
+    // Blank means base (GBP here), so a EUR quote is still foreign to it.
+    renderDialog([euroQuoted], null);
+    selectItem('Resistor 10k');
+    expect(screen.getByTestId('po-line-currency-mismatch')).toBeTruthy();
+    expect(costInput().value).toBe('');
+  });
+
+  it('stays quiet and auto-fills as usual when both sides name the same currency', () => {
+    renderDialog([euroQuoted], 'EUR');
+    selectItem('Resistor 10k');
+    expect(screen.queryByTestId('po-line-currency-mismatch')).toBeNull();
+    expect(costInput().value).toBe('0.1');
+  });
+
+  it('shows no warning before an item is chosen', () => {
+    // The warning is about the chosen supplier's quote; with nothing chosen there is none.
+    renderDialog([euroQuoted], 'GBP');
+    expect(screen.queryByTestId('po-line-currency-mismatch')).toBeNull();
+  });
+
+  it('keeps a hand-entered cost when a price-break tier is clicked', () => {
+    // The tier click releases the field back to auto-fill so the tier's price applies — but on a
+    // mismatch there is no price to apply, so releasing it would erase the user's figure instead.
+    renderDialog([euroQuoted], 'GBP');
+    selectItem('Resistor 10k');
+    fireEvent.change(costInput(), { target: { value: '0.085' } });
+
+    fireEvent.click(screen.getAllByTestId('po-line-price-break')[1]!);
+
+    expect(qtyInput()).toHaveValue('10'); // the quantity still moves to the tier
+    expect(costInput().value).toBe('0.085'); // …and their price survives
+  });
+
+  it('still lets the user price the line themselves in the order currency', () => {
+    // Refusing the auto-fill must not block the line — the user types the converted figure.
+    renderDialog([euroQuoted], 'GBP');
+    selectItem('Resistor 10k');
+    fireEvent.change(costInput(), { target: { value: '0.085' } });
+    fireEvent.submit(screen.getByTestId('po-line-form'));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      itemId: 'i1',
+      description: null,
+      orderedQty: 1,
+      unitCost: 0.085,
     });
   });
 });

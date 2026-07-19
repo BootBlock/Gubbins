@@ -1124,6 +1124,8 @@
   "reports.foreignCurrency.heading.other": "{count} Artikel sind in diesen Summen nicht enthalten",
   "reports.foreignCurrency.body.one": "Sein Preis wird von einem Lieferanten in einer anderen Währung als {currency} angegeben, und Gubbins rechnet Währungen niemals um. Geben Sie dem Artikel einen eigenen Stückpreis oder erfassen Sie den Lieferantenpreis in {currency}, damit er mitgezählt wird.",
   "reports.foreignCurrency.body.other": "Ihre Preise werden von Lieferanten in einer anderen Währung als {currency} angegeben, und Gubbins rechnet Währungen niemals um. Geben Sie diesen Artikeln eigene Stückpreise oder erfassen Sie die Lieferantenpreise in {currency}, damit sie mitgezählt werden.",
+  "purchasing.line.currencyMismatch.heading": "Dieser Lieferant rechnet in einer anderen Währung ab",
+  "purchasing.line.currencyMismatch.body": "Die Staffelpreise unten sind in {quoted} angegeben, diese Bestellung ist jedoch in {order} erfasst, und Gubbins rechnet Währungen niemals um. Der Betrag des Lieferanten kann nicht übernommen werden — geben Sie die Kosten dieser Position in {order} ein.",
   "reports.spendForeignCurrency.heading.one": "{count} Bestellung ist in diesen Ausgaben nicht enthalten",
   "reports.spendForeignCurrency.heading.other": "{count} Bestellungen sind in diesen Ausgaben nicht enthalten",
   "reports.spendForeignCurrency.body.one": "Sie ist in einer anderen Währung als {currency} erfasst, und Gubbins rechnet Währungen niemals um. Ihr Betrag fehlt daher in der Gesamtsumme sowie in den Auswertungen nach Lieferant und Kategorie. Erfassen Sie die Bestellung in {currency}, damit sie mitgezählt wird.",
