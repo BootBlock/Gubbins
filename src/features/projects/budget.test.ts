@@ -191,3 +191,43 @@ describe('summariseBudgetCategory', () => {
     expect(c.status).toBe('OVER');
   });
 });
+
+// Issue #288: a budget card's own figures must reconcile with each other.
+describe('monetary rounding', () => {
+  it('makes a category row subtract correctly once quantised', () => {
+    // Raw 0.025 / 0.014 publish as 0.03 / 0.01; a remaining taken from the raw difference
+    // would read 0.01 against two figures that visibly subtract to 0.02.
+    const c = summariseBudgetCategory(
+      { id: 'c1', name: 'Odds', amount: 0.025, spent: 0.014, position: 0 },
+      80,
+    );
+    expect(c.amount).toBe(0.03);
+    expect(c.spent).toBe(0.01);
+    expect(c.remaining).toBe(0.02);
+  });
+
+  it('keeps the summary self-consistent: committed + manual = spent, budget − spent = remaining', () => {
+    const s = summariseBudget(
+      facts({ budget: 1, estimatedCost: 0.7, committedFromBom: 0.1 * 3, manualExpenseTotal: 0.1 }),
+      80,
+    );
+    expect(s.committedFromBom).toBe(0.3);
+    expect(s.manualExpenseTotal).toBe(0.1);
+    expect(s.totalSpent).toBe(0.4);
+    expect(s.totalSpent).toBe(s.committedFromBom + s.manualExpenseTotal);
+    expect(s.remaining).toBe(0.6);
+    expect(s.projectedFinalCost).toBe(0.8);
+    expect(s.projectedRemaining).toBeCloseTo(0.2, 10);
+  });
+
+  it('still classifies status from the raw figures, not a rounded penny', () => {
+    // Raw spend 0.994 of a 1.00 budget is under; it publishes as 0.99 either way, but the
+    // status must not be decided on the rounded value.
+    const s = summariseBudget(
+      facts({ budget: 1, estimatedCost: 0, committedFromBom: 0.994, manualExpenseTotal: 0 }),
+      99,
+    );
+    expect(s.status).toBe('WARN');
+    expect(s.spentFraction).toBeCloseTo(0.994, 10);
+  });
+});

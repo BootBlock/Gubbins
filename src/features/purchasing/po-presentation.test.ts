@@ -31,4 +31,15 @@ describe('line totals', () => {
     // 10 * 0.5 + 2 * 3 = 11 (the unpriced line contributes nothing).
     expect(estimatedValue(lines)).toBe(11);
   });
+
+  it('quantises the estimate, so float drift never reaches the order (issue #288)', () => {
+    expect(
+      estimatedValue([
+        { orderedQty: 3, unitCost: 0.1 },
+        { orderedQty: 3, unitCost: 0.1 },
+        { orderedQty: 3, unitCost: 0.1 },
+      ]),
+    ).toBe(0.9);
+    expect(estimatedValue([{ orderedQty: 3, unitCost: 1.005 }])).toBe(3.02);
+  });
 });

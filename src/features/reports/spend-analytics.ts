@@ -14,7 +14,12 @@
  * acquisition prices. A single item bought through a PO can appear in two sources; rather than
  * silently de-duplicate (which would hide real cash movements), every event carries its `source` so
  * the by-source breakdown makes any overlap explicit and auditable.
+ *
+ * **Amounts accumulate raw and are quantised once, at the boundary** (issue #288) — every money
+ * figure published here goes through `@/lib/money`, so the headline total, the buckets and the
+ * breakdowns cannot drift a penny apart. Shares stay ratios of the raw totals.
  */
+import { roundMoney } from '@/lib/money';
 
 /** The three spend sources, each composed from data already stored. */
 export type SpendSource = 'PURCHASE_ORDER' | 'PROJECT_EXPENSE' | 'ACQUISITION';
@@ -181,16 +186,19 @@ export function buildSpendReport(
     else categoryTotals.set(catKey, { name: catKey === null ? UNCATEGORISED : catName, total: amount });
   }
 
+  // Amounts accumulated raw above; each published figure is quantised once, here at the
+  // boundary (issue #288), so the headline total and the breakdowns that recompute it agree.
+  // Shares stay ratios of the raw totals — a fraction is not an amount.
   const bySource: SpendSourceTotal[] = SPEND_SOURCES.map((source) => {
     const sourceTotal = sourceTotals.get(source) ?? 0;
-    return { source, total: sourceTotal, share: share(sourceTotal, total) };
+    return { source, total: roundMoney(sourceTotal), share: share(sourceTotal, total) };
   });
 
   const bySupplier: SpendGroup[] = [...supplierTotals.entries()]
     .map(([id, { name, total: groupTotal }]) => ({
       id,
       name,
-      total: groupTotal,
+      total: roundMoney(groupTotal),
       share: share(groupTotal, total),
     }))
     .sort(byTotalThenName);
@@ -199,12 +207,21 @@ export function buildSpendReport(
     .map(([id, { name, total: groupTotal }]) => ({
       id,
       name,
-      total: groupTotal,
+      total: roundMoney(groupTotal),
       share: share(groupTotal, total),
     }))
     .sort(byTotalThenName);
 
-  return { windowStart, windowEnd, total, eventCount, buckets, bySource, bySupplier, byCategory };
+  return {
+    windowStart,
+    windowEnd,
+    total: roundMoney(total),
+    eventCount,
+    buckets: buckets.map((b) => ({ start: b.start, end: b.end, total: roundMoney(b.total) })),
+    bySource,
+    bySupplier,
+    byCategory,
+  };
 }
 
 /** Stable group ordering: total descending, then name ascending (case-insensitive). */

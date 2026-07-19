@@ -21,8 +21,13 @@
  * *full* BOM estimate + manual is the forecast at completion (the committed spend is a
  * subset of the full estimate, so there is no double-count). Both get a status so the UI
  * can warn on what's spent *and* on where the project is heading.
+ *
+ * **Money is quantised once, at the summary boundary** (issue #288), through `@/lib/money` —
+ * fractions and the OK/WARN/OVER classification deliberately read the *raw* figures, so a
+ * threshold is never crossed by a rounding penny.
  */
 import type { ProjectBudget, ProjectBudgetCategoryRollup } from '@/db/repositories';
+import { roundMoney } from '@/lib/money';
 
 /** Budget health: no budget set, comfortably under, nearing the line, or over. */
 export type BudgetStatus = 'NONE' | 'OK' | 'WARN' | 'OVER';
@@ -135,12 +140,18 @@ export function summariseBudgetCategory(
   category: ProjectBudgetCategoryRollup,
   warnPercent: number,
 ): BudgetCategorySummary {
+  const amount = roundMoney(category.amount);
+  const spent = roundMoney(category.spent);
   return {
     id: category.id,
     name: category.name,
-    amount: category.amount,
-    spent: category.spent,
-    remaining: category.amount - category.spent,
+    amount,
+    spent,
+    // Derived from the *published* pair, so the row a budget card prints subtracts correctly
+    // (issue #288) — `roundMoney(raw amount − raw spent)` would show 0.03, 0.01 and 0.01.
+    remaining: roundMoney(amount - spent),
+    // Fractions and the status classification read the raw figures: a threshold decided on a
+    // rounded penny would flip a project into WARN/OVER a fraction early.
     spentFraction: spentFraction(category.spent, category.amount),
     status: budgetStatus(category.spent, category.amount, warnPercent),
   };
@@ -155,21 +166,35 @@ export function summariseBudget(facts: ProjectBudget, warnPercent: number): Budg
   const totalSpent = facts.committedFromBom + facts.manualExpenseTotal;
   const projectedFinalCost = facts.estimatedCost + facts.manualExpenseTotal;
   const budget = facts.budget;
+
+  // Quantised once at this boundary (issue #288), and every *derived* amount is then composed
+  // from the published parts rather than re-rounded from the raw ones — so a budget card's
+  // committed + manual really does equal its "spent so far", and budget − spent really does
+  // equal its "remaining". Rounding each figure independently from the raw values would leave
+  // the card's own arithmetic a penny out.
+  const publishedBudget = budget == null ? null : roundMoney(budget);
+  const publishedEstimatedCost = roundMoney(facts.estimatedCost);
+  const publishedCommitted = roundMoney(facts.committedFromBom);
+  const publishedManual = roundMoney(facts.manualExpenseTotal);
+  const publishedTotalSpent = roundMoney(publishedCommitted + publishedManual);
+  const publishedProjected = roundMoney(publishedEstimatedCost + publishedManual);
+
   return {
-    budget,
-    estimatedCost: facts.estimatedCost,
-    committedFromBom: facts.committedFromBom,
-    manualExpenseTotal: facts.manualExpenseTotal,
-    totalSpent,
-    remaining: budget == null ? null : budget - totalSpent,
-    projectedFinalCost,
-    projectedRemaining: budget == null ? null : budget - projectedFinalCost,
+    budget: publishedBudget,
+    estimatedCost: publishedEstimatedCost,
+    committedFromBom: publishedCommitted,
+    manualExpenseTotal: publishedManual,
+    totalSpent: publishedTotalSpent,
+    remaining: publishedBudget == null ? null : roundMoney(publishedBudget - publishedTotalSpent),
+    projectedFinalCost: publishedProjected,
+    projectedRemaining: publishedBudget == null ? null : roundMoney(publishedBudget - publishedProjected),
+    // Fractions and statuses read the raw figures — see `summariseBudgetCategory`.
     spentFraction: spentFraction(totalSpent, budget),
     projectedFraction: spentFraction(projectedFinalCost, budget),
     warnPercent,
     status: budgetStatus(totalSpent, budget, warnPercent),
     projectedStatus: budgetStatus(projectedFinalCost, budget, warnPercent),
     categories: facts.categories.map((c) => summariseBudgetCategory(c, warnPercent)),
-    uncategorisedExpenseTotal: facts.uncategorisedExpenseTotal,
+    uncategorisedExpenseTotal: roundMoney(facts.uncategorisedExpenseTotal),
   };
 }

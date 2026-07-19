@@ -11,6 +11,7 @@ import type { SqlStatement } from '../../rpc/driver';
 import { planTransfer } from '@/features/inventory/stock';
 import { isDefaultBatch, planBatchConsumption, planBatchSelection } from '@/features/inventory/batches';
 import { effectiveUnitCost } from '@/features/inventory/supplier-cost';
+import { roundMoney } from '@/lib/money';
 import { stockRowId } from '../stock';
 import {
   addBatchStatement,
@@ -333,7 +334,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       if (!Number.isFinite(unitSalePrice) || unitSalePrice < 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'Sale price cannot be negative.');
       }
-      const saleTotal = round2(unitSalePrice * draw.quantity);
+      const saleTotal = roundMoney(unitSalePrice * draw.quantity);
       const counterparty = input.counterparty?.trim() || null;
       const note = input.note?.trim() || `Sold ${draw.quantity}${counterparty ? ` to ${counterparty}` : ''}.`;
 
@@ -491,9 +492,4 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       return { quantity, fromLocationId, fromBatchKey, stockStatements, unitCostAtSale };
     }
   };
-}
-
-/** Round to 2 decimals, avoiding binary-float drift on a proceeds total (e.g. 3 × 0.1). */
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
