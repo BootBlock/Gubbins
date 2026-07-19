@@ -67,11 +67,13 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
     /**
      * How many active items currently match each of the common status filters — the inventory
      * filter bar uses this both to hide a chip that matches nothing (spec §3 filter axis) and
-     * to show the match count in its label (e.g. "Out of stock (8)"). Computed in a single
-     * round-trip: one `SELECT` of a `COUNT(*)` per status, each reusing that status's SSOT
-     * predicate via {@link buildStatusFilter}, so the count can never disagree with what the
-     * filter would actually return. `now` is injected for the time-based statuses (defaulting
-     * to query time).
+     * to show the match count in its label (e.g. "Out of stock (8)"). Computed in a **single
+     * pass over `items`** — one conditional `SUM(CASE WHEN … THEN 1 ELSE 0 END)` per status
+     * rather than a scalar `(SELECT COUNT(*) FROM items …)` subquery each, which would scan
+     * the table once per candidate status (issue #166: up to seven scans on every filter-bar
+     * render at 100k items). Each status still reuses its SSOT predicate via
+     * {@link buildStatusFilter}, so the count can never disagree with what the filter would
+     * actually return. `now` is injected for the time-based statuses (defaulting to query time).
      *
      * When `locationId` is set the counts are scoped to that location, so switching the
      * sidebar selection recomputes them — a filter that matches nothing *in the current
@@ -95,19 +97,22 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
         lowStockThresholds: params.lowStockThresholds,
         expirySoonWindowDays: params.expirySoonWindowDays,
       };
-      // The location scope is AND-ed into each per-status count ahead of the predicate, so its
-      // bound value is pushed before that status's own params.
-      const scope = params.locationId ? 'location_id = ? AND ' : '';
       const columns: string[] = [];
       const sqlParams: SqlValue[] = [];
       candidates.forEach((status, i) => {
         const [clause, clauseParams] = buildStatusFilter([status], ctx);
-        columns.push(`(SELECT COUNT(*) FROM items WHERE is_active = 1 AND ${scope}${clause}) AS s${i}`);
-        if (params.locationId) sqlParams.push(params.locationId);
+        columns.push(`SUM(CASE WHEN ${clause} THEN 1 ELSE 0 END) AS s${i}`);
         sqlParams.push(...clauseParams);
       });
-      const row = await this.driver.queryOne<Record<string, number>>(
-        `SELECT ${columns.join(', ')};`,
+      // The active-only / location scope moves to the shared `WHERE`, so it is applied once for
+      // the whole pass instead of being repeated inside every status's own subquery. Its bound
+      // value therefore comes *after* all the SELECT-list params, matching SQL clause order.
+      const scope = params.locationId ? ' AND location_id = ?' : '';
+      if (params.locationId) sqlParams.push(params.locationId);
+      // `SUM(...)` over zero matching rows is SQL NULL (not 0), so the column type admits null
+      // and the `?? 0` below is load-bearing for an empty/absent-location inventory.
+      const row = await this.driver.queryOne<Record<string, number | null>>(
+        `SELECT ${columns.join(', ')} FROM items WHERE is_active = 1${scope};`,
         sqlParams,
       );
       // Collect the non-zero counts, then return them in canonical ITEM_STATUS_FILTERS order
