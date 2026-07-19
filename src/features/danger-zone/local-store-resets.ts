@@ -26,6 +26,7 @@
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
+import { useSessionStore } from '@/state/stores/useSessionStore';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { useMilestonesStore } from '@/state/stores/useMilestonesStore';
 import { useClockSkewStore } from '@/state/stores/useClockSkewStore';
@@ -69,6 +70,9 @@ export const LOCAL_STORE_RESETS: Readonly<Record<string, (() => void) | null>> =
   'gubbins:dismissed-alerts': toDefaults(useDismissedAlertsStore),
   'gubbins:notified-reminders': toDefaults(useNotifiedRemindersStore),
   'gubbins:auth': toDefaults(useAuthStore),
+  // Resetting also returns the derived authority and actor to their defaults, so an erase
+  // leaves the app in the same state as a fresh install rather than mid-session.
+  'gubbins:session': toDefaults(useSessionStore),
   'gubbins:sync-conflicts': toDefaults(useSyncConflictsStore),
   'gubbins:export': toDefaults(useExportStore),
   'gubbins:pwa-update-snooze': toDefaults(usePwaUpdateSnoozeStore),

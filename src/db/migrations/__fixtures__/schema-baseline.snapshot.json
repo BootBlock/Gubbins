@@ -1029,15 +1029,21 @@
     },
     {
       "type": "trigger",
+      "name": "trg_users_protect_admin_update",
+      "tbl_name": "users",
+      "sql": "CREATE TRIGGER trg_users_protect_admin_update\n        BEFORE UPDATE ON users\n        FOR EACH ROW\n        WHEN OLD.kind = 'admin'\n          AND (\n            NEW.username     IS NOT OLD.username\n            OR NEW.display_name IS NOT OLD.display_name\n            OR NEW.kind      IS NOT OLD.kind\n            OR NEW.role_id   IS NOT OLD.role_id\n            OR NEW.is_enabled IS NOT OLD.is_enabled\n          )\n        BEGIN\n          SELECT RAISE(ABORT, 'The built-in Admin user cannot be renamed, disabled or re-roled.');\n        END"
+    },
+    {
+      "type": "trigger",
       "name": "trg_users_protect_builtin_delete",
       "tbl_name": "users",
       "sql": "CREATE TRIGGER trg_users_protect_builtin_delete\n        BEFORE DELETE ON users\n        FOR EACH ROW\n        WHEN OLD.kind IN ('system', 'admin')\n        BEGIN\n          SELECT RAISE(ABORT, 'The built-in System and Admin users cannot be deleted.');\n        END"
     },
     {
       "type": "trigger",
-      "name": "trg_users_protect_builtin_update",
+      "name": "trg_users_protect_system_update",
       "tbl_name": "users",
-      "sql": "CREATE TRIGGER trg_users_protect_builtin_update\n        BEFORE UPDATE ON users\n        FOR EACH ROW\n        WHEN OLD.kind IN ('system', 'admin')\n        BEGIN\n          SELECT RAISE(ABORT, 'The built-in System and Admin users cannot be modified.');\n        END"
+      "sql": "CREATE TRIGGER trg_users_protect_system_update\n        BEFORE UPDATE ON users\n        FOR EACH ROW\n        WHEN OLD.kind = 'system'\n        BEGIN\n          SELECT RAISE(ABORT, 'The built-in System user cannot be modified.');\n        END"
     },
     {
       "type": "trigger",

@@ -7,9 +7,8 @@
  * production worker and the Zustand storage store meet the repository layer.
  */
 import { getDatabaseDriver } from '../client';
-import { ADMIN_USER_ID } from './constants';
+import { useSessionStore } from '@/state/stores/useSessionStore';
 import { isWriteSuspended } from '@/features/storage/tiers';
-import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { AssetBookingRepository } from './AssetBookingRepository';
@@ -142,22 +141,23 @@ let roleRepository: RoleRepository | null = null;
  * Production repository options: the §7.6.1 write-gate, plus the actor every write is
  * attributed to (issue #79, plan §2.4).
  *
- * Attribution resolves to the built-in **Admin** user. The users module does not exist yet, so
- * there is no session to read and plan §3 specifies that single-user mode acts as Admin — which
- * is exactly what the app does today, just now recorded. Phase 3 replaces this one arrow with a
- * session lookup and every write in the app follows, with no call site changed.
+ * Both the actor and the authority now come from the **session store** (issue #79, phase 3),
+ * which is the single arrow phases 1 and 2 were built to leave swappable — no repository
+ * signature and no call site changed to make this happen.
  *
- * Authority resolves the same way, and for the same reason: with the users module absent
- * every caller is unrestricted, so the guards throughout the repository layer are inert and
- * the app behaves exactly as it did before permissions existed. Phase 3 swaps this arrow for
- * `resolveAuthority({ moduleEnabled, user, grants })` and the guards begin to bite —
- * deliberately one change, in one place, rather than a switch threaded through call sites.
+ * The store's defaults are `Admin` and unrestricted, and `authority-refresh.ts` returns them
+ * unchanged while the users module is off. So with the module off — the state Gubbins ships in
+ * — this resolves exactly as it did before sessions existed: every action attributed to Admin,
+ * every guard inert.
+ *
+ * Read per call, never captured: signing in or out must take effect immediately, without
+ * rebuilding the repository graph or reloading the page.
  */
 const productionOptions: RepositoryOptions = {
   isWriteSuspended: () => isWriteSuspended(useStorageStore.getState().tier),
-  resolveActor: () => ADMIN_USER_ID,
+  resolveActor: () => useSessionStore.getState().actorId,
   resolveBaseCurrency: () => usePreferencesStore.getState().baseCurrency,
-  resolveAuthority: () => UNRESTRICTED_AUTHORITY,
+  resolveAuthority: () => useSessionStore.getState().authority,
 };
 
 export function getUserRepository(): UserRepository {

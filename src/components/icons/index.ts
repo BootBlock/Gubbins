@@ -192,6 +192,11 @@ export {
   CameraOff as CameraOffIcon,
   Users as ContactsIcon,
   UserPlus as AddContactIcon,
+  // Sign-in and accounts (issue #79). Distinct from ContactsIcon, which is the address book:
+  // a *contact* is somebody you lend a tool to, a *user* is somebody who signs in.
+  User as AccountIcon,
+  Lock as PasswordIcon,
+  LogOut as SignOutIcon,
   Phone as PhoneIcon,
   Mail as EmailIcon,
   MapPin as AddressIcon,
