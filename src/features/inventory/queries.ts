@@ -14,6 +14,7 @@ import {
   MAX_LIST_PAGES,
   STATUS_FILTER_FEATURE,
   getItemRepository,
+  isStockDependentStatus,
   getLocationRepository,
   getSuggestionRepository,
   getSupplierPartRepository,
@@ -66,11 +67,23 @@ export type ItemQueryFilters = Pick<
 export const inventoryKeys = {
   all: ['inventory'] as const,
   items: () => [...inventoryKeys.all, 'items'] as const,
+  /**
+   * Sibling prefix to {@link inventoryKeys.items} for item-derived reads a **stock-only** write
+   * cannot change (issue #166). It is deliberately *outside* `items()` so
+   * {@link invalidateItemStock} — the narrow invalidation a quantity stepper or gauge adjust
+   * uses — can leave it alone, while the ordinary {@link invalidateItems} still sweeps both.
+   */
+  itemAttention: () => [...inventoryKeys.all, 'item-attention'] as const,
   itemList: (filters: ItemQueryFilters) => [...inventoryKeys.items(), 'list', filters] as const,
-  /** Which status filters currently match anything (filter-bar decluttering). Under items()
-   *  so any item mutation invalidates it by prefix. */
+  /** The **stock-derived** status counts (low/out of stock) — under items(), so every item
+   *  mutation including a bare quantity change invalidates them by prefix. */
   applicableStatuses: (tuning: ApplicableStatusTuning) =>
     [...inventoryKeys.items(), 'applicable-statuses', tuning] as const,
+  /** The status counts a stock write cannot move (on order, expiring, warranty, on loan,
+   *  overdue, maintenance due) — under itemAttention() so a stepper tap does not recompute
+   *  them. These carry the correlated per-row subqueries, so they are the costly half. */
+  stableStatuses: (tuning: ApplicableStatusTuning) =>
+    [...inventoryKeys.itemAttention(), 'stable-statuses', tuning] as const,
   item: (id: string) => [...inventoryKeys.items(), 'detail', id] as const,
   itemHistory: (id: string) => [...inventoryKeys.item(id), 'history'] as const,
   locations: () => [...inventoryKeys.all, 'locations'] as const,
@@ -390,18 +403,32 @@ export function useItemCount(filters: ItemQueryFilters = {}, enabled = true) {
   });
 }
 
+/** Shared empty result for a gated-off half, so the merge memo sees a stable reference. */
+const EMPTY_STATUS_COUNTS: readonly ItemStatusCount[] = [];
+
 /**
  * How many items match each status filter **in the currently-viewed location** — the filter
  * bar uses this both to hide a chip that would return nothing (spec §3 filter axis) and to
  * show its match count in the label. Judged against the same user-tuned low-stock / expiry
  * thresholds the filters themselves use, so the counts agree with what a chip would actually
- * return. Re-runs when the location selection changes (it keys the query) and on any item
- * mutation (the key sits under `items()`); a slightly stale count is only cosmetic.
+ * return. Re-runs when the location selection changes (it keys the query); a slightly stale
+ * count is only cosmetic.
+ *
+ * **Split across two caches by what can invalidate them (issue #166).** The counts used to sit
+ * under one key beneath `items()`, so *every* item mutation recomputed all of them — a single
+ * tap of a card's quantity stepper re-probed all eight statuses, and the six that a stock write
+ * cannot possibly move are the expensive ones (each carries a correlated per-row subquery
+ * against purchase-order lines, checkouts or maintenance schedules). They are therefore keyed
+ * separately: the two {@link STOCK_DEPENDENT_STATUSES} stay under `items()` and recompute on
+ * any write, while the rest live under `itemAttention()`, which {@link invalidateItemStock}
+ * deliberately leaves alone. The two result sets are merged back into one list here, so callers
+ * see the same shape as before.
  *
  * Only statuses whose Modular-UI capability is enabled are probed (via
  * {@link STATUS_FILTER_FEATURE}) — the filter bar hides a gated-off chip anyway, so its
  * (sometimes heavy) count is never computed. The candidate set keys the query, so toggling
- * a module recomputes it.
+ * a module recomputes it. A half with no enabled candidates is gated off entirely rather than
+ * issuing a query that could only return nothing.
  *
  * @param locationId - the selected location, or null/undefined for the "All items" view.
  * @param active - gate the query off (default `true`). When the Visual Builder is driving the
@@ -425,21 +452,53 @@ export function useApplicableStatuses(locationId?: string | null, active = true)
       }),
     [enabled],
   );
-  const tuning: ApplicableStatusTuning = {
+  const stockCandidates = useMemo(() => candidates.filter(isStockDependentStatus), [candidates]);
+  const stableCandidates = useMemo(() => candidates.filter((s) => !isStockDependentStatus(s)), [candidates]);
+
+  const base = {
     locationId: locationId ?? null,
     lowStockThresholds: { qtyThreshold, gaugePercent },
     expirySoonWindowDays,
-    candidates,
   };
-  return useQuery({
-    queryKey: inventoryKeys.applicableStatuses(tuning),
-    queryFn: (): Promise<ItemStatusCount[]> => getItemRepository().applicableStatuses(tuning),
+  const stockTuning: ApplicableStatusTuning = { ...base, candidates: stockCandidates };
+  const stableTuning: ApplicableStatusTuning = { ...base, candidates: stableCandidates };
+
+  const stock = useQuery({
+    queryKey: inventoryKeys.applicableStatuses(stockTuning),
+    queryFn: (): Promise<ItemStatusCount[]> => getItemRepository().applicableStatuses(stockTuning),
     // Skip the round-trip entirely while the Visual Builder supersedes the (now disabled) chips.
-    enabled: active,
+    enabled: active && stockCandidates.length > 0,
     // Keep the previous set on screen while a refresh runs, so chips don't flicker out and back.
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
+  const stable = useQuery({
+    queryKey: inventoryKeys.stableStatuses(stableTuning),
+    queryFn: (): Promise<ItemStatusCount[]> => getItemRepository().applicableStatuses(stableTuning),
+    enabled: active && stableCandidates.length > 0,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
+
+  // A gated-off half has no data and never will, so it contributes an empty list rather than
+  // holding the merged result at `undefined` — otherwise disabling every non-stock module (or
+  // the Visual-Builder gate) would leave the chips permanently "unknown".
+  const stockRows = stockCandidates.length === 0 ? EMPTY_STATUS_COUNTS : stock.data;
+  const stableRows = stableCandidates.length === 0 ? EMPTY_STATUS_COUNTS : stable.data;
+
+  // Merge only once *both* halves are known. Emitting a partial set would make a chip
+  // momentarily vanish from the bar on first load, which is exactly the flicker the
+  // `placeholderData` above exists to prevent. Re-sorted into canonical order so the merged
+  // list matches what a single un-split query returned.
+  const data = useMemo(() => {
+    if (!stockRows || !stableRows) return undefined;
+    const byStatus = new Map([...stockRows, ...stableRows].map((row) => [row.status, row]));
+    return ITEM_STATUS_FILTERS.map((status) => byStatus.get(status)).filter(
+      (row): row is ItemStatusCount => row !== undefined,
+    );
+  }, [stockRows, stableRows]);
+
+  return { data };
 }
 
 export function useItem(id: string | undefined) {

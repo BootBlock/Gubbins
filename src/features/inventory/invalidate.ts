@@ -26,5 +26,27 @@ import { inventoryKeys } from './queries';
  */
 export function invalidateItems(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+  void client.invalidateQueries({ queryKey: inventoryKeys.itemAttention() });
+  void client.invalidateQueries({ queryKey: reportKeys.all });
+}
+
+/**
+ * The narrow counterpart to {@link invalidateItems} for a write that changed **only an item's
+ * stock level** — the quantity stepper, a gauge adjust (issue #166).
+ *
+ * Identical to `invalidateItems` except that it leaves the `itemAttention()` prefix alone. That
+ * prefix holds the status counts a stock write cannot move — *on order*, *expiring*,
+ * *warranty*, *on loan*, *overdue*, *maintenance due* — which are decided by fields and tables
+ * a stock write never touches (see `STOCK_DEPENDENT_STATUSES`). They are also the expensive
+ * half: each carries a correlated per-row subquery, so recomputing them per stepper tap was
+ * most of the cost of a tap.
+ *
+ * **Use this only where that claim genuinely holds.** `invalidateItems` is the safe default and
+ * the right choice for anything that touches a row's other fields, its active flag, or the
+ * purchase-order / checkout / maintenance tables — over-invalidating merely costs a refetch,
+ * whereas under-invalidating leaves a visibly stale chip count until the next broad write.
+ */
+export function invalidateItemStock(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: inventoryKeys.items() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
 }

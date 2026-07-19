@@ -108,7 +108,9 @@ export {
   ITEM_SORT_FIELDS,
   ITEM_STATUS_FILTERS,
   STATUS_FILTER_FEATURE,
+  STOCK_DEPENDENT_STATUSES,
   isItemStatusFilter,
+  isStockDependentStatus,
 } from './ItemRepository';
 export type { UpdateAttachmentInput } from './AttachmentRepository';
 export type { AssemblyResult } from './ProjectRepository';

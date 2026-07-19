@@ -60,6 +60,33 @@ export const ITEM_STATUS_FILTERS: readonly ItemStatusFilter[] = [
 
 const STATUS_FILTER_SET = new Set<string>(ITEM_STATUS_FILTERS);
 
+/**
+ * The statuses whose match count is a function of an item's **stock level** — i.e. the only
+ * ones a stock-only write (the quantity stepper, a gauge adjust) can move.
+ *
+ * Both read `quantity` / `current_net_value` off the `items` row, so adding or drawing down
+ * stock can flip an item in or out of them. Every *other* status is decided by a field or a
+ * table a stock write never touches: `expiry_date` / `warranty_expires_at` on the row, or the
+ * purchase-order, checkout and maintenance tables. The stock recompute triggers propagate only
+ * `quantity` up the `stock_batches` → `item_stock` → `items` projection, so that separation
+ * holds at the database level too, not just by convention.
+ *
+ * This is the SSOT for the split applicability queries (`useApplicableStatuses`): the six
+ * stock-independent counts are cached under their own key so a stepper tap doesn't recompute
+ * them, and they are the expensive ones — each carries a correlated per-row subquery. Keep this
+ * list honest: a status added here that *isn't* purely stock-derived would show a stale count
+ * after an unrelated write, and one wrongly left out merely costs the recompute it was meant to
+ * skip. See {@link ITEM_STATUS_FILTERS} for the full set.
+ */
+export const STOCK_DEPENDENT_STATUSES: readonly ItemStatusFilter[] = ['low-stock', 'out-of-stock'];
+
+const STOCK_DEPENDENT_SET = new Set<ItemStatusFilter>(STOCK_DEPENDENT_STATUSES);
+
+/** Whether a stock-only write can change this status's match count (see {@link STOCK_DEPENDENT_STATUSES}). */
+export function isStockDependentStatus(status: ItemStatusFilter): boolean {
+  return STOCK_DEPENDENT_SET.has(status);
+}
+
 /** Narrow an arbitrary string to a known {@link ItemStatusFilter}. */
 export function isItemStatusFilter(value: string): value is ItemStatusFilter {
   return STATUS_FILTER_SET.has(value);
