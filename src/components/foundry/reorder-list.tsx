@@ -1,6 +1,8 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon, ChevronUpIcon, DragHandleIcon, HideIcon, ShowIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
+import { LiveRegion } from './live-region';
 
 /** One row of a {@link ReorderList}. */
 export interface ReorderListItem {
@@ -83,6 +85,11 @@ function IconButton({
  * focus. `handleMove` records the move and, once the new order paints, focus is re-homed onto
  * that row — the same-direction button if it's still live, else the opposite one (guaranteed
  * live at an end) — so a keyboard user can nudge a row repeatedly without re-finding it.
+ *
+ * The same pass announces the row's new place through a built-in `LiveRegion` ("Location moved
+ * to position 2 of 7", WCAG 4.1.3): a sighted user sees the row slide, so a screen-reader user
+ * needs the equivalent confirmation rather than silence. It reads the *applied* order, so a
+ * caller whose `onMove` declined the move (or clamped it) says nothing.
  */
 export function ReorderList({
   items,
@@ -92,11 +99,13 @@ export function ReorderList({
   'aria-label': ariaLabel,
   'data-testid': testId,
 }: ReorderListProps) {
+  const t = useT();
   const listRef = useRef<HTMLUListElement>(null);
-  const pendingFocus = useRef<{ id: string; dir: 'up' | 'down' } | null>(null);
+  const pendingFocus = useRef<{ id: string; dir: 'up' | 'down'; from: number } | null>(null);
+  const [announcement, setAnnouncement] = useState('');
 
   const handleMove = (id: string, dir: 'up' | 'down') => {
-    pendingFocus.current = { id, dir };
+    pendingFocus.current = { id, dir, from: items.findIndex((item) => item.id === id) };
     onMove(id, dir);
   };
 
@@ -104,6 +113,21 @@ export function ReorderList({
     const pending = pendingFocus.current;
     if (pending === null) return;
     pendingFocus.current = null;
+
+    // Nothing to do unless the caller actually applied the move. A declined or clamped press
+    // leaves the row where it was, so there is no new position to announce and no re-homing to
+    // do — the pressed button hasn't moved and still holds focus. Bailing here also stops a
+    // declined press (which may not re-render at all) from firing against a later, unrelated
+    // update as a focus jump and an announcement the user never earned.
+    const to = items.findIndex((item) => item.id === pending.id);
+    if (to === -1 || to === pending.from) return;
+
+    setAnnouncement(
+      t('reorderList.moveAnnounce', {
+        vars: { name: items[to]!.name, position: to + 1, total: items.length },
+      }),
+    );
+
     const root = listRef.current;
     if (root === null) return;
     const button = (dir: 'up' | 'down') =>
@@ -113,57 +137,62 @@ export function ReorderList({
     // one live move button), so focus never lands on a disabled control.
     const target = primary && !primary.disabled ? primary : button(pending.dir === 'up' ? 'down' : 'up');
     target?.focus();
-  }, [items]);
+  }, [items, t]);
 
   return (
-    <ul ref={listRef} aria-label={ariaLabel} data-testid={testId} className={cn('space-y-2', className)}>
-      {items.map((item, index) => {
-        const isFirst = index === 0;
-        const isLast = index === items.length - 1;
-        const hidden = item.visible === false;
-        return (
-          <li
-            key={item.id}
-            data-testid={`reorder-row-${item.id}`}
-            className={cn(
-              'flex items-center gap-2 rounded-lg border border-border/60 bg-card/40 px-3 py-2',
-              hidden && 'opacity-60',
-            )}
-          >
-            <DragHandleIcon aria-hidden className="size-4 shrink-0 text-muted-foreground/70" />
-            <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
-            <div className="flex shrink-0 items-center gap-0.5">
-              <IconButton
-                label={`Move ${item.name} up`}
-                onClick={() => handleMove(item.id, 'up')}
-                disabled={isFirst}
-                testId={`reorder-up-${item.id}`}
-                moveKey={`up:${item.id}`}
-              >
-                <ChevronUpIcon />
-              </IconButton>
-              <IconButton
-                label={`Move ${item.name} down`}
-                onClick={() => handleMove(item.id, 'down')}
-                disabled={isLast}
-                testId={`reorder-down-${item.id}`}
-                moveKey={`down:${item.id}`}
-              >
-                <ChevronDownIcon />
-              </IconButton>
-              {onToggleVisible && item.visible !== undefined ? (
+    <>
+      <ul ref={listRef} aria-label={ariaLabel} data-testid={testId} className={cn('space-y-2', className)}>
+        {items.map((item, index) => {
+          const isFirst = index === 0;
+          const isLast = index === items.length - 1;
+          const hidden = item.visible === false;
+          return (
+            <li
+              key={item.id}
+              data-testid={`reorder-row-${item.id}`}
+              className={cn(
+                'flex items-center gap-2 rounded-lg border border-border/60 bg-card/40 px-3 py-2',
+                hidden && 'opacity-60',
+              )}
+            >
+              <DragHandleIcon aria-hidden className="size-4 shrink-0 text-muted-foreground/70" />
+              <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
+              <div className="flex shrink-0 items-center gap-0.5">
                 <IconButton
-                  label={`${item.visible ? 'Hide' : 'Show'} ${item.name}`}
-                  onClick={() => onToggleVisible(item.id, !item.visible)}
-                  testId={`reorder-toggle-${item.id}`}
+                  label={t('reorderList.moveUp', { vars: { name: item.name } })}
+                  onClick={() => handleMove(item.id, 'up')}
+                  disabled={isFirst}
+                  testId={`reorder-up-${item.id}`}
+                  moveKey={`up:${item.id}`}
                 >
-                  {item.visible ? <HideIcon /> : <ShowIcon />}
+                  <ChevronUpIcon />
                 </IconButton>
-              ) : null}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+                <IconButton
+                  label={t('reorderList.moveDown', { vars: { name: item.name } })}
+                  onClick={() => handleMove(item.id, 'down')}
+                  disabled={isLast}
+                  testId={`reorder-down-${item.id}`}
+                  moveKey={`down:${item.id}`}
+                >
+                  <ChevronDownIcon />
+                </IconButton>
+                {onToggleVisible && item.visible !== undefined ? (
+                  <IconButton
+                    label={t(item.visible ? 'reorderList.hide' : 'reorderList.show', {
+                      vars: { name: item.name },
+                    })}
+                    onClick={() => onToggleVisible(item.id, !item.visible)}
+                    testId={`reorder-toggle-${item.id}`}
+                  >
+                    {item.visible ? <HideIcon /> : <ShowIcon />}
+                  </IconButton>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <LiveRegion visuallyHidden>{announcement ? <p>{announcement}</p> : null}</LiveRegion>
+    </>
   );
 }
