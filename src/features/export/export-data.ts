@@ -1,31 +1,42 @@
 /**
- * Pure builders for the Granular Export Wizard (spec §3 Export Wizard, §2 Versioned
- * JSON backup, §4.5 Markdown/Obsidian vault). Kept free of React, repositories and
- * the DOM so the serialisation is unit-tested in isolation; the wizard wires these
- * to repository reads and the download/zip side-effects.
+ * Pure builders for the Granular Export Wizard (spec §3 Export Wizard, §4.5
+ * Markdown/Obsidian vault). Kept free of React, repositories and the DOM so the
+ * serialisation is unit-tested in isolation; the wizard wires these to repository
+ * reads and the download/zip side-effects.
  */
 import type { Checkout, Contact, Item, ItemHistoryEntry } from '@/db/repositories';
+import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import { toCsv, type TabularCell, type TabularColumn } from './tabular-export';
 
-/** Schema version of the JSON backup payload (§2 "Versioned JSON File"). */
-export const BACKUP_FORMAT_VERSION = 1;
+/** Schema version of the JSON data-export payload (independent of the backup format's own). */
+export const JSON_EXPORT_FORMAT_VERSION = 1;
 
-export interface BackupPayload {
+export interface JsonExportPayload {
+  readonly kind: typeof JSON_EXPORT_KIND;
   readonly formatVersion: number;
   readonly exportedAt: number;
+  /** Self-describing so the file explains itself to whoever opens it years later. */
+  readonly note: string;
   readonly items: readonly Item[];
   readonly contacts: readonly Contact[];
   readonly checkouts: readonly Checkout[];
 }
 
-/** Build the agnostic versioned JSON backup string (§2). */
-export function buildJsonBackup(
-  data: Omit<BackupPayload, 'formatVersion' | 'exportedAt'>,
+/** Spelled out in the file itself — the wizard's hint is long gone by the time it is reopened. */
+const JSON_EXPORT_NOTE =
+  'A read-only extract of items, contacts and loans for use in other tools. ' +
+  'Gubbins cannot import this file back — use Backup & restore for a restorable backup.';
+
+/** Build the portable, versioned JSON data extract (§3). */
+export function buildJsonExport(
+  data: Pick<JsonExportPayload, 'items' | 'contacts' | 'checkouts'>,
   exportedAt = Date.now(),
 ): string {
-  const payload: BackupPayload = {
-    formatVersion: BACKUP_FORMAT_VERSION,
+  const payload: JsonExportPayload = {
+    kind: JSON_EXPORT_KIND,
+    formatVersion: JSON_EXPORT_FORMAT_VERSION,
     exportedAt,
+    note: JSON_EXPORT_NOTE,
     items: data.items,
     contacts: data.contacts,
     checkouts: data.checkouts,

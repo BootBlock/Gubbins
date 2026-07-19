@@ -9,6 +9,7 @@ import {
   TagRepository,
   UNASSIGNED_LOCATION_ID,
 } from '@/db/repositories';
+import { buildJsonExport } from '@/features/export/export-data';
 import { buildBackupJson, parseBackupJson, restoreFromBackupJson } from './backup';
 
 describe('backup parse/validate (§2)', () => {
@@ -25,6 +26,26 @@ describe('backup parse/validate (§2)', () => {
     const snap = parseBackupJson('{"formatVersion":1}');
     expect(snap.tables).toEqual({});
     expect(snap.tombstones).toEqual([]);
+  });
+
+  // Issue #153: the export wizard's JSON is a read-only extract. It carries a formatVersion
+  // and no `tables`, so it would otherwise parse as a valid *empty* snapshot and import
+  // nothing while reporting success.
+  it('issue #153: refuses a JSON data export by name instead of importing nothing', () => {
+    const dataExport = buildJsonExport({ items: [], contacts: [], checkouts: [] });
+    expect(() => parseBackupJson(dataExport)).toThrow(/data export, not a backup/i);
+  });
+
+  // Files exported before the marker existed carry no `kind`, so the shape must catch them.
+  it('issue #153: refuses an unmarked legacy data export by its shape', () => {
+    const legacy = '{"formatVersion":1,"exportedAt":1,"items":[],"contacts":[],"checkouts":[]}';
+    expect(() => parseBackupJson(legacy)).toThrow(/data export, not a backup/i);
+  });
+
+  // The guard must not catch a real backup of an empty database: it has a `tables` section.
+  it('issue #153: still accepts a real snapshot of an empty database', () => {
+    const snap = parseBackupJson('{"formatVersion":1,"tables":{},"items":[]}');
+    expect(snap.tables).toEqual({});
   });
 });
 

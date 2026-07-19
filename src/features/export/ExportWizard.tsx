@@ -8,11 +8,15 @@ import { useExportStore, type ExportFormat, type ExportScope, type ReportExportK
 import { useErrorMessage } from '@/features/errors';
 
 /**
- * The Granular Export Wizard (spec §3, §2 JSON backup, §4.5 Markdown vault).
+ * The Granular Export Wizard (spec §3, §4.5 Markdown vault).
+ *
+ * Every format here is an **outbound extract** for use in other tools — none of them restores
+ * back into Gubbins; that is Backup & restore's job (issue #153), which the JSON hint says
+ * plainly so the versioned JSON is not mistaken for a backup.
  *
  * Remembers the last-used format/scope via {@link useExportStore} (§3 "must remember the
  * user's last-used settings"). Phase 14 adds the §4.5 granularity — the whole inventory, a
- * single item, or a Project/BOM scope — in three formats: a versioned JSON backup (§2), an
+ * single item, or a Project/BOM scope — in three formats: a versioned JSON data export, an
  * items CSV, and an Obsidian Markdown vault (with image assets) zipped off-thread (§4.5).
  * Phase 61 adds a fourth format — a §3 aggregate **report CSV** (valuation / consumption /
  * movement / dead-stock) — routed through this same wizard so the remembered-settings and
@@ -23,7 +27,7 @@ const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof 
   {
     value: 'JSON',
     label: 'JSON data export',
-    hint: 'Items, contacts & loans only — not a full backup. For everything, use Sync → Backup & restore.',
+    hint: 'Items, contacts & loans for use in other tools — Gubbins cannot import this file back. For a restorable backup, use Sync → Backup & restore.',
     icon: ExportIcon,
   },
   { value: 'CSV', label: 'Items CSV', hint: 'Spreadsheet of the selected items.', icon: PackageIcon },

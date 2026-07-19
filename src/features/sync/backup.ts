@@ -11,6 +11,7 @@
  */
 import { isTombstoneTable } from '@/db/repositories';
 import type { IDatabaseDriver, SqlRow } from '@/db/rpc/driver';
+import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import { buildLocalSnapshot, restoreSnapshot } from './snapshot';
 import type { SyncSnapshot, Tombstone } from './types';
 import { SYNC_FORMAT_VERSION } from './types';
@@ -96,7 +97,27 @@ export function parseBackupJson(text: string): SyncSnapshot {
   if (typeof parsed !== 'object' || parsed === null) {
     throw new Error('This backup file is not in the expected format.');
   }
-  const obj = parsed as Partial<SyncSnapshot>;
+  const obj = parsed as Partial<SyncSnapshot> & {
+    readonly kind?: unknown;
+    readonly items?: unknown;
+  };
+  // A JSON *data export* from the export wizard is a read-only extract, not a snapshot, but it
+  // would otherwise satisfy every check below: it carries a `formatVersion` and simply has no
+  // `tables`, so it parses as a valid *empty* snapshot and imports nothing while reporting
+  // success. Name the file for what it is instead.
+  //
+  // Files exported before the `kind` marker existed (issue #153) carry no marker at all, so the
+  // shape is checked too: a top-level `items` array with no `tables` section is the data
+  // export's signature. A genuinely empty database still backs up with a `tables` object
+  // present, so this does not reject a real snapshot.
+  const looksLikeDataExport =
+    obj.kind === JSON_EXPORT_KIND || (obj.tables === undefined && Array.isArray(obj.items));
+  if (looksLikeDataExport) {
+    throw new Error(
+      'This is a JSON data export, not a backup, so it cannot be restored. ' +
+        'Restore from a backup .zip made by Backup & restore.',
+    );
+  }
   if (typeof obj.formatVersion !== 'number') {
     throw new Error('This backup file is missing its format version.');
   }
