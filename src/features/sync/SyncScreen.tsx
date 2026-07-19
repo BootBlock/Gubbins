@@ -53,6 +53,7 @@ import { GoogleApiError } from './providers/google-drive-api';
 import { consumeGoogleAuthError } from './providers/google-oauth';
 import { getActiveProvider, getSyncDriver, setActiveProvider } from './runtime';
 import { runSync, type SyncResult } from './sync-engine';
+import { SyncRemoteMissingError } from './sync-errors';
 import { describeSyncOutcome } from './sync-status-format';
 import { httpTimeSource } from './time-source';
 import { useSyncConflictsStore } from './conflict-store';
@@ -98,6 +99,9 @@ export function SyncScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [reconnectable, setReconnectable] = useState(false);
   const [googleReconnectable, setGoogleReconnectable] = useState(false);
+  // Issue #196: the shared snapshot has gone missing on a device that has synced before, so
+  // the sync stopped short of overwriting it. Offers an explicit republish.
+  const [remoteMissing, setRemoteMissing] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [conflictsOpen, setConflictsOpen] = useState(false);
   // Issue #72: device-local record of edits a sync overwrote — surfaced for review below.
@@ -199,6 +203,8 @@ export function SyncScreen() {
     auth.setProvider(provider.id, provider.label);
     setConnected(true);
     setError(null);
+    // A different remote is now in play, so a missing-copy warning about the old one is stale.
+    setRemoteMissing(false);
     setNotice(`Connected to ${provider.label}.`);
   }
 
@@ -229,13 +235,19 @@ export function SyncScreen() {
     setConnected(false);
     setReconnectable(false);
     setGoogleReconnectable(false);
+    setRemoteMissing(false);
     setResult(null);
     void forgetFileSystemProvider(); // drop the persisted folder handle (Phase 14)
     forgetGoogleDrive(); // drop the stored Google token
     setNotice('Disconnected.');
   }
 
-  async function syncNow() {
+  /**
+   * Issue #196: `allowRemoteReset` republishes this device's data as a *new* shared copy
+   * after the shared one has gone missing. Only ever passed from the confirm button below —
+   * never on the ordinary "Sync now" path, where a missing remote must stop the sync.
+   */
+  async function syncNow(allowRemoteReset = false) {
     const provider = getActiveProvider();
     if (!provider) {
       setError('Connect a sync provider first.');
@@ -244,8 +256,18 @@ export function SyncScreen() {
     setBusy(true);
     setError(null);
     setNotice(null);
+    setRemoteMissing(false);
     try {
-      const outcome = await runSync(getSyncDriver(), provider, { serverTime: httpTimeSource });
+      // The engine's missing-remote guard keys off `sync_meta`, which is device-global: it still
+      // reads "has synced" after the user connects a brand-new folder or account, so a genuinely
+      // fresh remote would be reported as one that had gone missing. `lastSyncedAt` is the
+      // per-connection answer (cleared when a different remote is connected), and a connection
+      // that has never synced has no shared state to lose by publishing.
+      const remoteNeverSynced = auth.lastSyncedAt === null;
+      const outcome = await runSync(getSyncDriver(), provider, {
+        serverTime: httpTimeSource,
+        allowRemoteReset: allowRemoteReset || remoteNeverSynced,
+      });
       setResult(outcome);
       if (outcome.status === 'HARD_STOP') {
         setError(outcome.message ?? 'Sync was halted by the storage Hard Stop.');
@@ -265,6 +287,12 @@ export function SyncScreen() {
         setConnected(false);
         setGoogleReconnectable(true);
         setError('Your Google Drive sign-in expired. Reconnect to resume syncing.');
+      } else if (err instanceof SyncRemoteMissingError) {
+        // The shared copy has vanished. Explain it, and offer the deliberate republish rather
+        // than leaving the user with a sync that can never succeed again. The catalog copy is
+        // used in preference to the error's own sentence so the whole banner is translated.
+        setError(t('sync.remoteMissing.error'));
+        setRemoteMissing(true);
       } else {
         setError(describeError(err, 'Sync failed.'));
       }
@@ -318,6 +346,27 @@ export function SyncScreen() {
         {error ? (
           <Banner tone="danger" role="alert" data-testid="sync-error">
             {error}
+          </Banner>
+        ) : null}
+        {/* Issue #196: the shared copy has gone missing, so the sync stopped rather than
+          replace it. Recovering is the user's call — reconnecting the right folder/account
+          is usually what they want, so publishing this device's data is the second option
+          and takes an explicit click. */}
+        {remoteMissing ? (
+          <Banner tone="warning" data-testid="sync-remote-missing">
+            <div className="space-y-2">
+              <p>{t('sync.remoteMissing.body')}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void syncNow(true)}
+                disabled={busy}
+                data-testid="republish-snapshot"
+              >
+                <CloudUploadIcon />
+                {t('sync.remoteMissing.republish')}
+              </Button>
+            </div>
           </Banner>
         ) : null}
         {notice ? (
@@ -444,7 +493,9 @@ export function SyncScreen() {
               triggerTabIndex={-1}
             >
               <span>
-                <Button onClick={syncNow} disabled={!connected || busy} data-testid="sync-now">
+                {/* Wrapped, not passed directly: `onClick` would hand the click event to
+                    `allowRemoteReset`, which is truthy — the exact overwrite this guards. */}
+                <Button onClick={() => void syncNow()} disabled={!connected || busy} data-testid="sync-now">
                   <SyncIcon />
                   Sync now
                 </Button>
