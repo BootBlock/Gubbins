@@ -57,14 +57,17 @@ const PAGE = 100;
  * seeded deterministically with the *same* constant ids on every device and are
  * protected by `trg_locations_protect_system_*`; they must never be synced (a remote
  * UPSERT would trip that guard), so they are excluded from the snapshot here.
+ *
+ * A bare condition, without the `WHERE` — as in {@link WIPE_FILTER} — because the paged read
+ * has to AND it with its keyset cursor.
  */
 const TABLE_FILTER: Partial<Record<SyncTable, string>> = {
-  locations: 'WHERE is_system = 0',
+  locations: 'is_system = 0',
   // The built-in System and Admin users are seeded by the baseline with the *same* constant
   // ids on every device and protected by `trg_users_protect_builtin_*`, exactly like the
   // system-locked locations above — a remote UPSERT would trip that guard and abort the whole
   // merge transaction. They need no syncing precisely because every device already has them.
-  users: "WHERE kind = 'normal'",
+  users: "kind = 'normal'",
 };
 
 /**
@@ -84,9 +87,9 @@ const TABLE_FILTER: Partial<Record<SyncTable, string>> = {
  *   subsequent `INSERT OR REPLACE` restores the remote's version in place.
  */
 const WIPE_FILTER: Partial<Record<SyncTable, string>> = {
-  locations: 'WHERE is_system = 0',
-  users: "WHERE kind = 'normal'",
-  roles: 'WHERE is_builtin = 0',
+  locations: 'is_system = 0',
+  users: "kind = 'normal'",
+  roles: 'is_builtin = 0',
 };
 
 /**
@@ -104,18 +107,67 @@ const PROTECTED_ROW_IDS: Partial<Record<SyncTable, readonly string[]>> = {
   users: [SYSTEM_USER_ID, ADMIN_USER_ID],
 };
 
-/** Page every row of a table through the worker bridge (§2.1) under an optional filter. */
-async function pageRows(driver: IDatabaseDriver, table: SyncTable, where: string): Promise<SqlRow[]> {
+/**
+ * Read every row of `table` in `key` order, a page at a time, under an optional filter.
+ *
+ * Paged by **keyset**, not `OFFSET` (issue #204). The driver has no row-returning transaction,
+ * so the dozens of reads a snapshot makes cannot share one isolated view of the database, and a
+ * write that lands between two pages is unavoidable — the bridge is a peer writing to the same
+ * dataset, and in-app background work is not excluded either. With `OFFSET` that was silently
+ * lossy in both directions: a delete shifts every later row one position earlier, so the row on
+ * the page boundary is stepped straight over, and an insert behind the cursor shifts them later,
+ * so a row is read twice. Neither was reported anywhere — the backup simply held the wrong set.
+ * Resuming from the last key seen makes the boundary self-correcting: a concurrent write can
+ * change whether *its own* row is included, but it can no longer displace anyone else's.
+ *
+ * `key` must be unique (it is the primary key, or a tuple ending in one), or paging could stall
+ * on a run of ties longer than a page.
+ */
+async function keysetPage(
+  driver: IDatabaseDriver,
+  table: string,
+  key: readonly string[],
+  filter = '',
+): Promise<SqlRow[]> {
+  const cursor = key.length === 1 ? key[0]! : `(${key.join(', ')})`;
+  const placeholder = key.length === 1 ? '?' : `(${key.map(() => '?').join(', ')})`;
+  const where = (extra?: string) => {
+    const conditions = [filter, extra].filter(Boolean);
+    return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')} ` : '';
+  };
+  const order = `ORDER BY ${key.join(', ')} LIMIT ?;`;
+  // Two statements rather than one with a sentinel starting value: SQLite orders values by
+  // storage class before content, so no single literal reliably sorts before every key
+  // regardless of whether a table's ids are text or integers.
+  const firstSql = `SELECT * FROM ${table} ${where()}${order}`;
+  const nextSql = `SELECT * FROM ${table} ${where(`${cursor} > ${placeholder}`)}${order}`;
+
   const all: SqlRow[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const rows = await driver.query<SqlRow>(`SELECT * FROM ${table} ${where} ORDER BY id LIMIT ? OFFSET ?;`, [
-      PAGE,
-      offset,
-    ]);
+  let after: SqlValue[] | undefined;
+  for (;;) {
+    const rows =
+      after === undefined
+        ? await driver.query<SqlRow>(firstSql, [PAGE])
+        : await driver.query<SqlRow>(nextSql, [...after, PAGE]);
     all.push(...rows);
     if (rows.length < PAGE) break;
+
+    const last = rows[rows.length - 1]!;
+    after = key.map((column) => last[column] as SqlValue);
+    // A NULL or absent key value cannot be compared against, so `key > ?` would match nothing
+    // and the read would stop here holding only part of the table. Stopping short is precisely
+    // the silent data loss this function exists to prevent, so fail loudly instead: the caller
+    // fails the whole snapshot, or records the table as skipped under `skipUnreadable`.
+    if (after.some((value) => value === null || value === undefined)) {
+      throw new Error(`Cannot page ${table}: row has no usable ${key.join('/')} to resume from.`);
+    }
   }
   return all;
+}
+
+/** Page every row of a syncable table through the worker bridge (§2.1) under an optional filter. */
+function pageRows(driver: IDatabaseDriver, table: SyncTable, filter: string): Promise<SqlRow[]> {
+  return keysetPage(driver, table, ['id'], filter);
 }
 
 /** Read every row of a table, paging the worker bridge (§2.1). */
@@ -124,16 +176,16 @@ async function readAllRows(
   table: SyncTable,
   options: BuildSnapshotOptions,
 ): Promise<SqlRow[]> {
-  const where = TABLE_FILTER[table] ?? '';
+  const filter = TABLE_FILTER[table] ?? '';
   try {
-    return await pageRows(driver, table, where);
+    return await pageRows(driver, table, filter);
   } catch (error) {
     // A filtered read can fail for two very different reasons, and only one of them is fatal.
     // In `skipUnreadable` mode the table may exist while the *column the filter names* does
     // not, so retry unfiltered and drop the protected rows by id instead — losing every
     // location because an older schema spelled `is_system` differently would be a far worse
     // outcome than the filter costs. A missing table throws again here and is skipped upstream.
-    if (!options.skipUnreadable || where === '') throw error;
+    if (!options.skipUnreadable || filter === '') throw error;
     const excluded = new Set(PROTECTED_ROW_IDS[table] ?? []);
     return (await pageRows(driver, table, '')).filter((row) => !excluded.has(String(row.id)));
   }
@@ -296,18 +348,15 @@ async function readItemRegions(driver: IDatabaseDriver): Promise<ItemRegionEdge[
   return rows.map((r) => ({ itemId: r.item_id, regionId: r.region_id }));
 }
 
-/** Read the full append-only `item_history` ledger (Phase 11; union-by-id). */
-async function readItemHistory(driver: IDatabaseDriver): Promise<SqlRow[]> {
-  const all: SqlRow[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const rows = await driver.query<SqlRow>(
-      `SELECT * FROM ${ITEM_HISTORY_TABLE} ORDER BY created_at, id LIMIT ? OFFSET ?;`,
-      [PAGE, offset],
-    );
-    all.push(...rows);
-    if (rows.length < PAGE) break;
-  }
-  return all;
+/**
+ * Read the full append-only `item_history` ledger (Phase 11; union-by-id).
+ *
+ * Keyset-paged on the same `(created_at, id)` key it orders by, for the reason given on
+ * {@link pageRows} — the ledger is append-only, but a §7.6.3-A prune can still retire an era
+ * mid-read, and under `OFFSET` that would silently drop an unrelated entry per pruned row.
+ */
+function readItemHistory(driver: IDatabaseDriver): Promise<SqlRow[]> {
+  return keysetPage(driver, ITEM_HISTORY_TABLE, ['created_at', 'id']);
 }
 
 /** The net-value deltas from the Activity Ledger that the Delta-CRDT replays (§7.3). */
@@ -673,7 +722,8 @@ export function buildCloneStatements(
   statements.push({ sql: `DELETE FROM ${LOCATION_TAGS_TABLE};` });
   statements.push({ sql: `DELETE FROM ${ITEM_REGIONS_TABLE};` });
   for (const table of [...SYNC_TABLES].reverse()) {
-    statements.push({ sql: `DELETE FROM ${table} ${WIPE_FILTER[table] ?? ''};`.replace(/\s+;$/, ';') });
+    const filter = WIPE_FILTER[table];
+    statements.push({ sql: `DELETE FROM ${table}${filter ? ` WHERE ${filter}` : ''};` });
   }
   statements.push({ sql: 'DELETE FROM tombstones;' });
 

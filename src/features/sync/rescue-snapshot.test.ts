@@ -9,6 +9,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { buildLocalSnapshot } from './snapshot';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { IDatabaseDriver, SqlParams, SqlRow } from '@/db/rpc/driver';
+import { pageOf } from '@/test/drivers/keyset-page';
 
 /** The table a `SELECT … FROM <table>` reads, for the fake driver's routing. */
 function tableOf(sql: string): string {
@@ -24,10 +25,7 @@ function fakeDriver(readable: Record<string, SqlRow[]>): IDatabaseDriver {
     const table = tableOf(sql);
     const rows = readable[table];
     if (!rows) throw new Error(`no such table: ${table}`);
-    // Honour the paging window so `buildLocalSnapshot`'s loop terminates.
-    const [limit, offset] = (params as number[] | undefined) ?? [];
-    if (typeof limit === 'number' && typeof offset === 'number') return rows.slice(offset, offset + limit);
-    return rows;
+    return pageOf(rows, params);
   };
   return {
     query: query as IDatabaseDriver['query'],
