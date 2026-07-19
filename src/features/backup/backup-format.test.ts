@@ -35,12 +35,23 @@ function makeSnapshot(): SyncSnapshot {
         item('B', 0), // removed
         item('C', 1, 'B'), // active variant of a removed parent → must drop (FK-safe)
         item('D', 1, 'A'), // active variant of a kept parent → keep
+        item('E', 1, 'C'), // grandchild of removed B → must drop too (issue #152)
       ],
       item_images: [
         { id: 'img1', item_id: 'A' } as unknown as SqlRow,
         { id: 'img2', item_id: 'B' } as unknown as SqlRow,
       ],
       capabilities: [{ id: 'cap1', item_id: 'C' } as unknown as SqlRow],
+      // Both endpoints are NOT NULL references to items under names other than `item_id`
+      // (issue #152) — a relation touching a removed item must not survive.
+      item_relations: [
+        { id: 'A|D|works_with', from_item_id: 'A', to_item_id: 'D' } as unknown as SqlRow,
+        { id: 'A|B|works_with', from_item_id: 'A', to_item_id: 'B' } as unknown as SqlRow,
+        { id: 'E|A|works_with', from_item_id: 'E', to_item_id: 'A' } as unknown as SqlRow,
+      ],
+      // A nullable reference (ON DELETE SET NULL): the line is a record of money spent, so it
+      // keeps its row and merely loses the link.
+      purchase_order_lines: [{ id: 'pol1', po_id: 'po1', item_id: 'B', qty: 2 } as unknown as SqlRow],
       locations: [{ id: 'loc1', name: 'Bin' } as unknown as SqlRow], // no item_id → always kept
     },
     tombstones: [{ tableName: 'items', id: 'Z', deletedAt: 5 }],
@@ -53,6 +64,10 @@ function makeSnapshot(): SyncSnapshot {
       { itemId: 'B', tagId: 't1' },
     ],
     locationTags: [],
+    itemRegions: [
+      { itemId: 'A', regionId: 'r1' },
+      { itemId: 'B', regionId: 'r1' },
+    ],
     itemHistory: [
       { id: 'h1', item_id: 'A' } as unknown as SqlRow,
       { id: 'h2', item_id: 'B' } as unknown as SqlRow,
@@ -65,7 +80,7 @@ describe('filterSnapshot', () => {
     const out = filterSnapshot(makeSnapshot(), { includeHistory: false, includeRemovedItems: true });
     expect(out.itemHistory).toEqual([]);
     expect(out.gaugeHistory).toEqual([]);
-    expect(out.tables.items).toHaveLength(4);
+    expect(out.tables.items).toHaveLength(5);
     expect(out.itemTags).toHaveLength(2);
   });
 
@@ -73,31 +88,61 @@ describe('filterSnapshot', () => {
     const out = filterSnapshot(makeSnapshot(), { includeHistory: true, includeRemovedItems: false });
 
     const itemIds = (out.tables.items ?? []).map((r) => r.id);
-    expect(itemIds).toEqual(['A', 'D']); // B removed; C dropped as a child of removed B
+    // B removed; C dropped as its variant; E dropped as C's variant (transitive, issue #152).
+    expect(itemIds).toEqual(['A', 'D']);
 
     expect((out.tables.item_images ?? []).map((r) => r.id)).toEqual(['img1']); // img2 (B) gone
     expect(out.tables.capabilities).toEqual([]); // cap1 (C) gone
     expect(out.tables.locations).toHaveLength(1); // unrelated table untouched
 
+    // Only the relation between two surviving items is left: the NOT-NULL `from_item_id` /
+    // `to_item_id` references would otherwise abort the whole restore (issue #152).
+    expect((out.tables.item_relations ?? []).map((r) => r.id)).toEqual(['A|D|works_with']);
+
     expect((out.itemHistory ?? []).map((r) => r.id)).toEqual(['h1']);
     expect(out.itemTags).toEqual([{ itemId: 'A', tagId: 't1' }]);
+    expect(out.itemRegions).toEqual([{ itemId: 'A', regionId: 'r1' }]);
     expect(out.gaugeHistory.map((d) => d.id)).toEqual(['g1']);
 
     // No surviving row references a dropped item — the result is import-safe.
     const surviving = new Set(itemIds.map(String));
+    const itemRefColumns = ['item_id', 'parent_id', 'from_item_id', 'to_item_id'] as const;
     for (const rows of Object.values(out.tables)) {
       for (const row of rows) {
-        if (row.item_id != null) expect(surviving.has(String(row.item_id))).toBe(true);
-        if (row.parent_id != null) expect(surviving.has(String(row.parent_id))).toBe(true);
+        for (const col of itemRefColumns) {
+          if (row[col] != null) expect(surviving.has(String(row[col]))).toBe(true);
+        }
       }
     }
+  });
+
+  it('keeps a row whose item reference is nullable, clearing the link instead', () => {
+    const out = filterSnapshot(makeSnapshot(), { includeHistory: true, includeRemovedItems: false });
+
+    // A purchase-order line records money actually spent, so it survives its item's removal
+    // with `item_id` cleared (the column is ON DELETE SET NULL) rather than being dropped.
+    expect(out.tables.purchase_order_lines).toEqual([{ id: 'pol1', po_id: 'po1', item_id: null, qty: 2 }]);
+  });
+
+  it('terminates on a parent_id cycle rather than looping forever', () => {
+    // Nothing in the schema prevents a `parent_id` cycle, and a snapshot can be hand-edited.
+    // The walk must still finish; neither item is removed, so both survive.
+    const base = makeSnapshot();
+    const snapshot: SyncSnapshot = {
+      ...base,
+      tables: { ...base.tables, items: [item('X', 1, 'Y'), item('Y', 1, 'X')] },
+    };
+
+    const out = filterSnapshot(snapshot, { includeHistory: true, includeRemovedItems: false });
+    expect((out.tables.items ?? []).map((r) => r.id)).toEqual(['X', 'Y']);
   });
 
   it('does not mutate the input snapshot', () => {
     const input = makeSnapshot();
     filterSnapshot(input, { includeHistory: false, includeRemovedItems: false });
-    expect(input.tables.items).toHaveLength(4);
+    expect(input.tables.items).toHaveLength(5);
     expect(input.itemHistory).toHaveLength(2);
+    expect(input.tables.purchase_order_lines?.[0]?.item_id).toBe('B');
   });
 });
 
@@ -121,7 +166,7 @@ describe('buildManifest', () => {
       settings: false,
       history: false,
     });
-    expect(manifest.counts).toEqual({ items: 4, images: 3 });
+    expect(manifest.counts).toEqual({ items: 5, images: 3 });
   });
 
   it('records the schema baseline when given one, and omits it otherwise (issue #84)', () => {
@@ -192,7 +237,7 @@ describe('parseBackupEntries', () => {
     });
     const parsed = parseBackupEntries(toEntries(built.files, built.assets));
     expect(parsed.manifest?.kind).toBe('gubbins-backup');
-    expect(parsed.snapshot.tables.items).toHaveLength(4);
+    expect(parsed.snapshot.tables.items).toHaveLength(5);
     expect(parsed.sqlite).not.toBeNull();
     expect(parsed.images).toEqual([{ name: 'a.webp', bytes: new Uint8Array([9]) }]);
     expect(parsed.settings).toEqual({ 'gubbins:layout': '{"state":{}}' });
@@ -244,7 +289,7 @@ describe('readBackupFile', () => {
     });
     const zip = zipSync(toEntries(built.files, built.assets));
     const parsed = readBackupFile(zip);
-    expect(parsed.snapshot.tables.items).toHaveLength(4);
+    expect(parsed.snapshot.tables.items).toHaveLength(5);
     expect(parsed.sqlite).not.toBeNull();
   });
 
