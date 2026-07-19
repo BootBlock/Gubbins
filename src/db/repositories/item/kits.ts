@@ -58,7 +58,7 @@ import {
   readItemBatches,
   stockBatchRowId,
 } from '../stock-batches';
-import { historyStatement } from './history';
+import { gaugeAfterDelta, gaugeDeltaHistoryStatement, gaugeValueUpdate, historyStatement } from './history';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 
@@ -343,18 +343,21 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
         const give = c.quantity * n;
         const m = meta.get(c.componentItemId)!;
         if (m.trackingMode === 'CONSUMABLE_GAUGE') {
-          const nextNet = clampNetValue(m.stock + give, m.grossCapacity ?? 0);
-          const applied = nextNet - m.stock;
+          // Relative in SQL, exactly as `adjustGauge` recovers material (issue #297): an
+          // absolute write computed from `m.stock` — read before the transaction — would
+          // discard any adjust that landed in between while still logging its own delta.
+          // The note's figure is composed from that same pre-read, so like every ledger
+          // note it narrates the event as it was requested; the stored delta is the exact one.
+          // Non-null by the table CHECK: a CONSUMABLE_GAUGE row must carry a capacity > 0.
+          // (A `?? 0` fallback here would silently drop the upper clamp the SQL always applies.)
+          const applied = clampNetValue(m.stock + give, m.grossCapacity!) - m.stock;
+          const nextValue = gaugeAfterDelta(give);
           statements.push(
-            {
-              sql: 'UPDATE items SET current_net_value = ? WHERE id = ?;',
-              params: [nextNet, c.componentItemId],
-            },
-            historyStatement(c.componentItemId, 'GAUGE_UPDATE', this.actorId(), {
-              netValueDelta: applied,
+            gaugeDeltaHistoryStatement(c.componentItemId, this.actorId(), nextValue, {
               note: `Recovered ${applied} from disassembling ${n} × "${kit.name}".`,
               metadata: { kitId, count: n },
             }),
+            gaugeValueUpdate(c.componentItemId, nextValue),
           );
         } else {
           statements.push(
