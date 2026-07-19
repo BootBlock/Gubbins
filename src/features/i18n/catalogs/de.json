@@ -1119,5 +1119,9 @@
   "webhooks.headers.remove": "Header entfernen",
   "webhooks.headers.issue.empty": "Geben Sie einen Header-Namen ein.",
   "webhooks.headers.issue.reserved": "Namen, die mit „X-Gubbins-“ beginnen, setzt Gubbins selbst — einschließlich der Signatur — und lassen sich daher nicht überschreiben.",
-  "webhooks.headers.issue.forbidden": "Dieser Header kann hier nicht gesetzt werden — er enthält entweder Zugangsdaten oder wird pro Anfrage berechnet."
+  "webhooks.headers.issue.forbidden": "Dieser Header kann hier nicht gesetzt werden — er enthält entweder Zugangsdaten oder wird pro Anfrage berechnet.",
+  "reports.foreignCurrency.heading.one": "{count} Artikel ist in diesen Summen nicht enthalten",
+  "reports.foreignCurrency.heading.other": "{count} Artikel sind in diesen Summen nicht enthalten",
+  "reports.foreignCurrency.body.one": "Sein Preis wird von einem Lieferanten in einer anderen Währung als {currency} angegeben, und Gubbins rechnet Währungen niemals um. Geben Sie dem Artikel einen eigenen Stückpreis oder erfassen Sie den Lieferantenpreis in {currency}, damit er mitgezählt wird.",
+  "reports.foreignCurrency.body.other": "Ihre Preise werden von Lieferanten in einer anderen Währung als {currency} angegeben, und Gubbins rechnet Währungen niemals um. Geben Sie diesen Artikeln eigene Stückpreise oder erfassen Sie die Lieferantenpreise in {currency}, damit sie mitgezählt werden."
 }

@@ -44,6 +44,7 @@ import {
   useConsumptionRate,
   useDataHygiene,
   useDeadStock,
+  useForeignCurrencyCostCount,
   useInventoryValue,
   useLowStockCount,
   useMovement,
@@ -53,6 +54,7 @@ import {
   useTurnover,
   useValuationTrend,
 } from './queries';
+import { ForeignCurrencyNotice } from './components/ForeignCurrencyNotice';
 
 /**
  * The §3 Reports & valuation screen (inventory-depth Phase 61): headline value cards, a
@@ -71,6 +73,10 @@ export function ReportsScreen() {
   const setAnalyticsWindow = usePreferencesStore((s) => s.setReportsAnalyticsWindow);
 
   const value = useInventoryValue();
+  // Stock the valuation queries had to leave out because its price is quoted in another
+  // currency — surfaced beneath the headline cards so the totals are never quietly short (#284).
+  const excludedByCurrency = useForeignCurrencyCostCount();
+  const baseCurrency = usePreferencesStore((s) => s.baseCurrency);
   const consumption = useConsumptionRate();
   // Stock movement has its own selectable window (issue #86), matching the Spend and Sales
   // sections rather than the fixed 30-day span it used to be pinned to.
@@ -303,6 +309,8 @@ export function ReportsScreen() {
             />
           </Reveal>
         </section>
+
+        <ForeignCurrencyNotice count={excludedByCurrency.data} baseCurrency={baseCurrency} />
 
         {/* Valuation breakdown */}
         <Reveal as="section" className="grid gap-6 lg:grid-cols-2">

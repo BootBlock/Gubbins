@@ -110,7 +110,8 @@ const queryState: Record<
   | 'aging'
   | 'trend'
   | 'hygiene'
-  | 'spend',
+  | 'spend'
+  | 'foreignCurrency',
   FakeQueryState
 > = {
   value: { isLoading: true, isError: false },
@@ -125,6 +126,8 @@ const queryState: Record<
   hygiene: { isLoading: true, isError: false },
   spend: { isLoading: true, isError: false },
   sales: { isLoading: true, isError: false },
+  // Nothing excluded by default, so the currency notice stays out of every existing test.
+  foreignCurrency: { isLoading: false, isError: false, data: 0 },
 };
 
 function makeAllLoaded() {
@@ -250,6 +253,7 @@ vi.mock('./queries', () => ({
     return { ...queryState.spend };
   },
   useSalesAnalytics: (_windowDays?: number, _options?: { enabled?: boolean }) => ({ ...queryState.sales }),
+  useForeignCurrencyCostCount: () => ({ ...queryState.foreignCurrency }),
 }));
 
 // --------------------------------------------------------------------------
@@ -323,6 +327,26 @@ describe('ReportsScreen — aggregate-completion aria-live announcement (Phase 6
     const errorRegion = alertRegions.find((el) => el.textContent?.includes('failed'));
     expect(errorRegion).toBeTruthy();
     expect(errorRegion!.textContent).toContain('Reports failed to load.');
+  });
+
+  it('warns when stock is left out of the totals for being priced in another currency (#284)', () => {
+    cleanup();
+    makeAllLoaded();
+    queryState.foreignCurrency = { isLoading: false, isError: false, data: 2 };
+    render(<ReportsScreen />);
+
+    const notice = screen.getByTestId('foreign-currency-notice');
+    expect(notice.textContent).toContain('2 items are not included in these totals');
+    // It must name the currency the totals *are* in, or the reader can't act on it.
+    expect(notice.textContent).toContain(usePreferencesStore.getState().baseCurrency);
+  });
+
+  it('stays silent when every price is in the base currency', () => {
+    cleanup();
+    makeAllLoaded();
+    queryState.foreignCurrency = { isLoading: false, isError: false, data: 0 };
+    render(<ReportsScreen />);
+    expect(screen.queryByTestId('foreign-currency-notice')).toBeNull();
   });
 
   it('the polite region stays mounted (empty) while loading — always-mounted contract', () => {

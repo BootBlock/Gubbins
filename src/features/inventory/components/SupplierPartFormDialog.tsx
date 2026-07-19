@@ -22,8 +22,10 @@ const URL_HINT = [
 const CURRENCY_HINT =
   'Pick from the list (open it with the ▾ arrow) or type any ISO-4217 code (e.g. **EUR**, ' +
   "**JPY**). This supplier's costs are then shown with that currency's own symbol — e.g. " +
-  '`€1.23` — exactly as entered and **never converted**. Leave blank to use your base ' +
-  'currency (set in Settings).';
+  '`€1.23` — exactly as entered and **never converted**. Because of that, a cost in anything ' +
+  'other than your base currency is **left out of valuation and report totals** rather than ' +
+  'added to them as if it were base currency; give the item its own unit cost if you need it ' +
+  'counted. Leave blank to use your base currency (set in Settings).';
 
 /**
  * Currency picker options as `"CODE — Name"` strings (e.g. `"GBP — British Pound"`), so the
@@ -218,8 +220,9 @@ export function SupplierPartFormDialog({
             label="Unit cost"
             hint={
               'Price for a **single unit** at this supplier, in the currency beside it. Feeds ' +
-              'valuation and cost roll-ups. Enter the base per-unit price here; tiered quantity ' +
-              'pricing goes in **Price breaks** below. Optional — leave blank if unknown.'
+              'valuation and cost roll-ups **when it is in your base currency** — see the ' +
+              'Currency hint. Enter the base per-unit price here; tiered quantity pricing goes ' +
+              'in **Price breaks** below. Optional — leave blank if unknown.'
             }
           >
             <Input

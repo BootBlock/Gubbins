@@ -93,6 +93,133 @@ describe('ReportRepository', () => {
       expect(shelfGroup).toMatchObject({ value: 70 });
     });
 
+    it('refuses a preferred supplier cost quoted in another currency (issue #284)', async () => {
+      // Gubbins holds no exchange rates, so ¥9,800 cannot become a £ figure. Adding it as
+      // "9800" would overstate this line by ~£9,750 — the report must leave it out instead.
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const item = await items.create({
+        name: 'Oscilloscope',
+        locationId: shelf.id,
+        quantity: 1,
+        unitCost: null,
+      });
+      await supplierParts.create(item.id, {
+        supplier: { supplierName: 'Akihabara Denshi' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+
+      const report = await gbp.inventoryValue();
+      expect(report.totalValue).toBe(0);
+      expect(report.unpricedItemCount).toBe(1);
+      expect(report.byLocation.find((g) => g.id === shelf.id)).toMatchObject({ value: 0 });
+      // …and the exclusion is reported rather than left as a silent hole in the total.
+      expect(await gbp.foreignCurrencyCostCount()).toBe(1);
+    });
+
+    it('still uses a preferred supplier cost in — or implicitly in — the base currency', async () => {
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      // An explicit match, a blank currency and a lower-case/padded code all mean "base".
+      const explicit = await items.create({ name: 'Explicit', quantity: 1, unitCost: null });
+      await supplierParts.create(explicit.id, {
+        supplier: { supplierName: 'Home Co' },
+        unitCost: 10,
+        currency: 'GBP',
+        isPreferred: true,
+      });
+      const implicit = await items.create({ name: 'Implicit', quantity: 1, unitCost: null });
+      await supplierParts.create(implicit.id, {
+        supplier: { supplierName: 'Blank Co' },
+        unitCost: 20,
+        isPreferred: true,
+      });
+      const scruffy = await items.create({ name: 'Scruffy', quantity: 1, unitCost: null });
+      await supplierParts.create(scruffy.id, {
+        supplier: { supplierName: 'Lowercase Co' },
+        unitCost: 30,
+        currency: ' gbp ',
+        isPreferred: true,
+      });
+
+      const report = await gbp.inventoryValue();
+      expect(report.totalValue).toBe(60);
+      expect(report.unpricedItemCount).toBe(0);
+      expect(await gbp.foreignCurrencyCostCount()).toBe(0);
+    });
+
+    it('keeps valuing a foreign-priced item that carries its own manual cost', async () => {
+      // A manual cost is the user stating the item's worth in *their* currency, so it wins
+      // outright and the supplier's foreign quote is irrelevant — nothing to report.
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      const item = await items.create({ name: 'Scope', quantity: 1, unitCost: 55 });
+      await supplierParts.create(item.id, {
+        supplier: { supplierName: 'Akihabara Denshi' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+
+      expect((await gbp.inventoryValue()).totalValue).toBe(55);
+      expect(await gbp.foreignCurrencyCostCount()).toBe(0);
+    });
+
+    it('does not report an item whose manual current value already covers it', async () => {
+      // A manual current value wins over cost entirely, so this item IS in the totals — counting
+      // it would warn about a total that is actually complete.
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      const item = await items.create({ name: 'Scope', quantity: 1, unitCost: null, currentValue: 500 });
+      await supplierParts.create(item.id, {
+        supplier: { supplierName: 'Akihabara Denshi' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+
+      expect((await gbp.inventoryValue()).totalValue).toBe(500);
+      expect((await gbp.insuranceSchedule()).grandTotal).toBe(500);
+      expect(await gbp.foreignCurrencyCostCount()).toBe(0);
+    });
+
+    it('values as before when the base currency is unknown, and reports no exclusions', async () => {
+      // `resolveBaseCurrency` is omitted here (as it is in every other fixture): with no base
+      // to compare against, "foreign" is undefinable, so the filter must not engage at all.
+      const item = await items.create({ name: 'Scope', quantity: 1, unitCost: null });
+      await supplierParts.create(item.id, {
+        supplier: { supplierName: 'Akihabara Denshi' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+
+      expect((await reports.inventoryValue()).totalValue).toBe(9800);
+      expect(await reports.foreignCurrencyCostCount()).toBe(0);
+    });
+
+    it('excludes a foreign-priced item from the insurance schedule total (issue #284)', async () => {
+      // The schedule is the sharpest edge of this bug: a document handed to an insurer.
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      const shelf = await locations.create({ name: 'Study' });
+      const foreign = await items.create({
+        name: 'Scope',
+        locationId: shelf.id,
+        quantity: 1,
+        unitCost: null,
+      });
+      await supplierParts.create(foreign.id, {
+        supplier: { supplierName: 'Akihabara Denshi' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+      const domestic = await items.create({ name: 'Desk', locationId: shelf.id, quantity: 1, unitCost: 150 });
+      expect(domestic.id).toBeTruthy();
+
+      const schedule = await gbp.insuranceSchedule();
+      expect(schedule.grandTotal).toBe(150);
+    });
+
     it('lets a manual unitCost win over the preferred supplier cost', async () => {
       const item = await items.create({ name: 'Switch', quantity: 4, unitCost: 2 });
       await supplierParts.create(item.id, {

@@ -25,6 +25,14 @@ others fall back to purchase price less [[depreciation|Warranty-and-Depreciation
 appreciating collectible is listed at its real replacement cost, not an out-of-date purchase
 figure.
 
+> **⚠️ Heads-up**
+> The grand total is in your **base currency**, and Gubbins never converts between currencies. If
+> an item's only price comes from a supplier who quotes in a different currency, it can't be added
+> to the total, so it is **left out** — and a notice at the top of the schedule says how many items
+> that applies to. The notice prints with the document, so an insurer or executor can see it too.
+> Give such an item its own **unit cost** to bring it back into the total. See
+> [[valuation & spend|Valuation-and-Spend]].
+
 ## Printing to PDF
 
 The schedule is **print-styled**: printing it (your browser's Print → **Save as PDF**) drops the
