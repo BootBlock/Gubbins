@@ -1,12 +1,20 @@
 import { useRef, useState } from 'react';
 import { Button } from '@/components/foundry';
-import { ArchiveRestoreIcon, DatabaseIcon, DownloadIcon, ResetIcon, RestoreIcon } from '@/components/icons';
+import {
+  ArchiveRestoreIcon,
+  DatabaseIcon,
+  DownloadIcon,
+  RefreshIcon,
+  ResetIcon,
+  RestoreIcon,
+} from '@/components/icons';
 import { restoreArchive } from '@/features/archive/restore-archive';
 import { useErrorMessage } from '@/features/errors';
 import {
   downloadJsonDump,
   downloadRawSqlite,
   hardResetLocalData,
+  resetServiceWorkerOnly,
   restoreRawSqlite,
 } from './safe-mode-actions';
 
@@ -149,6 +157,27 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
           </Button>
         </>
       )}
+      {/*
+       * The data-preserving escape hatch (issue #276), deliberately above the hard reset: when
+       * the *build* is what broke — a bad deploy the cache-first worker keeps serving — this
+       * fixes it without costing the user their inventory. Offering it first means the
+       * irreversible purge is the last resort it is meant to be, not the only worker reset
+       * on the menu.
+       *
+       * Left untranslated like every other string here, deliberately: `AppErrorBoundary` is the
+       * outermost wrapper in `App.tsx`, so this renders after the app below it has already
+       * failed. Its copy stays literal rather than depending on the i18n catalog being in a
+       * state to answer. (The same action in Settings — where the app is healthy — does go
+       * through `t()`.)
+       */}
+      <Button
+        variant="outline"
+        onClick={run('sw-reset', resetServiceWorkerOnly, 'Could not clear the cached app files.')}
+        disabled={busy !== null}
+      >
+        <RefreshIcon /> Reinstall app files (keeps your data)
+      </Button>
+
       {/*
        * Above the hard reset, deliberately: this is the failure the user must read *before*
        * the irreversible option, not after it. Rendering it below would put the explanation

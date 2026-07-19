@@ -14,6 +14,7 @@ vi.mock('./safe-mode-actions', () => ({
   downloadRawSqlite: vi.fn(),
   downloadJsonDump: vi.fn(),
   hardResetLocalData: vi.fn(),
+  resetServiceWorkerOnly: vi.fn(),
   restoreRawSqlite: vi.fn(),
 }));
 
@@ -88,6 +89,38 @@ describe('RescueActions', () => {
 
     // The user must read why the gentle rescue failed *before* reaching the irreversible one.
     expect(alert.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('offers the data-preserving reinstall above the hard reset (issue #276)', async () => {
+    render(<RescueActions />);
+
+    const reinstall = screen.getByRole('button', { name: /reinstall app files/i });
+    const reset = screen.getByRole('button', { name: /hard reset/i });
+
+    // A bad *build* must be fixable without paying for it with the user's inventory, and the
+    // gentle option has to come first or the purge reads as the only worker reset on offer.
+    expect(reinstall.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('reinstalls app files without confirmation — nothing is destroyed', async () => {
+    vi.mocked(actions.resetServiceWorkerOnly).mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<RescueActions />);
+
+    await user.click(screen.getByRole('button', { name: /reinstall app files/i }));
+
+    await waitFor(() => expect(actions.resetServiceWorkerOnly).toHaveBeenCalledOnce());
+    expect(actions.hardResetLocalData).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a failed reinstall rather than silently doing nothing', async () => {
+    vi.mocked(actions.resetServiceWorkerOnly).mockRejectedValue(new Error('Cache locked.'));
+    const user = userEvent.setup();
+    render(<RescueActions />);
+
+    await user.click(screen.getByRole('button', { name: /reinstall app files/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cache locked.');
   });
 
   it('leaves the button usable after a failure so the user can retry', async () => {

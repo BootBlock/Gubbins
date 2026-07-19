@@ -2,7 +2,30 @@
 
 The **danger zone** lets you selectively wipe parts of your data — a single kind of record, a
 whole section, or every trace of Gubbins on this device — without resorting to an
-all-or-nothing reset.
+all-or-nothing reset. It also holds the one action here that deletes *nothing*: **reinstall app
+files**, for when Gubbins itself is misbehaving rather than your data.
+
+**Where to find it:** **Settings → Danger zone**
+
+## Reinstall app files
+
+Gubbins keeps a copy of itself on your device so it works offline. Very occasionally that copy
+is the problem — an update that only half applied, or a version with a bug in it — and Gubbins
+keeps loading the same broken copy every time you open it.
+
+**Reinstall app files** throws that copy away and downloads Gubbins fresh, then reloads.
+**Your data is not touched**: your items, photos, settings, saved searches and sync links all
+stay exactly as they are. It only replaces the app's own program files.
+
+Reach for it when the app looks wrong, a screen won't load, or something broke right after an
+update. If it doesn't help, the problem is your data rather than the app, and the erase options
+below are the next step.
+
+> **💡 Tip**
+> This needs an internet connection — Gubbins has to download itself again. Offline, wait until
+> you're back online before using it.
+
+## Erasing data
 
 **Where to find it:** **Settings → Danger zone → Erase data…**
 
