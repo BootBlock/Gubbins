@@ -52,6 +52,38 @@ describe('repairSnapshotIntegrity (issue #405)', () => {
     expect(result.itemHistory).toHaveLength(1);
   });
 
+  // Issue #79: a Bridge token is normally minted against the built-in Admin, who is deliberately
+  // absent from the snapshot. Treating that absence as a missing parent would drop the token —
+  // and the bridge, which learns about tokens only through the snapshot, would then refuse the
+  // very credential the operator just created.
+  it('keeps an API token owned by a built-in principal the snapshot never carries', () => {
+    const result = repairSnapshotIntegrity(
+      snapshot({
+        tables: {
+          users: [],
+          api_tokens: [{ id: 'tok-1', user_id: ADMIN_USER_ID, name: 'Home Assistant' }],
+        },
+      }),
+    );
+
+    expect(result.tables.api_tokens).toHaveLength(1);
+  });
+
+  it('drops an API token whose owner did not survive the read', () => {
+    // The column is NOT NULL / ON DELETE CASCADE: a credential must never outlive its account,
+    // so there is no re-attribution to fall back on the way the history ledger has.
+    const result = repairSnapshotIntegrity(
+      snapshot({
+        tables: {
+          users: [{ id: 'u-1' }],
+          api_tokens: [{ id: 'tok-1', user_id: 'u-gone', name: 'Orphan' }],
+        },
+      }),
+    );
+
+    expect(result.tables.api_tokens).toHaveLength(0);
+  });
+
   it('re-attributes a history entry whose author is absent rather than losing the entry', () => {
     const result = repairSnapshotIntegrity(
       snapshot({
