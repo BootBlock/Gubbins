@@ -311,4 +311,33 @@ describe('DashboardGrid — touch-friendly move controls (issue #11)', () => {
     expect(screen.getByTestId('widget-move-alpha-up')).toBeDisabled();
     expect(screen.getByTestId('widget-move-alpha-left')).toBeDisabled();
   });
+
+  it('announces where a moved widget landed (issue #218)', () => {
+    useLayoutStore.setState({
+      dashboardLayout: [
+        { id: 'alpha', x: 0, y: 0, visible: true },
+        { id: 'delta', x: 1, y: 0, visible: true },
+      ],
+    });
+    render(<DashboardGrid />);
+    enterCustomise();
+    // The region pre-exists (screen readers ignore one inserted alongside its first message).
+    const live = screen.getByRole('status');
+    expect(live.textContent).toBe('');
+
+    fireEvent.click(screen.getByTestId('widget-move-alpha-right'));
+    expect(live.textContent).toContain('column 2 of 3, row 1');
+
+    fireEvent.click(screen.getByTestId('widget-move-alpha-down'));
+    expect(live.textContent).toContain('column 2 of 3, row 2');
+  });
+
+  it('says nothing when a move is clamped at an edge (nothing changed)', () => {
+    useLayoutStore.setState({ dashboardLayout: [{ id: 'alpha', x: 0, y: 0, visible: true }] });
+    render(<DashboardGrid />);
+    enterCustomise();
+    // The up control is disabled, so drive the clamped nudge through the keyboard path.
+    fireEvent.keyDown(screen.getByTestId('widget-alpha'), { key: 'ArrowUp' });
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
 });

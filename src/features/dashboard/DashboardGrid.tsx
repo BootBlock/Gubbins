@@ -11,11 +11,12 @@
  * affordance: below `sm` the board collapses to a single-column flow in row-major
  * order, so the coordinate placement only engages on wider screens.
  */
-import { useMemo, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import {
   buttonVariants,
+  LiveRegion,
   revealStaggerMs,
   Surface,
   Tooltip,
@@ -164,6 +165,31 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
     if (next !== layout) setLayout([...next, ...gated]);
   };
 
+  const [announcement, setAnnouncement] = useState('');
+
+  // Every path that moves a widget — drag-drop, the arrow keys, the on-tile move buttons —
+  // goes through here so the landing cell is spoken as well as animated (WCAG 4.1.3): a
+  // sighted user watches the tile glide, and the screen-reader equivalent is this. A pure op
+  // returns the same layout on a no-op (a nudge clamped at an edge), so nothing is announced
+  // unless the board actually changed.
+  const applyMove = (id: string, next: DashboardLayout) => {
+    if (next === layout) return;
+    apply(next);
+    const moved = next.find((p) => p.id === id);
+    const def = widgetById(id);
+    if (!moved || !def) return;
+    setAnnouncement(
+      t('dashboard.grid.moveAnnounce', {
+        vars: {
+          title: t(def.titleKey),
+          column: moved.x + 1,
+          columns: DASHBOARD_COLUMNS,
+          row: moved.y + 1,
+        },
+      }),
+    );
+  };
+
   // Pointer drag-to-move (mouse / pen / touch, replacing the touch-blind HTML5 drag). Dropping a
   // widget onto a cell key moves it there (swapping any occupant); the arrow keys and the on-tile
   // move buttons are the touch-free equivalents. Enabled only while customising.
@@ -172,7 +198,7 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
     enabled: editing,
     onDrop: (id, key) => {
       const cell = parseCellKey(key);
-      if (cell) apply(moveWidget(layout, id, cell.x, cell.y));
+      if (cell) applyMove(id, moveWidget(layout, id, cell.x, cell.y));
     },
   });
   // The cell under the pointer during a drag, decoded from the active drop key — drives the ghost.
@@ -196,7 +222,7 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
     const dir = ARROW_DIRECTIONS[e.key];
     if (!dir) return;
     e.preventDefault();
-    apply(nudgeWidget(layout, id, dir));
+    applyMove(id, nudgeWidget(layout, id, dir));
   };
 
   // Empty drop cells fill the gaps (edit mode only) so a tile can be dragged onto a
@@ -260,7 +286,7 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
               nodeRef={registerTile(p.id)}
               dragSourceProps={drag.sourceProps(p.id, t(def.titleKey))}
               dropProps={drag.dropProps(cellKey(p.x, p.y))}
-              onMove={(dir) => apply(nudgeWidget(layout, p.id, dir))}
+              onMove={(dir) => applyMove(p.id, nudgeWidget(layout, p.id, dir))}
               moveDisabled={{
                 up: nudgeWidget(layout, p.id, 'up') === layout,
                 down: nudgeWidget(layout, p.id, 'down') === layout,
@@ -347,6 +373,8 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
           </div>
         </div>
       ) : null}
+
+      <LiveRegion visuallyHidden>{announcement ? <p>{announcement}</p> : null}</LiveRegion>
     </section>
   );
 }
