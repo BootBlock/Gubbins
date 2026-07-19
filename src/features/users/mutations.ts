@@ -30,8 +30,11 @@ import { roleKeys, userKeys } from './queries';
  */
 async function refreshAfterWrite(client: QueryClient): Promise<void> {
   await refreshAuthority();
-  await client.invalidateQueries({ queryKey: userKeys.all });
-  await client.invalidateQueries({ queryKey: roleKeys.all });
+  // Independent key trees, so they refetch together rather than one after the other.
+  await Promise.all([
+    client.invalidateQueries({ queryKey: userKeys.all }),
+    client.invalidateQueries({ queryKey: roleKeys.all }),
+  ]);
 }
 
 export function useCreateUser() {

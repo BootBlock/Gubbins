@@ -12,6 +12,7 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { Role, User } from '@/db/repositories/types';
 import { ADMIN_USER_ID, SYSTEM_USER_ID } from '@/db/repositories/constants';
 
@@ -44,14 +45,15 @@ vi.mock('./queries', () => ({
   roleKeys: { all: ['roles'] },
 }));
 
-// Declared inside the factory rather than above it: `vi.mock` is hoisted to the top of the file,
-// so a top-level binding referenced here is not yet initialised when the factory runs.
+// `vi.mock` is hoisted above this file's bindings, so the spy the factory closes over is created
+// through `vi.hoisted` — a plain `const` would still be in its temporal dead zone when it runs.
+const deleteUserMutate = vi.hoisted(() => vi.fn());
 vi.mock('./mutations', () => {
   const idle = () => ({ mutate: vi.fn(), isPending: false });
   return {
     useCreateUser: idle,
     useUpdateUser: idle,
-    useDeleteUser: idle,
+    useDeleteUser: () => ({ mutate: deleteUserMutate, isPending: false }),
     useSetUserPassword: idle,
     useClearUserPassword: idle,
     useCreateRole: idle,
@@ -104,6 +106,7 @@ beforeEach(() => {
   usersResult.isPending = usersResult.isError = false;
   rolesResult.isPending = rolesResult.isError = false;
   useModulesStore.setState({ intent: {} });
+  deleteUserMutate.mockReset();
 });
 afterEach(() => {
   cleanup();
@@ -194,6 +197,39 @@ describe('UsersScreen — accounts', () => {
     render(<UsersScreen />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('The accounts couldn’t be loaded.');
+  });
+});
+
+describe('UsersScreen — failures are shown, not swallowed', () => {
+  it('surfaces a refused delete instead of leaving the dialog looking dead', async () => {
+    // A delete can be refused by the permission guard or a built-in trigger. With no `onError`
+    // the confirm button simply did nothing, which reads as a broken button.
+    deleteUserMutate.mockImplementation((_id, opts) => opts?.onError?.(new Error('Nope')));
+    usersResult.data = { rows: [user()] };
+    render(<UsersScreen />);
+
+    await userEvent.click(within(rowFor('Sam Okafor')).getByRole('button', { name: 'Delete account' }));
+    const dialog = within(screen.getByRole('dialog'));
+    await userEvent.click(dialog.getByRole('button', { name: 'Delete account' }));
+
+    expect(dialog.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('does not carry an error from one dialog into the next', async () => {
+    // `formError` is shared by every dialog, so an opener that forgets to clear it shows the
+    // previous failure in a fresh, unsubmitted form.
+    deleteUserMutate.mockImplementation((_id, opts) => opts?.onError?.(new Error('Nope')));
+    usersResult.data = { rows: [user()] };
+    render(<UsersScreen />);
+
+    await userEvent.click(within(rowFor('Sam Okafor')).getByRole('button', { name: 'Delete account' }));
+    const dialog = within(screen.getByRole('dialog'));
+    await userEvent.click(dialog.getByRole('button', { name: 'Delete account' }));
+    expect(dialog.getByRole('alert')).toBeInTheDocument();
+
+    await userEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add user' }));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 

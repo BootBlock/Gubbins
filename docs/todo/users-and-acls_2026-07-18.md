@@ -1,7 +1,8 @@
 # Users & ACLs — implementation plan
 
-> **Status:** 🟢 ACTIVE — phases 1 (schema, built-in users, attribution), 2 (permission engine)
-> and 3 (authentication & session) shipped; phase 4 (module, gating & admin UI) next.
+> **Status:** 🟢 ACTIVE — phases 1 (schema, built-in users, attribution), 2 (permission engine),
+> 3 (authentication & session) and 4 (module, gating & admin UI) shipped; phase 5 (Bridge tokens)
+> next.
 
 Gubbins has no concept of a user. Every action is anonymous, `item_history` records *what*
 happened but never *who*, and the Bridge authenticates with a single all-or-nothing bearer
@@ -272,6 +273,47 @@ The `users` feature-registry entry, `/users` route, the admin screen (list, crea
 disable, assign role), the roles editor, and per-screen/per-action gating driven by the phase-2
 engine. This is the largest UI phase and the one where design-token and Foundry-primitive
 discipline matters most.
+
+#### Phase 4 as built — decisions worth knowing before phase 5
+
+- **The feature registry gained `defaultOff`, and it is load-bearing.** `useModulesStore` reads a
+  *missing* intent key as **on**, so simply registering `users` would have switched sign-in and
+  permission enforcement on for every existing install the moment this shipped — the exact
+  opposite of §3. A feature may now declare itself opt-in, in which case absence means off, the
+  `everything` preset skips it (`PRESETABLE_FEATURE_IDS`), and "reset to everything" leaves it
+  off. `users` is the first such module; a preset can still turn one *off*, which is the safe
+  direction.
+- **`usersModuleEnabled()` is `isFeatureEnabled('users')` and nothing else.** Components that must
+  re-render on the toggle call `useFeature('users')` directly rather than a second hook-shaped
+  copy of the question. `SignInGate` subscribes that way, so the gate goes up and comes down
+  without a reload, and it refreshes the authority on the **off** transition too — skipping that
+  would leave the previous restricted authority resident and make the toggle a one-way door.
+- **The Users screen stays readable with the module off**, and says which mode you are in. The
+  accounts and roles survive the toggle (§3), so hiding the screen would make the data look
+  deleted; it also lets an operator set an account up *before* turning enforcement on.
+- **Enabling is confirmed against a live check that some account can still sign in**; a failed or
+  unfinished read blocks the confirm rather than assuming it is safe. The closure is computed
+  first and carried through the dialog, so the confirmation does not opt out of the dependency
+  cascade if `users` ever gains a `dependsOn`.
+- **The sign-in screen carries an escape hatch** that switches the module off on this device.
+  Without it the Modules manager — the only way back — sits behind the very gate a forgotten
+  password closes. This weakens nothing that was ever true: §1.1 already states sign-in is a soft
+  boundary, and the dialog says so plainly rather than implying otherwise. Confirmed with the
+  maintainer before building.
+- **A session whose account is deleted or disabled is dropped, not left stranded.** `no-role` and
+  `no-permissions` deliberately do *not* end the session — they are states an administrator fixes
+  by granting a role, and bouncing them to sign-in would simply loop.
+- **Phase 3 shipped `useSignOut` with no caller.** Phase 4 adds the nav row, gated on the module
+  and a live session. It is split into its own component so `useQueryClient` is only reached on
+  the branch that renders — otherwise every consumer of `AppNav`, which `PageHeader` mounts on
+  every screen, would need a `QueryClientProvider` even in single-user mode.
+- **Role editing goes through the pure `role-grants.ts` seam.** A checkbox grid cannot express the
+  global wildcard, a subject wildcard, or a grant a newer peer synced, and a naive "read the boxes,
+  write the keys" editor destroys all three. A subject wildcard survives until its row is touched,
+  at which point it converts to the exact keys shown — a deliberate act, not a silent one.
+- **Permission copy is keyed by subject and action** (`users.subject.*`, `users.action.*`), not one
+  key per permission key as §2.3 anticipated. The grid is subject-rows × action-columns, so ~25
+  keys cover it instead of ~48, and a new action reuses the label a sibling subject already has.
 
 ### Phase 5 — Bridge
 

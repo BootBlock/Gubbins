@@ -89,6 +89,22 @@ export function UsersScreen() {
 
   const onError = (error: unknown): void => setFormError(errorMessage(error, t('users.error.generic')));
 
+  // Every dialog opener goes through one of these. `formError` is shared by all of them, so an
+  // opener that forgets to clear it shows the *previous* dialog's failure in a fresh, unsubmitted
+  // form — which is why opening is a named function rather than a bare `setState` at each site.
+  const openUserDialog = (user: User | null): void => {
+    setFormError(null);
+    setUserDialog({ user });
+  };
+  const openRoleDialog = (role: Role | null): void => {
+    setFormError(null);
+    setRoleDialog({ role });
+  };
+  const openPasswordDialog = (user: User): void => {
+    setFormError(null);
+    setPasswordFor(user);
+  };
+
   const submitUser = (values: UserFormValues): void => {
     setFormError(null);
     const editing = userDialog?.user ?? null;
@@ -139,7 +155,7 @@ export function UsersScreen() {
         icon={<UsersIcon />}
         title={t('users.title')}
         actions={
-          <Button onClick={() => setUserDialog({ user: null })}>
+          <Button onClick={() => openUserDialog(null)}>
             <AddIcon aria-hidden />
             {t('users.add')}
           </Button>
@@ -184,15 +200,12 @@ export function UsersScreen() {
                     user={user}
                     roleName={roleName(user.roleId)}
                     isSelf={user.id === signedInUserId}
-                    onEdit={() => {
+                    onEdit={() => openUserDialog(user)}
+                    onPassword={() => openPasswordDialog(user)}
+                    onDelete={() => {
                       setFormError(null);
-                      setUserDialog({ user });
+                      setDeletingUser(user);
                     }}
-                    onPassword={() => {
-                      setFormError(null);
-                      setPasswordFor(user);
-                    }}
-                    onDelete={() => setDeletingUser(user)}
                   />
                 </li>
               ))}
@@ -205,14 +218,7 @@ export function UsersScreen() {
             <h2 id="users-roles-heading" className="text-sm font-semibold text-foreground">
               {t('roles.heading')}
             </h2>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setFormError(null);
-                setRoleDialog({ role: null });
-              }}
-            >
+            <Button variant="outline" size="sm" onClick={() => openRoleDialog(null)}>
               <AddIcon aria-hidden />
               {t('roles.add')}
             </Button>
@@ -237,11 +243,11 @@ export function UsersScreen() {
                   <RoleRow
                     role={role}
                     memberCount={users.filter((user) => user.roleId === role.id).length}
-                    onEdit={() => {
+                    onEdit={() => openRoleDialog(role)}
+                    onDelete={() => {
                       setFormError(null);
-                      setRoleDialog({ role });
+                      setDeletingRole(role);
                     }}
-                    onDelete={() => setDeletingRole(role)}
                   />
                 </li>
               ))}
@@ -254,6 +260,9 @@ export function UsersScreen() {
 
       {userDialog ? (
         <UserFormDialog
+          // Remount when the target changes: the dialog seeds its fields from props with
+          // `useState`, so reusing the instance would edit one account with another's values.
+          key={userDialog.user?.id ?? 'new'}
           user={userDialog.user}
           roles={roles}
           busy={createUser.isPending || updateUser.isPending}
@@ -265,6 +274,7 @@ export function UsersScreen() {
 
       {passwordFor ? (
         <PasswordDialog
+          key={passwordFor.id}
           user={passwordFor}
           busy={passwordBusy}
           error={formError}
@@ -299,6 +309,7 @@ export function UsersScreen() {
 
       {roleDialog ? (
         <RoleFormDialog
+          key={roleDialog.role?.id ?? 'new'}
           role={roleDialog.role}
           busy={createRole.isPending || updateRole.isPending}
           error={formError}
@@ -315,6 +326,11 @@ export function UsersScreen() {
           description={t('users.delete.body', { vars: { name: deletingUser.displayName } })}
         >
           <div className="flex flex-col gap-4">
+            {formError ? (
+              <Banner tone="danger" role="alert">
+                {formError}
+              </Banner>
+            ) : null}
             {/* The one part of a deletion that is *not* obvious: their past changes stay, and
                 stay readable, re-attributed to the built-in System user. */}
             <Banner tone="info">{t('users.delete.historyNote')}</Banner>
@@ -333,6 +349,9 @@ export function UsersScreen() {
                       );
                       setDeletingUser(null);
                     },
+                    // Without this a refused delete — no `users:manage`, or a built-in guard —
+                    // leaves the dialog sitting there unchanged, which reads as a dead button.
+                    onError,
                   })
                 }
               >
@@ -351,6 +370,11 @@ export function UsersScreen() {
           description={t('roles.delete.body', { vars: { name: deletingRole.name } })}
         >
           <div className="flex flex-col gap-4">
+            {formError ? (
+              <Banner tone="danger" role="alert">
+                {formError}
+              </Banner>
+            ) : null}
             <Banner tone="info">{t('roles.delete.membersNote')}</Banner>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setDeletingRole(null)} disabled={deleteRole.isPending}>
@@ -365,6 +389,8 @@ export function UsersScreen() {
                       setAnnouncement(t('roles.announce.deleted', { vars: { name: deletingRole.name } }));
                       setDeletingRole(null);
                     },
+                    // A built-in role refuses deletion; saying nothing would read as a dead button.
+                    onError,
                   })
                 }
               >

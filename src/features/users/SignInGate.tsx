@@ -17,6 +17,7 @@ import type { SignInOutcome } from '@/db/repositories/UserRepository';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { useFeature } from '@/features/modules/useFeature';
 import { refreshAuthority } from './authority-refresh';
+import { userKeys } from './queries';
 import { SignInScreen } from './SignInScreen';
 
 export function SignInGate({ children }: { children: ReactNode }) {
@@ -26,6 +27,8 @@ export function SignInGate({ children }: { children: ReactNode }) {
   const moduleEnabled = useFeature('users');
   const session = useSessionStore((state) => state.session);
   const signIn = useSessionStore((state) => state.signIn);
+  const signOut = useSessionStore((state) => state.signOut);
+  const authority = useSessionStore((state) => state.authority);
   const queryClient = useQueryClient();
   // Everything the resolved authority depends on, as one value. The gate is **derived** from it
   // rather than pushed closed by an effect: `resolved` goes false on the very render where an
@@ -57,8 +60,29 @@ export function SignInGate({ children }: { children: ReactNode }) {
     };
   }, [resolutionKey]);
 
+  /**
+   * The session names an account that can no longer be used — deleted (locally or arriving by
+   * sync), or disabled, including by the signed-in person editing their own row.
+   *
+   * Only these two reasons end the session. `no-role` and `no-permissions` are legitimate
+   * signed-in states an administrator is expected to fix by granting a role; bouncing those to
+   * the sign-in screen would just loop, because signing in again lands in the same place.
+   */
+  const sessionRevoked =
+    moduleEnabled &&
+    session !== null &&
+    resolved &&
+    authority.mode === 'denied' &&
+    (authority.reason === 'signed-out' || authority.reason === 'disabled');
+
+  useEffect(() => {
+    // Drop the dead session so the gate offers the account list again. Without this the app
+    // stays mounted refusing every action, with nothing on screen explaining why.
+    if (sessionRevoked) signOut();
+  }, [sessionRevoked, signOut]);
+
   const candidates = useQuery({
-    queryKey: ['users', 'sign-in-candidates'],
+    queryKey: userKeys.signInCandidates(),
     queryFn: () => getUserRepository().listSignInCandidates(),
     enabled: moduleEnabled && !session,
   });
@@ -86,6 +110,10 @@ export function SignInGate({ children }: { children: ReactNode }) {
   );
 
   if (!moduleEnabled) return <>{children}</>;
+
+  // Render nothing for the beat between spotting a revoked session and the effect clearing it,
+  // rather than the app under an authority that permits nothing.
+  if (sessionRevoked) return null;
 
   if (!session) {
     return (
