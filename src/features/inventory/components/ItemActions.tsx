@@ -254,35 +254,44 @@ export const ItemActions = forwardRef<
         </Tooltip>
       )}
 
-      <MoveItemDialog
-        item={item}
-        open={dialog === 'move'}
-        onClose={() => setDialog(null)}
-        locations={locations}
-      />
-      {item.gauge ? (
-        <GaugeAdjustDialog item={item} open={dialog === 'gauge'} onClose={() => setDialog(null)} />
+      {/* Each dialog is mounted **only while it is the selected one**, never as a closed
+          placeholder. `Modal` renders nothing when `open` is false, but that bail-out happens
+          after the dialog component's body has already run its hooks — so a permanently-mounted
+          closed dialog still pays for its queries and subscriptions. With ~40 cards on screen at
+          Visual density (each recycled by the virtualiser) the per-item reads those hooks issue
+          added up to a screenful of worker round-trips for dialogs nobody opened. Nothing is lost
+          by mounting on demand: `Modal` has no *exit* transition that a closing dialog needs to
+          stay mounted for, and its entrance animation plays on the portal content either way.
+          Each dialog now also opens with genuinely fresh state rather than the previous open's.
+
+          The capability guards stay: they also gate the imperative `open(kind)` path, which can
+          ask for a dialog the item doesn't support. */}
+      {dialog === 'move' ? (
+        <MoveItemDialog item={item} open onClose={() => setDialog(null)} locations={locations} />
       ) : null}
-      {canWeighCount ? (
-        <WeighCountDialog item={item} open={dialog === 'weigh'} onClose={() => setDialog(null)} />
+      {dialog === 'gauge' && item.gauge ? (
+        <GaugeAdjustDialog item={item} open onClose={() => setDialog(null)} />
       ) : null}
-      <ItemDetailDialog item={item} open={dialog === 'details'} onClose={() => setDialog(null)} />
-      <QrCodeDialog
-        itemId={item.id}
-        itemName={item.name}
-        itemMpn={item.mpn}
-        open={dialog === 'qr'}
-        onClose={() => setDialog(null)}
-      />
-      <CheckoutDialog item={item} open={dialog === 'checkout'} onClose={() => setDialog(null)} />
-      {projectsEnabled ? (
-        <AddItemToProjectDialog item={item} open={dialog === 'project'} onClose={() => setDialog(null)} />
+      {dialog === 'weigh' && canWeighCount ? (
+        <WeighCountDialog item={item} open onClose={() => setDialog(null)} />
       ) : null}
-      {canSell ? (
-        <>
-          <SellDialog item={item} open={dialog === 'sell'} onClose={() => setDialog(null)} />
-          <WriteOffDialog item={item} open={dialog === 'writeoff'} onClose={() => setDialog(null)} />
-        </>
+      {dialog === 'details' ? <ItemDetailDialog item={item} open onClose={() => setDialog(null)} /> : null}
+      {dialog === 'qr' ? (
+        <QrCodeDialog
+          itemId={item.id}
+          itemName={item.name}
+          itemMpn={item.mpn}
+          open
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
+      {dialog === 'checkout' ? <CheckoutDialog item={item} open onClose={() => setDialog(null)} /> : null}
+      {dialog === 'project' && projectsEnabled ? (
+        <AddItemToProjectDialog item={item} open onClose={() => setDialog(null)} />
+      ) : null}
+      {dialog === 'sell' && canSell ? <SellDialog item={item} open onClose={() => setDialog(null)} /> : null}
+      {dialog === 'writeoff' && canSell ? (
+        <WriteOffDialog item={item} open onClose={() => setDialog(null)} />
       ) : null}
     </div>
   );
