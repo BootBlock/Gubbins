@@ -123,6 +123,32 @@ export const ITEM_REGIONS_TABLE = 'item_regions';
 export const ITEM_HISTORY_TABLE = 'item_history';
 
 /**
+ * Every table a tombstone may legitimately name: the {@link SYNC_TABLES} LWW set plus the
+ * three membership joins, whose unlinks are also recorded as tombstones (keyed by their
+ * composite edge ids). The append-only {@link ITEM_HISTORY_TABLE} is deliberately absent —
+ * the ledger is immutable, so nothing ever tombstones a row in it.
+ *
+ * This is a **security boundary**, not a convenience. A tombstone's `tableName` arrives from
+ * parsed JSON — a backup file, a peer's snapshot in a shared sync folder, or a bridge push —
+ * and is interpolated into `DELETE FROM <table>` because SQLite cannot parameterise an
+ * identifier. Without this allow-list a crafted name such as `items WHERE 1 OR id = ?; --`
+ * forms a valid single statement with the right placeholder arity and empties the table, inside
+ * the very transaction the user believes is restoring their data. Check every `tableName`
+ * against {@link isTombstoneTable} before it reaches statement construction.
+ */
+export const TOMBSTONE_TABLES: ReadonlySet<string> = new Set<string>([
+  ...SYNC_TABLES,
+  ITEM_TAGS_TABLE,
+  LOCATION_TAGS_TABLE,
+  ITEM_REGIONS_TABLE,
+]);
+
+/** Whether `tableName` is a table a tombstone may name (see {@link TOMBSTONE_TABLES}). */
+export function isTombstoneTable(tableName: unknown): tableName is string {
+  return typeof tableName === 'string' && TOMBSTONE_TABLES.has(tableName);
+}
+
+/**
  * Separator for an `item_tags` edge tombstone id. A UUID is hex + hyphens, so `|` can
  * never appear inside one, making `${itemId}|${tagId}` an unambiguous composite key.
  */

@@ -73,6 +73,8 @@ export {
   LOCATION_TAGS_TABLE,
   ITEM_REGIONS_TABLE,
   ITEM_HISTORY_TABLE,
+  TOMBSTONE_TABLES,
+  isTombstoneTable,
   SYNC_EXCLUDED_COLUMNS,
   itemTagEdgeId,
   parseItemTagEdgeId,
