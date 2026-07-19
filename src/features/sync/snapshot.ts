@@ -27,16 +27,12 @@ import {
 } from '@/db/repositories';
 // Imported from the defining module rather than the `@/db/repositories` barrel: these are read
 // at module scope, and screen tests that mock the barrel wholesale do not provide them.
-import {
-  ADMIN_USER_ID,
-  IN_TRANSIT_LOCATION_ID,
-  SYSTEM_USER_ID,
-  UNASSIGNED_LOCATION_ID,
-} from '@/db/repositories/constants';
+import { SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import { historyStatement } from '@/db/repositories/item/history';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
 import { buildSchemaDictionary } from './schema-dictionary';
+import { ALWAYS_PRESENT_ROW_IDS, repairSnapshotIntegrity } from './snapshot-integrity';
 import type {
   GaugeHistoryDelta,
   ItemRegionEdge,
@@ -96,16 +92,14 @@ const WIPE_FILTER: Partial<Record<SyncTable, string>> = {
  * The rows {@link TABLE_FILTER} excludes, identified by their **id** rather than by the column
  * the filter tests (issue #197).
  *
- * Both sets are seeded with these exact constant ids on every device, so the id is the one
- * property a rescue read can rely on: it is stable across every revision of the pre-release
- * baseline, whereas `locations.is_system` / `users.kind` are columns a differently-shaped
- * database may simply not have. Used only by the best-effort fallback below — the normal path
- * still filters in SQL.
+ * Shared with the §405 integrity repair as {@link ALWAYS_PRESENT_ROW_IDS}, because the two uses
+ * are the same fact read in opposite directions: these rows are excluded from the snapshot
+ * precisely *because* every device already has them, which is also why the repair must never
+ * mistake one for an absent parent. Identified by id since that is the one property a rescue
+ * read can rely on — it is stable across every revision of the pre-release baseline, whereas
+ * `locations.is_system` / `users.kind` are columns a differently-shaped database may not have.
  */
-const PROTECTED_ROW_IDS: Partial<Record<SyncTable, readonly string[]>> = {
-  locations: [UNASSIGNED_LOCATION_ID, IN_TRANSIT_LOCATION_ID],
-  users: [SYSTEM_USER_ID, ADMIN_USER_ID],
-};
+const PROTECTED_ROW_IDS = ALWAYS_PRESENT_ROW_IDS;
 
 /**
  * Read every row of `table` in `key` order, a page at a time, under an optional filter.
@@ -231,12 +225,17 @@ export async function buildLocalSnapshot(
   generatedAt = Date.now(),
   options: BuildSnapshotOptions = {},
 ): Promise<SyncSnapshot> {
+  // Parts that could not be read at all (rescue mode only). An empty table here means "unknown",
+  // not "no rows", and the §405 repair below must not mistake the two — see `RepairOptions`.
+  const unreadableTables = new Set<string>();
+
   /** Read one part of the snapshot, degrading to `empty` when the caller asked us to. */
   const attempt = async <T>(part: string, read: () => Promise<T>, empty: T): Promise<T> => {
     if (!options.skipUnreadable) return read();
     try {
       return await read();
     } catch (error) {
+      unreadableTables.add(part);
       options.onSkipped?.(part, error);
       return empty;
     }
@@ -278,17 +277,25 @@ export async function buildLocalSnapshot(
   const itemRegions = await attempt(ITEM_REGIONS_TABLE, () => readItemRegions(driver), []);
   const itemHistory = await attempt(ITEM_HISTORY_TABLE, () => readItemHistory(driver), []);
 
-  return {
-    formatVersion: SYNC_FORMAT_VERSION,
-    generatedAt,
-    tables,
-    tombstones,
-    gaugeHistory,
-    itemTags,
-    locationTags,
-    itemRegions,
-    itemHistory,
-  };
+  // Issue #405: the reads above are not one point-in-time view — each is its own unisolated
+  // query, so a concurrent write can land a child row whose parent was read a moment too early.
+  // A restore applies the whole snapshot in one transaction and `OR IGNORE` does not cover
+  // FOREIGN KEY, so a single such orphan would abort it entirely. Repair here, where the data is
+  // still ours, rather than leaving every apply path to cope.
+  return repairSnapshotIntegrity(
+    {
+      formatVersion: SYNC_FORMAT_VERSION,
+      generatedAt,
+      tables,
+      tombstones,
+      gaugeHistory,
+      itemTags,
+      locationTags,
+      itemRegions,
+      itemHistory,
+    },
+    { unreadableTables },
+  );
 }
 
 /**
