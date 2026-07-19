@@ -52,7 +52,8 @@ export function BudgetCategoryEditor({
       {categories.length > 0 ? (
         <ul className="mb-3 space-y-2">
           {categories.map((category) => {
-            const summary = summariseBudgetCategory(category, warnPercent);
+            // The base currency's minor unit, not a flat 2dp (issue #292).
+            const summary = summariseBudgetCategory(category, warnPercent, fmt.currencyFractionDigits());
             return (
               <CategoryRow
                 key={category.id}

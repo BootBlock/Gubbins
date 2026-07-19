@@ -26,7 +26,7 @@
  * {@link SpendReport.excludedForeignCurrency} carries the count that was left out, so the omission
  * can be shown rather than silently understating the spend.
  */
-import { roundMoney } from '@/lib/money';
+import { MONEY_DECIMALS, roundMoney } from '@/lib/money';
 
 /** The three spend sources, each composed from data already stored. */
 export type SpendSource = 'PURCHASE_ORDER' | 'PROJECT_EXPENSE' | 'ACQUISITION';
@@ -145,6 +145,13 @@ const UNCATEGORISED = 'Uncategorised';
  * **`excludedForeignCurrency`** is passed straight through to the report (clamped to a
  * non-negative integer). It is a count the caller has already decided — this seam never sees the
  * excluded rows, precisely because they must not reach any total.
+ *
+ * @param decimals Places every published amount is quantised to — the reporting currency's
+ * **minor unit**, not a flat 2dp (issue #292). A yen has no minor unit and a Bahraini dinar has
+ * three, so a hard-coded 2 invents precision a JPY total cannot hold and discards a digit a BHD
+ * total genuinely has. The caller resolves this from the base currency
+ * (`BaseRepository.moneyDecimals()`); it defaults to {@link MONEY_DECIMALS} so a caller that has
+ * no currency to hand — and every existing test — behaves exactly as before.
  */
 export function buildSpendReport(
   events: readonly SpendEvent[],
@@ -152,6 +159,7 @@ export function buildSpendReport(
   windowEnd: number,
   bucketCount: number,
   excludedForeignCurrency = 0,
+  decimals: number = MONEY_DECIMALS,
 ): SpendReport {
   const count = Math.max(1, Math.floor(bucketCount));
   const span = Math.max(1, windowEnd - windowStart);
@@ -209,14 +217,14 @@ export function buildSpendReport(
   // Shares stay ratios of the raw totals — a fraction is not an amount.
   const bySource: SpendSourceTotal[] = SPEND_SOURCES.map((source) => {
     const sourceTotal = sourceTotals.get(source) ?? 0;
-    return { source, total: roundMoney(sourceTotal), share: share(sourceTotal, total) };
+    return { source, total: roundMoney(sourceTotal, decimals), share: share(sourceTotal, total) };
   });
 
   const bySupplier: SpendGroup[] = [...supplierTotals.entries()]
     .map(([id, { name, total: groupTotal }]) => ({
       id,
       name,
-      total: roundMoney(groupTotal),
+      total: roundMoney(groupTotal, decimals),
       share: share(groupTotal, total),
     }))
     .sort(byTotalThenName);
@@ -225,7 +233,7 @@ export function buildSpendReport(
     .map(([id, { name, total: groupTotal }]) => ({
       id,
       name,
-      total: roundMoney(groupTotal),
+      total: roundMoney(groupTotal, decimals),
       share: share(groupTotal, total),
     }))
     .sort(byTotalThenName);
@@ -233,9 +241,13 @@ export function buildSpendReport(
   return {
     windowStart,
     windowEnd,
-    total: roundMoney(total),
+    total: roundMoney(total, decimals),
     eventCount,
-    buckets: buckets.map((b) => ({ start: b.start, end: b.end, total: roundMoney(b.total) })),
+    buckets: buckets.map((b) => ({
+      start: b.start,
+      end: b.end,
+      total: roundMoney(b.total, decimals),
+    })),
     bySource,
     bySupplier,
     byCategory,

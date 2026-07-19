@@ -359,7 +359,7 @@ export class ReportRepository extends BaseRepository {
       parentId: r.parent_id,
     }));
 
-    return buildInsuranceSchedule(items, locations, now);
+    return buildInsuranceSchedule(items, locations, now, this.moneyDecimals());
   }
 
   /**
@@ -1251,7 +1251,14 @@ export class ReportRepository extends BaseRepository {
       excludedForeignCurrency = row?.n ?? 0;
     }
 
-    return buildSpendReport(events, windowStart, windowEnd, buckets, excludedForeignCurrency);
+    return buildSpendReport(
+      events,
+      windowStart,
+      windowEnd,
+      buckets,
+      excludedForeignCurrency,
+      this.moneyDecimals(),
+    );
   }
 
   /**
@@ -1287,6 +1294,9 @@ export class ReportRepository extends BaseRepository {
       [windowStart, windowEnd],
     );
 
+    // Resolved once rather than per row — it is the same base currency for every line, and the
+    // per-line cost below runs inside the map.
+    const decimals = this.moneyDecimals();
     const events: SalesEvent[] = rows.map((r) => {
       const meta = parseSalesMetadata(r.metadata);
       // Prefer the metadata quantity; fall back to the ledger delta's magnitude.
@@ -1295,7 +1305,7 @@ export class ReportRepository extends BaseRepository {
       // The line's proceeds were quantised to the minor unit when the sale was recorded, so its
       // cost is quantised the same way here — otherwise the margin subtracts an unrounded
       // subtrahend from a rounded minuend and lands a penny out (issue #288).
-      const cost = unitCost === null ? null : roundMoney(unitCost * quantity);
+      const cost = unitCost === null ? null : roundMoney(unitCost * quantity, decimals);
       return {
         instant: Number(r.instant),
         kind: r.action === 'WRITTEN_OFF' ? 'WRITTEN_OFF' : 'SOLD',
@@ -1307,7 +1317,7 @@ export class ReportRepository extends BaseRepository {
       };
     });
 
-    return buildSalesReport(events, windowStart, windowEnd, buckets);
+    return buildSalesReport(events, windowStart, windowEnd, buckets, decimals);
   }
 }
 

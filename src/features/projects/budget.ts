@@ -26,10 +26,11 @@
  * fractions and the OK/WARN/OVER classification deliberately read the *raw* figures, so a
  * threshold is never crossed by a rounding penny. Those raw comparisons go through
  * `moneyExceeds` / `moneyReaches` rather than bare `>` / `>=`, so the drift a float SUM carries
- * cannot decide a threshold either (issue #287).
+ * cannot decide a threshold either (issue #287). The *scale* it quantises to is the currency's
+ * minor unit, threaded in as `decimals` rather than assumed to be two (issue #292).
  */
 import type { ProjectBudget, ProjectBudgetCategoryRollup } from '@/db/repositories';
-import { moneyExceeds, moneyReaches, roundMoney } from '@/lib/money';
+import { MONEY_DECIMALS, moneyExceeds, moneyReaches, roundMoney } from '@/lib/money';
 
 /** Budget health: no budget set, comfortably under, nearing the line, or over. */
 export type BudgetStatus = 'NONE' | 'OK' | 'WARN' | 'OVER';
@@ -143,13 +144,22 @@ export function spentFraction(value: number, limit: number | null): number | nul
   return value / limit;
 }
 
-/** Roll one budget category up into its allocation-vs-spend summary. */
+/**
+ * Roll one budget category up into its allocation-vs-spend summary.
+ *
+ * @param decimals How many places to quantise the published figures to — the *currency's* minor
+ * unit, not a flat two (issue #292). A yen budget is written in whole yen and a Bahraini-dinar one
+ * in thousandths, so a fixed 2dp would print a category allocation the currency cannot hold. React
+ * callers pass `useFormatters().currencyFractionDigits()`; the default keeps the pre-#292 behaviour
+ * for callers that have no currency to hand.
+ */
 export function summariseBudgetCategory(
   category: ProjectBudgetCategoryRollup,
   warnPercent: number,
+  decimals: number = MONEY_DECIMALS,
 ): BudgetCategorySummary {
-  const amount = roundMoney(category.amount);
-  const spent = roundMoney(category.spent);
+  const amount = roundMoney(category.amount, decimals);
+  const spent = roundMoney(category.spent, decimals);
   return {
     id: category.id,
     name: category.name,
@@ -157,7 +167,7 @@ export function summariseBudgetCategory(
     spent,
     // Derived from the *published* pair, so the row a budget card prints subtracts correctly
     // (issue #288) — `roundMoney(raw amount − raw spent)` would show 0.03, 0.01 and 0.01.
-    remaining: roundMoney(amount - spent),
+    remaining: roundMoney(amount - spent, decimals),
     // Fractions and the status classification read the raw figures: a threshold decided on a
     // rounded penny would flip a project into WARN/OVER a fraction early.
     spentFraction: spentFraction(category.spent, category.amount),
@@ -169,8 +179,20 @@ export function summariseBudgetCategory(
  * Compose the full {@link BudgetSummary} for a project from its raw {@link ProjectBudget}
  * aggregates and the user's warning threshold (a Tier-2 preference, so it is threaded in
  * rather than read from a store — keeping this module pure and testable).
+ *
+ * @param decimals How many places to quantise the published figures to — the *currency's* minor
+ * unit, not a flat two (issue #292). Rounding a yen budget to 2dp publishes a "spent so far" of
+ * ¥301.50 that renders as ¥302 and disagrees with the meter beside it; a Bahraini-dinar budget
+ * loses its third digit outright. Because every derived figure is composed from the published
+ * parts, quantising them all at the same scale is also what keeps the card's own arithmetic exact
+ * (budget − spent really is remaining) whatever that scale is. React callers pass
+ * `useFormatters().currencyFractionDigits()`; the default keeps the pre-#292 behaviour.
  */
-export function summariseBudget(facts: ProjectBudget, warnPercent: number): BudgetSummary {
+export function summariseBudget(
+  facts: ProjectBudget,
+  warnPercent: number,
+  decimals: number = MONEY_DECIMALS,
+): BudgetSummary {
   const totalSpent = facts.committedFromBom + facts.manualExpenseTotal;
   const projectedFinalCost = facts.estimatedCost + facts.manualExpenseTotal;
   const budget = facts.budget;
@@ -180,12 +202,12 @@ export function summariseBudget(facts: ProjectBudget, warnPercent: number): Budg
   // committed + manual really does equal its "spent so far", and budget − spent really does
   // equal its "remaining". Rounding each figure independently from the raw values would leave
   // the card's own arithmetic a penny out.
-  const publishedBudget = budget == null ? null : roundMoney(budget);
-  const publishedEstimatedCost = roundMoney(facts.estimatedCost);
-  const publishedCommitted = roundMoney(facts.committedFromBom);
-  const publishedManual = roundMoney(facts.manualExpenseTotal);
-  const publishedTotalSpent = roundMoney(publishedCommitted + publishedManual);
-  const publishedProjected = roundMoney(publishedEstimatedCost + publishedManual);
+  const publishedBudget = budget == null ? null : roundMoney(budget, decimals);
+  const publishedEstimatedCost = roundMoney(facts.estimatedCost, decimals);
+  const publishedCommitted = roundMoney(facts.committedFromBom, decimals);
+  const publishedManual = roundMoney(facts.manualExpenseTotal, decimals);
+  const publishedTotalSpent = roundMoney(publishedCommitted + publishedManual, decimals);
+  const publishedProjected = roundMoney(publishedEstimatedCost + publishedManual, decimals);
 
   return {
     budget: publishedBudget,
@@ -193,16 +215,17 @@ export function summariseBudget(facts: ProjectBudget, warnPercent: number): Budg
     committedFromBom: publishedCommitted,
     manualExpenseTotal: publishedManual,
     totalSpent: publishedTotalSpent,
-    remaining: publishedBudget == null ? null : roundMoney(publishedBudget - publishedTotalSpent),
+    remaining: publishedBudget == null ? null : roundMoney(publishedBudget - publishedTotalSpent, decimals),
     projectedFinalCost: publishedProjected,
-    projectedRemaining: publishedBudget == null ? null : roundMoney(publishedBudget - publishedProjected),
+    projectedRemaining:
+      publishedBudget == null ? null : roundMoney(publishedBudget - publishedProjected, decimals),
     // Fractions and statuses read the raw figures — see `summariseBudgetCategory`.
     spentFraction: spentFraction(totalSpent, budget),
     projectedFraction: spentFraction(projectedFinalCost, budget),
     warnPercent,
     status: budgetStatus(totalSpent, budget, warnPercent),
     projectedStatus: budgetStatus(projectedFinalCost, budget, warnPercent),
-    categories: facts.categories.map((c) => summariseBudgetCategory(c, warnPercent)),
-    uncategorisedExpenseTotal: roundMoney(facts.uncategorisedExpenseTotal),
+    categories: facts.categories.map((c) => summariseBudgetCategory(c, warnPercent, decimals)),
+    uncategorisedExpenseTotal: roundMoney(facts.uncategorisedExpenseTotal, decimals),
   };
 }

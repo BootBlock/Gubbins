@@ -26,6 +26,7 @@ import { getReportRepository } from '@/db/repositories';
 import { readImageBlob } from '@/features/images/opfs-images';
 import { download } from './download';
 import { summariseBudget } from '@/features/projects/budget';
+import { moneyDecimals } from '@/lib/money';
 import {
   buildAbcCsv,
   buildAgingCsv,
@@ -356,7 +357,12 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
     const project = await projectRepo.getById(options.targetId);
     if (project) {
       const facts = await projectRepo.getBudget(options.targetId);
-      const summary = summariseBudget(facts, usePreferencesStore.getState().budgetWarnPercent);
+      // A pure module, so there is no `useFormatters` to read the currency's digits from — the
+      // preference store is the same source that hook derives them from, and `moneyDecimals`
+      // the same `Intl` lookup, so the exported figures land on the scale the app shows them at
+      // rather than a flat 2dp (issue #292).
+      const prefs = usePreferencesStore.getState();
+      const summary = summariseBudget(facts, prefs.budgetWarnPercent, moneyDecimals(prefs.baseCurrency));
       build = buildProjectVault(project.name, vaultItems, {
         budget: summary.budget,
         totalSpent: summary.totalSpent,

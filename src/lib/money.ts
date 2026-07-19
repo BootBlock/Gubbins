@@ -23,8 +23,44 @@
  * proceeds and its cost of goods, say) on the same scale, which is what makes a margin add up.
  */
 
-/** Decimal places a currency amount carries. Money is quantised to the minor unit (pence). */
+/**
+ * Decimal places assumed when the currency is unknown — the majority case (GBP, USD, EUR) and
+ * the safe default for a figure whose currency could not be resolved. Prefer
+ * {@link moneyDecimals}, which reports what the *actual* base currency uses.
+ */
 export const MONEY_DECIMALS = 2;
+
+/** Memoised per code — `Intl.NumberFormat` construction is heavyweight and this runs in loops. */
+const decimalsByCode = new Map<string, number>();
+
+/**
+ * How many decimal places `currency` is actually written in — its **minor unit** (issue #292).
+ *
+ * Not every currency has hundredths. The yen has none (`¥302`, never `¥301.5`) and the Bahraini
+ * dinar has three (1000 fils). Quantising to a flat 2dp therefore invents precision a JPY amount
+ * cannot hold — a sale of 3 × ¥100.5 booked `301.5`, half a yen, which then displayed as `¥302`
+ * and disagreed with itself — and destroys precision a BHD amount genuinely has.
+ *
+ * The digits come from live `Intl` currency data, so there is no hand-maintained table to drift
+ * (and it is the same source `Formatters.currencyFractionDigits` reads, which is what keeps a
+ * rounded figure and its rendered form on the same scale). An unknown, malformed or absent code
+ * falls back to {@link MONEY_DECIMALS} rather than throwing — a report with no resolved currency
+ * still totals, it just totals the way it always did.
+ */
+export function moneyDecimals(currency: string | null | undefined): number {
+  const code = currency?.trim().toUpperCase();
+  // Only three ASCII letters can be an ISO-4217 code; checking the shape first means a malformed
+  // value costs nothing and never reaches the cache, which stays bounded by the ISO-4217 space.
+  if (!code || !/^[A-Z]{3}$/.test(code)) return MONEY_DECIMALS;
+  const cached = decimalsByCode.get(code);
+  if (cached !== undefined) return cached;
+  // A well-formed but unassigned code (`XBT`) is accepted by `Intl` and reports the generic 2.
+  const digits =
+    new Intl.NumberFormat('en', { style: 'currency', currency: code }).resolvedOptions()
+      .maximumFractionDigits ?? MONEY_DECIMALS;
+  decimalsByCode.set(code, digits);
+  return digits;
+}
 
 /**
  * How far two currency figures may differ and still count as the same amount.

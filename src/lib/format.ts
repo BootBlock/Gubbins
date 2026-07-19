@@ -7,6 +7,7 @@
  * and are wired in via the `useFormatters()` hook so every call site honours the
  * chosen currency and locale end-to-end (§3).
  */
+import { moneyDecimals } from './money';
 import { formatWeight, type WeightUnit } from './weight';
 import { formatDimension, type DimensionUnit } from './dimensions';
 import { nowMs } from './clock';
@@ -211,8 +212,13 @@ export function makeFormatters(
     },
     currencyFractionDigits(currencyOverride) {
       const code = currencyOverride?.trim().toUpperCase();
-      const fmt = code && code !== currency ? (currencyFormatterFor(code) ?? currencyFormat) : currencyFormat;
-      return fmt.resolvedOptions().maximumFractionDigits ?? 2;
+      // Delegated to the money seam so the scale a figure is *rounded* to and the scale it is
+      // *rendered* at come from one lookup — two implementations of this is what issue #292 was
+      // (a formatter that knew about the yen beside arithmetic that did not). An override `Intl`
+      // cannot format falls back to the base currency, exactly as `currency()` falls back to the
+      // base symbol.
+      const usable = !!code && code !== currency && currencyFormatterFor(code) !== null;
+      return moneyDecimals(usable ? code : currency);
     },
     percent(ratio, maximumFractionDigits = 0) {
       return percentFormatterFor(maximumFractionDigits).format(clamp01(ratio));

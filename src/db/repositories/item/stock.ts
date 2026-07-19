@@ -337,7 +337,9 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       if (!Number.isFinite(unitSalePrice) || unitSalePrice < 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'Sale price cannot be negative.');
       }
-      const saleTotal = roundMoney(unitSalePrice * draw.quantity);
+      // Quantised to the base currency's minor unit, not a flat 2dp (issue #292): 3 × ¥100.5
+      // books as ¥302, because half a yen is not an amount that can be paid or displayed.
+      const saleTotal = roundMoney(unitSalePrice * draw.quantity, this.moneyDecimals());
       const counterparty = input.counterparty?.trim() || null;
       const note = input.note?.trim() || `Sold ${draw.quantity}${counterparty ? ` to ${counterparty}` : ''}.`;
 

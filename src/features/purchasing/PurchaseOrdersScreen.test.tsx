@@ -93,6 +93,8 @@ vi.mock('@/lib/useFormatters', () => ({
       { type: 'currency', value: SYMBOLS[code ?? ''] ?? '£' },
       { type: 'literal', value: v.toFixed(2) },
     ],
+    // The scale an order's estimated value is quantised to (issue #292) — sterling's two.
+    currencyFractionDigits: () => 2,
     quantity: (v: number) => String(v),
     date: () => '',
     dateTime: () => '',

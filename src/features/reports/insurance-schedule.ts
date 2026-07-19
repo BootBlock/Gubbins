@@ -21,7 +21,7 @@
  * rounded form: line → location subtotal → grand total.
  */
 import { effectiveUnitCost, type ValuedUnit } from './reports';
-import { roundMoney, sumMoney } from '@/lib/money';
+import { MONEY_DECIMALS, roundMoney, sumMoney } from '@/lib/money';
 import { effectiveUnitValue } from '@/features/inventory/valuation';
 import { warrantyStatus, type WarrantyStatus } from '@/features/inventory/asset-lifecycle';
 import type { Condition } from '@/db/repositories/constants';
@@ -164,8 +164,14 @@ export function flattenLocationHierarchy(locations: readonly ScheduleLocationInp
   return ordered;
 }
 
-/** Resolve a single asset input to its display line, valuing it through the cost seams. */
-function toLine(item: ScheduleItemInput, now: number): ScheduleLine {
+/**
+ * Resolve a single asset input to its display line, valuing it through the cost seams.
+ *
+ * `decimals` is the currency's minor unit (issue #292) — the line is the bottom rung of a column
+ * an insurer adds up by hand, so it must be quantised to a figure that currency can actually be
+ * written in, not a flat 2dp.
+ */
+function toLine(item: ScheduleItemInput, now: number, decimals: number): ScheduleLine {
   const qty = Math.max(0, item.quantity);
   // Manual current value (G9) wins; otherwise the effective replacement cost per unit. The
   // override precedence is the single `effectiveUnitValue` seam shared with the valuation report.
@@ -189,7 +195,7 @@ function toLine(item: ScheduleItemInput, now: number): ScheduleLine {
       },
       now,
     ),
-    replacementValue: roundMoney(qty * Math.max(0, unitValue)),
+    replacementValue: roundMoney(qty * Math.max(0, unitValue), decimals),
     thumbnail: item.thumbnail ?? null,
   };
 }
@@ -203,18 +209,26 @@ function toLine(item: ScheduleItemInput, now: number): ScheduleLine {
  * cannot be resolved fall into a trailing "Unassigned" group. Only locations that actually
  * hold at least one asset become a group — empty rooms are omitted. `now` is injected (for
  * the warranty derivation and the `generatedAt` stamp) so the result is deterministic.
+ *
+ * @param decimals Places every rung of the document is quantised to — the reporting currency's
+ * **minor unit**, not a flat 2dp (issue #292). This matters more here than anywhere else: the
+ * schedule is read with a calculator, so a line printed to a precision the currency cannot
+ * express (half a yen) is a figure the reader cannot reproduce. The caller resolves this from the
+ * base currency (`BaseRepository.moneyDecimals()`); it defaults to {@link MONEY_DECIMALS} so a
+ * caller that has no currency to hand — and every existing test — behaves exactly as before.
  */
 export function buildInsuranceSchedule(
   items: readonly ScheduleItemInput[],
   locations: readonly ScheduleLocationInput[],
   now: number,
+  decimals: number = MONEY_DECIMALS,
 ): InsuranceSchedule {
   // Bucket the resolved lines by location id (null key = unresolved → "Unassigned").
   const linesByLocation = new Map<string | null, ScheduleLine[]>();
   const known = new Set(locations.map((l) => l.id));
   for (const item of items) {
     const key = item.locationId != null && known.has(item.locationId) ? item.locationId : null;
-    const line = toLine(item, now);
+    const line = toLine(item, now, decimals);
     const bucket = linesByLocation.get(key);
     if (bucket) bucket.push(line);
     else linesByLocation.set(key, [line]);
@@ -233,7 +247,10 @@ export function buildInsuranceSchedule(
     // A schedule is read as a column of figures that must add up, so each rung sums the rung
     // below it *as printed*: lines are already quantised by `toLine`, and the subtotal is their
     // sum rounded once (issue #288). An insurer adding the lines by hand gets this subtotal.
-    const subtotal = sumMoney(sorted.map((l) => l.replacementValue));
+    const subtotal = sumMoney(
+      sorted.map((l) => l.replacementValue),
+      decimals,
+    );
     return { locationId, locationPath, depth, lines: sorted, subtotal };
   };
 
@@ -248,7 +265,10 @@ export function buildInsuranceSchedule(
     groups.push(makeGroup(null, UNASSIGNED_GROUP_LABEL, 0, unassigned));
   }
 
-  const grandTotal = sumMoney(groups.map((g) => g.subtotal));
+  const grandTotal = sumMoney(
+    groups.map((g) => g.subtotal),
+    decimals,
+  );
   const itemCount = groups.reduce((sum, g) => sum + g.lines.length, 0);
   return { groups, grandTotal, itemCount, generatedAt: now };
 }

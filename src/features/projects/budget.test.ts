@@ -283,3 +283,72 @@ describe('monetary rounding', () => {
     expect(s.spentFraction).toBeCloseTo(0.994, 10);
   });
 });
+
+// Issue #292: the scale is the currency's minor unit, not a flat two decimals.
+describe('currency minor units', () => {
+  it('publishes a zero-decimal currency (JPY) in whole units', () => {
+    // The yen has no sub-unit, so a raw ¥301.5 of spend must not be published as a half-yen.
+    const s = summariseBudget(
+      facts({ budget: 1000, estimatedCost: 900.4, committedFromBom: 201.5, manualExpenseTotal: 100 }),
+      80,
+      0,
+    );
+    expect(s.budget).toBe(1000);
+    expect(s.committedFromBom).toBe(202);
+    expect(s.estimatedCost).toBe(900);
+    expect(s.totalSpent).toBe(302);
+    expect(s.projectedFinalCost).toBe(1000);
+  });
+
+  it('still reconciles at zero decimals: budget − totalSpent is exactly remaining', () => {
+    const s = summariseBudget(
+      facts({ budget: 1000, estimatedCost: 900.4, committedFromBom: 201.5, manualExpenseTotal: 100 }),
+      80,
+      0,
+    );
+    expect(s.totalSpent).toBe(s.committedFromBom + s.manualExpenseTotal);
+    expect(s.remaining).toBe((s.budget as number) - s.totalSpent);
+    expect(s.remaining).toBe(698);
+    expect(s.projectedRemaining).toBe((s.budget as number) - s.projectedFinalCost);
+  });
+
+  it('keeps the third digit of a three-decimal currency (BHD)', () => {
+    // 1000 fils to the dinar, so 0.1235 is real money a flat 2dp would round away.
+    const s = summariseBudget(
+      facts({ budget: 1, estimatedCost: 0.5, committedFromBom: 0.1235, manualExpenseTotal: 0.0004 }),
+      80,
+      3,
+    );
+    expect(s.committedFromBom).toBe(0.124);
+    expect(s.manualExpenseTotal).toBe(0);
+    expect(s.totalSpent).toBe(0.124);
+    expect(s.remaining).toBe(0.876);
+  });
+
+  it('quantises a category at the same scale', () => {
+    const whole = summariseBudgetCategory(
+      { id: 'c1', name: 'Parts', amount: 500, spent: 100.5, position: 0 },
+      80,
+      0,
+    );
+    expect(whole.spent).toBe(101);
+    expect(whole.remaining).toBe(399);
+
+    const fils = summariseBudgetCategory(
+      { id: 'c2', name: 'Parts', amount: 1, spent: 0.1235, position: 0 },
+      80,
+      3,
+    );
+    expect(fils.spent).toBe(0.124);
+    expect(fils.remaining).toBe(0.876);
+  });
+
+  it('defaults to two decimals, so existing callers are unchanged', () => {
+    const s = summariseBudget(
+      facts({ budget: 1000, estimatedCost: 900.4, committedFromBom: 201.5, manualExpenseTotal: 100 }),
+      80,
+    );
+    expect(s.committedFromBom).toBe(201.5);
+    expect(s.totalSpent).toBe(301.5);
+  });
+});

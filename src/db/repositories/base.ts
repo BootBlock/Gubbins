@@ -7,6 +7,7 @@
  * passes `() => isWriteSuspended(useStorageStore.getState().tier)`; tests omit it
  * (defaulting to "never suspended") so the store is not a test dependency.
  */
+import { moneyDecimals } from '@/lib/money';
 import { DbError } from '../errors';
 import type { IDatabaseDriver } from '../rpc/driver';
 import { can, UNRESTRICTED_AUTHORITY, type Authority } from '@/features/users/permissions';
@@ -117,6 +118,16 @@ export abstract class BaseRepository {
     if (raw == null) return null;
     const code = raw.trim().toUpperCase();
     return /^[A-Z]{3}$/.test(code) ? code : null;
+  }
+
+  /**
+   * Decimal places to quantise a published money figure to — the base currency's minor unit
+   * (issue #292), so a JPY total lands on a whole yen and a BHD one keeps its third digit.
+   * Pass it to `roundMoney` / `sumMoney` at every boundary that persists or returns an amount;
+   * an unresolved currency falls back to {@link MONEY_DECIMALS}, i.e. the previous behaviour.
+   */
+  protected moneyDecimals(): number {
+    return moneyDecimals(this.baseCurrency());
   }
 
   /**
