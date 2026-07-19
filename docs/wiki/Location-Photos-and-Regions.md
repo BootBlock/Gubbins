@@ -68,8 +68,28 @@ shelf" is exactly what you record, without drawing two overlapping boxes.
 You can work from either end:
 
 - **From the photo** — open a region and add items to it.
-- **From the item** — an item's **Where it sits** section shows every region it sits in, each
-  with a preview of the photo and the name of the location it belongs to.
+- **From the item** — an item's **Where it sits** section (on the **Details** tab when you edit
+  an item) shows every region it sits in, each with a preview of the photo and the name of the
+  location it belongs to.
+
+### From the item
+
+**Where it sits** is not just a display — it is a full set of controls, so you never have to go
+hunting through a location's photos to correct where something lives:
+
+- **Place on a photo…** opens a chooser. Pick a photo, then pick a region on it, and the item is
+  placed there.
+- **Move** takes the item out of one region and puts it in another — including a region on a
+  different photo — in a single step.
+- **Remove** takes the item off that photo. The item itself is untouched.
+
+The chooser offers photos of the item's own location *and* of the locations above it, because a
+region is usually drawn on a picture of the containing place — you photograph the cabinet and
+mark out its drawers, rather than photographing every drawer.
+
+> **ℹ️ Note**
+> The chooser only *places* items. Drawing, renaming, recolouring and deleting regions all stay
+> in the location's photo editor, so the shapes have one home and one place to correct them.
 
 > **ℹ️ Note**
 > Placing an item in a region does **not** move its stock. Regions describe *where within a

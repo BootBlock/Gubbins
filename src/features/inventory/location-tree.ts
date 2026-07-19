@@ -233,3 +233,25 @@ export function locationPath(id: string, nodes: readonly FlatNode[], separator =
   }
   return names.join(separator);
 }
+
+/**
+ * A location's own id followed by each of its ancestors', nearest first (e.g. `Drawer 3`,
+ * `Cabinet A`, `Workshop`). Defensive in exactly the way {@link locationPath} is: a missing
+ * or cyclic parent stops the walk rather than looping.
+ *
+ * Used where a location's *containing* places are as relevant as the location itself — the
+ * item-side placement picker offers photos of the cabinet and the room, not only of the
+ * drawer, because that is where a small item's region is usually drawn.
+ */
+export function locationAncestry(id: string, nodes: readonly FlatNode[]): readonly string[] {
+  const byId = new Map(nodes.map((n) => [n.id, n] as const));
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  let current = byId.get(id);
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    ids.push(current.id);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  return ids;
+}

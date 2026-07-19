@@ -1,15 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
-import type { ItemRegionPlacement, LocationPhoto } from '@/db/repositories';
+import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
+import type { Item, ItemRegionPlacement, LocationPhoto } from '@/db/repositories';
 import { serialiseGeometry } from '../regions/geometry';
 
 /**
- * Component tests for {@link ItemPlacementsPanel} — the item side of location regions (issue #81).
+ * Component tests for {@link ItemPlacementsPanel} — the item side of location regions (issue #81),
+ * and the place/move/unplace actions added to it in issue #392.
  *
  * The react-query seams and the OPFS read are mocked, as everywhere in a component test. The
  * points worth pinning are that the preview stays **read-only** (a viewer must never become a
- * drawing surface), that it highlights only the region the placement is about, and that a photo
- * which never synced degrades to an explanation rather than a broken image.
+ * drawing surface), that it highlights only the region the placement is about, that a photo
+ * which never synced degrades to an explanation rather than a broken image — and that the write
+ * actions name both ends of the change, since a move that forgot its `from` end would silently
+ * leave the item in two places at once.
  */
 
 const h = vi.hoisted(() => ({
@@ -17,15 +20,40 @@ const h = vi.hoisted(() => ({
   photos: [] as LocationPhoto[],
   src: 'blob:photo' as string | null,
   loading: false,
+  setPlacement: vi.fn(),
+  toast: vi.fn(),
 }));
 
 vi.mock('../location-media', () => ({
   useItemPlacements: () => ({ data: h.placements }),
   useLocationPhotos: () => ({ data: h.photos }),
+  useSetItemPlacement: () => ({ mutate: h.setPlacement, isPending: false }),
 }));
 
 vi.mock('../usePhotoImageSrc', () => ({
   usePhotoImageSrc: () => ({ src: h.src, loading: h.loading }),
+}));
+
+// The picker has its own test; here it only has to be *reachable* and to report a choice back.
+vi.mock('./PlacementPickerDialog', () => ({
+  PlacementPickerDialog: ({
+    from,
+    onChoose,
+  }: {
+    from: { photoId: string; regionId: string } | null;
+    onChoose: (target: { photoId: string; regionId: string }, name: string) => void;
+  }) => (
+    <div data-testid="placement-picker" data-from={from ? from.regionId : 'none'}>
+      <button type="button" onClick={() => onChoose({ photoId: 'photo-2', regionId: 'r9' }, 'Bay 4')}>
+        choose
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock('@/components/foundry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/foundry')>()),
+  useToast: () => ({ show: h.toast }),
 }));
 
 import { ItemPlacementsPanel } from './ItemPlacementsPanel';
@@ -58,13 +86,18 @@ const placement = (overrides: Partial<ItemRegionPlacement> = {}): ItemRegionPlac
   ...overrides,
 });
 
-const renderPanel = () => render(<ItemPlacementsPanel itemId="item-1" />);
+/** Only `id` and `locationId` are read here; the rest of `Item` is irrelevant to this panel. */
+const item = { id: 'item-1', locationId: 'loc-1' } as Item;
+
+const renderPanel = () => render(<ItemPlacementsPanel item={item} />);
 
 beforeEach(() => {
   h.placements = [];
   h.photos = [photo()];
   h.src = 'blob:photo';
   h.loading = false;
+  h.setPlacement.mockReset();
+  h.toast.mockReset();
 });
 afterEach(cleanup);
 
@@ -127,5 +160,73 @@ describe('ItemPlacementsPanel', () => {
     h.placements = [placement({ photoId: 'gone' })];
     renderPanel();
     expect(screen.getByTestId('item-placement-placeholder')).toBeInTheDocument();
+  });
+
+  // --- Placing, moving and unplacing (issue #392) --------------------------------
+
+  it('offers to place the item even when it sits nowhere yet', () => {
+    renderPanel();
+    fireEvent.click(screen.getByTestId('item-placement-add'));
+    // Adding, not moving: there is no placement to move out of.
+    expect(screen.getByTestId('placement-picker')).toHaveAttribute('data-from', 'none');
+  });
+
+  it('places the item in the chosen region, with no `from` end', () => {
+    renderPanel();
+    fireEvent.click(screen.getByTestId('item-placement-add'));
+    fireEvent.click(screen.getByText('choose'));
+    expect(h.setPlacement).toHaveBeenCalledWith(
+      { itemId: 'item-1', from: null, to: { photoId: 'photo-2', regionId: 'r9' } },
+      expect.anything(),
+    );
+  });
+
+  it('moves a placement as one change — out of the old region and into the new', () => {
+    h.placements = [placement()];
+    renderPanel();
+    fireEvent.click(screen.getByTestId('item-placement-move'));
+    expect(screen.getByTestId('placement-picker')).toHaveAttribute('data-from', 'r1');
+    fireEvent.click(screen.getByText('choose'));
+    expect(h.setPlacement).toHaveBeenCalledWith(
+      {
+        itemId: 'item-1',
+        from: { photoId: 'photo-1', regionId: 'r1' },
+        to: { photoId: 'photo-2', regionId: 'r9' },
+      },
+      expect.anything(),
+    );
+  });
+
+  it('unplaces a placement without placing it anywhere else', () => {
+    h.placements = [placement()];
+    renderPanel();
+    fireEvent.click(screen.getByTestId('item-placement-remove'));
+    expect(h.setPlacement).toHaveBeenCalledWith(
+      { itemId: 'item-1', from: { photoId: 'photo-1', regionId: 'r1' } },
+      expect.anything(),
+    );
+  });
+
+  it('names the region in each action’s label, so a grid of several is unambiguous', () => {
+    h.placements = [placement()];
+    renderPanel();
+    expect(screen.getByRole('button', { name: 'Move out of Top shelf' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove from Top shelf' })).toBeInTheDocument();
+  });
+
+  it('reports a failed write rather than leaving the grid silently unchanged', () => {
+    h.placements = [placement()];
+    h.setPlacement.mockImplementation((_vars, opts) => opts.onError(new Error('disk full')));
+    renderPanel();
+    fireEvent.click(screen.getByTestId('item-placement-remove'));
+    expect(h.toast).toHaveBeenCalledWith(expect.objectContaining({ tone: 'danger' }));
+  });
+
+  it('announces an unplacing, which otherwise only removes a picture', () => {
+    h.placements = [placement()];
+    h.setPlacement.mockImplementation((_vars, opts) => opts.onSuccess());
+    renderPanel();
+    fireEvent.click(screen.getByTestId('item-placement-remove'));
+    expect(screen.getByText('Removed from Top shelf.')).toBeInTheDocument();
   });
 });
