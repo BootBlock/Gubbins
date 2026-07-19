@@ -1,4 +1,4 @@
-import { Button, Surface } from '@/components/foundry';
+import { Button, LiveRegion, Surface } from '@/components/foundry';
 import { CameraOffIcon } from '@/components/icons';
 import type { ScannerStatus } from '../scanner-machine';
 
@@ -89,9 +89,14 @@ export function ScannerViewfinder({
         </div>
       ) : null}
 
-      {status === 'REQUESTING_PERMISSIONS' ? (
-        <p className="absolute text-sm text-white/80">Requesting camera access…</p>
-      ) : null}
+      {/* The permission wait, announced as well as drawn. The region is **always mounted** and
+          only its text changes — a live region inserted at the moment its message appears is
+          frequently not announced at all (see {@link LiveRegion}), which is exactly the trap a
+          conditionally-rendered `role="status"` would fall into here. It stays absolutely
+          positioned so the empty region is out of flow and never shifts the centred video. */}
+      <LiveRegion className="absolute text-sm text-white/80">
+        {status === 'REQUESTING_PERMISSIONS' ? 'Requesting camera access…' : null}
+      </LiveRegion>
     </>
   );
 }
