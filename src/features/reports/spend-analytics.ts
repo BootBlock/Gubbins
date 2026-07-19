@@ -18,6 +18,13 @@
  * **Amounts accumulate raw and are quantised once, at the boundary** (issue #288) — every money
  * figure published here goes through `@/lib/money`, so the headline total, the buckets and the
  * breakdowns cannot drift a penny apart. Shares stay ratios of the raw totals.
+ *
+ * **One currency only** (issue #285). Every amount folded in here is assumed to be denominated in
+ * the user's base currency; the caller is responsible for excluding anything that is not. Gubbins
+ * holds no exchange rates, so adding a $500 order to a £500 one would produce a £1,000 total that
+ * is simply wrong — the same refusal `inBaseCurrencySql` already makes for valuation (issue #284).
+ * {@link SpendReport.excludedForeignCurrency} carries the count that was left out, so the omission
+ * can be shown rather than silently understating the spend.
  */
 import { roundMoney } from '@/lib/money';
 
@@ -100,6 +107,12 @@ export interface SpendReport {
   readonly bySupplier: readonly SpendGroup[];
   /** Category totals, highest first (the "Uncategorised" catch-all carries `id: null`). */
   readonly byCategory: readonly SpendGroup[];
+  /**
+   * How many in-window purchase orders were left out because they are priced in a currency other
+   * than the base one (issue #285). `0` when nothing was excluded — including when the base
+   * currency is unknown, since no exclusion can be decided in that case.
+   */
+  readonly excludedForeignCurrency: number;
 }
 
 /** Share guard: a part's fraction of the total, or 0 when the total is 0 (mirrors abc-analysis). */
@@ -128,12 +141,17 @@ const UNCATEGORISED = 'Uncategorised';
  * a stable order; a null supplier/category collapses into a single catch-all group. `bySource`
  * always lists all three sources in {@link SPEND_SOURCES} order (0 when none). Every `share` uses a
  * divide-by-zero-safe guard.
+ *
+ * **`excludedForeignCurrency`** is passed straight through to the report (clamped to a
+ * non-negative integer). It is a count the caller has already decided — this seam never sees the
+ * excluded rows, precisely because they must not reach any total.
  */
 export function buildSpendReport(
   events: readonly SpendEvent[],
   windowStart: number,
   windowEnd: number,
   bucketCount: number,
+  excludedForeignCurrency = 0,
 ): SpendReport {
   const count = Math.max(1, Math.floor(bucketCount));
   const span = Math.max(1, windowEnd - windowStart);
@@ -221,6 +239,12 @@ export function buildSpendReport(
     bySource,
     bySupplier,
     byCategory,
+    // `Math.floor(NaN)` is NaN and `Math.max(0, NaN)` is NaN, so a non-finite count would slip
+    // through the clamp and then read as falsy at every consumer — losing the exclusion silently,
+    // which is the one outcome this field exists to prevent.
+    excludedForeignCurrency: Number.isFinite(excludedForeignCurrency)
+      ? Math.max(0, Math.floor(excludedForeignCurrency))
+      : 0,
   };
 }
 

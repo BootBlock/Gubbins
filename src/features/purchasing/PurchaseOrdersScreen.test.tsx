@@ -80,12 +80,17 @@ vi.mock('@/features/inventory/queries', () => ({
   useSupplierPartsForItems: () => ({ data: new Map() }),
 }));
 
+/** Currency-code → symbol for the formatter stub; anything unmapped renders as the base £. */
+const SYMBOLS: Record<string, string> = { EUR: '€', USD: '$' };
+
 vi.mock('@/lib/useFormatters', () => ({
   useFormatters: () => ({
-    currency: (v: number) => `£${v.toFixed(2)}`,
+    // Honours the optional currency override so a test can tell a EUR order's total from a
+    // base-currency one (issue #285); omitted ⇒ the base currency, as in the real formatter.
+    currency: (v: number, code?: string) => `${SYMBOLS[code ?? ''] ?? '£'}${v.toFixed(2)}`,
     // Mirrors `currency` split into Intl-style parts so the <Money> control renders.
-    currencyParts: (v: number) => [
-      { type: 'currency', value: '£' },
+    currencyParts: (v: number, code?: string) => [
+      { type: 'currency', value: SYMBOLS[code ?? ''] ?? '£' },
       { type: 'literal', value: v.toFixed(2) },
     ],
     quantity: (v: number) => String(v),
@@ -327,5 +332,59 @@ describe('PurchaseOrdersScreen — master-list result-count aria-live (WCAG 4.1.
     const region = screen.getByTestId('po-list-count-live');
     expect(region.textContent).toContain('3');
     expect(region.textContent?.toLowerCase()).toContain('purchase orders');
+  });
+});
+
+describe("PurchaseOrdersScreen — an order's total renders in the order's currency (issue #285)", () => {
+  /** One list row whose lines total 100, in the given currency. */
+  function orderIn(currency: string | null): PurchaseOrderWithLines {
+    return {
+      id: 'po-1',
+      supplierName: 'Acme',
+      reference: 'REF-001',
+      effectiveStatus: 'ORDERED',
+      currency,
+      lines: [
+        {
+          id: 'l-1',
+          poId: 'po-1',
+          itemId: null,
+          description: 'Part',
+          orderedQty: 2,
+          receivedQty: 0,
+          unitCost: 50,
+        },
+      ],
+    } as unknown as PurchaseOrderWithLines;
+  }
+
+  it("renders a EUR order's total under the euro sign, not the base currency's", () => {
+    // The line costs were copied verbatim from a EUR supplier quote and are never converted,
+    // so showing €100 as "£100.00" would misstate the order by the exchange rate.
+    ordersState = { isLoading: false, data: { rows: [orderIn('EUR')] } };
+    render(<PurchaseOrdersScreen />);
+    const row = screen.getAllByTestId('po-list-row')[0]!;
+    expect(row.textContent).toContain('€100.00');
+    expect(row.textContent).not.toContain('£');
+  });
+
+  it('falls back to the base currency when the order carries no code', () => {
+    ordersState = { isLoading: false, data: { rows: [orderIn(null)] } };
+    render(<PurchaseOrdersScreen />);
+    const row = screen.getAllByTestId('po-list-row')[0]!;
+    expect(row.textContent).toContain('£100.00');
+  });
+
+  it("renders a EUR order's per-line price under the euro sign in the detail panel", () => {
+    // The line dialog already showed € for these same numbers; the detail list must agree.
+    poData = { ...makeDraftPo(), currency: 'EUR' } as unknown as PurchaseOrderWithLines;
+    poData = {
+      ...poData,
+      lines: [{ ...poData.lines[0]!, unitCost: 50 }],
+    } as unknown as PurchaseOrderWithLines;
+    render(<PurchaseOrdersScreen />);
+    const line = screen.getAllByTestId('po-line-row')[0]!;
+    expect(line.textContent).toContain('€50.00');
+    expect(line.textContent).not.toContain('£');
   });
 });
