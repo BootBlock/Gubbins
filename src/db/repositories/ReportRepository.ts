@@ -24,6 +24,7 @@ import {
   type DeadStockMode,
 } from './constants';
 import { buildAncestorChain } from '@/features/inventory/location-inheritance';
+import { effectiveUnitValue } from '@/features/inventory/valuation';
 import {
   resolveDeadStockPolicy,
   type DeadStockLocationPolicy,
@@ -972,11 +973,22 @@ export class ReportRepository extends BaseRepository {
   /**
    * Valuation over time (§3 advanced analytics): the total inventory value reconstructed across
    * the trailing `windowDays` at `points` evenly-spaced samples, for a sparkline. The current
-   * total (`SUM(quantity × effectiveUnitCost)`) anchors the line; the pure
-   * {@link buildValuationTrend} helper reverses the value-tagged ledger from it. Each in-window
-   * `item_history` quantity delta is costed by its item here (so the single cost-precedence rule
-   * stays in {@link effectiveUnitCost}). Active, non-parent items only. `now` defaults to the
-   * wall clock.
+   * total anchors the line; the pure {@link buildValuationTrend} helper reverses the value-tagged
+   * ledger from it. Each in-window `item_history` quantity delta is valued by its item here (so
+   * the single cost-precedence rule stays in {@link effectiveUnitCost}).
+   *
+   * The anchor and every event are valued through exactly the same rules as
+   * {@link inventoryValue}'s headline — a manual `current_value` wins over the replacement cost
+   * (`effectiveUnitValue`), and unlimited sources are excluded because they hold no finite value.
+   * Both figures sit side by side on the Reports screen and flow into the same export, so any
+   * divergence between them reads as a contradiction rather than a different measure (issue #289).
+   *
+   * Both the anchor and the in-window events use each item's value **as it stands today** — no
+   * historical value snapshots are consulted, so an item revalued (or re-costed) mid-window has
+   * its earlier movements priced at the new figure. That is the deliberate trade: it is what makes
+   * the right-hand endpoint land exactly on the headline, and the alternative (replaying the
+   * revaluation log per event) would draw a line that no longer ends where the headline says the
+   * inventory is worth. Active, non-parent items only. `now` defaults to the wall clock.
    */
   async valuationTrend(
     windowDays: number,
@@ -990,17 +1002,19 @@ export class ReportRepository extends BaseRepository {
     const itemRows = await this.driver.query<{
       quantity: number;
       unit_cost: number | null;
+      current_value: number | null;
       preferred_supplier_cost: number | null;
     }>(
-      `SELECT i.quantity AS quantity, i.unit_cost AS unit_cost,
+      `SELECT i.quantity AS quantity, i.unit_cost AS unit_cost, i.current_value AS current_value,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
          FROM items i
-        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')};`,
+        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
     );
     const currentValue = summariseValuation(
       itemRows.map((r) => ({
         quantity: r.quantity,
         unitCost: r.unit_cost,
+        currentValue: r.current_value,
         preferredSupplierCost: r.preferred_supplier_cost,
       })),
     ).totalValue;
@@ -1010,22 +1024,29 @@ export class ReportRepository extends BaseRepository {
       created_at: number;
       quantity_delta: number;
       unit_cost: number | null;
+      current_value: number | null;
       preferred_supplier_cost: number | null;
     }>(
       `SELECT h.created_at AS created_at, h.quantity_delta AS quantity_delta,
-              i.unit_cost AS unit_cost, ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
+              i.unit_cost AS unit_cost, i.current_value AS current_value,
+              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
          FROM item_history h
          JOIN items i ON i.id = h.item_id
         WHERE h.created_at > ? AND h.created_at <= ?
           AND h.quantity_delta IS NOT NULL AND h.quantity_delta <> 0
-          AND i.is_active = 1 AND ${notAVariantParent('i.id')};`,
+          AND i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
       [windowStart, now],
     );
     const events: ValuationEvent[] = eventRows.map((r) => ({
       createdAt: r.created_at,
       valueDelta:
         r.quantity_delta *
-        effectiveUnitCost({ unitCost: r.unit_cost, preferredSupplierCost: r.preferred_supplier_cost }),
+        // Same precedence as the anchor: a manual current value wins over the replacement cost,
+        // so reversing the ledger lands on a past total measured the same way as today's.
+        effectiveUnitValue(
+          r.current_value,
+          effectiveUnitCost({ unitCost: r.unit_cost, preferredSupplierCost: r.preferred_supplier_cost }),
+        ),
     }));
 
     return buildValuationTrend(currentValue, events, windowStart, now, points);

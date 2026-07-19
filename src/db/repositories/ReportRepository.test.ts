@@ -832,6 +832,47 @@ describe('ReportRepository', () => {
       expect(report.startValue).toBe(30); // higher before the consumption
       expect(report.changeValue).toBe(-10);
     });
+
+    it('anchors on the same total as the valuation headline (issue #289)', async () => {
+      const now = Date.now();
+      // A revalued collectible: the manual current value wins over its cost, on both figures.
+      await items.create({ name: 'Collectible', quantity: 1, unitCost: 40, currentValue: 900 });
+      // An unlimited source holds no finite value, so neither figure counts it.
+      await items.create({ name: 'Mains water', quantity: 500, unitCost: 2, isUnlimited: true });
+
+      const headline = (await reports.inventoryValue()).totalValue;
+      const trend = await reports.valuationTrend(30, 4, now);
+      expect(headline).toBe(900);
+      expect(trend.endValue).toBe(headline);
+    });
+
+    it('values in-window movements the same way it values the anchor (issue #289)', async () => {
+      const now = Date.now();
+      const item = await items.create({
+        name: 'Collectible',
+        quantity: 1,
+        unitCost: 40,
+        currentValue: 900,
+      });
+      // A −1 consumption mid-window is worth £900, not the £40 replacement cost, so the
+      // reconstructed start value is the £1,800 the headline would have reported back then.
+      await addHistory(item.id, -1, now - 15 * MS_PER_DAY);
+
+      const report = await reports.valuationTrend(30, 4, now);
+      expect(report.endValue).toBe(900);
+      expect(report.startValue).toBe(1800);
+    });
+
+    it('leaves unlimited sources out of the reconstructed movements (issue #289)', async () => {
+      const now = Date.now();
+      const water = await items.create({ name: 'Mains water', quantity: 500, unitCost: 2 });
+      await addHistory(water.id, -100, now - 15 * MS_PER_DAY);
+      await driver.execute('UPDATE items SET is_unlimited = 1 WHERE id = ?;', [water.id]);
+
+      const report = await reports.valuationTrend(30, 4, now);
+      expect(report.endValue).toBe(0);
+      expect(report.startValue).toBe(0);
+    });
   });
 
   describe('dataHygiene', () => {
