@@ -122,7 +122,7 @@ function ScheduleGroup({ group, formatters }: { group: ScheduleLocationGroup; fo
         </span>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="schedule-table-scroll overflow-x-auto">
         <table className="schedule-table w-full text-sm">
           <caption className="sr-only">Assets in {group.locationPath}</caption>
           <thead>
