@@ -57,6 +57,20 @@ There are two ways to restore:
 > Take a backup before any big change — a large import, a bulk edit, or a Replace restore. The
 > automatic restore-point has your back, but your own recent `.zip` is the surest safety net.
 
+## Only restore files you trust
+
+A backup file describes changes to make to your inventory — including which entries to remove — so
+restoring one hands it a good deal of authority over your data. Gubbins checks a file over before
+applying any of it, and refuses the **whole** file if it doesn't look like a genuine Gubbins backup:
+if it isn't valid, was made by a newer version, or refers to data that isn't part of Gubbins, nothing
+is restored and your current inventory is left untouched.
+
+> **⚠️ Heads-up**
+> Those checks are a safety net, not a substitute for judgement. Treat a backup like any other file
+> you'd open: restore from your own archives, or from someone you trust. The same goes for a
+> **[[Cloud sync|Cloud-Sync]]** folder shared with other people — anyone who can write to it can put
+> a file there for your devices to pick up.
+
 ## The weekly reminder (mobile)
 
 On a phone or tablet **without [[Cloud sync|Cloud-Sync]] connected**, Gubbins shows a *"Time for a
