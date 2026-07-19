@@ -65,11 +65,8 @@ import {
 import { buildSpendReport, type SpendEvent, type SpendReport } from '@/features/reports/spend-analytics';
 import { buildSalesReport, type SalesEvent, type SalesReport } from '@/features/reports/sales-analytics';
 import {
-  accumulateScheduleLine,
   createScheduleTotals,
   finaliseScheduleSummary,
-  resolveScheduleGroupKey,
-  scheduleLineValue,
   toScheduleLine,
   type InsuranceScheduleSummary,
   type ScheduleItemInput,
@@ -133,13 +130,6 @@ function notUnlimited(col: string): string {
  * grand total omits, or vice versa, is a document that does not add up.
  */
 const SCHEDULE_ITEM_FILTER = `items.is_active = 1 AND ${notAVariantParent('items.id')} AND ${notUnlimited('items.is_unlimited')}`;
-
-/**
- * How many rows the schedule summary scan pulls per round-trip. Large enough that the per-query
- * overhead is amortised, small enough that a chunk stays a trivial allocation even at 100k
- * assets — the point of the scan is that peak memory does not scale with the inventory.
- */
-const SCHEDULE_SCAN_CHUNK = 2000;
 
 /**
  * SQL predicate matching a currency column denominated in the user's base currency, and therefore
@@ -216,6 +206,39 @@ function effectiveUnitValueSql(alias: string, baseCurrency: string | null): stri
             WHEN ${alias}.unit_cost IS NOT NULL AND ${alias}.unit_cost >= 0 THEN ${alias}.unit_cost
             ELSE MAX(COALESCE(${preferredSupplierCostSql(`${alias}.id`, baseCurrency)}, 0), 0)
           END`;
+}
+
+/**
+ * SQL expression for one schedule line's replacement value as an **integer count of minor units** —
+ * `roundMoney(quantity × effectiveUnitValue, decimals)` reproduced exactly in SQL so the whole
+ * schedule can be summed **by the database** (issue #411) instead of shipping one row per asset to
+ * the worker to fold in JS. At 100k assets that transfer was the bulk of the read; a `SUM … GROUP
+ * BY` returns one row per room.
+ *
+ * The rule is delicate and is now stated twice — here and in `@/lib/money`'s `roundMoney` — so
+ * `ReportRepository.test.ts` pins this against the pure seam over randomised fixtures at each
+ * supported minor unit (0dp, 2dp, 3dp). Two things make it match where a naive `ROUND()` does not:
+ *
+ *  - **`printf('%.15g', …)` is `toPrecision(15)`.** `roundMoney` re-reads the scaled value at 15
+ *    significant digits to collapse binary representation error (`1.005 × 100` is stored as
+ *    `100.49999999999999`) back onto the decimal the user entered, so a tie rounds the way a person
+ *    expects. SQLite's own `ROUND()` rounds the raw binary double and gets those ties wrong — the
+ *    reason the totals could not previously move to SQL.
+ *  - **Integer minor units, half away from zero.** Emitting `round(value × 10^decimals)` as an
+ *    integer makes the `SUM` exact and order-independent (integer addition is associative), which is
+ *    what lets the totals agree to the penny regardless of the row order SQLite scans in. The
+ *    per-unit value is always ≥ 0 (see {@link effectiveUnitValueSql}) and the quantity is floored at
+ *    0, so the product is non-negative and `CAST(x + 0.5 AS INTEGER)` is exactly `Math.round` of it —
+ *    no negative/away-from-zero case is reachable.
+ *
+ * `decimals` is the reporting currency's minor unit; `10 ** decimals` is a controlled integer with
+ * no quoting or injection surface. The per-unit value is floored again by {@link effectiveUnitValueSql}
+ * but the explicit `MAX(…, 0)` mirrors `scheduleLineValue`'s `Math.max(0, …)` defence exactly.
+ */
+function scheduleLineMinorUnitsSql(alias: string, baseCurrency: string | null, decimals: number): string {
+  const factor = 10 ** decimals;
+  const lineValue = `MAX(${alias}.quantity, 0) * MAX(${effectiveUnitValueSql(alias, baseCurrency)}, 0)`;
+  return `CAST(CAST(printf('%.15g', (${lineValue}) * ${factor}) AS REAL) + 0.5 AS INTEGER)`;
 }
 
 /** One already-summed valuation group as the `GROUP BY` queries return it. */
@@ -338,66 +361,48 @@ export class ReportRepository extends BaseRepository {
    * Insurance / estate schedule (feature-gap G1) — the document's **totals and shape**, with no
    * lines: ordered room groups, each with its asset count and subtotal, plus the grand total.
    *
-   * Read by streaming the matching assets in `rowid` order in bounded chunks and folding each
-   * into {@link accumulateScheduleLine}, so peak memory is O(locations) rather than O(items)
-   * (issue #163). Nothing here selects a thumbnail: totalling a schedule never needs the photos,
-   * and at 100k assets those BLOBs are hundreds of megabytes.
+   * Summed **in the database** (issue #411): one grouped row per room rather than one transferred
+   * row per asset. A prior read streamed every matching asset to the worker to fold in JS, which at
+   * 100k assets spent the bulk of its time simply moving 100k row objects across the worker boundary
+   * to produce a few dozen numbers. Each line is quantised to integer minor units by
+   * {@link scheduleLineMinorUnitsSql} — reproducing `roundMoney` exactly — so the `SUM` is exact and
+   * order-independent, and the result feeds the *same* {@link finaliseScheduleSummary} seam
+   * (ordering, subtotals, grand total, "Unassigned" bucket) the paged and in-memory reads use.
+   * Nothing here selects a thumbnail: totalling a schedule never needs the photos, and at 100k
+   * assets those BLOBs are hundreds of megabytes.
    *
-   * Keyset (`rowid > ?`) rather than `LIMIT/OFFSET`: an offset scan re-walks the prefix on every
-   * chunk, turning a linear read into a quadratic one.
+   * The group key is normalised through a `LEFT JOIN` to `locations`, so an asset whose location is
+   * unset **or** points at a deleted location folds into the null ("Unassigned") group exactly as
+   * {@link resolveScheduleGroupKey} did — narrowing that to `location_id IS NULL` would silently drop
+   * assets pointing at a deleted room from a document someone claims against.
    *
-   * Cost flows through the same `effectiveUnitCost` seam as the valuation report (manual cost
-   * wins, else the preferred supplier cost, via {@link preferredSupplierCostSql}), and the
-   * arithmetic is the same pure code {@link buildInsuranceSchedule} uses — the figures a page
-   * shows and the totals above them come from one implementation.
+   * Cost flows through the same `effectiveUnitCost` seam as the valuation report (manual cost wins,
+   * else the preferred supplier cost, via {@link preferredSupplierCostSql}), so the figures a page
+   * shows and the totals above them come from one rule.
    */
   async insuranceScheduleSummary(now: number = nowMs()): Promise<InsuranceScheduleSummary> {
     const base = this.baseCurrency();
     const decimals = this.moneyDecimals();
+    const factor = 10 ** decimals;
     const locations = await this.scheduleLocations();
-    const known = new Set(locations.map((l) => l.id));
-    const totals = createScheduleTotals();
 
-    const sql = `SELECT items.rowid AS rid, items.quantity AS quantity, items.unit_cost AS unit_cost,
-              items.current_value AS current_value, items.location_id AS location_id,
-              ${preferredSupplierCostSql('items.id', base)} AS preferred_supplier_cost
+    const rows = await this.driver.query<{ group_id: string | null; n: number; minor: number | null }>(
+      `SELECT loc.id AS group_id, COUNT(*) AS n,
+              SUM(${scheduleLineMinorUnitsSql('items', base, decimals)}) AS minor
          FROM items
-        WHERE ${SCHEDULE_ITEM_FILTER} AND items.rowid > ?
-        ORDER BY items.rowid
-        LIMIT ?;`;
+         LEFT JOIN locations loc ON loc.id = items.location_id
+        WHERE ${SCHEDULE_ITEM_FILTER}
+        GROUP BY loc.id;`,
+    );
 
-    let cursor = 0;
-    for (;;) {
-      const rows = await this.driver.query<{
-        rid: number;
-        quantity: number;
-        unit_cost: number | null;
-        current_value: number | null;
-        location_id: string | null;
-        preferred_supplier_cost: number | null;
-      }>(sql, [cursor, SCHEDULE_SCAN_CHUNK]);
-      if (rows.length === 0) break;
-
-      for (const r of rows) {
-        accumulateScheduleLine(
-          totals,
-          resolveScheduleGroupKey(r.location_id, known),
-          scheduleLineValue(
-            {
-              quantity: r.quantity,
-              unitCost: r.unit_cost,
-              // Feature-gap G9: the manual current value wins over the replacement cost.
-              currentValuePerUnit: r.current_value,
-              preferredSupplierCost: r.preferred_supplier_cost,
-            },
-            decimals,
-          ),
-          decimals,
-        );
-      }
-
-      if (rows.length < SCHEDULE_SCAN_CHUNK) break;
-      cursor = rows[rows.length - 1]!.rid;
+    // Rebuild the pure accumulator's state from the grouped rows so the finalisation is byte-for-byte
+    // the streamed read's: integer minor units are exact, and the float sum is only the fallback
+    // `finaliseScheduleSummary` reaches past ~90 trillion at 2dp (no real inventory does).
+    const totals = createScheduleTotals();
+    for (const row of rows) {
+      const minorUnits = row.minor ?? 0;
+      totals.byLocation.set(row.group_id, { count: row.n, minorUnits, floatSum: minorUnits / factor });
+      if (!Number.isSafeInteger(minorUnits)) totals.exact = false;
     }
 
     return finaliseScheduleSummary(totals, locations, now, decimals);
