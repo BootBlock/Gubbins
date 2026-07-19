@@ -341,9 +341,12 @@ export function BootErrorScreen({ error }: { error: DbError }) {
             fresh.
           </p>
           <p className="mt-2">
-            This is <span className="font-medium text-foreground">expected</span> before 1.0. Back up your
-            data below if you'd like to keep a copy, then reset to continue. Once Gubbins reaches 1.0, updates
-            will preserve your data.
+            This is <span className="font-medium text-foreground">expected</span> before 1.0. To keep your
+            data, take the <span className="font-medium text-foreground">Back up everything (.zip)</span> copy
+            below <span className="font-medium text-foreground">before</span> resetting — that is the one you
+            can restore afterwards, from Settings → Backup &amp; Restore using{' '}
+            <span className="font-medium text-foreground">Merge</span>. Then reset to continue. Once Gubbins
+            reaches 1.0, updates will preserve your data.
           </p>
         </div>
       ) : null}

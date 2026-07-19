@@ -14,7 +14,6 @@ import {
   LOCATION_TAGS_TABLE,
   SYNC_EXCLUDED_COLUMNS,
   SYNC_TABLES,
-  UNASSIGNED_LOCATION_ID,
   clearItemRegionTombstoneStatement,
   clearItemTagTombstoneStatement,
   clearLocationTagTombstoneStatement,
@@ -26,7 +25,14 @@ import {
   parseItemTagEdgeId,
   parseLocationTagEdgeId,
 } from '@/db/repositories';
-import { SYSTEM_USER_ID } from '@/db/repositories/constants';
+// Imported from the defining module rather than the `@/db/repositories` barrel: these are read
+// at module scope, and screen tests that mock the barrel wholesale do not provide them.
+import {
+  ADMIN_USER_ID,
+  IN_TRANSIT_LOCATION_ID,
+  SYSTEM_USER_ID,
+  UNASSIGNED_LOCATION_ID,
+} from '@/db/repositories/constants';
 import { historyStatement } from '@/db/repositories/item/history';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
@@ -83,9 +89,23 @@ const WIPE_FILTER: Partial<Record<SyncTable, string>> = {
   roles: 'WHERE is_builtin = 0',
 };
 
-/** Read every row of a table, paging the worker bridge (§2.1). */
-async function readAllRows(driver: IDatabaseDriver, table: SyncTable): Promise<SqlRow[]> {
-  const where = TABLE_FILTER[table] ?? '';
+/**
+ * The rows {@link TABLE_FILTER} excludes, identified by their **id** rather than by the column
+ * the filter tests (issue #197).
+ *
+ * Both sets are seeded with these exact constant ids on every device, so the id is the one
+ * property a rescue read can rely on: it is stable across every revision of the pre-release
+ * baseline, whereas `locations.is_system` / `users.kind` are columns a differently-shaped
+ * database may simply not have. Used only by the best-effort fallback below — the normal path
+ * still filters in SQL.
+ */
+const PROTECTED_ROW_IDS: Partial<Record<SyncTable, readonly string[]>> = {
+  locations: [UNASSIGNED_LOCATION_ID, IN_TRANSIT_LOCATION_ID],
+  users: [SYSTEM_USER_ID, ADMIN_USER_ID],
+};
+
+/** Page every row of a table through the worker bridge (§2.1) under an optional filter. */
+async function pageRows(driver: IDatabaseDriver, table: SyncTable, where: string): Promise<SqlRow[]> {
   const all: SqlRow[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const rows = await driver.query<SqlRow>(`SELECT * FROM ${table} ${where} ORDER BY id LIMIT ? OFFSET ?;`, [
@@ -96,6 +116,27 @@ async function readAllRows(driver: IDatabaseDriver, table: SyncTable): Promise<S
     if (rows.length < PAGE) break;
   }
   return all;
+}
+
+/** Read every row of a table, paging the worker bridge (§2.1). */
+async function readAllRows(
+  driver: IDatabaseDriver,
+  table: SyncTable,
+  options: BuildSnapshotOptions,
+): Promise<SqlRow[]> {
+  const where = TABLE_FILTER[table] ?? '';
+  try {
+    return await pageRows(driver, table, where);
+  } catch (error) {
+    // A filtered read can fail for two very different reasons, and only one of them is fatal.
+    // In `skipUnreadable` mode the table may exist while the *column the filter names* does
+    // not, so retry unfiltered and drop the protected rows by id instead — losing every
+    // location because an older schema spelled `is_system` differently would be a far worse
+    // outcome than the filter costs. A missing table throws again here and is skipped upstream.
+    if (!options.skipUnreadable || where === '') throw error;
+    const excluded = new Set(PROTECTED_ROW_IDS[table] ?? []);
+    return (await pageRows(driver, table, '')).filter((row) => !excluded.has(String(row.id)));
+  }
 }
 
 /**
@@ -112,19 +153,56 @@ function rowForSnapshot(table: SyncTable, row: SqlRow): SqlRow {
   return encodeRowForTable(table, clean);
 }
 
+/** Options for {@link buildLocalSnapshot}. */
+export interface BuildSnapshotOptions {
+  /**
+   * Take whatever the database *can* answer instead of failing the whole snapshot on the first
+   * unreadable part (issue #197).
+   *
+   * Off by default, and deliberately so: sync and an ordinary backup must never quietly ship an
+   * incomplete picture. It is switched on only by the rescue path on the boot-failure screen,
+   * where the database is known to be a different shape from the one this build expects — a
+   * table this build knows about may simply not exist there — and a partial snapshot the user
+   * can restore is worth incomparably more than no snapshot at all.
+   *
+   * Each part that is skipped is reported through {@link onSkipped}, so the caller can tell the
+   * user exactly what did not make it rather than presenting the result as complete.
+   */
+  readonly skipUnreadable?: boolean;
+  /** Called once per skipped part when {@link skipUnreadable} is on. */
+  readonly onSkipped?: (part: string, error: unknown) => void;
+}
+
 /** Build the full local snapshot for diffing/pushing/back-up (§7.3, §2). */
 export async function buildLocalSnapshot(
   driver: IDatabaseDriver,
   generatedAt = Date.now(),
+  options: BuildSnapshotOptions = {},
 ): Promise<SyncSnapshot> {
+  /** Read one part of the snapshot, degrading to `empty` when the caller asked us to. */
+  const attempt = async <T>(part: string, read: () => Promise<T>, empty: T): Promise<T> => {
+    if (!options.skipUnreadable) return read();
+    try {
+      return await read();
+    } catch (error) {
+      options.onSkipped?.(part, error);
+      return empty;
+    }
+  };
+
   const tables: Record<string, SqlRow[]> = {};
   for (const table of SYNC_TABLES) {
-    const rows = await readAllRows(driver, table);
+    const rows = await attempt(table, () => readAllRows(driver, table, options), []);
     tables[table] = rows.map((row) => rowForSnapshot(table, row));
   }
 
-  const tombstoneRows = await driver.query<{ table_name: string; id: string; deleted_at: number }>(
-    'SELECT table_name, id, deleted_at FROM tombstones ORDER BY deleted_at;',
+  const tombstoneRows = await attempt(
+    'tombstones',
+    () =>
+      driver.query<{ table_name: string; id: string; deleted_at: number }>(
+        'SELECT table_name, id, deleted_at FROM tombstones ORDER BY deleted_at;',
+      ),
+    [],
   );
   // Drop any locally-stored tombstone naming a table that is not in the allow-list. Unlike an
   // *incoming* snapshot — where an unknown name means the payload is not ours and the whole
@@ -142,11 +220,11 @@ export async function buildLocalSnapshot(
       deletedAt: Number(t.deleted_at),
     }));
 
-  const gaugeHistory = await readGaugeHistory(driver);
-  const itemTags = await readItemTags(driver);
-  const locationTags = await readLocationTags(driver);
-  const itemRegions = await readItemRegions(driver);
-  const itemHistory = await readItemHistory(driver);
+  const gaugeHistory = await attempt('gauge history', () => readGaugeHistory(driver), []);
+  const itemTags = await attempt(ITEM_TAGS_TABLE, () => readItemTags(driver), []);
+  const locationTags = await attempt(LOCATION_TAGS_TABLE, () => readLocationTags(driver), []);
+  const itemRegions = await attempt(ITEM_REGIONS_TABLE, () => readItemRegions(driver), []);
+  const itemHistory = await attempt(ITEM_HISTORY_TABLE, () => readItemHistory(driver), []);
 
   return {
     formatVersion: SYNC_FORMAT_VERSION,

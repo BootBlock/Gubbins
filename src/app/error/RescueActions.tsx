@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
-import { Button } from '@/components/foundry';
+import { Button, LiveRegion } from '@/components/foundry';
 import {
+  ArchiveIcon,
   ArchiveRestoreIcon,
   DatabaseIcon,
   DownloadIcon,
@@ -9,6 +10,7 @@ import {
   RestoreIcon,
 } from '@/components/icons';
 import { restoreArchive } from '@/features/archive/restore-archive';
+import { createRescueBackup } from '@/features/backup/build-backup';
 import { useErrorMessage } from '@/features/errors';
 import {
   DamagedDatabaseError,
@@ -27,7 +29,8 @@ export interface RescueActionsProps {
    * Hide the irreversible hard reset. Set only where the failure being shown is *simulated*
    * (the lab's `schema-too-new` flag): the database is actually healthy, so offering to purge
    * it would let a presentation-only switch destroy real data on a single confirmed click. The
-   * non-destructive rescues — download a .sqlite, a JSON dump, restore — stay available.
+   * non-destructive rescues — the restorable backup, a .sqlite copy, a JSON dump, restore —
+   * stay available.
    */
   readonly allowHardReset?: boolean;
 }
@@ -51,6 +54,8 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
    * copy is an imperfect one.
    */
   const [damage, setDamage] = useState<readonly string[] | null>(null);
+  /** What the rescue backup actually captured, once one has been taken (issue #197). */
+  const [backupNote, setBackupNote] = useState<string | null>(null);
   const describeError = useErrorMessage();
   const sqliteRef = useRef<HTMLInputElement>(null);
   const archiveRef = useRef<HTMLInputElement>(null);
@@ -74,6 +79,30 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
       setBusy(null);
     }
   };
+
+  /**
+   * Take the restorable backup (issue #197) and report what it holds. The count and the list of
+   * anything missing are the point: this screen's advice ends in a purge, so the user has to be
+   * able to see what they are actually carrying across *before* they take it.
+   */
+  const takeBackup = run(
+    'backup',
+    async () => {
+      setBackupNote(null);
+      const result = await createRescueBackup();
+      const items = result.manifest.counts.items;
+      const summary =
+        `Saved ${result.filename} — ${items} ${items === 1 ? 'item' : 'items'}` +
+        (result.manifest.counts.images > 0 ? `, ${result.manifest.counts.images} images` : '') +
+        '. Restore it from Backup & Restore once Gubbins starts again.';
+      setBackupNote(
+        result.skipped.length > 0
+          ? `${summary} Some parts could not be read and are not in the file: ${result.skipped.join(', ')}.`
+          : summary,
+      );
+    },
+    'Could not build a backup.',
+  );
 
   const onFileChosen = (kind: PendingRestore['kind']) => (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -114,6 +143,27 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
 
   return (
     <div className="flex flex-col gap-2">
+      {/*
+       * The restorable rescue (issue #197), first and solid because it is the only one of these
+       * downloads the app can read back in. The two below it are diagnostic copies: after the
+       * hard reset this screen recommends, a `.sqlite` from the old schema is refused by the
+       * restore guard and the JSON dump has no importer at all — so leading with either would
+       * send the user into a purge holding a file that cannot bring their data back.
+       */}
+      <Button variant="primary" onClick={takeBackup} disabled={busy !== null}>
+        <ArchiveIcon /> Back up everything (.zip)
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        The copy to take before resetting: restore it afterwards from Settings → Backup &amp; Restore, using{' '}
+        <span className="font-medium">Merge</span>, which brings your records across a schema change.
+      </p>
+      {/*
+       * Always mounted, contents swapped: a live region inserted at the moment its message
+       * appears is frequently never announced. What the backup captured — and anything it had
+       * to leave out — is precisely what a screen-reader user must hear before the reset.
+       */}
+      <LiveRegion>{backupNote ? <p className="text-sm text-foreground">{backupNote}</p> : null}</LiveRegion>
+
       <Button
         variant="outline"
         onClick={run('sqlite', downloadRawSqlite, 'Could not download the database file.')}
@@ -128,6 +178,10 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
       >
         <DownloadIcon /> Export data (JSON)
       </Button>
+      <p className="text-xs text-muted-foreground">
+        Those two are copies to keep or inspect elsewhere — a database file for a SQLite browser, and a plain
+        data dump. Neither can be restored into Gubbins after a reset.
+      </p>
 
       <input
         ref={sqliteRef}
