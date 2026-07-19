@@ -107,6 +107,22 @@ export interface InsuranceSchedule {
 /** Heading for the bucket holding items whose location cannot be resolved. */
 export const UNASSIGNED_GROUP_LABEL = 'Unassigned';
 
+/**
+ * Most assets that can be rendered into a single printable document (text only).
+ *
+ * Printing is bounded by what the DOM and the printer can take, not by what the database can
+ * read: 20,000 lines is already 400–600 printed pages. Beyond this the schedule is offered as a
+ * file instead, which an insurer or executor can search and re-total — and print any part of.
+ */
+export const PRINT_FULL_LIMIT = 20_000;
+
+/**
+ * The same ceiling with photos on, where image decode rather than row count is what binds:
+ * 2,000 thumbnails is already several megabytes of BLOBs and 2,000 `<img>` decodes before the
+ * print dialog can open.
+ */
+export const PRINT_PHOTO_LIMIT = 2_000;
+
 /** Separator between ancestor names in a location's full path (a thin angle). */
 const PATH_SEPARATOR = ' › ';
 
@@ -164,18 +180,38 @@ export function flattenLocationHierarchy(locations: readonly ScheduleLocationInp
   return ordered;
 }
 
+/** The fields a line's value depends on — everything else on a line is presentation. */
+export interface ScheduleValuationInput extends ValuedUnit {
+  readonly quantity: number;
+  readonly currentValuePerUnit?: number | null;
+}
+
 /**
- * Resolve a single asset input to its display line, valuing it through the cost seams.
+ * The replacement value of one asset: `quantity × per-unit value`, quantised to the currency's
+ * minor unit (issue #292) — the line is the bottom rung of a column an insurer adds up by hand,
+ * so it must be a figure that currency can actually be written in, not a flat 2dp.
  *
- * `decimals` is the currency's minor unit (issue #292) — the line is the bottom rung of a column
- * an insurer adds up by hand, so it must be quantised to a figure that currency can actually be
- * written in, not a flat 2dp.
+ * Split out from {@link toScheduleLine} because totalling a 100k-asset schedule needs the value
+ * and nothing else (issue #163): resolving a full display line per row would derive a warranty
+ * status a total never reads. One expression, two callers, no chance of the totals and the
+ * printed lines diverging.
  */
-function toLine(item: ScheduleItemInput, now: number, decimals: number): ScheduleLine {
+export function scheduleLineValue(item: ScheduleValuationInput, decimals: number): number {
   const qty = Math.max(0, item.quantity);
   // Manual current value (G9) wins; otherwise the effective replacement cost per unit. The
   // override precedence is the single `effectiveUnitValue` seam shared with the valuation report.
   const unitValue = effectiveUnitValue(item.currentValuePerUnit, effectiveUnitCost(item));
+  return roundMoney(qty * Math.max(0, unitValue), decimals);
+}
+
+/**
+ * Resolve a single asset input to its display line, valuing it through {@link scheduleLineValue}.
+ *
+ * Exported because the schedule is read **two** ways (issue #163): {@link buildInsuranceSchedule}
+ * resolves a whole in-memory document, while `ReportRepository` resolves one bounded page at a
+ * time. Both must value a line identically, so there is exactly one place that does it.
+ */
+export function toScheduleLine(item: ScheduleItemInput, now: number, decimals: number): ScheduleLine {
   return {
     id: item.id,
     name: item.name,
@@ -195,9 +231,179 @@ function toLine(item: ScheduleItemInput, now: number, decimals: number): Schedul
       },
       now,
     ),
-    replacementValue: roundMoney(qty * Math.max(0, unitValue), decimals),
+    replacementValue: scheduleLineValue(item, decimals),
     thumbnail: item.thumbnail ?? null,
   };
+}
+
+/**
+ * Which group an asset belongs to: its location id, or `null` for the trailing "Unassigned"
+ * bucket when the location is unset **or** does not resolve to a known location.
+ *
+ * The "does not resolve" half matters and is easy to lose: an item pointing at a deleted
+ * location must still appear on the schedule. Exported so the paged repository read can
+ * reproduce this rule exactly rather than approximating it as `location_id IS NULL`.
+ */
+export function resolveScheduleGroupKey(
+  locationId: string | null,
+  knownLocationIds: ReadonlySet<string>,
+): string | null {
+  return locationId != null && knownLocationIds.has(locationId) ? locationId : null;
+}
+
+/** Per-group running totals; `minorUnits` is exact, `floatSum` is the overflow fallback. */
+interface GroupTotal {
+  count: number;
+  minorUnits: number;
+  floatSum: number;
+}
+
+/**
+ * A running per-location tally of line count and replacement value.
+ *
+ * Holding this rather than the lines themselves is what lets a 100k-asset schedule be totalled
+ * without ever materialising 100k rows (issue #163): memory is O(locations), not O(items).
+ */
+export interface ScheduleTotals {
+  readonly byLocation: Map<string | null, GroupTotal>;
+  /** Cleared when a running tally leaves exact-integer range; see {@link finaliseScheduleSummary}. */
+  exact: boolean;
+}
+
+/** A location group's headline figures, without its lines. */
+export interface ScheduleGroupSummary {
+  readonly locationId: string | null;
+  readonly locationPath: string;
+  readonly depth: number;
+  /** How many assets the group holds in total — **not** how many are on the current page. */
+  readonly itemCount: number;
+  readonly subtotal: number;
+}
+
+/** The schedule's totals and group ordering, with no lines: bounded by the location count. */
+export interface InsuranceScheduleSummary {
+  readonly groups: readonly ScheduleGroupSummary[];
+  readonly grandTotal: number;
+  readonly itemCount: number;
+  readonly generatedAt: number;
+}
+
+/** Start an empty tally. */
+export function createScheduleTotals(): ScheduleTotals {
+  return { byLocation: new Map(), exact: true };
+}
+
+/**
+ * Fold one already-valued line into the tally.
+ *
+ * The value is accumulated as an **integer count of minor units** rather than a running float.
+ * Integer addition is exact and associative, so the subtotal a streamed read produces cannot
+ * depend on the order rows happened to arrive in — which matters because SQLite's
+ * `COLLATE NOCASE` ordering does not match the builder's `localeCompare`. A float running sum
+ * would make the two reads disagree in the last minor unit for some inputs; integers make the
+ * question impossible to ask.
+ *
+ * `floatSum` is carried alongside purely as the overflow fallback (see
+ * {@link finaliseScheduleSummary}); it costs one addition and bounds nothing.
+ */
+export function accumulateScheduleLine(
+  totals: ScheduleTotals,
+  groupKey: string | null,
+  replacementValue: number,
+  decimals: number,
+): void {
+  let entry = totals.byLocation.get(groupKey);
+  if (entry === undefined) {
+    entry = { count: 0, minorUnits: 0, floatSum: 0 };
+    totals.byLocation.set(groupKey, entry);
+  }
+  entry.count += 1;
+  // A non-finite line value would poison the whole total; `toScheduleLine` cannot produce one,
+  // but skipping matches `sumMoney`'s contract rather than turning a report into NaN.
+  if (!Number.isFinite(replacementValue)) return;
+  entry.floatSum += replacementValue;
+  const minor = entry.minorUnits + Math.round(replacementValue * 10 ** decimals);
+  if (Number.isSafeInteger(minor)) entry.minorUnits = minor;
+  else totals.exact = false;
+}
+
+/**
+ * Resolve the tally into ordered groups with subtotals and a grand total.
+ *
+ * Groups are ordered by the location hierarchy exactly as {@link buildInsuranceSchedule} orders
+ * them, empty rooms are omitted, and the unresolved bucket sorts last at root depth.
+ *
+ * Above roughly 90 trillion at 2dp the integer tally would leave exact-integer range, so it falls
+ * back to summing the floats and rounding once — the pre-#163 behaviour. That is a total no real
+ * inventory reaches; the branch exists so the failure is a documented degradation rather than a
+ * silently wrong figure.
+ */
+export function finaliseScheduleSummary(
+  totals: ScheduleTotals,
+  locations: readonly ScheduleLocationInput[],
+  now: number,
+  decimals: number = MONEY_DECIMALS,
+): InsuranceScheduleSummary {
+  const subtotalOf = (entry: GroupTotal): number =>
+    totals.exact ? entry.minorUnits / 10 ** decimals : roundMoney(entry.floatSum, decimals);
+
+  const groups: ScheduleGroupSummary[] = [];
+  const push = (locationId: string | null, locationPath: string, depth: number) => {
+    const entry = totals.byLocation.get(locationId);
+    if (entry === undefined || entry.count === 0) return;
+    groups.push({ locationId, locationPath, depth, itemCount: entry.count, subtotal: subtotalOf(entry) });
+  };
+
+  for (const loc of flattenLocationHierarchy(locations)) push(loc.id, loc.path, loc.depth);
+  push(null, UNASSIGNED_GROUP_LABEL, 0);
+
+  const grandTotal = sumMoney(
+    groups.map((g) => g.subtotal),
+    decimals,
+  );
+  const itemCount = groups.reduce((sum, g) => sum + g.itemCount, 0);
+  return { groups, grandTotal, itemCount, generatedAt: now };
+}
+
+/** A contiguous run of one group's lines, addressed by the group's own offset. */
+export interface ScheduleSlice {
+  readonly locationId: string | null;
+  /** Offset **within the group**, not within the document. */
+  readonly offset: number;
+  readonly limit: number;
+}
+
+/**
+ * Map a document-wide `offset`/`limit` onto the per-group slices that cover it.
+ *
+ * This is where the schedule's global ordering lives. Groups are ordered by the location
+ * hierarchy — a JS concern over a bounded set of locations — so a page is expressed as a handful
+ * of single-location reads rather than an ordering SQLite would have to reproduce. A page
+ * straddling a room boundary simply yields two slices.
+ */
+export function scheduleSlices(
+  groups: readonly ScheduleGroupSummary[],
+  offset: number,
+  limit: number,
+): ScheduleSlice[] {
+  const slices: ScheduleSlice[] = [];
+  if (limit <= 0) return slices;
+
+  let remaining = limit;
+  let cursor = Math.max(0, offset);
+  for (const group of groups) {
+    if (remaining <= 0) break;
+    if (cursor >= group.itemCount) {
+      // The whole group sits before the requested window — skip it and charge its size.
+      cursor -= group.itemCount;
+      continue;
+    }
+    const take = Math.min(group.itemCount - cursor, remaining);
+    slices.push({ locationId: group.locationId, offset: cursor, limit: take });
+    remaining -= take;
+    cursor = 0;
+  }
+  return slices;
 }
 
 /**
@@ -223,12 +429,21 @@ export function buildInsuranceSchedule(
   now: number,
   decimals: number = MONEY_DECIMALS,
 ): InsuranceSchedule {
-  // Bucket the resolved lines by location id (null key = unresolved → "Unassigned").
+  // Bucket the resolved lines by location id (null key = unresolved → "Unassigned"), tallying
+  // as we go. The tally is the *same* accumulator the streamed, paged read uses, so a whole
+  // in-memory document and a page-by-page one cannot disagree about a subtotal (issue #163):
+  // there is one implementation, not two that have to be proved equivalent.
+  //
+  // A schedule is read as a column of figures that must add up, so each rung sums the rung below
+  // it *as printed* — lines are already quantised by `toScheduleLine` (issue #288). An insurer
+  // adding the lines by hand gets exactly the subtotal shown.
   const linesByLocation = new Map<string | null, ScheduleLine[]>();
   const known = new Set(locations.map((l) => l.id));
+  const totals = createScheduleTotals();
   for (const item of items) {
-    const key = item.locationId != null && known.has(item.locationId) ? item.locationId : null;
-    const line = toLine(item, now, decimals);
+    const key = resolveScheduleGroupKey(item.locationId, known);
+    const line = toScheduleLine(item, now, decimals);
+    accumulateScheduleLine(totals, key, line.replacementValue, decimals);
     const bucket = linesByLocation.get(key);
     if (bucket) bucket.push(line);
     else linesByLocation.set(key, [line]);
@@ -237,38 +452,21 @@ export function buildInsuranceSchedule(
   const byName = (a: ScheduleLine, b: ScheduleLine) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id);
 
-  const makeGroup = (
-    locationId: string | null,
-    locationPath: string,
-    depth: number,
-    lines: ScheduleLine[],
-  ): ScheduleLocationGroup => {
-    const sorted = [...lines].sort(byName);
-    // A schedule is read as a column of figures that must add up, so each rung sums the rung
-    // below it *as printed*: lines are already quantised by `toLine`, and the subtotal is their
-    // sum rounded once (issue #288). An insurer adding the lines by hand gets this subtotal.
-    const subtotal = sumMoney(
-      sorted.map((l) => l.replacementValue),
-      decimals,
-    );
-    return { locationId, locationPath, depth, lines: sorted, subtotal };
+  // The summary owns group ordering, subtotals, the grand total and the count; this pass only
+  // attaches each group's sorted lines.
+  const summary = finaliseScheduleSummary(totals, locations, now, decimals);
+  const groups: ScheduleLocationGroup[] = summary.groups.map((group) => ({
+    locationId: group.locationId,
+    locationPath: group.locationPath,
+    depth: group.depth,
+    lines: [...(linesByLocation.get(group.locationId) ?? [])].sort(byName),
+    subtotal: group.subtotal,
+  }));
+
+  return {
+    groups,
+    grandTotal: summary.grandTotal,
+    itemCount: summary.itemCount,
+    generatedAt: summary.generatedAt,
   };
-
-  const groups: ScheduleLocationGroup[] = [];
-  for (const loc of flattenLocationHierarchy(locations)) {
-    const lines = linesByLocation.get(loc.id);
-    if (lines && lines.length > 0) groups.push(makeGroup(loc.id, loc.path, loc.depth, lines));
-  }
-  // The unresolved bucket sorts last, at the root depth.
-  const unassigned = linesByLocation.get(null);
-  if (unassigned && unassigned.length > 0) {
-    groups.push(makeGroup(null, UNASSIGNED_GROUP_LABEL, 0, unassigned));
-  }
-
-  const grandTotal = sumMoney(
-    groups.map((g) => g.subtotal),
-    decimals,
-  );
-  const itemCount = groups.reduce((sum, g) => sum + g.lines.length, 0);
-  return { groups, grandTotal, itemCount, generatedAt: now };
 }

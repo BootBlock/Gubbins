@@ -67,9 +67,15 @@ import {
 import { buildSpendReport, type SpendEvent, type SpendReport } from '@/features/reports/spend-analytics';
 import { buildSalesReport, type SalesEvent, type SalesReport } from '@/features/reports/sales-analytics';
 import {
-  buildInsuranceSchedule,
-  type InsuranceSchedule,
+  accumulateScheduleLine,
+  createScheduleTotals,
+  finaliseScheduleSummary,
+  resolveScheduleGroupKey,
+  scheduleLineValue,
+  toScheduleLine,
+  type InsuranceScheduleSummary,
   type ScheduleItemInput,
+  type ScheduleLine,
   type ScheduleLocationInput,
 } from '@/features/reports/insurance-schedule';
 import {
@@ -89,7 +95,7 @@ import {
   type ReorderShortfallRow,
 } from '@/features/purchasing/reorder-plan';
 import { onOrderQtyForItemSql } from './PurchaseOrderRepository';
-import type { LowStockThresholds } from './types';
+import type { LowStockThresholds, Page, PageParams } from './types';
 import { nowMs } from '@/lib/clock';
 
 /** Default number of time buckets for the movement report (a fortnight of days fits well). */
@@ -121,6 +127,21 @@ const notAVariantParent = notAVariantParentSql;
 function notUnlimited(col: string): string {
   return `${col} = 0`;
 }
+
+/**
+ * The shared WHERE for every insurance-schedule read: one row per active, non-parent,
+ * non-unlimited item. Kept in one place so the summary's totals and a page's lines can never
+ * disagree about which assets the schedule covers (issue #163) — a page listing an asset the
+ * grand total omits, or vice versa, is a document that does not add up.
+ */
+const SCHEDULE_ITEM_FILTER = `items.is_active = 1 AND ${notAVariantParent('items.id')} AND ${notUnlimited('items.is_unlimited')}`;
+
+/**
+ * How many rows the schedule summary scan pulls per round-trip. Large enough that the per-query
+ * overhead is amortised, small enough that a chunk stays a trivial allocation even at 100k
+ * assets — the point of the scan is that peak memory does not scale with the inventory.
+ */
+const SCHEDULE_SCAN_CHUNK = 2000;
 
 /**
  * SQL predicate matching a currency column denominated in the user's base currency, and therefore
@@ -296,18 +317,107 @@ export class ReportRepository extends BaseRepository {
   }
 
   /**
-   * Insurance / estate schedule (feature-gap G1): a room-by-room document of every
-   * catalogued asset with its replacement value, for an insurer / estate / claim. One row
-   * per active, non-parent, non-unlimited item (a parent variant holds no stock of its own;
-   * an unlimited source has no finite value), joined to its primary thumbnail. The pure
-   * {@link buildInsuranceSchedule} groups the items by their home location, orders the groups
-   * by the location hierarchy and rolls up per-location subtotals + a grand total. Cost flows
-   * through the same `effectiveUnitCost` seam as the valuation report (manual cost wins, else
-   * the preferred supplier cost, via {@link preferredSupplierCostSql}).
+   * Insurance / estate schedule (feature-gap G1) — the document's **totals and shape**, with no
+   * lines: ordered room groups, each with its asset count and subtotal, plus the grand total.
+   *
+   * Read by streaming the matching assets in `rowid` order in bounded chunks and folding each
+   * into {@link accumulateScheduleLine}, so peak memory is O(locations) rather than O(items)
+   * (issue #163). Nothing here selects a thumbnail: totalling a schedule never needs the photos,
+   * and at 100k assets those BLOBs are hundreds of megabytes.
+   *
+   * Keyset (`rowid > ?`) rather than `LIMIT/OFFSET`: an offset scan re-walks the prefix on every
+   * chunk, turning a linear read into a quadratic one.
+   *
+   * Cost flows through the same `effectiveUnitCost` seam as the valuation report (manual cost
+   * wins, else the preferred supplier cost, via {@link preferredSupplierCostSql}), and the
+   * arithmetic is the same pure code {@link buildInsuranceSchedule} uses — the figures a page
+   * shows and the totals above them come from one implementation.
    */
-  async insuranceSchedule(now: number = nowMs()): Promise<InsuranceSchedule> {
+  async insuranceScheduleSummary(now: number = nowMs()): Promise<InsuranceScheduleSummary> {
     const base = this.baseCurrency();
-    const itemRows = await this.driver.query<{
+    const decimals = this.moneyDecimals();
+    const locations = await this.scheduleLocations();
+    const known = new Set(locations.map((l) => l.id));
+    const totals = createScheduleTotals();
+
+    const sql = `SELECT items.rowid AS rid, items.quantity AS quantity, items.unit_cost AS unit_cost,
+              items.current_value AS current_value, items.location_id AS location_id,
+              ${preferredSupplierCostSql('items.id', base)} AS preferred_supplier_cost
+         FROM items
+        WHERE ${SCHEDULE_ITEM_FILTER} AND items.rowid > ?
+        ORDER BY items.rowid
+        LIMIT ?;`;
+
+    let cursor = 0;
+    for (;;) {
+      const rows = await this.driver.query<{
+        rid: number;
+        quantity: number;
+        unit_cost: number | null;
+        current_value: number | null;
+        location_id: string | null;
+        preferred_supplier_cost: number | null;
+      }>(sql, [cursor, SCHEDULE_SCAN_CHUNK]);
+      if (rows.length === 0) break;
+
+      for (const r of rows) {
+        accumulateScheduleLine(
+          totals,
+          resolveScheduleGroupKey(r.location_id, known),
+          scheduleLineValue(
+            {
+              quantity: r.quantity,
+              unitCost: r.unit_cost,
+              // Feature-gap G9: the manual current value wins over the replacement cost.
+              currentValuePerUnit: r.current_value,
+              preferredSupplierCost: r.preferred_supplier_cost,
+            },
+            decimals,
+          ),
+          decimals,
+        );
+      }
+
+      if (rows.length < SCHEDULE_SCAN_CHUNK) break;
+      cursor = rows[rows.length - 1]!.rid;
+    }
+
+    return finaliseScheduleSummary(totals, locations, now, decimals);
+  }
+
+  /**
+   * One bounded page of a single room's schedule lines, ordered as the document orders them.
+   *
+   * A page is addressed per-group rather than document-wide because the schedule's group order
+   * is the location *hierarchy*, which is resolved in TypeScript over a bounded set of locations
+   * (`flattenLocationHierarchy`). The caller maps a document offset onto group slices with
+   * `scheduleSlices`; this only has to serve one room's contiguous run.
+   *
+   * `locationId` is `null` for the trailing "Unassigned" bucket, which must also pick up assets
+   * pointing at a **deleted** location — mirroring {@link resolveScheduleGroupKey}. Narrowing
+   * that to `IS NULL` would silently drop those assets from a document someone claims against.
+   *
+   * The thumbnail BLOB is fetched only when the Photo column is on, exactly as
+   * {@link partsCatalogue} does — an unneeded per-row BLOB is the bulk of a large schedule's
+   * payload (issue #163).
+   */
+  async insuranceScheduleGroupPage(
+    locationId: string | null,
+    params: PageParams = {},
+    options: { readonly includePhotos?: boolean } = {},
+    now: number = nowMs(),
+  ): Promise<Page<ScheduleLine>> {
+    const base = this.baseCurrency();
+    const { limit, offset } = this.resolvePage(params);
+    const thumbnailSelect = options.includePhotos ? THUMBNAIL_SUBQUERY : 'NULL AS thumbnail_blob';
+    const locationFilter =
+      locationId === null
+        ? '(items.location_id IS NULL OR items.location_id NOT IN (SELECT id FROM locations))'
+        : 'items.location_id = ?';
+    const queryParams: (string | number)[] =
+      locationId === null ? [limit, offset] : [locationId, limit, offset];
+
+    const rows = await this.driver.query<{
       id: string;
       name: string;
       serial_no: number | null;
@@ -318,7 +428,7 @@ export class ReportRepository extends BaseRepository {
       purchase_price: number | null;
       acquired_at: string | null;
       warranty_expires_at: string | null;
-      location_id: string;
+      location_id: string | null;
       preferred_supplier_cost: number | null;
       thumbnail_blob: Uint8Array | null;
     }>(
@@ -328,40 +438,46 @@ export class ReportRepository extends BaseRepository {
               items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
               items.location_id AS location_id,
               ${preferredSupplierCostSql('items.id', base)} AS preferred_supplier_cost,
-              ${THUMBNAIL_SUBQUERY}
+              ${thumbnailSelect}
          FROM items
-        WHERE items.is_active = 1 AND ${notAVariantParent('items.id')} AND ${notUnlimited('items.is_unlimited')};`,
+        WHERE ${SCHEDULE_ITEM_FILTER} AND ${locationFilter}
+        ORDER BY items.name COLLATE NOCASE, items.id
+        LIMIT ? OFFSET ?;`,
+      queryParams,
     );
 
-    const locationRows = await this.driver.query<{
-      id: string;
-      name: string;
-      parent_id: string | null;
-    }>(`SELECT id, name, parent_id FROM locations;`);
+    const decimals = this.moneyDecimals();
+    const lines = rows.map((r) =>
+      toScheduleLine(
+        {
+          id: r.id,
+          name: r.name,
+          serialNo: r.serial_no,
+          condition: (r.condition as ScheduleItemInput['condition']) ?? null,
+          quantity: r.quantity,
+          acquiredAt: r.acquired_at,
+          warrantyExpiresAt: r.warranty_expires_at,
+          purchasePrice: r.purchase_price,
+          unitCost: r.unit_cost,
+          // Feature-gap G9: the manual current value wins over the replacement cost.
+          currentValuePerUnit: r.current_value,
+          preferredSupplierCost: r.preferred_supplier_cost,
+          locationId: r.location_id,
+          thumbnail: r.thumbnail_blob ?? null,
+        },
+        now,
+        decimals,
+      ),
+    );
+    return this.toPage(lines, limit, offset);
+  }
 
-    const items: ScheduleItemInput[] = itemRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      serialNo: r.serial_no,
-      condition: (r.condition as ScheduleItemInput['condition']) ?? null,
-      quantity: r.quantity,
-      acquiredAt: r.acquired_at,
-      warrantyExpiresAt: r.warranty_expires_at,
-      purchasePrice: r.purchase_price,
-      unitCost: r.unit_cost,
-      // Feature-gap G9: the manual current value wins over the replacement cost in `toLine`.
-      currentValuePerUnit: r.current_value,
-      preferredSupplierCost: r.preferred_supplier_cost,
-      locationId: r.location_id,
-      thumbnail: r.thumbnail_blob ?? null,
-    }));
-    const locations: ScheduleLocationInput[] = locationRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      parentId: r.parent_id,
-    }));
-
-    return buildInsuranceSchedule(items, locations, now, this.moneyDecimals());
+  /** The location rows the schedule groups and orders by. Bounded by the location count. */
+  private async scheduleLocations(): Promise<ScheduleLocationInput[]> {
+    const rows = await this.driver.query<{ id: string; name: string; parent_id: string | null }>(
+      `SELECT id, name, parent_id FROM locations;`,
+    );
+    return rows.map((r) => ({ id: r.id, name: r.name, parentId: r.parent_id }));
   }
 
   /**

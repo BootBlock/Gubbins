@@ -178,7 +178,7 @@ describe('ReportRepository', () => {
       });
 
       expect((await gbp.inventoryValue()).totalValue).toBe(500);
-      expect((await gbp.insuranceSchedule()).grandTotal).toBe(500);
+      expect((await gbp.insuranceScheduleSummary()).grandTotal).toBe(500);
       expect(await gbp.foreignCurrencyCostCount()).toBe(0);
     });
 
@@ -216,7 +216,7 @@ describe('ReportRepository', () => {
       const domestic = await items.create({ name: 'Desk', locationId: shelf.id, quantity: 1, unitCost: 150 });
       expect(domestic.id).toBeTruthy();
 
-      const schedule = await gbp.insuranceSchedule();
+      const schedule = await gbp.insuranceScheduleSummary();
       expect(schedule.grandTotal).toBe(150);
     });
 
@@ -1211,36 +1211,38 @@ describe('ReportRepository', () => {
     });
   });
 
-  describe('insuranceSchedule', () => {
-    it('groups active assets by home location in hierarchy order, joining the thumbnail', async () => {
+  describe('insuranceScheduleSummary', () => {
+    /** Read every group's lines by paging, so a test can assert on the whole document. */
+    async function readAllLines(includePhotos = false) {
+      const summary = await reports.insuranceScheduleSummary();
+      const groups = await Promise.all(
+        summary.groups.map(async (g) => ({
+          group: g,
+          lines: (await reports.insuranceScheduleGroupPage(g.locationId, { limit: 100 }, { includePhotos }))
+            .rows,
+        })),
+      );
+      return { summary, groups };
+    }
+
+    it('groups active assets by home location in hierarchy order with subtotals', async () => {
       const garage = await locations.create({ name: 'Garage' });
       const shelf = await locations.create({ name: 'Shelf A', parentId: garage.id });
 
-      const drill = await items.create({ name: 'Drill', locationId: garage.id, quantity: 1, unitCost: 100 });
+      await items.create({ name: 'Drill', locationId: garage.id, quantity: 1, unitCost: 100 });
       await items.create({ name: 'Saw', locationId: shelf.id, quantity: 2, unitCost: 25 });
 
-      // A primary thumbnail on the drill exercises the correlated THUMBNAIL_SUBQUERY join.
-      const images = new ImageRepository(driver);
-      await images.add({
-        itemId: drill.id,
-        thumbnailBlob: new Uint8Array([1, 2, 3]),
-        fullResOpfsPath: '/d.webp',
-      });
-
-      const schedule = await reports.insuranceSchedule();
+      const summary = await reports.insuranceScheduleSummary();
 
       // Depth-first order: Garage (root) then its child Shelf A.
-      expect(schedule.groups.map((g) => g.locationPath)).toEqual(['Garage', 'Garage › Shelf A']);
-      const garageGroup = schedule.groups.find((g) => g.locationId === garage.id)!;
-      const shelfGroup = schedule.groups.find((g) => g.locationId === shelf.id)!;
+      expect(summary.groups.map((g) => g.locationPath)).toEqual(['Garage', 'Garage › Shelf A']);
+      const garageGroup = summary.groups.find((g) => g.locationId === garage.id)!;
+      const shelfGroup = summary.groups.find((g) => g.locationId === shelf.id)!;
       expect(garageGroup.subtotal).toBe(100);
+      expect(garageGroup.itemCount).toBe(1);
       expect(shelfGroup.subtotal).toBe(50); // 2 × £25
-      expect(schedule.grandTotal).toBe(150);
-      expect(schedule.itemCount).toBe(2);
-
-      const drillLine = garageGroup.lines.find((l) => l.id === drill.id)!;
-      expect(drillLine.thumbnail).toBeInstanceOf(Uint8Array);
-      expect(shelfGroup.lines[0].thumbnail).toBeNull();
+      expect(summary.grandTotal).toBe(150);
+      expect(summary.itemCount).toBe(2);
     });
 
     it('excludes soft-deleted items, abstract variant parents and unlimited-supply items', async () => {
@@ -1251,22 +1253,145 @@ describe('ReportRepository', () => {
       await items.create({ name: 'Mains water', quantity: 1, unitCost: 3, isUnlimited: true });
       const keep = await items.create({ name: 'Camera', quantity: 1, unitCost: 400 });
 
-      const schedule = await reports.insuranceSchedule();
-      const names = schedule.groups.flatMap((g) => g.lines.map((l) => l.name)).sort();
+      const { summary, groups } = await readAllLines();
+      const names = groups.flatMap((g) => g.lines.map((l) => l.name)).sort();
       // The child variant "Kit v2" is a real unit and stays; only the abstract parent,
       // the soft-deleted item and the unlimited source drop out.
       expect(names).toEqual(['Camera', 'Kit v2']);
-      expect(schedule.groups.flatMap((g) => g.lines).find((l) => l.id === keep.id)?.replacementValue).toBe(
-        400,
-      );
+      expect(summary.itemCount).toBe(2);
+      expect(groups.flatMap((g) => g.lines).find((l) => l.id === keep.id)?.replacementValue).toBe(400);
     });
 
     it('groups location-less items under the system Unassigned location', async () => {
       await items.create({ name: 'Floating', quantity: 1, unitCost: 9 });
-      const schedule = await reports.insuranceSchedule();
-      const unassigned = schedule.groups.find((g) => g.locationId === UNASSIGNED_LOCATION_ID);
+      const { summary, groups } = await readAllLines();
+      const unassigned = groups.find((g) => g.group.locationId === UNASSIGNED_LOCATION_ID);
       expect(unassigned?.lines.map((l) => l.name)).toEqual(['Floating']);
-      expect(schedule.grandTotal).toBe(9);
+      expect(summary.grandTotal).toBe(9);
+    });
+
+    it('declines a preferred supplier price quoted in another currency', async () => {
+      // The #284 refusal must survive the move to a streamed scan: a foreign price is excluded
+      // rather than mis-summed into a base-currency total.
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      const shelf = await locations.create({ name: 'Study' });
+      const foreign = await items.create({
+        name: 'Scope',
+        locationId: shelf.id,
+        quantity: 1,
+        unitCost: null,
+      });
+      await supplierParts.create(foreign.id, {
+        supplier: { supplierName: 'Akihabara Denshi' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+      await items.create({ name: 'Desk', locationId: shelf.id, quantity: 1, unitCost: 150 });
+
+      const summary = await gbp.insuranceScheduleSummary();
+      expect(summary.grandTotal).toBe(150);
+    });
+
+    it('totals a fixture larger than one scan chunk without dropping or double-counting', async () => {
+      // The keyset loop's boundary: 2001 assets is one full chunk plus one.
+      const room = await locations.create({ name: 'Warehouse' });
+      for (let i = 0; i < 2001; i += 1) {
+        await items.create({ name: `Asset ${i}`, locationId: room.id, quantity: 1, unitCost: 1 });
+      }
+
+      const summary = await reports.insuranceScheduleSummary();
+      expect(summary.itemCount).toBe(2001);
+      expect(summary.grandTotal).toBe(2001);
+      expect(summary.groups.find((g) => g.locationId === room.id)!.itemCount).toBe(2001);
+    });
+
+    it('is empty for an empty database', async () => {
+      const summary = await reports.insuranceScheduleSummary();
+      expect(summary.groups).toEqual([]);
+      expect(summary.grandTotal).toBe(0);
+      expect(summary.itemCount).toBe(0);
+    });
+  });
+
+  describe('insuranceScheduleGroupPage', () => {
+    it('orders a room by name and pages without gaps or repeats', async () => {
+      const room = await locations.create({ name: 'Study' });
+      for (const name of ['Delta', 'alpha', 'Charlie', 'bravo']) {
+        await items.create({ name, locationId: room.id, quantity: 1, unitCost: 1 });
+      }
+
+      const first = await reports.insuranceScheduleGroupPage(room.id, { limit: 2, offset: 0 });
+      const second = await reports.insuranceScheduleGroupPage(room.id, { limit: 2, offset: 2 });
+
+      // Case-insensitive, matching the document's own ordering.
+      expect(first.rows.map((l) => l.name)).toEqual(['alpha', 'bravo']);
+      expect(second.rows.map((l) => l.name)).toEqual(['Charlie', 'Delta']);
+      // `hasMore` follows the repository-wide contract — "a full page came back" — so an exactly
+      // full *final* page still reports true. The schedule never navigates by it: the summary's
+      // per-group `itemCount` is the authority, which is why a page can be addressed directly
+      // rather than discovered by walking.
+      expect(first.hasMore).toBe(true);
+      expect(second.hasMore).toBe(true);
+
+      const third = await reports.insuranceScheduleGroupPage(room.id, { limit: 2, offset: 4 });
+      expect(third.rows).toEqual([]);
+      expect(third.hasMore).toBe(false);
+    });
+
+    it('reports no more rows once the group is exhausted', async () => {
+      const room = await locations.create({ name: 'Shed' });
+      await items.create({ name: 'Spade', locationId: room.id, quantity: 1, unitCost: 4 });
+
+      const past = await reports.insuranceScheduleGroupPage(room.id, { limit: 10, offset: 10 });
+      expect(past.rows).toEqual([]);
+      expect(past.hasMore).toBe(false);
+    });
+
+    it('fetches the thumbnail only when photos are requested', async () => {
+      const room = await locations.create({ name: 'Loft' });
+      const drill = await items.create({ name: 'Drill', locationId: room.id, quantity: 1, unitCost: 100 });
+      const images = new ImageRepository(driver);
+      await images.add({
+        itemId: drill.id,
+        thumbnailBlob: new Uint8Array([1, 2, 3]),
+        fullResOpfsPath: '/d.webp',
+      });
+
+      const withPhotos = await reports.insuranceScheduleGroupPage(
+        room.id,
+        { limit: 10 },
+        { includePhotos: true },
+      );
+      expect(withPhotos.rows[0]!.thumbnail).toBeInstanceOf(Uint8Array);
+
+      // The actual fix (issue #163): with photos off the BLOB is never selected at all, not
+      // merely discarded after the worker has already materialised and transferred it.
+      const sql: string[] = [];
+      const query = driver.query.bind(driver);
+      driver.query = ((text: string, params?: unknown) => {
+        sql.push(text);
+        return query(text, params as never);
+      }) as typeof driver.query;
+
+      const withoutPhotos = await reports.insuranceScheduleGroupPage(
+        room.id,
+        { limit: 10 },
+        { includePhotos: false },
+      );
+      driver.query = query;
+
+      expect(withoutPhotos.rows[0]!.thumbnail).toBeNull();
+      expect(sql.some((s) => s.includes('thumbnail_blob FROM item_images'))).toBe(false);
+      expect(sql.some((s) => s.includes('NULL AS thumbnail_blob'))).toBe(true);
+    });
+
+    it('clamps an over-large page request to the repository ceiling', async () => {
+      const room = await locations.create({ name: 'Cellar' });
+      await items.create({ name: 'Rack', locationId: room.id, quantity: 1, unitCost: 1 });
+
+      const page = await reports.insuranceScheduleGroupPage(room.id, { limit: 5000 });
+      expect(page.limit).toBe(100);
     });
   });
 
