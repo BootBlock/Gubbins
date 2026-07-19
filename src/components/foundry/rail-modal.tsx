@@ -126,14 +126,24 @@ export function RailModal({
   // shifts and the panel scrolls within rather than resizing (and re-centring) the whole modal.
   // A trailing footer stays pinned below it. When `onSubmit` is given the frame is wrapped in a
   // <form> so fields spread across panels and the footer submit button share one form.
+  //
+  // `74dvh` is the height it *asks* for; it is a flex item under the Modal's `scrollBody={false}`
+  // body, so on a viewport too short to grant that (a small laptop, or any display zoomed in far
+  // enough) `min-h-0` lets it shrink to the room actually available instead of overflowing the
+  // Surface. Below that the panel simply scrolls, as it already does when a section is long.
   const frame = (
-    <div className="flex h-[74vh] flex-col">
+    <div className="flex h-[74dvh] min-h-0 flex-col">
       <div className="flex min-h-0 flex-1 gap-4 sm:gap-5">
         <div
           role="tablist"
           aria-orientation="vertical"
           aria-label={railAriaLabel}
-          className="flex shrink-0 flex-col gap-1"
+          // `max-w-[13rem]` is sized to hold the longest section name a caller ships without
+          // ellipsis, while stopping a pathological label from crowding out the panel.
+          // `min-h-0 overflow-y-auto` matters once the labels are showing on a short viewport:
+          // the rail is `shrink-0`, so a ten-section stack that no longer fits would otherwise
+          // spill straight out past the footer and off the Surface. It scrolls instead.
+          className="flex max-w-[13rem] min-h-0 shrink-0 flex-col gap-1 overflow-y-auto"
         >
           {tabs.map((tab) => {
             const selected = tab.id === active.id;
@@ -180,7 +190,13 @@ export function RailModal({
                 >
                   {tab.icon}
                 </span>
-                <span className="hidden sm:inline">{tab.label}</span>
+                {/* The label stays visible wherever there is room for it. It collapses to the
+                    icon alone only on a real handset (`handset:` — narrow *and* coarse-pointer),
+                    never on a merely-narrow viewport: a desktop at 200% zoom measures ~640px in
+                    CSS pixels, and taking the section names away from someone who zoomed in to
+                    read is the opposite of what they need (WCAG 1.4.4 Resize Text). `aria-label`
+                    above keeps the accessible name intact in the collapsed case. */}
+                <span className="truncate handset:hidden">{tab.label}</span>
               </button>
             );
           })}
@@ -219,7 +235,15 @@ export function RailModal({
       scrollBody={false}
       initialFocusRef={initialFocusRef}
     >
-      {onSubmit ? <form onSubmit={onSubmit}>{frame}</form> : frame}
+      {/* The <form> sits between the Modal body and the frame, so it has to pass the body's
+          shrink-to-fit through rather than block it at its own natural height. */}
+      {onSubmit ? (
+        <form className="flex min-h-0 flex-col" onSubmit={onSubmit}>
+          {frame}
+        </form>
+      ) : (
+        frame
+      )}
     </Modal>
   );
 }

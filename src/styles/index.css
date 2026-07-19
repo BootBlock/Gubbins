@@ -30,6 +30,27 @@
   }
 }
 
+/*
+ * `handset:` variant — a genuinely small *touch* screen (a phone), as opposed to any
+ * viewport that merely measures small.
+ *
+ * CSS pixels grow as the user zooms, so the viewport shrinks in CSS px and a plain
+ * `max-width` query cannot tell a phone from a 1280px desktop at 200% zoom — both report
+ * ~640px. That matters wherever a layout *drops information* to save room: dropping it on
+ * a phone is a fair trade, dropping it for a low-vision user who zoomed in specifically to
+ * read is exactly backwards (WCAG 1.4.4 Resize Text). Pairing the width with
+ * `(pointer: coarse)` — the same discriminator `large-format:` uses above — keeps the
+ * compact treatment on real handsets while a zoomed or narrowed desktop stays fully
+ * labelled.
+ *
+ * Reach for it only when hiding content; ordinary responsive sizing stays on `sm:` etc.
+ */
+@custom-variant handset {
+  @media (width < 40rem) and (pointer: coarse) {
+    @slot;
+  }
+}
+
 :root {
   color-scheme: light;
 
