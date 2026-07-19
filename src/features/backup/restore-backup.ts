@@ -26,7 +26,7 @@ import {
   SYNC_TABLES,
 } from '@/features/sync/snapshot';
 import { ITEM_HISTORY_TABLE } from '@/db/repositories';
-import { overwriteOpfsDatabase } from '@/app/error/safe-mode-actions';
+import { overwriteOpfsDatabase, StaleJournalError } from '@/app/error/safe-mode-actions';
 import { writeImageFiles } from '@/features/images/opfs-images';
 import { BASELINE_REVISION } from '@/db/migrations';
 import { readBackupFile, type ParsedBackup } from './backup-format';
@@ -136,8 +136,18 @@ async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
       );
     }
     await disposeDatabase();
-    await overwriteOpfsDatabase(parsed.sqlite);
+    // A `StaleJournalError` lands *after* the new bytes commit, so the images still belong
+    // beside them — write them, then let the failure through so the caller reports it rather
+    // than reloading into a journal replay (#203).
+    let staleJournal: StaleJournalError | undefined;
+    try {
+      await overwriteOpfsDatabase(parsed.sqlite);
+    } catch (error) {
+      if (!(error instanceof StaleJournalError)) throw error;
+      staleJournal = error;
+    }
     if (parsed.images.length > 0) await writeImageFiles(parsed.images);
+    if (staleJournal) throw staleJournal;
     return true;
   }
 

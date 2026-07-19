@@ -29,27 +29,77 @@ export { isSqliteFile } from '@/db/sqlite-header';
 /**
  * Overwrite the OPFS database file with raw SQLite bytes (the shared write step behind
  * both raw-`.sqlite` and full-archive restore). The production database uses the standard
- * OPFS VFS — the file at `DB_FILENAME` *is* the raw SQLite database — so we clear any stale
- * WAL/SHM/journal sidecars first, then write the new bytes verbatim. The caller must have
- * disposed the worker beforehand and must reload afterwards so the worker re-opens it.
+ * OPFS VFS — the file at `DB_FILENAME` *is* the raw SQLite database — so the new bytes are
+ * written verbatim and any stale WAL/SHM/journal sidecars are cleared, or the next open would
+ * read the new file through the old session's journal. The caller must have disposed the
+ * worker beforehand and must reload afterwards so the worker re-opens it.
+ *
+ * **Order matters (issue #203).** The write comes *first* and the sidecars go only once it has
+ * committed. Deleting them up front discards, before anything has replaced it, the one thing
+ * that could repair the current database — a hot rollback journal left by an unclean shutdown —
+ * so a write that then fails (quota, a tab closed mid-write, any OPFS error) turns a database
+ * that was merely un-updated into one that is unrecoverable. A failed write aborts the
+ * writable rather than closing it, so the original file keeps its contents and its sidecars
+ * still match it.
  */
 export async function overwriteOpfsDatabase(bytes: Uint8Array): Promise<void> {
   const baseName = DB_FILENAME.replace(/^\//, '');
   const root = await navigator.storage.getDirectory();
-  // Remove stale journal sidecars first so the freshly-written file is read verbatim.
-  for (const name of [`${baseName}-journal`, `${baseName}-wal`, `${baseName}-shm`]) {
-    try {
-      await root.removeEntry(name);
-    } catch {
-      // Not present — ignore.
-    }
-  }
+
   const handle = await root.getFileHandle(baseName, { create: true });
   const writable = await handle.createWritable();
   try {
     await writable.write(bytes as BufferSource);
-  } finally {
     await writable.close();
+  } catch (error) {
+    // Discard the staged write instead of committing a partial file. Best-effort: the stream
+    // may already be errored, and that must not mask the failure the caller needs to see.
+    await writable.abort?.().catch(() => {});
+    throw error;
+  }
+
+  // Only now the new bytes are on disk: a sidecar from the old session would otherwise be
+  // replayed over them. A removal that fails for a reason other than absence is *not*
+  // swallowed — the database has been replaced but a stale journal survives beside it, which
+  // the caller must surface rather than reload into.
+  for (const name of DB_SIDECAR_SUFFIXES.map((suffix) => `${baseName}${suffix}`)) {
+    try {
+      await root.removeEntry(name);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'NotFoundError') continue;
+      throw new StaleJournalError(name, error);
+    }
+  }
+}
+
+/**
+ * The journal/WAL sidecar files SQLite keeps beside the database. Shared so the restore
+ * overwrite and {@link hardResetLocalData} can never disagree about what counts as a sidecar.
+ */
+const DB_SIDECAR_SUFFIXES = ['-journal', '-wal', '-shm'] as const;
+
+/**
+ * Thrown when the new database bytes committed but one of the old session's sidecars could
+ * not be removed (issue #203).
+ *
+ * Distinct from every other restore failure because it is the one that happens *after* the
+ * overwrite: the restore did land, so a caller must finish the rest of its work rather than
+ * unwind — but it must not reload, since opening the new file beside a hot journal would let
+ * SQLite roll the restored database back over itself.
+ */
+export class StaleJournalError extends Error {
+  /** The sidecar that could not be removed, e.g. `gubbins.sqlite3-wal`. */
+  readonly sidecar: string;
+
+  constructor(sidecar: string, cause: unknown) {
+    super(
+      'Your data was restored, but a leftover database file from the previous session could not ' +
+        'be removed. Close any other Gubbins tabs and reload — if that does not help, restore ' +
+        'again from the copy that was just downloaded.',
+      { cause },
+    );
+    this.name = 'StaleJournalError';
+    this.sidecar = sidecar;
   }
 }
 
@@ -237,7 +287,7 @@ export async function hardResetLocalData(): Promise<void> {
   const baseName = DB_FILENAME.replace(/^\//, '');
   try {
     const root = await navigator.storage.getDirectory();
-    for (const name of [baseName, `${baseName}-journal`, `${baseName}-wal`, `${baseName}-shm`]) {
+    for (const name of [baseName, ...DB_SIDECAR_SUFFIXES.map((suffix) => `${baseName}${suffix}`)]) {
       try {
         await root.removeEntry(name);
       } catch {
