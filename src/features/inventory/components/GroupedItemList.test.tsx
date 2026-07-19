@@ -10,10 +10,11 @@ import type { LocationTreeNode } from '@/db/repositories';
  * collapsed section's items, the empty-leaf note, and the "Show more" pager.
  */
 
-const { sectionResult, fetchNextPage } = vi.hoisted(() => ({
+const { sectionResult, fetchNextPage, fetchPreviousPage } = vi.hoisted(() => ({
   // Per-location fake query results, keyed by the section's location id.
   sectionResult: new Map<string, unknown>(),
   fetchNextPage: vi.fn(),
+  fetchPreviousPage: vi.fn(),
 }));
 
 vi.mock('../queries', () => ({
@@ -59,6 +60,42 @@ function page(ids: string[], hasNextPage = false) {
     isFetchingNextPage: false,
     fetchNextPage,
   };
+}
+
+/** A resolved section query holding `count` items, as a window starting at absolute `offset`. */
+function bigPage(count: number, offset = 0, hasNextPage = true) {
+  return {
+    data: {
+      pages: [
+        {
+          offset,
+          rows: Array.from({ length: count }, (_, i) => ({
+            id: `big-${offset + i}`,
+            locationId: 'parent',
+          })),
+        },
+      ],
+    },
+    isLoading: false,
+    hasNextPage,
+    isFetchingNextPage: false,
+    fetchNextPage,
+    hasPreviousPage: offset > 0,
+    isFetchingPreviousPage: false,
+    fetchPreviousPage,
+  };
+}
+
+/**
+ * Give the DOM a real viewport for the duration of a test. happy-dom reports every element as
+ * zero-sized, and a virtualizer over a zero-height scroller renders nothing at all — so the
+ * virtualised-section tests below have to state how big the box is before they can assert what
+ * lands in it. Restored by `vi.restoreAllMocks()` in the shared afterEach.
+ */
+function withViewport(width = 1000, height = 800) {
+  // The virtualizer sizes its scroller from offsetWidth/offsetHeight, both hard-wired to 0 here.
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(width);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(height);
 }
 
 const node = (over: Partial<LocationTreeNode> & Pick<LocationTreeNode, 'id' | 'name'>): LocationTreeNode =>
@@ -108,8 +145,12 @@ beforeEach(() => {
   sectionResult.set('child', page(['child-a']));
   sectionResult.set('empty', page([]));
   fetchNextPage.mockClear();
+  fetchPreviousPage.mockClear();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe('GroupedItemList', () => {
   it('renders a section header per location, nesting children under their parent', () => {
@@ -169,6 +210,51 @@ describe('GroupedItemList', () => {
     );
     expect(screen.queryByTestId('stub-row')).toBeNull();
     expect(screen.queryByTestId('stub-card')).toBeNull();
+  });
+
+  it('mounts every card of a small section as plain DOM', () => {
+    // Below the threshold nothing is virtualised — the section is exactly its items.
+    render(<GroupedItemList tree={TREE} {...PROPS} />);
+    expect(screen.queryByTestId('location-section-virtual-body')).toBeNull();
+    expect(screen.getAllByTestId('stub-card')).toHaveLength(2);
+  });
+
+  it('virtualises a section that has paged past its first page (issue #171)', () => {
+    // 200 items in one location: the body switches to the virtualiser, so only the rows near
+    // the viewport are mounted rather than 200 cards — each of which would carry its own
+    // dialogs, mutations and thumbnail BLOB.
+    withViewport();
+    sectionResult.set('parent', bigPage(200));
+    render(<GroupedItemList tree={TREE} {...PROPS} />);
+    expect(screen.getByTestId('location-section-virtual-body')).toBeInTheDocument();
+    const mounted = screen.getAllByTestId('stub-card');
+    expect(mounted.length).toBeGreaterThan(0);
+    expect(mounted.length).toBeLessThan(50);
+    // What is mounted is the head of the section, not an arbitrary slice.
+    expect(mounted[0]).toHaveTextContent('big-0');
+  });
+
+  it('virtualises in table density too, keeping one header above the virtual rows', () => {
+    withViewport();
+    sectionResult.set('parent', bigPage(200));
+    render(<GroupedItemList tree={TREE} {...PROPS} density="table" />);
+    expect(screen.getByTestId('location-section-virtual-body')).toBeInTheDocument();
+    expect(screen.getAllByTestId('stub-table-header')).toHaveLength(1);
+    const rows = screen.getAllByTestId('stub-table-row');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.length).toBeLessThan(50);
+  });
+
+  it('keeps a trimmed-off front page addressable rather than renumbering the section', () => {
+    // The query caps retained pages, so a deeply-paged section's window starts partway down.
+    // Rows are indexed absolutely, so row 0 is still result 0 — the rows on screen do not jump
+    // when a page is trimmed, and scrolling back up refills the prefix.
+    withViewport();
+    sectionResult.set('parent', bigPage(100, 100));
+    render(<GroupedItemList tree={TREE} {...PROPS} />);
+    expect(screen.getByTestId('location-section-virtual-body')).toBeInTheDocument();
+    // The visible head of the list is above the resident window, so the prefix is refetched.
+    expect(fetchPreviousPage).toHaveBeenCalled();
   });
 
   it('wraps each top-level section in a scroll-reveal (armed pending entrance) without gating its content', () => {
