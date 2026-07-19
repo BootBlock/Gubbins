@@ -81,14 +81,31 @@ async function gotoInventory() {
   await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 15000 });
 }
 
-// ── Boot + dismiss the first-run module chooser ──────────────────────────────
-await mkdir(OUT, { recursive: true });
-await gotoInventory();
-const skip = page.getByTestId('first-run-skip');
-if (await skip.isVisible().catch(() => false)) {
+/**
+ * Dismiss the first-run module chooser if it is showing.
+ *
+ * It *waits* for the dialog rather than testing `isVisible()` once: on a fast machine the app
+ * reaches "Add item" before the chooser mounts, so a single probe misses it and the overlay
+ * then swallows every subsequent click. Signing in remounts the router, which can re-offer it,
+ * so this is called again there rather than only at boot.
+ */
+async function dismissFirstRun(timeout = 6000) {
+  const skip = page.getByTestId('first-run-skip');
+  try {
+    await skip.waitFor({ state: 'visible', timeout });
+  } catch {
+    return; // Not offered (already dismissed for this profile) — nothing to do.
+  }
+  // Past this point the chooser *is* up, so a failure here is real: its overlay swallows every
+  // later click, and staying quiet would surface as a baffling timeout on an unrelated locator.
   await skip.click();
   await skip.waitFor({ state: 'hidden', timeout: 5000 });
 }
+
+// ── Boot + dismiss the first-run module chooser ──────────────────────────────
+await mkdir(OUT, { recursive: true });
+await gotoInventory();
+await dismissFirstRun();
 
 // ── Seed synthetic demo data (idempotent-ish: created once per fresh profile) ─
 // A unit cost gives the valuation/spend reports something to show.
@@ -705,6 +722,108 @@ await page.waitForTimeout(700);
 await shot('settings-appearance-dark', page.getByRole('dialog').first(), { settle: 500 });
 // Leave the app on its default Dark theme for any later shots.
 
+// ── Users, roles & sign-in (issue #79) ───────────────────────────────────────
+// Deliberately last. The `users` module is opt-in and switching it on raises the sign-in gate
+// in front of the whole app, so anything captured after this point would have to sign in first.
+// Every account here is invented (public-repo hygiene) and `example.com` is the only domain.
+try {
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.goto(`${BASE}modules`, { waitUntil: 'domcontentloaded' });
+  // Each module's control is a Foundry Select of On/Off, not a switch — it has to be opened
+  // and the option chosen, or the click merely expands the listbox.
+  const usersToggle = page.getByTestId('module-toggle-users');
+  await usersToggle.waitFor({ state: 'visible', timeout: 10000 });
+  await chooseOption(usersToggle, 'On');
+  // Enabling is confirmed against a live "can anyone still sign in?" check, so the confirm
+  // button only becomes clickable once that read resolves.
+  const confirmEnable = page.getByTestId('confirm-users-enable');
+  await confirmEnable.waitFor({ state: 'visible', timeout: 8000 });
+  await confirmEnable.click({ timeout: 8000 });
+
+  // The gate goes up immediately; the built-in Admin account has no password, so one click in.
+  const adminTile = page.getByRole('button', { name: /Admin/ }).first();
+  await adminTile.waitFor({ state: 'visible', timeout: 10000 });
+  await adminTile.click();
+
+  await page.goto(`${BASE}users`, { waitUntil: 'domcontentloaded' });
+  await dismissFirstRun(3000);
+  await page.getByRole('button', { name: 'Add user' }).waitFor({ state: 'visible', timeout: 12000 });
+
+  /** Create one synthetic account with a role assigned. */
+  async function addUser(username, displayName, email, role) {
+    await page.getByRole('button', { name: 'Add user' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add user' });
+    await dialog.getByLabel('Username').fill(username);
+    await dialog.getByLabel('Display name').fill(displayName);
+    await dialog.getByLabel('Email (optional)').fill(email);
+    await chooseOption(dialog.getByRole('combobox', { name: 'Role' }), role, { exact: false });
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await dialog.waitFor({ state: 'hidden', timeout: 8000 });
+    await page.getByText(displayName).first().waitFor({ state: 'visible', timeout: 8000 });
+  }
+
+  await addUser('sam', 'Sam Okonkwo', 'sam@example.com', 'Manager');
+  await addUser('priya', 'Priya Nair', 'priya@example.com', 'Stocker');
+  await addUser('jo', 'Jo Brennan', 'jo@example.com', 'Viewer');
+
+  // Give one account a password so both states appear side by side — the wiki is explicit that
+  // an account may legitimately have none, and a list where every row says so shows only half of
+  // it. The value is throwaway demo data for a fresh browser profile, not a credential.
+  const samRow = page.locator('li', { hasText: 'Sam Okonkwo' }).first();
+  await samRow.getByRole('button', { name: 'Password' }).click();
+  const pwDialog = page.getByRole('dialog').first();
+  await pwDialog.waitFor({ state: 'visible', timeout: 8000 });
+  await pwDialog.getByLabel('New password', { exact: true }).fill('demo-passphrase-1');
+  await pwDialog.getByLabel('Confirm password', { exact: true }).fill('demo-passphrase-1');
+  await pwDialog.getByRole('button', { name: 'Save password' }).click();
+  await pwDialog.waitFor({ state: 'hidden', timeout: 8000 });
+
+  await shot('users-screen', page.locator('#main-content'), { settle: 600 });
+
+  // The role editor for Stocker — a partly-ticked role shows the grid far better than an
+  // all-or-nothing one. Scoped to the row naming Stocker rather than a positional index, so
+  // adding or reordering a built-in role fails the capture loudly instead of quietly shooting
+  // some other role's grid while the page around it still says "Stocker".
+  // `role="dialog"` sits on the full-screen Modal wrapper, so the shot targets the panel inside
+  // it (the sibling after the overlay) to get a cropped image.
+  // Both lists are `<li>`s and an account row shows its role name too ("priya · Stocker"), so
+  // the row is pinned by *also* holding an "Edit role" button — which only a role row does.
+  const stockerRow = page
+    .locator('li')
+    .filter({ hasText: 'Stocker' })
+    .filter({ has: page.getByRole('button', { name: 'Edit role' }) });
+  await stockerRow.getByRole('button', { name: 'Edit role' }).click();
+  const roleDialog = page.getByRole('dialog').first();
+  await roleDialog.waitFor({ state: 'visible', timeout: 8000 });
+  await shot('users-role-editor', roleDialog.locator('> div').nth(1), { settle: 900 });
+  await page.keyboard.press('Escape').catch(() => {});
+
+  // Sign out to capture the gate itself, now that there are several accounts to show.
+  await page.getByRole('button', { name: 'Navigation menu' }).click();
+  const signOut = page.getByTestId('app-nav-sign-out');
+  await signOut.waitFor({ state: 'visible', timeout: 8000 });
+  await signOut.click();
+  await page
+    .getByRole('heading', { name: /Who’s using Gubbins/ })
+    .waitFor({ state: 'visible', timeout: 10000 });
+  await shot('sign-in', page.locator('#main-content'), { settle: 700 });
+
+  // Leave the profile as the run found it: the gate would otherwise front every later shot
+  // if a capture step is ever appended below this one.
+  await page.getByRole('button', { name: /Can’t sign in/ }).click();
+  await page.getByTestId('sign-in-turn-off-users').click();
+  // The gate comes down in place, leaving the router on whichever route it was on (`/users`,
+  // which is now module-guarded) — so navigate rather than waiting for a screen to appear.
+  await gotoInventory();
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ users screenshots — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 console.log(`\nDone: ${captured} captured, ${failed} failed. → ${OUT}`);
-await browser.close();
+
+// Close on a deadline. Every image is on disk by this point, so a browser that declines to shut
+// down — the app's SQLite worker and service worker can both keep the context alive — must not
+// hold the run open indefinitely; the exit code still reflects the captures.
+await Promise.race([browser.close(), new Promise((resolve) => setTimeout(resolve, 10000))]);
 process.exit(failed > 0 ? 1 : 0);

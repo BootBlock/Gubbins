@@ -12,8 +12,9 @@ The very first time you open Gubbins, it offers a short, **skippable** setup:
 
 - **Choose the modules you want.** Gubbins can hide whole areas it thinks you may not need
   (Projects, Purchase orders, Bookings, and more) so the app starts lean. Pick a preset, or
-  just **Skip** to keep everything on — you can change any of this later on the
-  [[Modular UI|Modular-UI]] screen.
+  just **Skip** to keep the standard set on — you can change any of this later on the
+  [[Modular UI|Modular-UI]] screen. (A couple of modules, such as
+  [[Users|Users-and-Accounts]], start switched off and are never turned on by a preset.)
 - **Your currency and region are guessed** from your device, so prices and dates look right
   straight away. You can adjust them under [[Language & region|Language-and-Region]].
 
@@ -64,3 +65,4 @@ picture is on [[Locations & stock|Locations-and-Stock]].
 - Organise where things live: **[[Locations & stock|Locations-and-Stock]]**.
 - Make it yours: **[[Appearance & theming|Appearance-and-Theming]]** and
   **[[Modular UI|Modular-UI]]**.
+- Sharing this device with other people? **[[Users & accounts|Users-and-Accounts]]**.

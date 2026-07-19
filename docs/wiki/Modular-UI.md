@@ -18,6 +18,23 @@ hidden" prompt).
 A handful of essentials — Dashboard, Inventory, Settings, About — are **always on** and can't be
 hidden.
 
+## Modules that start switched off
+
+Most modules are on to begin with, and you turn off what you don't want. A few work the other way
+round and are **off until you ask for them**, because switching one on changes how the whole app
+behaves. **[[Users|Users-and-Accounts]]** — accounts, sign-in and per-person permissions — is one of
+these. No preset switches it on — not even **Everything** — so it never arrives by surprise.
+
+> **⚠️ Heads-up**
+> Applying a preset switches *off* every module the preset doesn't list, and no preset lists
+> **Users**. So if you have sign-in turned on and then pick a preset, sign-in is switched off. Your
+> accounts and roles are kept, but you'll need to turn the module back on.
+
+> **ℹ️ Note**
+> Turning **Users** on puts a [[sign-in screen|Signing-In]] in front of the app, so Gubbins confirms
+> first that somebody can still get in. Turning it back off loses nothing — accounts, roles and the
+> record of who changed what are all kept.
+
 ## Turning things off (and on)
 
 Switch a module off and it disappears **everywhere** at once — from the nav menu, dashboard tiles
@@ -45,3 +62,5 @@ untouched.
 - **[[Dashboard & widgets|Dashboard-and-Widgets]]** — what modules add to the dashboard.
 - **[[Kiosk & tablet mode|Kiosk-and-Tablet-Mode]]** — pairing a lean module set with a locked-down
   display.
+- **[[Users & accounts|Users-and-Accounts]]** — the opt-in module for sharing a device with other
+  people.

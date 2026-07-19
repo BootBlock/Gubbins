@@ -5,8 +5,11 @@ This page explains what that means in practice.
 
 ## Private by default
 
-- **No account, no server.** Gubbins has no sign-up and no backend. Your inventory lives in your
-  browser's storage on your device — see [[How your data is stored|How-Your-Data-Is-Stored]].
+- **No sign-up, no server.** Gubbins has no backend and no account to register for. Your inventory
+  lives in your browser's storage on your device — see
+  [[How your data is stored|How-Your-Data-Is-Stored]]. (You *can* create local
+  [[accounts|Users-and-Accounts]] for the people who share a device, but they exist only on that
+  device — see the section below for what they do and don't protect.)
 - **Nothing is uploaded unless you choose it.** The app never phones home. Data only moves when
   *you* enable a feature and point it at storage or a service *you* control.
 - **Fully offline.** Because nothing depends on a server, Gubbins keeps working with no connection
@@ -28,6 +31,26 @@ A few optional features exist precisely to move data. Each is opt-in and stays u
 | **[[Product lookup\|Scraping-Supplier-Data]]** | Names a scanned barcode | Off until you allow it; then sends *only the barcode number* to Open Food Facts, only when you tap **Look up** |
 | **[[Camera scanning\|Camera-Scanning]]** / **[[OCR\|Receipt-and-Label-OCR]]** | Read codes / text | On-device only; no image leaves your device |
 | **[[Diagnostics\|About-and-Diagnostics]]** | Environment details for a bug report | Only gathered when you press **Refresh**; only shared if you copy it or open the pre-filled issue; never includes your inventory |
+
+## What sign-in protects — and what it doesn't
+
+If several people share a device you can turn on [[accounts and sign-in|Users-and-Accounts]]. It is
+worth being precise about what that buys you, because it would be easy to assume more:
+
+- ✅ It **controls who gets into the app** on that device, and keeps each person to what their
+  [[role|Roles-and-Permissions]] allows.
+- ✅ It **attributes every change to a person**, so the [[activity log|Activity-Log]] records who.
+- ❌ It **does not encrypt your data.** The database still sits in your browser's storage in the
+  clear, and anyone who can reach that device's files can read the lot — whatever passwords are set.
+
+> **⚠️ Heads-up**
+> Sign-in is a boundary between the people who *share* a device, not a defence against someone who
+> *has* the device. For that, use your operating system's own account passcode and disk encryption
+> (BitLocker, FileVault, LUKS) — Gubbins is not a substitute for either.
+
+An account may also legitimately have **no password at all**, which is a sensible choice on a family
+or workshop device where the point is knowing who did what. Gubbins labels such accounts plainly
+rather than hiding it.
 
 ## Good habits
 
@@ -56,4 +79,6 @@ does — see the [Gubbins repository](https://github.com/BootBlock/Gubbins).
 - **[[Backup & restore|Backup-and-Restore]]** and **[[Cloud sync|Cloud-Sync]]** — keeping data safe
   and portable.
 - **[[Bridge overview|Bridge-Overview]]** — the security model for the one networked feature.
+- **[[Users & accounts|Users-and-Accounts]]** and **[[Signing in|Signing-In]]** — sharing a device
+  with other people.
 - **[[About & diagnostics|About-and-Diagnostics]]** — exactly what a bug report includes.

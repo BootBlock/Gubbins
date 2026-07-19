@@ -38,6 +38,11 @@
 - [[Loans|Loans-Check-Out-and-In]]
 - [[Bookings]]
 
+**Users & access**
+- [[Users & accounts|Users-and-Accounts]]
+- [[Roles & permissions|Roles-and-Permissions]]
+- [[Signing in|Signing-In]]
+
 **Search**
 - [[Search overview|Search-Overview]]
 - [[Visual query builder|Visual-Query-Builder]]
