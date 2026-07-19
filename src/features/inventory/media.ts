@@ -5,6 +5,9 @@
  * compress → write the raw WebP to OPFS → store only the path + thumbnail via the
  * worker. If the database write fails after the OPFS file lands, the orphaned file
  * is cleaned up. Removal deletes the DB record, then the raw OPFS file it pointed at.
+ *
+ * The OPFS write goes through `full-res-policy`, which refuses it once storage is
+ * critically full (§7.6.1) and stores the image thumbnail-only instead.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -14,7 +17,9 @@ import {
   type UpdateAttachmentInput,
 } from '@/db/repositories';
 import { processImageFile } from '@/features/images/compression';
-import { deleteImageFile, saveImageFile } from '@/features/images/opfs-images';
+import { placeFullResImage } from '@/features/images/full-res-policy';
+import { deleteImageFile } from '@/features/images/opfs-images';
+import { useStorageStore } from '@/state/stores/useStorageStore';
 import { inventoryKeys } from './queries';
 import { invalidateItems } from './invalidate';
 
@@ -34,12 +39,17 @@ export function useAddItemImage() {
   return useMutation({
     mutationFn: async ({ itemId, file }: { itemId: string; file: Blob }) => {
       const { fullRes, thumbnailBytes } = await processImageFile(file);
-      const fullResOpfsPath = await saveImageFile(fullRes);
+      // Read the tier at submit time, not at render: a poll may have moved it since.
+      const { fullResOpfsPath, fullResDowngradedAt } = await placeFullResImage(
+        fullRes,
+        useStorageStore.getState().tier,
+      );
       try {
         return await getImageRepository().add({
           itemId,
           thumbnailBlob: thumbnailBytes,
           fullResOpfsPath,
+          fullResDowngradedAt,
         });
       } catch (err) {
         // The DB write failed — don't leak the raw OPFS file we just wrote.

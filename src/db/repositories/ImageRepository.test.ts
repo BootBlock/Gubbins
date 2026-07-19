@@ -36,6 +36,32 @@ describe('ImageRepository', () => {
     expect(list).toHaveLength(1);
   });
 
+  it('records an image created without its full-resolution file as already downgraded', async () => {
+    const item = await items.create({ name: 'Thumbnail only' });
+    // What the critical storage tier produces (§7.6.1): the OPFS write was refused, so the
+    // reserved path must never read as a file that exists.
+    const img = await images.add({
+      itemId: item.id,
+      thumbnailBlob: new Uint8Array([1]),
+      fullResOpfsPath: 'images/reserved.webp',
+      fullResDowngradedAt: 1_700_000_000_000,
+    });
+    expect(img.fullResDowngradedAt).toBe(1_700_000_000_000);
+
+    const [stored] = await images.listForItem(item.id);
+    expect(stored.fullResDowngradedAt).toBe(1_700_000_000_000);
+  });
+
+  it('leaves a normally-added image un-downgraded', async () => {
+    const item = await items.create({ name: 'Pictured' });
+    const img = await images.add({
+      itemId: item.id,
+      thumbnailBlob: null,
+      fullResOpfsPath: 'images/full.webp',
+    });
+    expect(img.fullResDowngradedAt).toBeNull();
+  });
+
   it('rejects a blank OPFS path', async () => {
     const item = await items.create({ name: 'X' });
     await expect(

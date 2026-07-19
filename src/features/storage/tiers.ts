@@ -36,9 +36,10 @@ export function isWriteSuspended(tier: StorageTier): boolean {
 }
 
 /**
- * Non-essential features (e.g. new high-res image uploads) are disabled from critical upward.
- *
- * @internal Exported for unit tests only.
+ * Non-essential features are disabled from critical upward — currently the full-resolution
+ * half of a new image upload, which is by far the largest thing the app writes. Enforced in
+ * `features/images/full-res-policy`, which every media pipeline routes its OPFS write
+ * through; the critical banner promises exactly this, so the two must not drift apart.
  */
 export function areNonEssentialFeaturesDisabled(tier: StorageTier): boolean {
   return tier === 'critical' || tier === 'locked';

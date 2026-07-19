@@ -1,5 +1,6 @@
 import { InfoHint, Spinner } from '@/components/foundry';
 import { CloseIcon, UploadIcon } from '@/components/icons';
+import { FullResDisabledNote } from '@/features/images/FullResDisabledNote';
 import { useAddItemImage, useItemImages, useRemoveItemImage } from '../media';
 import { Thumbnail } from './Thumbnail';
 
@@ -33,6 +34,7 @@ export function ImageManager({ itemId }: { itemId: string }) {
           }
         />
       </div>
+      <FullResDisabledNote />
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
         {(images ?? []).map((img) => (
           <div

@@ -17,6 +17,7 @@ import { Button, FormField, InfoHint, Input, Spinner, useToast } from '@/compone
 import { CloseIcon, MapViewIcon, UploadIcon } from '@/components/icons';
 import type { LocationPhoto } from '@/db/repositories';
 import { useT } from '@/features/i18n';
+import { FullResDisabledNote } from '@/features/images/FullResDisabledNote';
 import {
   useAddLocationPhoto,
   useLocationPhotos,
@@ -68,6 +69,8 @@ export function LocationPhotoManager({
         <span>{t('inventory.locationPhotos.addLabel')}</span>
         <InfoHint content={t('inventory.locationPhotos.hint')} />
       </div>
+
+      <FullResDisabledNote />
 
       {rows.length === 0 && !isLoading ? (
         <p className="text-sm text-muted-foreground" data-testid="location-photos-empty">

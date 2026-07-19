@@ -35,9 +35,10 @@ export class ImageRepository extends BaseRepository {
     }
     const id = crypto.randomUUID();
     await this.driver.execute(
-      `INSERT INTO item_images (id, item_id, thumbnail_blob, full_res_opfs_path, position)
-       VALUES (?, ?, ?, ?, ?);`,
-      [id, input.itemId, input.thumbnailBlob, path, input.position ?? 0],
+      `INSERT INTO item_images
+         (id, item_id, thumbnail_blob, full_res_opfs_path, full_res_downgraded_at, position)
+       VALUES (?, ?, ?, ?, ?, ?);`,
+      [id, input.itemId, input.thumbnailBlob, path, input.fullResDowngradedAt ?? null, input.position ?? 0],
     );
     const row = await this.driver.queryOne<ItemImageRow>('SELECT * FROM item_images WHERE id = ?;', [id]);
     return rowToItemImage(row!);
