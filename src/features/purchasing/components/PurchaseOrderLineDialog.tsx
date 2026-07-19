@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Button, FormField, InfoHint, Input, Modal, Money, SelectField } from '@/components/foundry';
+import { Banner, Button, FormField, InfoHint, Input, Modal, Money, SelectField } from '@/components/foundry';
+import { WarningIcon } from '@/components/icons';
 import type { CreatePurchaseOrderLineInput, PriceBreak } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import { effectiveUnitCostForQty } from '@/features/inventory/supplier-cost';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
+import { isCurrencyMismatch, normaliseCurrencyCode } from '../po-presentation';
 
 /**
  * A pickable item for a PO line, carrying the pricing needed to cost the line by quantity
@@ -32,6 +36,12 @@ export interface LineItemOption {
 export interface PurchaseOrderLineDialogProps {
   readonly open: boolean;
   readonly items: readonly LineItemOption[];
+  /**
+   * The currency of the order this line joins; null ⇒ the base currency. A line stores a bare
+   * number that is read as *this* currency, so it decides whether the supplier's quote can be
+   * copied across (issue #285).
+   */
+  readonly orderCurrency: string | null;
   readonly isSaving: boolean;
   readonly onSubmit: (input: CreatePurchaseOrderLineInput) => void;
   readonly onClose: () => void;
@@ -56,11 +66,14 @@ interface DisplayTier {
 export function PurchaseOrderLineDialog({
   open,
   items,
+  orderCurrency,
   isSaving,
   onSubmit,
   onClose,
 }: PurchaseOrderLineDialogProps) {
   const f = useFormatters();
+  const t = useT();
+  const baseCurrency = usePreferencesStore((s) => s.baseCurrency);
   const [itemId, setItemId] = useState('');
   const [description, setDescription] = useState('');
   const [orderedQty, setOrderedQty] = useState('1');
@@ -89,6 +102,19 @@ export function PurchaseOrderLineDialog({
 
   const chosen = useMemo(() => items.find((i) => i.id === itemId), [items, itemId]);
 
+  // Whether the chosen item's supplier quotes in a different currency from this order. A line's
+  // cost is stored as a bare number meaning the *order's* currency, so copying a €12.00 quote
+  // into a GBP order would record "12.00 GBP" — the same cross-currency arithmetic the spend
+  // report refuses, committed at the point of entry instead (issue #285).
+  const currencyMismatch = useMemo(
+    () => chosen !== undefined && isCurrencyMismatch(chosen.currency, orderCurrency, baseCurrency),
+    [chosen, orderCurrency, baseCurrency],
+  );
+
+  /** The codes named in the warning; both resolve the blank-means-base convention. */
+  const quotedCurrency = normaliseCurrencyCode(chosen?.currency) ?? normaliseCurrencyCode(baseCurrency) ?? '';
+  const lineCurrency = normaliseCurrencyCode(orderCurrency) ?? normaliseCurrencyCode(baseCurrency) ?? '';
+
   // The ordered quantity as a usable positive integer, else 1 for pricing purposes (the
   // resolver qualifies no break for a non-positive quantity anyway; submit re-validates).
   const qtyNum = Number(orderedQty);
@@ -105,11 +131,18 @@ export function PurchaseOrderLineDialog({
     );
   }, [chosen, effectiveQty]);
 
-  // Auto-fill the cost field from the resolved cost until the user types their own value.
+  // Auto-fill the cost field from the resolved cost until the user types their own value — but
+  // never across a currency boundary. Auto-filling a foreign quote would silently commit the
+  // wrong number under the order's currency, so on a mismatch the field is left empty for the
+  // user to price in the order's own terms; the warning below says why.
   useEffect(() => {
     if (costEdited) return;
+    if (currencyMismatch) {
+      setUnitCost('');
+      return;
+    }
     setUnitCost(resolvedCost === null ? '' : String(resolvedCost));
-  }, [resolvedCost, costEdited]);
+  }, [resolvedCost, costEdited, currencyMismatch]);
 
   // Price-break tiers to surface for the chosen item — only when the preferred supplier
   // actually has breaks and no manual override is masking them (an override wins regardless
@@ -144,7 +177,10 @@ export function PurchaseOrderLineDialog({
   const handleTierClick = (qty: number) => {
     // Jump the order quantity to a break threshold so its price applies immediately.
     setOrderedQty(String(qty));
-    setCostEdited(false);
+    // Releasing the field back to auto-fill is what makes the tier's price apply — but across a
+    // currency boundary there is no price to apply, so the same release would just erase whatever
+    // the user had priced the line at. Leave their figure alone and only move the quantity.
+    if (!currencyMismatch) setCostEdited(false);
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -229,6 +265,19 @@ export function PurchaseOrderLineDialog({
             />
           </FormField>
         </div>
+
+        {currencyMismatch ? (
+          <Banner
+            tone="warning"
+            icon={<WarningIcon aria-hidden />}
+            heading={t('purchasing.line.currencyMismatch.heading')}
+            data-testid="po-line-currency-mismatch"
+          >
+            {t('purchasing.line.currencyMismatch.body', {
+              vars: { quoted: quotedCurrency, order: lineCurrency },
+            })}
+          </Banner>
+        ) : null}
 
         {tiers.length > 0 ? (
           <div data-testid="po-line-price-breaks">

@@ -1124,6 +1124,8 @@
   "reports.foreignCurrency.heading.other": "{count} items are not included in these totals",
   "reports.foreignCurrency.body.one": "Its price is quoted by a supplier in a currency other than {currency}, and Gubbins never converts between currencies. Give the item its own unit cost, or record the supplier’s price in {currency}, to include it.",
   "reports.foreignCurrency.body.other": "Their prices are quoted by suppliers in a currency other than {currency}, and Gubbins never converts between currencies. Give those items their own unit cost, or record the suppliers’ prices in {currency}, to include them.",
+  "purchasing.line.currencyMismatch.heading": "This supplier quotes in a different currency",
+  "purchasing.line.currencyMismatch.body": "The price breaks below are quoted in {quoted}, but this order is priced in {order}, and Gubbins never converts between currencies. The supplier’s figure can’t be copied across — enter what this line costs in {order}.",
   "reports.spendForeignCurrency.heading.one": "{count} purchase order is not included in this spend",
   "reports.spendForeignCurrency.heading.other": "{count} purchase orders are not included in this spend",
   "reports.spendForeignCurrency.body.one": "It is priced in a currency other than {currency}, and Gubbins never converts between currencies, so its money is missing from the total and from the supplier and category breakdowns. Record the order in {currency} to include it.",
