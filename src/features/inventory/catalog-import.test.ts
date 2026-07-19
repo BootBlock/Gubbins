@@ -19,6 +19,7 @@ import {
   buildCatalogImportPlan,
   applyCatalogImportPlan,
   normaliseTrackingMode,
+  parseNumericCell,
   type CatalogItemRepository,
   type ColumnMapping,
 } from './catalog-import';
@@ -792,5 +793,95 @@ describe('buildCatalogImportPlan — unlimited supply (Phase 82)', () => {
     const plan = buildCatalogImportPlan(csv, null, []);
     expect(plan.errors).toEqual([]);
     expect(plan.create[0]?.input.isUnlimited).toBe(true);
+  });
+});
+
+describe('parseNumericCell (issue #339)', () => {
+  it('reads a spreadsheet’s grouped thousands rather than truncating at the separator', () => {
+    expect(parseNumericCell('1,500')).toBe(1500);
+    expect(parseNumericCell('1,234,567')).toBe(1234567);
+    expect(parseNumericCell('1,234,567.25')).toBe(1234567.25);
+    expect(parseNumericCell('1 500')).toBe(1500);
+    expect(parseNumericCell('1\u00a0500')).toBe(1500); // non-breaking space
+    expect(parseNumericCell('1\u202f500')).toBe(1500); // narrow no-break space
+  });
+
+  it('reads plain numbers, signs and decimals', () => {
+    expect(parseNumericCell('42')).toBe(42);
+    expect(parseNumericCell(' 7 ')).toBe(7);
+    expect(parseNumericCell('0.05')).toBe(0.05);
+    expect(parseNumericCell('-3')).toBe(-3);
+    expect(parseNumericCell('1.5')).toBe(1.5);
+  });
+
+  it('strips a currency marker so a price column from another tool still reads', () => {
+    // Migration sources map their price column straight through, symbol and all; the
+    // value is unambiguous, so it must not cost the row its import.
+    expect(parseNumericCell('$1.99')).toBe(1.99);
+    expect(parseNumericCell('£1,234.56')).toBe(1234.56);
+    expect(parseNumericCell('1.99 €')).toBe(1.99);
+  });
+
+  it('rejects a partially-numeric or ambiguous cell instead of guessing', () => {
+    // `parseInt` would have read these as 12, 12, 1 and 1 respectively.
+    expect(parseNumericCell('12kg')).toBeNull();
+    expect(parseNumericCell('12 units')).toBeNull();
+    expect(parseNumericCell('1,5')).toBeNull(); // decimal comma vs. grouping — never guessed
+    expect(parseNumericCell('1,50')).toBeNull();
+    expect(parseNumericCell('abc')).toBeNull();
+    expect(parseNumericCell('~12')).toBeNull();
+    expect(parseNumericCell('n/a')).toBeNull();
+    expect(parseNumericCell('')).toBeNull();
+  });
+});
+
+describe('buildCatalogImportPlan — numeric cells (issue #339)', () => {
+  it('imports a grouped-thousands quantity at full value', () => {
+    const csv = 'name,quantity\r\nM3 bolt,"1,500"';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.input.quantity).toBe(1500);
+  });
+
+  it('rejects an unreadable quantity instead of creating the item with zero stock', () => {
+    const csv = 'name,quantity\r\nMystery part,abc';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/Quantity: "abc" is not a number/);
+  });
+
+  it('reports a fractional quantity as a whole-number error rather than truncating it', () => {
+    const csv = 'name,quantity\r\nHalf a widget,1.5';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/whole number/i);
+  });
+
+  it('rejects an unreadable unit cost, weight or reorder point', () => {
+    const csv = 'name,unitCost\r\nPriced part,~2.50';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/Unit cost: "~2\.50" is not a number/);
+
+    const reorder = buildCatalogImportPlan('name,reorderPoint\r\nPart,n/a', null, []);
+    expect(reorder.create).toHaveLength(0);
+    expect(reorder.errors[0]!.message).toMatch(/Reorder point: "n\/a" is not a number/);
+  });
+
+  it('names every unreadable cell in the row so one pass fixes the sheet', () => {
+    const csv = 'name,quantity,unitCost\r\nBad row,abc,xyz';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/Quantity: "abc"/);
+    expect(plan.errors[0]!.message).toMatch(/Unit cost: "xyz"/);
+  });
+
+  it('leaves an empty numeric cell as "not supplied" (no error)', () => {
+    const csv = 'name,quantity,unitCost\r\nSparse row,,';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.input.quantity).toBe(0);
+    expect(plan.create[0]!.input.unitCost).toBeNull();
   });
 });
