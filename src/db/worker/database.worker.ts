@@ -12,9 +12,11 @@
  * synchronously within this worker, each handler completes atomically before the
  * next begins.
  */
+import { createLocalDriver } from './local-driver';
 import { bootstrapDatabase, readDiagnostics, type BootstrapResult } from './sqlite-bootstrap';
 import { verifySqliteBinary } from './verify-binary';
 import { DbError } from '../errors';
+import { runSnapshotMerge, type SnapshotMergeRequest, type SnapshotMergeResult } from '@/features/sync/merge';
 import type { BindingSpec } from '@sqlite.org/sqlite-wasm';
 import type { RpcRequestEnvelope, RpcResponseEnvelope, DbRequest } from '../rpc/protocol';
 import type { SqlParams, SqlRow, SqlExecuteResult, SqlStatement } from '../rpc/driver';
@@ -74,6 +76,8 @@ async function dispatch(request: DbRequest): Promise<unknown> {
       return runTransaction(active, request.statements);
     case 'exportBinary':
       return exportBinary(active);
+    case 'snapshotMerge':
+      return runMerge(active, request.request);
     default:
       return assertNever(request);
   }
@@ -123,6 +127,34 @@ function runTransaction(active: BootstrapResult, statements: readonly SqlStateme
     throw err;
   }
   return null;
+}
+
+/**
+ * Run a whole sync merge here rather than on the main thread (issue #173).
+ *
+ * The merge is written against {@link IDatabaseDriver}, so it needs no worker-specific
+ * variant: it is handed a driver bound to this connection and its reads and writes resolve
+ * in-process. Everything expensive — the full local snapshot, the synchronous `reconcile`
+ * pass over it, the atomic apply, the re-read — therefore happens on this thread, and only
+ * the merged snapshot the network push actually needs crosses back.
+ *
+ * It shares the same FIFO queue as every other request (§2.2.4), so nothing can interleave
+ * writes with the merge's own read-reconcile-apply sequence — which also means the UI's own
+ * queries wait behind a long merge. That is the better trade, and deliberately so: they used
+ * to interleave only because the main thread was blocked solid for the same period, so the app
+ * could not have painted their results anyway. Now it stays interactive throughout and merely
+ * loads data a beat later, and the merge gets the consistent view the §7.5 integrity rules
+ * assume rather than reading around concurrent writes.
+ */
+function runMerge(active: BootstrapResult, request: SnapshotMergeRequest): Promise<SnapshotMergeResult> {
+  const driver = createLocalDriver({
+    query: (sql, params) => runQuery(active, sql, params),
+    execute: (sql, params) => runExecute(active, sql, params),
+    transaction: (statements) => {
+      runTransaction(active, statements);
+    },
+  });
+  return runSnapshotMerge(driver, request);
 }
 
 /**

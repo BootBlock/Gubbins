@@ -1,14 +1,19 @@
 /**
  * The sync orchestrator (spec §7.2, §7.3, §7.4, Phase 7).
  *
- * Ties the pure {@link reconcile} engine to the database driver, a {@link CloudProvider}
- * and the storage safeguards. The reconciliation logic itself stays pure & tested;
- * everything browser-only (storage estimate, the provider transport) is injected or
- * feature-detected so the whole flow is exercisable on the `:memory:` driver.
+ * Ties the database-bound {@link mergeSnapshot} half to a {@link CloudProvider} and the
+ * storage safeguards. The reconciliation logic itself stays pure & tested; everything
+ * browser-only (storage estimate, the provider transport) is injected or feature-detected so
+ * the whole flow is exercisable on the `:memory:` driver.
  *
  * Normal lifecycle (§7.3): pre-flight quota Hard Stop (§7.4) → server-time offset
- * guard (§7.3.1) → fetch remote → reconcile → apply atomically → re-read & push the
+ * guard (§7.3.1) → fetch remote → merge (read local, reconcile, apply, re-read) → push the
  * merged snapshot → prune expired tombstones (§7.2 TTL) → stamp `sync_meta`.
+ *
+ * The merge step is deliberately one coarse call into `./merge`: on a driver that supports it
+ * that whole step runs in the database worker, so the full local snapshot and the long
+ * synchronous reconcile pass never touch the main thread (issue #173). What stays here is
+ * precisely what cannot move — the network transport and the browser storage API.
  *
  * TTL edge (§7.2): a device whose `last_sync_timestamp` predates the 180-day
  * Tombstone TTL cannot trust delta reconciliation (the remote may have pruned the
@@ -16,40 +21,15 @@
  * mutations since the last sync, clone the remote wholesale, then re-apply the
  * salvaged work as local-wins — rather than a blind wipe.
  */
-import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
-import {
-  SYNC_TABLES,
-  ITEM_HISTORY_TABLE,
-  ITEM_TAGS_TABLE,
-  ITEM_REGIONS_TABLE,
-  LOCATION_TAGS_TABLE,
-  itemTagEdgeId,
-  itemRegionEdgeId,
-  locationTagEdgeId,
-} from '@/db/repositories';
+import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { estimateStorage } from '@/features/storage/storage-api';
 import { STORAGE_THRESHOLDS } from '@/features/storage/tiers';
 import { labFlag } from '@/state/stores/useLabStore';
-import { decodeRowForTable } from './blob-codec';
 import { measureClockOffset } from './clock';
-import { forceLwwTies } from './lww-tie-override';
+import { mergeSnapshot } from './merge';
 import type { CloudProvider } from './provider';
-import { reconcile } from './reconcile';
-import { buildSchemaDictionary } from './schema-dictionary';
 import { REMOTE_MISSING_MESSAGE, SyncRemoteMissingError } from './sync-errors';
-import {
-  applyPlan,
-  buildCloneStatements,
-  buildLocalSnapshot,
-  historyInsertStatement,
-  requireColumns,
-  shiftSnapshotTimestamps,
-  tombstoneDeleteStatement,
-} from './snapshot';
-import type { SchemaDictionary, SyncConflict, SyncSnapshot, SyncTable, Tombstone } from './types';
-
-/** Tables read into the schema dictionary: the LWW set plus the unioned ledger. */
-const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE];
+import type { SyncConflict } from './types';
 
 /**
  * §7.2 Tombstone TTL: 180 days in milliseconds.
@@ -193,9 +173,23 @@ export async function runSync(
   });
   const effectiveNow = serverNow ?? localNow;
 
-  const dictionary = await buildSchemaDictionary(driver, DICTIONARY_TABLES);
   const rawRemote = await provider.fetchSnapshot();
   const meta = await readSyncMeta(driver);
+  // Resolved here, not inside the merge: the lab-flag store is main-thread-only, and the merge
+  // may well be running in the database worker (issue #173).
+  const forceTies = labFlag('sync-lww-tie');
+
+  // Everything the database-bound half needs that does not depend on which of the three §7.3
+  // paths this pass takes. The merge runs in the database worker where the driver supports it
+  // (issue #173), so it is handed plain data — the raw server-time remote included; the frame
+  // conversions happen there, off the main thread.
+  const mergeBase = {
+    offset,
+    effectiveNow,
+    lastSyncTimestamp: meta.lastSyncTimestamp,
+    historyPrunedBefore: meta.historyPrunedBefore,
+    forceTies,
+  } as const;
 
   // First publish: no remote yet — just push our state, normalised to server time.
   if (rawRemote === null) {
@@ -208,75 +202,56 @@ export async function runSync(
     if (meta.lastSyncTimestamp > 0 && !options.allowRemoteReset) {
       throw new SyncRemoteMissingError(REMOTE_MISSING_MESSAGE);
     }
-    const snapshot = await buildLocalSnapshot(driver, effectiveNow);
-    await provider.pushSnapshot(shiftSnapshotTimestamps(snapshot, offset));
+    const { merged } = await mergeSnapshot(driver, {
+      ...mergeBase,
+      mode: 'publish',
+      remote: null,
+    });
+    await provider.pushSnapshot(merged);
     const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
     await writeSyncMeta(driver, effectiveNow, offset);
     return result('PUBLISHED', { prunedTombstones: pruned, clockOffset: offset });
   }
 
-  // The wire carries server-time timestamps (every device normalises on push); convert the
-  // remote back into *this* device's local clock frame once, up front, so reconcile, the TTL
-  // clone and everything written to the DB all operate in one consistent frame (§7.3.1). The
-  // pushed snapshot is converted back to server time at each push below.
-  const remote = shiftSnapshotTimestamps(rawRemote, -offset);
-
   // --- §7.2 TTL edge: full clone with Pre-Wipe Salvage --------------------------
   if (needsFullResync(meta.lastSyncTimestamp, effectiveNow, ttlMs)) {
-    await cloneWithSalvage(
-      driver,
-      remote,
-      dictionary,
-      meta.lastSyncTimestamp,
-      offset,
-      meta.historyPrunedBefore,
-    );
-    const merged = await buildLocalSnapshot(driver, effectiveNow);
-    await provider.pushSnapshot(shiftSnapshotTimestamps(merged, offset));
+    const { merged } = await mergeSnapshot(driver, {
+      ...mergeBase,
+      mode: 'clone',
+      remote: rawRemote,
+    });
+    await provider.pushSnapshot(merged);
     const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
     await writeSyncMeta(driver, effectiveNow, offset);
     return result('CLONED', { prunedTombstones: pruned, clockOffset: offset });
   }
 
   // --- §7.3 normal delta reconciliation -----------------------------------------
-  const local = await buildLocalSnapshot(driver, effectiveNow);
-  // `offset: 0` is deliberate: `remote` was already converted to this device's local frame
-  // above, and `local` is read straight from the DB (also local frame), so the two are
-  // directly comparable and reconcile must apply no further shift.
-  //
-  // Issue #72 conflict detection needs the last-sync watermark in that same local frame:
-  // `sync_meta.last_sync_timestamp` is stored in *server* time (every push normalises to it),
-  // so shift it back by the offset to compare against the local-frame row timestamps.
+  // Issue #72 conflict detection needs the last-sync watermark in the *local* frame:
+  // `sync_meta.last_sync_timestamp` is stored in server time (every push normalises to it), so
+  // shift it back by the offset to compare against the local-frame row timestamps.
   const conflictSince = meta.lastSyncTimestamp > 0 ? meta.lastSyncTimestamp - offset : undefined;
-  // Lab-only reproduction seam (`sync-lww-tie`): force every shared row's incoming timestamp to
-  // tie the local one, in memory only, so the LWW-tie re-upsert bug can be reproduced on demand
-  // (see lww-tie-override.ts). Off by default; leaves this path byte-identical.
-  const reconcileRemote = labFlag('sync-lww-tie') ? forceLwwTies(local, remote) : remote;
-  const plan = reconcile(local, reconcileRemote, {
-    offset: 0,
-    dictionary,
-    historyPrunedBefore: meta.historyPrunedBefore,
+  const outcome = await mergeSnapshot(driver, {
+    ...mergeBase,
+    mode: 'delta',
+    remote: rawRemote,
     conflictSince,
-    now: effectiveNow,
   });
-  await applyPlan(driver, plan, dictionary);
-
-  const merged = await buildLocalSnapshot(driver, effectiveNow);
-  await provider.pushSnapshot(shiftSnapshotTimestamps(merged, offset));
+  await provider.pushSnapshot(outcome.merged);
   const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
   await writeSyncMeta(driver, effectiveNow, offset);
 
   return result('SYNCED', {
-    pulled: plan.localUpserts.length,
-    deleted: plan.localDeletes.length,
-    reparented: plan.reparented.length,
-    rejectedCycles: plan.rejectedCycles.length,
+    pulled: outcome.pulled,
+    deleted: outcome.deleted,
+    reparented: outcome.reparented,
+    rejectedCycles: outcome.rejectedCycles,
     prunedTombstones: pruned,
     clockOffset: offset,
-    historyInserted: plan.historyInserts.length,
-    tagEdgesAdded: plan.itemTagUpserts.length + plan.locationTagUpserts.length,
-    tagEdgesRemoved: plan.itemTagDeletes.length + plan.locationTagDeletes.length,
-    conflicts: plan.conflicts,
+    historyInserted: outcome.historyInserted,
+    tagEdgesAdded: outcome.tagEdgesAdded,
+    tagEdgesRemoved: outcome.tagEdgesRemoved,
+    conflicts: outcome.conflicts,
   });
 }
 
@@ -285,121 +260,6 @@ async function pruneTombstones(driver: IDatabaseDriver, now: number, ttlMs: numb
   const cutoff = now - ttlMs;
   const res = await driver.execute('DELETE FROM tombstones WHERE deleted_at < ?;', [cutoff]);
   return res.rowsModified;
-}
-
-/**
- * §7.2 Pre-Wipe Salvage: capture local rows/tombstones changed since the last sync,
- * wipe the syncable tables, clone the remote wholesale, then re-apply the salvage as
- * local-wins so offline work survives the clone.
- */
-async function cloneWithSalvage(
-  driver: IDatabaseDriver,
-  remote: SyncSnapshot,
-  dictionary: SchemaDictionary,
-  lastSync: number,
-  offset: number,
-  historyPrunedBefore: number,
-): Promise<void> {
-  // 1. Salvage: rows whose offset-adjusted updated_at is newer than the last sync.
-  const salvage = await buildLocalSnapshot(driver);
-  const salvageRows: { table: SyncTable; row: SqlRow }[] = [];
-  for (const table of SYNC_TABLES) {
-    for (const row of salvage.tables[table] ?? []) {
-      if (Number(row.updated_at) + offset > lastSync) salvageRows.push({ table, row });
-    }
-  }
-  const salvageTombstones = salvage.tombstones.filter((t) => t.deletedAt + offset > lastSync);
-
-  // 2 & 3. Wipe + clone the remote (shared with §2 restore), then re-apply the
-  // salvage as local-wins — all in one transaction.
-  const statements: SqlStatement[] = buildCloneStatements(remote, dictionary, historyPrunedBefore);
-
-  for (const { table, row } of salvageRows) {
-    statements.push(upsert(table, row, requireColumns(dictionary, table)));
-  }
-  for (const t of salvageTombstones) {
-    statements.push(tombstoneDeleteStatement(t.tableName, t.id));
-    statements.push(tombstone(t));
-  }
-
-  // Phase 11 non-LWW salvage. The append-only ledger and M:N membership have no
-  // `updated_at`, so they merge as sets rather than by the lastSync cut-off:
-  //  - re-union ALL local history rows (INSERT OR IGNORE; the wholesale clone already
-  //    pulled the remote's, so this restores any offline-only entries);
-  //  - re-assert ALL local membership edges *except* those tombstoned on either side
-  //    (so a removal — local or remote — still wins), then apply every local edge
-  //    tombstone (deleting any edge the clone re-introduced + recording the tombstone).
-  const removedItemEdges = new Set<string>();
-  const removedLocationEdges = new Set<string>();
-  const removedRegionEdges = new Set<string>();
-  for (const source of [remote.tombstones, salvage.tombstones]) {
-    for (const t of source) {
-      if (t.tableName === ITEM_TAGS_TABLE) removedItemEdges.add(t.id);
-      else if (t.tableName === LOCATION_TAGS_TABLE) removedLocationEdges.add(t.id);
-      else if (t.tableName === ITEM_REGIONS_TABLE) removedRegionEdges.add(t.id);
-    }
-  }
-
-  for (const row of salvage.itemHistory) {
-    statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
-  }
-  for (const { itemId, tagId } of salvage.itemTags) {
-    if (removedItemEdges.has(itemTagEdgeId(itemId, tagId))) continue;
-    statements.push({
-      sql: `INSERT OR IGNORE INTO ${ITEM_TAGS_TABLE} (item_id, tag_id) VALUES (?, ?);`,
-      params: [itemId, tagId],
-    });
-  }
-  for (const { locationId, tagId } of salvage.locationTags) {
-    if (removedLocationEdges.has(locationTagEdgeId(locationId, tagId))) continue;
-    statements.push({
-      sql: `INSERT OR IGNORE INTO ${LOCATION_TAGS_TABLE} (location_id, tag_id) VALUES (?, ?);`,
-      params: [locationId, tagId],
-    });
-  }
-  for (const { itemId, regionId } of salvage.itemRegions) {
-    if (removedRegionEdges.has(itemRegionEdgeId(itemId, regionId))) continue;
-    statements.push({
-      sql: `INSERT OR IGNORE INTO ${ITEM_REGIONS_TABLE} (item_id, region_id) VALUES (?, ?);`,
-      params: [itemId, regionId],
-    });
-  }
-  for (const t of salvage.tombstones) {
-    if (
-      t.tableName !== ITEM_TAGS_TABLE &&
-      t.tableName !== LOCATION_TAGS_TABLE &&
-      t.tableName !== ITEM_REGIONS_TABLE
-    ) {
-      continue;
-    }
-    statements.push(tombstoneDeleteStatement(t.tableName, t.id));
-    statements.push(tombstone(t));
-  }
-
-  await driver.transaction(statements);
-}
-
-// --- statement builders ----------------------------------------------------------
-
-function upsert(table: SyncTable, snapshotRow: SqlRow, columns: readonly string[]): SqlStatement {
-  // Decode any base64 BLOB (item_images thumbnail) from the snapshot back to bytes.
-  const row = decodeRowForTable(table, snapshotRow);
-  const cols = columns.filter((c) => c in row);
-  const updates = cols
-    .filter((c) => c !== 'id')
-    .map((c) => `${c} = excluded.${c}`)
-    .join(', ');
-  const sql =
-    `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')}) ` +
-    `ON CONFLICT(id) DO UPDATE SET ${updates};`;
-  return { sql, params: cols.map((c) => row[c] as SqlValue) };
-}
-
-function tombstone(t: Tombstone): SqlStatement {
-  return {
-    sql: 'INSERT OR REPLACE INTO tombstones (table_name, id, deleted_at) VALUES (?, ?, ?);',
-    params: [t.tableName, t.id, t.deletedAt],
-  };
 }
 
 function hardStop(message: string): SyncResult {

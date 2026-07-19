@@ -97,6 +97,27 @@ describe('WorkerDatabaseDriver', () => {
     await expect(rows).resolves.toEqual([{ n: 1 }]);
   });
 
+  it('forwards a snapshot merge to the worker and resolves with its result (#173)', async () => {
+    const driver = createDriver();
+    const request = {
+      mode: 'delta',
+      remote: { tables: {} },
+      offset: 0,
+      effectiveNow: 1,
+      lastSyncTimestamp: 0,
+      historyPrunedBefore: 0,
+      forceTies: false,
+    } as unknown as Parameters<WorkerDatabaseDriver['snapshotMerge']>[0];
+
+    const merged = driver.snapshotMerge(request);
+    // The merge crosses as one coarse call — this is what keeps the local snapshot and the
+    // reconcile pass off the main thread entirely.
+    expect(worker.posted[0]!.request).toEqual({ kind: 'snapshotMerge', request });
+
+    worker.reply(0, { ok: true, result: { pulled: 3 } });
+    await expect(merged).resolves.toMatchObject({ pulled: 3 });
+  });
+
   describe('request timeouts', () => {
     it('rejects an unanswered request with WORKER_TIMEOUT once its budget elapses', async () => {
       const driver = createDriver();

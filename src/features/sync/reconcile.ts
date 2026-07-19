@@ -18,8 +18,12 @@
  * re-reads the merged state to push — so it is exhaustively unit-tested in isolation.
  */
 import { BUILTIN_USER_IDS, SYSTEM_USER_ID } from '@/db/repositories/constants';
+// Imported from the defining modules rather than the `@/db/repositories` barrel: this module
+// now runs inside the database worker (issue #173), and the barrel wires the repository layer
+// to the main thread's session/preferences stores — pulling those into the worker would give
+// it a second, never-updated copy of state it has no business holding.
+import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import {
-  UNASSIGNED_LOCATION_ID,
   SYNC_TABLES,
   ITEM_HISTORY_TABLE,
   ITEM_TAGS_TABLE,
@@ -30,7 +34,7 @@ import {
   locationTagEdgeId,
   parseItemTagEdgeId,
   parseLocationTagEdgeId,
-} from '@/db/repositories';
+} from '@/db/repositories/tombstone';
 import type { SqlRow } from '@/db/rpc/driver';
 import { applyOffset } from './clock';
 import { buildConflict, nonLwwColumns } from './conflict-detect';

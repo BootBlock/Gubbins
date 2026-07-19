@@ -30,6 +30,7 @@ import {
   type VerifyBinaryResult,
 } from './protocol';
 import type { IDatabaseDriver, SqlExecuteResult, SqlParams, SqlRow, SqlStatement } from './driver';
+import type { SnapshotMergeRequest, SnapshotMergeResult } from '@/features/sync/merge';
 
 /**
  * Per-request budgets, in milliseconds. Generous by design — these exist to convert an
@@ -50,6 +51,9 @@ export const RPC_TIMEOUT_MS: Readonly<Record<DbRequest['kind'], number>> = {
   // Reads every page of the candidate file, so it scales with the database being restored —
   // budgeted like the other whole-database operations rather than like a query.
   verifyBinary: 300_000,
+  // Reads, reconciles and rewrites the whole syncable database (#173), so it is budgeted like
+  // the other whole-database operations rather than like a query.
+  snapshotMerge: 300_000,
   // Deliberately the shortest: `close` is awaited by the Safe Mode reset, and a wedged worker is
   // exactly the state a user reaches for that reset in. Waiting 30s to give up on a teardown that
   // ends in `terminate()` anyway just freezes the recovery path.
@@ -110,6 +114,15 @@ export class WorkerDatabaseDriver implements IDatabaseDriver {
    */
   verifyBinary(bytes: Uint8Array): Promise<VerifyBinaryResult> {
     return this.#send<VerifyBinaryResult>({ kind: 'verifyBinary', bytes });
+  }
+
+  /**
+   * Run a whole sync merge inside the worker (issue #173) — this is the
+   * `OffThreadSnapshotMerge` capability the sync engine feature-detects, so naming it
+   * `snapshotMerge` is what switches sync off the main thread.
+   */
+  snapshotMerge(request: SnapshotMergeRequest): Promise<SnapshotMergeResult> {
+    return this.#send<SnapshotMergeResult>({ kind: 'snapshotMerge', request });
   }
 
   query<TRow = SqlRow>(sql: string, params?: SqlParams): Promise<TRow[]> {
