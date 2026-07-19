@@ -255,7 +255,9 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
       className="max-w-3xl"
       scrollBody={false}
     >
-      <div className="flex h-[68vh] flex-col gap-4">
+      {/* `min-h-0` lets this shrink below the requested `68dvh` when the viewport cannot
+          give it that much — see the `scrollBody={false}` note in the Modal primitive. */}
+      <div className="flex h-[68dvh] min-h-0 flex-col gap-4">
         {/* Backup nudge */}
         <p className="text-sm text-muted-foreground">
           Before erasing, consider{' '}
@@ -278,7 +280,9 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
             role="tablist"
             aria-orientation="vertical"
             aria-label="Data categories"
-            className="flex w-14 shrink-0 flex-col gap-1 sm:w-52"
+            // `min-h-0 overflow-y-auto`: the rail is `shrink-0`, so on a short viewport the
+            // category stack would otherwise spill straight out past the footer. It scrolls.
+            className="flex w-52 min-h-0 shrink-0 flex-col gap-1 overflow-y-auto handset:w-14"
           >
             {ERASE_SECTIONS.map((section) => (
               <TabButton
@@ -530,7 +534,7 @@ function TabButton({
         onClick={onSelect}
         onKeyDown={onKeyDown}
         className={cn(
-          'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm font-medium transition-colors ease-emphasized sm:px-3',
+          'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ease-emphasized handset:px-2',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           selected
             ? danger
@@ -554,10 +558,13 @@ function TabButton({
         >
           {icon}
         </span>
-        <span className="hidden flex-1 sm:inline">{label}</span>
+        {/* Collapses to the icon alone only on a real handset, never on a merely-narrow
+            viewport — a zoomed-in desktop measures small in CSS pixels but is exactly where
+            the category names are most needed (WCAG 1.4.4). See the `handset:` variant. */}
+        <span className="flex-1 truncate handset:hidden">{label}</span>
         {badge ? (
           <span
-            className="hidden min-w-5 rounded-full bg-primary/15 px-1.5 text-center text-xs font-semibold tabular-nums text-primary sm:inline"
+            className="min-w-5 rounded-full bg-primary/15 px-1.5 text-center text-xs font-semibold tabular-nums text-primary handset:hidden"
             aria-label={`${badge} selected`}
           >
             {badge}
