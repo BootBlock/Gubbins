@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       # Gate on link/image integrity before anything is published. A broken `[[link]]` or a
       # missing image only misbehaves once rendered, so catching it here keeps the published
@@ -52,7 +52,7 @@ jobs:
       # The wiki is a real git repo at `<repo>.wiki.git`. Its default branch is `master`, not
       # `main`; letting checkout pick the default avoids hard-coding that.
       - name: Checkout wiki repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: ${{ github.repository }}.wiki
           path: .wiki
