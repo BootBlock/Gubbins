@@ -268,6 +268,8 @@ const ERROR_HINTS: Partial<Record<DbErrorCode, string>> = {
   SCHEMA_TOO_NEW: 'Your local data is from a newer schema than this build. Reset local data to rebuild it.',
   SCHEMA_STALE: 'Your local data is from an earlier schema than this build. Reset local data to rebuild it.',
   INIT_FAILED: 'The database failed to initialise.',
+  WORKER_UNAVAILABLE: 'The database stopped responding and cannot reconnect. Reload the page to try again.',
+  WORKER_TIMEOUT: 'The database took too long to start. Reload the page to try again.',
 };
 
 export function BootErrorScreen({ error }: { error: DbError }) {
