@@ -57,6 +57,21 @@ There are two ways to restore:
 > Take a backup before any big change — a large import, a bulk edit, or a Replace restore. The
 > automatic restore-point has your back, but your own recent `.zip` is the surest safety net.
 
+## Backing up when Gubbins won't start
+
+If Gubbins can't open your database — most often because an update changed its shape while Gubbins
+is still pre-1.0 — the recovery screen offers **Back up everything (.zip)**. It builds a normal
+backup out of the database as it stands, so you're never asked to reset without a copy you can
+bring back.
+
+Restore it with **Merge** once Gubbins starts again. Merge re-applies your records onto the new
+database shape, which is exactly what's needed after a reset; **Replace** would put the old database
+file back and run into the same problem, so Gubbins refuses that combination and says so.
+
+> **ℹ️ Note**
+> Because the database is in an unexpected shape, a part of it occasionally can't be read. The
+> screen names anything left out, so you know what the file holds before you rely on it.
+
 ## Only restore files you trust
 
 A backup file describes changes to make to your inventory — including which entries to remove — so

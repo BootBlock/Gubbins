@@ -136,10 +136,20 @@ Gubbins is still in early, rapid development (before version **1.0**). As new fe
 shape of the local database changes — and while it's this young, those changes aren't migrated
 automatically. When an update needs a newer database than your device has, Gubbins can't carry your
 existing data forward, so it asks you to start fresh. **This is expected before 1.0**, not a bug or
-data corruption. On that screen you can back up your data first (download a raw `.sqlite` copy or a
-JSON export) and then reset to continue. Once Gubbins reaches 1.0, updates will preserve your data.
+data corruption. Once Gubbins reaches 1.0, updates will preserve your data.
+
+**Before you reset, press "Back up everything (.zip)" on that screen.** That builds an ordinary
+Gubbins backup out of the database Gubbins couldn't open, and it is the copy you can bring back
+afterwards: once the app starts again, restore it from **Settings → Backup & Restore → Restore**
+using **Merge**, which re-applies your records onto the new database shape. The screen tells you
+what the backup captured, and names anything the old database wouldn't give up.
 
 > **⚠️ Heads-up**
+> The other two downloads on that screen — the raw `.sqlite` copy and the JSON export — are for
+> keeping or inspecting elsewhere (a SQLite browser, a text editor). Neither can be restored into
+> Gubbins after a schema reset, because both are in the shape of the old database. Take the `.zip`.
+
+> **💡 Tip**
 > Take a [[backup|Backup-and-Restore]] regularly while Gubbins is pre-1.0, so a schema reset never
 > costs you more than the changes since your last backup.
 
