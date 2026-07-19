@@ -53,6 +53,13 @@ That's the one-time setup Gubbins does on your first visit, and it normally fini
 a moment. If it lingers, press **Reload**. If it then reports a different cause, follow the advice
 it gives — see [[Supported browsers|Installing-Gubbins]].
 
+**Gubbins says it lost its connection to my data, or that the database took too long to respond.**
+Gubbins keeps your data in a background component of the page, and very occasionally that component
+stops — a browser reclaiming memory is the usual reason. When it does, Gubbins tells you instead of
+leaving the screen spinning, and **reloading the page** restores it. Nothing is lost: your data is
+on the device, not in that component. If it says the database merely took too long, try the action
+again first; reload only if it keeps happening.
+
 **My data disappeared / the app is empty.**
 The most common cause is the browser clearing its storage for Gubbins. Restore from a
 [[backup|Backup-and-Restore]] or re-[[sync|Cloud-Sync]]. To prevent it, [[install the

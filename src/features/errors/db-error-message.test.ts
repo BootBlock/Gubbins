@@ -49,6 +49,8 @@ describe('describeDbError', () => {
     ['SCHEMA_TOO_NEW', 'db.error.schemaTooNew'],
     ['SCHEMA_STALE', 'db.error.schemaStale'],
     ['FTS5_UNAVAILABLE', 'db.error.ftsUnavailable'],
+    ['WORKER_UNAVAILABLE', 'db.error.workerUnavailable'],
+    ['WORKER_TIMEOUT', 'db.error.workerTimeout'],
   ])('humanises the environmental code %s', (code, key) => {
     expect(describeDbError(new DbError(code, 'database or disk is full'))).toEqual({ key });
   });
@@ -142,6 +144,8 @@ describe('describeDbError', () => {
       'SCHEMA_TOO_NEW',
       'SCHEMA_STALE',
       'FTS5_UNAVAILABLE',
+      'WORKER_UNAVAILABLE',
+      'WORKER_TIMEOUT',
       'SQLITE_CONSTRAINT_FOREIGNKEY',
     ];
     const messages = [

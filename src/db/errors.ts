@@ -26,6 +26,11 @@ export type DbErrorCode =
   | 'SCHEMA_STALE'
   | 'INIT_FAILED'
   | 'TRANSACTION_FAILED'
+  // The database worker died (crash, browser eviction, an unhandled trap), so the OPFS connection
+  // it owned is gone for the rest of this page's life — only a reload recovers (§2.2.3).
+  | 'WORKER_UNAVAILABLE'
+  // The worker accepted a request but never answered it within that call's budget (§2.2.3).
+  | 'WORKER_TIMEOUT'
   // The storage Hard Stop (§7.6.1): writes are suspended at the locked tier.
   | 'WRITE_SUSPENDED'
   | 'UNKNOWN';

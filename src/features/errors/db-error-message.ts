@@ -49,6 +49,8 @@ const ENVIRONMENTAL_MESSAGES: Partial<Record<DbErrorCode, string>> = {
   SCHEMA_TOO_NEW: 'db.error.schemaTooNew',
   SCHEMA_STALE: 'db.error.schemaStale',
   FTS5_UNAVAILABLE: 'db.error.ftsUnavailable',
+  WORKER_UNAVAILABLE: 'db.error.workerUnavailable',
+  WORKER_TIMEOUT: 'db.error.workerTimeout',
 };
 
 /**

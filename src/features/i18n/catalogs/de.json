@@ -920,6 +920,8 @@
   "db.error.schemaTooNew": "Diese Daten wurden mit einer neueren Version von Gubbins erstellt. Aktualisieren Sie Gubbins, um sie zu öffnen.",
   "db.error.schemaStale": "Diese Daten wurden mit einer älteren Version von Gubbins erstellt und können nicht mehr geöffnet werden. Stellen Sie eine Sicherung wieder her, um fortzufahren.",
   "db.error.ftsUnavailable": "Die Suche ist in diesem Browser nicht verfügbar.",
+  "db.error.workerUnavailable": "Gubbins hat die Verbindung zu Ihren Daten verloren und kann sie nicht wiederherstellen. Laden Sie die Seite neu, um fortzufahren.",
+  "db.error.workerTimeout": "Die Datenbank hat zu lange nicht geantwortet. Versuchen Sie es erneut und laden Sie die Seite neu, falls es weiterhin auftritt.",
   "db.error.unique": "Etwas mit diesen Angaben existiert bereits. Ändern Sie sie und versuchen Sie es erneut.",
   "db.error.uniqueField": "Dieser {field} wird bereits verwendet. Wählen Sie einen anderen.",
   "db.error.notNull": "Ein erforderlicher Wert fehlt. Füllen Sie alle Pflichtfelder aus und versuchen Sie es erneut.",
