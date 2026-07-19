@@ -46,6 +46,7 @@ import {
 } from '@/features/inventory/kit-availability';
 import { DEFAULT_BATCH_KEY, planItemConsumption, type LocatedBatchLine } from '@/features/inventory/batches';
 import { clampNetValue } from '../gauge';
+import { tombstoneStatement } from '../tombstone';
 import type { TrackingMode } from '../constants';
 import type { IDatabaseDriver, SqlStatement } from '../../rpc/driver';
 import type { Item } from '../types';
@@ -197,8 +198,11 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
     }
 
     /**
-     * Remove a component line from its kit. Write-gated (a definition edit). Returns the
-     * refreshed component list for the owning kit.
+     * Remove a component line from its kit. Write-gated (a definition edit). The DELETE and its
+     * tombstone go in the *same* transaction so the removal propagates on the next sync rather
+     * than being mistaken for an edge the peer should re-download (§7.2, issue #151). A missing
+     * id is a genuine no-op: no tombstone is recorded, since tombstoning an id this device never
+     * held would wrongly instruct peers to delete it. Returns the refreshed component list.
      */
     async removeKitComponent(id: string): Promise<KitComponent[]> {
       this.assertPermission('items:write');
@@ -208,7 +212,10 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
         [id],
       );
       if (!row) return [];
-      await this.driver.execute('DELETE FROM kit_components WHERE id = ?;', [id]);
+      await this.driver.transaction([
+        { sql: 'DELETE FROM kit_components WHERE id = ?;', params: [id] },
+        tombstoneStatement('kit_components', id),
+      ]);
       return this.listKitComponents(row.kit_item_id);
     }
 

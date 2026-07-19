@@ -393,11 +393,14 @@ export async function applyPlan(
   // System — losing the very attribution the column exists to record. That repoint needs the
   // winner to already exist, while the delete must precede the winner's INSERT (they share the
   // username index). The cycle is broken by freeing the username here and deferring the delete
-  // itself until after the upserts, below.
+  // itself until after the upserts, below. That deferral applies only to a genuine naming
+  // contest: a `hoistOnly` entry marks a row this merge was *already* deleting, and its DELETE is
+  // simply brought forward — repointing a retired user's ledger there would re-attribute a
+  // deleted account's history to whoever happens to hold the username now.
   const deferredUserRetirements: { loserId: string; winnerId: string }[] = [];
 
-  for (const { table, loserId, winnerId, deletedAt } of plan.collisions) {
-    if (table === 'users') {
+  for (const { table, loserId, winnerId, deletedAt, hoistOnly } of plan.collisions) {
+    if (table === 'users' && !hoistOnly) {
       // Park the loser on a guaranteed-unique username (its own id) so the winner's INSERT
       // can take the real one. The row is deleted a few statements later, in this same
       // transaction, so the parked value is never observable.

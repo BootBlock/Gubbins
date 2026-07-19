@@ -59,6 +59,7 @@ export const SYNC_TABLES = [
   'supplier_part_price_history', // FK → supplier_parts (Phase 81 — cost-over-time points; ordered after supplier_parts so its FK never trips on an UPSERT batch)
   'item_stock', // FK → items, locations (per-location ledger; LWW; ordered after items so its recompute trigger has the final word on items.quantity)
   'stock_batches', // FK → items, locations (per-batch ledger, the SSOT below item_stock; ordered after it so its recompute trigger has the final word on item_stock.quantity → items.quantity)
+  'kit_components', // FK → items ×2 (CASCADE) — the kit→component definition edges (issue #151); LWW leaf, ordered after items so its FKs never trip on an UPSERT batch. Excluded in v1 as "device-local", which silently lost every kit definition on a restore from a portable backup.
   'item_aliases', // FK → items
   'revaluations', // FK → items (feature-gap G9 — append-only manual current-value log; LWW leaf; ordered after items so its FK never trips on an UPSERT batch)
   'item_relations', // FK → items ×2 (feature-gap G6 — "works with"/accessory/spare-for cross-links; LWW leaf, deterministic id; ordered after items so its FKs never trip on an UPSERT batch)
