@@ -48,6 +48,12 @@ There are two ways to restore:
   there. Non-destructive.
 - **Replace** — wipe the current data and restore the backup *exactly*. Destructive.
 
+> **ℹ️ Note**
+> **Merge** only ever adds or updates — it never removes a record you still have, even one the
+> backup was taken after you'd deleted. Deletions you've made since are remembered too, so
+> [[Cloud Sync|Cloud-Sync]] won't bring those records back from another device. Do expect a merge
+> to restore records that *are* in the backup but you've since deleted — that's the point of it.
+
 > **⚠️ Heads-up**
 > **Replace** overwrites everything currently in Gubbins. It's deliberately well-guarded — an
 > automatic restore-point is taken first, you get an impact preview and a storage-space check, and

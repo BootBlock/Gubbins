@@ -269,8 +269,10 @@ export async function buildBackupJson(driver: IDatabaseDriver): Promise<string> 
 }
 
 /**
- * Restore the database from a backup JSON string (§2). **Destructive** — replaces all
- * syncable data. The caller must confirm with the user first.
+ * Restore the database from a backup JSON string (§2) by **merging** it into the current data —
+ * see {@link restoreSnapshot} for what that does and does not touch. Records are added or
+ * updated, never removed; the destructive point-in-time restore is a different path entirely
+ * (`buildCloneStatements`, behind the Replace mode's type-to-confirm).
  *
  * @internal Exported for unit tests only.
  */
