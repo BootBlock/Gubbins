@@ -14,6 +14,7 @@ import { CardFieldSummary } from './ItemCardFields';
 import { FavouriteStar } from './FavouriteIndicator';
 import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
 import type { ItemSelection } from './inventory-ui';
+import { ItemRowCrashed, withItemCrashBoundary } from './ItemCrashBoundary';
 
 /**
  * Data-Heavy item presentation (spec §3): a dense, tabular row optimised for
@@ -26,7 +27,7 @@ import type { ItemSelection } from './inventory-ui';
  * skips its subtree entirely. `selection` stays stable (only its `onToggle` member), and
  * `selected` is a plain boolean, so toggling one row re-renders just that row.
  */
-export const ItemRow = memo(function ItemRow({
+const ItemRowBody = memo(function ItemRow({
   item,
   locations,
   locationName,
@@ -128,3 +129,6 @@ export const ItemRow = memo(function ItemRow({
     </div>
   );
 });
+
+/** The exported row: {@link ItemRowBody} behind a per-item crash boundary (#313). */
+export const ItemRow = withItemCrashBoundary(ItemRowBody, 'item row', ItemRowCrashed);

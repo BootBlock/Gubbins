@@ -21,6 +21,7 @@ import { CategoryGlyphWatermark } from './CategoryGlyphWatermark';
 import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
 import { itemRarity } from '../rarity';
 import type { ItemSelection } from './inventory-ui';
+import { ItemCardCrashed, withItemCrashBoundary } from './ItemCrashBoundary';
 
 /**
  * Visual-Heavy item presentation (spec §3): a large, striking card with bold
@@ -33,7 +34,7 @@ import type { ItemSelection } from './inventory-ui';
  * `selection` stays stable and `selected` is a plain boolean, so toggling one card
  * re-renders just that card.
  */
-export const ItemCard = memo(function ItemCard({
+const ItemCardBody = memo(function ItemCard({
   item,
   locations,
   locationName,
@@ -250,3 +251,9 @@ export const ItemCard = memo(function ItemCard({
     </Surface>
   );
 });
+
+/**
+ * The exported card: {@link ItemCardBody} behind a per-item crash boundary, so one item that
+ * can't render degrades to a single placeholder card instead of blanking the list (#313).
+ */
+export const ItemCard = withItemCrashBoundary(ItemCardBody, 'item card', ItemCardCrashed);

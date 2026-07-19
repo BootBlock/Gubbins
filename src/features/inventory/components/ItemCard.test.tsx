@@ -370,3 +370,33 @@ describe('ItemCard — drag-source wiring', () => {
     expect(screen.getByTestId('item-drag-preview')).toHaveTextContent('NE555 timer');
   });
 });
+
+describe('ItemCard — crash containment (issue #313)', () => {
+  /** An item whose `name` throws on read — stands in for a malformed row the card can't render. */
+  function poisonedItem(): Item {
+    const item = makeItem();
+    Object.defineProperty(item, 'name', {
+      get() {
+        throw new Error('malformed item row');
+      },
+    });
+    return item;
+  }
+
+  it('renders a placeholder card instead of letting the crash escape the list', () => {
+    // React logs the caught error, as does the boundary itself — both are expected here.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { container } = render(
+      <>
+        <ItemCard item={poisonedItem()} locations={[]} locationName="Workshop" />
+        <ItemCard item={makeItem({ id: 'item-2' })} locations={[]} locationName="Workshop" />
+      </>,
+    );
+
+    // The broken card degrades to the inline stand-in…
+    expect(screen.getByTestId('item-crashed')).toHaveTextContent('This item couldn’t be displayed.');
+    // …and the healthy sibling beside it is untouched.
+    expect(screen.getByRole('heading', { name: /NE555 timer/ })).not.toBeNull();
+    expect(container.querySelectorAll('[data-testid="item-crashed"]')).toHaveLength(1);
+  });
+});

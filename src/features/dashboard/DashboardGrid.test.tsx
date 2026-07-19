@@ -68,6 +68,9 @@ vi.mock('./widgets', () => {
     widgetById: (id: string) => defs.find((d) => d.id === id),
     // "Hide healthy cards" probe (issue #111) — driven by the mutable set above.
     useHealthyWidgetIds: () => mockHealthyIds,
+    // Stand-in for a tile whose render crashed (#313) — the grid hands this to each tile's
+    // boundary as its fallback. Exercised in `DashboardGrid.crash.test.tsx`.
+    WidgetCrashFallback: ({ title }: { title: string }) => <p>{title} unavailable</p>,
   };
 });
 

@@ -13,6 +13,7 @@ import { FavouriteStar } from './FavouriteIndicator';
 import { FieldValue } from './ItemCardFields';
 import { useCardClickAction } from './useCardClickAction';
 import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
+import { ItemTableRowCrashed, withItemCrashBoundary } from './ItemCrashBoundary';
 import {
   columnSortField,
   NAME_COLUMN_SORT_FIELD,
@@ -125,7 +126,7 @@ export function ItemTableHeader({
  * list, so an unchanged row skips its subtree as the user scrolls). Keeps the same body-click
  * shortcut, drag-to-move source and highlight-flash as the card/row presentations.
  */
-export const ItemTableRow = memo(function ItemTableRow({
+const ItemTableRowBody = memo(function ItemTableRow({
   item,
   locations,
   locationName,
@@ -226,3 +227,6 @@ export const ItemTableRow = memo(function ItemTableRow({
     </div>
   );
 });
+
+/** The exported table row: {@link ItemTableRowBody} behind a per-item crash boundary (#313). */
+export const ItemTableRow = withItemCrashBoundary(ItemTableRowBody, 'item table row', ItemTableRowCrashed);
