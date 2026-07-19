@@ -4,6 +4,7 @@ import {
   defaultLocationForNewItem,
   defaultParentForNewLocation,
   flattenVisibleTree,
+  locationAncestry,
   locationPath,
   locationsMatchingQuery,
   matchingWithAncestors,
@@ -36,6 +37,33 @@ describe('collectDescendantIds', () => {
 
   it('is unaffected by unrelated subtrees', () => {
     expect(collectDescendantIds('garage', nodes)).toEqual(new Set(['garage']));
+  });
+});
+
+describe('locationAncestry', () => {
+  it('runs from the location itself outwards to the root', () => {
+    expect(locationAncestry('drawer', nodes)).toEqual(['drawer', 'cabinet', 'workshop']);
+  });
+
+  it('is just the location for a top-level one', () => {
+    expect(locationAncestry('garage', nodes)).toEqual(['garage']);
+  });
+
+  it('is empty for a location that is not in the list', () => {
+    expect(locationAncestry('missing', nodes)).toEqual([]);
+  });
+
+  it('stops cleanly on a broken parent chain', () => {
+    const orphan: FlatNode[] = [{ id: 'x', name: 'X', parentId: 'missing' }];
+    expect(locationAncestry('x', orphan)).toEqual(['x']);
+  });
+
+  it('terminates on a cyclic parent chain rather than looping forever', () => {
+    const cyclic: FlatNode[] = [
+      { id: 'a', name: 'A', parentId: 'b' },
+      { id: 'b', name: 'B', parentId: 'a' },
+    ];
+    expect(locationAncestry('a', cyclic)).toEqual(['a', 'b']);
   });
 });
 

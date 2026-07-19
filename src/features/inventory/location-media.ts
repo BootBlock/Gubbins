@@ -11,7 +11,7 @@
  * file decodes — and on a peer device that file may never arrive, since only the thumbnail
  * syncs.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getLocationPhotoRepository,
   type CreateLocationRegionInput,
@@ -28,6 +28,26 @@ export function useLocationPhotos(locationId: string | undefined) {
     queryKey: inventoryKeys.locationPhotos(locationId ?? ''),
     queryFn: () => getLocationPhotoRepository().listForLocation(locationId!),
     enabled: Boolean(locationId),
+  });
+}
+
+/**
+ * Photos for several locations at once, flattened into one list in the order the ids were
+ * given. The placement picker walks an item's location *and its ancestors* — a photo of the
+ * cabinet is where a drawer's contents get marked out — so it needs a variable number of
+ * location reads, which a single `useQuery` can't express. Each query keeps the per-location
+ * key, so these share the cache with {@link useLocationPhotos} rather than duplicating it.
+ */
+export function useLocationPhotosFor(locationIds: readonly string[]) {
+  return useQueries({
+    queries: locationIds.map((id) => ({
+      queryKey: inventoryKeys.locationPhotos(id),
+      queryFn: () => getLocationPhotoRepository().listForLocation(id),
+    })),
+    combine: (results) => ({
+      data: results.flatMap((result) => result.data ?? []),
+      pending: results.some((result) => result.isPending),
+    }),
   });
 }
 
@@ -184,6 +204,52 @@ export function useLinkItemToRegion(photoId: string) {
       void client.invalidateQueries({
         queryKey: [...inventoryKeys.photoRegions(''), 'items', regionId] as const,
       });
+    },
+  });
+}
+
+/** One end of a placement change: the region, plus the photo whose region list it changes. */
+export interface PlacementTarget {
+  readonly photoId: string;
+  readonly regionId: string;
+}
+
+/**
+ * Add, remove or **move** an item's placement, from the item's side (issue #392).
+ *
+ * {@link useLinkItemToRegion} is bound to the one photo its editor is open on, which cannot
+ * express a move: the two ends may sit on different photos, of different locations. So both
+ * ends are named per-mutation and both photos' region lists are invalidated — a region row
+ * carries the item count the change moves.
+ *
+ * The unlink runs *first* so that moving an item to a region it already occupies is a no-op
+ * rather than a link the following unlink immediately undoes.
+ */
+export function useSetItemPlacement() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      itemId,
+      from,
+      to,
+    }: {
+      itemId: string;
+      from?: PlacementTarget | null;
+      to?: PlacementTarget | null;
+    }) => {
+      const repo = getLocationPhotoRepository();
+      if (from) await repo.unlinkItem(itemId, from.regionId);
+      if (to) await repo.linkItem(itemId, to.regionId);
+    },
+    onSettled: (_d, _e, { itemId, from, to }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemPlacements(itemId) });
+      for (const end of [from, to]) {
+        if (!end) continue;
+        void client.invalidateQueries({ queryKey: inventoryKeys.photoRegions(end.photoId) });
+        void client.invalidateQueries({
+          queryKey: [...inventoryKeys.photoRegions(''), 'items', end.regionId] as const,
+        });
+      }
     },
   });
 }

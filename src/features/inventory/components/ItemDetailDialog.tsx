@@ -352,7 +352,7 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
         {
           title: 'Where it sits',
           icon: <MapViewIcon />,
-          content: <ItemPlacementsPanel itemId={item.id} />,
+          content: <ItemPlacementsPanel item={item} />,
           hint: SECTION_HINT_PLACEMENTS,
           feature: 'location-photos',
         },
