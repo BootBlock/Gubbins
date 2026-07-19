@@ -70,6 +70,14 @@ export interface StorageKeyEntry {
 export const EMOJI_PICKER_SIZE_KEY = 'gubbins:emoji-picker-size';
 
 /**
+ * Records the app version that already auto-reloaded this tab to recover from a code chunk the
+ * host no longer serves (see `stale-chunk-reload.ts`), so a failed recovery can't loop. Defined
+ * here for the same reason as the key above — it is written directly rather than through a
+ * Zustand `persist` name.
+ */
+export const STALE_CHUNK_RELOAD_KEY = 'gubbins:stale-chunk-reload';
+
+/**
  * Every `gubbins:` key, in rough order of how user-visible it is. Keep this list exhaustive:
  * the coverage test compares it against the literals in `src/`.
  *
@@ -237,6 +245,14 @@ export const STORAGE_KEYS = [
     eraseGroup: null,
     backupIncluded: false,
     note: 'sessionStorage, not localStorage — a one-shot post-reload notice that dies with the tab.',
+  },
+  {
+    key: 'gubbins:stale-chunk-reload',
+    store: 'lib/stale-chunk-reload',
+    storage: 'session',
+    eraseGroup: null,
+    backupIncluded: false,
+    note: 'sessionStorage, not localStorage — a one-shot "this tab already reloaded to recover" marker that dies with the tab.',
   },
   {
     key: 'gubbins:db-tab',
