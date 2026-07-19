@@ -15,12 +15,23 @@
  */
 import type { FeatureDef, FeatureId } from './feature-registry';
 
-/** The user's explicit per-feature choice. A missing key means "on" (default everything-on). */
+/**
+ * The user's explicit per-feature choice. A missing key means "on" (default everything-on),
+ * except for a feature declared {@link FeatureDef.defaultOff}, where it means "off".
+ */
 export type FeatureIntent = Readonly<Record<string, boolean>>;
 
-/** A feature the user has not explicitly turned off (`intent[id] !== false`). */
-function isIntended(intent: FeatureIntent, id: FeatureId): boolean {
-  return intent[id] !== false;
+/**
+ * Whether the user's stored intent wants this feature on.
+ *
+ * Absence is read against the feature's own default: everything-on for an ordinary module (so a
+ * newly-added feature appears rather than hiding silently), but **off** for one declared
+ * `defaultOff`, which must be chosen rather than inherited.
+ */
+function isIntended(intent: FeatureIntent, feature: FeatureDef): boolean {
+  const stored = intent[feature.id];
+  if (stored !== undefined) return stored;
+  return !feature.defaultOff;
 }
 
 /**
@@ -54,7 +65,7 @@ export function resolveEnabled(
     }
 
     visiting.add(id);
-    const on = isIntended(intent, id) && (feature.dependsOn ?? []).every((dep) => resolve(dep));
+    const on = isIntended(intent, feature) && (feature.dependsOn ?? []).every((dep) => resolve(dep));
     visiting.delete(id);
 
     effective.set(id, on);

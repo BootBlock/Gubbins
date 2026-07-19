@@ -20,7 +20,20 @@ describe('useModulesStore — defaults', () => {
 
   it('resolves everything on when no intent is stored (missing key ⇒ on)', () => {
     const enabled = resolveEnabled(state().intent, FEATURE_REGISTRY);
-    expect(enabled.size).toBe(FEATURE_REGISTRY.length);
+    // Every feature bar the opt-in ones, which read as *off* until deliberately chosen — see
+    // `FeatureDef.defaultOff`. Asserted against the registry rather than a hard-coded count so
+    // adding a feature of either kind keeps this honest.
+    const expected = FEATURE_REGISTRY.filter((f) => !f.defaultOff);
+    expect([...enabled].sort()).toEqual(expected.map((f) => f.id).sort());
+  });
+
+  it('leaves an opt-in feature off until it is explicitly turned on', () => {
+    const optIn = FEATURE_REGISTRY.filter((f) => f.defaultOff);
+    expect(optIn.length).toBeGreaterThan(0);
+    for (const feature of optIn) {
+      expect(resolveEnabled({}, FEATURE_REGISTRY).has(feature.id)).toBe(false);
+      expect(resolveEnabled({ [feature.id]: true }, FEATURE_REGISTRY).has(feature.id)).toBe(true);
+    }
   });
 });
 
@@ -99,7 +112,13 @@ describe('resetToEverything', () => {
     state().resetToEverything();
     expect(state().intent).toEqual({});
     const enabled = resolveEnabled(state().intent, FEATURE_REGISTRY);
-    expect(enabled.size).toBe(FEATURE_REGISTRY.length);
+    // "Reset" returns to the *default*, which for an opt-in feature is off — resetting must not
+    // quietly switch sign-in on.
+    expect([...enabled].sort()).toEqual(
+      FEATURE_REGISTRY.filter((f) => !f.defaultOff)
+        .map((f) => f.id)
+        .sort(),
+    );
   });
 });
 

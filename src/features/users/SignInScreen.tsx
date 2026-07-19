@@ -18,6 +18,7 @@ import {
   FormField,
   Input,
   MAIN_CONTENT_ID,
+  Modal,
   Spinner,
   Surface,
   optionCardClassName,
@@ -25,6 +26,7 @@ import {
 import { AccountIcon, PasswordIcon, WarningIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { useErrorMessage } from '@/features/errors';
+import { useModulesStore } from '@/state/stores/useModulesStore';
 import { cn } from '@/lib/utils';
 import type { User } from '@/db/repositories/types';
 import type { SignInOutcome } from '@/db/repositories/UserRepository';
@@ -134,9 +136,68 @@ export function SignInScreen({ users, loading, onSignIn }: SignInScreenProps) {
               <AccountList users={users} error={error} pending={pending} onChoose={chooseAccount} />
             )}
           </div>
+
+          <LockedOutEscape />
         </main>
       </Surface>
     </div>
+  );
+}
+
+/**
+ * The way back in when nobody can sign in (issue #79, plan §3).
+ *
+ * Without this the Modules manager — the only place the users module can be switched off — sits
+ * behind the very gate a forgotten password closes, leaving an operator permanently locked out
+ * of their own local database. The plan is explicit that turning the module off must never
+ * strand anyone, and a warning at enable time is not a guarantee.
+ *
+ * This does not weaken anything real: §1.1 already states that sign-in is a soft boundary and
+ * that the database on this device is readable by whoever holds the device. The honest move is
+ * to say so here rather than to imply a protection the app cannot provide — so the confirmation
+ * spells out both what this does and why it is possible.
+ */
+function LockedOutEscape() {
+  const t = useT();
+  const setFeatureIntent = useModulesStore((state) => state.setFeatureIntent);
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <>
+      <div className="mt-6 flex justify-center border-t border-border pt-4">
+        <Button variant="link" size="sm" onClick={() => setConfirming(true)}>
+          {t('signIn.lockedOut.trigger')}
+        </Button>
+      </div>
+
+      {confirming ? (
+        <Modal
+          open
+          onClose={() => setConfirming(false)}
+          title={t('signIn.lockedOut.title')}
+          description={t('signIn.lockedOut.description')}
+        >
+          <div className="flex flex-col gap-4">
+            <Banner tone="warning">{t('signIn.lockedOut.warning')}</Banner>
+            <p className="text-sm text-muted-foreground">{t('signIn.lockedOut.dataSafe')}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setConfirming(false)}>
+                {t('signIn.lockedOut.cancel')}
+              </Button>
+              <Button
+                variant="destructive"
+                data-testid="sign-in-turn-off-users"
+                // Records intent only. The accounts, their roles and every past attribution stay
+                // exactly as they are — turning the module back on restores all of it (plan §3).
+                onClick={() => setFeatureIntent('users', false)}
+              >
+                {t('signIn.lockedOut.confirm')}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+    </>
   );
 }
 

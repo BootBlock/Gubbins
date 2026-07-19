@@ -197,6 +197,11 @@ export {
   User as AccountIcon,
   Lock as PasswordIcon,
   LogOut as SignOutIcon,
+  // Account administration (issue #79 phase 4): the Users screen and its nav entry, and the
+  // roles that bundle permissions. `Shield` is the "what you're allowed to do" glyph; the
+  // shield-*check* variant is already spoken for by warranty.
+  UserCog as UsersIcon,
+  Shield as RoleIcon,
   Phone as PhoneIcon,
   Mail as EmailIcon,
   MapPin as AddressIcon,

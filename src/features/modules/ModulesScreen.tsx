@@ -12,6 +12,7 @@ import {
 import { CheckIcon, ModulesIcon, ResetIcon, SearchIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { ConfirmUsersEnableModal } from '@/features/users/components/ConfirmUsersEnableModal';
 import {
   FEATURE_GROUP_ORDER,
   FEATURE_REGISTRY,
@@ -90,6 +91,7 @@ export function ModulesScreen() {
   // Re-run the first-run chooser on demand via local mount state — flipping the persisted
   // `firstRunComplete` flag back off would wrongly re-trigger the wizard on every load.
   const [showChooser, setShowChooser] = useState(false);
+  const [confirmUsersEnable, setConfirmUsersEnable] = useState(false);
 
   const trimmedQuery = query.trim().toLowerCase();
   const matchesQuery = (feature: FeatureDef) =>
@@ -108,6 +110,14 @@ export function ModulesScreen() {
    * a self-contained change (closure is just the feature itself) applies immediately.
    */
   const requestToggle = (id: FeatureId, nextOn: boolean) => {
+    // Switching the users module on is the one toggle that can lock somebody out of their own
+    // data, so it gets its own confirmation which checks that an account can still sign in
+    // (issue #79, plan §3). Switching it *off* needs no such gate — that is the safe direction,
+    // and obstructing it is precisely what would make the feature a one-way door.
+    if (id === 'users' && nextOn) {
+      setConfirmUsersEnable(true);
+      return;
+    }
     const closure = [
       ...(nextOn
         ? closureToEnable(id, intent, FEATURE_REGISTRY)
@@ -248,6 +258,16 @@ export function ModulesScreen() {
       ) : null}
 
       {showChooser ? <FirstRunModulesDialog onClose={() => setShowChooser(false)} /> : null}
+
+      {confirmUsersEnable ? (
+        <ConfirmUsersEnableModal
+          onCancel={() => setConfirmUsersEnable(false)}
+          onConfirm={() => {
+            setFeatureIntent('users', true);
+            setConfirmUsersEnable(false);
+          }}
+        />
+      ) : null}
     </PageContainer>
   );
 }

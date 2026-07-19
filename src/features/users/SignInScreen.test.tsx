@@ -5,10 +5,11 @@
  * says so plainly rather than implying a protection it does not have (plan §1.1), and that a
  * disabled account is refused with the administrator's own words where they left any.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { User } from '@/db/repositories/types';
+import { useModulesStore } from '@/state/stores/useModulesStore';
 import { SignInScreen } from './SignInScreen';
 
 function user(overrides: Partial<User> = {}): User {
@@ -163,5 +164,44 @@ describe('SignInScreen', () => {
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+});
+
+describe('SignInScreen — the locked-out escape hatch (plan §3)', () => {
+  beforeEach(() => {
+    useModulesStore.setState({ intent: { users: true } });
+  });
+  afterEach(() => {
+    useModulesStore.setState({ intent: {} });
+  });
+
+  it('offers a way out, so a forgotten password cannot strand anyone', async () => {
+    // Without this the Modules manager — the only place the module can be switched off — sits
+    // behind the very gate a forgotten password closes.
+    render(<SignInScreen users={[user()]} loading={false} onSignIn={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /Can’t sign in/ })).toBeInTheDocument();
+  });
+
+  it('does not switch the module off until the warning is confirmed', async () => {
+    render(<SignInScreen users={[user()]} loading={false} onSignIn={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Can’t sign in/ }));
+    // Opening the dialog alone must change nothing — a mis-tap is not a decision.
+    expect(useModulesStore.getState().intent.users).toBe(true);
+
+    // The honest explanation of *why* this is possible is part of the deal, not a footnote.
+    expect(screen.getByText(/not whether the data is encrypted/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing is deleted/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('sign-in-turn-off-users'));
+    expect(useModulesStore.getState().intent.users).toBe(false);
+  });
+
+  it('cancelling leaves the gate exactly as it was', async () => {
+    render(<SignInScreen users={[user()]} loading={false} onSignIn={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Can’t sign in/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(useModulesStore.getState().intent.users).toBe(true);
   });
 });

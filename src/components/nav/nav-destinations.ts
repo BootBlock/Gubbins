@@ -21,6 +21,7 @@ import {
   ShoppingCartIcon,
   SupplierIcon,
   TagIcon,
+  UsersIcon,
   WebhookIcon,
 } from '@/components/icons';
 
@@ -63,6 +64,7 @@ export type AppRoutePath =
   | '/webhooks'
   | '/settings'
   | '/about'
+  | '/users'
   | '/modules'
   | '/tags';
 
@@ -213,6 +215,14 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: ExtensionIcon,
     group: 'system',
     feature: 'home-assistant',
+  },
+  {
+    to: '/users',
+    label: 'Users',
+    messageKey: 'nav.users',
+    Icon: UsersIcon,
+    group: 'system',
+    feature: 'users',
   },
   {
     to: '/settings',

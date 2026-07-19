@@ -15,35 +15,47 @@ import type { ReactNode } from 'react';
 import { getUserRepository } from '@/db/repositories';
 import type { SignInOutcome } from '@/db/repositories/UserRepository';
 import { useSessionStore } from '@/state/stores/useSessionStore';
+import { useFeature } from '@/features/modules/useFeature';
 import { refreshAuthority } from './authority-refresh';
-import { usersModuleEnabled } from './module';
 import { SignInScreen } from './SignInScreen';
 
 export function SignInGate({ children }: { children: ReactNode }) {
-  const moduleEnabled = usersModuleEnabled();
+  // Subscribed rather than read once: the module is toggled from the Modules manager *inside*
+  // the app, so switching it on must put the gate up — and switching it off must take it down —
+  // without a reload. `usersModuleEnabled()` is the same question asked outside a render.
+  const moduleEnabled = useFeature('users');
   const session = useSessionStore((state) => state.session);
   const signIn = useSessionStore((state) => state.signIn);
   const queryClient = useQueryClient();
-  // Until the first refresh resolves we do not yet know what the restored session may do, and
-  // rendering the app against a stale authority is exactly the gap this guards.
-  const [resolved, setResolved] = useState(!moduleEnabled);
+  // Everything the resolved authority depends on, as one value. The gate is **derived** from it
+  // rather than pushed closed by an effect: `resolved` goes false on the very render where an
+  // input changes, so there is no frame in which the app is mounted under the previous
+  // principal's authority. Pushing it closed instead would leave that frame visible for exactly
+  // as long as it took the effect to run.
+  const resolutionKey = `${moduleEnabled}:${session?.userId ?? ''}`;
+  const [resolvedKey, setResolvedKey] = useState<string | null>(null);
+  const resolved = resolvedKey === resolutionKey;
 
   useEffect(() => {
-    if (!moduleEnabled) return;
-    setResolved(false);
     let cancelled = false;
+    // Runs for the module-**off** transition too, not just on. Turning the module off must
+    // return the app to acting as Admin immediately; skipping the refresh here would leave the
+    // previous restricted (or denied) authority resident, so a user who had just switched the
+    // feature off would still be refused — a one-way door in the direction the plan (§3) says
+    // must stay safe.
+    //
     // Always release the render. A refresh can fail for reasons unrelated to the session — a
-    // database briefly unavailable, a failed read — and leaving this false would hold the app
-    // on a blank screen indefinitely, with no error and no way out. `refreshAuthority` never
+    // database briefly unavailable, a failed read — and leaving this shut would hold the app on
+    // a blank screen indefinitely, with no error and no way out. `refreshAuthority` never
     // rejects and publishes a *denied* authority if it cannot establish one, so releasing here
     // shows an app that refuses actions rather than one that silently permits them.
     void refreshAuthority().then(() => {
-      if (!cancelled) setResolved(true);
+      if (!cancelled) setResolvedKey(resolutionKey);
     });
     return () => {
       cancelled = true;
     };
-  }, [moduleEnabled, session?.userId]);
+  }, [resolutionKey]);
 
   const candidates = useQuery({
     queryKey: ['users', 'sign-in-candidates'],
@@ -59,13 +71,9 @@ export function SignInGate({ children }: { children: ReactNode }) {
         // was read as the previous principal (or as nobody), and a restricted user must not be
         // shown a list the cache filled while unrestricted.
         await queryClient.invalidateQueries();
-        // Close the render gate in the same update as the session. Publishing the session
-        // alone would let React render with `session` set while `resolved` was still true from
-        // the signed-out refresh, mounting the whole app for a beat under the *previous*
-        // principal's authority. Both state updates batch, so the first render that sees the
-        // new session also sees the gate shut, and the effect above reopens it once the real
-        // authority has been resolved.
-        setResolved(false);
+        // The gate needs no explicit closing here: publishing the session changes the resolution
+        // key, so the first render that sees the new session already reads `resolved` as false
+        // and stays shut until the real authority has been resolved for that user.
         signIn({
           userId: outcome.user.id,
           displayName: outcome.user.displayName,

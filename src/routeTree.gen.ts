@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WebhooksRouteImport } from './routes/webhooks'
+import { Route as UsersRouteImport } from './routes/users'
 import { Route as UpcomingRouteImport } from './routes/upcoming'
 import { Route as TagsRouteImport } from './routes/tags'
 import { Route as SyncRouteImport } from './routes/sync'
@@ -37,6 +38,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const WebhooksRoute = WebhooksRouteImport.update({
   id: '/webhooks',
   path: '/webhooks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsersRoute = UsersRouteImport.update({
+  id: '/users',
+  path: '/users',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UpcomingRoute = UpcomingRouteImport.update({
@@ -179,6 +185,7 @@ export interface FileRoutesByFullPath {
   '/sync': typeof SyncRoute
   '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
+  '/users': typeof UsersRoute
   '/webhooks': typeof WebhooksRoute
 }
 export interface FileRoutesByTo {
@@ -205,6 +212,7 @@ export interface FileRoutesByTo {
   '/sync': typeof SyncRoute
   '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
+  '/users': typeof UsersRoute
   '/webhooks': typeof WebhooksRoute
 }
 export interface FileRoutesById {
@@ -232,6 +240,7 @@ export interface FileRoutesById {
   '/sync': typeof SyncRoute
   '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
+  '/users': typeof UsersRoute
   '/webhooks': typeof WebhooksRoute
 }
 export interface FileRouteTypes {
@@ -260,6 +269,7 @@ export interface FileRouteTypes {
     | '/sync'
     | '/tags'
     | '/upcoming'
+    | '/users'
     | '/webhooks'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -286,6 +296,7 @@ export interface FileRouteTypes {
     | '/sync'
     | '/tags'
     | '/upcoming'
+    | '/users'
     | '/webhooks'
   id:
     | '__root__'
@@ -312,6 +323,7 @@ export interface FileRouteTypes {
     | '/sync'
     | '/tags'
     | '/upcoming'
+    | '/users'
     | '/webhooks'
   fileRoutesById: FileRoutesById
 }
@@ -339,6 +351,7 @@ export interface RootRouteChildren {
   SyncRoute: typeof SyncRoute
   TagsRoute: typeof TagsRoute
   UpcomingRoute: typeof UpcomingRoute
+  UsersRoute: typeof UsersRoute
   WebhooksRoute: typeof WebhooksRoute
 }
 
@@ -349,6 +362,13 @@ declare module '@tanstack/react-router' {
       path: '/webhooks'
       fullPath: '/webhooks'
       preLoaderRoute: typeof WebhooksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/users': {
+      id: '/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof UsersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/upcoming': {
@@ -539,6 +559,7 @@ const rootRouteChildren: RootRouteChildren = {
   SyncRoute: SyncRoute,
   TagsRoute: TagsRoute,
   UpcomingRoute: UpcomingRoute,
+  UsersRoute: UsersRoute,
   WebhooksRoute: WebhooksRoute,
 }
 export const routeTree = rootRouteImport

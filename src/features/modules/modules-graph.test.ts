@@ -4,6 +4,7 @@ import {
   FEATURE_GROUP_ORDER,
   FEATURE_REGISTRY,
   OPTIONAL_FEATURE_IDS,
+  PRESETABLE_FEATURE_IDS,
   getFeature,
   type FeatureDef,
   type FeatureId,
@@ -270,11 +271,23 @@ describe('preset integrity', () => {
     expect(new Set(ids2).size).toBe(ids2.length);
   });
 
-  it('everything = all optional features, minimal = none', () => {
+  it('everything = every presetable feature, minimal = none', () => {
     const everything = PRESETS.find((p) => p.id === 'everything')!;
     const minimal = PRESETS.find((p) => p.id === 'minimal')!;
-    expect([...everything.featureIds].sort()).toEqual([...OPTIONAL_FEATURE_IDS].sort());
+    expect([...everything.featureIds].sort()).toEqual([...PRESETABLE_FEATURE_IDS].sort());
     expect(minimal.featureIds).toEqual([]);
+  });
+
+  it('no preset switches an opt-in feature on', () => {
+    // An opt-in feature changes how the whole app behaves (sign-in, permission enforcement), so
+    // picking a preset — an act about which *screens* you want — must never enable one.
+    const optIn = FEATURE_REGISTRY.filter((f) => f.defaultOff).map((f) => f.id);
+    expect(optIn.length).toBeGreaterThan(0);
+    for (const preset of PRESETS) {
+      for (const id of optIn) {
+        expect(preset.featureIds, `preset ${preset.id}`).not.toContain(id);
+      }
+    }
   });
 
   it('resolves each preset to a self-consistent set (listed features stay enabled)', () => {

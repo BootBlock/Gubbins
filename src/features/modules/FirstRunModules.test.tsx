@@ -27,7 +27,7 @@ vi.mock('@/components/icons', async (importOriginal) => {
 import { FirstRunModules } from './FirstRunModules';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
-import { OPTIONAL_FEATURE_IDS } from './feature-registry';
+import { FEATURE_REGISTRY, OPTIONAL_FEATURE_IDS, PRESETABLE_FEATURE_IDS } from './feature-registry';
 
 /** Advance from the modules step to the animation step. */
 function goToAnimationStep() {
@@ -99,8 +99,15 @@ describe('FirstRunModules — modules step', () => {
 
     const state = useModulesStore.getState();
     expect(state.firstRunComplete).toBe(true);
-    for (const id of OPTIONAL_FEATURE_IDS) {
+    // "Everything" means every feature the app offers by default. An opt-in feature — one that
+    // changes how the whole app behaves, like Users putting a sign-in in front of it — is
+    // deliberately left off: first-run setup is a question about which screens you want, and it
+    // must not be the thing that switches sign-in on.
+    for (const id of PRESETABLE_FEATURE_IDS) {
       expect(state.intent[id]).toBe(true);
+    }
+    for (const feature of FEATURE_REGISTRY.filter((f) => f.defaultOff)) {
+      expect(state.intent[feature.id]).toBe(false);
     }
   });
 });

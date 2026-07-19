@@ -40,6 +40,7 @@ import {
   ShoppingCartIcon,
   SupplierIcon,
   TagsIcon,
+  UsersIcon,
   VariantIcon,
   WarrantyIcon,
   WebhookIcon,
@@ -75,6 +76,7 @@ export type FeatureId =
   | 'inventory'
   | 'settings'
   | 'about'
+  | 'users'
   // Optional page modules.
   | 'projects'
   | 'purchase-orders'
@@ -126,6 +128,17 @@ export interface FeatureDef {
   readonly dependsOn?: readonly FeatureId[];
   /** Core essentials that can never be hidden (dashboard/inventory/settings/about). */
   readonly alwaysOn?: boolean;
+  /**
+   * **Opt-in**: a feature with no stored intent reads as *off* rather than on.
+   *
+   * The registry's default is everything-on, so that a new module appears for existing
+   * installs rather than hiding silently. That default is wrong for a feature which changes
+   * how the whole app behaves the moment it switches on — `users` gates the app behind a
+   * sign-in — where inheriting "on" would enable it for every existing install on upgrade.
+   * Such a feature must be chosen, so it declares itself opt-in here and the `everything`
+   * preset leaves it alone (see `presets.ts`).
+   */
+  readonly defaultOff?: boolean;
 }
 
 /**
@@ -178,6 +191,19 @@ const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
     group: 'core',
     route: '/about',
     alwaysOn: true,
+  },
+  users: {
+    id: 'users',
+    kind: 'page',
+    label: 'Users',
+    description: 'Sign in as a named person, attribute every change to them, and limit what each one may do.',
+    Icon: UsersIcon,
+    group: 'core',
+    route: '/users',
+    // Opt-in, unlike every other module: switching this on puts a sign-in in front of the app
+    // and starts enforcing permissions, so it must be a decision rather than an inherited
+    // default (plan §3 — Gubbins behaves exactly as it always has until this is chosen).
+    defaultOff: true,
   },
 
   // ── Optional page modules ───────────────────────────────────────────────────
@@ -440,6 +466,17 @@ export const ALL_FEATURE_IDS: readonly FeatureId[] = FEATURE_REGISTRY.map((f) =>
 export const OPTIONAL_FEATURE_IDS: readonly FeatureId[] = FEATURE_REGISTRY.filter((f) => !f.alwaysOn).map(
   (f) => f.id,
 );
+
+/**
+ * The optional features a preset may switch **on**: every {@link OPTIONAL_FEATURE_IDS} bar the
+ * opt-in ones. "Everything" means every feature the app offers by default — an opt-in module
+ * changes how the whole app behaves, so sweeping it on as part of a preset would be exactly the
+ * surprise {@link FeatureDef.defaultOff} exists to prevent. Presets still turn opt-in features
+ * *off* (see `intentFromEnabled`), which is the safe direction.
+ */
+export const PRESETABLE_FEATURE_IDS: readonly FeatureId[] = FEATURE_REGISTRY.filter(
+  (f) => !f.alwaysOn && !f.defaultOff,
+).map((f) => f.id);
 
 /** Look up a feature definition by id, or `undefined` if the id is not registered. */
 export function getFeature(id: FeatureId): FeatureDef | undefined {
