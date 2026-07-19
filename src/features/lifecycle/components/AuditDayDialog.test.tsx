@@ -52,14 +52,10 @@ vi.mock('@/db/repositories', () => ({
   }),
 }));
 
-const reconcileSpy = vi.hoisted(() => vi.fn().mockResolvedValue([]));
-const reconcileSerialisedSpy = vi.hoisted(() => vi.fn().mockResolvedValue([]));
-const markCountedSpy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const authoriseCountSpy = vi.hoisted(() => vi.fn().mockResolvedValue({ discrete: [], serialised: [] }));
 
 vi.mock('../hooks', () => ({
-  useReconcile: () => ({ mutateAsync: reconcileSpy, isPending: false }),
-  useReconcileSerialised: () => ({ mutateAsync: reconcileSerialisedSpy, isPending: false }),
-  useMarkLocationCounted: () => ({ mutateAsync: markCountedSpy, isPending: false }),
+  useAuthoriseCount: () => ({ mutateAsync: authoriseCountSpy, isPending: false }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -92,9 +88,7 @@ afterEach(() => {
   // Reset the persisted session between tests.
   useAuditSessionStore.setState({ session: null });
   localStorage.clear();
-  reconcileSpy.mockResolvedValue([]);
-  reconcileSerialisedSpy.mockResolvedValue([]);
-  markCountedSpy.mockResolvedValue(undefined);
+  authoriseCountSpy.mockResolvedValue({ discrete: [], serialised: [] });
 });
 
 // ---------------------------------------------------------------------------
@@ -136,8 +130,13 @@ describe('AuditDayDialog — guided walk', () => {
     expect(screen.getByTestId('audit-step-heading').textContent).toContain('Location 1 of 2');
     await waitForCountInput();
 
-    // Count 8 vs expected 10 → one variance → authorise it.
-    reconcileSpy.mockResolvedValue([{ id: 'w1' }]);
+    // Count 8 vs expected 10 → one variance → authorise it. Every location's authorisation goes
+    // through the one call now (it also stamps a clean location as counted), so the stub reports
+    // an adjustment only when the call actually carries one — as the repository does.
+    authoriseCountSpy.mockImplementation(async (input: { quantityAdjustments: readonly unknown[] }) => ({
+      discrete: input.quantityAdjustments.length > 0 ? [{ id: 'w1' }] : [],
+      serialised: [],
+    }));
     fireEvent.change(screen.getByTestId(COUNT_TESTID), { target: { value: '8' } });
     await act(async () => {
       fireEvent.click(screen.getByTestId('audit-authorise-continue'));

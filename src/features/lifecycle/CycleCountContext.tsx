@@ -3,7 +3,7 @@
  * §2.1). A blind count of a location is highly transient workflow state, so — like
  * {@link ScannerQueueProvider} — it lives in this Context, mounted and unmounted
  * with the cycle-count dialog, never in a global store or the database. Only the
- * authorised Reconciliation Adjustments are persisted (by `useReconcile`); the
+ * authorised Reconciliation Adjustments are persisted (by `useAuthoriseCount`); the
  * variance arithmetic itself lives in the pure, unit-tested `cycle-count` module.
  */
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';

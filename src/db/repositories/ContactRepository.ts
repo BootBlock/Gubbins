@@ -10,6 +10,7 @@
  */
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
+import { planCheckInAllForTarget } from './checkout-plan';
 import { rowToContact } from './mappers';
 import { tombstoneStatement } from './tombstone';
 import type {
@@ -146,9 +147,17 @@ export class ContactRepository extends BaseRepository {
    * Delete a contact (cascades their checkout records). Bypasses the Hard Stop.
    * Records a tombstone in the same transaction so the deletion syncs (§7.2). The
    * cascaded checkouts are implied by the contact tombstone (the remote cascades too).
+   *
+   * Every still-open loan is returned first — restoring stock and logging `CHECKED_IN` exactly
+   * as an ordinary check-in would — so deleting a contact never strands stock still marked
+   * "out". Those returns ride in **this** transaction (issue #301): as two separate awaited
+   * calls, a failed delete left every loan force-returned against a contact that still existed,
+   * with no way to tell which half applied.
    */
   async delete(id: string): Promise<void> {
+    const returns = await planCheckInAllForTarget(this.driver, 'contact', id, this.actorId());
     await this.driver.transaction([
+      ...returns,
       { sql: 'DELETE FROM contacts WHERE id = ?;', params: [id] },
       tombstoneStatement('contacts', id),
     ]);

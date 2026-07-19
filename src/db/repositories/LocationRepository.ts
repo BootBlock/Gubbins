@@ -12,6 +12,8 @@ import { DbError } from '../errors';
 import type { SqlStatement } from '../rpc/driver';
 import { historyStatement } from './item/history';
 import { BaseRepository } from './base';
+import { planCheckInAllForTarget } from './checkout-plan';
+import { markCountedStatement } from './location-count';
 import { UNASSIGNED_LOCATION_ID, clampDeadStockDays } from './constants';
 import { rowToLocation } from './mappers';
 import { parseLocationBranch } from '@/features/inventory/location-path';
@@ -328,11 +330,17 @@ export class LocationRepository extends BaseRepository {
    * location, whether the count was clean or reconciled variances. Deliberately its own
    * method rather than a field on {@link update}: it carries no other input, needs no
    * cycle guard, and is called from the count engine rather than a location-edit form.
+   *
+   * A system location cannot be stamped: `trg_locations_protect_system_update` aborts *any*
+   * UPDATE on one, so the guard here only surfaces that as a clear error rather than a raw
+   * constraint failure. Counting one is still allowed — see `authoriseCount`, which simply
+   * omits the stamp rather than failing the whole count over it (issue #301).
    */
   async markCounted(id: string, at: number = Date.now()): Promise<Location> {
     this.assertWritable();
     await this.assertMutable(id);
-    await this.driver.execute('UPDATE locations SET last_counted_at = ? WHERE id = ?;', [at, id]);
+    const { sql, params } = markCountedStatement(id, at);
+    await this.driver.execute(sql, params ?? []);
     return (await this.getById(id))!;
   }
 
@@ -341,6 +349,10 @@ export class LocationRepository extends BaseRepository {
    * are promoted to the deleted node's parent. The whole operation is one atomic
    * transaction, and each re-parented item gets an Activity Log entry. Deletes are
    * permitted even under the storage Hard Stop (they free space).
+   *
+   * Every tool still out *to* this location as a borrower is returned first (B4), inside this
+   * same transaction (issue #301) rather than a preceding awaited call — so a failed delete
+   * can't leave those loans force-returned against a location that still exists.
    */
   async delete(id: string): Promise<void> {
     const location = await this.getById(id);
@@ -352,12 +364,18 @@ export class LocationRepository extends BaseRepository {
       );
     }
 
+    // Return every loan borrowed *by* this location before anything else, so the restored
+    // stock lands while the location's placements still exist and is then re-homed to
+    // Unassigned by the batch move below along with the rest. (This is the loan *target*; the
+    // distinct `source_location_id` pointer is nulled separately further down.)
+    const returns = await planCheckInAllForTarget(this.driver, 'location', id, this.actorId());
+
     const orphanedItems = await this.driver.query<{ id: string }>(
       'SELECT id FROM items WHERE location_id = ?;',
       [id],
     );
 
-    const statements: SqlStatement[] = [];
+    const statements: SqlStatement[] = [...returns];
 
     // Re-parent orphaned items to Unassigned and log each move.
     if (orphanedItems.length > 0) {

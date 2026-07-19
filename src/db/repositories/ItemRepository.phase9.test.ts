@@ -4,6 +4,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { ItemRepository } from './ItemRepository';
+import { LocationRepository } from './LocationRepository';
 
 describe('ItemRepository — Phase 9 (perishables, condition, variants, reconciliation)', () => {
   let driver: MemoryDriver;
@@ -183,5 +184,79 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
     await expect(items.reconcileSerialised([{ itemId: widget.id, note: 'x' }])).rejects.toBeInstanceOf(
       DbError,
     );
+  });
+
+  describe('authoriseCount — the whole count is one transaction (issue #301)', () => {
+    let locations: LocationRepository;
+
+    beforeEach(() => {
+      locations = new LocationRepository(driver);
+    });
+
+    it('reconciles discrete + serialised and stamps the location together', async () => {
+      const drawer = await locations.create({ name: 'Drawer A2' });
+      const widget = await items.create({ name: 'Widget', quantity: 10, locationId: drawer.id });
+      const [meter] = await items.createSerialised({ name: 'Multimeter', count: 1, locationId: drawer.id });
+
+      const result = await items.authoriseCount({
+        locationId: drawer.id,
+        quantityAdjustments: [{ itemId: widget.id, counted: 8, note: 'counted 8, expected 10' }],
+        serialisedAdjustments: [{ itemId: meter.id, note: 'not found' }],
+      });
+
+      expect(result.discrete.map((i) => i.quantity)).toEqual([8]);
+      expect(result.serialised.map((i) => i.isActive)).toEqual([false]);
+      expect((await locations.getById(drawer.id))?.lastCountedAt).not.toBeNull();
+    });
+
+    it('stamps a clean count that adjusted nothing', async () => {
+      const drawer = await locations.create({ name: 'Drawer B' });
+      const result = await items.authoriseCount({
+        locationId: drawer.id,
+        quantityAdjustments: [],
+        serialisedAdjustments: [],
+      });
+      expect(result).toEqual({ discrete: [], serialised: [] });
+      expect((await locations.getById(drawer.id))?.lastCountedAt).not.toBeNull();
+    });
+
+    it('applies nothing at all when one half of the count is invalid', async () => {
+      const drawer = await locations.create({ name: 'Drawer C' });
+      const widget = await items.create({ name: 'Widget', quantity: 10, locationId: drawer.id });
+      const gauge = await items.create({
+        name: 'Filament',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000 },
+      });
+
+      // The serialised half rejects a gauge item — and because the whole authorisation is planned
+      // before anything is written, the discrete adjustment and the stamp never land either.
+      await expect(
+        items.authoriseCount({
+          locationId: drawer.id,
+          quantityAdjustments: [{ itemId: widget.id, counted: 8, note: 'counted 8' }],
+          serialisedAdjustments: [{ itemId: gauge.id, note: 'not found' }],
+        }),
+      ).rejects.toBeInstanceOf(DbError);
+
+      expect((await items.getById(widget.id))?.quantity).toBe(10);
+      expect((await locations.getById(drawer.id))?.lastCountedAt).toBeNull();
+    });
+
+    it('counts the system Unassigned location, omitting the stamp it cannot write', async () => {
+      // The schema forbids any UPDATE on a system location, so the stamp is skipped rather than
+      // aborting the count — previously the reconciliation applied and then the stamp errored.
+      const widget = await items.create({ name: 'Widget', quantity: 4 });
+      const unassignedId = widget.locationId;
+
+      const result = await items.authoriseCount({
+        locationId: unassignedId,
+        quantityAdjustments: [{ itemId: widget.id, counted: 3, note: 'counted 3, expected 4' }],
+        serialisedAdjustments: [],
+      });
+
+      expect(result.discrete.map((i) => i.quantity)).toEqual([3]);
+      expect((await locations.getById(unassignedId))?.lastCountedAt).toBeNull();
+    });
   });
 });

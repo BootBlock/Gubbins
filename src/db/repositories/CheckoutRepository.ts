@@ -14,23 +14,21 @@
  * are Hard-Stop gated; check-ins (which can only shrink the open set) are not.
  */
 import { DbError } from '../errors';
-import { SQL_NOW_MS } from '../migrations';
 import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository, type RepositoryOptions } from './base';
 import type { BorrowerType, CheckoutStatus, Condition } from './constants';
 import { ContactRepository } from './ContactRepository';
+import { borrowerColumn, planCheckIn, planCheckInAllForTarget } from './checkout-plan';
 import { historyStatement } from './item/history';
 import { stockRowId } from './stock';
 import {
-  addBatchStatement,
   consumeBatchStatements,
   placementDeltaStatements,
   runStockDraw,
   readPlacementBatches,
   stockBatchRowId,
-  UNTRACKED_BATCH,
 } from './stock-batches';
-import { batchIdentityFromKey, planBatchSelection } from '@/features/inventory/batches';
+import { planBatchSelection } from '@/features/inventory/batches';
 import { nowMs } from '@/lib/clock';
 import { rowToCheckout } from './mappers';
 import type {
@@ -279,75 +277,10 @@ export class CheckoutRepository extends BaseRepository {
    * Leaving `condition` unset never touches the item, preserving the fast one-tap return.
    */
   async checkIn(checkoutId: string, options: CheckInOptions = {}): Promise<Checkout> {
-    const { note, condition } = options;
-    const existing = await this.driver.queryOne<CheckoutRow>('SELECT * FROM checkouts WHERE id = ?;', [
-      checkoutId,
-    ]);
-    if (!existing) {
-      throw new DbError('SQLITE_CONSTRAINT', `Checkout "${checkoutId}" does not exist.`);
-    }
-    if (existing.returned_at !== null) {
-      return rowToCheckout(existing); // already returned — idempotent
-    }
-
-    const item = await this.driver.queryOne<{
-      location_id: string;
-      tracking_mode: string;
-      condition: string | null;
-    }>('SELECT location_id, tracking_mode, condition FROM items WHERE id = ?;', [existing.item_id]);
-    // SERIALISED stock was never decremented (it is pinned to 1), so it is not restored.
-    // The loan is returned to *where it was lent from* (Phase 26): the stored source
-    // placement, or the item's current primary location when no source was recorded (or
-    // it was nulled because that location has since been deleted). And to *the exact lot* it
-    // came from (Phase 29): the canonical `source_batch_key` round-trips back to its identity
-    // via `batchIdentityFromKey`, so a tracked lot is rebuilt rather than anonymised into the
-    // untracked default (NULL/'' → the default batch — the pre-Phase-29 behaviour). `addBatch`
-    // upserts, so the lot is recreated even if it was emptied/consolidated while the unit was out.
-    const restoreDelta = item?.tracking_mode === 'SERIALISED' ? 0 : existing.quantity;
-    const restoreLocationId = existing.source_location_id ?? item?.location_id;
-    const restoreIdentity = existing.source_batch_key
-      ? batchIdentityFromKey(existing.source_batch_key)
-      : UNTRACKED_BATCH;
-
-    // Condition on return (B2): only when a condition was supplied *and* it differs from the
-    // item's current one do we record a change — mirroring `ItemRepository.update`'s guard so a
-    // return that re-affirms the same condition logs no spurious `CONDITION_CHANGED`. Leaving it
-    // unset (undefined) never touches the item, keeping the empty submit a pure one-tap return.
-    const currentCondition = item?.condition ?? null;
-    const conditionChanged = condition !== undefined && condition !== currentCondition;
-
-    await this.driver.transaction([
-      ...(restoreDelta > 0 && restoreLocationId
-        ? [addBatchStatement(existing.item_id, restoreLocationId, restoreIdentity, restoreDelta)]
-        : []),
-      {
-        // The return note lands in its OWN column — never `note`, which holds the reason the
-        // item was lent out. Writing it here (not `note = COALESCE(?, note)`) means a return
-        // remark no longer clobbers the loan note; both survive independently.
-        sql: `UPDATE checkouts SET returned_at = (${SQL_NOW_MS}), return_note = ? WHERE id = ?;`,
-        params: [note?.trim() || null, checkoutId],
-      },
-      historyStatement(existing.item_id, 'CHECKED_IN', this.actorId(), {
-        quantityDelta: restoreDelta === 0 ? null : restoreDelta,
-        note: note?.trim() || `Returned ${existing.quantity} from loan.`,
-        metadata: { checkoutId },
-      }),
-      // The condition change rides in the same transaction as the return + stock restore, so a
-      // returned tool's new state is atomic with its check-in. `updated_at` self-stamps via the
-      // items trigger (the UPDATE leaves it untouched), exactly as `ItemRepository.update` relies on.
-      ...(conditionChanged
-        ? [
-            {
-              sql: `UPDATE items SET condition = ? WHERE id = ?;`,
-              params: [condition, existing.item_id] as SqlValue[],
-            },
-            historyStatement(existing.item_id, 'CONDITION_CHANGED', this.actorId(), {
-              note: `Condition changed ${currentCondition ? `from "${currentCondition}" ` : ''}to "${condition}" on return.`,
-              metadata: { from: currentCondition, to: condition, checkoutId },
-            }),
-          ]
-        : []),
-    ]);
+    // The reads and the statement building live in `checkout-plan` so a borrower delete can
+    // splice the very same return into its own transaction (issue #301).
+    const statements = await planCheckIn(this.driver, checkoutId, this.actorId(), options);
+    if (statements.length > 0) await this.driver.transaction(statements);
     return (await this.getById(checkoutId))!;
   }
 
@@ -403,20 +336,22 @@ export class CheckoutRepository extends BaseRepository {
    * logging `CHECKED_IN`) — used before a borrower is deleted so its active loans never strand
    * stock. The target's `ON DELETE CASCADE` then removes the (now-returned) rows. Deliberately
    * unbounded: every open loan must be returned, not just the first page.
+   *
+   * All the returns land in **one** transaction (issue #301) — previously each loan was its own
+   * awaited `checkIn`, so a failure part-way left some loans returned and others still out. The
+   * borrower-delete paths no longer call this at all: `ContactRepository` / `ProjectRepository` /
+   * `LocationRepository` splice the same planned statements into their own delete transaction,
+   * so the returns and the delete succeed or fail together.
    */
   async checkInAllForTarget(type: BorrowerType, id: string): Promise<void> {
-    const open = await this.driver.query<{ id: string }>(
-      `SELECT id FROM checkouts WHERE ${borrowerColumn(type)} = ? AND returned_at IS NULL;`,
-      [id],
-    );
-    for (const row of open) {
-      await this.checkIn(row.id);
-    }
+    const statements = await planCheckInAllForTarget(this.driver, type, id, this.actorId());
+    if (statements.length > 0) await this.driver.transaction(statements);
   }
 
   /**
    * Return every still-open checkout for a contact (a {@link checkInAllForTarget} shorthand
-   * for the `contact` target — the contact-delete cascade helper).
+   * for the `contact` target). Note this is *not* what contact deletion uses — that splices
+   * the same planned returns into its own transaction; see `ContactRepository.delete`.
    */
   async checkInAllForContact(contactId: string): Promise<void> {
     await this.checkInAllForTarget('contact', contactId);
@@ -548,18 +483,6 @@ export class CheckoutRepository extends BaseRepository {
       limit,
       offset,
     );
-  }
-}
-
-/** The `checkouts` FK column that stores a borrower of the given target type (B4). */
-function borrowerColumn(type: BorrowerType): 'contact_id' | 'project_id' | 'location_id' {
-  switch (type) {
-    case 'project':
-      return 'project_id';
-    case 'location':
-      return 'location_id';
-    default:
-      return 'contact_id';
   }
 }
 
