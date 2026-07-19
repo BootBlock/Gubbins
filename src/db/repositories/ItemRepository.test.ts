@@ -213,6 +213,101 @@ describe('ItemRepository', () => {
     expect(history.rows[0]?.netValueDelta).toBe(600); // applied delta, clamped to top-off
   });
 
+  it('composes overlapping gauge adjusts instead of losing one (issue #297)', async () => {
+    const spool = await items.create({
+      name: 'Busy spool',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 1000 },
+    });
+    // Two adjusts in flight together — a second gauge surface, a bridge write — both read
+    // the same starting value. An absolute write would let the second discard the first.
+    await Promise.all([
+      items.adjustGauge(spool.id, { delta: -40 }),
+      items.adjustGauge(spool.id, { delta: -30 }),
+    ]);
+
+    const after = await items.getById(spool.id);
+    expect(after?.gauge?.currentNetValue).toBe(930);
+
+    // §7.3 replay rebuilds the value as `grossCapacity + Σ deltas`, so the ledger has to
+    // agree with the row exactly — not merely record both events.
+    const history = await items.getHistory(spool.id);
+    const deltas = history.rows.filter((r) => r.action === 'GAUGE_UPDATE');
+    expect(deltas).toHaveLength(2);
+    expect(deltas.reduce((sum, r) => sum + (r.netValueDelta ?? 0), 0)).toBe(-70);
+  });
+
+  it('keeps the ledger honest when overlapping draws hit empty (issue #297)', async () => {
+    const spool = await items.create({
+      name: 'Nearly gone',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 50 },
+    });
+    // 80 g asked for from a gauge holding 50 g: the clamp cuts the pair short, and only
+    // 50 g may be recorded as having moved.
+    await Promise.all([
+      items.adjustGauge(spool.id, { delta: -40 }),
+      items.adjustGauge(spool.id, { delta: -40 }),
+    ]);
+
+    const after = await items.getById(spool.id);
+    expect(after?.gauge?.currentNetValue).toBe(0);
+
+    const history = await items.getHistory(spool.id);
+    const deltas = history.rows.filter((r) => r.action === 'GAUGE_UPDATE');
+    expect(deltas.reduce((sum, r) => sum + (r.netValueDelta ?? 0), 0)).toBe(-50);
+  });
+
+  it('does not let a reconfiguration revert a concurrent adjust (issue #297)', async () => {
+    const drum = await items.create({
+      name: 'Cable drum',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 100, tareWeight: 0, currentNetValue: 100 },
+    });
+    // Correcting the unit label moves no material, so it must leave the level alone —
+    // including a draw that lands while the reconfigure dialog is open. The draw is listed
+    // first deliberately: both calls await a single read before their transaction, so this
+    // is the ordering where the reconfiguration writes last and an absolute write would
+    // revert the draw. (Listed the other way round the bug hides.)
+    await Promise.all([
+      items.adjustGauge(drum.id, { delta: -25 }),
+      items.reconfigureGauge(drum.id, { unitOfMeasure: 'm' }),
+    ]);
+
+    const after = await items.getById(drum.id);
+    expect(after?.gauge?.unitOfMeasure).toBe('m');
+    expect(after?.gauge?.currentNetValue).toBe(75);
+
+    const history = await items.getHistory(drum.id);
+    const deltas = history.rows.filter((r) => r.action === 'GAUGE_UPDATE');
+    expect(deltas.reduce((sum, r) => sum + (r.netValueDelta ?? 0), 0)).toBe(-25);
+  });
+
+  it('records a spill a concurrent refill created during a shrink (issue #297)', async () => {
+    const drum = await items.create({
+      name: 'Shrinking drum',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, tareWeight: 0, currentNetValue: 500 },
+    });
+    // Read against 500, shrinking to 750 spills nothing. A refill to 1000 landing first
+    // makes it spill 250 for real — the ledger has to carry the spill that actually happened,
+    // not the zero the pre-read predicted.
+    await Promise.all([
+      items.adjustGauge(drum.id, { delta: 500 }),
+      items.reconfigureGauge(drum.id, { grossCapacity: 750 }),
+    ]);
+
+    const after = await items.getById(drum.id);
+    expect(after?.gauge?.grossCapacity).toBe(750);
+    expect(after?.gauge?.currentNetValue).toBe(750);
+
+    // The deltas must account for every unit of the 500 → 750 move, whichever of the two
+    // commits first: a +500 refill and a -250 spill, or a 0 spill and a +250 clamped refill.
+    const history = await items.getHistory(drum.id);
+    const deltas = history.rows.filter((r) => r.action === 'GAUGE_UPDATE');
+    expect(deltas.reduce((sum, r) => sum + (r.netValueDelta ?? 0), 0)).toBe(250);
+  });
+
   it('persists an attrition rate and reports it back on the gauge (issue #89)', async () => {
     const flour = await items.create({
       name: 'Flour',
