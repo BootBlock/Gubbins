@@ -7,6 +7,7 @@
  * Every action is defensive — the database may be in a poor state.
  */
 import { downloadBlob, fileTimestamp } from '@/lib/download';
+import { resetAppShell } from '@/lib/app-shell-reset';
 import { getDatabaseDriver, disposeDatabase } from '@/db/client';
 import { DB_FILENAME } from '@/db/worker/sqlite-bootstrap';
 import { removeImagesDirectory } from '@/features/images/opfs-images';
@@ -132,22 +133,30 @@ export async function hardResetLocalData(): Promise<void> {
     // OPFS unavailable — nothing to purge there.
   }
 
-  try {
-    const keys = await caches.keys();
-    await Promise.all(keys.map((key) => caches.delete(key)));
-  } catch {
-    // Cache Storage unavailable — ignore.
-  }
-
-  try {
-    const registrations = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
-    await Promise.all(registrations.map((registration) => registration.unregister()));
-  } catch {
-    // No service workers — ignore.
-  }
+  // The code half of the purge — service worker + Cache Storage — is exactly what
+  // `resetServiceWorkerOnly` does on its own; sharing it keeps the two from drifting.
+  await resetAppShell();
 
   await clearLocalAppState();
 
+  location.reload();
+}
+
+/**
+ * Discard the cached app shell and reload, **keeping every byte of the user's data**
+ * (issue #276).
+ *
+ * The recovery to reach for when the *build* is bad rather than the data: a broken
+ * deploy, a half-applied update, a stale chunk the cache-first worker keeps serving. It
+ * unregisters the service worker and empties Cache Storage, so the reload goes to the
+ * network and picks up whatever the host is currently serving — while the OPFS database,
+ * the images directory and all `gubbins:` settings are left untouched.
+ *
+ * This is strictly weaker than {@link hardResetLocalData} and is offered *first* so a
+ * cosmetic bug never costs a user their inventory.
+ */
+export async function resetServiceWorkerOnly(): Promise<void> {
+  await resetAppShell();
   location.reload();
 }
 

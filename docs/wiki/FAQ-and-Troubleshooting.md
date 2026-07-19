@@ -60,6 +60,24 @@ leaving the screen spinning, and **reloading the page** restores it. Nothing is 
 on the device, not in that component. If it says the database merely took too long, try the action
 again first; reload only if it keeps happening.
 
+**Gubbins looks broken since it updated — but my data is fine.**
+Gubbins keeps a copy of itself on your device so it works offline, and occasionally that copy is
+what's wrong: an update that only half applied, or a version with a bug in it. **Settings → Danger
+zone → Reinstall app files** throws that copy away and downloads Gubbins fresh. It deletes
+**nothing** — your items, photos and settings are untouched — so it's always safe to try before
+anything more drastic. See [[Danger zone|Danger-Zone-Erasing-Data]].
+
+**I get a blank white screen and nothing loads at all.**
+If Gubbins won't start far enough to reach its own settings, add `?recover=1` to the end of the
+address and press Enter — so `https://bootblock.github.io/Gubbins/?recover=1`. That does the same
+thing as *Reinstall app files* above, but from outside the app: it discards the stored copy of
+Gubbins and reloads the latest version. **Your data is not touched.** Once it finishes, the
+address returns to normal on its own.
+
+> **💡 Tip**
+> Try this before "clear site data" in your browser settings. Clearing site data also deletes your
+> inventory; `?recover=1` deliberately doesn't.
+
 **My data disappeared / the app is empty.**
 The most common cause is the browser clearing its storage for Gubbins. Restore from a
 [[backup|Backup-and-Restore]] or re-[[sync|Cloud-Sync]]. To prevent it, [[install the
