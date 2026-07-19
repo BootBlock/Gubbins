@@ -5,9 +5,11 @@
  * the strict-pagination mandate (§2.1) targets the item lists. Writes use targeted
  * invalidation — schema edits are low-frequency and reshape derived counts.
  */
+import { useMemo } from 'react';
 import {
   keepPreviousData,
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
   type QueryClient,
@@ -21,6 +23,7 @@ import {
   type UpdateCategoryFieldInput,
   type UpdateCategoryInput,
 } from '@/db/repositories';
+import { bucketIds, mergeBucketMaps } from './id-buckets';
 import { inventoryKeys } from './queries';
 import { invalidateItems } from './invalidate';
 
@@ -79,17 +82,25 @@ export function useAllCategoryFields() {
 
 /**
  * Stored custom-field values for a set of on-screen items, so the item cards can render
- * chosen custom fields without an async fetch per card (backlog E1). One indexed `IN (…)`
- * read; `keepPreviousData` holds the last values in place while the resident window shifts
- * as the virtualised list scrolls, so a card never flickers. Pass `enabled: false` (no
- * custom field is shown) to skip the query entirely — zero cost for the common case.
+ * chosen custom fields without an async fetch per card (backlog E1). Pass `enabled: false`
+ * (no custom field is shown) to skip the read entirely — zero cost for the common case.
+ *
+ * The window is read one fixed-size id bucket at a time rather than as a single whole-window
+ * query, so a scrolling list reads each item's values exactly once instead of re-reading
+ * every resident id on every page (issue #169 — see {@link bucketIds}).
  */
 export function useItemFieldValues(itemIds: readonly string[], enabled = true) {
-  return useQuery({
-    queryKey: inventoryKeys.itemFieldValues(itemIds),
-    queryFn: () => getCategoryRepository().getItemFieldValues(itemIds),
-    enabled: enabled && itemIds.length > 0,
-    placeholderData: (prev) => prev,
+  const buckets = useMemo(() => bucketIds(itemIds), [itemIds]);
+  return useQueries({
+    queries: buckets.map((bucket) => ({
+      queryKey: inventoryKeys.itemFieldValues(bucket),
+      queryFn: () => getCategoryRepository().getItemFieldValues(bucket),
+      enabled,
+      // Only the partly-filled tail bucket ever re-keys; hold its last values in place while
+      // it reloads so those cards don't flicker.
+      placeholderData: (prev: Map<string, Map<string, string>> | undefined) => prev,
+    })),
+    combine: (results) => ({ data: mergeBucketMaps(results.map((r) => r.data)) }),
   });
 }
 
