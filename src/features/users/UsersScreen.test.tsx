@@ -14,7 +14,12 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Role, User } from '@/db/repositories/types';
-import { ADMIN_USER_ID, SYSTEM_USER_ID } from '@/db/repositories/constants';
+import {
+  ADMIN_USER_DESCRIPTION,
+  ADMIN_USER_ID,
+  SYSTEM_USER_DESCRIPTION,
+  SYSTEM_USER_ID,
+} from '@/db/repositories/constants';
 
 // Plain-anchor Link so PageHeader renders without a RouterProvider.
 vi.mock('@tanstack/react-router', () => ({
@@ -77,6 +82,7 @@ function user(overrides: Partial<User> = {}): User {
     username: 'sam',
     displayName: 'Sam Okafor',
     email: null,
+    description: null,
     hasPassword: true,
     isEnabled: true,
     disabledMessage: null,
@@ -199,8 +205,20 @@ describe('UsersScreen — accounts', () => {
   it('describes the System and Admin accounts’ purpose, since neither can be edited to say so', () => {
     usersResult.data = {
       rows: [
-        user({ id: SYSTEM_USER_ID, displayName: 'System', kind: 'system', hasPassword: false }),
-        user({ id: ADMIN_USER_ID, username: 'admin', displayName: 'Admin', kind: 'admin' }),
+        user({
+          id: SYSTEM_USER_ID,
+          displayName: 'System',
+          kind: 'system',
+          hasPassword: false,
+          description: SYSTEM_USER_DESCRIPTION,
+        }),
+        user({
+          id: ADMIN_USER_ID,
+          username: 'admin',
+          displayName: 'Admin',
+          kind: 'admin',
+          description: ADMIN_USER_DESCRIPTION,
+        }),
       ],
     };
     render(<UsersScreen />);
@@ -209,10 +227,16 @@ describe('UsersScreen — accounts', () => {
     expect(within(rowFor('Admin')).getByText(/single-user mode/)).toBeInTheDocument();
   });
 
-  it('has no description for an ordinary account', () => {
+  it('has no description for an ordinary account by default', () => {
     usersResult.data = { rows: [user()] };
     render(<UsersScreen />);
     expect(within(rowFor('Sam Okafor')).queryByText(/single-user mode|automated actor/)).toBeNull();
+  });
+
+  it('shows an ordinary account’s own description verbatim, not translated', () => {
+    usersResult.data = { rows: [user({ description: 'Runs the weekend stock-take.' })] };
+    render(<UsersScreen />);
+    expect(within(rowFor('Sam Okafor')).getByText('Runs the weekend stock-take.')).toBeInTheDocument();
   });
 
   it('shows an error instead of an empty list when the accounts fail to load', () => {

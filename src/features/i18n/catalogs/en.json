@@ -1221,6 +1221,7 @@
   "users.form.displayName.label": "Display name",
   "users.form.displayName.hint": "Shown throughout the app and against everything they change. Defaults to the username.",
   "users.form.email.label": "Email (optional)",
+  "users.form.description.label": "Description (optional)",
   "users.form.role.label": "Role",
   "users.form.role.hint": "What this person may do. Without a role they can sign in but nothing else.",
   "users.form.role.none": "No role",

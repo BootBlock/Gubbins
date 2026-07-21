@@ -1,4 +1,5 @@
 import {
+  ADMIN_USER_DESCRIPTION,
   ADMIN_USER_DISPLAY_NAME,
   ADMIN_USER_ID,
   ADMIN_USER_USERNAME,
@@ -14,6 +15,7 @@ import {
   PROJECT_STATUSES,
   REGION_SHAPES,
   RESERVATION_STATUSES,
+  SYSTEM_USER_DESCRIPTION,
   SYSTEM_USER_DISPLAY_NAME,
   SYSTEM_USER_ID,
   SYSTEM_USER_USERNAME,
@@ -193,6 +195,9 @@ const baselineStatements: SqlStatement[] = [
           username            TEXT    NOT NULL,
           display_name        TEXT    NOT NULL,
           email               TEXT,
+          -- Free text: what this account is for. Populated at seed time for the two built-in
+          -- principals (issue #430); optional for an ordinary account.
+          description         TEXT,
           -- All three are NULL together when the user has no password at all, which is a
           -- legitimate configuration on a shared household device where the point is
           -- attribution rather than secrecy (plan §1.1). The iteration count is stored
@@ -277,17 +282,17 @@ const baselineStatements: SqlStatement[] = [
   },
   {
     sql: `
-        INSERT INTO users (id, username, display_name, kind, is_enabled)
-        VALUES (?, ?, ?, 'system', 0);
+        INSERT INTO users (id, username, display_name, description, kind, is_enabled)
+        VALUES (?, ?, ?, ?, 'system', 0);
       `,
-    params: [SYSTEM_USER_ID, SYSTEM_USER_USERNAME, SYSTEM_USER_DISPLAY_NAME],
+    params: [SYSTEM_USER_ID, SYSTEM_USER_USERNAME, SYSTEM_USER_DISPLAY_NAME, SYSTEM_USER_DESCRIPTION],
   },
   {
     sql: `
-        INSERT INTO users (id, username, display_name, kind, is_enabled)
-        VALUES (?, ?, ?, 'admin', 1);
+        INSERT INTO users (id, username, display_name, description, kind, is_enabled)
+        VALUES (?, ?, ?, ?, 'admin', 1);
       `,
-    params: [ADMIN_USER_ID, ADMIN_USER_USERNAME, ADMIN_USER_DISPLAY_NAME],
+    params: [ADMIN_USER_ID, ADMIN_USER_USERNAME, ADMIN_USER_DISPLAY_NAME, ADMIN_USER_DESCRIPTION],
   },
   // --- Bridge API tokens (issue #79, plan §1.3) ----------------------------------
   //

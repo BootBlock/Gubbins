@@ -787,6 +787,7 @@ export function rowToUser(row: UserRow): User {
     username: row.username,
     displayName: row.display_name,
     email: row.email,
+    description: row.description,
     hasPassword: row.password_hash !== null,
     isEnabled: row.is_enabled === 1,
     disabledMessage: row.disabled_message,

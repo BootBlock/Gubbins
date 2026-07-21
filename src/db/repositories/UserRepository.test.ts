@@ -12,7 +12,13 @@ import { BUILTIN_ROLES } from '@/features/users/builtin-roles';
 import { normaliseGrants } from '@/features/users/permissions';
 import { runMigrations } from '../migrations/engine';
 import { migrations } from '../migrations';
-import { ADMIN_USER_ID, SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID } from './constants';
+import {
+  ADMIN_USER_DESCRIPTION,
+  ADMIN_USER_ID,
+  SYSTEM_USER_DESCRIPTION,
+  SYSTEM_USER_ID,
+  UNASSIGNED_LOCATION_ID,
+} from './constants';
 import { ItemRepository } from './ItemRepository';
 import { RoleRepository } from './RoleRepository';
 import { TombstoneRepository } from './tombstone';
@@ -84,6 +90,11 @@ describe('users, roles and attribution', () => {
       expect(page.rows.map((u) => u.isEnabled)).toEqual([false, true]);
     });
 
+    it('seeds System and Admin with a description of their purpose', async () => {
+      const page = await users.list();
+      expect(page.rows.map((u) => u.description)).toEqual([SYSTEM_USER_DESCRIPTION, ADMIN_USER_DESCRIPTION]);
+    });
+
     it('never exposes the password triple on the DTO, only whether one is set', async () => {
       const user = await users.create({ username: 'sam' });
       await driver.execute(
@@ -149,6 +160,14 @@ describe('users, roles and attribution', () => {
     it('rejects a duplicate username case-insensitively', async () => {
       await users.create({ username: 'sam' });
       await expect(users.create({ username: 'SAM' })).rejects.toThrow();
+    });
+
+    it('stores and updates a description, trimming blank to null', async () => {
+      const user = await users.create({ username: 'sam', description: '  Runs weekend counts.  ' });
+      expect(user.description).toBe('Runs weekend counts.');
+
+      const updated = await users.update(user.id, { description: '  ' });
+      expect(updated.description).toBeNull();
     });
 
     it('keeps the account when its role is deleted, clearing only the grant', async () => {

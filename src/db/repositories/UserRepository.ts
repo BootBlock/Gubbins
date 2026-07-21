@@ -84,9 +84,16 @@ export class UserRepository extends BaseRepository {
     const displayName = input.displayName?.trim() || username;
     const id = crypto.randomUUID();
     await this.driver.execute(
-      `INSERT INTO users (id, username, display_name, email, kind, role_id)
-       VALUES (?, ?, ?, ?, 'normal', ?);`,
-      [id, username, displayName, input.email?.trim() || null, input.roleId ?? null],
+      `INSERT INTO users (id, username, display_name, email, description, kind, role_id)
+       VALUES (?, ?, ?, ?, ?, 'normal', ?);`,
+      [
+        id,
+        username,
+        displayName,
+        input.email?.trim() || null,
+        input.description?.trim() || null,
+        input.roleId ?? null,
+      ],
     );
     return (await this.getById(id))!;
   }
@@ -118,6 +125,10 @@ export class UserRepository extends BaseRepository {
     if (input.email !== undefined) {
       sets.push('email = ?');
       params.push(input.email?.trim() || null);
+    }
+    if (input.description !== undefined) {
+      sets.push('description = ?');
+      params.push(input.description?.trim() || null);
     }
     if (input.isEnabled !== undefined) {
       sets.push('is_enabled = ?');

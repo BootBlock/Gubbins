@@ -52,6 +52,7 @@ export interface UserRow {
   readonly username: string;
   readonly display_name: string;
   readonly email: string | null;
+  readonly description: string | null;
   readonly password_hash: string | null;
   readonly password_salt: string | null;
   readonly password_iterations: number | null;
@@ -76,6 +77,13 @@ export interface User {
   readonly displayName: string;
   readonly email: string | null;
   /**
+   * Free text: what this account is for. Populated at seed time for the two built-in
+   * principals (System/Admin) and optional for an ordinary account. The two built-in accounts
+   * render this translated while it still equals its shipped default — see
+   * `builtin-user-labels.ts`, the same pattern a built-in role's description uses.
+   */
+  readonly description: string | null;
+  /**
    * Whether the user has a password at all. A user with none is a legitimate configuration
    * on a shared device where the point is attribution rather than secrecy (plan §1.1) — the
    * UI must say so plainly rather than implying a protection that isn't there.
@@ -96,6 +104,7 @@ export interface CreateUserInput {
   readonly username: string;
   readonly displayName?: string;
   readonly email?: string | null;
+  readonly description?: string | null;
   readonly roleId?: string | null;
 }
 
@@ -103,6 +112,7 @@ export interface UpdateUserInput {
   readonly username?: string;
   readonly displayName?: string;
   readonly email?: string | null;
+  readonly description?: string | null;
   readonly isEnabled?: boolean;
   readonly disabledMessage?: string | null;
   readonly roleId?: string | null;
