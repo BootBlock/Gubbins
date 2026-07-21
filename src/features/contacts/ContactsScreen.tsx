@@ -21,6 +21,7 @@ import { CheckInDialog } from './components/CheckInDialog';
 import { RenewLoanDialog } from './components/RenewLoanDialog';
 import { LoanRow } from './components/LoanRow';
 import { EditContactDialog } from './components/EditContactDialog';
+import { ContactsGettingStarted } from './components/ContactsGettingStarted';
 import { useContacts, useCreateContact, useDeleteContact, useOpenCheckouts } from './contacts';
 
 /**
@@ -59,6 +60,10 @@ export function ContactsScreen() {
   const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
   const [contactsPage, setContactsPage] = useState(1);
   const contactRows = contacts.data?.rows ?? [];
+  // First-run guide (#424): once either list has something in it, the page speaks for
+  // itself, so the guide only shows while both are confirmed (not merely loading) empty.
+  const isFirstRun =
+    !open.isLoading && !contacts.isLoading && onLoan.length === 0 && contactRows.length === 0;
   const contactPages = pageCount(contactRows.length, defaultPageSize);
   const { start, end } = pageSliceBounds(contactsPage, defaultPageSize, contactRows.length);
   const visibleContacts = paginated ? contactRows.slice(start, end) : contactRows;
@@ -120,6 +125,9 @@ export function ContactsScreen() {
               ? `${contacts.data.rows.length} ${plural(contacts.data.rows.length, 'contact')}.`
               : 'No contacts yet.'}
         </p>
+
+        {isFirstRun ? <ContactsGettingStarted /> : null}
+
         {/* On loan */}
         <section className="space-y-3">
           <div className="flex items-center gap-2">

@@ -240,6 +240,36 @@ describe('ContactsScreen — list pagination (issue #20)', () => {
   });
 });
 
+describe('ContactsScreen — first-run guide (#424)', () => {
+  it('shows the guide once both lists are confirmed empty', () => {
+    openCheckoutsState = { isLoading: false, data: { rows: [] } };
+    contactsState = { isLoading: false, data: { rows: [] } };
+    render(<ContactsScreen />);
+    expect(screen.getByTestId('contacts-getting-started')).toBeTruthy();
+  });
+
+  it('hides the guide while either query is still loading', () => {
+    openCheckoutsState = { isLoading: true };
+    contactsState = { isLoading: false, data: { rows: [] } };
+    render(<ContactsScreen />);
+    expect(screen.queryByTestId('contacts-getting-started')).toBeNull();
+  });
+
+  it('hides the guide once something is on loan', () => {
+    openCheckoutsState = { isLoading: false, data: { rows: [makeCheckout('c1', false)] } };
+    contactsState = { isLoading: false, data: { rows: [] } };
+    render(<ContactsScreen />);
+    expect(screen.queryByTestId('contacts-getting-started')).toBeNull();
+  });
+
+  it('hides the guide once a contact exists', () => {
+    openCheckoutsState = { isLoading: false, data: { rows: [] } };
+    contactsState = { isLoading: false, data: { rows: [makeContact('k1', 'Alice')] } };
+    render(<ContactsScreen />);
+    expect(screen.queryByTestId('contacts-getting-started')).toBeNull();
+  });
+});
+
 describe('ContactsScreen — renew loan affordance (B3)', () => {
   it('opens the renew dialog seeded from the loan when "Renew" is clicked', () => {
     openCheckoutsState = { isLoading: false, data: { rows: [makeCheckout('c1', false)] } };
