@@ -32,7 +32,7 @@ import {
   UsersIcon,
   WarningIcon,
 } from '@/components/icons';
-import { useT } from '@/features/i18n';
+import { useT, type TypedTranslator } from '@/features/i18n';
 import { useErrorMessage } from '@/features/errors';
 import { useFeature } from '@/features/modules/useFeature';
 import { useSessionStore } from '@/state/stores/useSessionStore';
@@ -60,6 +60,18 @@ import { RoleFormDialog, type RoleFormValues } from './components/RoleFormDialog
 /** Whether a row is one of the two seeded principals, which the schema protects from edits. */
 function isBuiltin(user: User): boolean {
   return BUILTIN_USER_IDS.includes(user.id as (typeof BUILTIN_USER_IDS)[number]);
+}
+
+/**
+ * What a built-in account is *for*, in the active language — `null` for an ordinary account.
+ * There is no stored `description` column for users (unlike roles): System and Admin are the
+ * only accounts this ever applies to, neither is editable, so the copy lives in the catalog
+ * rather than a column nothing else would ever write to.
+ */
+function builtinUserDescription(user: User, t: TypedTranslator): string | null {
+  if (user.kind === 'system') return t('users.builtin.system.description');
+  if (user.kind === 'admin') return t('users.builtin.admin.description');
+  return null;
 }
 
 export function UsersScreen() {
@@ -502,6 +514,7 @@ function UserRow({
   // System is an actor rather than a person: it never signs in, so a password control on its row
   // would offer something the repository and the schema trigger both refuse.
   const isSystem = user.kind === 'system';
+  const description = builtinUserDescription(user, t);
 
   return (
     <Surface className="flex flex-wrap items-center gap-3 p-3">
@@ -536,6 +549,8 @@ function UserRow({
           {user.username}
           {roleName ? ` · ${roleName}` : ''}
         </p>
+
+        {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
 
         {/* The no-password warning the plan (§1.1) requires on this list, worded exactly as the
             sign-in tile words it so the two surfaces cannot drift apart. System is exempt: it has

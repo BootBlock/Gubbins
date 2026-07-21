@@ -196,6 +196,25 @@ describe('UsersScreen — accounts', () => {
     expect(within(rowFor('Sam Okafor')).getByText('Sign-in turned off')).toBeInTheDocument();
   });
 
+  it('describes the System and Admin accounts’ purpose, since neither can be edited to say so', () => {
+    usersResult.data = {
+      rows: [
+        user({ id: SYSTEM_USER_ID, displayName: 'System', kind: 'system', hasPassword: false }),
+        user({ id: ADMIN_USER_ID, username: 'admin', displayName: 'Admin', kind: 'admin' }),
+      ],
+    };
+    render(<UsersScreen />);
+
+    expect(within(rowFor('System')).getByText(/automated actor/)).toBeInTheDocument();
+    expect(within(rowFor('Admin')).getByText(/single-user mode/)).toBeInTheDocument();
+  });
+
+  it('has no description for an ordinary account', () => {
+    usersResult.data = { rows: [user()] };
+    render(<UsersScreen />);
+    expect(within(rowFor('Sam Okafor')).queryByText(/single-user mode|automated actor/)).toBeNull();
+  });
+
   it('shows an error instead of an empty list when the accounts fail to load', () => {
     // "No accounts" would be a lie that reads like success and hides a real failure.
     usersResult.isError = true;

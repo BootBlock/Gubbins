@@ -1197,6 +1197,8 @@
   "users.accounts.retry": "Erneut versuchen",
   "users.row.you": "Sie",
   "users.row.builtin": "Integriert",
+  "users.builtin.system.description": "Der automatisierte Akteur, unter dem Gubbins seine eigenen Aktionen protokolliert – geplante Wartung, Importe und Synchronisationsabgleich. Meldet sich nie an und hat kein Passwort.",
+  "users.builtin.admin.description": "Vollzugriff auf alles. Diese Identität wird im Einzelbenutzermodus stellvertretend verwendet, wenn das Modul „Benutzer“ ausgeschaltet ist.",
   "users.row.disabled": "Anmeldung deaktiviert",
   "users.row.passwordAction": "Passwort",
   "users.row.edit": "Konto bearbeiten",
