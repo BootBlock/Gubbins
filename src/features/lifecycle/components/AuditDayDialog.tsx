@@ -112,7 +112,7 @@ export function AuditDayDialog({ open, onClose }: { open: boolean; onClose: () =
         : 'Start a stock-take';
   const description =
     stage === 'scope'
-      ? 'Walk a set of locations in turn, counting and reconciling each. Your progress is saved, so you can pause and resume.'
+      ? "A stock-take means physically counting what you actually have, and letting Gubbins update its records to match — catching drift from things being used, moved, damaged or mis-logged along the way. This guided walk takes you through your locations one at a time: count what's there, then reconcile any difference, before moving to the next. Your progress is saved as you go, so you can pause partway through and pick up right where you left off."
       : undefined;
 
   // Announce completion as text for screen-reader users (WCAG 4.1.3): the milestone burst is
