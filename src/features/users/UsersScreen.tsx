@@ -512,14 +512,14 @@ function UserRow({
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-foreground">{user.displayName}</span>
-          {isSelf ? (
-            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
-              {t('users.row.you')}
-            </span>
-          ) : null}
           {builtin ? (
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
               {t('users.row.builtin')}
+            </span>
+          ) : null}
+          {isSelf ? (
+            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
+              {t('users.row.you')}
             </span>
           ) : null}
           {/* System is stored disabled because it must never sign in, but badging it
