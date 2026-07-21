@@ -480,6 +480,15 @@ export const SYSTEM_USER_USERNAME = 'system';
 export const SYSTEM_USER_DISPLAY_NAME = 'System';
 
 /**
+ * Seeded `description` for the System user (issue #430). Stored verbatim rather than composed
+ * in the UI so a fresh database and this constant can never drift; the display layer renders it
+ * translated while it still equals this shipped value (see `builtin-user-labels.ts`), exactly as
+ * a built-in role's description does.
+ */
+export const SYSTEM_USER_DESCRIPTION =
+  'The automated actor Gubbins signs its own actions as — scheduled maintenance, imports and sync reconciliation. It never signs in and has no password.';
+
+/**
  * Fixed, well-known identifier for the seeded **Admin** user (issue #79, plan §2.2). Constant
  * for the same reason as {@link SYSTEM_USER_ID}: with the users module off, every action in
  * the app is attributed to this id, so it must resolve identically on every device.
@@ -491,6 +500,10 @@ export const ADMIN_USER_USERNAME = 'admin';
 
 /** Display name of the seeded Admin user. */
 export const ADMIN_USER_DISPLAY_NAME = 'Admin';
+
+/** Seeded `description` for the Admin user (issue #430). See {@link SYSTEM_USER_DESCRIPTION}. */
+export const ADMIN_USER_DESCRIPTION =
+  'Full access to everything. This is the identity single-user mode transparently acts as when the Users module is switched off.';
 
 /**
  * The seeded users that may never be deleted, disabled, renamed or re-roled (plan §2.2).

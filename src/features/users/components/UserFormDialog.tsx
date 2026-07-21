@@ -18,6 +18,7 @@ export interface UserFormValues {
   readonly username: string;
   readonly displayName: string;
   readonly email: string | null;
+  readonly description: string | null;
   readonly roleId: string | null;
   readonly isEnabled: boolean;
   readonly disabledMessage: string | null;
@@ -38,6 +39,7 @@ export function UserFormDialog({ user, roles, busy, error, onSubmit, onClose }: 
   const [username, setUsername] = useState(user?.username ?? '');
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
+  const [description, setDescription] = useState(user?.description ?? '');
   const [roleId, setRoleId] = useState(user?.roleId ?? '');
   const [isEnabled, setIsEnabled] = useState(user?.isEnabled ?? true);
   const [disabledMessage, setDisabledMessage] = useState(user?.disabledMessage ?? '');
@@ -53,6 +55,7 @@ export function UserFormDialog({ user, roles, busy, error, onSubmit, onClose }: 
       // rather than storing a blank that renders as an empty row.
       displayName: displayName.trim() || trimmedUsername,
       email: email.trim() || null,
+      description: description.trim() || null,
       roleId: roleId || null,
       isEnabled,
       disabledMessage: disabledMessage.trim() || null,
@@ -109,6 +112,15 @@ export function UserFormDialog({ user, roles, busy, error, onSubmit, onClose }: 
             autoComplete="off"
             disabled={busy}
             onChange={(event) => setEmail(event.target.value)}
+          />
+        </FormField>
+
+        <FormField label={t('users.form.description.label')}>
+          <Input
+            value={description}
+            autoComplete="off"
+            disabled={busy}
+            onChange={(event) => setDescription(event.target.value)}
           />
         </FormField>
 

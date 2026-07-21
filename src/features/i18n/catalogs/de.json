@@ -1221,6 +1221,7 @@
   "users.form.displayName.label": "Anzeigename",
   "users.form.displayName.hint": "Wird in der App und bei allen von ihnen vorgenommenen Änderungen angezeigt. Standard ist der Benutzername.",
   "users.form.email.label": "E-Mail (optional)",
+  "users.form.description.label": "Beschreibung (optional)",
   "users.form.role.label": "Rolle",
   "users.form.role.hint": "Was diese Person tun darf. Ohne Rolle kann sie sich anmelden, aber sonst nichts.",
   "users.form.role.none": "Keine Rolle",

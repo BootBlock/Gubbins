@@ -743,7 +743,7 @@
       "type": "table",
       "name": "users",
       "tbl_name": "users",
-      "sql": "CREATE TABLE users (\n          id                  TEXT    PRIMARY KEY NOT NULL,\n          username            TEXT    NOT NULL,\n          display_name        TEXT    NOT NULL,\n          email               TEXT,\n          -- All three are NULL together when the user has no password at all, which is a\n          -- legitimate configuration on a shared household device where the point is\n          -- attribution rather than secrecy (plan §1.1). The iteration count is stored\n          -- per-user so it can be raised later without invalidating existing hashes.\n          password_hash       TEXT,\n          password_salt       TEXT,\n          password_iterations INTEGER,\n          is_enabled          INTEGER NOT NULL DEFAULT 1,\n          disabled_message    TEXT,\n          kind                TEXT    NOT NULL DEFAULT 'normal',\n          -- NULL for the built-in system/admin users, whose permissions are implicit and\n          -- not editable. ON DELETE RESTRICT is deliberately absent: a role that is still\n          -- assigned cannot be deleted anyway, because deleting it would leave the user\n          -- with no permissions at all rather than an obvious error.\n          role_id             TEXT    REFERENCES roles(id) ON DELETE SET NULL,\n          created_at          INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at          INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (is_enabled IN (0, 1)),\n          CHECK (kind IN ('system', 'admin', 'normal')),\n          -- The password triple is all-or-nothing: a hash without its salt or iteration\n          -- count is unverifiable, and a salt without a hash is meaningless.\n          CHECK (\n            (password_hash IS NULL AND password_salt IS NULL AND password_iterations IS NULL)\n            OR (password_hash IS NOT NULL AND password_salt IS NOT NULL AND password_iterations IS NOT NULL)\n          )\n        ) STRICT"
+      "sql": "CREATE TABLE users (\n          id                  TEXT    PRIMARY KEY NOT NULL,\n          username            TEXT    NOT NULL,\n          display_name        TEXT    NOT NULL,\n          email               TEXT,\n          -- Free text: what this account is for. Populated at seed time for the two built-in\n          -- principals (issue #430); optional for an ordinary account.\n          description         TEXT,\n          -- All three are NULL together when the user has no password at all, which is a\n          -- legitimate configuration on a shared household device where the point is\n          -- attribution rather than secrecy (plan §1.1). The iteration count is stored\n          -- per-user so it can be raised later without invalidating existing hashes.\n          password_hash       TEXT,\n          password_salt       TEXT,\n          password_iterations INTEGER,\n          is_enabled          INTEGER NOT NULL DEFAULT 1,\n          disabled_message    TEXT,\n          kind                TEXT    NOT NULL DEFAULT 'normal',\n          -- NULL for the built-in system/admin users, whose permissions are implicit and\n          -- not editable. ON DELETE RESTRICT is deliberately absent: a role that is still\n          -- assigned cannot be deleted anyway, because deleting it would leave the user\n          -- with no permissions at all rather than an obvious error.\n          role_id             TEXT    REFERENCES roles(id) ON DELETE SET NULL,\n          created_at          INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at          INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (is_enabled IN (0, 1)),\n          CHECK (kind IN ('system', 'admin', 'normal')),\n          -- The password triple is all-or-nothing: a hash without its salt or iteration\n          -- count is unverifiable, and a salt without a hash is meaningless.\n          CHECK (\n            (password_hash IS NULL AND password_salt IS NULL AND password_iterations IS NULL)\n            OR (password_hash IS NOT NULL AND password_salt IS NOT NULL AND password_iterations IS NOT NULL)\n          )\n        ) STRICT"
     },
     {
       "type": "table",
@@ -6089,7 +6089,7 @@
         },
         {
           "cid": 4,
-          "name": "password_hash",
+          "name": "description",
           "type": "TEXT",
           "notnull": 0,
           "dflt_value": null,
@@ -6097,7 +6097,7 @@
         },
         {
           "cid": 5,
-          "name": "password_salt",
+          "name": "password_hash",
           "type": "TEXT",
           "notnull": 0,
           "dflt_value": null,
@@ -6105,6 +6105,14 @@
         },
         {
           "cid": 6,
+          "name": "password_salt",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
           "name": "password_iterations",
           "type": "INTEGER",
           "notnull": 0,
@@ -6112,7 +6120,7 @@
           "pk": 0
         },
         {
-          "cid": 7,
+          "cid": 8,
           "name": "is_enabled",
           "type": "INTEGER",
           "notnull": 1,
@@ -6120,7 +6128,7 @@
           "pk": 0
         },
         {
-          "cid": 8,
+          "cid": 9,
           "name": "disabled_message",
           "type": "TEXT",
           "notnull": 0,
@@ -6128,7 +6136,7 @@
           "pk": 0
         },
         {
-          "cid": 9,
+          "cid": 10,
           "name": "kind",
           "type": "TEXT",
           "notnull": 1,
@@ -6136,7 +6144,7 @@
           "pk": 0
         },
         {
-          "cid": 10,
+          "cid": 11,
           "name": "role_id",
           "type": "TEXT",
           "notnull": 0,
@@ -6144,7 +6152,7 @@
           "pk": 0
         },
         {
-          "cid": 11,
+          "cid": 12,
           "name": "created_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -6152,7 +6160,7 @@
           "pk": 0
         },
         {
-          "cid": 12,
+          "cid": 13,
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,

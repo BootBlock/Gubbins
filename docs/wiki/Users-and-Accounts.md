@@ -47,6 +47,7 @@ Every copy of Gubbins starts with two accounts you can't delete:
 | **Username** | The handle they sign in with. Unique on this device |
 | **Display name** | What's shown around the app and against everything they change |
 | **Email** | Optional |
+| **Description** | Optional. A short note on what the account is for, shown on its row |
 | **[[Role\|Roles-and-Permissions]]** | What they may do. Without one they can sign in, but nothing else |
 | **This account may sign in** | Untick to suspend an account without deleting it |
 
