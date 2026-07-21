@@ -12,10 +12,14 @@
  *   frames — so the baseline is completely untouched.
  * - **Animation level.** The layer is an ambient decoration, so it tracks the graded animation
  *   level exactly like the starfield: it animates at the livelier tiers, holds a single static
- *   frame at Calm (folded into {@link useDecorationMotionReduced} with the OS `prefers-reduced-
- *   motion` setting), and drops out entirely at Minimal/Off (`suppressesAmbient`). A canvas is
- *   invisible to the CSS `data-anim-level` / reduced-motion catch-alls, so these gates are applied
- *   here in JS.
+ *   frame at Calm (in-app only — see {@link useDecorationMotionReduced}), and drops out entirely
+ *   at Minimal/Off (`suppressesAmbient`). A canvas is invisible to the CSS `data-anim-level` /
+ *   reduced-motion catch-alls, so these gates are applied here in JS.
+ * - **OS reduced motion drops it entirely (issue #420).** A static single frame is still a
+ *   "reduced" state, not an "off" one — someone who has asked their *system* to minimise
+ *   animation (Windows "Animation effects", macOS "Reduce motion", …) gets no canvas at all, not
+ *   a frozen one. This is stricter than the in-app Calm level above, which deliberately keeps a
+ *   still frame; only the OS-level signal ({@link useReducedMotion}) skips the effect outright.
  * - **A seasonal garnish.** On a few days a year (see {@link ./seasonal}) the running field also
  *   carries a sparse drift of themed emoji. It is a garnish on an effect you already chose, so it
  *   never appears when the effect is `none` and never replaces the rain or snow; the hidden lab
@@ -39,6 +43,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useBackdropStore } from '@/state/stores/useBackdropStore';
 import { useLabFlag, useLabStore } from '@/state/stores/useLabStore';
 import { useDecorationMotionReduced } from '@/components/foundry/decoration-motion';
+import { useReducedMotion } from '@/components/foundry/useReducedMotion';
 import { suppressesAmbient } from '@/features/settings/theme-registry';
 import { startPrecip, type PrecipController } from './precip-engine';
 import { resolveOccasion } from './seasonal';
@@ -47,6 +52,9 @@ import { trackSurfaces } from './surface-map';
 export function BackgroundEffects() {
   const effect = usePreferencesStore((s) => s.backgroundEffect);
   const reduced = useDecorationMotionReduced();
+  // The OS-level signal alone (issue #420): unlike the in-app Calm level folded into `reduced`
+  // above, a system-wide reduced-motion request drops the effect entirely rather than freezing it.
+  const osReduced = useReducedMotion();
   // Minimal/Off switch ambient decorations off entirely (not just freeze them), like the starfield.
   const ambientOff = usePreferencesStore((s) => suppressesAmbient(s.animationLevel));
   // Yield to a screen showing its own full-viewport backdrop (the About starfield) — the two
@@ -73,7 +81,7 @@ export function BackgroundEffects() {
   // Normally the garnish rides an already-running rain/snow layer and never appears alone. The lab
   // flag runs it with no effect selected: the layer starts, but with an empty base pool.
   const garnishOnly = effect === 'none' && ignoreEffect && occasion !== null && !reduced;
-  const hidden = (effect === 'none' && !garnishOnly) || ambientOff || backdropActive;
+  const hidden = (effect === 'none' && !garnishOnly) || ambientOff || backdropActive || osReduced;
 
   // Start/stop the engine when the chosen effect, the motion gate or the ambient cutoff changes.
   useEffect(() => {

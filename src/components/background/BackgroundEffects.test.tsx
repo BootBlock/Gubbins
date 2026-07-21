@@ -6,7 +6,7 @@
  * wiring: nothing renders when the effect is off, and an active effect mounts a decorative,
  * pointer-inert canvas without throwing.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { BackgroundEffects } from './BackgroundEffects';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -85,5 +85,38 @@ describe('BackgroundEffects', () => {
     useBackdropStore.setState({ backdropActive: true });
     render(<BackgroundEffects />);
     expect(document.documentElement.dataset.bgEffect).toBeUndefined();
+  });
+
+  describe('OS-level reduced motion (issue #420)', () => {
+    let realMatchMedia: typeof window.matchMedia;
+
+    beforeEach(() => {
+      realMatchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) =>
+        ({
+          matches: query.includes('reduced-motion'),
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        }) as unknown as MediaQueryList) as typeof window.matchMedia;
+    });
+
+    afterEach(() => {
+      window.matchMedia = realMatchMedia;
+    });
+
+    it('renders nothing — not even a static frame — when the OS prefers reduced motion', () => {
+      usePreferencesStore.setState({ backgroundEffect: 'snow' });
+      const { container } = render(<BackgroundEffects />);
+      expect(container.firstChild).toBeNull();
+      expect(screen.queryByTestId('background-effects')).toBeNull();
+      expect(screen.queryByTestId('background-effects-overlay')).toBeNull();
+    });
+
+    it('does not project data-bg-effect while dropped for OS-level reduced motion', () => {
+      usePreferencesStore.setState({ backgroundEffect: 'rain' });
+      render(<BackgroundEffects />);
+      expect(document.documentElement.dataset.bgEffect).toBeUndefined();
+    });
   });
 });

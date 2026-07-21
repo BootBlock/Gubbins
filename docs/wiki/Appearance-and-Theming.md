@@ -65,7 +65,10 @@ Gubbins has some gentle visual polish that you can dial up or down:
 
 > **ℹ️ Note**
 > All decoration respects your system's **reduced-motion** setting — if you've asked your
-> device to minimise animation, Gubbins honours that automatically, whatever these are set to.
+> device to minimise animation (for example, Windows' **Settings → Accessibility → Visual
+> effects → Animation effects**, turned off), Gubbins honours that automatically, whatever
+> these are set to here. **Background effect** in particular turns off entirely rather than
+> freezing on a still frame — if you've picked Rain or Snow but see nothing, this is why.
 
 > **💡 Tip**
 > Want a calmer app in one move? Turning **Animation** down (or enabling your device's
