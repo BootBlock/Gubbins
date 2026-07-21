@@ -229,6 +229,57 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
   });
 });
 
+describe('SettingsDialog — reduced-motion notice on Background effect (issue #420)', () => {
+  let realMatchMedia: typeof window.matchMedia;
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    usePreferencesStore.setState({ backgroundEffect: 'none' });
+  });
+
+  function mockOsReducedMotion(reduced: boolean) {
+    realMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) =>
+      ({
+        matches: reduced && query.includes('reduced-motion'),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }) as unknown as MediaQueryList) as typeof window.matchMedia;
+  }
+
+  it('shows the notice when an effect is chosen and the OS prefers reduced motion', () => {
+    mockOsReducedMotion(true);
+    usePreferencesStore.setState({ backgroundEffect: 'snow' });
+    render(<SettingsDialog open onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+
+    expect(screen.getByTestId('setting-background-effect-reduced-motion-notice')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /wiki/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('Appearance-and-Theming'),
+    );
+  });
+
+  it('stays hidden when the effect is none, even under OS reduced motion', () => {
+    mockOsReducedMotion(true);
+    usePreferencesStore.setState({ backgroundEffect: 'none' });
+    render(<SettingsDialog open onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+
+    expect(screen.queryByTestId('setting-background-effect-reduced-motion-notice')).toBeNull();
+  });
+
+  it('stays hidden when an effect is chosen but the OS does not prefer reduced motion', () => {
+    mockOsReducedMotion(false);
+    usePreferencesStore.setState({ backgroundEffect: 'rain' });
+    render(<SettingsDialog open onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+
+    expect(screen.queryByTestId('setting-background-effect-reduced-motion-notice')).toBeNull();
+  });
+});
+
 describe('SettingsDialog — nav-tile count pickers (A1/A2)', () => {
   it('shows a metric picker for each configurable tile on the Dashboard tab', () => {
     renderTab('Dashboard');

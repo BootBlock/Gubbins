@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useId, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
+  Banner,
   Button,
   Input,
   RailModal,
@@ -8,6 +9,7 @@ import {
   Tooltip,
   buttonVariants,
   useInstallPrompt,
+  useReducedMotion,
   useRovingRadioGroup,
   type RailTab,
 } from '@/components/foundry';
@@ -104,6 +106,16 @@ const ANIMATION_LEVEL_HINT =
 /** Background-effect choices for the Appearance `Select` (none / rain / snow), in registry order. */
 const BACKGROUND_EFFECT_OPTIONS = BACKGROUND_EFFECTS.map((e) => ({ value: e.id, label: e.label }));
 
+/**
+ * Deep link into the wiki's "Motion & decorative flair" section (issue #420) — surfaced by the
+ * reduced-motion notice below the Background effect row. `Appearance-and-Theming.md`'s
+ * `## Motion & decorative flair` heading slugifies to this anchor under GitHub's auto-heading-id
+ * rules (lowercase, punctuation stripped, spaces to hyphens); `npm run wiki:check` does not
+ * validate anchors, so keep this in sync by eye if that heading is ever reworded.
+ */
+const BACKGROUND_EFFECT_WIKI_URL =
+  'https://github.com/BootBlock/Gubbins/wiki/Appearance-and-Theming#motion--decorative-flair';
+
 /** Surface-style choices for the Branding `Select` (solid / soft / sheer), in registry order. */
 const SURFACE_STYLE_OPTIONS = SURFACE_STYLES.map((s) => ({ value: s.id, label: s.label }));
 
@@ -186,6 +198,9 @@ export default function SettingsDialog({
   const prefs = usePreferencesStore();
   const [triageOpen, setTriageOpen] = useState(false);
   const install = useInstallPrompt();
+  // OS-level signal only (issue #420) — not the in-app Animation level, which is a deliberate
+  // choice this notice shouldn't second-guess; see BackgroundEffects.tsx for the matching gate.
+  const osReducedMotion = useReducedMotion();
 
   // Modular UI (Phase 7): controls whose feature is off are hidden here too, so a hidden
   // capability leaves no orphaned setting behind. The Scanner section drops whole; the
@@ -342,6 +357,24 @@ export default function SettingsDialog({
               options={BACKGROUND_EFFECT_OPTIONS}
             />
           </SettingRow>
+          {prefs.backgroundEffect !== 'none' && osReducedMotion && (
+            <Banner
+              tone="info"
+              heading={t('settings.backgroundEffect.reducedMotionNotice.heading')}
+              className="my-3"
+              data-testid="setting-background-effect-reduced-motion-notice"
+            >
+              {t('settings.backgroundEffect.reducedMotionNotice.body')}{' '}
+              <a
+                href={BACKGROUND_EFFECT_WIKI_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                {t('settings.backgroundEffect.reducedMotionNotice.link')}
+              </a>
+            </Banner>
+          )}
           <SettingRow
             label="Holographic foil cards"
             description="Give item cards a rainbow trading-card foil shimmer on hover."
