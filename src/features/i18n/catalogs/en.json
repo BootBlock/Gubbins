@@ -1197,6 +1197,8 @@
   "users.accounts.retry": "Try again",
   "users.row.you": "You",
   "users.row.builtin": "Built-in",
+  "users.builtin.system.description": "The automated actor Gubbins signs its own actions as — scheduled maintenance, imports and sync reconciliation. It never signs in and has no password.",
+  "users.builtin.admin.description": "Full access to everything. This is the identity single-user mode transparently acts as when the Users module is switched off.",
   "users.row.disabled": "Sign-in turned off",
   "users.row.passwordAction": "Password",
   "users.row.edit": "Edit account",
