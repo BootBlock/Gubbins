@@ -30,6 +30,8 @@
  */
 import { MONEY_DECIMALS, roundMoney } from '@/lib/money';
 
+import { inTimeWindow } from './window-membership';
+
 /** The two outbound kinds this report folds together. */
 export type SalesKind = 'SOLD' | 'WRITTEN_OFF';
 
@@ -114,8 +116,8 @@ const UNCATEGORISED = 'Uncategorised';
  * Fold sale/write-off events into a windowed report: headline proceeds/COGS/margin, units and
  * write-off totals, a chronological bucket series and a by-category breakdown.
  *
- * **Window membership (half-open, mirrors {@link buildSpendReport}).** Only events with
- * `windowStart <= instant < windowEnd` are counted; an event exactly on `windowEnd` is excluded.
+ * **Window membership.** Only events inside the shared forward window {@link inTimeWindow}
+ * (`windowStart <= instant < windowEnd`) are counted; an event exactly on `windowEnd` is excluded.
  * Events with a non-positive `quantity` are ignored.
  *
  * **Bucketing.** `bucketCount` equal half-open spans across the window (clamped to `>= 1`); the
@@ -163,7 +165,7 @@ export function buildSalesReport(
   let writeOffCount = 0;
 
   for (const event of events) {
-    if (event.instant < windowStart || event.instant >= windowEnd) continue;
+    if (!inTimeWindow(event.instant, windowStart, windowEnd)) continue;
     if (!Number.isFinite(event.quantity) || event.quantity <= 0) continue;
 
     if (event.kind === 'WRITTEN_OFF') {

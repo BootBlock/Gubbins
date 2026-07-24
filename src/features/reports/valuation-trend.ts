@@ -12,6 +12,7 @@
  * (`quantity_delta × effectiveUnitCost`), so this module needs no cost seam of its own — the cost
  * precedence has already been resolved upstream when the delta was recorded.
  */
+import { inTimeWindowEndInclusive } from './window-membership';
 
 /**
  * One value-tagged ledger entry. `valueDelta` is the signed change in total inventory value at
@@ -65,10 +66,13 @@ export interface ValuationTrendReport {
  * (`windowEnd`, treated as "now") reconstructs to `currentValue` (nothing in-window lies strictly
  * after it), and the first boundary reconstructs the window-start value.
  *
- * **Window membership (mirrors {@link bucketMovement}'s half-open rigour).** Only events with
- * `windowStart < createdAt <= windowEnd` can move an in-window boundary: an event at or before
- * `windowStart` is not strictly after any boundary `>= windowStart`, and an event strictly after
- * `windowEnd` is never "now or earlier" for any in-window boundary. Both are therefore ignored.
+ * **Window membership ({@link inTimeWindowEndInclusive} — the *complement* of the forward
+ * bucketing rule).** Only events with `windowStart < createdAt <= windowEnd` can move an in-window
+ * boundary: an event at or before `windowStart` is not strictly after any boundary `>= windowStart`,
+ * and an event strictly after `windowEnd` is never "now or earlier" for any in-window boundary. Both
+ * are therefore ignored. This end-inclusive rule is deliberately opposite to the start-inclusive
+ * {@link inTimeWindow} the forward reports use, because this module reconstructs *backward* from the
+ * present — see `window-membership.ts` for why the two conventions differ.
  *
  * **Clamping.** Each emitted `value` is clamped to `>= 0`. Imperfect or partial cost data could
  * otherwise let a reversed delta drive a reconstructed total negative, which is never a meaningful
@@ -103,7 +107,7 @@ export function buildValuationTrend(
   // Only in-window events (windowStart < createdAt <= windowEnd) can affect any boundary; drop the
   // rest up front, then sort ascending so the descending sweep below can accumulate the tail-sum.
   const inWindow = events
-    .filter((event) => event.createdAt > windowStart && event.createdAt <= windowEnd)
+    .filter((event) => inTimeWindowEndInclusive(event.createdAt, windowStart, windowEnd))
     .sort((a, b) => a.createdAt - b.createdAt);
 
   const boundaries: number[] = [];
