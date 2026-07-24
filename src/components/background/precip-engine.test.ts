@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { startPrecip } from './precip-engine';
+import { blizzard } from './flow-field';
 import { NO_SURFACE, type HoverFollow, type SurfaceTracker } from './surface-map';
 
 interface DrawCall {
@@ -194,8 +195,10 @@ describe('startPrecip', () => {
   });
 
   it('blits distant snow grains plainly (no rotation) and advances them', () => {
-    // Depth < grainMaxZ → every flake spawns as a plain grain.
-    vi.spyOn(Math, 'random').mockReturnValue(0.1);
+    // Depth < grainMaxZ → every flake spawns as a plain grain. (0.3, not lower: a sample under
+    // the deep-layer fraction would land the whole field in the slow deep background, whose
+    // sub-pixel per-frame fall the rounding check below couldn't see.)
+    vi.spyOn(Math, 'random').mockReturnValue(0.3);
     const rec = makeCtx();
     const ctrl = startPrecip(makeCanvas(rec), { kind: 'snow', reduced: false });
     pump(0);
@@ -495,6 +498,98 @@ describe('startPrecip seasonal garnish', () => {
     for (let i = 1; i <= 40; i++) pump(i * 50);
     // The snow pool is untouched — the garnish is added on top of it, never carved out of it.
     expect(rec.drawImages.length).toBeGreaterThan(plainPerFrame);
+    ctrl.stop();
+  });
+});
+
+/**
+ * The widened snow parallax range and the blizzard scheduler (issue #455). Depth is pinned via
+ * Math.random, so every spawn sample collapses to one value: a pin under the deep-layer fraction
+ * puts the whole field in the deep background (z < 0), a pin above 1 − bokeh.fraction puts it in
+ * the foreground bokeh layer (z > 1), and anything between is the main-field depth itself.
+ */
+describe('startPrecip snow depth & weather (issue #455)', () => {
+  /** Mean per-step fall (css px over one 16ms frame) of a pinned-depth snow field. */
+  const meanFall = (pin: number) => {
+    vi.spyOn(Math, 'random').mockReturnValue(pin);
+    rafQueue = [];
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), { kind: 'snow', reduced: false });
+    pump(16); // dt = 0 (primes lastTime); draws the field at its start positions
+    pump(32); // dt = 16ms; the field falls one step
+    ctrl.stop();
+    vi.restoreAllMocks();
+    // Crystals draw via translate; grains and bokeh discs blit at absolute coords.
+    const ys =
+      rec.translates.length > 0
+        ? rec.translates.map(([, y]) => y)
+        : rec.drawImages.map((d) => d.args[2] as number);
+    const perFrame = ys.length / 2;
+    let sum = 0;
+    for (let i = 0; i < perFrame; i++) sum += ys[perFrame + i] - ys[i];
+    return { fall: sum / perFrame, rec };
+  };
+
+  it('falls with depth parallax — near crystals fall faster than far grains', () => {
+    const near = meanFall(0.9).fall;
+    const far = meanFall(0.3).fall;
+    expect(near).toBeGreaterThan(0);
+    expect(far).toBeGreaterThan(0);
+    expect(near).toBeGreaterThan(far * 1.5);
+  });
+
+  it('has deep background layers that fall slower than the main field', () => {
+    // 0.05 < deepLayerFraction → every flake lands in a deep layer (z < 0).
+    const deep = meanFall(0.05).fall;
+    const mainFar = meanFall(0.3).fall;
+    expect(deep).toBeGreaterThan(0); // still falling, not frozen
+    expect(deep).toBeLessThan(mainFar * 0.75); // …but slower than the main field's far edge
+  });
+
+  it('has a foreground bokeh layer — unrotated, big, and the fastest of all', () => {
+    // 0.96 > 1 − bokeh.fraction → every flake is a foreground bokeh disc (z > 1).
+    const { fall, rec } = meanFall(0.96);
+    expect(rec.rotateCount).toBe(0); // out-of-focus discs never rotate
+    expect(rec.translates.length).toBe(0); // …and blit plainly
+    expect(rec.drawImages.length).toBeGreaterThan(0);
+    // Drawn large: the depth extrapolation scales them past the main field's near edge.
+    for (const d of rec.drawImages) expect(d.args[3] as number).toBeGreaterThan(28);
+    // And near = fast: they leave the far grains well behind. (Not compared against the near
+    // crystals: a pinned RNG puts the whole field at one position, so the curl field's vertical
+    // term biases each pin by more than the bokeh-vs-near speed gap.)
+    expect(fall).toBeGreaterThan(meanFall(0.3).fall * 1.5);
+  });
+
+  it('thickens, streaks and hazes the field when the scheduler raises a blizzard', () => {
+    // Find the first full-strength storm in the deterministic schedule.
+    let stormT = -1;
+    for (let t = 130; t < 2000; t += 0.25) {
+      if (blizzard(t) > 0.9) {
+        stormT = t;
+        break;
+      }
+    }
+    expect(stormT).toBeGreaterThan(0);
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), { kind: 'snow', reduced: false });
+    let now = 0;
+    pump(now); // dt = 0, primes lastTime
+    pump((now += 50));
+    // One calm frame's draw count (the reserve storm pool is dormant — neither stepped nor drawn).
+    const calmMark = rec.drawImages.length;
+    pump((now += 50));
+    const calmFrame = rec.drawImages.length - calmMark;
+    // Drive elapsed to the storm: each 50ms pump advances the (clamped) engine clock by 50ms.
+    const frames = Math.ceil(stormT / 0.05) + 4;
+    for (let i = 0; i < frames; i++) pump((now += 50));
+    const stormMark = rec.drawImages.length;
+    pump((now += 50));
+    const stormDraws = rec.drawImages.slice(stormMark);
+    // The storm pool has woken and the whiteout haze blits, so the frame draws far more…
+    expect(stormDraws.length).toBeGreaterThan(calmFrame * 1.3);
+    // …and wind-raked flakes elongate into motion streaks (height drawn well past width, which
+    // never happens to the square-sprite flakes in calm air; the haze blit is wider than tall).
+    expect(stormDraws.some((d) => (d.args[4] as number) > (d.args[3] as number) * 1.5)).toBe(true);
     ctrl.stop();
   });
 });

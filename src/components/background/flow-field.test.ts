@@ -5,7 +5,7 @@
  * divergence-free — turbulence field.
  */
 import { describe, it, expect } from 'vitest';
-import { gust, flurry, curlField } from './flow-field';
+import { gust, flurry, curlField, gustPulse, blizzard, blizzardWind, smooth01 } from './flow-field';
 
 /** Sample a function across a long time span. */
 function sample(fn: (t: number) => number, count = 4000, dt = 0.05): number[] {
@@ -99,5 +99,112 @@ describe('curlField', () => {
       }
     }
     expect(maxCurl).toBeGreaterThan(1e-3);
+  });
+});
+
+describe('smooth01', () => {
+  it('clamps outside [0, 1] and eases monotonically between', () => {
+    expect(smooth01(-2)).toBe(0);
+    expect(smooth01(0)).toBe(0);
+    expect(smooth01(1)).toBe(1);
+    expect(smooth01(3)).toBe(1);
+    let prev = 0;
+    for (let i = 1; i <= 20; i++) {
+      const v = smooth01(i / 20);
+      expect(v).toBeGreaterThanOrEqual(prev);
+      prev = v;
+    }
+  });
+});
+
+describe('blizzard', () => {
+  it('stays within [0, 1] across an hour', () => {
+    for (const v of sample(blizzard, 14400, 0.25)) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('is calm for the whole first epoch — the layer never opens mid-storm', () => {
+    for (let t = 0; t < 130; t += 0.5) expect(blizzard(t)).toBe(0);
+  });
+
+  it('is mostly calm but occasionally reaches a full storm', () => {
+    const xs = sample(blizzard, 14400, 0.25); // one hour
+    const calm = xs.filter((v) => v < 0.05).length / xs.length;
+    expect(calm).toBeGreaterThan(0.7); // storms are occasional, not the norm
+    expect(Math.max(...xs)).toBeGreaterThan(0.95); // …but they genuinely arrive
+  });
+
+  it('is smooth — no per-frame jumps even through a storm front', () => {
+    let prev = blizzard(0);
+    for (let i = 1; i < 40000; i++) {
+      const v = blizzard(i * 0.016); // ~60fps across the first storms
+      expect(Math.abs(v - prev)).toBeLessThan(0.05);
+      prev = v;
+    }
+  });
+});
+
+describe('blizzardWind', () => {
+  it('matches the storm envelope in magnitude and holds one direction per storm', () => {
+    let dir = 0;
+    let prevEnv = 0;
+    for (let t = 0; t < 3600; t += 0.25) {
+      const env = blizzard(t);
+      const wind = blizzardWind(t);
+      expect(Math.abs(wind)).toBeCloseTo(env, 10);
+      if (env > 0.05) {
+        const sign = Math.sign(wind);
+        // A fresh storm may pick either way, but the direction never flips mid-storm.
+        if (prevEnv > 0.05 && dir !== 0) expect(sign).toBe(dir);
+        dir = sign;
+      }
+      prevEnv = env;
+    }
+  });
+});
+
+describe('gustPulse', () => {
+  it('stays within [-1, 1]', () => {
+    for (const v of sample(gustPulse, 24000, 0.05)) {
+      expect(v).toBeGreaterThanOrEqual(-1);
+      expect(v).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('is mostly quiet with occasional decisive shoves', () => {
+    const xs = sample(gustPulse, 24000, 0.05); // 20 minutes
+    const quiet = xs.filter((v) => Math.abs(v) < 0.02).length / xs.length;
+    expect(quiet).toBeGreaterThan(0.5); // pulses are events, not a constant hum
+    expect(Math.max(...xs.map(Math.abs))).toBeGreaterThan(0.6); // …and they genuinely shove
+  });
+
+  it('dips into a lull below zero after a pulse (the die-down overshoot)', () => {
+    // Find a positive-going pulse, then check the signed value crosses to the other side of
+    // zero within its event window — the trailing lull.
+    let found = false;
+    for (let t = 0; t < 3600 && !found; t += 0.05) {
+      const v = gustPulse(t);
+      if (Math.abs(v) < 0.3) continue;
+      const sign = Math.sign(v);
+      for (let u = t; u < t + 20; u += 0.05) {
+        if (Math.sign(gustPulse(u)) === -sign && Math.abs(gustPulse(u)) > 0.01) {
+          found = true;
+          break;
+        }
+      }
+      break;
+    }
+    expect(found).toBe(true);
+  });
+
+  it('is smooth — small time steps produce small changes', () => {
+    let prev = gustPulse(0);
+    for (let i = 1; i < 40000; i++) {
+      const v = gustPulse(i * 0.016);
+      expect(Math.abs(v - prev)).toBeLessThan(0.1);
+      prev = v;
+    }
   });
 });
