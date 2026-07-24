@@ -99,17 +99,21 @@ export function SuppliersScreen() {
       >
         <p className="max-w-2xl text-sm text-muted-foreground">{t('suppliers.intro')}</p>
 
-        <section aria-labelledby="suppliers-list-heading" className="flex flex-col gap-3">
+        <section aria-labelledby="suppliers-list-heading" className="flex flex-1 flex-col gap-3">
           <h2 id="suppliers-list-heading" className="text-sm font-semibold text-foreground">
             {t('suppliers.list.heading')}
           </h2>
 
           {suppliersQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground">{t('suppliers.list.loading')}</p>
+            // The loading / error / empty states fill the list region (rather than sitting in a
+            // small card) so this screen sizes like the master-detail list screens it sits beside.
+            <Surface className="grid flex-1 place-items-center p-8 text-center">
+              <p className="text-sm text-muted-foreground">{t('suppliers.list.loading')}</p>
+            </Surface>
           ) : suppliersQuery.isError ? (
             // Never fall through to the empty state on failure — "No suppliers yet" would be a
             // lie, and it hides a real error behind copy that reads like success.
-            <Surface className="flex flex-col items-center gap-3 p-8 text-center">
+            <Surface className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
               <p role="alert" className="text-sm text-destructive">
                 {t('suppliers.list.error')}
               </p>
@@ -118,7 +122,7 @@ export function SuppliersScreen() {
               </Button>
             </Surface>
           ) : suppliers.length === 0 ? (
-            <Surface className="flex flex-col items-center gap-2 p-8 text-center">
+            <Surface className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
               <SupplierIcon aria-hidden className="size-8 text-muted-foreground/60" />
               <p className="text-sm text-muted-foreground">{t('suppliers.list.empty')}</p>
             </Surface>
