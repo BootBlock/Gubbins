@@ -86,7 +86,10 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   // which stacks on top of the editor.
   const [barcodeScanOpen, setBarcodeScanOpen] = useState(false);
 
-  // Re-sync the draft when the persisted values change (open, after a save, or sync).
+  // Re-sync the whole draft when the persisted item changes (open, after a save, or a sync
+  // landing). Keyed on `item` identity ALONE: a unit-preference change must not reach the text
+  // fields, or switching grams→ounces mid-edit would silently discard unsaved Notes and the
+  // other text drafts (issue #158). The measurements are re-expressed by the effects below.
   useEffect(() => {
     setName(item.name);
     setTrackingMode(item.trackingMode);
@@ -99,13 +102,30 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     setUnitCost(item.unitCost?.toString() ?? '');
     setCategoryId(item.categoryId ?? '');
     setIsUnlimited(item.isUnlimited);
-    // Also re-syncs when the weight *unit* preference changes, re-expressing the stored grams.
     setWeight(weightToInput(item.weight, weightUnit));
-    // Likewise re-express the stored mm when the item or the dimension *unit* preference changes.
     setWidth(dimensionToInput(item.width, dimensionUnit));
     setHeight(dimensionToInput(item.height, dimensionUnit));
     setDepth(dimensionToInput(item.depth, dimensionUnit));
-  }, [item, weightUnit, dimensionUnit]);
+    // `weightUnit`/`dimensionUnit` are read for the initial re-expression but deliberately kept
+    // out of the deps — a unit change is handled by the dedicated effects below, not here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item]);
+
+  // Re-express the stored canonical weight when only the weight *unit* preference changes, so the
+  // displayed number tracks grams→ounces without touching any other field (issue #158).
+  useEffect(() => {
+    setWeight(weightToInput(item.weight, weightUnit));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weightUnit]);
+
+  // Likewise re-express the stored canonical dimensions when only the dimension *unit* preference
+  // changes, leaving the text fields (and weight) untouched (issue #158).
+  useEffect(() => {
+    setWidth(dimensionToInput(item.width, dimensionUnit));
+    setHeight(dimensionToInput(item.height, dimensionUnit));
+    setDepth(dimensionToInput(item.depth, dimensionUnit));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dimensionUnit]);
 
   // "Unlimited supply" is a DISCRETE-only modifier (Phase 82).
   const canBeUnlimited = item.trackingMode === 'DISCRETE';
