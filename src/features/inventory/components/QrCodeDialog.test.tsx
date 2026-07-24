@@ -63,3 +63,30 @@ describe('QrCodeDialog — write to NFC tag (issue #71)', () => {
     expect(screen.queryByTestId('nfc-write')).toBeNull();
   });
 });
+
+/** Switch the symbology combobox to the named option. */
+function chooseSymbology(optionName: string) {
+  fireEvent.click(screen.getByTestId('qr-symbology'));
+  fireEvent.click(screen.getByRole('option', { name: optionName }));
+}
+
+describe('QrCodeDialog — barcode readability (issue #331)', () => {
+  it('encodes a workable MPN verbatim, with no notice', () => {
+    render(<QrCodeDialog {...props} itemMpn="RC0805-10K" />);
+    chooseSymbology('Barcode (Code 128)');
+
+    expect(screen.getByTestId('item-barcode')).toBeTruthy();
+    expect(screen.queryByTestId('item-barcode-shortened')).toBeNull();
+  });
+
+  it('falls back to a short item code, and says so, when the MPN is too long to print readably', () => {
+    render(<QrCodeDialog {...props} itemMpn={'X'.repeat(60)} />);
+    // The QR is unaffected by MPN length, so nothing is said until a barcode is asked for.
+    expect(screen.queryByTestId('item-barcode-shortened')).toBeNull();
+
+    chooseSymbology('Barcode (Code 128)');
+
+    expect(screen.getByTestId('item-barcode')).toBeTruthy();
+    expect(screen.getByTestId('item-barcode-shortened')).toHaveTextContent(/short item code/i);
+  });
+});

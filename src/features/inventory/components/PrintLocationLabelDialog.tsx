@@ -1,8 +1,9 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Button, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
+import { Banner, Button, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
+import { useT } from '@/features/i18n';
 import {
   LABEL_COLUMNS_BOUNDS,
   LABEL_SYMBOLOGY_OPTIONS,
@@ -20,18 +21,6 @@ import { LabelCellPreview } from './LabelCellPreview';
 import { LabelSizeControls } from './LabelSizeControls';
 
 const COPY_OPTIONS = [1, 2, 4, 6, 8, 12, 24];
-
-/** Rich-Markdown help for the **Code** (symbology) picker. */
-const CODE_HINT = [
-  'The machine-readable code printed on the label, encoding a **deep-link to this',
-  'location** so scanning it jumps straight to the bin/shelf in Gubbins.',
-  '',
-  '- **QR** — a 2-D square; the fastest to scan with a **phone camera** and the most',
-  '  forgiving of small print sizes. The usual choice.',
-  '- **Barcode (Code 128)** — a 1-D barcode for a **laser/linear barcode scanner**; needs',
-  '  more width but suits existing warehouse-style hardware.',
-  '- **QR + barcode** prints both, for a location read by either kind of scanner.',
-].join('\n');
 
 /** Rich-Markdown help for the **Copies** picker. */
 const COPIES_HINT = [
@@ -101,6 +90,7 @@ export function PrintLocationLabelDialog({
   onClose: () => void;
   location: LocationLabelInput;
 }) {
+  const t = useT();
   const storedTemplate = usePreferencesStore((s) => s.labelTemplate);
   const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
 
@@ -171,6 +161,19 @@ export function PrintLocationLabelDialog({
       className="max-w-[38.4rem]"
     >
       <div className="space-y-4">
+        {/* Code 128 needs a minimum bar width to scan: a long location name would print as a
+            smear, so it falls back to a short code — and a very narrow label can't carry a
+            barcode at all. Say which, rather than quietly printing something else (#331). */}
+        {cell.barcodeFit === 'unprintable' ? (
+          <Banner tone="warning" data-testid="loc-label-barcode-too-narrow">
+            {t('inventory.labels.barcodeTooNarrow')}
+          </Banner>
+        ) : cell.barcodeFit === 'shortened' ? (
+          <Banner tone="warning" data-testid="loc-label-barcode-shortened">
+            {t('inventory.labels.barcodeShortenedLocation')}
+          </Banner>
+        ) : null}
+
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
           <LabelSizeControls
             testId="loc-label-size"
@@ -184,7 +187,7 @@ export function PrintLocationLabelDialog({
 
           <CompactSelect
             label="Code"
-            hint={CODE_HINT}
+            hint={t('inventory.labels.codeHintLocation')}
             value={symbology}
             onChange={(value) => setSymbology(value as LabelSymbology)}
             data-testid="loc-label-symbology"

@@ -111,6 +111,40 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     expect(width.value).toBe('37');
   });
 
+  it('warns when an MPN is too long to print as a readable barcode (issue #331)', () => {
+    render(
+      <PrintLabelsDialog
+        open
+        onClose={() => {}}
+        items={[{ ...ITEMS[0]!, mpn: 'RC0805-10K-0402-VERY-LONG-PART-NUMBER' }]}
+      />,
+    );
+    // No barcode drawn yet, so nothing to warn about.
+    expect(screen.queryByTestId('labels-barcode-shortened')).toBeNull();
+
+    chooseOption('label-symbology', 'Barcode (Code 128)');
+    expect(screen.getByTestId('labels-barcode-shortened')).toBeTruthy();
+  });
+
+  it('warns when the label is too narrow for any readable barcode (issue #331)', () => {
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+
+    chooseOption('label-symbology', 'Barcode (Code 128)');
+    expect(screen.queryByTestId('labels-barcode-too-narrow')).toBeNull();
+
+    chooseOption('label-size', /Custom/);
+    const width = screen.getByTestId('label-size-width');
+    fireEvent.change(width, { target: { value: '15' } });
+    fireEvent.blur(width);
+
+    expect(screen.getByTestId('labels-barcode-too-narrow')).toBeTruthy();
+    // Nothing was merely shortened — no label on this sheet can carry a barcode at all.
+    expect(screen.queryByTestId('labels-barcode-shortened')).toBeNull();
+    screen.getAllByTestId('label-cell').forEach((cell) => {
+      expect(cell.querySelector('svg')).toBeNull();
+    });
+  });
+
   it('disables printing and shows a notice when nothing is selected', () => {
     render(<PrintLabelsDialog open onClose={() => {}} items={[]} />);
     expect(screen.getByTestId('print-labels-confirm')).toBeDisabled();

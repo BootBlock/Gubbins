@@ -11,7 +11,13 @@
  * arbitrary (e.g. stale persisted) value back to a valid template so a malformed
  * preference can never reach the label renderer — the same defensive pattern as the
  * scanner's `normaliseSymbology`.
+ *
+ * {@link fitBarcodeValue} applies the same defensiveness to the *printed* result: a
+ * Code 128 is only as readable as its narrowest bar, so a value too long for the label
+ * it must fit is swapped for a short id — or dropped — rather than printed as a smear
+ * (issue #331).
  */
+import { code128Modules } from './code128';
 
 /**
  * Which code a label carries:
@@ -280,11 +286,84 @@ function toEncodableAscii(value: string): string {
 }
 
 /**
- * The value a label's Code 128 barcode encodes for an item: its MPN/SKU when set
- * (sanitised to encodable ASCII), else a short form of its id. Pure — the barcode
- * renderer and the on-screen preview derive the same value from this one place.
+ * Quiet zone, in modules, printed either side of a Code 128 — the ISO/IEC 15417 minimum
+ * of 10X. Part of the symbol's printed width, so {@link barcodeModuleWidth} counts it and
+ * every label renderer passes it as the encoder's `margin`.
  */
-export function labelBarcodeValue(item: { readonly id: string; readonly mpn?: string | null }): string {
-  const mpn = toEncodableAscii(item.mpn ?? '');
-  return mpn.length > 0 ? mpn : shortId(item.id);
+export const BARCODE_QUIET_ZONE_MODULES = 10;
+
+/**
+ * The narrowest a single Code 128 module (its "X-dimension") may print and still be read,
+ * in millimetres.
+ *
+ * Code 128 spends 11 modules per character, so a long value squeezed into a fixed label
+ * width collapses every bar towards nothing — a scanner sees a grey smear, and no amount
+ * of print quality recovers it. 0.19 mm (7.5 mil) is the usual lower bound for close-range
+ * laser/imager reading, so it is treated here as a hard floor: below it a symbol is
+ * unreadable in practice. It is not a quality target — general-distribution specifications
+ * ask for a good deal more (0.25 mm and up), so a value that merely clears this floor is
+ * still better printed larger where there is room.
+ */
+export const MIN_BARCODE_MODULE_MM = 0.19;
+
+/**
+ * The printed width, in modules, of the Code 128 symbol encoding `value` — bars plus the
+ * {@link BARCODE_QUIET_ZONE_MODULES} quiet zone either side — or `null` when `value`
+ * cannot be encoded at all (empty, or carrying a character outside Code Set B).
+ */
+export function barcodeModuleWidth(value: string): number | null {
+  try {
+    return code128Modules(value).length + BARCODE_QUIET_ZONE_MODULES * 2;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Would `value` print as a *readable* Code 128 across `widthMm` of label — i.e. is each
+ * module at least {@link MIN_BARCODE_MODULE_MM} wide? `false` for a value that cannot be
+ * encoded at all.
+ */
+export function barcodeFitsWidth(value: string, widthMm: number): boolean {
+  const modules = barcodeModuleWidth(value);
+  if (modules === null || modules <= 0) return false;
+  return widthMm / modules >= MIN_BARCODE_MODULE_MM;
+}
+
+/**
+ * What became of a label's preferred barcode value at the size it will print:
+ * - `ok`          — it fits (or there was no preferred value and the short id fits).
+ * - `shortened`   — it would have printed too small to scan, so the short id is used.
+ * - `unprintable` — not even the short id fits; the label prints without a barcode.
+ */
+export type BarcodeFit = 'ok' | 'shortened' | 'unprintable';
+
+/** The chosen barcode value (`null` when none can print) and why — see {@link BarcodeFit}. */
+export interface FittedBarcode {
+  readonly value: string | null;
+  readonly fit: BarcodeFit;
+}
+
+/**
+ * Choose the value a label's Code 128 encodes, given the width it has to print across.
+ *
+ * `preferred` is the meaningful, human-facing value — an item's MPN/SKU, a location's
+ * name — sanitised to encodable ASCII. It is used whenever it prints wide enough to
+ * scan; otherwise the value falls back to {@link shortId} — the id's first group, so
+ * short and of a predictable width whatever the record. On a label too narrow for even
+ * that, no barcode is printed at all: an unreadable symbol is worse than none, because
+ * it looks like it should work (issue #331).
+ *
+ * Pure — the printed sheet, the on-screen preview and the dialogs' warnings all derive
+ * the same answer from this one place.
+ */
+export function fitBarcodeValue(preferred: string, id: string, widthMm: number): FittedBarcode {
+  const wanted = toEncodableAscii(preferred);
+  if (wanted.length > 0 && barcodeFitsWidth(wanted, widthMm)) return { value: wanted, fit: 'ok' };
+  const short = shortId(id);
+  if (barcodeFitsWidth(short, widthMm)) {
+    // No preferred value to lose (an item with no MPN) is the ordinary path, not a downgrade.
+    return { value: short, fit: wanted.length > 0 ? 'shortened' : 'ok' };
+  }
+  return { value: null, fit: 'unprintable' };
 }

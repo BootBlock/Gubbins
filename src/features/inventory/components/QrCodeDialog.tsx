@@ -7,7 +7,12 @@ import { useT } from '@/features/i18n';
 import { useNfcWrite } from '@/features/scanner/useNfcWrite';
 import { useFeature } from '@/features/modules/useFeature';
 import { code128Svg } from '../labels/code128';
-import { LABEL_SYMBOLOGY_OPTIONS, labelBarcodeValue, type LabelSymbology } from '../labels/label-template';
+import {
+  BARCODE_QUIET_ZONE_MODULES,
+  LABEL_SYMBOLOGY_OPTIONS,
+  fitBarcodeValue,
+  type LabelSymbology,
+} from '../labels/label-template';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 /**
@@ -53,7 +58,13 @@ export function QrCodeDialog({
   );
 
   const url = useMemo(() => buildItemQrUrl(itemId, baseUrl), [itemId, baseUrl]);
-  const barcodeValue = useMemo(() => labelBarcodeValue({ id: itemId, mpn: itemMpn }), [itemId, itemMpn]);
+  // The barcode carries the MPN/SKU where it can, but Code 128 is 11 modules per character
+  // and the print stylesheet below caps the symbol at PRINTED_BARCODE_MM — so a very long
+  // MPN falls back to a short id rather than printing as an unscannable smear (issue #331).
+  const barcode128 = useMemo(
+    () => fitBarcodeValue(itemMpn ?? '', itemId, PRINTED_BARCODE_MM),
+    [itemId, itemMpn],
+  );
 
   // Write-to-NFC-tag (issue #71): the same deep-link the QR encodes, written to a blank tag so a
   // later tap resolves it exactly like scanning the printed code. Only offered when the NFC
@@ -75,13 +86,20 @@ export function QrCodeDialog({
   const qr = useMemo(() => (showQr ? qrSvgOrNull(url, { scale: 8, margin: 4 }) : null), [showQr, url]);
   const qrTooLong = showQr && qr === null;
   const barcode = useMemo(() => {
-    if (!showBarcode) return null;
+    if (!showBarcode || barcode128.value === null) return null;
     try {
-      return code128Svg(barcodeValue, { scale: 2, height: 64, margin: 10, showText: true });
+      return code128Svg(barcode128.value, {
+        scale: 2,
+        height: 64,
+        margin: BARCODE_QUIET_ZONE_MODULES,
+        showText: true,
+      });
     } catch {
       return null;
     }
-  }, [showBarcode, barcodeValue]);
+  }, [showBarcode, barcode128]);
+  /** The MPN was too long to print readably, so the barcode carries a short id instead. */
+  const barcodeShortened = showBarcode && barcode128.fit === 'shortened';
   /** Whether anything at all encoded — the print/download actions need at least one code. */
   const hasCode = qr !== null || barcode !== null;
 
@@ -91,7 +109,7 @@ export function QrCodeDialog({
     w.document.write(
       `<!doctype html><title>${escapeHtml(itemName)} — label</title>` +
         `<style>body{font-family:system-ui,sans-serif;text-align:center;padding:24px}` +
-        `h1{font-size:16px;margin:0 0 12px}svg{max-width:280px}` +
+        `h1{font-size:16px;margin:0 0 12px}svg{max-width:${PRINTED_BARCODE_MM}mm}` +
         `.qr svg{width:240px;height:240px}.bc{margin-top:12px}.bc svg{height:80px}` +
         `p{font-size:11px;color:#555;word-break:break-all;margin-top:12px}</style>` +
         `<h1>${escapeHtml(itemName)}</h1>` +
@@ -160,6 +178,15 @@ export function QrCodeDialog({
               data-testid="item-barcode"
             />
           ) : null}
+          {barcodeShortened ? (
+            <p
+              role="alert"
+              data-testid="item-barcode-shortened"
+              className="max-w-xs rounded-lg border border-border bg-muted/40 px-3 py-2 text-center text-sm text-muted-foreground"
+            >
+              {t('inventory.labels.barcodeShortenedItem')}
+            </p>
+          ) : null}
         </div>
 
         {qr ? (
@@ -224,6 +251,13 @@ export function QrCodeDialog({
     </Modal>
   );
 }
+
+/**
+ * The widest this dialog prints a code, in mm — the `max-width` its print stylesheet
+ * applies (built from this constant, so the two cannot drift). It is what a Code 128's
+ * module width is measured against when deciding whether the MPN will still be readable.
+ */
+const PRINTED_BARCODE_MM = 74;
 
 const SINGLE_CODE_SYMBOLOGIES = new Set<LabelSymbology>(['qr', 'barcode', 'both']);
 

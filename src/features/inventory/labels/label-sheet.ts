@@ -17,11 +17,14 @@ import { buildItemQrUrl } from '@/features/scanner/scan-payload';
 import { qrSvgOrNull } from '@/features/scanner/qr-code';
 import { code128Svg } from './code128';
 import {
+  BARCODE_QUIET_ZONE_MODULES,
   DEFAULT_LABEL_TEMPLATE,
+  clampColumns,
   clampLabelDimension,
-  labelBarcodeValue,
+  fitBarcodeValue,
   templateHasBarcode,
   templateHasQr,
+  type BarcodeFit,
   type LabelTemplate,
 } from './label-template';
 
@@ -46,6 +49,12 @@ export interface LabelCell {
   readonly barcodeSvg: string | null;
   /** The value encoded by the barcode (for the preview caption / tests), or `null`. */
   readonly barcodeValue: string | null;
+  /**
+   * How the preferred barcode value fared at this label's printed size, or `null` when
+   * the template draws no barcode. Drives the print dialogs' "shortened"/"too narrow"
+   * warnings (issue #331).
+   */
+  readonly barcodeFit: BarcodeFit | null;
   /** Text lines beneath the code, already filtered by the template's field flags. */
   readonly lines: string[];
 }
@@ -55,6 +64,27 @@ export interface LabelCell {
  * per-label encoding cost) bounded even if a very large selection is printed.
  */
 export const MAX_LABELS = 500;
+
+/*
+ * Printed-label geometry, in mm. Both print stylesheets in this module are built from
+ * these constants — and so is {@link barcodeWidthMm}, which decides whether a barcode can
+ * print readably at all (issue #331) — so the layout and the measurement of it can never
+ * disagree.
+ */
+/** The short edge of an A4 page. */
+const A4_WIDTH_MM = 210;
+/** `@page` margin around the A4 sheet. */
+const SHEET_PAGE_MARGIN_MM = 10;
+/** Gap between label cells in the A4 grid. */
+const SHEET_GAP_MM = 6;
+/** Padding inside an A4 label cell (each side). */
+const SHEET_CELL_PADDING_MM = 3;
+/** Cap on a barcode's printed width in an A4 label cell (a wide cell doesn't stretch it). */
+const SHEET_BARCODE_MAX_MM = 40;
+/** Cap on a text line's width in an A4 label cell. */
+const SHEET_TEXT_MAX_MM = 40;
+/** Padding inside a die-cut label (each side). */
+const DIE_CUT_PADDING_MM = 1.5;
 
 /**
  * Truncate a label set to {@link MAX_LABELS}, keeping the first labels.
@@ -93,41 +123,76 @@ export interface LabelSpec {
   readonly id: string;
   readonly name: string;
   readonly url: string;
-  readonly barcodeValue: string;
+  /**
+   * The meaningful value the barcode should carry if it can — an item's MPN, a
+   * location's name. Blank when there is none. Too long a value for the printed label
+   * is swapped for a short id by {@link fitBarcodeValue}, so a caller never has to
+   * size-check it itself.
+   */
+  readonly barcodePreferred: string;
   readonly lines: string[];
 }
 
 /** Resolve a {@link LabelSpec} to a rendered {@link LabelCell} under a template. */
 export function resolveCell(spec: LabelSpec, template: LabelTemplate): LabelCell {
-  const codes = renderCodes(spec.url, spec.barcodeValue, template);
+  const codes = renderCodes(spec, template);
   return { id: spec.id, name: spec.name, url: spec.url, ...codes, lines: spec.lines };
 }
 
 /**
- * Render the QR and/or barcode SVGs for a deep-link + barcode value under a template.
- * Both encoders are guarded: an un-encodable value degrades to "no code" rather than
- * throwing. That matters most for the QR, whose payload length depends on the
- * user-supplied "Link host" — this runs inside a render-time `useMemo`, so a throw here
- * would take the whole print dialog down.
+ * Render the QR and/or barcode SVGs for a label spec under a template, choosing a
+ * barcode value that will actually print readably at this label's size. Both encoders
+ * are guarded: an un-encodable value degrades to "no code" rather than throwing. That
+ * matters most for the QR, whose payload length depends on the user-supplied "Link
+ * host" — this runs inside a render-time `useMemo`, so a throw here would take the whole
+ * print dialog down.
  */
 function renderCodes(
-  url: string,
-  barcodeValue: string,
+  spec: LabelSpec,
   template: LabelTemplate,
-): { qrSvg: string | null; barcodeSvg: string | null; barcodeValue: string | null } {
-  const qr = templateHasQr(template) ? qrSvgOrNull(url, { scale: 4, margin: 2 }) : null;
-  let barcode: string | null = null;
-  let value: string | null = null;
-  if (templateHasBarcode(template) && barcodeValue.length > 0) {
-    try {
-      barcode = code128Svg(barcodeValue, { scale: 2, height: 48, margin: 8, showText: template.showText });
-      value = barcodeValue;
-    } catch {
-      barcode = null;
-      value = null;
-    }
+): {
+  qrSvg: string | null;
+  barcodeSvg: string | null;
+  barcodeValue: string | null;
+  barcodeFit: BarcodeFit | null;
+} {
+  const qr = templateHasQr(template) ? qrSvgOrNull(spec.url, { scale: 4, margin: 2 }) : null;
+  const none = { qrSvg: qr, barcodeSvg: null, barcodeValue: null };
+  if (!templateHasBarcode(template)) return { ...none, barcodeFit: null };
+  const fitted = fitBarcodeValue(spec.barcodePreferred, spec.id, barcodeWidthMm(template));
+  // Too narrow to print anything readable — say so rather than draw an unscannable smear.
+  if (fitted.value === null) return { ...none, barcodeFit: fitted.fit };
+  try {
+    const barcode = code128Svg(fitted.value, {
+      scale: 2,
+      height: 48,
+      margin: BARCODE_QUIET_ZONE_MODULES,
+      showText: template.showText,
+    });
+    return { qrSvg: qr, barcodeSvg: barcode, barcodeValue: fitted.value, barcodeFit: fitted.fit };
+  } catch {
+    return { ...none, barcodeFit: 'unprintable' };
   }
-  return { qrSvg: qr, barcodeSvg: barcode, barcodeValue: value };
+}
+
+/**
+ * The width, in mm, a printed Code 128 has to fit across under `template` — what the
+ * minimum-module-width floor is measured against (issue #331).
+ *
+ * Derived from the very constants the print stylesheets below are built from, so the
+ * measurement and the CSS that produces it cannot drift apart: on an A4 sheet a barcode
+ * spans its grid cell, capped at {@link SHEET_BARCODE_MAX_MM}; on a die-cut label it
+ * spans the full label less its padding.
+ */
+export function barcodeWidthMm(template: LabelTemplate): number {
+  if (template.sizeMode === 'die-cut') {
+    const width = clampLabelDimension(template.labelWidthMm, DEFAULT_LABEL_TEMPLATE.labelWidthMm);
+    return Math.max(0, width - DIE_CUT_PADDING_MM * 2);
+  }
+  const columns = clampColumns(template.columns);
+  const printable = A4_WIDTH_MM - SHEET_PAGE_MARGIN_MM * 2;
+  const cell = (printable - SHEET_GAP_MM * (columns - 1)) / columns - SHEET_CELL_PADDING_MM * 2;
+  return Math.max(0, Math.min(SHEET_BARCODE_MAX_MM, cell));
 }
 
 /** Resolve each (capped) item to a {@link LabelCell} under the given template. */
@@ -142,7 +207,9 @@ export function toLabelCells(
         id: item.id,
         name: item.name,
         url: buildItemQrUrl(item.id, baseUrl),
-        barcodeValue: labelBarcodeValue(item),
+        // Prefer the MPN/SKU a handheld scanner would look up; `resolveCell` swaps in a
+        // short id when it is too long to print readably at this label size.
+        barcodePreferred: item.mpn ?? '',
         lines: itemLabelLines(item, template),
       },
       template,
@@ -200,16 +267,17 @@ function a4SheetDocument(cellsHtml: string, columns: number): string {
     '<html lang="en-GB"><head><meta charset="utf-8">' +
     '<title>Gubbins — labels</title>' +
     '<style>' +
-    '@page{size:A4;margin:10mm}' +
+    `@page{size:A4;margin:${SHEET_PAGE_MARGIN_MM}mm}` +
     '*{box-sizing:border-box}' +
     'body{margin:0;font-family:system-ui,-apple-system,sans-serif;color:#000}' +
-    `.sheet{display:grid;grid-template-columns:repeat(${columns},1fr);gap:6mm}` +
+    `.sheet{display:grid;grid-template-columns:repeat(${columns},1fr);gap:${SHEET_GAP_MM}mm}` +
     '.label{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;' +
-    'gap:2mm;padding:3mm;border:1px solid #ddd;border-radius:2mm;break-inside:avoid;text-align:center}' +
+    `gap:2mm;padding:${SHEET_CELL_PADDING_MM}mm;border:1px solid #ddd;border-radius:2mm;` +
+    'break-inside:avoid;text-align:center}' +
     '.label .qr svg{width:30mm;height:30mm}' +
-    '.label .bc svg{max-width:40mm;height:14mm}' +
-    '.name{font-size:9pt;line-height:1.2;word-break:break-word;max-width:40mm;font-weight:600}' +
-    '.meta{font-size:8pt;line-height:1.2;word-break:break-word;max-width:40mm;color:#444}' +
+    `.label .bc svg{max-width:${SHEET_BARCODE_MAX_MM}mm;height:14mm}` +
+    `.name{font-size:9pt;line-height:1.2;word-break:break-word;max-width:${SHEET_TEXT_MAX_MM}mm;font-weight:600}` +
+    `.meta{font-size:8pt;line-height:1.2;word-break:break-word;max-width:${SHEET_TEXT_MAX_MM}mm;color:#444}` +
     '</style></head>' +
     `<body><div class="sheet">${cellsHtml}</div></body></html>`
   );
@@ -233,7 +301,7 @@ function dieCutDocument(cellsHtml: string, template: LabelTemplate): string {
     '*{box-sizing:border-box}' +
     'body{margin:0;font-family:system-ui,-apple-system,sans-serif;color:#000}' +
     `.label{width:${w}mm;height:${h}mm;display:flex;flex-direction:column;align-items:center;` +
-    'justify-content:center;gap:1mm;padding:1.5mm;overflow:hidden;text-align:center;' +
+    `justify-content:center;gap:1mm;padding:${DIE_CUT_PADDING_MM}mm;overflow:hidden;text-align:center;` +
     'break-after:page;break-inside:avoid}' +
     '.label:last-child{break-after:auto}' +
     '.label .qr{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center}' +

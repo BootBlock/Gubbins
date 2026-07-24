@@ -46,6 +46,28 @@ off in one go — perfect for labelling a new storage system or a batch of asset
 > whether or not the camera capability is enabled, and any phone camera app can open the deep
 > link.
 
+## QR code or barcode?
+
+Each label can carry a **QR code**, a **Code 128 barcode**, **both**, or **no code at all** — pick
+under **Code** in the print dialog.
+
+- **QR** holds a full link, so scanning one with any phone camera opens that exact item or
+  location in Gubbins. It stays readable at small sizes, which makes it the right choice for most
+  labels.
+- **Code 128** is the familiar striped barcode, for a handheld laser scanner of the kind used in
+  warehouses. It carries an item's **part number** — or a location's **name** — as plain text, so
+  scanning one types that value wherever your cursor is.
+
+> **⚠️ Heads-up**
+> A Code 128 barcode is *wide*: every character adds another group of bars, so a long value on a
+> small label collapses into a grey smear no scanner can read. Gubbins won't print one. If the
+> value is too long for the label, the barcode carries a short code for that item or location
+> instead, and the print dialog says so above the preview. On a label too narrow for even a short
+> code, the barcode is left off entirely; choose a wider label size, use fewer columns per sheet,
+> or switch to a QR code. Either way the barcode prints its own value underneath in plain
+> characters — so if you want the full name or part number on the label as well, turn on the
+> matching field under **Show on label**.
+
 ## Choosing the address labels point to
 
 A printed code carries a full web address, so a label is only useful if the device scanning it can
