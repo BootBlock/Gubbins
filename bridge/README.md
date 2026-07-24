@@ -1885,6 +1885,22 @@ The bridge is designed to be safe by construction; this is the checklist it sati
   for every caller, whatever their role; permissions only ever narrow the operator's choices.
 - **Local-bind by default.** The server binds `127.0.0.1` unless you set
   `GUBBINS_BRIDGE_HOST=0.0.0.0`, which it logs as a deliberate LAN-exposure choice.
+- **Plaintext HTTP transport — no TLS, so keep it loopback or trusted-LAN.** The bridge speaks
+  `http` only: it has no certificate handling and takes no TLS option. On the loopback default that
+  is moot — nothing leaves the host. But once you set `GUBBINS_BRIDGE_HOST=0.0.0.0` to expose it on
+  the LAN, **every request crosses the network in cleartext**, including the `Authorization: Bearer`
+  token — and, on the [calendar](#calendar-subscription) and [feed](#feeds--metrics) paths, the
+  `?token=` in the URL. A passive observer or an ARP-spoofing peer on the same segment can capture
+  that token and replay it for whatever the owning account may do (read, and — if enabled — write
+  and push). The **outbound** Home Assistant call has the same exposure the other way: since
+  `GUBBINS_BRIDGE_HA_URL` accepts an `http://` address it will put the long-lived HA token on the
+  wire in cleartext, and the [Home Assistant custom component](../custom_components/gubbins/api.py)
+  likewise reaches the bridge over plain HTTP. So keep the default loopback bind, or confine any
+  wider bind to a network you actually trust; to reach the bridge across an untrusted network, front
+  it with a **TLS-terminating reverse proxy** (nginx, Caddy, a tunnel) — the bridge stays plain HTTP
+  bound to loopback *behind* the proxy — and give it an `https://` Home Assistant URL. This is the
+  same weaker posture the token-in-URL trade-off under
+  [Calendar subscription](#calendar-subscription) already flags, stated here for transport as a whole.
 - **No PII in logs or errors.** Logs are limited to lifecycle lines (bound address, snapshot
   loaded/failed). Item names, query text, tokens, and client IPs are **never logged**, and
   every unexpected failure is collapsed to a generic `500 { "error": "Internal error" }` —
