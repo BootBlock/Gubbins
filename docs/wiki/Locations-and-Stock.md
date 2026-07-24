@@ -144,6 +144,29 @@ behaves exactly as before.
 > switching between millimetres, inches or metres in **Settings** simply re-displays the same
 > size. Nothing is converted or lost.
 
+## Walk order: picking in one sweep
+
+A location can be given a **walk order** — a plain number saying where it sits on the route you
+naturally walk when gathering things. Put the shelf by the door at **1**, the bench in the middle
+at **2**, the far storage at **9**, and so on. Set it from a location's **Edit** dialog; leave it
+blank for any location that isn't on a route.
+
+Its one job is to order a project's **[[Picking list|Projects-and-BOM#picking-the-parts]]**: when
+you gather the parts for a build, Gubbins lists them — and each part's locations — in ascending
+walk order, so you sweep through your space once instead of criss-crossing it. Lower numbers come
+first; locations left blank sort after the ones you've placed, falling back to the usual
+busiest-first order.
+
+> **💡 Tip**
+> You don't have to number every location — just the handful you actually visit for a build. And
+> the numbers needn't be consecutive: leave gaps (10, 20, 30…) so you can slot a new spot into the
+> route later without renumbering everything.
+
+> **ℹ️ Note**
+> Walk order is a deliberately simple stand-in for full floor-plan mapping: no coordinates to
+> measure, no map to draw — just the order you'd walk. It's enough to turn a scattered parts list
+> into a single, sensible lap of the room.
+
 ## Statistics for a location
 
 Every location's **Edit** dialog has a **Statistics** tab that adds up what's stored there, so

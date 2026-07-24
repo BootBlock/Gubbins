@@ -80,3 +80,11 @@ export const HINT_DEAD_STOCK_DAYS =
 export const HINT_DEFAULT =
   'Pre-select this location when adding a new item, so your most-used spot is one click away. ' +
   'Only **one** location can be the default; choosing this clears it from any other.';
+
+export const HINT_WALK_ORDER =
+  'Where this location sits on your **picking route** — the order you naturally walk past it ' +
+  'when gathering parts (by the door might be **1**, the far shelving **9**). When you pick a ' +
+  "project's parts, the **Picking** worksheet lists everything in this order so you gather it in " +
+  'one sweep instead of doubling back.\n\nLower numbers come first; ties fall back to the usual ' +
+  'busiest-location order. Leave blank to leave this location off the route — it then sorts after ' +
+  'the places you have ordered.';

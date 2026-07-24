@@ -54,13 +54,21 @@ flows into your [[purchasing|Reorder-and-Shopping-List]].
 ## Picking the parts
 
 When it's time to build, the **Picking** list turns the BOM into a walk-and-tick-off worksheet.
-For every line it shows **where to find it** — the exact locations its stock sits in, busiest
-first (for example *"3 in Garage · Shelf B, 2 in Loft bin 4"*) — drawn straight from your
+For every line it shows **where to find it** — the exact locations its stock sits in (for example
+*"3 in Garage · Shelf B, 2 in Loft bin 4"*) — drawn straight from your
 [[per-location stock|Locations-and-Stock]]. Gather each part, tick it off, and a progress bar
 tracks how much of the build you've collected.
 
 A line with no matching item, or a matched item you're out of, is still listed so nothing is
 forgotten — it just shows there's no shelf to walk to.
+
+### Picking in walking order
+
+If you give your locations a **[[walk order|Locations-and-Stock#walk-order-picking-in-one-sweep]]**
+— the order you pass them on a sweep of your space — the worksheet lists both the parts *and* each
+part's locations in that route order, so you gather everything in one pass instead of doubling back.
+Locations you haven't placed on the route sit at the end, falling back to busiest-first. Until you
+set any walk order, the list stays in its usual order, so this only ever helps.
 
 Once **every** line is ticked, the worksheet surfaces a **Finalise** step: the natural moment to
 consume the gathered parts into the finished build (a new container location, a single assembled

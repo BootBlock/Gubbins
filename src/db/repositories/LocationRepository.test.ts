@@ -224,6 +224,36 @@ describe('LocationRepository', () => {
     });
   });
 
+  describe('walk order (issue #461 picking sweep)', () => {
+    it('defaults walkOrder to null (unplaced)', async () => {
+      const loc = await locations.create({ name: 'Shelf' });
+      expect(loc.walkOrder).toBeNull();
+    });
+
+    it('round-trips a walk order through create, getById and the list read', async () => {
+      const loc = await locations.create({ name: 'Bench', walkOrder: 3 });
+      expect(loc.walkOrder).toBe(3);
+      expect((await locations.getById(loc.id))?.walkOrder).toBe(3);
+      const listed = (await locations.list()).rows.find((l) => l.id === loc.id);
+      expect(listed?.walkOrder).toBe(3);
+    });
+
+    it('floors a fractional walk order and coerces blank/negative/non-finite to null', async () => {
+      const floored = await locations.create({ name: 'A', walkOrder: 2.9 });
+      expect(floored.walkOrder).toBe(2); // a rung on a sequence, not a measurement
+      const neg = await locations.create({ name: 'B', walkOrder: -1 });
+      expect(neg.walkOrder).toBeNull();
+      const nan = await locations.create({ name: 'C', walkOrder: Number.NaN });
+      expect(nan.walkOrder).toBeNull();
+    });
+
+    it('updates a walk order and clears it back to null (off the route)', async () => {
+      const loc = await locations.create({ name: 'Rack', walkOrder: 4 });
+      expect((await locations.update(loc.id, { walkOrder: 1 })).walkOrder).toBe(1);
+      expect((await locations.update(loc.id, { walkOrder: null })).walkOrder).toBeNull();
+    });
+  });
+
   describe('createPath (nested-create shortcut §4)', () => {
     it('creates the whole branch from a slash-separated path and returns the leaf', async () => {
       const [leaf] = await locations.createPath({ name: 'Workshop/Cabinet A/Drawer 3' });

@@ -63,6 +63,7 @@ function loc(overrides: Partial<LocationWithCount> = {}): LocationWithCount {
     depth: null,
     usableVolume: null,
     packingFactor: null,
+    walkOrder: null,
     updatedAt: 1_700_000_000_000,
     itemCount: 4,
     ...overrides,
@@ -127,6 +128,7 @@ describe('EditLocationDialog — the field surface', () => {
     expect(d.getByLabelText('Name')).toBeInTheDocument();
     expect(d.getByLabelText('Description (optional)')).toBeInTheDocument();
     expect(d.getByLabelText('Capacity (optional)')).toBeInTheDocument();
+    expect(d.getByLabelText('Walk order (optional)')).toBeInTheDocument();
     expect(d.getByLabelText('Idle threshold (optional)')).toBeInTheDocument();
 
     // The parent picker is a Foundry combobox named by its visible label.
@@ -168,6 +170,17 @@ describe('EditLocationDialog — the field surface', () => {
     expect(d.getByRole('radio', { name: 'Teal' })).toHaveAttribute('aria-checked', 'true');
     expect(d.getByRole('radio', { name: 'Cabinet' })).toHaveAttribute('aria-checked', 'true');
     expect(d.getByTestId('location-dead-stock-mode-always')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('seeds a placed walk order and leaves the field blank when unplaced (issue #461)', () => {
+    renderDialog({ walkOrder: 7 });
+    const field = dialog().getByLabelText('Walk order (optional)');
+    expect(field).toHaveValue('7');
+    cleanup();
+    renderDialog({ walkOrder: null });
+    const blank = dialog().getByLabelText('Walk order (optional)');
+    expect(blank).toHaveValue('');
+    expect(blank).toHaveAttribute('placeholder', 'Not on the picking route');
   });
 
   it('falls back to the "none" choices for a location with no colour or type', () => {
@@ -274,6 +287,15 @@ describe('EditLocationDialog — Save gating', () => {
     expect(saveButton()).toBeDisabled();
   });
 
+  it('surfaces a walk-order error and blocks the save', () => {
+    renderDialog();
+    fireEvent.change(dialog().getByLabelText('Walk order (optional)'), { target: { value: '-1' } });
+    expect(dialog().getByText('Walk order must be a whole number of 0 or more.')).toBeInTheDocument();
+    expect(saveButton()).toBeDisabled();
+    fireEvent.click(saveButton());
+    expect(spies.update).not.toHaveBeenCalled();
+  });
+
   it('disables Save for an out-of-range idle threshold, like an invalid capacity', () => {
     // The disabled guard once omitted `deadStockDaysValid` while `submit()` checked it, which
     // left a button that looked usable and silently did nothing. Both now agree.
@@ -307,6 +329,8 @@ describe('EditLocationDialog — saving', () => {
     width: null,
     height: null,
     depth: null,
+    // Walk order (issue #461) rides in the payload too; the fixture leaves it unplaced.
+    walkOrder: null,
   };
 
   it('dispatches the whole location payload, not just the changed field', () => {
@@ -345,6 +369,26 @@ describe('EditLocationDialog — saving', () => {
     fireEvent.click(saveButton());
     expect(spies.update).toHaveBeenCalledWith(
       { id: 'cabinet', input: { ...fullPayload, parentId: null } },
+      expect.anything(),
+    );
+  });
+
+  it('saves a walk order, flooring a fractional value (issue #461)', () => {
+    renderDialog();
+    fireEvent.change(dialog().getByLabelText('Walk order (optional)'), { target: { value: '3.9' } });
+    fireEvent.click(saveButton());
+    expect(spies.update).toHaveBeenCalledWith(
+      { id: 'cabinet', input: { ...fullPayload, walkOrder: 3 } },
+      expect.anything(),
+    );
+  });
+
+  it('clears a walk order back to null (off the picking route)', () => {
+    renderDialog({ walkOrder: 5 });
+    fireEvent.change(dialog().getByLabelText('Walk order (optional)'), { target: { value: '' } });
+    fireEvent.click(saveButton());
+    expect(spies.update).toHaveBeenCalledWith(
+      { id: 'cabinet', input: { ...fullPayload, walkOrder: null } },
       expect.anything(),
     );
   });

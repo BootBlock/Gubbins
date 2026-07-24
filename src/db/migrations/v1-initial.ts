@@ -1716,6 +1716,17 @@ const baselineStatements: SqlStatement[] = [
   {
     sql: `ALTER TABLE locations ADD COLUMN packing_factor REAL CHECK (packing_factor IS NULL OR (packing_factor > 0 AND packing_factor <= 1));`,
   },
+  // --- Walk order: a location's position on a physical picking sweep (issue #461) --------
+  // An optional, non-negative ordinal placing this location on the route a user walks when
+  // gathering a project's parts — "by the door" (1) before "far shelving" (9). The picking
+  // worksheet presents each part and its locations in ascending walk order so a multi-item
+  // pick is one fluid sweep rather than a back-and-forth. NULL = unplaced, which sorts after
+  // every placed location, so the worksheet's long-standing busiest-first order is exactly
+  // what remains until a user assigns any walk order. A deliberately lightweight alternative
+  // to physical X/Y/Z coordinates + pathfinding: no graph to maintain, themable to any space.
+  {
+    sql: `ALTER TABLE locations ADD COLUMN walk_order INTEGER CHECK (walk_order IS NULL OR walk_order >= 0);`,
+  },
   // The report filters to opted-in items, so the mode is a selective predicate on a
   // table that grows to 100k+ rows. A partial index keeps it off the full scan while
   // costing nothing for the overwhelmingly common 'inherit' default.
