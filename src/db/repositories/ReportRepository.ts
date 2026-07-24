@@ -138,9 +138,8 @@ function notUnlimited(col: string): string {
  * supplier-cost precedence (issue #398).
  *
  * `alias` is the qualified `items` alias (`i`, `items`). The per-location reads value the
- * `item_stock` ledger instead and use {@link valuableStockFilter}: they add `s.quantity > 0` and
- * deliberately omit `notAVariantParent`, because a parent holds no ledger rows so the join already
- * excludes it.
+ * `item_stock` ledger instead and use {@link valuableStockFilter}, which adds `s.quantity > 0`
+ * over the same three predicates so the two reads value exactly the same stock.
  */
 function valuableItemFilter(alias: string): string {
   return `${alias}.is_active = 1 AND ${notAVariantParent(`${alias}.id`)} AND ${notUnlimited(`${alias}.is_unlimited`)}`;
@@ -149,17 +148,23 @@ function valuableItemFilter(alias: string): string {
 /**
  * The ledger twin of {@link valuableItemFilter}: the single WHERE fragment for a **per-location
  * valuation read** that values the `item_stock` ledger where stock physically sits. Stock counts
- * when its item is active and not unlimited **and the placement holds a positive quantity**
- * (`s.quantity > 0`). Unlike the item-based filter it omits `notAVariantParent` — an abstract
- * variant parent holds no `item_stock` rows (its variants do), so the join already excludes it —
- * so it must never be used against a bare `items` scan.
+ * when its item is active, not an abstract variant parent, and not unlimited, **and the placement
+ * holds a positive quantity** (`s.quantity > 0`).
+ *
+ * It carries `notAVariantParent` for the same reason its item-based twin does, not because the
+ * join guarantees it: "a variant parent holds no stock of its own" is a convention, not an
+ * enforced invariant. `setParent` attaches an *existing* item to a parent with a bare
+ * `UPDATE items SET parent_id = ?` and never zeroes the parent's stock, so a once-ordinary item
+ * that is later made a parent keeps its `item_stock` rows. Without this predicate the location
+ * breakdown would value stock the headline/category read excludes, and the two would stop summing
+ * to the same total (issue #155).
  *
  * `itemAlias` is the qualified `items` alias (`i`), `stockAlias` the `item_stock` alias (`s`).
  * Kept in one place so `inventoryValue`'s location breakdown and every `locationStats` figure
  * agree on which stock is valued (issue #398).
  */
 function valuableStockFilter(itemAlias: string, stockAlias: string): string {
-  return `${itemAlias}.is_active = 1 AND ${stockAlias}.quantity > 0 AND ${notUnlimited(`${itemAlias}.is_unlimited`)}`;
+  return `${itemAlias}.is_active = 1 AND ${notAVariantParent(`${itemAlias}.id`)} AND ${stockAlias}.quantity > 0 AND ${notUnlimited(`${itemAlias}.is_unlimited`)}`;
 }
 
 /**
