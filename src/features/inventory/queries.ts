@@ -2,9 +2,12 @@
  * Tier-1 read hooks for the inventory domain (spec §2.1).
  *
  * Every database read goes through TanStack Query here, never directly from a
- * component. Item lists use `useInfiniteQuery` with strict offset pagination
- * (LIMIT/OFFSET ≤ 100) so pages feed incrementally into the virtualised list,
- * keeping the worker bridge and the DOM light with 100,000+ records.
+ * component. The infinite-scroll item list uses `useInfiniteQuery` with keyset (seek)
+ * pagination (issue #172) — each page seeks past the previous page's boundary row rather
+ * than by a growing `OFFSET`, so a deep scroll stays constant-cost — while the discrete
+ * page read ({@link useItemPage}) keeps `OFFSET` for random page access. Pages (≤ 100 rows)
+ * feed incrementally into the virtualised list, keeping the worker bridge and the DOM light
+ * with 100,000+ records.
  */
 import { useMemo } from 'react';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
@@ -19,6 +22,7 @@ import {
   getSuggestionRepository,
   getSupplierPartRepository,
   type ItemListFilters,
+  type ItemSeek,
   type ItemStatusCount,
   type ItemStatusFilter,
   type LocationWithCount,
@@ -309,9 +313,22 @@ export function useItemTestRecords(itemId: string | undefined) {
 }
 
 /**
+ * The infinite-scroll page cursor (issue #172): `null` is the first page (no seek, absolute index
+ * 0); every later page carries a keyset cursor from {@link ItemSeek}. Never returned from
+ * `getNextPageParam`/`getPreviousPageParam` as `null` (those return `undefined` to stop), so it
+ * never collides with the "no more pages" signal.
+ */
+type ItemListPageParam = ItemSeek | null;
+
+/**
  * Paginated, virtualisation-ready item list. `enabled` gates the query off (default on) so the
  * inventory screen can suspend it while the list is shown in discrete-pagination mode (issue #20)
  * — the {@link useItemPage} read drives the list then, and running both would be wasted work.
+ *
+ * Pages are fetched by **keyset (seek) pagination** (issue #172): each page seeks strictly past the
+ * previous page's boundary row rather than by a growing `OFFSET`, so scrolling to page 1000 of a
+ * 100k list costs no more than page 1 (SQLite no longer produces and discards every skipped row).
+ * The discrete-pagination path ({@link useItemPage}) keeps its `OFFSET` — it needs random access.
  */
 export function useInventoryItems(
   filters: ItemQueryFilters = {},
@@ -320,16 +337,33 @@ export function useInventoryItems(
 ) {
   return useInfiniteQuery({
     queryKey: inventoryKeys.itemList(filters),
-    initialPageParam: 0,
+    initialPageParam: null as ItemListPageParam,
     enabled,
-    queryFn: ({ pageParam }) => getItemRepository().list({ ...filters, limit: pageSize, offset: pageParam }),
-    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
-    // Bound the resident window so a deep scroll never retains every page's
-    // thumbnail BLOBs (spec §2.1). The previous-page param lets a trimmed-off
-    // prefix refetch when the user scrolls back up; the virtualised list indexes
-    // in absolute space so the refill never shifts the viewport.
-    getPreviousPageParam: (firstPage) =>
-      firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
+    queryFn: ({ pageParam }) =>
+      getItemRepository().list({ ...filters, limit: pageSize, ...(pageParam ? { seek: pageParam } : {}) }),
+    // Seek strictly after the last row's sort key. `startIndex` is the running absolute index the
+    // virtualised list positions the page at (it replaces the SQL OFFSET, not the seek), computed
+    // by advancing from the previous page's offset by the rows it returned.
+    getNextPageParam: (lastPage): ItemListPageParam | undefined =>
+      lastPage.hasMore && lastPage.endCursor
+        ? {
+            cursor: lastPage.endCursor,
+            direction: 'forward',
+            startIndex: lastPage.offset + lastPage.rows.length,
+          }
+        : undefined,
+    // Bound the resident window so a deep scroll never retains every page's thumbnail BLOBs
+    // (spec §2.1). The previous-page param lets a trimmed-off prefix refetch when the user scrolls
+    // back up; the virtualised list indexes in absolute space so the refill never shifts the
+    // viewport. It seeks *before* the first resident row, so it too is constant-cost at any depth.
+    getPreviousPageParam: (firstPage): ItemListPageParam | undefined =>
+      firstPage.offset > 0 && firstPage.startCursor
+        ? {
+            cursor: firstPage.startCursor,
+            direction: 'backward',
+            startIndex: Math.max(0, firstPage.offset - firstPage.limit),
+          }
+        : undefined,
     maxPages: MAX_LIST_PAGES,
     // Keep the previous filter's results on screen while the new filter loads, so toggling
     // a filter (e.g. "Show removed") or changing the search never clears the list to a

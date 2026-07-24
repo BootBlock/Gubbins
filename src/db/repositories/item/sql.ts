@@ -43,8 +43,11 @@ export interface ItemSort {
  * The sortable-field allow-list: field name → real column (+ whether it collates
  * case-insensitively). Only these fixed identifiers ever reach the SQL text — the sort
  * field is **never** interpolated from free user input — so there is no injection surface.
+ *
+ * Exported so the keyset seam ({@link file://./list-order.ts}) resolves the same columns and
+ * collations the `ORDER BY` uses — the seek predicate must match the sort exactly (issue #172).
  */
-const ITEM_SORT_COLUMNS: Readonly<Record<ItemSortField, { column: string; collate: boolean }>> = {
+export const ITEM_SORT_COLUMNS: Readonly<Record<ItemSortField, { column: string; collate: boolean }>> = {
   name: { column: 'items.name', collate: true },
   quantity: { column: 'items.quantity', collate: false },
   unitCost: { column: 'items.unit_cost', collate: false },

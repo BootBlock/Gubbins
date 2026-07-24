@@ -28,6 +28,14 @@ import type {
 } from '../types';
 import { historyStatement } from './history';
 import {
+  buildSeekPredicate,
+  extractCursor,
+  renderOrderBy,
+  resolveItemOrder,
+  reverseOrder,
+  type Cursor,
+} from './list-order';
+import {
   normaliseCurrentValue,
   normaliseExpiry,
   normaliseIsoDate,
@@ -42,20 +50,23 @@ import {
 } from './normalise';
 import { buildInsert, resolveCreate } from './create';
 import { buildCategoryMaintenanceInsert, type CategoryMaintenanceDefault } from './maintenance-default';
-import { itemOrderByClause, THUMBNAIL_SUBQUERY, type ItemSort } from './sql';
+import { THUMBNAIL_SUBQUERY, type ItemSort } from './sql';
 import { buildStatusFilter, type ItemStatusFilter } from './status-filter';
 import type { LowStockThresholds } from '../types';
 import { nowMs } from '@/lib/clock';
 
-/** The default ordering for a list read when the caller requests no explicit sort. */
-const DEFAULT_ITEM_ORDER = 'name COLLATE NOCASE ASC, serial_no ASC, created_at ASC';
-
 /**
- * Favourited items (issue #23) always float to the top of the list, ahead of everything else,
- * whatever ordering follows. Prepended to the resolved order so it leads both the default and
- * any explicit user sort (`is_favourite` is 1 for a favourite, 0 otherwise → DESC puts 1 first).
+ * A keyset (seek) page request for the infinite-scroll list (issue #172) — the offset-free
+ * alternative to `PageParams.offset`. `cursor` is the boundary row's ordering values (a prior
+ * page's `endCursor` for `forward`, its `startCursor` for `backward`); `startIndex` is the
+ * absolute index this page's first row occupies, echoed into `Page.offset` so the virtualised
+ * list positions it exactly as an offset read would.
  */
-const FAVOURITE_FIRST_ORDER = 'items.is_favourite DESC';
+export interface ItemSeek {
+  readonly cursor: Cursor;
+  readonly direction: 'forward' | 'backward';
+  readonly startIndex: number;
+}
 
 export interface ItemListFilters extends PageParams {
   readonly locationId?: string;
@@ -87,6 +98,12 @@ export interface ItemListFilters extends PageParams {
    * evaluated when the read runs, keeping `now` out of the query cache key.
    */
   readonly now?: number;
+  /**
+   * Keyset (seek) pagination for the infinite-scroll list (issue #172). When present, the page is
+   * fetched by seeking past `seek.cursor` instead of by `offset` — so a deep page costs no more
+   * than the first. Omit for the offset path (discrete pagination and the grouped sections).
+   */
+  readonly seek?: ItemSeek;
 }
 
 export class ItemCoreRepository extends BaseRepository {
@@ -134,23 +151,54 @@ export class ItemCoreRepository extends BaseRepository {
     return row ? rowToItem(row) : undefined;
   }
 
-  /** A paginated, filtered list of items (spec §2.1). */
+  /** A paginated, filtered list of items (spec §2.1), by `offset` or keyset `seek` (issue #172). */
   async list(filters: ItemListFilters = {}): Promise<Page<Item>> {
-    const { limit, offset } = this.resolvePage(filters);
+    const { limit, offset: offsetParam } = this.resolvePage(filters);
     // Stamp the clock at query time so the time-based status filters (expiring / overdue /
     // maintenance) evaluate against "now" when the read runs, keeping `now` out of the key.
-    const [clause, params] = buildListFilter({ ...filters, now: filters.now ?? nowMs() });
-    params.push(limit, offset);
-    // Favourites lead the list ahead of everything else, then the caller's explicit sort (or
-    // the default name/serial/created order) breaks ties among them and among the rest.
-    const order = `${FAVOURITE_FIRST_ORDER}, ${itemOrderByClause(filters.sort) ?? DEFAULT_ITEM_ORDER}`;
+    const [clause, filterParams] = buildListFilter({ ...filters, now: filters.now ?? nowMs() });
+    // The favourites-first lead, the caller's sort (or the default), and the unique id tiebreak,
+    // as one spec — the same spec builds the seek predicate below, so they can never diverge.
+    const order = resolveItemOrder(filters.sort);
+    const seek = filters.seek;
+
+    // A backward (scroll-up) seek runs the reversed order and flips the rows back afterwards, so
+    // it reuses the forward "strictly after" predicate. Everything else runs the forward order.
+    const backward = seek?.direction === 'backward';
+    const orderTerms = backward ? reverseOrder(order) : order;
+
+    const where: string[] = [];
+    const params: SqlValue[] = [...filterParams];
+    if (clause) where.push(clause.replace(/^WHERE /, ''));
+    if (seek) {
+      const predicate = buildSeekPredicate(orderTerms, seek.cursor);
+      where.push(predicate.sql);
+      params.push(...predicate.params);
+    }
+    const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
+    // The absolute index of the first row: the seek's running index, or the offset for an
+    // offset read. Echoed into `Page.offset` so the virtualised list positions the page either way.
+    const offset = seek ? seek.startIndex : offsetParam;
+    params.push(limit);
+    if (!seek) params.push(offset);
+
     const rows = await this.driver.query<ItemRow>(
-      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items ${clause}
-       ORDER BY ${order}
-       LIMIT ? OFFSET ?;`,
+      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items ${whereClause}
+       ORDER BY ${renderOrderBy(orderTerms)}
+       LIMIT ?${seek ? '' : ' OFFSET ?'};`,
       params,
     );
-    return this.toPage(rows.map(rowToItem), limit, offset);
+    // The reversed backward read came back last-to-first; flip it so the page is forward order.
+    const ordered = backward ? rows.slice().reverse() : rows;
+
+    const page = this.toPage(ordered.map(rowToItem), limit, offset);
+    if (ordered.length === 0) return page;
+    // Cursors are always taken from the forward-ordered rows, so `startCursor` is the first row and
+    // `endCursor` the last regardless of which direction fetched the page.
+    const startCursor: Cursor = extractCursor(ordered[0]!, order);
+    const endCursor: Cursor = extractCursor(ordered[ordered.length - 1]!, order);
+    return { ...page, startCursor, endCursor };
   }
 
   /** Count items matching a filter (for pagination headers / dashboard widgets). */
