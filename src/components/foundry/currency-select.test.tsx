@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { useState } from 'react';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
-import { CurrencySelect, CurrencyAutocompleteField, currencyCodeFromInput } from './currency-select';
+import { CurrencySelect, CurrencyAutocompleteField } from './currency-select';
+import { currencyCodeFromInput } from './currency-options';
 
 afterEach(cleanup);
 

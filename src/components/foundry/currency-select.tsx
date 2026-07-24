@@ -1,43 +1,12 @@
 import { type ReactNode, type Ref, useMemo } from 'react';
-import { CURRENCY_OPTIONS } from '@/lib/format';
 import { AutocompleteField } from './autocomplete';
-import { Select, type SelectOption } from './select';
-
-/** Popular currencies as `CODE — Name` rows, shared by both currency controls below. */
-const CURRENCY_SUGGESTIONS = CURRENCY_OPTIONS.map((c) => `${c.value} — ${c.label}`);
-
-/**
- * Default guidance shown in the editable field's `(i)` hint when a caller doesn't supply its
- * own. Tells the user what a valid value looks like — the request behind this control — and
- * that blank falls back to the base currency.
- */
-export const DEFAULT_CURRENCY_HINT =
-  'Pick a currency from the list, or type its three-letter ISO 4217 code (e.g. `GBP`, `USD`, ' +
-  '`EUR`). Leave it blank to use your base currency.';
-
-/**
- * Reduce an accepted currency value to a bare, upper-cased ISO code: a chosen suggestion
- * `"EUR — Euro"` becomes `"EUR"`, and a free-typed `"eur"` becomes `"EUR"`. Exported so the
- * few call sites that manage their own state normalise identically.
- */
-export function currencyCodeFromInput(value: string): string {
-  return value.split(' — ')[0]!.trim().toUpperCase();
-}
-
-/**
- * Build the option list the select-only picker offers: the popular {@link CURRENCY_OPTIONS} as
- * `CODE — Name` rows. A non-empty `value` that isn't one of the offered codes is appended
- * verbatim so an existing off-list code still shows and round-trips rather than silently
- * blanking.
- */
-function buildCurrencyOptions(value: string): SelectOption[] {
-  const options: SelectOption[] = CURRENCY_OPTIONS.map((c) => ({
-    value: c.value,
-    label: `${c.value} — ${c.label}`,
-  }));
-  if (value && !CURRENCY_OPTIONS.some((c) => c.value === value)) options.push({ value, label: value });
-  return options;
-}
+import { Select } from './select';
+import {
+  CURRENCY_SUGGESTIONS,
+  DEFAULT_CURRENCY_HINT,
+  buildCurrencyOptions,
+  currencyCodeFromInput,
+} from './currency-options';
 
 export interface CurrencySelectProps {
   /** The current ISO-4217 code. */
@@ -55,7 +24,7 @@ export interface CurrencySelectProps {
 
 /**
  * Foundry CurrencySelect — a **select-only** currency picker (one of the offered codes),
- * wrapping the Foundry {@link Select} pre-loaded with {@link CURRENCY_OPTIONS}. This is the
+ * wrapping the Foundry {@link Select} pre-loaded with the popular currencies. This is the
  * control for a **required** currency that must be a valid `Intl` code — namely the base
  * currency, which drives every money format app-wide and would break formatting if it were an
  * arbitrary string. For the *optional, per-record* currency fields, where the user may need a
@@ -116,7 +85,7 @@ export interface CurrencyAutocompleteFieldProps {
 
 /**
  * Foundry CurrencyAutocompleteField — the **editable** currency control: a real free-text
- * field that *also* offers the popular {@link CURRENCY_OPTIONS} as a filtered dropdown, built
+ * field that *also* offers the popular currencies as a filtered dropdown, built
  * on the Foundry {@link AutocompleteField}. It suits the optional, per-record currency fields
  * (a supplier's default, a supplier part's or a purchase order's currency), where the user
  * usually wants one of the common currencies but must be able to enter any ISO-4217 code — a
