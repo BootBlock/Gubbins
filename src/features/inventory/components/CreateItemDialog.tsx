@@ -998,7 +998,11 @@ export function CreateItemDialog({
       {/* Keyless product enrichment (recommendation point 2): when the companion extension
             is present and a barcode is entered, look the product up (Open Food Facts) and fill
             any blank name/description/manufacturer. Feature-detected — hidden when absent. */}
-      <ProductLookupPanel barcode={watch('barcode') ?? ''} onResult={onProductLookup} />
+      <ProductLookupPanel
+        barcode={watch('barcode') ?? ''}
+        onResult={onProductLookup}
+        onEnterManually={() => nameRef.current?.focus()}
+      />
       <FormField
         label="Unit cost (optional)"
         hint={

@@ -29,7 +29,11 @@ export async function lookupProductOnline(
   } catch {
     return { ok: false, reason: 'Couldn’t reach the product database. Check your connection and try again.' };
   }
-  if (!response.ok) {
+  // Open Food Facts v2 answers a barcode it doesn't carry with HTTP 404 (and a `{ status: 0 }`
+  // body) — a legitimate "no product for this barcode", not a failure. Read that body through the
+  // shared parser so the user sees a clean "no product found" message rather than a raw error code
+  // (issue #439). Any *other* non-OK status is a genuine fault worth surfacing.
+  if (!response.ok && response.status !== 404) {
     return { ok: false, reason: `The product database returned an error (${response.status}).` };
   }
   let body: string;

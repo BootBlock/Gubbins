@@ -86,6 +86,34 @@ describe('ProductLookupPanel (issue #59)', () => {
     await waitFor(() => expect(show).toHaveBeenCalled());
   });
 
+  it('wires the failure toast’s "Enter manually" action to onEnterManually (issue #439)', async () => {
+    prefState.allowOnlineProductLookup = true;
+    online.mockResolvedValue({ ok: false, reason: 'No product found for barcode 4006381333931.' });
+    const onEnterManually = vi.fn();
+    render(
+      <ProductLookupPanel barcode="4006381333931" onResult={vi.fn()} onEnterManually={onEnterManually} />,
+    );
+
+    fireEvent.click(screen.getByTestId('product-lookup-submit'));
+
+    await waitFor(() => expect(show).toHaveBeenCalled());
+    const action = show.mock.calls.at(-1)?.[0]?.action;
+    expect(action?.label).toBe('Enter manually');
+    action?.onClick();
+    expect(onEnterManually).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits the toast action entirely when no onEnterManually is provided (issue #439)', async () => {
+    prefState.allowOnlineProductLookup = true;
+    online.mockResolvedValue({ ok: false, reason: 'No product found.' });
+    render(<ProductLookupPanel barcode="4006381333931" onResult={vi.fn()} />);
+
+    fireEvent.click(screen.getByTestId('product-lookup-submit'));
+
+    await waitFor(() => expect(show).toHaveBeenCalled());
+    expect(show.mock.calls.at(-1)?.[0]?.action).toBeUndefined();
+  });
+
   it('uses the privileged extension path when it is present (no online fetch, no prompt)', () => {
     bridge.ready = true;
     render(<ProductLookupPanel barcode="4006381333931" onResult={vi.fn()} />);

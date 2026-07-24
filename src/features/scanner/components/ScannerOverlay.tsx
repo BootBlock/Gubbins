@@ -519,7 +519,13 @@ function ScannerOverlayInner({
                   form offers — the companion extension when present, else the open Open Food Facts
                   database after a one-time consent. On a hit its name/brand pre-fill the new item. It
                   renders nothing when the lookup capability is off, so it degrades to manual entry. */}
-              {!lookupResult ? <ProductLookupPanel barcode={gtinResult} onResult={setLookupResult} /> : null}
+              {!lookupResult ? (
+                <ProductLookupPanel
+                  barcode={gtinResult}
+                  onResult={setLookupResult}
+                  onEnterManually={onCreateFromBarcode ? createFromBarcode : undefined}
+                />
+              ) : null}
               <div className="flex gap-2">
                 {onCreateFromBarcode ? (
                   <Button onClick={createFromBarcode} data-testid="scanner-create-from-barcode">
