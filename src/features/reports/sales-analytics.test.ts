@@ -253,4 +253,41 @@ describe('buildSalesReport', () => {
       expect(report.writeOffValue).toBe(101);
     });
   });
+
+  // Issue #400: each breakdown column re-adds to its headline, apportioning the rounding remainder
+  // rather than rounding every row on its own. Only visible under a 0-decimal currency, where the
+  // per-row gap is a whole unit rather than a sub-penny.
+  describe('breakdowns re-add to their headline (issue #400)', () => {
+    const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
+
+    it('makes the bucket and category columns sum to the headline under a 0-decimal currency', () => {
+      // Three ¥100.5 sales in distinct buckets and categories. Rounded on their own each proceeds
+      // row carries up to ¥101 → ¥303, but the raw total ¥301.5 publishes as ¥302: a visible ¥1
+      // gap the apportionment closes.
+      const report = buildSalesReport(
+        [
+          ev(10, { proceeds: 100.5, cost: 40.5, categoryId: 'a', categoryName: 'Alpha' }),
+          ev(40, { proceeds: 100.5, cost: 40.5, categoryId: 'b', categoryName: 'Bravo' }),
+          ev(70, { proceeds: 100.5, cost: 40.5, categoryId: 'c', categoryName: 'Cair' }),
+        ],
+        0,
+        90,
+        3,
+        0, // JPY — whole units
+      );
+      expect(report.proceeds).toBe(302); // raw 301.5 → 302
+      expect(report.cogs).toBe(122); // raw 121.5 → 122
+      // The columns sum to the published headline exactly, not to 303 as naive rounding would.
+      expect(sum(report.buckets.map((b) => b.proceeds))).toBe(report.proceeds);
+      expect(sum(report.buckets.map((b) => b.cogs))).toBe(report.cogs);
+      expect(sum(report.byCategory.map((g) => g.proceeds))).toBe(report.proceeds);
+      expect(sum(report.byCategory.map((g) => g.cogs))).toBe(report.cogs);
+      // Apportioning proceeds and COGS makes the derived margin column add up for free.
+      expect(sum(report.byCategory.map((g) => g.margin))).toBe(report.margin);
+      expect(sum(report.buckets.map((b) => b.margin))).toBe(report.margin);
+      // Every published row is still a whole yen — the apportionment never invents a fraction.
+      for (const b of report.buckets) expect(Number.isInteger(b.proceeds)).toBe(true);
+      for (const g of report.byCategory) expect(Number.isInteger(g.proceeds)).toBe(true);
+    });
+  });
 });
