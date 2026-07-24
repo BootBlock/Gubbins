@@ -3,8 +3,9 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { DbError } from '@/db/errors';
 import { runMigrations } from '@/db/migrations';
 import { migrations } from '@/db/migrations/index';
-import { MS_PER_DAY } from './constants';
+import { MS_PER_DAY, SYSTEM_USER_ID } from './constants';
 import { CheckoutRepository, overdueCheckoutExistsSql } from './CheckoutRepository';
+import { planCheckIn } from './checkout-plan';
 import { ContactRepository } from './ContactRepository';
 import { ItemRepository } from './ItemRepository';
 import { ProjectRepository } from './ProjectRepository';
@@ -156,6 +157,42 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       const again = await checkouts.checkIn(checkout.id);
       expect(again.returnedAt).not.toBeNull();
       expect((await items.getById(itemId))?.quantity).toBe(5); // not double-restored
+    });
+
+    it('collapses two returns that race past the read guard to one physical return (#296)', async () => {
+      const itemId = await makeItem('Clamp meter', 5);
+      const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 2 });
+      expect((await items.getById(itemId))?.quantity).toBe(3);
+
+      // The TOCTOU race: two check-ins each read the still-open loan (both see returned_at ===
+      // null) before either writes — the worker never pairs a repository read with its later
+      // transaction. Planning twice against the pre-write state captures exactly that, then both
+      // transactions run in sequence as the serialised worker would apply them.
+      const first = await planCheckIn(driver, checkout.id, SYSTEM_USER_ID);
+      const second = await planCheckIn(driver, checkout.id, SYSTEM_USER_ID);
+      await driver.transaction(first);
+      await driver.transaction(second);
+
+      // The loser no-ops at the database: stock is restored once and only one CHECKED_IN is logged.
+      expect((await items.getById(itemId))?.quantity).toBe(5);
+      const history = await items.getHistory(itemId);
+      expect(history.rows.filter((h) => h.action === 'CHECKED_IN')).toHaveLength(1);
+      expect((await checkouts.getById(checkout.id))?.returnedAt).not.toBeNull();
+    });
+
+    it('does not double-apply the condition change when two returns race (#296)', async () => {
+      const drill = await items.create({ name: 'Hammer drill', quantity: 1, condition: 'MINT' });
+      const checkout = await checkouts.checkout({ itemId: drill.id, contactName: 'Bob' });
+
+      const first = await planCheckIn(driver, checkout.id, SYSTEM_USER_ID, { condition: 'NEEDS_REPAIR' });
+      const second = await planCheckIn(driver, checkout.id, SYSTEM_USER_ID, { condition: 'NEEDS_REPAIR' });
+      await driver.transaction(first);
+      await driver.transaction(second);
+
+      expect((await items.getById(drill.id))?.condition).toBe('NEEDS_REPAIR');
+      const history = await items.getHistory(drill.id);
+      expect(history.rows.filter((h) => h.action === 'CONDITION_CHANGED')).toHaveLength(1);
+      expect(history.rows.filter((h) => h.action === 'CHECKED_IN')).toHaveLength(1);
     });
 
     it('records the condition on return, updating the item and logging CONDITION_CHANGED (B2)', async () => {
