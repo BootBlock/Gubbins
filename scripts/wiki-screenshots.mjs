@@ -399,16 +399,41 @@ try {
   console.warn(`  ✗ location photos — ${err instanceof Error ? err.message : String(err)}`);
 }
 
-// --- Location statistics (issue #458) --------------------------------------------
-// Garage holds nothing loose itself, so roll the figures up its subtree: the shot then shows
-// the scope toggle plus real value (the priced Cordless Drill on Workshop Shelf A beneath it)
-// and the value-by-category breakdown.
+// --- Location statistics (issues #458 + #457) ------------------------------------
+// Showcase the value AND volumetric tiles together: give the Cordless Drill a size and Workshop
+// Shelf A (the location it sits in) an internal size, so the Statistics tab shows a real "Space
+// used" against the shelf's capacity, plus the value-by-category breakdown.
 try {
-  const dialog = await openLocationEditor('Garage');
-  await dialog.getByRole('tab', { name: 'Statistics' }).click();
-  await dialog.getByTestId('location-stats-scope-subtree').click();
-  await dialog.getByTestId('location-stats-value').waitFor({ state: 'visible', timeout: 8000 });
-  await shot('location-statistics', dialog, { settle: 600 });
+  // 1. Size the drill (300 × 200 × 150 mm) via its edit-details dialog.
+  await gotoInventory();
+  const drillCard = page
+    .locator('#main-content')
+    .getByRole('heading', { name: 'Cordless Drill' })
+    .locator('xpath=ancestor::div[contains(@class,"select-none")][1]');
+  await drillCard.first().getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Edit details' }).click();
+  const detail = page.getByRole('dialog');
+  await detail.getByTestId('item-details-width').fill('300');
+  await detail.getByTestId('item-details-height').fill('200');
+  await detail.getByTestId('item-details-depth').fill('150');
+  const saveDetail = detail.getByTestId('item-details-save');
+  await saveDetail.click();
+  await saveDetail.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: 5000 });
+  await page.keyboard.press('Escape');
+
+  // 2. Give Workshop Shelf A an internal size (400 × 300 × 300 mm ≈ 36 L).
+  let shelf = await openLocationEditor('Workshop Shelf A');
+  await shelf.getByTestId('location-width').fill('400');
+  await shelf.getByTestId('location-height').fill('300');
+  await shelf.getByTestId('location-depth').fill('300');
+  await shelf.getByRole('button', { name: 'Save changes' }).click();
+  await shelf.waitFor({ state: 'detached', timeout: 5000 });
+
+  // 3. Capture the Statistics tab — value, items, units and space used, with utilisation.
+  shelf = await openLocationEditor('Workshop Shelf A');
+  await shelf.getByRole('tab', { name: 'Statistics' }).click();
+  await shelf.getByTestId('location-stats-volume').waitFor({ state: 'visible', timeout: 8000 });
+  await shot('location-statistics', shelf, { settle: 600 });
   await page.keyboard.press('Escape');
 } catch (err) {
   failed += 1;

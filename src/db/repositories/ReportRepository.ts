@@ -409,12 +409,20 @@ export class ReportRepository extends BaseRepository {
       value: number;
       distinct_items: number;
       priced_items: number;
+      used_volume: number;
+      measured_items: number;
     }>(
+      // `unit_volume` is the item's bounding-box volume (mm³), NULL when any dimension is unset —
+      // so an unmeasured item adds nothing to `used_volume` and isn't counted as measured, exactly
+      // the convention the location tree's volume bar uses (issue #457).
       `SELECT COALESCE(SUM(qty), 0) AS quantity,
               COALESCE(SUM(qty * unit_value), 0) AS value,
               COUNT(*) AS distinct_items,
-              COUNT(CASE WHEN unit_value > 0 THEN 1 END) AS priced_items
-         FROM (SELECT MAX(SUM(s.quantity), 0) AS qty, ${unitValue} AS unit_value
+              COUNT(CASE WHEN unit_value > 0 THEN 1 END) AS priced_items,
+              COALESCE(SUM(CASE WHEN unit_volume IS NOT NULL THEN qty * unit_volume ELSE 0 END), 0) AS used_volume,
+              COUNT(CASE WHEN unit_volume IS NOT NULL THEN 1 END) AS measured_items
+         FROM (SELECT MAX(SUM(s.quantity), 0) AS qty, ${unitValue} AS unit_value,
+                      (i.width * i.height * i.depth) AS unit_volume
                  FROM item_stock s
                  JOIN items i ON i.id = s.item_id
                 WHERE i.is_active = 1 AND s.quantity > 0 AND ${notUnlimited('i.is_unlimited')}
@@ -445,6 +453,8 @@ export class ReportRepository extends BaseRepository {
       totalQuantity: headline?.quantity ?? 0,
       distinctItemCount,
       unpricedItemCount: distinctItemCount - (headline?.priced_items ?? 0),
+      usedVolume: headline?.used_volume ?? 0,
+      measuredItemCount: headline?.measured_items ?? 0,
       byCategory: sortValueGroups(categoryRows.map(toValueGroupTotals)),
     };
   }
