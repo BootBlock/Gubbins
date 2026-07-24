@@ -526,6 +526,8 @@
   "inventory.locations.search.clear": "Clear location search",
   "inventory.locations.search.empty": "No locations match “{query}”.",
   "inventory.locations.tags.empty": "No locations carry the selected tags.",
+  "inventory.locations.tree.volumeFullness": "Volume {percent}% full",
+  "inventory.locations.tree.volumeFullnessOver": "Volume over capacity ({percent}% full)",
   "inventory.location.fields.remove": "Remove {name}",
   "inventory.location.fields.saving": "Saving…",
   "inventory.location.fields.emptyNoFields": "No custom fields exist yet. Create one under Categories & schemas, then set its value here to share it with the items inside.",

@@ -24,6 +24,13 @@ import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useFeature } from '@/features/modules/useFeature';
 import { useT } from '@/features/i18n';
 import { useReportWriteFailure } from '@/features/errors';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import {
+  EMPTY_VOLUME_TOTALS,
+  isVolumetricFullness,
+  resolveLocationFullness,
+  type VolumetricFullness,
+} from '../location-fullness';
 import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
 import {
@@ -299,6 +306,18 @@ export function LocationSidebar({
   const movingItemToId = moveItem.isPending ? (moveItem.variables?.locationId ?? null) : null;
 
   const t = useT();
+
+  // Global packing-factor preference, bound once here so each tree row's volumetric fullness is
+  // resolved without every (virtualised) row re-reading the store. Feeds `volumeFullnessFor` below.
+  const packingFactor = usePreferencesStore((s) => s.defaultPackingFactor);
+  // Resolve a location's *volumetric* fullness (issue #457) for its tree row's fill bar — null
+  // unless the location has a measured internal size, so count-only rows show no bar. Only the
+  // volume mode is surfaced here (the count text keeps its own count-based tint), so a count-mode
+  // reading from the resolver is narrowed away.
+  const volumeFullnessFor = (node: LocationTreeNode): VolumetricFullness | null => {
+    const fullness = resolveLocationFullness(node, node.volumeTotals ?? EMPTY_VOLUME_TOTALS, packingFactor);
+    return fullness && isVolumetricFullness(fullness) ? fullness : null;
+  };
 
   // Every row the tree shows, in render order: the synthetic "All items" row, then the location
   // rows the controller flattened (collapsed subtrees omitted). Reusing its list — rather than
@@ -615,6 +634,7 @@ export function LocationSidebar({
         description={node.description}
         count={node.itemCount}
         capacity={node.capacity}
+        volumeFullness={volumeFullnessFor(node)}
         isDefault={node.isDefault}
         archived={node.archivedAt != null}
         expanded={hasChildren ? isExpanded : undefined}
