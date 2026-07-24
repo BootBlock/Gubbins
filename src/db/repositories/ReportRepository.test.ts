@@ -319,6 +319,32 @@ describe('ReportRepository', () => {
       // Neither the soft-deleted item nor the abstract parent contribute.
       expect(report.totalValue).toBe(0);
     });
+
+    it('drops a stocked item from the location breakdown once it is made a variant parent (issue #155)', async () => {
+      // "a variant parent holds no stock of its own" is a convention, not an invariant:
+      // `setParent` attaches an existing, already-stocked item to a parent without zeroing its
+      // stock — so an ordinary item that later becomes a parent keeps its `item_stock` rows.
+      const shelf = await locations.create({ name: 'Shed' });
+      const bolts = await items.create({
+        name: 'M3 bolts',
+        locationId: shelf.id,
+        quantity: 500,
+        unitCost: 0.1,
+      });
+      const child = await items.create({ name: 'M3 bolts, black', quantity: 0 });
+      // Attaching the child turns `bolts` into an abstract parent while it still holds 500 in Shed.
+      await items.setParent(child.id, bolts.id);
+
+      const report = await reports.inventoryValue();
+      // The headline excludes the now-parent's stock (item-based filter), so the location
+      // breakdown must too — otherwise the two disagree and the breakdown over-counts.
+      expect(report.totalValue).toBe(0);
+      expect(report.byLocation.find((g) => g.id === shelf.id)?.value ?? 0).toBe(0);
+      // And `locationStats` reads the same ledger, so Shed values to nothing there as well.
+      const stats = await reports.locationStats(shelf.id);
+      expect(stats.totalValue).toBe(0);
+      expect(stats.totalQuantity).toBe(0);
+    });
   });
 
   // Issue #458 — aggregate statistics for a single location's contents. The figures read the same
