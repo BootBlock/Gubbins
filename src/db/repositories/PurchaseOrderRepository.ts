@@ -25,6 +25,7 @@
  * gated; deletes (which free space) are not and record a tombstone in the same transaction so
  * the deletion syncs (§7.2).
  */
+import { toStoredMoney } from '@/lib/money';
 import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
 import { SQL_NOW_MS } from '../migrations/migration';
 import { planPoReceipt, planPoReturn } from '@/features/purchasing/po-receipt';
@@ -97,13 +98,16 @@ function cleanText(value: string | null | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-/** Validate a nullable non-negative cost (the CHECK also enforces ≥ 0). */
+/**
+ * Validate a nullable non-negative cost (the CHECK also enforces ≥ 0), returned in integer
+ * micro-units — the on-disk money scale (issue #286).
+ */
 function cleanCost(value: number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   if (!Number.isFinite(value) || value < 0) {
     throw new DbError('SQLITE_CONSTRAINT', 'A unit cost must be a non-negative number.');
   }
-  return value;
+  return toStoredMoney(value);
 }
 
 /** Validate a required positive whole ordered quantity (the CHECK also enforces > 0). */

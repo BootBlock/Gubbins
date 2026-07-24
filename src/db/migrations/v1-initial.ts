@@ -773,7 +773,14 @@ const baselineStatements: SqlStatement[] = [
   { sql: updatedAtTrigger('item_attachments') },
   { sql: `ALTER TABLE items ADD COLUMN mpn TEXT;` },
   { sql: `ALTER TABLE items ADD COLUMN manufacturer TEXT;` },
-  { sql: `ALTER TABLE items ADD COLUMN unit_cost REAL CHECK (unit_cost IS NULL OR unit_cost >= 0);` },
+  // Money convention (issue #286): every monetary column is an INTEGER count of **micro-units** —
+  // millionths of a major currency unit — not a binary REAL. A fixed 1e6 scale (six decimal
+  // places, above every currency's minor unit) is exact, decouples storage from the mutable base
+  // currency, and makes SQL SUMs exact and order-independent. The app works in major units on both
+  // sides of the repository boundary; `src/lib/money.ts` (`toStoredMoney`/`fromStoredMoney`) is the
+  // only place the scale is applied. This applies to every money column below. The CHECK (issue
+  // #349) is scale-invariant — 0 and non-negativity mean the same in micro-units.
+  { sql: `ALTER TABLE items ADD COLUMN unit_cost INTEGER CHECK (unit_cost IS NULL OR unit_cost >= 0);` },
   { sql: `CREATE INDEX idx_items_mpn ON items(mpn COLLATE NOCASE);` },
   // Retail barcode (GTIN — EAN/UPC): an item's own scannable article code, distinct
   // from the MPN and stored verbatim as printed. Indexed for the scanner's exact
@@ -841,7 +848,7 @@ const baselineStatements: SqlStatement[] = [
           reserved_qty       INTEGER NOT NULL DEFAULT 0,
           reservation_status TEXT    NOT NULL DEFAULT 'NONE',
           procurement_status TEXT    NOT NULL DEFAULT 'NONE',
-          unit_cost_snapshot REAL,
+          unit_cost_snapshot INTEGER,                          -- money: integer micro-units (issue #286)
           position           INTEGER NOT NULL DEFAULT 0,
           created_at         INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at         INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -1315,14 +1322,14 @@ const baselineStatements: SqlStatement[] = [
   { sql: `ALTER TABLE item_attachments ADD COLUMN origin_device_id TEXT;` },
   { sql: `ALTER TABLE locations ADD COLUMN description TEXT;` },
   { sql: `ALTER TABLE locations ADD COLUMN color TEXT;` },
-  { sql: `ALTER TABLE projects ADD COLUMN budget REAL;` },
+  { sql: `ALTER TABLE projects ADD COLUMN budget INTEGER;` },
   {
     sql: `
         CREATE TABLE project_budget_categories (
           id         TEXT    PRIMARY KEY NOT NULL,
           project_id TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
           name       TEXT    NOT NULL,
-          amount     REAL    NOT NULL DEFAULT 0,
+          amount     INTEGER NOT NULL DEFAULT 0,             -- money: integer micro-units (issue #286)
           position   INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -1342,7 +1349,7 @@ const baselineStatements: SqlStatement[] = [
           project_id  TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
           category_id TEXT    REFERENCES project_budget_categories(id) ON DELETE SET NULL,
           description TEXT,
-          amount      REAL    NOT NULL DEFAULT 0,
+          amount      INTEGER NOT NULL DEFAULT 0,            -- money: integer micro-units (issue #286)
           incurred_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -1407,7 +1414,7 @@ const baselineStatements: SqlStatement[] = [
           -- meaningless once the supplier is gone. Contrast purchase_orders below.
           supplier_id   TEXT    NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
           order_code    TEXT,
-          unit_cost     REAL,
+          unit_cost     INTEGER,                             -- money: integer micro-units (issue #286)
           currency      TEXT,
           pack_qty      INTEGER,
           min_order_qty INTEGER,
@@ -1486,7 +1493,7 @@ const baselineStatements: SqlStatement[] = [
           description      TEXT,
           ordered_qty      INTEGER NOT NULL,
           received_qty     INTEGER NOT NULL DEFAULT 0,
-          unit_cost        REAL,
+          unit_cost        INTEGER,                          -- money: integer micro-units (issue #286)
           created_at       INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at       INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (ordered_qty > 0),
@@ -1509,7 +1516,7 @@ const baselineStatements: SqlStatement[] = [
   { sql: `ALTER TABLE items ADD COLUMN acquired_at TEXT;` },
   { sql: `ALTER TABLE items ADD COLUMN warranty_expires_at TEXT;` },
   {
-    sql: `ALTER TABLE items ADD COLUMN purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0);`,
+    sql: `ALTER TABLE items ADD COLUMN purchase_price INTEGER CHECK (purchase_price IS NULL OR purchase_price >= 0);`,
   },
   {
     sql: `ALTER TABLE items ADD COLUMN depreciation_months INTEGER CHECK (depreciation_months IS NULL OR depreciation_months > 0);`,
@@ -1568,7 +1575,7 @@ const baselineStatements: SqlStatement[] = [
         CREATE TABLE supplier_part_price_history (
           id               TEXT    PRIMARY KEY NOT NULL,
           supplier_part_id TEXT    NOT NULL REFERENCES supplier_parts(id) ON DELETE CASCADE,
-          unit_cost        REAL    NOT NULL,                  -- the recorded cost at recorded_at
+          unit_cost        INTEGER NOT NULL,                  -- recorded cost at recorded_at (micro-units, issue #286)
           currency         TEXT,                              -- null ⇒ base currency
           source           TEXT    NOT NULL DEFAULT 'MANUAL', -- 'MANUAL' | 'SCRAPE'
           recorded_at      INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -1654,14 +1661,14 @@ const baselineStatements: SqlStatement[] = [
   // Additive: a live manual per-unit value on items, plus an append-only LWW log of the
   // valuation points that set it (value can move up or down, independent of depreciation).
   {
-    sql: `ALTER TABLE items ADD COLUMN current_value REAL CHECK (current_value IS NULL OR current_value >= 0);`,
+    sql: `ALTER TABLE items ADD COLUMN current_value INTEGER CHECK (current_value IS NULL OR current_value >= 0);`,
   },
   {
     sql: `
         CREATE TABLE revaluations (
           id          TEXT    PRIMARY KEY NOT NULL,
           item_id     TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-          value       REAL    NOT NULL,                    -- the recorded per-unit value at revalued_at
+          value       INTEGER NOT NULL,                    -- recorded per-unit value at revalued_at (micro-units, issue #286)
           revalued_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}), -- effective date of the valuation (UNIX-ms)
           note        TEXT,
           created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -1713,7 +1720,7 @@ const baselineStatements: SqlStatement[] = [
           name         TEXT    NOT NULL,
           note         TEXT,                           -- optional free-text context
           url          TEXT,                           -- optional http(s) link (app-sanitised)
-          target_price REAL    CHECK (target_price IS NULL OR target_price >= 0),
+          target_price INTEGER CHECK (target_price IS NULL OR target_price >= 0), -- money: micro-units (issue #286)
           priority     TEXT    NOT NULL DEFAULT 'NONE', -- HIGH | MEDIUM | LOW | NONE (app-enforced)
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})

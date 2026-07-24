@@ -119,11 +119,13 @@ describe('schema baseline lock', () => {
     await runMigrations(driver, migrations);
     const loc = '00000000-0000-4000-8000-000000000001'; // seeded Unassigned location
 
-    // NULL (unset) and a non-negative cost are both admitted by the CHECK.
+    // NULL (unset) and a non-negative cost are both admitted by the CHECK. `unit_cost` is stored
+    // as an INTEGER count of micro-units (issue #286), so £12.50 is 12,500,000 — a fractional REAL
+    // is refused by the STRICT column, not the CHECK.
     await driver.execute(
       `INSERT INTO items (id, name, location_id, tracking_mode, quantity, unit_cost)
        VALUES ('uc-null', 'No cost', ?, 'DISCRETE', 1, NULL),
-              ('uc-pos', 'Priced', ?, 'DISCRETE', 1, 12.5);`,
+              ('uc-pos', 'Priced', ?, 'DISCRETE', 1, 12500000);`,
       [loc, loc],
     );
 

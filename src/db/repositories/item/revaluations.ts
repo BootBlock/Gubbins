@@ -11,6 +11,7 @@
  * row to the `revaluations` log. {@link recordRevaluation} does both in the *same* atomic
  * transaction so the column can never drift from the newest log point.
  */
+import { toStoredMoney } from '@/lib/money';
 import { DbError } from '../../errors';
 import { rowToRevaluation } from '../mappers';
 import { historyStatement } from './history';
@@ -43,14 +44,17 @@ export function withRevaluations<TBase extends Constructor<ItemCoreRepository>>(
           : Date.now();
       const note = input.note?.trim() ? input.note.trim() : null;
       const id = crypto.randomUUID();
+      // `revaluations.value` and the mirrored `items.current_value` are stored in integer
+      // micro-units (issue #286); the Activity-Log metadata keeps the major-unit figure for display.
+      const storedValue = toStoredMoney(value);
 
       const statements: SqlStatement[] = [
         {
           sql: `INSERT INTO revaluations (id, item_id, value, revalued_at, note)
                 VALUES (?, ?, ?, ?, ?);`,
-          params: [id, itemId, value, revaluedAt, note],
+          params: [id, itemId, storedValue, revaluedAt, note],
         },
-        { sql: 'UPDATE items SET current_value = ? WHERE id = ?;', params: [value, itemId] },
+        { sql: 'UPDATE items SET current_value = ? WHERE id = ?;', params: [storedValue, itemId] },
         historyStatement(itemId, 'REVALUED', this.actorId(), {
           note: note ? `Recorded a manual revaluation. ${note}` : 'Recorded a manual revaluation.',
           metadata: { value, revaluedAt },
