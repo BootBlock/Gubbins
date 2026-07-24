@@ -44,7 +44,7 @@ import { fitsInQr } from '@/features/scanner/qr-code';
 import { hasOcr } from '@/lib/env/feature-detection';
 import { cn } from '@/lib/utils';
 import { useFeature } from '@/features/modules/useFeature';
-import { useT } from '@/features/i18n';
+import { useT, hasInterfaceTranslation } from '@/features/i18n';
 import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
 import { ReminderSettings } from '@/features/alerts/ReminderSettings';
@@ -559,9 +559,26 @@ export default function SettingsDialog({
               className="h-9 w-56"
               value={prefs.locale}
               onChange={(value) => prefs.setLocale(value)}
-              options={LOCALE_OPTIONS.map((l) => ({ value: l.value, label: l.label }))}
+              // Flag locales whose interface isn't translated (e.g. French) so the picker never
+              // implies a translated interface it can't deliver — such a locale changes only the
+              // number/date/currency formatting; the interface stays in English (issue #160).
+              options={LOCALE_OPTIONS.map((l) => ({
+                value: l.value,
+                label: l.label,
+                meta: hasInterfaceTranslation(l.value) ? undefined : t('settings.language.formattingOnly'),
+              }))}
             />
           </SettingRow>
+          {hasInterfaceTranslation(prefs.locale) ? null : (
+            <Banner
+              tone="info"
+              heading={t('settings.language.formattingOnlyNotice.heading')}
+              className="my-3"
+              data-testid="setting-locale-formatting-only-notice"
+            >
+              {t('settings.language.formattingOnlyNotice.body')}
+            </Banner>
+          )}
         </SettingsSection>
       ),
     },
