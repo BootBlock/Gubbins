@@ -148,7 +148,7 @@ describe('makeFormatters — defaults (§1.2.1 en-GB / GBP)', () => {
     // "27 Jun" west of UTC (all of the Americas); `calendarDate()` must render "28 Jun"
     // regardless of the host zone, which is the whole point of issue #318.
     expect(gb.calendarDate(Date.UTC(2026, 5, 28))).toBe('28 Jun 2026');
-    expect(us.calendarDate(Date.UTC(2026, 5, 28))).toBe('Jun 28, 2026');
+    expect(makeFormatters('en-US', 'USD').calendarDate(Date.UTC(2026, 5, 28))).toBe('Jun 28, 2026');
   });
 
   it('formats a UNIX-ms instant as a date and time (TZ-independent assertion)', () => {
