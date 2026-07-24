@@ -19,16 +19,19 @@
  *
  *  - **A derived amount is derived from the published ones.** `margin` is published proceeds −
  *    published COGS at every level, so the amounts a reader sees side by side subtract correctly.
- *  - **A breakdown need not re-add to its headline.** Buckets and categories are each rounded on
- *    their own, so a column of them can sit up to half a penny per row away from the headline
- *    total. That is inherent to quantising parts and a whole independently; the headline is the
- *    accurate figure, and reconciling instead would mean apportioning the remainder across rows
- *    (which the printed insurance schedule does, because that document *is* read as a sum).
+ *  - **A breakdown re-adds to its headline** (issue #400). Buckets and categories are not rounded
+ *    on their own — each column is *apportioned* to the headline through `apportionMoney`, so the
+ *    figures really do sum to the total printed above them. Rounding parts and their whole
+ *    independently would leave a column up to half a minor unit per row adrift, invisible at 2dp
+ *    but a whole unit under a 0-decimal currency; the headline stays the accurate figure and the
+ *    remainder is shared out (largest-remainder), the same guarantee the printed insurance schedule
+ *    gives by summing its single column rung by rung. Apportioning proceeds and COGS makes the
+ *    derived `margin` column add up for free (a difference of two reconciled columns).
  *
  * Ratios (`share`, `marginPct`) are deliberately computed from the raw totals: they are
  * fractions, not amounts.
  */
-import { MONEY_DECIMALS, roundMoney } from '@/lib/money';
+import { MONEY_DECIMALS, apportionMoney, roundMoney } from '@/lib/money';
 
 import { inTimeWindow } from './window-membership';
 
@@ -216,18 +219,32 @@ export function buildSalesReport(
   // margin. The outer round mops up the float noise in a difference of two quantised values.
   const margin = roundMoney(totalProceeds - totalCogs, decimals);
 
-  const byCategory: SalesGroup[] = [...categoryTotals.entries()]
-    .map(([id, { name, proceeds: p, cogs: c }]) => {
-      const groupProceeds = roundMoney(p, decimals);
-      const groupCogs = roundMoney(c, decimals);
+  // Each breakdown column is apportioned to the published headline rather than rounded row by row
+  // (issue #400), so the categories sum to `totalProceeds`/`totalCogs` exactly. Proceeds and COGS
+  // are apportioned separately, which also makes each group's derived margin add up (it is the
+  // difference of two reconciled columns). The share stays a ratio of the raw totals — a fraction,
+  // not an amount — since dividing rounded pennies would visibly skew a small category's percentage.
+  const catEntries = [...categoryTotals.entries()];
+  const catProceeds = apportionMoney(
+    catEntries.map(([, v]) => v.proceeds),
+    totalProceeds,
+    decimals,
+  );
+  const catCogs = apportionMoney(
+    catEntries.map(([, v]) => v.cogs),
+    totalCogs,
+    decimals,
+  );
+  const byCategory: SalesGroup[] = catEntries
+    .map(([id, { name, proceeds: p }], i) => {
+      const groupProceeds = catProceeds[i]!;
+      const groupCogs = catCogs[i]!;
       return {
         id,
         name,
         proceeds: groupProceeds,
         cogs: groupCogs,
         margin: roundMoney(groupProceeds - groupCogs, decimals),
-        // The share stays a ratio of the raw totals — it is a fraction, not an amount, and
-        // dividing rounded pennies would visibly skew a small category's percentage.
         share: share(p, proceeds),
       };
     })
@@ -236,6 +253,20 @@ export function buildSalesReport(
         ? b.proceeds - a.proceeds
         : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
     );
+
+  // The bucket series is apportioned to the headline exactly like the categories (issue #400):
+  // the chronological proceeds/COGS columns sum to `totalProceeds`/`totalCogs`, not each rounded
+  // in isolation, so a chart's bars re-add to the total beside them.
+  const bucketProceeds = apportionMoney(
+    buckets.map((b) => b.proceeds),
+    totalProceeds,
+    decimals,
+  );
+  const bucketCogs = apportionMoney(
+    buckets.map((b) => b.cogs),
+    totalCogs,
+    decimals,
+  );
 
   return {
     windowStart,
@@ -251,16 +282,16 @@ export function buildSalesReport(
     writeOffValue: roundMoney(writeOffValue, decimals),
     writeOffUnits,
     writeOffCount,
-    buckets: buckets.map((b) => {
-      const bucketProceeds = roundMoney(b.proceeds, decimals);
-      const bucketCogs = roundMoney(b.cogs, decimals);
+    buckets: buckets.map((b, i) => {
+      const p = bucketProceeds[i]!;
+      const c = bucketCogs[i]!;
       return {
         start: b.start,
         end: b.end,
-        proceeds: bucketProceeds,
-        cogs: bucketCogs,
+        proceeds: p,
+        cogs: c,
         // Derived from the published pair, exactly like the headline margin.
-        margin: roundMoney(bucketProceeds - bucketCogs, decimals),
+        margin: roundMoney(p - c, decimals),
       };
     }),
     byCategory,

@@ -200,4 +200,35 @@ describe('buildSpendReport', () => {
       expect(report.byCategory[0]!.total).toBe(1.001);
     });
   });
+
+  // Issue #400: every breakdown column re-adds to the grand total, apportioning the rounding
+  // remainder rather than rounding each row on its own — visible under a 0-decimal currency, where
+  // the per-row gap is a whole unit rather than a sub-penny.
+  describe('breakdowns re-add to their headline (issue #400)', () => {
+    const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
+
+    it('makes every column sum to the grand total under a 0-decimal currency', () => {
+      // Three ¥100.5 spends across distinct buckets, suppliers and categories. Rounded on their
+      // own each row carries up to ¥101 → ¥303, but the raw total ¥301.5 publishes as ¥302.
+      const report = buildSpendReport(
+        [
+          ev(10, 100.5, { supplier: 'Ay', categoryId: 'c1', categoryName: 'One' }),
+          ev(40, 100.5, { supplier: 'Bee', categoryId: 'c2', categoryName: 'Two' }),
+          ev(70, 100.5, { supplier: 'Cee', categoryId: 'c3', categoryName: 'Three' }),
+        ],
+        0,
+        90,
+        3,
+        0, // excludedForeignCurrency
+        0, // JPY — whole units
+      );
+      expect(report.total).toBe(302); // raw 301.5 → 302
+      expect(sum(report.buckets.map((b) => b.total))).toBe(report.total);
+      expect(sum(report.bySupplier.map((g) => g.total))).toBe(report.total);
+      expect(sum(report.byCategory.map((g) => g.total))).toBe(report.total);
+      expect(sum(report.bySource.map((s) => s.total))).toBe(report.total);
+      for (const b of report.buckets) expect(Number.isInteger(b.total)).toBe(true);
+      for (const g of report.bySupplier) expect(Number.isInteger(g.total)).toBe(true);
+    });
+  });
 });

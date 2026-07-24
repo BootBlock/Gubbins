@@ -4,6 +4,7 @@ import {
   MONEY_EPSILON,
   MONEY_STORAGE_DECIMALS,
   MONEY_STORAGE_SCALE,
+  apportionMoney,
   fromStoredMoney,
   moneyDecimals,
   moneyExceeds,
@@ -121,6 +122,66 @@ describe('sumMoney', () => {
 
   it('honours a non-default scale', () => {
     expect(sumMoney([0.0000005, 0.0000005], 6)).toBe(0.000001);
+  });
+});
+
+describe('apportionMoney (largest-remainder breakdown, issue #400)', () => {
+  /** The invariant the seam exists for: rounded rows sum back to the headline exactly. */
+  const sumsTo = (parts: number[], target: number, decimals?: number) =>
+    expect(apportionMoney(parts, target, decimals).reduce((a, b) => a + b, 0)).toBeCloseTo(target, 10);
+
+  it('makes a 0-decimal breakdown re-add to its headline where naive rounding would not', () => {
+    // Three ¥100.5 rows: rounded on their own each carries up to 101 → 303, but the raw total is
+    // ¥301.5 → ¥302. Apportioning shares the two spare units among the largest remainders.
+    const parts = [100.5, 100.5, 100.5];
+    const target = roundMoney(301.5, 0); // 302
+    const out = apportionMoney(parts, target, 0);
+    expect(out.reduce((a, b) => a + b, 0)).toBe(302);
+    expect(out).toEqual([101, 101, 100]);
+  });
+
+  it('gives the +1 to the largest fractional remainders first', () => {
+    // Raw 0.104 + 0.203 + 0.713 = 1.02 → headline 1.02; the floors (0.10/0.20/0.71) sum to 1.01,
+    // so the one owed penny goes to the biggest fraction (.4 beats .3 and .3).
+    expect(apportionMoney([0.104, 0.203, 0.713], 1.02, 2)).toEqual([0.11, 0.2, 0.71]);
+    // Two pennies owed: 0.005 / 0.005 / 0.005 each floors to 0.00, headline 0.02 (raw 0.015 → 0.02
+    // half-away), so two of the three rows carry up.
+    const out = apportionMoney([0.005, 0.005, 0.005], 0.02, 2);
+    expect(out.reduce((a, b) => a + b, 0)).toBeCloseTo(0.02, 10);
+    expect(out.filter((v) => v === 0.01)).toHaveLength(2);
+  });
+
+  it('is identical to rounding each row on its own when the rows already sum to the target', () => {
+    // Clean 2dp figures that divide exactly: nothing is owed, so no row shifts.
+    const parts = [12.34, 56.78, 30.88];
+    const target = roundMoney(12.34 + 56.78 + 30.88, 2); // 100.00
+    expect(apportionMoney(parts, target, 2)).toEqual(parts.map((p) => roundMoney(p, 2)));
+    sumsTo(parts, target, 2);
+  });
+
+  it('breaks remainder ties by original index for a deterministic, sort-independent result', () => {
+    // Two equal .5 fractions competing for one unit — the earlier index wins.
+    expect(apportionMoney([10.5, 10.5], roundMoney(21, 0), 0)).toEqual([11, 10]);
+  });
+
+  it('counts a non-finite part as zero rather than poisoning the column', () => {
+    const out = apportionMoney([1.5, Number.NaN, 2.25], roundMoney(3.75, 0), 0);
+    expect(out.reduce((a, b) => a + b, 0)).toBe(4); // raw 3.75 → 4
+    expect(out[1]).toBe(0);
+  });
+
+  it('returns an empty column for empty parts, whatever the target', () => {
+    expect(apportionMoney([], 100, 2)).toEqual([]);
+  });
+
+  it('handles a single row by pinning it to the headline', () => {
+    expect(apportionMoney([0.9], 0.9, 2)).toEqual([0.9]);
+    expect(apportionMoney([300.75], roundMoney(300.75, 0), 0)).toEqual([301]);
+  });
+
+  it('honours a 3-decimal scale (BHD)', () => {
+    const out = apportionMoney([1.0005, 0.0005], roundMoney(1.001, 3), 3);
+    expect(out.reduce((a, b) => a + b, 0)).toBeCloseTo(1.001, 10);
   });
 });
 

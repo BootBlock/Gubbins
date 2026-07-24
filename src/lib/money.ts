@@ -148,6 +148,64 @@ export function sumMoney(values: Iterable<number>, decimals: number = MONEY_DECI
 }
 
 /**
+ * Apportion `parts` to `decimals` places so the rounded rows sum **exactly** to `target`.
+ *
+ * Rounding each row on its own and rounding the whole are two different questions with two
+ * different answers: a column of independently-rounded figures need not re-add to the headline
+ * rounded from the raw total. At 2dp the gap is at most half a minor unit per row and effectively
+ * theoretical; under a 0-decimal currency (issue #292) that same tolerance is half a *whole unit*
+ * per row, so a twelve-row breakdown can visibly sum to ¥301 beside a ¥304 headline — a
+ * discrepancy a reader can see and cannot reconcile (issue #400).
+ *
+ * This is the largest-remainder (Hamilton) apportionment that the insurance schedule's
+ * single-partition "sum the rung below as printed" rule cannot express when the same money is split
+ * several ways at once (by time *and* by category *and* by supplier): there is no one column to
+ * total the headline from, so the construction runs the other way. The headline stays the accurate
+ * figure, each row floors to its minor unit, and the remainder between the headline and the floored
+ * rows is handed out one minor unit at a time to the rows with the largest fractional part — the
+ * very rows a naive round would have carried up. When the independently-rounded rows already sum to
+ * the target — the common case, and every set of 2dp figures that divides cleanly — the result is
+ * byte-identical to rounding each row on its own, so nothing shifts needlessly.
+ *
+ * Intended for a set of **non-negative** parts that partition `target` (a breakdown of a total). A
+ * non-finite part counts as 0; an empty `parts` yields an empty result whatever `target` is.
+ */
+export function apportionMoney(
+  parts: readonly number[],
+  target: number,
+  decimals: number = MONEY_DECIMALS,
+): number[] {
+  const n = parts.length;
+  if (n === 0) return [];
+  const factor = 10 ** decimals;
+  // Each row in minor units, corrected for binary drift exactly as roundMoney does before it
+  // breaks a tie, so 1.005 and its kin land where a person reads them rather than one unit below.
+  const scaled = parts.map((p) => (Number.isFinite(p) ? Number((p * factor).toPrecision(15)) : 0));
+  const floors = scaled.map((s) => Math.floor(s));
+  const sumFloor = floors.reduce((a, b) => a + b, 0);
+  const targetMinor = Number.isFinite(target)
+    ? Math.round(Number((target * factor).toPrecision(15)))
+    : sumFloor;
+  // Rows that must round up rather than down for the column to hit the target. Clamped to [0, n]:
+  // with non-negative parts that partition the target this is already in range, and the clamp keeps
+  // a stray float discrepancy between the target and the parts' own sum from handing out more +1s
+  // than there are rows to receive them.
+  const carriesUp = Math.min(n, Math.max(0, targetMinor - sumFloor));
+  // Largest fractional remainder takes the +1 first; ties break by original index so the result is
+  // deterministic and independent of any display sort the caller applies afterwards.
+  const order = scaled
+    .map((s, i) => ({ i, frac: s - floors[i]! }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  const rounded = floors.slice();
+  for (let k = 0; k < carriesUp; k += 1) {
+    const idx = order[k]!.i;
+    rounded[idx] = (rounded[idx] ?? 0) + 1;
+  }
+  // `+ 0` normalises the `-0` a floored value can carry so a zeroed row never renders "-0".
+  return rounded.map((r) => r / factor + 0);
+}
+
+/**
  * The fixed storage scale for monetary columns (issue #286): every money value is persisted as an
  * INTEGER number of **micro-units** — millionths of a major currency unit — rather than a binary
  * `REAL`. Six is the count of decimal places that scale preserves.

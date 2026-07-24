@@ -15,9 +15,12 @@
  * silently de-duplicate (which would hide real cash movements), every event carries its `source` so
  * the by-source breakdown makes any overlap explicit and auditable.
  *
- * **Amounts accumulate raw and are quantised once, at the boundary** (issue #288) — every money
- * figure published here goes through `@/lib/money`, so the headline total, the buckets and the
- * breakdowns cannot drift a penny apart. Shares stay ratios of the raw totals.
+ * **Amounts accumulate raw and are quantised once, at the boundary** (issue #288), and every
+ * breakdown re-adds to its headline (issue #400). Each column — buckets, by-source, by-supplier,
+ * by-category — is *apportioned* to the grand total through `apportionMoney` rather than rounded
+ * row by row, so the figures sum to the total printed above them instead of drifting up to half a
+ * minor unit per row adrift (invisible at 2dp, a whole unit under a 0-decimal currency). Shares
+ * stay ratios of the raw totals — a fraction is not an amount.
  *
  * **One currency only** (issue #285). Every amount folded in here is assumed to be denominated in
  * the user's base currency; the caller is responsible for excluding anything that is not. Gubbins
@@ -26,7 +29,7 @@
  * {@link SpendReport.excludedForeignCurrency} carries the count that was left out, so the omission
  * can be shown rather than silently understating the spend.
  */
-import { MONEY_DECIMALS, roundMoney } from '@/lib/money';
+import { MONEY_DECIMALS, apportionMoney, roundMoney } from '@/lib/money';
 
 import { inTimeWindow } from './window-membership';
 
@@ -214,41 +217,65 @@ export function buildSpendReport(
     else categoryTotals.set(catKey, { name: catKey === null ? UNCATEGORISED : catName, total: amount });
   }
 
-  // Amounts accumulated raw above; each published figure is quantised once, here at the
-  // boundary (issue #288), so the headline total and the breakdowns that recompute it agree.
+  // Amounts accumulated raw above; the headline is quantised once, here at the boundary (issue
+  // #288), and every breakdown is then apportioned *to that headline* (issue #400) rather than
+  // rounded row by row, so each column sums to the grand total instead of drifting a unit apart.
   // Shares stay ratios of the raw totals — a fraction is not an amount.
-  const bySource: SpendSourceTotal[] = SPEND_SOURCES.map((source) => {
-    const sourceTotal = sourceTotals.get(source) ?? 0;
-    return { source, total: roundMoney(sourceTotal, decimals), share: share(sourceTotal, total) };
-  });
+  const grandTotal = roundMoney(total, decimals);
 
-  const bySupplier: SpendGroup[] = [...supplierTotals.entries()]
-    .map(([id, { name, total: groupTotal }]) => ({
+  const sourceRaw = SPEND_SOURCES.map((source) => sourceTotals.get(source) ?? 0);
+  const sourceApportioned = apportionMoney(sourceRaw, grandTotal, decimals);
+  const bySource: SpendSourceTotal[] = SPEND_SOURCES.map((source, i) => ({
+    source,
+    total: sourceApportioned[i]!,
+    share: share(sourceRaw[i]!, total),
+  }));
+
+  const supplierEntries = [...supplierTotals.entries()];
+  const supplierApportioned = apportionMoney(
+    supplierEntries.map(([, v]) => v.total),
+    grandTotal,
+    decimals,
+  );
+  const bySupplier: SpendGroup[] = supplierEntries
+    .map(([id, { name, total: groupTotal }], i) => ({
       id,
       name,
-      total: roundMoney(groupTotal, decimals),
+      total: supplierApportioned[i]!,
       share: share(groupTotal, total),
     }))
     .sort(byTotalThenName);
 
-  const byCategory: SpendGroup[] = [...categoryTotals.entries()]
-    .map(([id, { name, total: groupTotal }]) => ({
+  const categoryEntries = [...categoryTotals.entries()];
+  const categoryApportioned = apportionMoney(
+    categoryEntries.map(([, v]) => v.total),
+    grandTotal,
+    decimals,
+  );
+  const byCategory: SpendGroup[] = categoryEntries
+    .map(([id, { name, total: groupTotal }], i) => ({
       id,
       name,
-      total: roundMoney(groupTotal, decimals),
+      total: categoryApportioned[i]!,
       share: share(groupTotal, total),
     }))
     .sort(byTotalThenName);
+
+  const bucketApportioned = apportionMoney(
+    buckets.map((b) => b.total),
+    grandTotal,
+    decimals,
+  );
 
   return {
     windowStart,
     windowEnd,
-    total: roundMoney(total, decimals),
+    total: grandTotal,
     eventCount,
-    buckets: buckets.map((b) => ({
+    buckets: buckets.map((b, i) => ({
       start: b.start,
       end: b.end,
-      total: roundMoney(b.total, decimals),
+      total: bucketApportioned[i]!,
     })),
     bySource,
     bySupplier,
