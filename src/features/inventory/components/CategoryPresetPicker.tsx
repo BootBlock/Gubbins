@@ -29,6 +29,7 @@ const SECTION_LABEL_KEY: Record<PresetSectionId, MessageKey> = {
   workshop: 'inventory.presets.section.workshop',
   electronics: 'inventory.presets.section.electronics',
   household: 'inventory.presets.section.household',
+  containers: 'inventory.presets.section.containers',
   crafts: 'inventory.presets.section.crafts',
   media: 'inventory.presets.section.media',
   collectibles: 'inventory.presets.section.collectibles',

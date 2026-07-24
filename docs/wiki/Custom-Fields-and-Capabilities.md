@@ -131,12 +131,13 @@ staples spanning cards and coins (`Trading card`, `Baseball cards`, `Magic: The 
 `Handbags`, `Gold & silver bullion`), toys and figures (`Action figures`, `Funko Pop figures`,
 `LEGO sets`, `Die-cast model cars`, `Warhammer & tabletop gaming miniatures`), and antiques and
 curios (`Antique furniture`, `Porcelain & fine ceramics`, `Vintage cameras`, `Fountain pens`,
-`Stamps`, `Postcards`) — among many others. Pick one, then rename, extend or trim its fields to
+`Stamps`, `Postcards`), and storage and containers (`Tool bag`, `First aid kit`, `Storage tote`,
+`Gridfinity bin`) — among many others. Pick one, then rename, extend or trim its fields to
 match your own inventory.
 
 The picker is organised for browsing: sections down the left-hand side — **Workshop**,
-**Electronics**, **Household**, **Crafts & hobbies**, **Media** and **Collectibles**, plus
-**All presets** for the whole library at once — and, on the right, the presets of the chosen
+**Electronics**, **Household**, **Storage & containers**, **Crafts & hobbies**, **Media** and
+**Collectibles**, plus **All presets** for the whole library at once — and, on the right, the presets of the chosen
 section. Each preset shows its name, a one-line description and a sample of the custom fields
 it creates, so you can see what you're getting before you add it.
 
