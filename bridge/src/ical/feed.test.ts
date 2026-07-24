@@ -7,8 +7,10 @@
  * no calendar date and must be skipped), and three items with a warranty date. Every assertion
  * derives its expected date from the emitter helpers, so the test is timezone-independent.
  */
+import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import { buildCalendar, buildCalendarEvents } from './feed.ts';
@@ -155,5 +157,72 @@ describe('empty calendar', () => {
     } finally {
       await empty.driver.close();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-source date frame — proven under a non-UTC zone (issue #321).
+//
+// The in-worker assertions above compare each event's DTSTART to the *same* emitter helper the
+// feed uses, so they only tell `icalLocalDate` apart from `icalDate` when the runner's zone puts a
+// value's local day on a different date from its UTC day. Under a UTC (or east-of-UTC) worker they
+// agree, so a regression of a source to the wrong helper would slip through. The bridge config
+// can't re-seat the zone in its worker-threads pool, so this runs the real feed in a child process
+// pinned to America/New_York (UTC-4/-5) — where a midnight-UTC value's local day is the day before
+// — reusing the bridge's own `@/`-alias loader (the same mechanism `cli.mjs`/`smoke.mjs` use).
+// ---------------------------------------------------------------------------
+
+describe('per-source date frame across a UTC boundary (America/New_York)', () => {
+  it('renders a local-eod loan on its local day but a midnight-UTC booking on its UTC day', () => {
+    const dir = import.meta.dirname; // bridge/src/ical
+    const loaderUrl = pathToFileURL(join(dir, '..', '..', 'loader.mjs')).href;
+    const feedUrl = pathToFileURL(join(dir, 'feed.ts')).href;
+    const emitterUrl = pathToFileURL(join(dir, 'emitter.ts')).href;
+    const hydrateUrl = pathToFileURL(join(dir, '..', 'hydrate.ts')).href;
+    const fixturePath = join(dir, '..', 'fixtures', 'synthetic-calendar-snapshot.json');
+
+    // Fixture instants (both are midnight UTC, so New York reads them as the previous day).
+    const LOAN_DUE = 1754006400000;
+    const BOOKING_START = 2064268800000;
+
+    const script = `
+      process.env.TZ = 'America/New_York';
+      const { register } = await import('node:module');
+      const { readFile } = await import('node:fs/promises');
+      register(${JSON.stringify(loaderUrl)});
+      const { buildCalendarEvents } = await import(${JSON.stringify(feedUrl)});
+      const { icalDate, icalLocalDate } = await import(${JSON.stringify(emitterUrl)});
+      const { hydrateFromJson } = await import(${JSON.stringify(hydrateUrl)});
+      const { driver } = await hydrateFromJson(await readFile(${JSON.stringify(fixturePath)}, 'utf8'));
+      const events = await buildCalendarEvents(driver, { dtstamp: ${DTSTAMP}, now: ${NOW} });
+      await driver.close();
+      const find = (uid) => events.find((e) => e.uid === uid);
+      const loan = find('loan-checkout-open-due@gubbins.invalid');
+      const booking = find('booking-booking-active@gubbins.invalid');
+      process.stdout.write(JSON.stringify({
+        loanStart: loan.start.value,
+        loanLocal: icalLocalDate(${LOAN_DUE}).value,
+        loanUtc: icalDate(${LOAN_DUE}).value,
+        bookingStart: booking.start.value,
+        bookingLocal: icalLocalDate(${BOOKING_START}).value,
+        bookingUtc: icalDate(${BOOKING_START}).value,
+      }));
+    `;
+    const out = execFileSync(
+      process.execPath,
+      ['--experimental-strip-types', '--input-type=module', '-e', script],
+      { encoding: 'utf8' },
+    );
+    const r = JSON.parse(out);
+
+    // The pinned zone genuinely separates the local and UTC readings for these instants.
+    expect(r.loanLocal).not.toBe(r.loanUtc);
+    expect(r.bookingLocal).not.toBe(r.bookingUtc);
+    // The loan (local end-of-day) renders on its LOCAL day; a swap back to icalDate would fail here.
+    expect(r.loanStart).toBe(r.loanLocal);
+    expect(r.loanStart).not.toBe(r.loanUtc);
+    // The booking (midnight UTC, #320) renders on its UTC day; using local would be wrong for it.
+    expect(r.bookingStart).toBe(r.bookingUtc);
+    expect(r.bookingStart).not.toBe(r.bookingLocal);
   });
 });
