@@ -96,6 +96,7 @@ export {
 export type { Tombstone, SyncTable, NotSyncedTable } from './tombstone';
 export type {
   ItemListFilters,
+  ItemSeek,
   ItemSort,
   ItemSortField,
   ItemStatusFilter,

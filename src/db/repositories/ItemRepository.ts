@@ -27,7 +27,7 @@ import { withRevaluations } from './item/revaluations';
 import { withRelations } from './item/relations';
 import { withTestRecords } from './item/test-records';
 
-export type { ItemListFilters } from './item/core';
+export type { ItemListFilters, ItemSeek } from './item/core';
 export type { ItemSort, ItemSortField } from './item/sql';
 export { ITEM_SORT_FIELDS } from './item/sql';
 export {
