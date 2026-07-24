@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import {
   Banner,
   Button,
+  CurrencySelect,
   Input,
   RailModal,
   Select,
@@ -57,7 +58,6 @@ import { monthsLabel } from '@/features/storage/triage';
 import {
   BUDGET_WARN_BOUNDS,
   CARD_CLICK_ACTION_OPTIONS,
-  CURRENCY_OPTIONS,
   DEAD_STOCK_DAYS_BOUNDS,
   EXPIRY_WINDOW_BOUNDS,
   LOW_STOCK_GAUGE_BOUNDS,
@@ -442,13 +442,12 @@ export default function SettingsDialog({
                   Detect
                 </Button>
               </Tooltip>
-              <Select
+              <CurrencySelect
                 aria-label="Base currency"
                 data-testid="setting-currency"
                 className="h-9 w-56"
                 value={prefs.baseCurrency}
                 onChange={(value) => prefs.setBaseCurrency(value)}
-                options={CURRENCY_OPTIONS.map((c) => ({ value: c.value, label: `${c.value} — ${c.label}` }))}
               />
             </div>
           </SettingRow>

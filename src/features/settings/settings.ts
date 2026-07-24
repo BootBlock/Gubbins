@@ -13,38 +13,14 @@ import {
   LOW_STOCK_QTY_THRESHOLD,
   MAX_PAGE_SIZE,
 } from '@/db/repositories/constants';
-import { DEFAULT_CURRENCY } from '@/lib/format';
+import { CURRENCY_OPTIONS, DEFAULT_CURRENCY } from '@/lib/format';
 
 /**
- * Popular base currencies offered by the Settings control (§1.2.1 GBP default, §3).
- * A pragmatic subset of widely-used ISO-4217 codes — broad enough to cover most
- * users without turning the picker into an exhaustive registry. Each entry carries
- * a short English name so the longer list stays scannable. `GBP` stays first as the
- * locked default. Every code here must be representable by {@link Intl.NumberFormat}.
+ * Re-exported for callers that reach the offered-currency list through the settings
+ * domain. The list itself now lives in `@/lib/format` (its single source of truth), so the
+ * {@link CurrencySelect} Foundry primitive can render it without importing a feature module.
  */
-export const CURRENCY_OPTIONS = [
-  { value: 'GBP', label: 'British Pound' },
-  { value: 'USD', label: 'US Dollar' },
-  { value: 'EUR', label: 'Euro' },
-  { value: 'AUD', label: 'Australian Dollar' },
-  { value: 'CAD', label: 'Canadian Dollar' },
-  { value: 'JPY', label: 'Japanese Yen' },
-  { value: 'CHF', label: 'Swiss Franc' },
-  { value: 'CNY', label: 'Chinese Yuan' },
-  { value: 'INR', label: 'Indian Rupee' },
-  { value: 'NZD', label: 'New Zealand Dollar' },
-  { value: 'SEK', label: 'Swedish Krona' },
-  { value: 'NOK', label: 'Norwegian Krone' },
-  { value: 'DKK', label: 'Danish Krone' },
-  { value: 'PLN', label: 'Polish Zloty' },
-  { value: 'SGD', label: 'Singapore Dollar' },
-  { value: 'HKD', label: 'Hong Kong Dollar' },
-  { value: 'ZAR', label: 'South African Rand' },
-  { value: 'MXN', label: 'Mexican Peso' },
-  { value: 'BRL', label: 'Brazilian Real' },
-  { value: 'AED', label: 'UAE Dirham' },
-  { value: 'KRW', label: 'South Korean Won' },
-] as const satisfies readonly { value: string; label: string }[];
+export { CURRENCY_OPTIONS };
 
 /**
  * Map of ISO 3166 region → an offered {@link CURRENCY_OPTIONS} code, used to make a

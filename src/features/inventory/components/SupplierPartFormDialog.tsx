@@ -1,8 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { AutocompleteField, Button, FormField, Input, Modal, Textarea } from '@/components/foundry';
+import { Button, CurrencyField, FormField, Input, Modal, Textarea } from '@/components/foundry';
 import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/repositories';
 import { SUPPORTED_SUPPLIER_LABELS } from '@/features/scraping';
-import { CURRENCY_OPTIONS } from '@/features/settings/settings';
 import { SupplierPicker, supplierRefFrom, type SupplierPickerValue } from '@/features/suppliers';
 
 /**
@@ -18,26 +17,14 @@ const URL_HINT = [
     'product page is still read on a best-effort basis from its structured metadata.',
 ].join('\n');
 
-/** Help for the auto-completing Currency field (now drives the displayed symbol). */
+/** Help for the Currency picker (the chosen currency drives the displayed symbol). */
 const CURRENCY_HINT =
-  'Pick from the list (open it with the ▾ arrow) or type any ISO-4217 code (e.g. **EUR**, ' +
-  "**JPY**). This supplier's costs are then shown with that currency's own symbol — e.g. " +
-  '`€1.23` — exactly as entered and **never converted**. Because of that, a cost in anything ' +
-  'other than your base currency is **left out of valuation and report totals** rather than ' +
-  'added to them as if it were base currency; give the item its own unit cost if you need it ' +
-  'counted. Leave blank to use your base currency (set in Settings).';
-
-/**
- * Currency picker options as `"CODE — Name"` strings (e.g. `"GBP — British Pound"`), so the
- * dropdown is self-explanatory to a user who does not know the codes. Selecting one is stripped
- * back to the bare code by {@link codeFromCurrencyChoice}; typing a code stands as-is.
- */
-const CURRENCY_SUGGESTIONS = CURRENCY_OPTIONS.map((c) => `${c.value} — ${c.label}`);
-
-/** Reduce a Currency-field value to its ISO code: `"GBP — British Pound"` → `"GBP"`. */
-function codeFromCurrencyChoice(value: string): string {
-  return value.split(' — ')[0]!.trim().toUpperCase();
-}
+  "Pick this supplier's currency from the list. Its costs are then shown with that currency's " +
+  'own symbol — e.g. `€1.23` — exactly as entered and **never converted**. Because of that, a ' +
+  'cost in anything other than your base currency is **left out of valuation and report totals** ' +
+  'rather than added to them as if it were base currency; give the item its own unit cost if you ' +
+  'need it counted. Leave it on **Use base currency** to fall back to your base currency (set in ' +
+  'Settings).';
 
 /**
  * Add/edit dialog for a single supplier part (§4 supplier facet; Phase 60). Local controlled
@@ -233,15 +220,12 @@ export function SupplierPartFormDialog({
               data-testid="supplier-part-unit-cost"
             />
           </FormField>
-          <AutocompleteField
+          <CurrencyField
             label="Currency"
             hint={CURRENCY_HINT}
             value={currency}
-            onChange={(value) => setCurrency(codeFromCurrencyChoice(value))}
-            suggestions={CURRENCY_SUGGESTIONS}
-            maxOptions={CURRENCY_SUGGESTIONS.length}
-            maxLength={3}
-            placeholder="—"
+            onChange={setCurrency}
+            allowNone
             data-testid="supplier-part-currency"
           />
           <FormField
