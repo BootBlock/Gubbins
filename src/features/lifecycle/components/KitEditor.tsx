@@ -198,7 +198,6 @@ export function KitEditor({ item }: { item: Item }) {
               />
             </div>
             <Button
-              size="sm"
               onClick={() =>
                 assemble.mutate(
                   {
@@ -217,7 +216,6 @@ export function KitEditor({ item }: { item: Item }) {
               Assemble
             </Button>
             <Button
-              size="sm"
               variant="outline"
               onClick={() =>
                 disassemble.mutate(
@@ -290,7 +288,6 @@ export function KitEditor({ item }: { item: Item }) {
             />
           </label>
           <Button
-            size="sm"
             onClick={add}
             disabled={addComponent.isPending || componentId === ''}
             data-testid="add-kit-component"

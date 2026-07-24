@@ -219,7 +219,6 @@ function DateOverrideSection({
         </FormField>
         <Button
           variant="outline"
-          size="sm"
           data-testid="lab-date-clear"
           disabled={value === null}
           onClick={() => onChange(null)}

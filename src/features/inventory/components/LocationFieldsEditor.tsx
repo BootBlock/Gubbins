@@ -133,7 +133,6 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
             aria-label={t('inventory.location.fields.addLabel')}
           />
           <Button
-            size="sm"
             disabled={adding === '' || isSaving(adding)}
             onClick={() => {
               // Seeded inheritable: adding a field to a *location* is almost always in

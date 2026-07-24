@@ -234,7 +234,7 @@ function VariantsSection({ item }: { item: Item }) {
           <span className="mb-field-gap-compact block text-xs text-muted-foreground">Qty</span>
           <Input type="number" min={0} step={1} value={qty} onChange={(e) => setQty(e.target.value)} />
         </label>
-        <Button size="sm" onClick={add} disabled={createVariant.isPending} data-testid="add-variant">
+        <Button onClick={add} disabled={createVariant.isPending} data-testid="add-variant">
           <AddIcon />
           Add
         </Button>

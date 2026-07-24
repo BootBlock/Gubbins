@@ -177,12 +177,7 @@ export function RelationsEditor({ item }: { item: Item }) {
               data-testid="relation-item-picker"
             />
           </div>
-          <Button
-            size="sm"
-            onClick={add}
-            disabled={addRelation.isPending || otherId === ''}
-            data-testid="add-relation"
-          >
+          <Button onClick={add} disabled={addRelation.isPending || otherId === ''} data-testid="add-relation">
             <AddIcon />
             Add
           </Button>

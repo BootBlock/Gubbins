@@ -141,7 +141,6 @@ export function SubstitutionsEditor({ item }: { item: Item }) {
             />
           </div>
           <Button
-            size="sm"
             onClick={add}
             disabled={addRelation.isPending || otherId === ''}
             data-testid="add-substitution"
