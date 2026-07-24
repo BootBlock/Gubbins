@@ -9,7 +9,15 @@ import {
   Textarea,
   type RailTab,
 } from '@/components/foundry';
-import { DeleteIcon, EditIcon, ImageIcon, PackageIcon, MoveIcon } from '@/components/icons';
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  DeleteIcon,
+  EditIcon,
+  ImageIcon,
+  PackageIcon,
+  MoveIcon,
+} from '@/components/icons';
 import type { LocationWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
@@ -64,6 +72,7 @@ export function EditLocationDialog({
   location,
   locations,
   onDelete,
+  onToggleArchive,
 }: {
   open: boolean;
   onClose: () => void;
@@ -78,6 +87,13 @@ export function EditLocationDialog({
    * deleting it re-parents its items to Unassigned). Omit to hide the control.
    */
   onDelete?: () => void;
+  /**
+   * Archive this location if it's live, or restore it if it's already archived — a single,
+   * reversible lifecycle toggle sitting beside Delete in the footer. Like deletion, it moved
+   * here out of the cramped hover row into this considered context. The caller reads the
+   * location's archived state to decide which way to flip it. Omit to hide the control.
+   */
+  onToggleArchive?: () => void;
 }) {
   const update = useUpdateLocation();
   const fmt = useFormatters();
@@ -145,6 +161,7 @@ export function EditLocationDialog({
 
   const kindLabel = locationKindLabel(location.kind);
   const fullness = locationFullness(location.itemCount, location.capacity);
+  const archived = location.archivedAt != null;
 
   const submit = () => {
     if (trimmed.length === 0 || !dirty || !capacityValid || !deadStockDaysValid) return;
@@ -392,16 +409,38 @@ export function EditLocationDialog({
             </p>
           ) : null}
           <div className="flex items-center justify-between gap-2">
-            {onDelete ? (
-              <Button
-                variant="destructive"
-                onClick={onDelete}
-                disabled={update.isPending}
-                data-testid="edit-location-delete"
-              >
-                <DeleteIcon />
-                Delete location
-              </Button>
+            {/* Lifecycle actions — Delete, then the Archive/Restore toggle immediately to its
+                right. Both act on the location as a whole, so they group together, apart from the
+                Cancel/Save pair that acts on the edits. */}
+            {onDelete || onToggleArchive ? (
+              <div className="flex flex-wrap gap-2">
+                {onDelete ? (
+                  <Button
+                    variant="destructive"
+                    onClick={onDelete}
+                    disabled={update.isPending}
+                    data-testid="edit-location-delete"
+                  >
+                    <DeleteIcon />
+                    Delete location
+                  </Button>
+                ) : null}
+                {onToggleArchive ? (
+                  <Button
+                    variant="outline"
+                    onClick={onToggleArchive}
+                    disabled={update.isPending}
+                    // Colourised for its meaning without shouting over the solid-red Delete:
+                    // restoring picks up the success glyph tone, archiving the neutral "set aside"
+                    // one — the same semantics the row used to carry. The icon inherits the colour.
+                    className={archived ? 'text-glyph-success' : 'text-glyph-neutral'}
+                    data-testid="edit-location-archive"
+                  >
+                    {archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
+                    {archived ? 'Restore location' : 'Archive location'}
+                  </Button>
+                ) : null}
+              </div>
             ) : (
               <span />
             )}

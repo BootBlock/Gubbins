@@ -31,7 +31,7 @@ export interface TreeItemProps {
   readonly capacity?: number | null;
   /** True ⇒ this is the default location for new items (shows a star). */
   readonly isDefault?: boolean;
-  /** True ⇒ this location is archived (row dimmed; Restore replaces Archive). */
+  /** True ⇒ this location is archived (row dimmed). Archiving/restoring lives in the Edit dialog. */
   readonly archived?: boolean;
   /** `undefined` when the node has no children (no `aria-expanded`). */
   readonly expanded?: boolean;
@@ -44,10 +44,6 @@ export interface TreeItemProps {
   readonly onRenameCancel?: () => void;
   readonly onEdit?: () => void;
   readonly editLabel?: string;
-  readonly onArchive?: () => void;
-  readonly archiveLabel?: string;
-  readonly onRestore?: () => void;
-  readonly restoreLabel?: string;
   readonly onPrintLabel?: () => void;
   readonly printLabelLabel?: string;
   /**
@@ -124,10 +120,6 @@ export function LocationTreeItem({
   onRenameCancel,
   onEdit,
   editLabel,
-  onArchive,
-  archiveLabel,
-  onRestore,
-  restoreLabel,
   onPrintLabel,
   printLabelLabel,
   onDropItem,
@@ -250,16 +242,12 @@ export function LocationTreeItem({
           </>
         )}
       </span>
-      {!editing && (onEdit || onPrintLabel || onArchive || onRestore) ? (
+      {!editing && (onEdit || onPrintLabel) ? (
         <LocationRowActions
           onPrintLabel={onPrintLabel}
           printLabelLabel={printLabelLabel}
           onEdit={onEdit}
           editLabel={editLabel}
-          onArchive={onArchive}
-          archiveLabel={archiveLabel}
-          onRestore={onRestore}
-          restoreLabel={restoreLabel}
         />
       ) : null}
     </div>

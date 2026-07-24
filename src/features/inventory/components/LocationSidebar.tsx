@@ -497,6 +497,15 @@ export function LocationSidebar({
             setEditLocation(null);
             requestDelete(loc.id, loc.name, loc.itemCount);
           }}
+          onToggleArchive={() => {
+            // Archiving/restoring also moved off the hover row into the dialog footer, beside
+            // Delete. It's a reversible lifecycle toggle, so close the dialog and flip the state
+            // in one tap — the sidebar's "Show archived" toggle governs whether the row stays
+            // in view afterwards.
+            const loc = editLocation;
+            setEditLocation(null);
+            archive.mutate({ id: loc.id, archived: loc.archivedAt == null });
+          }}
         />
       ) : null}
       {printLabelNode ? (
@@ -605,16 +614,6 @@ export function LocationSidebar({
         onRenameCancel={() => endRename(node.id)}
         onEdit={node.isSystem ? undefined : () => setEditLocation(node)}
         editLabel={`Edit ${node.name}`}
-        onArchive={
-          node.isSystem || node.archivedAt != null
-            ? undefined
-            : () => archive.mutate({ id: node.id, archived: true })
-        }
-        archiveLabel={`Archive ${node.name}`}
-        onRestore={
-          node.archivedAt != null ? () => archive.mutate({ id: node.id, archived: false }) : undefined
-        }
-        restoreLabel={`Restore ${node.name}`}
         onPrintLabel={labelsEnabled ? () => setPrintLabelNode(node) : undefined}
         printLabelLabel={`Print label for ${node.name}`}
         onDropItem={
