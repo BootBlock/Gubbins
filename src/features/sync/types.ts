@@ -194,6 +194,24 @@ export interface SerialisedLoanClosure {
 }
 
 /**
+ * Issue #194 repair log: a booking cancelled because it double-booked an asset the merge unioned.
+ *
+ * A booking holds one identifiable unit for a span of days, so two active bookings of the same
+ * asset whose day-ranges overlap are a double-booking. `AssetBookingRepository.create`'s overlap
+ * guard is a read-then-write check across sibling rows, so it holds only within one device; two
+ * offline devices can each pass it and the id-keyed LWW union keeps both. The merge keeps the
+ * earlier-reserved booking and cancels the rest, recording each here.
+ */
+export interface BookingOverlapCancellation {
+  /** The asset that was booked more than once over the same days. */
+  readonly itemId: string;
+  /** The surplus booking that was cancelled (its `cancelled_at` stamped). */
+  readonly cancelledBookingId: string;
+  /** The booking kept active — the one reserved first — that this one clashed with. */
+  readonly keptBookingId: string;
+}
+
+/**
  * The outcome of reconciling a local snapshot against a remote one (§7.3). Describes
  * the **local** mutations to apply atomically; the engine re-reads and pushes the
  * merged state, so the push half needs no separate diff here.
@@ -267,6 +285,8 @@ export interface ReconciliationPlan {
   readonly rejectedCycles: readonly string[];
   /** Issue #193: serialised items whose surplus open loans were closed (see {@link SerialisedLoanClosure}). */
   readonly serialisedLoansClosed: readonly SerialisedLoanClosure[];
+  /** Issue #194: bookings cancelled because they double-booked an asset (see {@link BookingOverlapCancellation}). */
+  readonly bookingsCancelled: readonly BookingOverlapCancellation[];
   /** Issue #187: ids retired to a peer's row under a shared natural key (see {@link CollisionResolution}). */
   readonly collisions: readonly CollisionResolution[];
   /** Issues #157 / #192: "one flag per item" reductions to apply before the upserts (see {@link FlagRepair}). */

@@ -37,6 +37,7 @@ import {
   parseLocationTagEdgeId,
 } from '@/db/repositories/tombstone';
 import type { SqlRow } from '@/db/rpc/driver';
+import { resolveBookingConflicts, type BookingWindow } from '@/features/bookings/booking-overlap';
 import { applyOffset } from './clock';
 import { buildConflict, nonLwwColumns } from './conflict-detect';
 import { reconcileGauge, reconcileStockQuantity } from './delta-crdt';
@@ -47,6 +48,7 @@ import { sanitiseRow } from './schema-dictionary';
 import { SUPPLIER_PART_FLAG_COLUMNS, flagWinner, type FlagRanked } from './supplier-part-flags';
 import { resolveUniqueKeyCollisions } from './unique-keys';
 import type {
+  BookingOverlapCancellation,
   FlagRepair,
   GaugeHistoryDelta,
   GaugeResolution,
@@ -100,6 +102,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   reparented: [],
   rejectedCycles: [],
   serialisedLoansClosed: [],
+  bookingsCancelled: [],
   collisions: [],
   flagRepairs: [],
   defaultLocationWinnerId: null,
@@ -219,6 +222,12 @@ export function reconcile(
   // collision resolution so it sees the settled (possibly contact-repointed) checkout upserts.
   const serialisedLoansClosed = resolveSerialisedLoanConflicts(local, localUpserts, localDeletes);
 
+  // --- Issue #194 asset-booking double-booking ----------------------------------
+  // Cancel the surplus of any asset the id-keyed union left booked more than once over the same
+  // days. Runs alongside the serialised-loan pass and before the FK guard, so a cancellation of a
+  // booking whose asset the merge removed is dropped with the rest of that asset's rows.
+  const bookingsCancelled = resolveBookingOverlapConflicts(local, localUpserts, localDeletes);
+
   // --- §7.5.2 orphan re-parenting ------------------------------------------------
   const { reparented, finalItems, activeLocationIds } = reparentOrphans(local, localUpserts, localDeletes);
 
@@ -326,6 +335,7 @@ export function reconcile(
     reparented,
     rejectedCycles,
     serialisedLoansClosed,
+    bookingsCancelled,
     collisions,
     flagRepairs,
     defaultLocationWinnerId,
@@ -562,6 +572,92 @@ function earlierLoan(a: SqlRow, b: SqlRow): SqlRow {
   const cb = num(b.checked_out_at);
   if (ca !== cb) return ca < cb ? a : b;
   return String(a.id) < String(b.id) ? a : b;
+}
+
+/**
+ * Issue #194: an asset booking holds one identifiable unit for a span of days, so two *active*
+ * (non-cancelled, non-converted) bookings of the same asset whose whole-day ranges overlap are a
+ * double-booking. `AssetBookingRepository.create` refuses an overlapping booking, but that is a
+ * read-then-write check across sibling rows — it holds only within one device. Two offline devices
+ * can each pass it and INSERT a booking with its own UUID; the id-keyed LWW union then keeps both,
+ * so the calendar renders the same unit reserved twice over the same days with no signal that one
+ * is illegitimate. This pass collapses that: for every asset left with overlapping active bookings
+ * after the merge it keeps the earlier-reserved booking(s) and cancels the surplus, mutating
+ * `localUpserts` in place.
+ *
+ * The survivor of any clash is the booking **reserved first** (smallest `created_at`, ties broken by
+ * the lexicographically smaller id — see {@link resolveBookingConflicts}), so both devices run the
+ * same pure rule over the same rows and pick the same survivors without reference to which side is
+ * local. `created_at` is safe to compare because `shiftSnapshotTimestamps` never shifts it, so it is
+ * byte-identical on every device (the determinism `resolveSerialisedLoanConflicts` relies on for the
+ * same reason). Overlap is not transitive, so a booking is cancelled only when it clashes with a
+ * *surviving earlier* one, never blindly reduced to a single winner per asset.
+ *
+ * A loser is **cancelled, not deleted**: stamping `cancelled_at` keeps the booking in the asset's
+ * history (an honest record that it was double-booked), removes it from the active/overlap set so
+ * the calendar stops rendering it, and — being derived — blocks any later `convertToCheckout`. The
+ * stamp is deterministic: `cancelled_at` = the loser's own `created_at` (frame-stable, so identical
+ * on every device) and `updated_at` bumped by 1. That bump is frame-invariant under the linear
+ * push-shift, so both devices converge on the identical pushed row with no last-write-wins churn,
+ * and — being strictly greater than the old value — it also skips the `updated_at` self-stamp
+ * trigger so the deterministic value survives (the same reasoning as the serialised-loan closure).
+ */
+function resolveBookingOverlapConflicts(
+  local: SyncSnapshot,
+  localUpserts: TableRow[],
+  localDeletes: readonly Tombstone[],
+): BookingOverlapCancellation[] {
+  // The booking rows that survive the merge: local rows overlaid with winning upserts, minus deletes.
+  const finalBookings = new Map<string, SqlRow>();
+  for (const row of local.tables.asset_bookings ?? []) finalBookings.set(String(row.id), row);
+  for (const u of localUpserts) if (u.table === 'asset_bookings') finalBookings.set(String(u.row.id), u.row);
+  for (const d of localDeletes) if (d.tableName === 'asset_bookings') finalBookings.delete(d.id);
+
+  // Group the still-active (non-cancelled, non-converted) bookings of each asset.
+  const activeByItem = new Map<string, BookingWindow[]>();
+  const rowById = new Map<string, SqlRow>();
+  for (const row of finalBookings.values()) {
+    if (row.cancelled_at !== null && row.cancelled_at !== undefined) continue; // already cancelled
+    if (row.converted_checkout_id !== null && row.converted_checkout_id !== undefined) continue; // checked out
+    const itemId = String(row.item_id);
+    const id = String(row.id);
+    const window: BookingWindow = {
+      id,
+      start: num(row.start_date),
+      end: num(row.end_date),
+      createdAt: num(row.created_at),
+    };
+    const list = activeByItem.get(itemId) ?? [];
+    list.push(window);
+    activeByItem.set(itemId, list);
+    rowById.set(id, row);
+  }
+
+  const upsertIndex = new Map<string, number>();
+  localUpserts.forEach((u, i) => {
+    if (u.table === 'asset_bookings') upsertIndex.set(String(u.row.id), i);
+  });
+
+  const cancellations: BookingOverlapCancellation[] = [];
+  for (const [itemId, windows] of activeByItem) {
+    if (windows.length < 2) continue; // a single booking cannot overlap anything
+    const { cancelled } = resolveBookingConflicts(windows);
+    for (const { id: loserId, clashesWith } of cancelled) {
+      const loser = rowById.get(loserId)!;
+      // Deterministic cancel + a +1 bump (see the doc comment): both devices produce the
+      // byte-identical cancelled row after the push-shift, so it converges churn-free.
+      const cancelledRow: SqlRow = {
+        ...loser,
+        cancelled_at: num(loser.created_at),
+        updated_at: num(loser.updated_at) + 1,
+      };
+      const existing = upsertIndex.get(loserId);
+      if (existing !== undefined) localUpserts[existing] = { table: 'asset_bookings', row: cancelledRow };
+      else localUpserts.push({ table: 'asset_bookings', row: cancelledRow });
+      cancellations.push({ itemId, cancelledBookingId: loserId, keptBookingId: clashesWith });
+    }
+  }
+  return cancellations;
 }
 
 /**

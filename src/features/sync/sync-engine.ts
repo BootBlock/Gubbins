@@ -50,6 +50,8 @@ export interface SyncResult {
   readonly rejectedCycles: number;
   /** Issue #193: serialised items whose surplus open loan the merge closed (double-booked offline). */
   readonly serialisedLoansClosed: number;
+  /** Issue #194: bookings the merge cancelled because they double-booked an asset (booked offline on two devices). */
+  readonly bookingsCancelled: number;
   /** Expired tombstones pruned (§7.2 TTL). */
   readonly prunedTombstones: number;
   /** The clock offset applied (ms, server − local). */
@@ -249,6 +251,7 @@ export async function runSync(
     reparented: outcome.reparented,
     rejectedCycles: outcome.rejectedCycles,
     serialisedLoansClosed: outcome.serialisedLoansClosed,
+    bookingsCancelled: outcome.bookingsCancelled,
     prunedTombstones: pruned,
     clockOffset: offset,
     historyInserted: outcome.historyInserted,
@@ -277,6 +280,7 @@ function result(status: SyncResult['status'], partial: Partial<SyncResult>): Syn
     reparented: partial.reparented ?? 0,
     rejectedCycles: partial.rejectedCycles ?? 0,
     serialisedLoansClosed: partial.serialisedLoansClosed ?? 0,
+    bookingsCancelled: partial.bookingsCancelled ?? 0,
     prunedTombstones: partial.prunedTombstones ?? 0,
     clockOffset: partial.clockOffset ?? 0,
     historyInserted: partial.historyInserted ?? 0,

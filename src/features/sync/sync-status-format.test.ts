@@ -11,6 +11,7 @@ function makeResult(overrides: Partial<SyncResult> = {}): SyncResult {
     reparented: 0,
     rejectedCycles: 0,
     serialisedLoansClosed: 0,
+    bookingsCancelled: 0,
     prunedTombstones: 0,
     clockOffset: 0,
     historyInserted: 0,
@@ -65,6 +66,18 @@ describe('describeSyncOutcome', () => {
     );
     expect(describeSyncOutcome(makeResult({ serialisedLoansClosed: 2 }))).toContain(
       '2 duplicate loans closed',
+    );
+  });
+
+  it('flags a booking cancelled because the asset was already booked for those dates elsewhere (#194)', () => {
+    const plain = describeSyncOutcome(makeResult({ status: 'SYNCED' }));
+    expect(plain).not.toMatch(/overlapping booking/);
+
+    expect(describeSyncOutcome(makeResult({ bookingsCancelled: 1 }))).toContain(
+      '1 overlapping booking cancelled (an asset was already booked for those dates elsewhere).',
+    );
+    expect(describeSyncOutcome(makeResult({ bookingsCancelled: 2 }))).toContain(
+      '2 overlapping bookings cancelled',
     );
   });
 

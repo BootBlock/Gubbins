@@ -13,6 +13,17 @@ const DICTIONARY = {
   capabilities: ['id', 'item_id', 'key', 'updated_at'],
   contacts: ['id', 'name', 'updated_at'],
   checkouts: ['id', 'item_id', 'contact_id', 'checked_out_at', 'returned_at', 'updated_at'],
+  asset_bookings: [
+    'id',
+    'item_id',
+    'contact_id',
+    'start_date',
+    'end_date',
+    'cancelled_at',
+    'converted_checkout_id',
+    'created_at',
+    'updated_at',
+  ],
   field_defs: ['id', 'name', 'field_type', 'updated_at'],
   category_fields: ['id', 'category_id', 'def_id', 'updated_at'],
   location_field_values: ['id', 'location_id', 'def_id', 'value', 'is_inheritable', 'updated_at'],
@@ -278,6 +289,100 @@ describe('reconcile (§7.3 / §7.5)', () => {
       const plan = reconcile(local, remote, opts);
 
       expect(plan.serialisedLoansClosed).toEqual([]);
+    });
+  });
+
+  describe('issue #194 — asset-booking double-booking', () => {
+    const bookableItem = {
+      id: 'i1',
+      name: 'Laser cutter',
+      location_id: 'loc1',
+      tracking_mode: 'SERIALISED',
+      updated_at: 1,
+    };
+    const booking = (id: string, start: number, end: number, createdAt: number): SqlRow => ({
+      id,
+      item_id: 'i1',
+      contact_id: null,
+      start_date: start,
+      end_date: end,
+      note: null,
+      cancelled_at: null,
+      converted_checkout_id: null,
+      created_at: createdAt,
+      updated_at: createdAt,
+    });
+
+    it('cancels the later-created of two overlapping bookings a merge downloaded', () => {
+      // Local reserved first (created_at 100); the peer's overlapping booking arrives as new-on-remote.
+      const local = snapshot({
+        tables: { items: [bookableItem], asset_bookings: [booking('bkA', 10, 30, 100)] },
+      });
+      const remote = snapshot({ tables: { asset_bookings: [booking('bkB', 20, 40, 200)] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.bookingsCancelled).toEqual([
+        { itemId: 'i1', cancelledBookingId: 'bkB', keptBookingId: 'bkA' },
+      ]);
+      const bkB = plan.localUpserts.find((u) => u.table === 'asset_bookings' && u.row.id === 'bkB');
+      expect(bkB?.row.cancelled_at).toBe(200); // its own created_at → deterministic + frame-stable
+      expect(bkB?.row.updated_at).toBe(201); // deterministic +1 bump
+      // The survivor is left untouched (active), carried by the push half rather than an upsert.
+      expect(plan.localUpserts.some((u) => u.table === 'asset_bookings' && u.row.id === 'bkA')).toBe(false);
+    });
+
+    it('cancels a purely-local surplus booking when the peer holds the earlier one', () => {
+      // The mirror side: this device made the *later* booking; the peer's earlier one wins.
+      const local = snapshot({
+        tables: { items: [bookableItem], asset_bookings: [booking('bkB', 20, 40, 200)] },
+      });
+      const remote = snapshot({ tables: { asset_bookings: [booking('bkA', 10, 30, 100)] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.bookingsCancelled).toEqual([
+        { itemId: 'i1', cancelledBookingId: 'bkB', keptBookingId: 'bkA' },
+      ]);
+      // bkB was local-only, so a fresh upsert is emitted to cancel it.
+      const bkB = plan.localUpserts.find((u) => u.table === 'asset_bookings' && u.row.id === 'bkB');
+      expect(bkB?.row.cancelled_at).toBe(200);
+      // The downloaded survivor stays active.
+      const bkA = plan.localUpserts.find((u) => u.table === 'asset_bookings' && u.row.id === 'bkA');
+      expect(bkA?.row.cancelled_at ?? null).toBeNull();
+    });
+
+    it('breaks a created_at tie by the smaller id, so both devices agree', () => {
+      const local = snapshot({
+        tables: { items: [bookableItem], asset_bookings: [booking('bkA', 10, 30, 100)] },
+      });
+      const remote = snapshot({ tables: { asset_bookings: [booking('bkB', 20, 40, 100)] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.bookingsCancelled).toEqual([
+        { itemId: 'i1', cancelledBookingId: 'bkB', keptBookingId: 'bkA' },
+      ]);
+    });
+
+    it('leaves two non-overlapping bookings of the same asset alone', () => {
+      const local = snapshot({
+        tables: { items: [bookableItem], asset_bookings: [booking('bkA', 10, 12, 100)] },
+      });
+      const remote = snapshot({ tables: { asset_bookings: [booking('bkB', 20, 22, 200)] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.bookingsCancelled).toEqual([]);
+      const bkB = plan.localUpserts.find((u) => u.table === 'asset_bookings' && u.row.id === 'bkB');
+      expect(bkB?.row.cancelled_at ?? null).toBeNull(); // downloaded unchanged, still active
+    });
+
+    it('ignores an already-cancelled or converted booking when detecting overlaps', () => {
+      const cancelled = { ...booking('bkOld', 5, 40, 50), cancelled_at: 55 };
+      const local = snapshot({
+        tables: { items: [bookableItem], asset_bookings: [booking('bkA', 10, 30, 100)] },
+      });
+      const remote = snapshot({ tables: { asset_bookings: [cancelled] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.bookingsCancelled).toEqual([]);
     });
   });
 
