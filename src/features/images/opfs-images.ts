@@ -114,7 +114,25 @@ export async function readAllImages(): Promise<OpfsImageFile[]> {
  * (e.g. happy-dom), so the caller can report "unsupported" rather than delete
  * against an empty list. An absent `images/` directory is an empty list (`[]`).
  */
-export async function listImageFilenames(): Promise<string[] | null> {
+export function listImageFilenames(): Promise<string[] | null> {
+  return listImageFilenamesFiltered();
+}
+
+/**
+ * As {@link listImageFilenames}, but omitting any file modified within the last `minAgeMs`
+ * (measured against `now`). This is the list the **automatic** orphan sweep works from
+ * (issue #206): the media pipeline writes the raw OPFS file *before* committing its
+ * `item_images` row, so a just-written file legitimately has no owning row for a brief
+ * window — excluding young files keeps a background sweep from deleting an image that is
+ * still mid-add. A genuinely orphaned file is caught on a later sweep once it has aged past
+ * the margin. The manual sweep passes no age filter (the user triggered it deliberately, and
+ * it reports what it removed), so it still sees every file.
+ */
+export function listImageFilenamesOlderThan(minAgeMs: number, now: number): Promise<string[] | null> {
+  return listImageFilenamesFiltered({ minAgeMs, now });
+}
+
+async function listImageFilenamesFiltered(age?: { minAgeMs: number; now: number }): Promise<string[] | null> {
   let dir: FileSystemDirectoryHandle;
   try {
     dir = await imagesDirectory(false);
@@ -137,7 +155,13 @@ export async function listImageFilenames(): Promise<string[] | null> {
   if (typeof iterable !== 'function') return null;
   const names: string[] = [];
   for await (const [name, handle] of iterable.call(dir)) {
-    if (handle.kind === 'file') names.push(name);
+    if (handle.kind !== 'file') continue;
+    if (age) {
+      // Reading the file yields its `lastModified` (cheap metadata, no byte copy).
+      const file = await (handle as FileSystemFileHandle).getFile();
+      if (age.now - file.lastModified < age.minAgeMs) continue;
+    }
+    names.push(name);
   }
   return names;
 }

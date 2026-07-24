@@ -85,6 +85,14 @@ export const STALE_CHUNK_RELOAD_KEY = 'gubbins:stale-chunk-reload';
 export const TAB_LOCK_OVERRIDE_KEY = 'gubbins:tab-lock-override';
 
 /**
+ * When the automatic orphaned-image sweep last ran (issue #206), so it fires at most once per
+ * interval rather than on every launch. Defined here for the same reason as the keys above —
+ * `features/maintenance/auto-orphan-sweep.ts` reads and writes it directly, not via a Zustand
+ * `persist` name.
+ */
+export const LAST_ORPHAN_SWEEP_KEY = 'gubbins:last-orphan-sweep';
+
+/**
  * Every `gubbins:` key, in rough order of how user-visible it is. Keep this list exhaustive:
  * the coverage test compares it against the literals in `src/`.
  *
@@ -235,6 +243,15 @@ export const STORAGE_KEYS = [
     eraseGroup: 'local-ui',
     // Never backed up: it describes *this* device's clock error, so restoring it onto another
     // machine would apply a correction for a fault that device does not have.
+    backupIncluded: false,
+  },
+  {
+    key: LAST_ORPHAN_SWEEP_KEY,
+    store: 'features/maintenance/auto-orphan-sweep',
+    storage: 'local',
+    eraseGroup: 'local-ui',
+    // Device-local timing telemetry (when this device last swept its own OPFS): restoring it
+    // onto another machine would just delay that device's first sweep, so it never travels.
     backupIncluded: false,
   },
 
