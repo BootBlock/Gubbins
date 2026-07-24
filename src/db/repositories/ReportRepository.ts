@@ -125,12 +125,52 @@ function notUnlimited(col: string): string {
 }
 
 /**
- * The shared WHERE for every insurance-schedule read: one row per active, non-parent,
- * non-unlimited item. Kept in one place so the summary's totals and a page's lines can never
- * disagree about which assets the schedule covers (issue #163) — a page listing an asset the
- * grand total omits, or vice versa, is a document that does not add up.
+ * The single WHERE fragment for an **item-based on-hand valuation read**: an item counts as
+ * valuable stock when it is active, is not an abstract variant **parent** (which holds no stock
+ * of its own — {@link notAVariantParent}), and is not an unlimited source (whose `qty × value`
+ * is undefined — {@link notUnlimited}). This is the definition every item-table valuation query
+ * opts into — the headline/category valuation, the insurance schedule, the valuation trend, stock
+ * aging, and dead-stock detection — rather than restating the three predicates and leaving one free
+ * to drift from the rest. That drift was issue #289: the trend's queries were silently missing
+ * `notUnlimited`, with no shared definition to have dropped it *from*. Its pair
+ * {@link valuedItemColumns} does the same
+ * for the projection, alongside the cost seam {@link preferredSupplierCostSql} already does for
+ * supplier-cost precedence (issue #398).
+ *
+ * `alias` is the qualified `items` alias (`i`, `items`). The per-location reads value the
+ * `item_stock` ledger instead and use {@link valuableStockFilter}: they add `s.quantity > 0` and
+ * deliberately omit `notAVariantParent`, because a parent holds no ledger rows so the join already
+ * excludes it.
  */
-const SCHEDULE_ITEM_FILTER = `items.is_active = 1 AND ${notAVariantParent('items.id')} AND ${notUnlimited('items.is_unlimited')}`;
+function valuableItemFilter(alias: string): string {
+  return `${alias}.is_active = 1 AND ${notAVariantParent(`${alias}.id`)} AND ${notUnlimited(`${alias}.is_unlimited`)}`;
+}
+
+/**
+ * The ledger twin of {@link valuableItemFilter}: the single WHERE fragment for a **per-location
+ * valuation read** that values the `item_stock` ledger where stock physically sits. Stock counts
+ * when its item is active and not unlimited **and the placement holds a positive quantity**
+ * (`s.quantity > 0`). Unlike the item-based filter it omits `notAVariantParent` — an abstract
+ * variant parent holds no `item_stock` rows (its variants do), so the join already excludes it —
+ * so it must never be used against a bare `items` scan.
+ *
+ * `itemAlias` is the qualified `items` alias (`i`), `stockAlias` the `item_stock` alias (`s`).
+ * Kept in one place so `inventoryValue`'s location breakdown and every `locationStats` figure
+ * agree on which stock is valued (issue #398).
+ */
+function valuableStockFilter(itemAlias: string, stockAlias: string): string {
+  return `${itemAlias}.is_active = 1 AND ${stockAlias}.quantity > 0 AND ${notUnlimited(`${itemAlias}.is_unlimited`)}`;
+}
+
+/**
+ * The shared WHERE for every insurance-schedule read: one row per active, non-parent,
+ * non-unlimited item — the item-based valuation filter ({@link valuableItemFilter}) fixed to the
+ * `items` alias the schedule queries use. Kept named because the schedule threads it through
+ * several reads, so the summary's totals and a page's lines can never disagree about which assets
+ * the schedule covers (issue #163) — a page listing an asset the grand total omits, or vice versa,
+ * is a document that does not add up.
+ */
+const SCHEDULE_ITEM_FILTER = valuableItemFilter('items');
 
 /**
  * SQL predicate matching a currency column denominated in the user's base currency, and therefore
@@ -207,6 +247,27 @@ function effectiveUnitValueSql(alias: string, baseCurrency: string | null): stri
             WHEN ${alias}.unit_cost IS NOT NULL AND ${alias}.unit_cost >= 0 THEN ${alias}.unit_cost
             ELSE MAX(COALESCE(${preferredSupplierCostSql(`${alias}.id`, baseCurrency)}, 0), 0)
           END`;
+}
+
+/**
+ * The SELECT-list projection of the **raw stored inputs a valuation read needs** when it values
+ * each row in JavaScript rather than summing in SQL: an item's manual `unit_cost`, its manual
+ * `current_value`, and its {@link preferredSupplierCostSql} preferred-supplier fallback, aliased
+ * `unit_cost` / `current_value` / `preferred_supplier_cost`. A consumer feeds exactly these three
+ * (after `fromStoredMoney`) to `effectiveUnitValue(currentValue, effectiveUnitCost({ unitCost,
+ * preferredSupplierCost }))` — the JS twin of {@link effectiveUnitValueSql}.
+ *
+ * This is the projection half of the valuation read: {@link valuableItemFilter} says which rows
+ * count, this says which value inputs to select. It exists for the same reason (issue #398) — the
+ * per-row reads (the valuation trend's events, stock aging, an insurance-schedule page) each used
+ * to spell the triple out, and #289 was one of them silently dropping `current_value`, valuing
+ * stock at cost with no shared projection to have dropped it from. `alias` is the qualified `items`
+ * alias (`i`, `items`).
+ */
+function valuedItemColumns(alias: string, baseCurrency: string | null): string {
+  return `${alias}.unit_cost AS unit_cost,
+          ${alias}.current_value AS current_value,
+          ${preferredSupplierCostSql(`${alias}.id`, baseCurrency)} AS preferred_supplier_cost`;
 }
 
 /**
@@ -307,8 +368,8 @@ export class ReportRepository extends BaseRepository {
     const row = await this.driver.queryOne<{ n: number }>(
       `SELECT COUNT(*) AS n
          FROM items i
-        WHERE i.is_active = 1 AND i.unit_cost IS NULL AND i.current_value IS NULL
-          AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')}
+        WHERE ${valuableItemFilter('i')}
+          AND i.unit_cost IS NULL AND i.current_value IS NULL
           AND EXISTS (SELECT 1 FROM supplier_parts sp
                        WHERE sp.item_id = i.id AND sp.is_preferred = 1 AND sp.unit_cost IS NOT NULL
                          AND NOT ${inBaseCurrencySql('sp.currency', base)});`,
@@ -345,7 +406,7 @@ export class ReportRepository extends BaseRepository {
                       MAX(i.quantity, 0) AS qty, ${unitValue} AS unit_value
                  FROM items i
                  LEFT JOIN categories c ON c.id = i.category_id
-                WHERE i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')})
+                WHERE ${valuableItemFilter('i')})
         GROUP BY group_id, group_name;`,
     );
 
@@ -357,7 +418,7 @@ export class ReportRepository extends BaseRepository {
                  FROM item_stock s
                  JOIN items i ON i.id = s.item_id
                  LEFT JOIN locations l ON l.id = s.location_id
-                WHERE i.is_active = 1 AND s.quantity > 0 AND ${notUnlimited('i.is_unlimited')})
+                WHERE ${valuableStockFilter('i', 's')})
         GROUP BY group_id, group_name;`,
     );
 
@@ -439,7 +500,7 @@ export class ReportRepository extends BaseRepository {
                       (i.width * i.height * i.depth) AS unit_volume
                  FROM item_stock s
                  JOIN items i ON i.id = s.item_id
-                WHERE i.is_active = 1 AND s.quantity > 0 AND ${notUnlimited('i.is_unlimited')}
+                WHERE ${valuableStockFilter('i', 's')}
                   AND ${scopeClause}
                 GROUP BY s.item_id);`,
       scopeIds,
@@ -453,7 +514,7 @@ export class ReportRepository extends BaseRepository {
                  FROM item_stock s
                  JOIN items i ON i.id = s.item_id
                  LEFT JOIN categories c ON c.id = i.category_id
-                WHERE i.is_active = 1 AND s.quantity > 0 AND ${notUnlimited('i.is_unlimited')}
+                WHERE ${valuableStockFilter('i', 's')}
                   AND ${scopeClause})
         GROUP BY group_id, group_name;`,
       scopeIds,
@@ -573,11 +634,11 @@ export class ReportRepository extends BaseRepository {
       thumbnail_blob: Uint8Array | null;
     }>(
       `SELECT items.id AS id, items.name AS name, items.serial_no AS serial_no, items.condition AS condition,
-              items.quantity AS quantity, items.unit_cost AS unit_cost, items.current_value AS current_value,
+              items.quantity AS quantity,
+              ${valuedItemColumns('items', base)},
               items.purchase_price AS purchase_price,
               items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
               items.location_id AS location_id,
-              ${preferredSupplierCostSql('items.id', base)} AS preferred_supplier_cost,
               ${thumbnailSelect}
          FROM items
         WHERE ${SCHEDULE_ITEM_FILTER} AND ${locationFilter}
@@ -972,10 +1033,7 @@ export class ReportRepository extends BaseRepository {
                  WHERE h.item_id = i.id
                    AND (h.quantity_delta IS NOT NULL OR h.net_value_delta IS NOT NULL) ) AS last_moved_at
          FROM items i
-        WHERE i.is_active = 1
-          AND i.quantity > 0
-          AND ${notAVariantParent('i.id')}
-          AND ${notUnlimited('i.is_unlimited')};`,
+        WHERE ${valuableItemFilter('i')} AND i.quantity > 0;`,
     );
 
     // The location tree decides the opt-in for every item still set to 'inherit' — which is
@@ -1223,15 +1281,13 @@ export class ReportRepository extends BaseRepository {
       created_at: number;
       last_inbound_at: number | null;
     }>(
-      `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
-              i.current_value AS current_value,
-              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
+      `SELECT i.id AS id, i.name AS name, i.quantity AS quantity,
+              ${valuedItemColumns('i', base)},
               i.acquired_at AS acquired_at, i.created_at AS created_at,
               ( SELECT MAX(h.created_at) FROM item_history h
                  WHERE h.item_id = i.id AND h.quantity_delta > 0 ) AS last_inbound_at
          FROM items i
-        WHERE i.is_active = 1 AND i.quantity > 0
-          AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
+        WHERE ${valuableItemFilter('i')} AND i.quantity > 0;`,
     );
     const inputs: AgingInput[] = rows.map((r) => ({
       id: r.id,
@@ -1283,7 +1339,7 @@ export class ReportRepository extends BaseRepository {
     const anchor = await this.driver.queryOne<{ total: number | null }>(
       `SELECT SUM(MAX(i.quantity, 0) * (${effectiveUnitValueSql('i', base)})) AS total
          FROM items i
-        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
+        WHERE ${valuableItemFilter('i')};`,
     );
     // The anchor is an exact integer micro-unit SUM; the whole trend runs in major units (issue #286).
     const currentValue = fromStoredMoney(anchor?.total ?? 0);
@@ -1297,13 +1353,12 @@ export class ReportRepository extends BaseRepository {
       preferred_supplier_cost: number | null;
     }>(
       `SELECT h.created_at AS created_at, h.quantity_delta AS quantity_delta,
-              i.unit_cost AS unit_cost, i.current_value AS current_value,
-              ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost
+              ${valuedItemColumns('i', base)}
          FROM item_history h
          JOIN items i ON i.id = h.item_id
         WHERE h.created_at > ? AND h.created_at <= ?
           AND h.quantity_delta IS NOT NULL AND h.quantity_delta <> 0
-          AND i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
+          AND ${valuableItemFilter('i')};`,
       [windowStart, now],
     );
     const events: ValuationEvent[] = eventRows.map((r) => ({
