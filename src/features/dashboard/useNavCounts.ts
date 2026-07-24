@@ -54,7 +54,8 @@ import {
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { AppRoutePath } from '@/components/nav/nav-destinations';
 import { nowMs } from '@/lib/clock';
-import { addCalendarDays, startOfLocalDay } from '@/lib/calendar-days';
+import { MS_PER_DAY } from '@/db/repositories/constants';
+import { startOfUtcDay } from '@/lib/calendar-days';
 
 /** One counted tile's badge: the figure, the spoken nouns and the attention tone. */
 export interface NavCount {
@@ -71,9 +72,13 @@ export interface NavCount {
   readonly tone: NavCountTone;
 }
 
-/** The instant at the start of the local day — the cut-off for a booking still being upcoming. */
+/**
+ * The instant at the start of today — the cut-off for a booking still being upcoming. Taken in UTC
+ * because bookings store midnight UTC (issue #320), so the comparison against `startDate`/`endDate`
+ * stays in one time frame.
+ */
 function startOfToday(): number {
-  return startOfLocalDay(nowMs());
+  return startOfUtcDay(nowMs());
 }
 
 // --- pure count selectors: (rows, metric) → count -----------------------------
@@ -115,8 +120,8 @@ export function countPurchaseOrders(rows: readonly PurchaseOrderRow[], metric: s
 /**
  * Bookings: every booking, only those *starting this week* (the next 7 days), or the
  * *upcoming* ones (default). A live booking is one neither cancelled nor converted to a loan;
- * dates are day-start UNIX-ms, so "upcoming" compares the last day against the start of today
- * (an all-day booking is still upcoming on its final day) and "this week" is a rolling 7-day
+ * dates are midnight-UTC day-start UNIX-ms, so "upcoming" compares the last day against the start of
+ * today (an all-day booking is still upcoming on its final day) and "this week" is a rolling 7-day
  * window from the start of today.
  */
 export function countBookings(rows: readonly BookingRow[], metric: string): number {
@@ -124,9 +129,9 @@ export function countBookings(rows: readonly BookingRow[], metric: string): numb
   const live = rows.filter((b) => !b.cancelledAt && !b.convertedCheckoutId);
   if (metric === 'thisWeek') {
     const start = startOfToday();
-    // Whole calendar week from the start of today (issue #325), so the window edge stays at local
-    // midnight rather than slipping an hour across a DST change.
-    const end = addCalendarDays(start, 7);
+    // Seven UTC days from the start of today. A UTC day is exactly MS_PER_DAY (no DST), so the window
+    // edge stays on a UTC midnight aligned with the stored booking dates (issue #320).
+    const end = start + 7 * MS_PER_DAY;
     return live.filter((b) => b.startDate >= start && b.startDate < end).length;
   }
   const cutoff = startOfToday();

@@ -58,9 +58,11 @@ export function todayDateInputValue(now: number = Date.now()): string {
  * - {@link toDueDateInputValue} reads that instant back as the **local** calendar day, so it is
  *   the exact inverse — reopening the renew editor shows the day that was saved.
  *
- * This mirrors the local-day convention asset bookings already use (`startOfLocalDay`). Do not
- * route due dates through {@link fromDateInputValue}/{@link toDateInputValue}: midnight UTC would
- * both flag a loan overdue a day early in the Americas and render its due date a day early.
+ * A due date is deliberately the odd one out: a *deadline* is anchored to the borrower's own day,
+ * unlike the midnight-UTC convention every other day-grained value uses (see `startOfUtcDay` in
+ * `@/lib/calendar-days` — bookings included, issue #320). Do not route due dates through
+ * {@link fromDateInputValue}/{@link toDateInputValue}: midnight UTC would both flag a loan overdue a
+ * day early in the Americas and render its due date a day early.
  */
 export function fromDueDateInputValue(value: string): number | null {
   const trimmed = value.trim();

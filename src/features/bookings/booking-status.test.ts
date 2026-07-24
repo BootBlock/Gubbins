@@ -12,15 +12,15 @@ import {
   isBookableTrackingMode,
 } from './booking-status';
 
-// Timezone-robust anchor: start of the local day containing noon on 2026-01-15 UTC. Deriving
-// every instant from this same local-midnight base means the boundary tests hold in any host
-// time zone (the seam itself uses local-midnight day boundaries).
-function startOfLocalDay(ms: number): number {
+// Timezone-robust anchor: midnight UTC of 2026-01-15. Deriving every instant from this same
+// midnight-UTC base means the boundary tests hold in any host time zone (the seam itself uses
+// midnight-UTC day boundaries — issue #320).
+function startOfUtcDay(ms: number): number {
   const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCHours(0, 0, 0, 0);
   return d.getTime();
 }
-const DAY0 = startOfLocalDay(Date.UTC(2026, 0, 15, 12));
+const DAY0 = startOfUtcDay(Date.UTC(2026, 0, 15, 12));
 const day = (n: number): number => DAY0 + n * MS_PER_DAY;
 
 /** A plain, not-cancelled, not-converted booking over days [start, end] (in `day()` units). */
@@ -83,7 +83,7 @@ describe('deriveBookingStatus — exact boundary instants', () => {
 
   it('last ms of the end day → active (whole end day is booked)', () => {
     const b = booking(0, 2);
-    // endExclusive = startOfLocalDay(endDate) + MS_PER_DAY === day(3); last ms is one before.
+    // endExclusive = startOfUtcDay(endDate) + MS_PER_DAY === day(3); last ms is one before.
     expect(deriveBookingStatus(b, day(3) - 1)).toBe('active');
   });
 

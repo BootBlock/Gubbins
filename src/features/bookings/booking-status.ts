@@ -14,7 +14,8 @@
  * (`text-destructive`, `bg-primary/10`, …) — never raw colour literals — so the calendar stays
  * themable and dark-mode-correct (see CLAUDE.md "Design tokens are mandatory").
  */
-import { addCalendarDays, startOfLocalDay } from '@/lib/calendar-days';
+import { MS_PER_DAY } from '@/db/repositories/constants';
+import { startOfUtcDay } from '@/lib/calendar-days';
 
 // ---------------------------------------------------------------------------
 // Status type & input
@@ -29,13 +30,13 @@ export type BookingStatus = 'cancelled' | 'converted' | 'overdue' | 'active' | '
 
 /**
  * The minimal stored slice a booking's status is derived from. `startDate`/`endDate` are
- * day-start (local midnight) UNIX-ms instants, both **inclusive** — the booking covers every
+ * day-start (midnight UTC) UNIX-ms instants, both **inclusive** — the booking covers every
  * whole day from `startDate` up to and including the day containing `endDate`.
  */
 export interface BookingStatusInput {
-  /** Day-start (local midnight) UNIX-ms — first booked day, inclusive. */
+  /** Day-start (midnight UTC) UNIX-ms — first booked day, inclusive. */
   readonly startDate: number;
-  /** Day-start (local midnight) UNIX-ms — last booked day, inclusive of that whole day. */
+  /** Day-start (midnight UTC) UNIX-ms — last booked day, inclusive of that whole day. */
   readonly endDate: number;
   /** UNIX-ms the booking was cancelled, or null if it was not. Takes precedence over all. */
   readonly cancelledAt: number | null;
@@ -54,8 +55,9 @@ export interface BookingStatusInput {
  * 2. `convertedCheckoutId != null` → **converted** (realised into a checkout; beats dates).
  * 3. Otherwise date-based, comparing `now` to the booked whole-day window. The window runs
  *    from `startDate` (inclusive) to the END of the day containing `endDate`, i.e.
- *    `endExclusive = addCalendarDays(startOfLocalDay(endDate), 1)` — the next local midnight, so a
- *    DST change on the final day never trips the window an hour early (issue #325):
+ *    `endExclusive = startOfUtcDay(endDate) + MS_PER_DAY`. `endDate` is a midnight-UTC day-start
+ *    (issue #320); a UTC day is always exactly `MS_PER_DAY`, so this lands on the next UTC midnight
+ *    with no DST wrinkle (unlike the local `addCalendarDays` #325 needs for wall-clock windows):
  *    - `now >= endExclusive` → **overdue** (the window fully passed, never converted/cancelled).
  *    - `now >= startDate` (and `now < endExclusive`) → **active** (in use today).
  *    - else (`now < startDate`) → **upcoming**.
@@ -63,7 +65,7 @@ export interface BookingStatusInput {
 export function deriveBookingStatus(b: BookingStatusInput, now: number): BookingStatus {
   if (b.cancelledAt != null) return 'cancelled';
   if (b.convertedCheckoutId != null) return 'converted';
-  const endExclusive = addCalendarDays(startOfLocalDay(b.endDate), 1);
+  const endExclusive = startOfUtcDay(b.endDate) + MS_PER_DAY;
   if (now >= endExclusive) return 'overdue';
   if (now >= b.startDate) return 'active';
   return 'upcoming';

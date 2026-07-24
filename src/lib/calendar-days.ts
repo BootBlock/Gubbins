@@ -16,10 +16,20 @@
  *    earlier or later in local terms at each crossing, and over years of re-servicing that drifts
  *    across a whole day boundary.
  *
- * These helpers do the arithmetic on the local *calendar* fields instead, so a day is always one
+ * The local helpers do the arithmetic on the local *calendar* fields instead, so a day is always one
  * calendar day regardless of DST. Both are pure given the host time zone; callers that need a
  * fixed-duration span (converting an elapsed millisecond count *to* a number of days) still divide
  * by `MS_PER_DAY` — that is genuinely a duration, not a calendar step.
+ *
+ * ## Local vs UTC day-start
+ *
+ * {@link startOfLocalDay} answers a *wall-clock* question — "which calendar day is it for the user?"
+ * — used for bucketing "today"/"this week" and for deadlines the borrower experiences locally.
+ * {@link startOfUtcDay} answers a *storage* question: a day-grained value (a booking date, an expiry
+ * date) is stored as the midnight-UTC instant of the calendar day the user picked, so it names the
+ * same day everywhere rather than drifting a day across time zones (issue #320). Because a UTC day is
+ * always exactly `MS_PER_DAY`, `startOfUtcDay(x) + MS_PER_DAY` is the next UTC midnight exactly — DST
+ * never applies — so day-grained UTC values need no {@link addCalendarDays} equivalent.
  */
 
 /**
@@ -30,6 +40,20 @@
 export function startOfLocalDay(ms: number): number {
   const d = new Date(ms);
   d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * Start of the **UTC** calendar day containing `ms` (midnight UTC, UNIX-ms) — the instant-based
+ * sibling of `date-input`'s `fromDateInputValue` (which snaps a `yyyy-MM-dd` *string* to the same
+ * instant). This is how every day-grained *stored* value is snapped: a booking date, like
+ * `expiry_date`/`due_date` and the other day columns, records the midnight-UTC instant of the
+ * calendar day the user picked, so it encodes the same day in every time zone rather than baking in
+ * the author's offset (issue #320). Idempotent on a value already at midnight UTC.
+ */
+export function startOfUtcDay(ms: number): number {
+  const d = new Date(ms);
+  d.setUTCHours(0, 0, 0, 0);
   return d.getTime();
 }
 

@@ -1572,8 +1572,8 @@ const baselineStatements: SqlStatement[] = [
           id                    TEXT    PRIMARY KEY NOT NULL,
           item_id               TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
           contact_id            TEXT    REFERENCES contacts(id) ON DELETE SET NULL,
-          start_date            INTEGER NOT NULL,            -- day-start UNIX-ms (inclusive)
-          end_date              INTEGER NOT NULL,            -- day-start UNIX-ms (inclusive)
+          start_date            INTEGER NOT NULL,            -- midnight-UTC day-start UNIX-ms (inclusive)
+          end_date              INTEGER NOT NULL,            -- midnight-UTC day-start UNIX-ms (inclusive)
           note                  TEXT,
           cancelled_at          INTEGER,                     -- set ⇒ derived 'cancelled'
           converted_checkout_id TEXT,                        -- set ⇒ derived 'converted' (soft pointer, not FK)

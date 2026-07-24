@@ -25,9 +25,9 @@ import type { IDatabaseDriver, SqlValue } from '../rpc/driver';
 import {
   findFirstOverlap,
   normaliseDayRange,
-  startOfLocalDay,
   type OverlapCandidate,
 } from '@/features/bookings/booking-overlap';
+import { startOfUtcDay } from '@/lib/calendar-days';
 import { isBookableTrackingMode } from '@/features/bookings/booking-status';
 import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import { CheckoutRepository } from './CheckoutRepository';
@@ -69,8 +69,8 @@ export class AssetBookingRepository extends BaseRepository {
   }
 
   /**
-   * Reserve a bookable asset for a whole-day date range. The range is snapped to local day
-   * starts; the asset must be serialised or single-unit discrete; and the range must not
+   * Reserve a bookable asset for a whole-day date range. The range is snapped to midnight-UTC
+   * day starts; the asset must be serialised or single-unit discrete; and the range must not
    * overlap any active booking for the same asset (hard double-booking prevention).
    */
   async create(input: CreateBookingInput): Promise<AssetBooking> {
@@ -208,8 +208,9 @@ export class AssetBookingRepository extends BaseRepository {
    * cut-off is deterministic and testable; ordered by soonest start.
    */
   async listUpcoming(now: number, params: PageParams = {}): Promise<Page<AssetBookingWithNames>> {
-    // Keep a booking until the end of its last booked day (start-of-day + one day).
-    const cutoff = startOfLocalDay(now);
+    // Keep a booking until the end of its last booked day. Bookings store midnight UTC (issue #320),
+    // so the "start of today" cut-off is taken in UTC too, keeping it in one frame with `end_date`.
+    const cutoff = startOfUtcDay(now);
     return this.listJoined(
       'WHERE b.cancelled_at IS NULL AND b.converted_checkout_id IS NULL AND b.end_date >= ?',
       [cutoff],

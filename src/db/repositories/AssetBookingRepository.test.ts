@@ -7,12 +7,13 @@ import { MS_PER_DAY } from './constants';
 import { AssetBookingRepository } from './AssetBookingRepository';
 import { ItemRepository } from './ItemRepository';
 
-/** Local-midday instant `n` whole days from a fixed anchor (timezone-robust). */
-const ANCHOR = new Date(2026, 5, 10, 12, 0, 0).getTime();
+// Midday-UTC instant `n` whole days from a fixed anchor, and its midnight-UTC day-start. Bookings
+// store midnight UTC (issue #320), so deriving both from a UTC base keeps the suite timezone-robust.
+const ANCHOR = Date.UTC(2026, 5, 10, 12, 0, 0);
 const day = (n: number): number => ANCHOR + n * MS_PER_DAY;
 const dayStart = (n: number): number => {
   const d = new Date(day(n));
-  d.setHours(0, 0, 0, 0);
+  d.setUTCHours(0, 0, 0, 0);
   return d.getTime();
 };
 
@@ -37,7 +38,7 @@ describe('AssetBookingRepository (Phase 78 — time-based asset booking)', () =>
     return item!.id;
   }
 
-  it('creates a booking, snapping the range to whole local days', async () => {
+  it('creates a booking, snapping the range to whole UTC days', async () => {
     const itemId = await serialisedAsset();
     const booking = await bookings.create({
       itemId,
