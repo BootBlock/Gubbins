@@ -28,9 +28,14 @@
  *                                  off by default, and auto-skipped on a loopback bind.
  *   GUBBINS_BRIDGE_MDNS_NAME      (optional) — service instance name in the advertisement.
  *   GUBBINS_BRIDGE_ALLOW_WRITES   (optional) — opt into the limited write endpoints (stock
- *                                  adjust). OFF by default; the bridge is read-only unless set.
+ *                                  adjust). OFF by default; the bridge is read-only unless this
+ *                                  or _ALLOW_PUSH is set.
  *   GUBBINS_BRIDGE_ALLOW_PUSH     (optional) — opt into the snapshot-ingest endpoint (the PWA
- *                                  "push to bridge"). OFF by default, independent of writes.
+ *                                  "push to bridge"). OFF by default. A separate opt-in from
+ *                                  writes, but a STRICTLY WIDER privilege: it merges an
+ *                                  attacker-controllable snapshot into the whole served dataset,
+ *                                  not a single bounded stock delta — treat it as at least as
+ *                                  sensitive as writes.
  *   GUBBINS_BRIDGE_MAX_PUSH_BYTES (optional) — hard cap on a pushed snapshot's size in bytes;
  *                                  defaults to {@link DEFAULT_MAX_PUSH_BYTES} (64 MiB).
  *   GUBBINS_BRIDGE_STALE_AFTER_FAILURES (optional) — consecutive failed snapshot reloads before
@@ -129,17 +134,23 @@ export interface BridgeConfig {
   readonly mdnsInstanceName: string | undefined;
   /**
    * Whether the operator opted into the limited write endpoints (`GUBBINS_BRIDGE_ALLOW_WRITES=on`).
-   * **Off by default** — the bridge is strictly read-only unless this is set. When on, the
-   * POST stock-adjust endpoints become available (same bearer token + rate limit); each write
-   * round-trips through the app's own mutation + the §7.3 sync merge, never a bespoke SQL write.
+   * **Off by default** — the bridge is read-only unless this **or {@link allowPush}** is set. When
+   * on, the POST stock-adjust endpoints become available (same bearer token + rate limit); each
+   * write round-trips through the app's own mutation + the §7.3 sync merge, never a bespoke SQL
+   * write, and each is a **bounded, reversible per-item delta** recorded in the item's history.
    */
   readonly allowWrites: boolean;
   /**
    * Whether the operator opted into the snapshot-ingest endpoint (`GUBBINS_BRIDGE_ALLOW_PUSH=on`)
-   * — the PWA "push to bridge". **Off by default**, and **independent of {@link allowWrites}**
-   * (push replaces the whole served snapshot; the limited writes apply a surgical per-item change
-   * — orthogonal opt-ins). When on, `POST /api/v1/snapshot` accepts the same versioned backup
-   * JSON the watcher reads and rewrites the snapshot atomically (same bearer token + rate limit).
+   * — the PWA "push to bridge". **Off by default**, and a **separate opt-in from
+   * {@link allowWrites}** — but *not* a lesser one. It is a **strictly wider privilege**: a write
+   * applies one surgical, bounded stock delta, whereas a push merges a caller-supplied snapshot
+   * into the **whole served dataset** through the app's §7.3 reconcile (LWW / Delta-CRDT +
+   * tombstones), so a token holder can reshape *any* row — items, locations, even users and their
+   * permissions. Enabling push therefore trusts the caller at least as much as enabling writes;
+   * they are orthogonal *switches*, not orthogonal *risk levels*. When on, `POST /api/v1/snapshot`
+   * accepts the same versioned backup JSON the watcher reads and rewrites the served snapshot
+   * atomically (same bearer token + rate limit).
    */
   readonly allowPush: boolean;
   /** Hard cap (bytes) on a pushed snapshot body. Defaults to {@link DEFAULT_MAX_PUSH_BYTES}. */

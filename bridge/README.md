@@ -947,16 +947,28 @@ machinery — so enabling writes enables them on **both** surfaces.
 The bridge normally **reads** `gubbins-sync.json` from a shared folder (the FS-Access sync). For a
 user who does **not** use folder sync — no NAS, no synced drive — the PWA can instead **push** its
 whole dataset straight to the bridge over HTTP, so no shared folder is needed at all. This is
-**off by default** and **independent** of the [limited writes](#limited-writes-opt-in) above
-(push *replaces* the whole snapshot; a write applies a surgical per-item change — orthogonal
-opt-ins).
+**off by default** and a **separate** opt-in from the [limited writes](#limited-writes-opt-in)
+above — but **not a lesser one**.
 
-> **Why it's safe.** The pushed body is the **same** versioned backup JSON the PWA already writes
-> to a synced folder (`snapshotToBackupJson(buildLocalSnapshot(...))`). The bridge validates it
-> with the **same** format-version guard the watcher uses, then writes it to
-> `GUBBINS_SNAPSHOT_PATH` **atomically** (temp file + rename). The unchanged watcher re-hydrates it
-> through its normal path, so what the bridge serves is byte-identical to what it would have read
-> from a synced file. Ingest runs **no SQL** — it only validates JSON and renames a file.
+> **⚠️ Push is a wider privilege than writes — not a milder one.** A write applies a single
+> **bounded, reversible** stock delta to one item. A push merges caller-supplied content into the
+> **whole** served dataset through the app's §7.3 reconcile, so a token holder who can push can
+> reshape **any** row — items, locations, and even users and their permissions — and can delete via
+> tombstones. Anything a write can do, a push can do too, and much more. The two are orthogonal
+> *switches*, not orthogonal *risk levels*: enabling push trusts the caller **at least as much** as
+> enabling writes. Gate it on the caller's account (`bridge:write` + `sync:write`) accordingly, and
+> keep the bridge on the loopback default unless you mean to expose it.
+
+> **Why it's still safe under sync.** The pushed body is the **same** versioned backup JSON the PWA
+> already writes to a synced folder (`snapshotToBackupJson(buildLocalSnapshot(...))`), and the
+> bridge validates it with the **same** format-version guard the watcher uses. It does **not** run
+> any *caller-supplied* SQL — like the [limited writes](#limited-writes-opt-in), a push is treated
+> as just another sync peer and **merged** into the served snapshot through the app's **own** §7.3
+> reconcile (LWW / Delta-CRDT), so a change the bridge itself made in the meantime is not silently
+> clobbered ([#154](https://github.com/BootBlock/Gubbins/issues/154)). The merged result is written
+> back **atomically** (temp file + rename) and the unchanged watcher re-hydrates it. Only when there
+> is nothing to merge into — a first push, or an unreadable served snapshot — is the pushed body
+> placed verbatim.
 
 ### Enabling it
 
@@ -975,7 +987,7 @@ the cap on a constrained host (a Pi/NAS on an SD card).
 
 | Endpoint | Body | Effect |
 | --- | --- | --- |
-| `POST /api/v1/snapshot` | The versioned backup JSON (the bytes `snapshotToBackupJson` produces). | Validates and **atomically replaces** the served snapshot; the watcher re-hydrates it. Returns `{ ok, formatVersion, generatedAt }`. |
+| `POST /api/v1/snapshot` | The versioned backup JSON (the bytes `snapshotToBackupJson` produces). | Validates and **merges** the push into the served snapshot (placed verbatim only when there is nothing to merge into), then writes the result **atomically**; the watcher re-hydrates it. Returns `{ ok, formatVersion, generatedAt }`. |
 
 Status codes: `200` (accepted), `400` (malformed/non-JSON body), `401` (missing/unknown/revoked
 token), `403` (the owner's role lacks `bridge:write` or `sync:write`),
@@ -1627,7 +1639,7 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 | Flag (`GUBBINS_BRIDGE_…`) | Turns on | Direction | Writes inventory? | Caller must also hold / secrets |
 | --- | --- | --- | --- | --- |
 | `ALLOW_WRITES` | [Limited stock writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge`, plus the matching [MCP write tools](#write-tools-opt-in) (JSON source only). | inbound (HTTP + MCP stdio) | **Yes** — check-in/out & gauge adjust, round-tripped through the sync merge, attributed over HTTP to the token's owner. | `bridge:write` + `stock:write` over HTTP — the flag opens the route, the role decides who may use it. The MCP tools have **no credential and no permission check** (stdio's boundary is the OS process), so enabling this trusts whoever can launch the server. No new operator secret. |
-| `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | Replaces the **whole** served snapshot atomically (no SQL). | `bridge:write` + `sync:write`. No new operator secret. |
+| `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | **Yes — wider than `ALLOW_WRITES`.** Merges a caller-supplied snapshot into the **whole** served dataset through the app's §7.3 reconcile (no *bespoke* SQL), so it can reshape **any** row — not just a bounded stock delta. | `bridge:write` + `sync:write`. No new operator secret. |
 | `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | `bridge:read`. No new operator secret. |
 | `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled; with MQTT on, also to the transient [`gubbins/locate`](#the-locate-topic-where-is-x-for-automations) topic. | outbound (push) | No — it is a read; nothing is written. | Nothing beyond the lookup itself — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
 | `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). Targets are the webhooks configured **in the app** (read from the snapshot the bridge already hydrates) merged with the operator's file/env list. Adds the read-only `GET /api/v1/webhooks/deliveries` log and `POST /api/v1/webhooks/test` (fires a synthetic event at one subscription through the real delivery path). | outbound (push) | No — an event never mutates inventory. | `bridge:read` + `settings:read` for the delivery log; `bridge:write` + `settings:write` to fire a test. Signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `GUBBINS_BRIDGE_WEBHOOKS_SECRETS` / `.env` only. An app-configured webhook may name a secret held here (`secret_ref`) so its value never enters the database; an **unresolvable** ref drops that subscription rather than delivering it unsigned. Delivery to loopback/private/metadata addresses is **refused** unless `GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on`. |
@@ -1676,8 +1688,8 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_ALLOWED_ORIGINS` | no | *(hosted app)* | Comma-separated list of **browser origins** allowed to read a bridge response cross-origin (CORS). Defaults to the hosted app origin `https://bootblock.github.io`; **loopback origins (a dev server) are always allowed on top**. Add your own PWA origin here if you self-host the app on another domain and use "push to bridge" from the browser. Set to `*` to restore the old permissive wildcard. Only browsers are affected — a non-browser client (Home Assistant, `curl`, a scrape) sends no `Origin` and is unaffected. See [Cross-origin (CORS) policy](#cross-origin-cors-policy). |
 | `GUBBINS_BRIDGE_MDNS` | no | `off` | Advertise over mDNS so Home Assistant can auto-discover the bridge. `on` to enable. Carries **no secret**; only meaningful when LAN-exposed (auto-skipped on the loopback default). See [mDNS / zeroconf discovery](#mdns--zeroconf-discovery). |
 | `GUBBINS_BRIDGE_MDNS_NAME` | no | `Gubbins Bridge` | Service instance name shown in a discovery browser. |
-| `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this is `on`.** HTTP writes additionally need the caller to hold `bridge:write` + `stock:write`; the MCP tools are gated by process launch alone (stdio carries no credential). |
-| `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**, independent of writes; JSON source only. Same rate limit; the caller needs `bridge:write` + `sync:write`. |
+| `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this (or `GUBBINS_BRIDGE_ALLOW_PUSH`) is `on`.** HTTP writes additionally need the caller to hold `bridge:write` + `stock:write`; the MCP tools are gated by process launch alone (stdio carries no credential). |
+| `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**; a **separate** opt-in from writes but a **strictly wider privilege** — a push merges caller-supplied content into the **whole** dataset, not a bounded stock delta, so treat it as at least as sensitive as writes. JSON source only. Same rate limit; the caller needs `bridge:write` + `sync:write`. |
 | `GUBBINS_BRIDGE_MAX_PUSH_BYTES` | no | `67108864` | Hard cap (bytes) on a pushed snapshot; default 64 MiB. An over-large push is rejected with `413`. Lower it on a constrained host. |
 | `GUBBINS_BRIDGE_STALE_AFTER_FAILURES` | no | `3` | Consecutive failed snapshot reloads before [`/health`](#snapshot-freshness-and-health) reports the served data as stale (`ok: false`). `0` keeps the counters but never flips `ok`. |
 | `GUBBINS_BRIDGE_EVENTS` | no | `off` | Enable the opt-in read-only [SSE event stream](#events-webhooks--sse-opt-in) at `GET /api/v1/events`. **Off by default** (the path is `404` when off). Implied by `GUBBINS_BRIDGE_WEBHOOKS`. Same rate limit; the caller needs `bridge:read`. |
@@ -1857,15 +1869,18 @@ npx tsc --noEmit -p bridge/tsconfig.json
 
 The bridge is designed to be safe by construction; this is the checklist it satisfies.
 
-- **Read-only by default; writes are opt-in and gated.** With `GUBBINS_BRIDGE_ALLOW_WRITES`
-  unset (the default), hydration into a *private, in-memory* `node:sqlite` DB is the only write
-  and the snapshot file on disk is only ever read — no endpoint mutates anything. The opt-in
-  [limited write endpoints](#limited-writes-opt-in) never string-build SQL either: they apply the
-  change through the app's **own** repository mutation and round-trip it through the §7.3 sync
-  merge, so even when enabled there is no bespoke write path and no risk of sync drift. The opt-in
-  [snapshot-ingest endpoint](#snapshot-push-opt-in) runs **no SQL** at all — it validates the same
-  versioned JSON the watcher reads and atomically rewrites the snapshot file; the watcher then
-  re-hydrates it through the unchanged read path.
+- **Read-only by default; every mutation is opt-in and gated.** With **both**
+  `GUBBINS_BRIDGE_ALLOW_WRITES` **and** `GUBBINS_BRIDGE_ALLOW_PUSH` unset (the default), hydration
+  into a *private, in-memory* `node:sqlite` DB is the only write and the snapshot file on disk is
+  only ever read — no endpoint mutates anything. The opt-in
+  [limited write endpoints](#limited-writes-opt-in) never string-build SQL: they apply a bounded,
+  reversible per-item change through the app's **own** repository mutation and round-trip it through
+  the §7.3 sync merge, so even when enabled there is no bespoke write path and no risk of sync
+  drift. The opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) runs **no *caller-supplied*
+  SQL** either, but it is the **wider** privilege of the two — it merges a caller-supplied snapshot
+  into the **whole** served dataset through that same §7.3 reconcile, so it can reshape any row, not
+  just a stock level. Both mutate only through the app's own merge; neither is "read-only", so the
+  bridge is read-only precisely when **neither** flag is set.
 - **Parameterised queries only.** Every query — casual phrase or power-user
   `field:`/`cap:` syntax — is parsed to an AST and translated by the app's single
   `parseASTtoSQL`. SQL is **never string-built** from user input, so there is no injection

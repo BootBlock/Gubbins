@@ -125,6 +125,13 @@ wiped out by a slightly-older push from a device that hadn't seen it — both su
 last-write-wins merge the rest of Gubbins uses.
 
 > **⚠️ Heads-up**
+> *Push* is a **separate** switch from write-back, but it isn't a milder one — it's **wider**.
+> Write-back adjusts a single stock level; a push merges a whole dataset in, which can touch **any**
+> part of your data, not just stock. So turn push on with the same care as write-back, and hand its
+> account only to a device you trust. As with everything here, the caller still needs the matching
+> permission on its own account — turning the switch on doesn't give every token holder that reach.
+
+> **⚠️ Heads-up**
 > Keep an [[API token|Bridge-API-Tokens]] secret and out of any file you commit or share — this is
 > a **public** project, and a leaked token plus an exposed bind would let others read your data.
 > The safe default is loopback-only, with each integration on its own narrow account. See

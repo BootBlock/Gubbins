@@ -413,9 +413,11 @@ export const openapiDocument: JsonValue = {
       name: 'push',
       description:
         'Opt-in snapshot ingest — the PWA "push to bridge" (off by default; enabled with ' +
-        'GUBBINS_BRIDGE_ALLOW_PUSH=on, and only for a JSON snapshot source). Accepts the same ' +
-        'versioned backup JSON the bridge reads from a synced folder and replaces it atomically; ' +
-        'the watcher then re-hydrates. When push is disabled this path returns 404.',
+        'GUBBINS_BRIDGE_ALLOW_PUSH=on, and only for a JSON snapshot source). A separate opt-in ' +
+        'from writes, but a wider privilege: it merges caller-supplied content into the whole ' +
+        'served dataset, not a single bounded stock delta. Accepts the same versioned backup JSON ' +
+        'the bridge reads from a synced folder, merges it into the served snapshot and writes the ' +
+        'result atomically; the watcher then re-hydrates. When push is disabled this path returns 404.',
     },
     {
       name: 'events',
@@ -795,13 +797,16 @@ export const openapiDocument: JsonValue = {
     '/api/v1/snapshot': {
       post: {
         tags: ['push'],
-        summary: 'Replace the served snapshot (the PWA "push to bridge")',
+        summary: 'Merge a pushed snapshot into the served one (the PWA "push to bridge")',
         description:
           'Opt-in (GUBBINS_BRIDGE_ALLOW_PUSH=on, JSON source only); returns 404 when push is ' +
-          'disabled or the source is a raw .sqlite. Accepts the same versioned backup JSON the ' +
-          'PWA writes to a synced folder, validates it with the format-version guard, and writes ' +
-          'it to the snapshot path atomically. The watcher then re-hydrates it through the normal ' +
-          'path, so subsequent reads reflect the pushed data. The body is capped at ' +
+          'disabled or the source is a raw .sqlite. A separate opt-in from writes but a wider ' +
+          'privilege — it merges caller-supplied content into the whole served dataset, not a ' +
+          'single bounded stock delta. Accepts the same versioned backup JSON the PWA writes to a ' +
+          'synced folder, validates it with the format-version guard, merges it into the served ' +
+          'snapshot (placed verbatim only when there is nothing to merge into) and writes the ' +
+          'result atomically. The watcher then re-hydrates it through the normal path, so ' +
+          'subsequent reads reflect the pushed data. The body is capped at ' +
           'GUBBINS_BRIDGE_MAX_PUSH_BYTES (default 64 MiB).',
         requestBody: {
           required: true,
