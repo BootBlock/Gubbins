@@ -213,6 +213,12 @@
     },
     {
       "type": "index",
+      "name": "idx_items_favourite_name",
+      "tbl_name": "items",
+      "sql": "CREATE INDEX idx_items_favourite_name ON items(is_favourite DESC, name COLLATE NOCASE) WHERE is_active = 1"
+    },
+    {
+      "type": "index",
       "name": "idx_items_is_active",
       "tbl_name": "items",
       "sql": "CREATE INDEX idx_items_is_active ON items(is_active)"
@@ -228,6 +234,12 @@
       "name": "idx_items_mpn",
       "tbl_name": "items",
       "sql": "CREATE INDEX idx_items_mpn ON items(mpn COLLATE NOCASE)"
+    },
+    {
+      "type": "index",
+      "name": "idx_items_name",
+      "tbl_name": "items",
+      "sql": "CREATE INDEX idx_items_name ON items(name COLLATE NOCASE) WHERE is_active = 1"
     },
     {
       "type": "index",
@@ -3345,7 +3357,7 @@
           "partial": 0
         },
         {
-          "seq": 9,
+          "seq": 11,
           "name": "idx_items_category_id",
           "unique": 0,
           "origin": "c",
@@ -3366,14 +3378,21 @@
           "partial": 1
         },
         {
-          "seq": 8,
+          "seq": 9,
+          "name": "idx_items_favourite_name",
+          "unique": 0,
+          "origin": "c",
+          "partial": 1
+        },
+        {
+          "seq": 10,
           "name": "idx_items_is_active",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 10,
+          "seq": 12,
           "name": "idx_items_location_id",
           "unique": 0,
           "origin": "c",
@@ -3385,6 +3404,13 @@
           "unique": 0,
           "origin": "c",
           "partial": 0
+        },
+        {
+          "seq": 8,
+          "name": "idx_items_name",
+          "unique": 0,
+          "origin": "c",
+          "partial": 1
         },
         {
           "seq": 3,
@@ -3408,7 +3434,7 @@
           "partial": 1
         },
         {
-          "seq": 11,
+          "seq": 13,
           "name": "sqlite_autoindex_items_1",
           "unique": 1,
           "origin": "pk",

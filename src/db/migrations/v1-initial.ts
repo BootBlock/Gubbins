@@ -510,6 +510,21 @@ const baselineStatements: SqlStatement[] = [
   { sql: `CREATE INDEX idx_items_location_id ON items(location_id);` },
   { sql: `CREATE INDEX idx_items_category_id ON items(category_id);` },
   { sql: `CREATE INDEX idx_items_is_active ON items(is_active);` },
+  // Order-by support for the item list reads (issue #164). Every list page sorts the matching
+  // set before LIMIT/OFFSET, so without a covering index each page is a full scan + full sort.
+  // Both indexes are partial (WHERE is_active = 1) because list reads default to active
+  // inventory, so the index only carries the rows the reads actually visit.
+  //
+  //  - The default list floats favourites first, then name (issue #23):
+  //    `is_favourite DESC, name COLLATE NOCASE ASC, …`. This composite matches that prefix, so
+  //    the scan walks the index in order and only block-sorts the tiny per-name tie-break tail.
+  {
+    sql: `CREATE INDEX idx_items_favourite_name ON items(is_favourite DESC, name COLLATE NOCASE) WHERE is_active = 1;`,
+  },
+  //  - The Visual-Builder AST search orders by `name COLLATE NOCASE ASC, …` with no favourite
+  //    prefix, so the composite above cannot order it (its leading column is is_favourite). A
+  //    plain name index serves that path the same way.
+  { sql: `CREATE INDEX idx_items_name ON items(name COLLATE NOCASE) WHERE is_active = 1;` },
   { sql: updatedAtTrigger('items') },
   {
     sql: `
