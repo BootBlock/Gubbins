@@ -81,9 +81,10 @@ export function icalDate(unixMs: number): ICalDate {
  * An all-day `DATE` value derived from a UNIX-ms instant, using **local** calendar components.
  *
  * For a value that carries a real time-of-day in the host's own frame — a maintenance due instant
- * (`lastPerformedAt` + interval, which keeps the service's wall-clock time) — the calendar day the
- * user means is the *local* day it falls on, not the UTC one. The bridge runs on the user's own
- * machine, so `getFullYear()/getMonth()/getDate()` name that day directly (issue #321). Contrast
+ * (`lastPerformedAt` + interval, which keeps the service's wall-clock time) or a loan due date
+ * (stored at local end-of-day, issue #318) — the calendar day the user means is the *local* day it
+ * falls on, not the UTC one. The bridge runs on the user's own machine, so
+ * `getFullYear()/getMonth()/getDate()` name that day directly (issue #321). Contrast
  * {@link icalDate}, which reads UTC components and so suits a value already at midnight UTC.
  */
 export function icalLocalDate(unixMs: number): ICalDate {

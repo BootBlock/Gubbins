@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import { buildCalendar, buildCalendarEvents } from './feed.ts';
-import { icalDate, icalDateFromIso, icalLocalDate, type VEvent } from './emitter.ts';
+import { addDays, icalDate, icalDateFromIso, icalLocalDate, type VEvent } from './emitter.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-calendar-snapshot.json', import.meta.url);
 
@@ -45,9 +45,10 @@ describe('loan due-backs', () => {
     const loan = loans[0]!;
     expect(loan.uid).toBe('loan-checkout-open-due@gubbins.invalid');
     expect(loan.summary).toBe('Loan due: Multimeter');
-    expect(loan.start).toEqual(icalDate(1754006400000));
-    // All-day → exclusive next-day end.
-    expect(loan.end).toEqual(icalDate(1754006400000 + 86400000));
+    // A loan due date is stored at local end-of-day, so it reads as its LOCAL calendar day (#321).
+    expect(loan.start).toEqual(icalLocalDate(1754006400000));
+    // All-day → exclusive next-day end (a calendar-day step on the DATE value, DST-safe).
+    expect(loan.end).toEqual(addDays(icalLocalDate(1754006400000), 1));
     expect(loan.description).toContain('Alex Rivera');
     expect(loan.categories).toEqual(['Gubbins', 'Loan']);
   });
