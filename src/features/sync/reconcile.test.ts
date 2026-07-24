@@ -84,6 +84,17 @@ describe('reconcile (§7.3 / §7.5)', () => {
     expect(reconcile(local, remote, opts).localUpserts).toHaveLength(0);
   });
 
+  it('issue #161: a column only on the local row (excluded / schema-skew) does not defeat the skip', () => {
+    // The apply's UPSERT only writes the sanitised remote columns, so a column the winning row
+    // does not carry — e.g. a per-device sync-excluded column like `full_res_downgraded_at`, or
+    // one an older peer's schema lacks — cannot change anything and must not force a re-upsert.
+    const local = snapshot({
+      tables: { contacts: [{ id: 'c1', name: 'Same', updated_at: 10, full_res_downgraded_at: 999 }] },
+    });
+    const remote = snapshot({ tables: { contacts: [{ id: 'c1', name: 'Same', updated_at: 10 }] } });
+    expect(reconcile(local, remote, opts).localUpserts).toHaveLength(0);
+  });
+
   it('issue #161: still applies a tie whose content differs (a real concurrent edit)', () => {
     // Same updated_at, different content — REMOTE_WINS must actually write, so the two sides
     // converge on the remote's value rather than staying divergent.

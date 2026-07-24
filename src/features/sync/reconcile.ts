@@ -129,9 +129,9 @@ function rowsDiffer(a: SqlRow, b: SqlRow, table: SyncTable): boolean {
 
 /**
  * Would upserting `winner` over the existing local row `l` write nothing but a re-stamp?
- * (issue #161). Unlike {@link rowsDiffer}, this compares **every** column — including
- * `updated_at` and the non-LWW / bookkeeping columns — because the question here is not "is
- * this a lost edit" but "is applying this upsert a genuine no-op".
+ * (issue #161). Unlike {@link rowsDiffer} — which asks "is this a lost edit" and so ignores
+ * bookkeeping/non-LWW columns — this asks "is applying this upsert a genuine no-op", so it
+ * compares `updated_at` and every other column too.
  *
  * Why it matters: a §7.3 timestamp tie resolves `REMOTE_WINS` (see {@link resolveLww}), so the
  * engine emits an upsert even when the winning row is byte-identical to the one already stored.
@@ -142,6 +142,14 @@ function rowsDiffer(a: SqlRow, b: SqlRow, table: SyncTable): boolean {
  * ping-pong an unedited row forever, inflating every delta. Suppressing the no-op upsert makes a
  * tie genuinely idempotent, exactly as `resolveLww` documents.
  *
+ * The comparison ranges over `winner`'s keys — the exact columns the apply's UPSERT will write
+ * (`applyPlan` builds `SET col = excluded.col` only for the columns present in the sanitised
+ * `winner`). A column on `l` that `winner` does not carry — a per-device sync-excluded column such
+ * as `item_images.full_res_downgraded_at`, or a column an older peer's schema lacks — is never
+ * written by the upsert, so it cannot make the apply anything other than a no-op and must not
+ * defeat the skip. (In practice `buildLocalSnapshot` already strips the excluded columns from `l`
+ * too, so this is also robust against a future reader that stops doing so.)
+ *
  * Comparing `updated_at` keeps the check frame-safe: it is a no-op **only** when applying would
  * change nothing at all. A strictly-newer remote (or a tie observed across a non-zero clock offset,
  * where the applied server-frame stamp differs from the stored local-frame one) differs in
@@ -149,8 +157,7 @@ function rowsDiffer(a: SqlRow, b: SqlRow, table: SyncTable): boolean {
  * cannot churn, because `NEW.updated_at ≠ OLD.updated_at` leaves the trigger dormant.
  */
 function upsertWouldNoOp(l: SqlRow, winner: SqlRow): boolean {
-  const keys = new Set([...Object.keys(l), ...Object.keys(winner)]);
-  for (const key of keys) {
+  for (const key of Object.keys(winner)) {
     if (String(l[key] ?? '') !== String(winner[key] ?? '')) return false;
   }
   return true;
