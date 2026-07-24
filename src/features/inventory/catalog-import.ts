@@ -228,12 +228,26 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
 ];
 
 /**
+ * The gauge-configuration fields (issue #341). They are only meaningful on a Consumable-Gauge
+ * row and ignored on every other, so — unlike every other core field — a category custom field
+ * of the same name wins the header in {@link inferColumnMapping}: shadowing "Unit of measure"
+ * would silently discard that column's value on a catalogue of ordinary items.
+ */
+const GAUGE_FIELDS: ReadonlySet<CatalogField> = new Set<CatalogField>([
+  'unitOfMeasure',
+  'grossCapacity',
+  'tareWeight',
+  'currentNetValue',
+]);
+
+/**
  * Infer a {@link ColumnMapping} from a CSV header row. Core catalog synonyms win
  * first; a header that matches no core synonym is then matched against the supplied
  * category **custom-field** definitions by normalised name (or exact field id), so a
  * column like `Resistance` targets that category field (Phase 72). Unrecognised
  * columns map to `null`. Each core field and each custom field is assigned at most
- * once (first header wins).
+ * once (first header wins). The one exception to "core wins" is a {@link GAUGE_FIELDS}
+ * column, which yields to a same-named custom field.
  */
 export function inferColumnMapping(
   headers: readonly string[],
@@ -252,16 +266,20 @@ export function inferColumnMapping(
 
   return headers.map((h) => {
     const key = headerKey(h);
-    for (const [synonym, field] of HEADER_SYNONYMS) {
-      if (synonym === key && !assigned.has(field)) {
-        assigned.add(field);
-        return field;
-      }
-    }
-    // No core match — try a custom field. Match on the normalised header key or the
-    // raw (un-normalised) header, the latter so a UUID field id used as a header
-    // resolves even though normalisation would strip its hyphens.
+    // The custom field this header would target, resolved up-front so a gauge column can yield
+    // to it. Matched on the normalised header key or the raw (un-normalised) header, the latter
+    // so a UUID field id used as a header resolves even though normalisation would strip its
+    // hyphens.
     const fieldId = fieldByKey.get(key) ?? fieldByKey.get(h.trim());
+    const customFieldFree = fieldId !== undefined && !assignedFieldIds.has(fieldId);
+    for (const [synonym, field] of HEADER_SYNONYMS) {
+      if (synonym !== key || assigned.has(field)) continue;
+      // A gauge column defers to a custom field of the same name (see GAUGE_FIELDS).
+      if (GAUGE_FIELDS.has(field) && customFieldFree) break;
+      assigned.add(field);
+      return field;
+    }
+    // No core match (or a gauge column that yielded) — target the custom field.
     if (fieldId !== undefined && !assignedFieldIds.has(fieldId)) {
       assignedFieldIds.add(fieldId);
       return { fieldId };
@@ -474,9 +492,15 @@ interface CoercedRow {
  * Numeric fields are converted from strings here so Zod receives the right types —
  * including non-integer values such as `1.5`, which are passed through as-is so the
  * schema's whole-number rule reports them rather than the parser silently truncating.
+ *
+ * The gauge cells are read only on a row whose *resolved* tracking mode is Consumable-Gauge
+ * (issue #341); every other row ignores them, and reporting a value the row discards anyway
+ * would cost it its import — a shipping sheet's "Tare weight: 12 kg" is not this importer's
+ * business unless the row is a gauge.
  */
 function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRow {
   const unreadable: string[] = [];
+  const isGauge = raw.trackingMode === 'CONSUMABLE_GAUGE';
 
   /**
    * Read one numeric cell. An absent cell yields `undefined` ("not supplied"); an
@@ -494,6 +518,9 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRo
     return value;
   };
 
+  /** Read one gauge cell — only on a gauge row (an ignored cell is never reported). */
+  const gaugeNum = (field: NumericCatalogField): number | undefined => (isGauge ? num(field) : undefined);
+
   return {
     unreadable,
     data: {
@@ -507,10 +534,10 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRo
       locationId: raw.locationId ?? undefined,
       categoryId: raw.categoryId,
       trackingMode: (raw.trackingMode ?? undefined) as CatalogRowData['trackingMode'],
-      unitOfMeasure: raw.unitOfMeasure,
-      grossCapacity: num('grossCapacity'),
-      tareWeight: num('tareWeight'),
-      currentNetValue: num('currentNetValue'),
+      unitOfMeasure: isGauge ? raw.unitOfMeasure : undefined,
+      grossCapacity: gaugeNum('grossCapacity'),
+      tareWeight: gaugeNum('tareWeight'),
+      currentNetValue: gaugeNum('currentNetValue'),
       mpn: raw.mpn,
       manufacturer: raw.manufacturer,
       unitCost: num('unitCost'),

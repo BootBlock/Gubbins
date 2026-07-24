@@ -889,6 +889,34 @@ describe('buildCatalogImportPlan — Consumable-Gauge configuration (issue #341)
     expect(plan.create[0]!.input.gauge).toBeUndefined();
   });
 
+  it('does not report an unreadable gauge cell on a row that ignores it', () => {
+    // A shipping sheet's "Tare weight: 12 kg" is not a number, but a bulk row never reads it —
+    // reporting it would cost the row its import over a cell the importer discards.
+    const csv = 'name,tareWeight,quantity\r\nM3 bolt,12 kg,40';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.input.quantity).toBe(40);
+  });
+
+  it('still reports an unreadable gauge cell on a consumable row', () => {
+    const csv = 'name,tracking,unitOfMeasure,grossCapacity\r\nResin,gauge,ml,half a litre';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toEqual([]);
+    expect(plan.errors[0]!.message).toMatch(/Gross capacity: "half a litre" is not a number/i);
+  });
+
+  it('lets a custom field of the same name keep its column', () => {
+    // Unlike every other core field, a gauge column yields: it is ignored on a non-gauge row,
+    // so shadowing the custom field would silently discard the value.
+    const field = stubField('f-uom', 'Unit of measure');
+    expect(inferColumnMapping(['name', 'Unit of measure'], [field])).toEqual(['name', { fieldId: 'f-uom' }]);
+
+    const csv = 'name,Unit of measure\r\nM3 bolt,EA';
+    const plan = buildCatalogImportPlan(csv, null, [], { customFields: [field] });
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.fieldValues).toEqual({ 'f-uom': 'EA' });
+  });
+
   it('costs only its own row, leaving the rest of the batch importable', () => {
     const csv =
       'name,Type\r\nResistor 10k,Bulk\r\nMystery goo,Consumable\r\nCapacitor 100nF,Bulk\r\nLED Red,Bulk';
