@@ -8,10 +8,16 @@ name: Tests
 # v23.x build, FTS5 was never backported there). The bridge additionally runs TypeScript
 # directly via Node's built-in type-stripping — so all jobs pin Node 25, which satisfies the
 # requirement above and matches the local dev toolchain so the lockfile resolves identically.
+#
+# `workflow_call` also exposes this whole suite as a reusable gate: the Deploy workflow invokes
+# it (against the exact ref being published) and blocks its build on a green result, so the same
+# secret-scan / quality / app / bridge checks run before anything reaches production — an
+# operator can no longer one-click-deploy an unmerged ref that CI has never seen (issue #275).
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 # Least-privilege: the tests only need to read the checkout.
 permissions:

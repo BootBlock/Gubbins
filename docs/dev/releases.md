@@ -20,6 +20,20 @@ brackets that with a release marker:
 So a tag means "this commit reached production", never "someone tried". `git tag` is the
 release history, and the newest tag names the build currently being served.
 
+### Nothing untested reaches production
+
+Before it builds anything, the deploy runs the **full Tests suite** — secret-scan,
+lint/format/type-check, the app and bridge unit tests, and the bridge boot-smoke — against
+*exactly the ref being deployed*, and blocks the build on a green result (issue #275). It does
+this by calling `tests.yml` as a reusable workflow, so the deploy gate and the ordinary
+push/PR checks are one definition that cannot drift.
+
+This matters because `workflow_dispatch` lets the operator publish **any** ref, including an
+unmerged branch that CI has never seen. Without the gate, the only thing between a red commit
+and every user's device was remembering to check the Actions tab; now a failing check fails the
+deploy. A rollback to a known-good tag re-runs the suite against that tag and passes, so it stays
+a straight republish.
+
 ### Cutting a release
 
 1. Bump `version` (and `releaseDate`) in `package.json`. Bump `schemaVersion` too if the change
