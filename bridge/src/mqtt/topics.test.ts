@@ -10,12 +10,14 @@ import {
   locationAttributes,
   locationPayload,
   sanitizeTopicLevel,
+  snapshotHealthPayload,
   summaryPayload,
   topicsFor,
 } from './topics.ts';
 import type { InventoryState } from './state.ts';
 import type { BridgeEvent } from '../events/model.ts';
 import { LOOKUP_RESOLVED_TYPE, type LookupEvent } from '../events/lookup.ts';
+import { HEALTHY_RELOAD, summarizeSnapshotHealth } from '../snapshot-health.ts';
 
 const STATE: InventoryState = {
   itemsTotal: 3,
@@ -74,6 +76,7 @@ describe('topicsFor', () => {
     expect(t.locationState('loc-store')).toBe('gubbins/location/loc-store/state');
     expect(t.event('item.low_stock')).toBe('gubbins/event/item.low_stock');
     expect(t.locate).toBe('gubbins/locate');
+    expect(t.snapshotState).toBe('gubbins/snapshot/state');
   });
   it('honours a custom prefix and defaults a blank one', () => {
     expect(topicsFor('home/gubbins').summaryState).toBe('home/gubbins/summary/state');
@@ -144,6 +147,35 @@ describe('payloads', () => {
       name: 'Store Room',
       itemCount: 2,
       attributes: { ha_entity: 'light.store_room', aisle: 'B' },
+    });
+  });
+  it('snapshot health carries the fresh verdict when the data is current (issue #394)', () => {
+    expect(JSON.parse(snapshotHealthPayload(summarizeSnapshotHealth(HEALTHY_RELOAD)))).toEqual({
+      stale: false,
+      reloadFailures: 0,
+      lastReloadAt: null,
+      lastReloadError: null,
+      lastReloadErrorAt: null,
+    });
+  });
+  it('snapshot health carries the stale verdict + redacted counters when the data is out of date', () => {
+    const payload = JSON.parse(
+      snapshotHealthPayload(
+        summarizeSnapshotHealth({
+          ...HEALTHY_RELOAD,
+          consecutiveFailures: 4,
+          lastError: "ENOENT: no such file or directory, open '/srv/gubbins-sync.json'",
+          lastErrorAt: '2025-06-27T07:40:00.000Z',
+          lastSuccessAt: '2025-06-27T07:33:20.000Z',
+        }),
+      ),
+    );
+    expect(payload).toEqual({
+      stale: true,
+      reloadFailures: 4,
+      lastReloadAt: '2025-06-27T07:33:20.000Z',
+      lastReloadError: "ENOENT: no such file or directory, open '<path>'",
+      lastReloadErrorAt: '2025-06-27T07:40:00.000Z',
     });
   });
 

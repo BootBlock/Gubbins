@@ -278,6 +278,18 @@ export async function handleRequest(
   // opaque network failure.
   res.setHeader('Access-Control-Allow-Origin', '*');
 
+  // Snapshot-staleness marker on **every** response (issue #394). `/health` already carries the
+  // full reload tally, but a consumer of `/search`, `/where`, `/metrics` or any `/api/v1` read
+  // otherwise learns nothing about staleness without separately polling `/health` — so the same
+  // verdict is stamped once here, in the request path, covering every read at a single point. It is
+  // the boolean form of `/health`'s `snapshotStale`; a client wanting the counters still reads
+  // `/health`. Absent (never set) when no reload-health accessor is wired, so its presence is
+  // itself the signal that the bridge reports this at all.
+  const staleHeaderHealth = options.getSnapshotHealth?.();
+  if (staleHeaderHealth !== undefined) {
+    res.setHeader('X-Gubbins-Snapshot-Stale', staleHeaderHealth.snapshotStale ? 'true' : 'false');
+  }
+
   // A CORS preflight is a plain capability check the browser makes before the real request; it
   // carries no Authorization header (browsers deliberately omit it on preflights), so it must be
   // answered before the auth/rate-limit guards below, and never counted against the rate limit.

@@ -72,6 +72,13 @@ describe('GET /health', () => {
     });
   });
 
+  // Issue #394: with no reload-health accessor wired the staleness header is simply absent — its
+  // presence is itself the signal that the bridge reports staleness at all.
+  it('omits the staleness header when no reload-health accessor is wired', async () => {
+    const res = await get('/health');
+    expect(res.headers.get('x-gubbins-snapshot-stale')).toBeNull();
+  });
+
   // Issue #312: a failed re-hydrate keeps the last good snapshot serving, so /health has to stop
   // claiming `ok` once the data is knowingly out of date — otherwise a dashboard renders stale
   // stock levels as if they were current.
@@ -91,8 +98,14 @@ describe('GET /health', () => {
         r.json(),
       );
 
+    const head = (path: string) =>
+      fetch(`http://127.0.0.1:${port}${path}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+
     try {
       expect(await health('/health')).toMatchObject({ ok: true, snapshotStale: false });
+      // Issue #394: the staleness verdict also rides every read as a response header, so a
+      // consumer of /search or any /api/v1 read learns about it without polling /health.
+      expect((await head('/search?q=ESP32')).headers.get('x-gubbins-snapshot-stale')).toBe('false');
 
       report = summarizeSnapshotHealth({
         consecutiveFailures: 3,
@@ -112,6 +125,9 @@ describe('GET /health', () => {
       // Both surfaces agree — the versioned alias is not allowed to be more optimistic.
       expect(await health('/health')).toMatchObject(expected);
       expect(await health('/api/v1/health')).toMatchObject(expected);
+      // The header flips with the verdict, and covers a plain data read as well as /health.
+      expect((await head('/health')).headers.get('x-gubbins-snapshot-stale')).toBe('true');
+      expect((await head('/search?q=ESP32')).headers.get('x-gubbins-snapshot-stale')).toBe('true');
     } finally {
       await new Promise<void>((resolve) => stale.close(() => resolve()));
     }

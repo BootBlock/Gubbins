@@ -18,6 +18,14 @@ an MCP client, and the assistant can then look things up on your behalf, in natu
 Because it uses the same query engine as the rest of the bridge, the assistant sees exactly the
 data you'd see — and, by default, **cannot change anything**.
 
+> **ℹ️ Note — the assistant is told when the data may be out of date**
+> If the bridge can no longer re-read your data it keeps answering from the last copy it had (so the
+> assistant isn't left with nothing), but those figures are then stale. When that happens, its
+> answers come with a short note that the data may be out of date and when it was last refreshed —
+> so the assistant can say "you had 12 as of this morning" rather than stating a stale number as if
+> it were current. This matches the freshness signal the rest of the bridge gives; see
+> [[checking it's serving current data|Running-the-Bridge]].
+
 ## Letting an assistant adjust stock (optional)
 
 If you switch **writes** on when running the bridge, two more tools appear alongside the read-only

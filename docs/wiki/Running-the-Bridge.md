@@ -52,6 +52,16 @@ caught it mid-write.
 > always current. That way a broken data feed shows as *unavailable* instead of quietly displaying
 > yesterday's stock levels as if they were today's.
 
+You don't have to poll `/health` separately to notice this. The same freshness verdict travels on
+every other surface too, so whichever way you read the bridge you find out:
+
+- **Every response** carries an `X-Gubbins-Snapshot-Stale: true` / `false` header, so an
+  integration reading search results or the API learns the data is stale as it reads it.
+- **Home Assistant over [[MQTT|Webhooks-MQTT-and-iCal]]** gets a dedicated *Snapshot stale* sensor —
+  the entities stay put, but this one flips on so you can alert or automate on it.
+- **The [[AI assistant tools|AI-Assistant-Query-MCP]]** add a short "this data may be out of date"
+  note to their answers, so an assistant caveats a count rather than stating it as current.
+
 ## When something goes wrong while it's running
 
 The bridge is built to **stay up**. An occasional problem — a hiccup reaching your MQTT broker, a

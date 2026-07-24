@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import type { BridgeServerState } from '../server.ts';
+import { HEALTHY_RELOAD, summarizeSnapshotHealth } from '../snapshot-health.ts';
 import {
   createMcpDispatcher,
   DEFAULT_PROTOCOL_VERSION,
@@ -106,6 +107,54 @@ describe('tools/call', () => {
     expect(result.structuredContent.matches[0]!.id).toBe('item-esp32');
     // The text content is the same data, JSON-encoded.
     expect(JSON.parse(result.content[0]!.text).matches[0].id).toBe('item-esp32');
+  });
+
+  it('does not annotate a successful result when the snapshot is fresh (issue #394)', async () => {
+    const fresh = createMcpDispatcher({
+      getState: () => state,
+      getSnapshotHealth: () => summarizeSnapshotHealth(HEALTHY_RELOAD),
+    });
+    const res = await fresh({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'gubbins_search', arguments: { q: 'ESP32 Dev Board' } },
+    });
+    const result = (res as JsonRpcResponse).result as { content: { text: string }[] };
+    // A healthy call keeps its single data block — the very first block is the JSON payload.
+    expect(result.content).toHaveLength(1);
+    expect(JSON.parse(result.content[0]!.text).matches[0].id).toBe('item-esp32');
+  });
+
+  it('prepends a staleness caveat to a successful result when the snapshot is stale (issue #394)', async () => {
+    const staleReport = summarizeSnapshotHealth({
+      ...HEALTHY_RELOAD,
+      consecutiveFailures: 5,
+      lastError: "ENOENT: no such file or directory, open '/srv/gubbins-sync.json'",
+      lastErrorAt: '2026-06-29T00:05:00.000Z',
+      lastSuccessAt: '2026-06-29T00:00:00.000Z',
+    });
+    const stale = createMcpDispatcher({ getState: () => state, getSnapshotHealth: () => staleReport });
+    const res = await stale({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'gubbins_search', arguments: { q: 'ESP32 Dev Board' } },
+    });
+    const result = (res as JsonRpcResponse).result as {
+      content: { type: string; text: string }[];
+      structuredContent: { matches: { id: string }[] };
+      isError: boolean;
+    };
+    // Caveat first (so the model reads it before the data), then the untouched data block.
+    expect(result.content).toHaveLength(2);
+    expect(result.content[0]!.text).toContain('out of date');
+    expect(result.content[0]!.text).not.toContain('/srv/gubbins-sync.json'); // redacted
+    expect(JSON.parse(result.content[1]!.text).matches[0].id).toBe('item-esp32');
+    // The structured payload stays clean — staleness is metadata about the answer, not part of it.
+    expect(result.structuredContent).not.toHaveProperty('stale');
+    expect(result.structuredContent.matches[0]!.id).toBe('item-esp32');
+    expect(result.isError).toBe(false);
   });
 
   it('returns a normal (non-error) result with found:false for an unknown item id', async () => {

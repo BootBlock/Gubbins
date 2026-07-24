@@ -7,6 +7,7 @@ import {
   HEALTHY_RELOAD,
   healthBody,
   redactReloadError,
+  stalenessCaveat,
   summarizeSnapshotHealth,
   type SnapshotReloadHealth,
 } from './snapshot-health.ts';
@@ -79,6 +80,43 @@ describe('redactReloadError', () => {
   it('never returns an empty string', () => {
     expect(redactReloadError('/only/a/path')).toBe('<path>');
     expect(redactReloadError('   ')).toBe('Snapshot reload failed.');
+  });
+});
+
+describe('stalenessCaveat', () => {
+  it('returns null when the snapshot is current', () => {
+    expect(stalenessCaveat(summarizeSnapshotHealth(HEALTHY_RELOAD))).toBeNull();
+    expect(
+      stalenessCaveat(
+        summarizeSnapshotHealth(health({ consecutiveFailures: DEFAULT_STALE_AFTER_FAILURES - 1 })),
+      ),
+    ).toBeNull();
+  });
+
+  it('describes the staleness, the failure count and the last good read when stale', () => {
+    const caveat = stalenessCaveat(
+      summarizeSnapshotHealth(
+        health({
+          consecutiveFailures: 5,
+          lastError: "ENOENT: no such file or directory, open '/srv/gubbins-sync.json'",
+          lastErrorAt: '2026-07-19T10:05:00.000Z',
+          lastSuccessAt: '2026-07-19T10:00:00.000Z',
+        }),
+      ),
+    );
+    expect(caveat).not.toBeNull();
+    expect(caveat).toContain('out of date');
+    expect(caveat).toContain('5 attempts');
+    expect(caveat).toContain('2026-07-19T10:00:00.000Z');
+    // The path in the error is redacted before it ever reaches the caveat.
+    expect(caveat).toContain('<path>');
+    expect(caveat).not.toContain('/srv/gubbins-sync.json');
+  });
+
+  it('reads sensibly with no prior successful read', () => {
+    const caveat = stalenessCaveat(summarizeSnapshotHealth(health({ consecutiveFailures: 3 })));
+    expect(caveat).toContain('out of date');
+    expect(caveat).not.toContain('last read successfully');
   });
 });
 

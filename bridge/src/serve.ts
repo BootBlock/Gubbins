@@ -168,6 +168,11 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
       if (mqtt) {
         try {
           await mqtt.publishState(state.driver, state.snapshotGeneratedAt);
+          // A successful reload clears any prior staleness — publish the fresh verdict so a broker
+          // /HA that had gone stale flips back (issue #394). Same summariser as `/health`.
+          mqtt.publishSnapshotHealth(
+            summarizeSnapshotHealth(watcher.getReloadHealth(), config.staleAfterFailures),
+          );
         } catch (err) {
           console.error(`MQTT state publish failed: ${errorDetail(err)}`);
         }
@@ -176,10 +181,20 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     // The count is what distinguishes a caught-mid-write blip from a reload that is genuinely
     // stuck, so it goes in the log line as well as in `/health`. Safe to read here: the watcher
     // binding is assigned before any hook can fire.
-    onError: (error) =>
-      console.error(
-        `Snapshot reload failed (${watcher.getReloadHealth().consecutiveFailures} in a row): ${error.message}`,
-      ),
+    onError: (error) => {
+      const health = watcher.getReloadHealth();
+      console.error(`Snapshot reload failed (${health.consecutiveFailures} in a row): ${error.message}`);
+      // The failure path is the whole point of the separate staleness topic (issue #394): the
+      // summary/location state froze at its last good values, so this is the only signal that tells
+      // a broker/HA the data has gone stale. Best-effort; never disturbs the retained good data.
+      if (mqtt) {
+        try {
+          mqtt.publishSnapshotHealth(summarizeSnapshotHealth(health, config.staleAfterFailures));
+        } catch (err) {
+          console.error(`MQTT staleness publish failed: ${errorDetail(err)}`);
+        }
+      }
+    },
   });
   mqtt?.start();
   await watcher.start();

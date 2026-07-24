@@ -16,6 +16,7 @@
  * read-only and nothing here can mutate anything.
  */
 import type { BridgeServerState } from '../server.ts';
+import { stalenessCaveat, type SnapshotHealthReport } from '../snapshot-health.ts';
 import { ALL_TOOLS, ToolInputError, type McpTool } from './tools.ts';
 
 /** The MCP protocol revision we advertise when a client doesn't request a specific one. */
@@ -58,6 +59,14 @@ export interface McpDispatcherOptions {
   readonly tools?: readonly McpTool[];
   /** Server identity returned by `initialize`. */
   readonly serverInfo?: ServerInfo;
+  /**
+   * Reload health for the served snapshot (issue #394). A failed re-hydrate keeps the last good
+   * snapshot live, so without this an assistant answering "how many do I have?" presents a stale
+   * count as authoritative with nothing to caveat it. When present and the verdict is stale, a
+   * short caveat is prepended to each successful tool result so the model can degrade honestly —
+   * the MCP analogue of `/health`'s `ok: false`. Omit and tool results are never annotated.
+   */
+  readonly getSnapshotHealth?: () => SnapshotHealthReport;
 }
 
 /** A function that handles one parsed message, resolving to a response or null (notification). */
@@ -93,7 +102,9 @@ export function createMcpDispatcher(options: McpDispatcherOptions): McpDispatch 
         case 'tools/list':
           return isNotification ? null : result(id, { tools: tools.map(toToolDefinition) });
         case 'tools/call':
-          return isNotification ? null : result(id, await callTool(params, tools, options.getState));
+          return isNotification
+            ? null
+            : result(id, await callTool(params, tools, options.getState, options.getSnapshotHealth));
         default:
           // Notifications (e.g. notifications/initialized) need no reply and no error.
           if (isNotification) return null;
@@ -130,6 +141,7 @@ async function callTool(
   params: unknown,
   tools: readonly McpTool[],
   getState: () => BridgeServerState | null,
+  getSnapshotHealth?: () => SnapshotHealthReport,
 ): Promise<unknown> {
   const name = isObject(params) ? params.name : undefined;
   if (typeof name !== 'string') {
@@ -153,8 +165,15 @@ async function callTool(
 
   try {
     const data = await tool.run(state.driver, args);
+    // When the served snapshot is knowingly out of date, prepend a caveat as its own text block so
+    // the model reads it before the data and can qualify anything it reports (issue #394). The
+    // structured payload is left untouched — the staleness is metadata about the answer, not part
+    // of it — and the caveat is skipped entirely when the data is current, so a healthy call keeps
+    // its existing single-block shape.
+    const caveat = getSnapshotHealth ? stalenessCaveat(getSnapshotHealth()) : null;
+    const dataBlock = { type: 'text', text: JSON.stringify(data, null, 2) };
     return {
-      content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+      content: caveat === null ? [dataBlock] : [{ type: 'text', text: caveat }, dataBlock],
       structuredContent: data,
       isError: false,
     };
