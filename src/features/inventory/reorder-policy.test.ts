@@ -4,6 +4,7 @@ import {
   effectiveGaugePercent,
   effectiveQtyThreshold,
   isLow,
+  isOutOfStock,
   shortfall,
   type ReorderDefaults,
   type ReorderItem,
@@ -110,6 +111,43 @@ describe('reorder-policy — isLow', () => {
     // An infinite source never runs low, even at 0 on-hand or with an aggressive reorder point.
     expect(isLow(discrete(0, { isUnlimited: true }), DEFAULTS)).toBe(false);
     expect(isLow(discrete(0, { isUnlimited: true, reorderPoint: 20 }), DEFAULTS)).toBe(false);
+  });
+});
+
+describe('reorder-policy — isOutOfStock (not opt-in)', () => {
+  it('flags a depleted DISCRETE item even with no reorder point set', () => {
+    // The regression this guards: an item at 0 with no reorder point is still out of stock,
+    // independent of the opt-in low-stock gate.
+    expect(isOutOfStock(discrete(0))).toBe(true);
+    expect(isOutOfStock(discrete(1))).toBe(false);
+  });
+
+  it('flags an emptied CONSUMABLE_GAUGE item with real capacity', () => {
+    expect(isOutOfStock(gauge(0))).toBe(true);
+    expect(isOutOfStock(gauge(1))).toBe(false);
+  });
+
+  it('never flags a gauge with no usable capacity', () => {
+    const noCapacity = gauge(0, {
+      gauge: {
+        unitOfMeasure: 'g',
+        grossCapacity: 0,
+        tareWeight: 0,
+        currentNetValue: 0,
+        percentageRemaining: 0,
+        currentGrossWeight: 0,
+      },
+    });
+    expect(isOutOfStock(noCapacity)).toBe(false);
+  });
+
+  it('never flags SERIALISED or UNTRACKED items (no bulk stock level to deplete)', () => {
+    expect(isOutOfStock(discrete(0, { trackingMode: 'SERIALISED' }))).toBe(false);
+    expect(isOutOfStock(discrete(0, { trackingMode: 'UNTRACKED' }))).toBe(false);
+  });
+
+  it('never flags an unlimited-supply item, whatever its on-hand count', () => {
+    expect(isOutOfStock(discrete(0, { isUnlimited: true }))).toBe(false);
   });
 });
 

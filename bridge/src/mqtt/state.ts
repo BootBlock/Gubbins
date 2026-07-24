@@ -7,7 +7,7 @@
  * low-stock and out-of-stock counts, and a per-location item count.
  *
  * The low-stock / out-of-stock counts reuse the **exact same seams** as the EI-1 event model —
- * `isLow` (reorder policy) and `isStockEmpty` (the event model) with the app-default thresholds —
+ * `isLow` and `isOutOfStock` (the app's reorder policy) with the app-default low-stock thresholds —
  * so the published counts can never drift from the `item.low_stock` / `item.out_of_stock` events.
  * Everything is bounded (paged at the repository ceiling up to {@link MAX_ITEMS_SCANNED}) so a huge
  * vault can't produce an unbounded scan.
@@ -41,7 +41,7 @@ export interface InventoryState {
   readonly itemsTotal: number;
   /** How many active items are at/below their low-stock threshold. */
   readonly lowStockItems: number;
-  /** How many active items are fully depleted (a subset of {@link lowStockItems}). */
+  /** How many active items are fully depleted (counted independently of {@link lowStockItems}). */
   readonly outOfStockItems: number;
   /** Per-location item counts (for the per-location sensors). */
   readonly locations: readonly LocationState[];
