@@ -21,6 +21,7 @@ import { createBridgeServer } from './server.ts';
 import { createRateLimiter } from './rate-limit.ts';
 import { createWriteExecutor } from './write.ts';
 import { ingestSnapshot } from './push.ts';
+import { createSnapshotMutex } from './snapshot-io.ts';
 import { detectSource, pushEnabledForSource, writesEnabledForSource } from './sqlite-source.ts';
 import { createSnapshotWatcher, type SnapshotWatcher } from './watcher.ts';
 import { summarizeSnapshotHealth } from './snapshot-health.ts';
@@ -200,20 +201,32 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   await watcher.start();
 
   const rateLimiter = config.rateLimit ? createRateLimiter(config.rateLimit) : undefined;
+  // One single-flight shared by BOTH mutating surfaces (writes and push): each is a
+  // read-modify-write on the same snapshot, so a write and a push must apply one-at-a-time or one
+  // silently drops the other's change (issue #154). See snapshot-io.ts.
+  const snapshotMutex = createSnapshotMutex();
   // Writes are off unless explicitly opted in; the executor serialises writes and round-trips
   // each through the §7.3 sync merge (the PWA picks them up on its next sync). See write.ts.
   // They are additionally refused for a raw `.sqlite` source, which has no sync channel to
   // round-trip through (the PWA never reads the exported `.sqlite` back) — see sqlite-source.ts.
   const source = await detectSource(config.snapshotPath);
   const writesEnabled = writesEnabledForSource(config.allowWrites, source);
-  const write = writesEnabled ? { execute: createWriteExecutor(config.snapshotPath) } : undefined;
-  // Push ("push to bridge") is an independent opt-in: it replaces the whole served snapshot, and
-  // is likewise refused for a raw `.sqlite` source (no JSON sync channel). See push.ts.
+  const write = writesEnabled
+    ? { execute: createWriteExecutor(config.snapshotPath, undefined, snapshotMutex) }
+    : undefined;
+  // Push ("push to bridge") is an independent opt-in: it MERGES into the served snapshot via the
+  // §7.3 reconcile (so a concurrent bridge write is never lost), and is likewise refused for a raw
+  // `.sqlite` source (no JSON sync channel). See push.ts.
   const pushEnabled = pushEnabledForSource(config.allowPush, source);
   const push = pushEnabled
     ? {
         ingest: (body: AsyncIterable<Uint8Array>) =>
-          ingestSnapshot({ snapshotPath: config.snapshotPath, body, maxBytes: config.maxPushBytes }),
+          ingestSnapshot({
+            snapshotPath: config.snapshotPath,
+            body,
+            maxBytes: config.maxPushBytes,
+            mutex: snapshotMutex,
+          }),
       }
     : undefined;
   // Home Assistant reads (issue #122) — an independent, outbound-only opt-in: the bridge calls
@@ -298,8 +311,9 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   }
   if (pushEnabled) {
     console.warn(
-      'Snapshot push ENABLED (GUBBINS_BRIDGE_ALLOW_PUSH=on): POST /api/v1/snapshot can REPLACE the ' +
-        `served snapshot (max ${config.maxPushBytes} bytes). The watcher re-hydrates each push.`,
+      'Snapshot push ENABLED (GUBBINS_BRIDGE_ALLOW_PUSH=on): POST /api/v1/snapshot merges a pushed ' +
+        `snapshot into the served one via the sync reconcile (max ${config.maxPushBytes} bytes), so a ` +
+        'concurrent write is not lost. The watcher re-hydrates each push.',
     );
   } else if (config.allowPush && source === 'sqlite') {
     console.warn(
