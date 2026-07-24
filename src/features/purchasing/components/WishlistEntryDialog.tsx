@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Button, FormField, Input, Modal, SelectField, Textarea } from '@/components/foundry';
+import { Button, FormField, Input, Modal, MoneyInput, SelectField, Textarea } from '@/components/foundry';
 import {
   WISHLIST_PRIORITY_OPTIONS,
   planWishlistEntry,
@@ -113,17 +113,13 @@ export function WishlistEntryDialog({ open, entry, isSaving, onSubmit, onClose }
             hint="An optional budget/price you're aiming for, in your base currency."
             error={fieldError('targetPrice')}
           >
-            <Input
-              type="number"
-              min={0}
-              step="0.01"
-              inputMode="decimal"
+            <MoneyInput
               value={targetPrice}
-              onChange={(e) => {
-                setTargetPrice(e.target.value);
+              onValueChange={(value) => {
+                setTargetPrice(value);
                 if (error === 'INVALID_PRICE') setError(null);
               }}
-              placeholder="—"
+              placeholder="0.00"
               data-testid="wishlist-target-price"
             />
           </FormField>
