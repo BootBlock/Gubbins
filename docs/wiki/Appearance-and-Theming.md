@@ -59,7 +59,10 @@ Gubbins has some gentle visual polish that you can dial up or down:
   weather also touches the interface itself: falling **snow** settles on buttons, cards and other
   controls, slowly building little drifts along their tops (scroll or move things around and the
   snow is knocked off, ready to build again), while **rain** splashes off the tops of controls in
-  small ripples as drops strike them.
+  small ripples as drops strike them. Snow also has weather of its own: mostly it drifts gently —
+  with the occasional gust or a passing swirl catching the flakes — but every few minutes a brief
+  **blizzard** blows through, briefly whipping the snow near-horizontal and thickening the air
+  before calm returns. It's all part of the one effect; there's nothing extra to configure.
 - **Holographic foil cards** / **Collector cards** — playful trading-card shimmer and rarity
   frames on item cards.
 
