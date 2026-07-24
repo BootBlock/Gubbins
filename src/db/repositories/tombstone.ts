@@ -129,6 +129,36 @@ export const ITEM_REGIONS_TABLE = 'item_regions';
 export const ITEM_HISTORY_TABLE = 'item_history';
 
 /**
+ * The schema tables deliberately **excluded** from every synchronisation path — neither an
+ * LWW entry in {@link SYNC_TABLES} nor one of the bespoke sections ({@link ITEM_TAGS_TABLE} /
+ * {@link LOCATION_TAGS_TABLE} / {@link ITEM_REGIONS_TABLE} / {@link ITEM_HISTORY_TABLE}). Each
+ * is device-local or derived, so a peer's copy would be meaningless or actively wrong:
+ *
+ *  - `app_meta` — per-device application/schema bookkeeping (the `user_version` mirror, feature
+ *    seeds); never data the user authored, so it never travels.
+ *  - `sync_meta` — the sync engine's own local cursors and watermarks (last-sync times, the
+ *    §7.6.3-A `history_pruned_before` mark). These describe *this* device's sync state; a peer's
+ *    values would corrupt it.
+ *  - `tombstones` — the deletion ledger. It *is* propagated, but as its own snapshot section
+ *    (the `tombstones` array reconciled by {@link tombstoneDeleteStatement}), never upserted
+ *    row-for-row like a data table; listing it here keeps it from being mistaken for LWW data.
+ *  - `location_item_counts` — pure derived cache, re-computed by triggers from `items`
+ *    (see the migration note at its `CREATE TABLE`). A peer's count is meaningless; a restore
+ *    re-derives it from whatever rows land in `items`.
+ *
+ * This list is the explicit half of the classification the drift test enforces
+ * (`sync-table-classification.test.ts`): every real table in the built schema must appear in
+ * exactly one bucket, so adding a table forces a conscious *synced* / *not-synced* decision
+ * rather than defaulting silently to unsynced (issue #245 — the trap that lost `kit_components`,
+ * issue #151). The FTS5 virtual table `items_fts` and its shadow tables are not listed: they are
+ * an engine-managed index rebuilt from `items`, so the test skips virtual tables and their
+ * shadow tables wholesale rather than classifying each.
+ */
+export const NOT_SYNCED = ['app_meta', 'sync_meta', 'tombstones', 'location_item_counts'] as const;
+
+export type NotSyncedTable = (typeof NOT_SYNCED)[number];
+
+/**
  * Every table a tombstone may legitimately name: the {@link SYNC_TABLES} LWW set plus the
  * three membership joins, whose unlinks are also recorded as tombstones (keyed by their
  * composite edge ids). The append-only {@link ITEM_HISTORY_TABLE} is deliberately absent —
