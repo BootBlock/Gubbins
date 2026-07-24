@@ -276,4 +276,40 @@ describe('discrete-stock convergence — the #188 scenario end-to-end (S1)', () 
       await b.close();
     }
   });
+
+  it('falls back to LWW for a baseline-less placement rather than converging to a wrong value', async () => {
+    const dictOf = (driver: MemoryDriver) =>
+      buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE]);
+
+    const a = createMemoryDriver();
+    const b = createMemoryDriver();
+    try {
+      await runMigrations(a, migrations);
+      const itemsA = new ItemRepository(a);
+      const loc = await new LocationRepository(a).create({ name: 'Bin' });
+      const item = await itemsA.create({ name: 'Washer', quantity: 40, locationId: loc.id });
+      await runMigrations(b, migrations);
+      await b.transaction(
+        withCaptureDisabled(buildCloneStatements(await buildLocalSnapshot(a), await dictOf(b))),
+      );
+      const itemsB = new ItemRepository(b);
+
+      // Simulate a history-excluded restore on A: its stock persists but its ledger is wiped, so
+      // A's placement is now "baseline-less" (quantity 40, Σ deltas 0). Both devices then move.
+      await a.execute('DELETE FROM stock_deltas;');
+      await itemsA.adjustQuantity(item.id, -3); // A ledger: {-3}, quantity 37 (base 40 not in ledger)
+      await itemsB.adjustQuantity(item.id, -2); // B ledger: {seed +40, -2}, quantity 38 (complete)
+
+      // The naive CRDT would union {-3, -2} = -5 → clamp 0 and wipe the stock. The completeness
+      // guard sees A's ledger is incomplete (Σ ≠ quantity) and emits NO resolution, so LWW stands.
+      const plan = reconcile(await buildLocalSnapshot(a), await buildLocalSnapshot(b), {
+        offset: 0,
+        dictionary: await dictOf(a),
+      });
+      expect(plan.stockResolutions).toEqual([]);
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
 });

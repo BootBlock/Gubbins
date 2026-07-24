@@ -15,7 +15,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ITEM_HISTORY_TABLE, SYNC_TABLES } from '@/db/repositories';
+import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE, SYNC_TABLES } from '@/db/repositories';
 import { ADMIN_USER_ID, SYSTEM_USER_ID } from '@/db/repositories/constants';
 import { UserRepository } from '@/db/repositories/UserRepository.ts';
 import { runMigrations } from '@/db/migrations/engine';
@@ -30,7 +30,7 @@ import { hydrateFromJson, type HydrateResult } from './hydrate.ts';
 import { applyOperation, createWriteExecutor, executeWrite, MAX_NOTE_LENGTH, WriteError } from './write.ts';
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
-const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE];
+const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE];
 /**
  * The actor every write in this file is attributed to. Since issue #79 the bridge writes as the
  * owner of the token that authorised the request; these tests drive the layer below that, so they
