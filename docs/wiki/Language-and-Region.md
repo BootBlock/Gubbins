@@ -11,6 +11,15 @@ The interface is available in **English** and **German** today, with more possib
 Gubbins picks the language from your chosen locale, and anything not yet translated falls back to
 English automatically — so the app is always fully usable, whatever you pick.
 
+You can still choose a region whose language isn't translated yet — say **French (France)** — to get
+its number, date and currency formatting. The picker marks those as **formatting only**, and the
+interface stays in English until a translation for that language ships.
+
+> **ℹ️ Note**
+> A region tagged *formatting only* changes how dates, times and numbers look — not the language of
+> the interface. Pick a translated language (English or German today) if you want the words to change
+> too.
+
 ## Region & formatting
 
 Your locale also sets how Gubbins **formats** things:

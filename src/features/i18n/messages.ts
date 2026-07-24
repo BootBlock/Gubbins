@@ -76,6 +76,17 @@ export function languageForLocale(locale: string): string {
   return LANGUAGE_CODES.has(code) ? code : BASE_LANGUAGE;
 }
 
+/**
+ * Does a *translated interface* exist for this formatting locale, or will the interface fall back
+ * to English? `en-GB`/`en-US` → true (English is the base), `de-DE` → true (German catalog), but
+ * `fr-FR` → false — French *formatting* is applied while the interface stays English. The Settings
+ * locale picker uses this to flag formatting-only locales, so the control never implies a
+ * translated interface it can't deliver.
+ */
+export function hasInterfaceTranslation(locale: string): boolean {
+  return LANGUAGE_CODES.has(baseSubtag(locale));
+}
+
 /** Load the catalog for a language code; the bundled English catalog for the base / anything unknown. */
 export async function loadCatalog(code: string): Promise<MessageCatalog> {
   const def = SUPPORTED_LANGUAGES.find((l) => l.code === code);

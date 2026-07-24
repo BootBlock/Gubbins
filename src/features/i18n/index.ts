@@ -9,6 +9,7 @@ export {
   BASE_LANGUAGE,
   EN_CATALOG,
   SUPPORTED_LANGUAGES,
+  hasInterfaceTranslation,
   languageForLocale,
   loadCatalog,
   type LanguageDef,

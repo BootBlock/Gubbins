@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { BASE_LANGUAGE, EN_CATALOG, SUPPORTED_LANGUAGES, languageForLocale, loadCatalog } from './messages';
+import {
+  BASE_LANGUAGE,
+  EN_CATALOG,
+  SUPPORTED_LANGUAGES,
+  hasInterfaceTranslation,
+  languageForLocale,
+  loadCatalog,
+} from './messages';
 
 describe('languageForLocale', () => {
   it('derives the UI language from the base subtag of the formatting locale', () => {
@@ -18,6 +25,24 @@ describe('languageForLocale', () => {
   it('falls back to English for a malformed locale rather than throwing', () => {
     expect(languageForLocale('not-a-real-locale-@@')).toBe('en');
     expect(languageForLocale('')).toBe('en');
+  });
+});
+
+describe('hasInterfaceTranslation', () => {
+  it('is true for locales whose interface is translated (English base or a catalog)', () => {
+    expect(hasInterfaceTranslation('en-GB')).toBe(true);
+    expect(hasInterfaceTranslation('en-US')).toBe(true);
+    expect(hasInterfaceTranslation('de-DE')).toBe(true);
+    expect(hasInterfaceTranslation('de-AT')).toBe(true);
+  });
+
+  it('is false for a formatting-only locale we do not translate', () => {
+    // French formatting is offered, but there is no French catalog → English interface.
+    expect(hasInterfaceTranslation('fr-FR')).toBe(false);
+  });
+
+  it('is false for a malformed locale rather than throwing', () => {
+    expect(hasInterfaceTranslation('not-a-real-locale-@@')).toBe(false);
   });
 });
 
