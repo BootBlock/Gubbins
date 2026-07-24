@@ -7,6 +7,7 @@ import {
   LiveRegion,
   Pagination,
   Spinner,
+  Surface,
   pageCount,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
@@ -1136,6 +1137,21 @@ function InventoryWorkspace() {
               ) : listStatus.isLoading ? (
                 <div className="flex flex-1 items-center justify-center">
                   <Spinner />
+                </div>
+              ) : listStatus.isError ? (
+                // Never fall through to the list's empty state on failure: an empty
+                // inventory and a failed read would render byte-identically, and "nothing
+                // here" is the most alarming possible misreport for stock that is actually
+                // just unreadable (issue #306). Offer a retry so it's recoverable in place.
+                <div className="flex flex-1 items-center justify-center p-4">
+                  <Surface className="flex flex-col items-center gap-3 p-6 text-center">
+                    <p role="alert" className="text-sm text-destructive">
+                      {t('inventory.list.error')}
+                    </p>
+                    <Button variant="outline" onClick={() => void listStatus.refetch()}>
+                      {t('inventory.list.retry')}
+                    </Button>
+                  </Surface>
                 </div>
               ) : (
                 <div className="flex min-h-0 flex-1 flex-col">

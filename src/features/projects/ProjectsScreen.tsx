@@ -9,6 +9,7 @@ import {
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import { AddIcon, ImportIcon, ProjectIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { useHotkeyScope } from '@/features/hotkeys/useHotkeyScope';
 import { useHotkeyIntent } from '@/features/hotkeys/useHotkeyIntent';
 import { plural } from '@/lib/plural';
@@ -24,6 +25,7 @@ import { ProjectDetail } from './components/ProjectDetail';
  * and the selected project's BOM, costing, procurement and shopping list on the right.
  */
 export function ProjectsScreen() {
+  const t = useT();
   const projects = useProjects();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -85,6 +87,17 @@ export function ProjectsScreen() {
             <div className="flex justify-center pt-8">
               <Spinner />
             </div>
+          ) : projects.isError ? (
+            // Never fall through to the empty state on failure: "No projects yet" would read
+            // like success and hide a real error behind cheerful copy (issue #306).
+            <Surface className="flex flex-col items-center gap-3 p-6 text-center">
+              <p role="alert" className="text-sm text-destructive">
+                {t('projects.list.error')}
+              </p>
+              <Button variant="outline" onClick={() => void projects.refetch()}>
+                {t('projects.list.retry')}
+              </Button>
+            </Surface>
           ) : rows.length === 0 ? (
             <p className="px-2 pt-6 text-sm text-muted-foreground">
               No projects yet. Create one to plan a build.
@@ -134,9 +147,13 @@ export function ProjectsScreen() {
           <p className="sr-only" role="status" aria-live="polite" data-testid="projects-count-live">
             {projects.isLoading
               ? 'Loading projects…'
-              : rows.length === 0
-                ? 'No projects yet.'
-                : `${rows.length} ${plural(rows.length, 'project')}.`}
+              : projects.isError
+                ? // The visible error carries its own role="alert"; keep this polite region
+                  // from also (mis)reporting an empty list on failure (issue #306).
+                  ''
+                : rows.length === 0
+                  ? 'No projects yet.'
+                  : `${rows.length} ${plural(rows.length, 'project')}.`}
           </p>
           {selectedId ? (
             // Keyed by project id so picking a different project replays the swap-in

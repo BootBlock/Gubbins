@@ -14,6 +14,7 @@ import {
 } from '@/components/foundry';
 import { AddContactIcon, ContactsIcon, DeleteIcon } from '@/components/icons';
 import type { CheckoutWithNames, ContactWithCount } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
 import { plural } from '@/lib/plural';
@@ -29,6 +30,7 @@ import { useContacts, useCreateContact, useDeleteContact, useOpenCheckouts } fro
  * out on loan (with overdue alerts and one-tap return) plus the Contacts dictionary.
  */
 export function ContactsScreen() {
+  const t = useT();
   const open = useOpenCheckouts();
   const contacts = useContacts();
   const createContact = useCreateContact();
@@ -62,8 +64,15 @@ export function ContactsScreen() {
   const contactRows = contacts.data?.rows ?? [];
   // First-run guide (#424): once either list has something in it, the page speaks for
   // itself, so the guide only shows while both are confirmed (not merely loading) empty.
+  // A failed load also leaves both lists empty, so exclude that — the guide would otherwise
+  // greet a returning user as brand-new when their data simply didn't load (issue #306).
   const isFirstRun =
-    !open.isLoading && !contacts.isLoading && onLoan.length === 0 && contactRows.length === 0;
+    !open.isLoading &&
+    !contacts.isLoading &&
+    !open.isError &&
+    !contacts.isError &&
+    onLoan.length === 0 &&
+    contactRows.length === 0;
   const contactPages = pageCount(contactRows.length, defaultPageSize);
   const { start, end } = pageSliceBounds(contactsPage, defaultPageSize, contactRows.length);
   const visibleContacts = paginated ? contactRows.slice(start, end) : contactRows;
@@ -114,16 +123,24 @@ export function ContactsScreen() {
         <p className="sr-only" role="status" aria-live="polite" data-testid="contacts-on-loan-live">
           {open.isLoading
             ? 'Loading on-loan items…'
-            : onLoan.length === 0
-              ? 'Nothing currently checked out.'
-              : `${onLoan.length} ${plural(onLoan.length, 'item')} on loan${overdueCount > 0 ? `, ${overdueCount} overdue` : ''}.`}
+            : open.isError
+              ? // The visible error carries its own role="alert"; keep this polite region from
+                // also (mis)reporting an empty list on failure (issue #306).
+                ''
+              : onLoan.length === 0
+                ? 'Nothing currently checked out.'
+                : `${onLoan.length} ${plural(onLoan.length, 'item')} on loan${overdueCount > 0 ? `, ${overdueCount} overdue` : ''}.`}
         </p>
         <p className="sr-only" role="status" aria-live="polite" data-testid="contacts-count-live">
-          {contacts.data == null
-            ? 'Loading contacts…'
-            : contacts.data.rows.length > 0
-              ? `${contacts.data.rows.length} ${plural(contacts.data.rows.length, 'contact')}.`
-              : 'No contacts yet.'}
+          {contacts.isError
+            ? // The visible error carries its own role="alert"; keep this polite region from
+              // also (mis)reporting an empty list on failure (issue #306).
+              ''
+            : contacts.data == null
+              ? 'Loading contacts…'
+              : contacts.data.rows.length > 0
+                ? `${contacts.data.rows.length} ${plural(contacts.data.rows.length, 'contact')}.`
+                : 'No contacts yet.'}
         </p>
 
         {isFirstRun ? <ContactsGettingStarted /> : null}
@@ -141,6 +158,17 @@ export function ContactsScreen() {
 
           {open.isLoading ? (
             <Spinner />
+          ) : open.isError ? (
+            // Never fall through to the empty state on failure: "Nothing is currently checked
+            // out" would read like success and hide a real error (issue #306).
+            <Surface className="flex flex-col items-center gap-3 p-6 text-center">
+              <p role="alert" className="text-sm text-destructive">
+                {t('contacts.onLoan.error')}
+              </p>
+              <Button variant="outline" onClick={() => void open.refetch()}>
+                {t('contacts.list.retry')}
+              </Button>
+            </Surface>
           ) : onLoan.length === 0 ? (
             <Surface className="p-6 text-center text-sm text-muted-foreground">
               Nothing is currently checked out.
@@ -178,6 +206,17 @@ export function ContactsScreen() {
 
           {contacts.isLoading ? (
             <Spinner />
+          ) : contacts.isError ? (
+            // Never fall through to the empty state on failure: "No contacts yet" would read
+            // like success and hide a real error (issue #306).
+            <Surface className="flex flex-col items-center gap-3 p-6 text-center">
+              <p role="alert" className="text-sm text-destructive">
+                {t('contacts.list.error')}
+              </p>
+              <Button variant="outline" onClick={() => void contacts.refetch()}>
+                {t('contacts.list.retry')}
+              </Button>
+            </Surface>
           ) : contactRows.length > 0 ? (
             <>
               <ul className="grid gap-2 sm:grid-cols-2">

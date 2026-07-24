@@ -181,15 +181,30 @@ export function PurchaseOrdersScreen() {
           >
             {ordersQuery.isLoading
               ? 'Loading purchase orders…'
-              : orders.length === 0
-                ? 'No purchase orders yet.'
-                : `${orders.length} ${plural(orders.length, 'purchase order')}.`}
+              : ordersQuery.isError
+                ? // The visible error carries its own role="alert"; keep this polite region
+                  // from also (mis)reporting an empty list on failure (issue #306).
+                  ''
+                : orders.length === 0
+                  ? 'No purchase orders yet.'
+                  : `${orders.length} ${plural(orders.length, 'purchase order')}.`}
           </p>
           {/* Order list */}
           <section aria-label="Purchase orders" className="flex flex-col gap-2">
             {ordersQuery.isLoading ? (
               <Surface className="flex items-center justify-center p-8">
                 <Spinner />
+              </Surface>
+            ) : ordersQuery.isError ? (
+              // Never fall through to the empty state on failure: "No purchase orders yet"
+              // would read like success and hide a real error (issue #306).
+              <Surface className="flex flex-col items-center gap-3 p-6 text-center" data-testid="po-error">
+                <p role="alert" className="text-sm text-destructive">
+                  {t('purchasing.orders.error')}
+                </p>
+                <Button variant="outline" onClick={() => void ordersQuery.refetch()}>
+                  {t('purchasing.orders.retry')}
+                </Button>
               </Surface>
             ) : orders.length === 0 ? (
               <Surface className="p-6 text-sm text-muted-foreground" data-testid="po-empty">

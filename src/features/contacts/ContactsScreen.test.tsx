@@ -52,16 +52,18 @@ vi.mock('@/lib/useFormatters', () => ({
 
 type ContactRow = { id: string; name: string; openCount: number };
 
-let openCheckoutsState: { isLoading: boolean; data?: { rows: CheckoutWithNames[] } } = {
+let openCheckoutsState: { isLoading: boolean; isError?: boolean; data?: { rows: CheckoutWithNames[] } } = {
   isLoading: true,
 };
-let contactsState: { isLoading: boolean; data?: { rows: ContactRow[] } } = {
+let contactsState: { isLoading: boolean; isError?: boolean; data?: { rows: ContactRow[] } } = {
   isLoading: true,
 };
+const refetchOpen = vi.fn();
+const refetchContacts = vi.fn();
 
 vi.mock('./contacts', () => ({
-  useOpenCheckouts: () => openCheckoutsState,
-  useContacts: () => contactsState,
+  useOpenCheckouts: () => ({ ...openCheckoutsState, refetch: refetchOpen }),
+  useContacts: () => ({ ...contactsState, refetch: refetchContacts }),
   useCreateContact: () => ({ mutate: vi.fn(), isPending: false }),
   useCheckInItem: () => ({ mutate: vi.fn(), isPending: false }),
   useRenewLoan: () => ({ mutate: vi.fn(), isPending: false }),
@@ -107,6 +109,8 @@ afterEach(cleanup);
 beforeEach(() => {
   openCheckoutsState = { isLoading: true };
   contactsState = { isLoading: true };
+  refetchOpen.mockClear();
+  refetchContacts.mockClear();
 });
 
 // ─── tests ────────────────────────────────────────────────────────────────────
@@ -267,6 +271,47 @@ describe('ContactsScreen — first-run guide (#424)', () => {
     contactsState = { isLoading: false, data: { rows: [makeContact('k1', 'Alice')] } };
     render(<ContactsScreen />);
     expect(screen.queryByTestId('contacts-getting-started')).toBeNull();
+  });
+});
+
+describe('ContactsScreen — failed loads (issue #306)', () => {
+  it('reports a failed on-loan load instead of "nothing checked out"', () => {
+    openCheckoutsState = { isLoading: false, isError: true };
+    contactsState = { isLoading: false, data: { rows: [] } };
+    render(<ContactsScreen />);
+    const alerts = screen.getAllByRole('alert').map((el) => el.textContent);
+    expect(alerts.some((text) => text?.includes('loans couldn’t be loaded'))).toBe(true);
+    expect(screen.queryByText(/Nothing is currently checked out/)).toBeNull();
+  });
+
+  it('reports a failed contacts load instead of "no contacts yet"', () => {
+    openCheckoutsState = { isLoading: false, data: { rows: [] } };
+    contactsState = { isLoading: false, isError: true };
+    render(<ContactsScreen />);
+    const alerts = screen.getAllByRole('alert').map((el) => el.textContent);
+    expect(alerts.some((text) => text?.includes('contacts couldn’t be loaded'))).toBe(true);
+    expect(screen.queryByText(/No contacts yet/)).toBeNull();
+  });
+
+  it('does not show the first-run guide when a load failed', () => {
+    // Both lists come back empty on failure, which used to look identical to a brand-new
+    // account and wrongly greeted a returning user with the getting-started guide.
+    openCheckoutsState = { isLoading: false, isError: true };
+    contactsState = { isLoading: false, isError: true };
+    render(<ContactsScreen />);
+    expect(screen.queryByTestId('contacts-getting-started')).toBeNull();
+  });
+
+  it('each failed list offers a retry that refetches its own query', () => {
+    openCheckoutsState = { isLoading: false, isError: true };
+    contactsState = { isLoading: false, isError: true };
+    render(<ContactsScreen />);
+    const retries = screen.getAllByRole('button', { name: 'Try again' });
+    expect(retries).toHaveLength(2);
+    fireEvent.click(retries[0]!);
+    fireEvent.click(retries[1]!);
+    expect(refetchOpen).toHaveBeenCalled();
+    expect(refetchContacts).toHaveBeenCalled();
   });
 });
 
