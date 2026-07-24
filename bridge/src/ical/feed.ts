@@ -18,11 +18,17 @@
  * "due" by usage, not by a date). Every source is bounded ({@link MAX_EVENTS_PER_SOURCE}) so a
  * huge inventory can't produce an unbounded feed.
  *
- * All-day dates dominate here (a due-back, a warranty, a booking span are day-grained). A booking
- * date is stored at midnight UTC (issue #320), so its all-day value uses UTC components; a
- * maintenance due date is an instant carrying a local time-of-day, so its all-day value uses
- * *local* components (issue #321 — the bridge runs on the user's machine); a warranty's stored
- * `YYYY-MM-DD` string is used verbatim (no timezone maths). See `emitter.ts`.
+ * All-day dates dominate here (a due-back, a warranty, a booking span are day-grained). Which
+ * calendar components to read depends on how each value is stored (issue #321):
+ *
+ *   - a **booking** date is stored at midnight UTC (issue #320), so its all-day value uses **UTC**
+ *     components — the UTC day is the calendar day the user picked;
+ *   - a **loan** due date is stored at local end-of-day and a **maintenance** due date is an
+ *     instant carrying the service's local wall-clock time, so both use **local** components (the
+ *     bridge runs on the user's own machine, so the local day is the one meant);
+ *   - a **warranty**'s stored `YYYY-MM-DD` string is used verbatim (no timezone maths).
+ *
+ * See `emitter.ts` (`icalDate` vs `icalLocalDate` vs `icalDateFromIso`).
  */
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { CheckoutRepository } from '@/db/repositories/CheckoutRepository.ts';
@@ -178,7 +184,9 @@ function loanEvent(checkout: CheckoutWithNames, dtstamp: ICalDate): VEvent {
   return allDayEvent({
     uid: `loan-${checkout.id}${UID_SUFFIX}`,
     dtstamp,
-    day: icalDate(checkout.dueDate as number),
+    // A loan due date is stored at local end-of-day (issue #318), so read its *local* calendar day
+    // (issue #321) — reading UTC components would push it a day late west of UTC.
+    day: icalLocalDate(checkout.dueDate as number),
     summary: `Loan due: ${checkout.itemName}`,
     description: checkout.note ? `${detail} ${checkout.note}` : detail,
     category: 'Loan',
