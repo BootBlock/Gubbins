@@ -5,7 +5,21 @@
  * divergence-free — turbulence field.
  */
 import { describe, it, expect } from 'vitest';
-import { gust, flurry, curlField, gustPulse, blizzard, blizzardWind, smooth01 } from './flow-field';
+import {
+  gust,
+  flurry,
+  curlField,
+  gustPulse,
+  blizzard,
+  blizzardWind,
+  squall,
+  diamondDust,
+  graupelShower,
+  warmSnow,
+  deadAir,
+  lightningFlash,
+  smooth01,
+} from './flow-field';
 
 /** Sample a function across a long time span. */
 function sample(fn: (t: number) => number, count = 4000, dt = 0.05): number[] {
@@ -206,5 +220,88 @@ describe('gustPulse', () => {
       expect(Math.abs(v - prev)).toBeLessThan(0.1);
       prev = v;
     }
+  });
+});
+
+describe('event spells (squall / diamond dust / graupel / warm snow / dead air)', () => {
+  const spells: ReadonlyArray<[string, (t: number) => number, number]> = [
+    ['squall', squall, 90],
+    ['diamondDust', diamondDust, 110],
+    ['graupelShower', graupelShower, 100],
+    ['warmSnow', warmSnow, 70],
+    ['deadAir', deadAir, 85],
+  ];
+
+  it.each(spells)('%s stays within [0, 1] across an hour', (_name, fn) => {
+    for (const v of sample(fn, 14400, 0.25)) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it.each(spells)('%s is quiet for its whole first epoch', (_name, fn, epoch) => {
+    for (let t = 0; t < epoch; t += 0.5) expect(fn(t)).toBe(0);
+  });
+
+  it.each(spells)('%s is mostly quiet but genuinely occurs', (_name, fn) => {
+    const xs = sample(fn, 14400, 0.25); // one hour
+    const quiet = xs.filter((v) => v < 0.05).length / xs.length;
+    expect(quiet).toBeGreaterThan(0.5); // events, not a constant state
+    expect(Math.max(...xs)).toBeGreaterThan(0.95); // …that genuinely reach full strength
+  });
+
+  it.each(spells)('%s is smooth — no per-frame jumps', (_name, fn) => {
+    let prev = fn(0);
+    for (let i = 1; i < 40000; i++) {
+      const v = fn(i * 0.016);
+      expect(Math.abs(v - prev)).toBeLessThan(0.06);
+      prev = v;
+    }
+  });
+});
+
+describe('lightningFlash', () => {
+  it('stays within [0, 1] and is zero almost always', () => {
+    const xs = sample((t) => lightningFlash(t), 24000, 0.05); // 20 minutes
+    for (const v of xs) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+    }
+    const zero = xs.filter((v) => v < 0.01).length / xs.length;
+    expect(zero).toBeGreaterThan(0.9);
+  });
+
+  it('genuinely flashes, and flickers through more than one stroke per event', () => {
+    // Find a flash event, then confirm the intensity dips and re-rises inside its window —
+    // the multi-stroke flicker that makes lightning read as lightning.
+    let flickered = false;
+    for (let t = 0; t < 600 && !flickered; t += 0.01) {
+      if (lightningFlash(t) < 0.9) continue;
+      let dipped = false;
+      for (let u = t; u < t + 0.6; u += 0.01) {
+        const v = lightningFlash(u);
+        if (!dipped && v < 0.2) dipped = true;
+        else if (dipped && v > 0.4) {
+          flickered = true;
+          break;
+        }
+      }
+      break;
+    }
+    expect(flickered).toBe(true);
+  });
+
+  it('flashes far more often on the dense (lab) cadence', () => {
+    const count = (dense: boolean): number => {
+      let events = 0;
+      let active = false;
+      for (let t = 0; t < 600; t += 0.02) {
+        const on = lightningFlash(t, dense) > 0.1;
+        if (on && !active) events++;
+        active = on;
+      }
+      return events;
+    };
+    expect(count(true)).toBeGreaterThan(count(false) * 2);
   });
 });

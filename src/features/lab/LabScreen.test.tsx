@@ -52,7 +52,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { setClockOffsetMs } from '@/lib/clock';
 import { startLabClock } from './lab-clock';
 
-const CLEAN = { dateOverride: null, occasionModes: {}, flags: {} } as const;
+const CLEAN = { dateOverride: null, occasionModes: {}, weatherMode: 'auto', flags: {} } as const;
 
 beforeEach(() => {
   createMany.mockClear();
@@ -108,16 +108,33 @@ describe('LabScreen', () => {
     expect(useLabStore.getState().flags['seasonal-dense']).toBe(true);
   });
 
+  it('stores a forced snow-weather mode', () => {
+    render(<LabScreen />);
+    expect(screen.getByTestId('lab-weather-mode')).toHaveTextContent('Auto');
+    choose('Weather', 'Blizzard');
+    expect(useLabStore.getState().weatherMode).toBe('blizzard');
+  });
+
+  it('warns when a forced weather mode has no snow to drive, but not under Auto', () => {
+    usePreferencesStore.setState({ backgroundEffect: 'none' });
+    render(<LabScreen />);
+    expect(screen.queryByTestId('lab-weather-status')).toBeNull();
+    choose('Weather', 'Squall');
+    expect(screen.getByTestId('lab-weather-status')).toHaveTextContent('not set to Snow');
+  });
+
   it('resets every override', () => {
     useLabStore.setState({
       dateOverride: '2030-01-01',
       occasionModes: { cats: 'on' },
+      weatherMode: 'thundersnow',
       flags: { 'seasonal-dense': true },
     });
     render(<LabScreen />);
     fireEvent.click(screen.getByTestId('lab-reset'));
     expect(useLabStore.getState().dateOverride).toBeNull();
     expect(useLabStore.getState().occasionModes).toEqual({});
+    expect(useLabStore.getState().weatherMode).toBe('auto');
     expect(useLabStore.getState().flags).toEqual({});
   });
 

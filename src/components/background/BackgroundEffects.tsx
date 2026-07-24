@@ -75,6 +75,9 @@ export function BackgroundEffects() {
   const occasionModes = useLabStore((s) => s.occasionModes);
   const dense = useLabFlag('seasonal-dense');
   const ignoreEffect = useLabFlag('seasonal-ignore-effect');
+  // The lab's snow-weather override (`auto` in ordinary use). Applied via the controller so a
+  // mode switch never restarts the layer — the falling field carries straight on.
+  const weatherMode = useLabStore((s) => s.weatherMode);
   const occasion = useMemo(() => resolveOccasion(new Date(), occasionModes), [occasionModes]);
   const garnish = useMemo(() => (occasion ? { emoji: occasion.emoji, dense } : null), [occasion, dense]);
 
@@ -102,6 +105,9 @@ export function BackgroundEffects() {
       surfaces: trackSurfaces,
       garnish,
       suppressBase: garnishOnly,
+      // Read once at start (a ref, not a dep — changes flow through setWeather below, so the
+      // layer isn't torn down and restarted just to change the weather).
+      weather: useLabStore.getState().weatherMode,
     });
     controllerRef.current = controller;
     return () => {
@@ -109,6 +115,11 @@ export function BackgroundEffects() {
       controllerRef.current = null;
     };
   }, [effect, reduced, hidden, garnish, garnishOnly]);
+
+  // Push lab weather-mode changes into the running engine without restarting the layer.
+  useEffect(() => {
+    controllerRef.current?.setWeather(weatherMode);
+  }, [weatherMode]);
 
   // Re-read the token colours when the resolved theme changes (explicit axes).
   useEffect(() => {

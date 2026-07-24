@@ -29,6 +29,15 @@
  *    long it blows and which way. The envelope rises over several seconds, holds, and decays more
  *    slowly — the shape of a real squall passing through — and the whole schedule is a pure
  *    function of time, so "occasional random storms" stay reproducible and unit-testable.
+ *  - {@link squall} / {@link diamondDust} / {@link graupelShower} / {@link warmSnow} /
+ *    {@link deadAir} — further snow events on the same epoch-hash machinery ({@link spell}),
+ *    each with its own cadence and envelope shape: the squall's near-instant slam-and-clear,
+ *    diamond dust's slow shimmer-in of a clear-sky crystal haze, the graupel shower's brief
+ *    rattle of dense pellets, warm-snow's spells of big lazy aggregate clumps, and dead-air's
+ *    windless laminar lulls.
+ *  - {@link lightningFlash} — thundersnow. Deliberately *not* smooth: real lightning rises in
+ *    under a millisecond, so the flash steps on instantly and flickers through two or three
+ *    decaying strokes. The engine gates it behind a deep blizzard, where thundersnow lives.
  *
  * None of this touches the DOM, so it is safe to import anywhere and trivial to test.
  */
@@ -145,10 +154,33 @@ const BLIZZARD = {
   hold: [10, 26] as const,
 } as const;
 
-/** The full on-screen length of the storm in a given epoch (attack + hashed hold + decay), in s. */
-function blizzardSpan(e: number): number {
-  const hold = BLIZZARD.hold[0] + (BLIZZARD.hold[1] - BLIZZARD.hold[0]) * hash01(e, 1);
-  return BLIZZARD.attack + hold + BLIZZARD.decay;
+/** The shape shared by every epoch-hashed event scheduler. */
+interface SpellConfig {
+  readonly epoch: number;
+  readonly prob: number;
+  readonly attack: number;
+  readonly decay: number;
+  readonly hold: readonly [number, number];
+}
+
+/**
+ * The shared epoch-hash spell envelope in [0, 1]: cut time into `cfg.epoch`-second epochs, hash
+ * (with `seed` decorrelating the different event kinds) whether each epoch carries an event, when
+ * it starts, and how long it holds; ramp with smoothstep attack/decay. Every event is strictly
+ * contained in its epoch (span ≤ epoch by construction — asserted by the configs' tests), and
+ * epoch 0 is always quiet so the layer never opens mid-event. `seed` = 0 reproduces the original
+ * blizzard schedule byte-for-byte (its hashes used seeds 0/1/2 before this was factored out).
+ */
+function spell(t: number, cfg: SpellConfig, seed = 0): number {
+  if (t < cfg.epoch) return 0;
+  const e = Math.floor(t / cfg.epoch);
+  if (hash01(e, seed) >= cfg.prob) return 0;
+  const hold = cfg.hold[0] + (cfg.hold[1] - cfg.hold[0]) * hash01(e, seed + 1);
+  const span = cfg.attack + hold + cfg.decay;
+  const start = e * cfg.epoch + hash01(e, seed + 2) * (cfg.epoch - span);
+  const u = t - start;
+  if (u <= 0 || u >= span) return 0;
+  return Math.min(smooth01(u / cfg.attack), smooth01((span - u) / cfg.decay));
 }
 
 /**
@@ -157,14 +189,7 @@ function blizzardSpan(e: number): number {
  * first epoch, so the layer never opens mid-whiteout: the calm effect establishes itself first.
  */
 export function blizzard(t: number): number {
-  if (t < BLIZZARD.epoch) return 0;
-  const e = Math.floor(t / BLIZZARD.epoch);
-  if (hash01(e) >= BLIZZARD.prob) return 0;
-  const span = blizzardSpan(e);
-  const start = e * BLIZZARD.epoch + hash01(e, 2) * (BLIZZARD.epoch - span);
-  const u = t - start;
-  if (u <= 0 || u >= span) return 0;
-  return Math.min(smooth01(u / BLIZZARD.attack), smooth01((span - u) / BLIZZARD.decay));
+  return spell(t, BLIZZARD);
 }
 
 /**
@@ -223,4 +248,141 @@ export function gustPulse(t: number): number {
     shape = -PULSE.lull * Math.sin((Math.PI * (u - attack - decay)) / decay);
   }
   return dir * amp * shape;
+}
+
+/**
+ * Snow-squall scheduler: unlike the blizzard's minutes-of-warning build, a squall *slams* in —
+ * the NWS definition is a sudden, brief, intense burst of snowfall with a whiteout-grade
+ * visibility crash, over within the hour (scaled here to seconds). So: near-instant attack,
+ * short hold, quick clear-out.
+ */
+const SQUALL = {
+  epoch: 90,
+  prob: 0.3,
+  attack: 1.5,
+  decay: 4,
+  hold: [6, 12] as const,
+} as const;
+
+/** Squall intensity envelope in [0, 1] — the sudden dense dump, distinct from a blizzard's rake. */
+export function squall(t: number): number {
+  return spell(t, SQUALL, 20);
+}
+
+/**
+ * Diamond-dust scheduler: the clear-sky ice-crystal haze of deeply cold, *calm* air. It doesn't
+ * arrive — it shimmers into being and fades away again, so the ramps are the slowest here and
+ * the spell holds the longest.
+ */
+const DIAMOND_DUST = {
+  epoch: 110,
+  prob: 0.28,
+  attack: 5,
+  decay: 7,
+  hold: [14, 28] as const,
+} as const;
+
+/** Diamond-dust intensity envelope in [0, 1]. The engine suppresses it while storms blow. */
+export function diamondDust(t: number): number {
+  return spell(t, DIAMOND_DUST, 30);
+}
+
+/**
+ * Graupel-shower scheduler: a brief rattle of dense, rimed snow pellets — fast, straight,
+ * bouncy — the kind of shower that passes in a minute. Quick attack, short hold.
+ */
+const GRAUPEL = {
+  epoch: 100,
+  prob: 0.24,
+  attack: 2,
+  decay: 3.5,
+  hold: [8, 16] as const,
+} as const;
+
+/** Graupel-shower intensity envelope in [0, 1]. */
+export function graupelShower(t: number): number {
+  return spell(t, GRAUPEL, 40);
+}
+
+/**
+ * Warm-snow scheduler: spells of big, clumpy aggregate flakes — snow falling near 0 °C sticks
+ * together into fat lazy clumps whose fall speed is nearly size-independent (the aggregate
+ * fall-speed exponent is ~0.1–0.2), the classic cosy movie-snow look. Gradual and common: this
+ * is a mood, not a storm.
+ */
+const WARM_SNOW = {
+  epoch: 70,
+  prob: 0.4,
+  attack: 8,
+  decay: 10,
+  hold: [18, 36] as const,
+} as const;
+
+/** Warm-snow ("big lazy aggregate flakes") intensity envelope in [0, 1]. */
+export function warmSnow(t: number): number {
+  return spell(t, WARM_SNOW, 60);
+}
+
+/**
+ * Dead-air scheduler: the still spell between systems, when the wind drops out and flakes fall
+ * in slow, near-vertical, laminar paths. The envelope *damps* the wind terms rather than adding
+ * anything — and it makes the storms read harder by contrast.
+ */
+const DEAD_AIR = {
+  epoch: 85,
+  prob: 0.3,
+  attack: 4,
+  decay: 5,
+  hold: [8, 18] as const,
+} as const;
+
+/** Dead-air ("wind drops out") intensity envelope in [0, 1]. */
+export function deadAir(t: number): number {
+  return spell(t, DEAD_AIR, 70);
+}
+
+/**
+ * Thundersnow flash timing. Real lightning rises in well under a millisecond and a flash is
+ * usually several return strokes flickering over a few hundred milliseconds — so the envelope
+ * is deliberately discontinuous: each stroke steps on instantly and decays linearly, and the
+ * flash's read is the flicker, not a fade-in. `dense` is the lab's forced-thundersnow cadence
+ * (a flash every few seconds); the natural cadence relies on the engine gating flashes behind
+ * a deep blizzard, which is what makes real thundersnow rare.
+ */
+const LIGHTNING = {
+  natural: { epoch: 7, prob: 0.32 },
+  dense: { epoch: 3.5, prob: 0.85 },
+  /** Stroke offsets into the event (s) and their relative brightness. */
+  strokes: [
+    { at: 0, amp: 1 },
+    { at: 0.14, amp: 0.55 },
+    { at: 0.34, amp: 0.8 },
+  ],
+  /** Per-stroke linear decay time (s). */
+  strokeDecay: 0.16,
+  /** Total event window (s) — covers the last stroke at max jitter (0.34 + 0.08) plus decay. */
+  span: 0.6,
+} as const;
+
+/** Thundersnow flash intensity in [0, 1]: zero almost always, stepping through stroke flickers. */
+export function lightningFlash(t: number, dense = false): number {
+  const cfg = dense ? LIGHTNING.dense : LIGHTNING.natural;
+  const e = Math.floor(t / cfg.epoch);
+  if (hash01(e, 50) >= cfg.prob) return 0;
+  const start = e * cfg.epoch + hash01(e, 51) * (cfg.epoch - LIGHTNING.span);
+  const u = t - start;
+  if (u <= 0 || u >= LIGHTNING.span) return 0;
+  // Stroke jitter per event, so consecutive flashes don't flicker identically.
+  const jitter = hash01(e, 52) * 0.08;
+  let peak = 0;
+  for (let i = 0; i < LIGHTNING.strokes.length; i++) {
+    const s = LIGHTNING.strokes[i];
+    if (!s) continue;
+    const at = s.at === 0 ? 0 : s.at + jitter;
+    const du = u - at;
+    if (du < 0 || du >= LIGHTNING.strokeDecay) continue;
+    const v = s.amp * (1 - du / LIGHTNING.strokeDecay);
+    if (v > peak) peak = v;
+  }
+  return peak;
 }

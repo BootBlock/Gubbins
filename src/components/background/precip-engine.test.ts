@@ -22,11 +22,17 @@ function makeCtx() {
   const drawAlphas: number[] = [];
   let rotateCount = 0;
   let clearCount = 0;
+  let fillCount = 0;
   const ctx = {
     globalAlpha: 1,
+    fillStyle: '',
     setTransform: () => {},
     clearRect: () => {
       clearCount++;
+    },
+    // The thundersnow flash is a plain full-canvas fill.
+    fillRect: () => {
+      fillCount++;
     },
     save: () => {},
     restore: () => {},
@@ -51,6 +57,9 @@ function makeCtx() {
     },
     get clearCount() {
       return clearCount;
+    },
+    get fillCount() {
+      return fillCount;
     },
   };
 }
@@ -590,6 +599,118 @@ describe('startPrecip snow depth & weather (issue #455)', () => {
     // …and wind-raked flakes elongate into motion streaks (height drawn well past width, which
     // never happens to the square-sprite flakes in calm air; the haze blit is wider than tall).
     expect(stormDraws.some((d) => (d.args[4] as number) > (d.args[3] as number) * 1.5)).toBe(true);
+    ctrl.stop();
+  });
+});
+
+/**
+ * The lab weather override and the event pools (issue #455 follow-up). Forcing a mode ramps its
+ * event to full strength over ~2.5s of engine time, so these drive a few seconds of 50ms-clamped
+ * frames and compare per-frame draw activity between modes — no waiting for the natural epochs.
+ */
+describe('startPrecip forced snow weather (lab override)', () => {
+  /** Pump `seconds` of engine time in 50ms-clamped frames, continuing from `from`. */
+  const pumpSeconds = (from: number, seconds: number): number => {
+    let now = from;
+    for (let i = 0; i < Math.ceil(seconds / 0.05); i++) pump((now += 50));
+    return now;
+  };
+  /** Draws recorded over exactly one further frame. */
+  const frameDraws = (rec: ReturnType<typeof makeCtx>, now: number): number => {
+    const mark = rec.drawImages.length;
+    pump(now + 50);
+    return rec.drawImages.length - mark;
+  };
+
+  it('ramps a forced blizzard in: the field visibly thickens without waiting for the scheduler', () => {
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), { kind: 'snow', reduced: false, weather: 'calm' });
+    pump(0);
+    let now = pumpSeconds(0, 1);
+    const calmFrame = frameDraws(rec, now);
+    now += 50;
+    ctrl.setWeather('blizzard');
+    now = pumpSeconds(now, 4); // ramp is ~2.5s
+    const stormFrame = frameDraws(rec, now);
+    expect(stormFrame).toBeGreaterThan(calmFrame * 1.3); // storm pool + haze woke up
+    ctrl.stop();
+  });
+
+  it('wakes the diamond-dust and graupel pools only under their events', () => {
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), { kind: 'snow', reduced: false, weather: 'calm' });
+    pump(0);
+    let now = pumpSeconds(0, 1);
+    const calmFrame = frameDraws(rec, now);
+    now += 50;
+    ctrl.setWeather('diamond-dust');
+    now = pumpSeconds(now, 3.5);
+    const dustFrame = frameDraws(rec, now);
+    expect(dustFrame).toBeGreaterThan(calmFrame + 8); // the dust pool is drawing
+    now += 50;
+    ctrl.setWeather('graupel');
+    now = pumpSeconds(now, 3.5); // the dust envelope eases out (~1.2s) while graupel eases in
+    const graupelFrame = frameDraws(rec, now);
+    expect(graupelFrame).toBeGreaterThan(calmFrame + 6); // …and now the pellet pool instead
+    ctrl.stop();
+  });
+
+  it('flashes the whole canvas during forced thundersnow (and never in calm)', () => {
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), { kind: 'snow', reduced: false, weather: 'calm' });
+    pump(0);
+    let now = pumpSeconds(0, 2);
+    expect(rec.fillCount).toBe(0); // calm air: no lightning
+    now += 50;
+    ctrl.setWeather('thundersnow');
+    pumpSeconds(now, 12); // the dense lab cadence flashes every few seconds
+    expect(rec.fillCount).toBeGreaterThan(0);
+    ctrl.stop();
+  });
+
+  it('spawns far-layer flakes across the deep ladder (five strata, all slower than the field)', () => {
+    // Pin the RNG at 0.05: sample < deepLayerFraction, so every flake lands in the ladder (the
+    // pinned pick lands on the first stratum) and draws with the fog-blended far sprite —
+    // unrotated plain blits.
+    vi.spyOn(Math, 'random').mockReturnValue(0.05);
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), { kind: 'snow', reduced: false });
+    pump(16);
+    pump(32);
+    ctrl.stop();
+    vi.restoreAllMocks();
+    expect(rec.rotateCount).toBe(0);
+    expect(rec.translates.length).toBe(0);
+    expect(rec.drawImages.length).toBeGreaterThan(0);
+  });
+});
+
+describe('startPrecip wind-plaster (blizzard side accumulation)', () => {
+  it('plasters storm-driven snow onto a windward face and composites it above the UI', () => {
+    // A single 4px-wide "pillar" mid-screen: near-horizontal storm flight crossing its column
+    // in the band just below its top edge hits the face; vertical top landings on a 4px column
+    // are comparatively rare, so overlay activity here is dominated by the plaster path.
+    const cols = 340;
+    const tops = new Int16Array(cols).fill(NO_SURFACE);
+    tops[170] = 400;
+    const tracker: SurfaceTracker = {
+      snapshot: () => ({ tops, generation: 1 }),
+      hoverFollow: () => null,
+      stop: () => {},
+    };
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: () => tracker,
+      weather: 'blizzard', // forced: ramps to full rake in ~2.5s, driving flakes into the face
+    });
+    let now = 0;
+    pump(now);
+    for (let i = 0; i < 240; i++) pump((now += 50)); // 12s of storm
+    expect(orec.drawImages.length).toBeGreaterThan(0); // plaster rendered and composited
     ctrl.stop();
   });
 });
