@@ -237,6 +237,38 @@ describe('optimistic item writes guard the detail cache', () => {
     expect(client.getQueryData(DETAIL_KEY)).toEqual(CACHED);
   });
 
+  it('a failed tap mid-burst keeps the other taps’ optimistic patches (issue #300)', async () => {
+    // Three +1 taps queue optimistically (10 → 13). The middle one fails. The rollback must
+    // invert only that tap (13 → 12), not restore a snapshot taken when the tap started — which
+    // was captured *after* an earlier tap patched and so would drop a later tap's still-valid +1,
+    // showing a quantity that reflects neither the database nor the user's input.
+    const gates: Array<{ resolve: () => void; reject: (reason: unknown) => void }> = [];
+    repo.adjustQuantity.mockImplementation(
+      () => new Promise<void>((resolve, reject) => gates.push({ resolve: () => resolve(), reject })),
+    );
+    const { client, wrapper: local } = withClient();
+
+    const { result } = renderHook(() => useAdjustQuantity(), { wrapper: local });
+    act(() => {
+      result.current.mutate({ id: 'item-1', delta: 1 });
+      result.current.mutate({ id: 'item-1', delta: 1 });
+      result.current.mutate({ id: 'item-1', delta: 1 });
+    });
+    await waitFor(() => expect(gates).toHaveLength(3));
+    await waitFor(() => expect(client.getQueryData(DETAIL_KEY)).toMatchObject({ quantity: 13 }));
+
+    // The middle tap is rejected; the first and last land in the database.
+    act(() => gates[1].reject(new DbError('SQLITE_BUSY', 'database is locked')));
+    act(() => {
+      gates[0].resolve();
+      gates[2].resolve();
+    });
+
+    // Only the failed tap's +1 is undone. The old snapshot-restore reverted to 11 (dropping the
+    // last tap) — the two surviving taps must remain, so the cache reads 12, not 11 or 10.
+    await waitFor(() => expect(client.getQueryData(DETAIL_KEY)).toMatchObject({ quantity: 12 }));
+  });
+
   it('cancels an in-flight detail fetch so it cannot clobber the optimistic value', async () => {
     repo.adjustQuantity.mockResolvedValue(undefined);
     const { client, wrapper: local } = withClient();
