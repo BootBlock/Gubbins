@@ -31,6 +31,9 @@ individual shelves.
 
 Give each photo a **caption** if it helps ("left-hand cabinet", "under the bench").
 
+To remove one, press the **✕** in the corner of its thumbnail. With a mouse it appears when you
+hover the thumbnail; on a touch screen it is always shown.
+
 ## Drawing regions
 
 A **region** is a named shape drawn on a photo — "Top shelf", "Drawer 2", "the bin behind the

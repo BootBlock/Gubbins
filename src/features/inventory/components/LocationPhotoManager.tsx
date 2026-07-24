@@ -161,11 +161,13 @@ function PhotoTile({
           alt={t('inventory.locationPhotos.alt', { vars: { location: locationName } })}
           className="size-full"
         />
+        {/* `touch:` keeps the remove control visible where there is no hover to reveal it
+            (issue #258) — otherwise it is an invisible, undiscoverable target on a tablet. */}
         <button
           type="button"
           aria-label={t('inventory.locationPhotos.removeLabel')}
           onClick={() => setConfirming(true)}
-          className="absolute right-1 top-1 grid size-6 origin-top-right scale-90 place-items-center rounded-full bg-background/80 text-destructive opacity-0 backdrop-blur transition-all duration-200 ease-emphasized group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 [&_svg]:size-3.5"
+          className="absolute right-1 top-1 grid size-6 origin-top-right scale-90 place-items-center rounded-full bg-background/80 text-destructive opacity-0 backdrop-blur transition-all duration-200 ease-emphasized group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 touch:scale-100 touch:opacity-100 [&_svg]:size-3.5"
         >
           <CloseIcon aria-hidden="true" />
         </button>
