@@ -41,7 +41,7 @@ Select a supplier to edit it.
 | --- | --- |
 | **Name** | How the supplier is known. Matching ignores capitals, spaces and punctuation. |
 | **Website** | The supplier's home page or storefront. A supplier *part* keeps its own link to the specific product page. |
-| **Default currency** | Pick a common currency from the list, or type any three-letter ISO 4217 code (e.g. `GBP`, `USD`, `EUR`). Used when a part or order under this supplier doesn't state a currency of its own; leave it blank to fall back to your [[base currency|Language-and-Region]]. |
+| **Default currency** | Pick a common currency from the list, or type any three-letter ISO 4217 code (e.g. `GBP`, `USD`, `EUR`). Used when a part or order under this supplier doesn't state a currency of its own; leave it blank to fall back to your [[base currency\|Language-and-Region]]. |
 | **Note** | Anything worth remembering: account number, delivery quirks, who to ask for. |
 
 You don't have to come here first. Naming a supplier on a [[supplier part|Supplier-Parts-and-Price-History]]
