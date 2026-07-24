@@ -63,6 +63,37 @@ bridge/webhooks.*.json
 # Belt-and-braces: a root-level webhooks.json (if the bridge is ever run from the repo root).
 /webhooks.json
 
+# Data artefacts — a real database, dump, backup, or exported snapshot carries live inventory
+# data and must never enter this public repo (see the no-secrets rule in CLAUDE.md). These are
+# exactly the files a developer drops in the repo root while testing the backup/restore and
+# bridge-hydration paths, and the pre-commit hook only scans *added lines* — it cannot flag a
+# binary .sqlite or a JSON inventory dump. The only snapshots allowed in git are the synthetic
+# fixtures already tracked under src/**/fixtures/ and __fixtures__/ (invented data only).
+*.sqlite
+*.sqlite3
+*.db
+*.sql
+# The bridge's documented input snapshot (real inventory — bridge/README.md) and the app's
+# backup archive (gubbins-backup-<stamp>.zip). bridge/.gitignore also covers gubbins-sync.json;
+# this catches one produced from the repo root.
+gubbins-sync.json
+gubbins-backup*.zip
+
+# Keys, certificates, and keystores — never commit a private key or credential store.
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+*.keystore
+*.jks
+id_rsa
+id_rsa.*
+id_dsa
+id_ecdsa
+id_ed25519
+
 # Local browser-smoke artefact
 scripts/.smoke-screenshot.png
 
