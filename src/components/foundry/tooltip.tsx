@@ -141,18 +141,6 @@ export const LONG_PRESS_MS = 500;
  */
 const MOVE_CANCEL_PX = 10;
 /**
- * Window (ms) after a pointer press during which a focus event is treated as pointer-initiated
- * and does **not** open the tooltip (see `onFocus`). Only keyboard focus should force the bubble
- * open — hover governs the mouse and a tap/long-press governs touch. The catch is that touch
- * defers the focus to *release* rather than firing it on press, so a plain tap's focus can land
- * well after `onPointerDown`; a boolean flag cleared on the next tick misses it and the bubble
- * pops on a tap. Keyed off a timestamp instead, this covers that deferral while staying tight
- * enough that a genuine keyboard focus (never preceded by a press on the same trigger) still
- * opens. Comfortably above a normal tap and above {@link LONG_PRESS_MS} (whose peek opens the
- * bubble deliberately anyway, so a late focus there is harmless).
- */
-const POINTER_FOCUS_SUPPRESS_MS = 700;
-/**
  * Elements that count as the trigger "wrapping its own interactive control" for touch-tap
  * auto-detection (see {@link TooltipProps.openOnTap}). When a trigger contains one of these,
  * a tap belongs to that control, so the tooltip must not toggle open and cover it. A passive
@@ -204,11 +192,13 @@ export function Tooltip({
   const scrollRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Timestamp of the last pointer press on the trigger, so the focus it triggers does not
-  // force the bubble open — a focus within {@link POINTER_FOCUS_SUPPRESS_MS} of a press is
-  // pointer-initiated (touch defers focus to release, so this can't be a next-tick flag).
-  // See `onFocus` below.
-  const lastPointerDownAt = useRef<number | null>(null);
+  // Whether the most recent global input was a pointer press rather than a keypress. Consulted
+  // by `onFocus` so the tooltip opens only on *keyboard* focus: a focus caused by a pointer —
+  // a click/tap on the trigger, or focus restored to it when a dialog opened by a tap/click is
+  // dismissed (issue #474) — must not pop the bubble. Tracked at document level (below) because
+  // the input can land anywhere, not just on this trigger; `false` (keyboard) by default so a
+  // trigger keyboard-focused right after mount still opens.
+  const lastInputWasPointer = useRef(false);
   // Long-press-to-peek state (touch/pen on a control-wrapping trigger). `pressTimer`
   // is the pending peek; `pressStart` is the down point for the movement-cancel; and
   // `longPressFired` is a one-shot guard read by `onClickCapture` to swallow the click
@@ -216,6 +206,15 @@ export function Tooltip({
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressStart = useRef<{ x: number; y: number } | null>(null);
   const longPressFired = useRef(false);
+  // Mouse hover-open is *armed* on enter (at the enter coordinates) and only promoted to a
+  // delayed open once the cursor genuinely **moves** to a different point over the trigger. The
+  // browser also synthesises an enter — and sometimes a zero-distance move — when the trigger
+  // merely *appears* under a stationary cursor: e.g. a dialog opened by a touch tap closing,
+  // leaving the OS cursor parked on the control the finger pressed (issue #474). Requiring an
+  // actual positional change keeps the bubble shut for that, while still opening the instant the
+  // user moves a real mouse onto the control (even one previously parked there). `null` = not
+  // armed; an object = armed at that point.
+  const hoverOpenPending = useRef<{ x: number; y: number } | null>(null);
   const id = useId();
 
   const cancelClose = useCallback(() => {
@@ -263,6 +262,26 @@ export function Tooltip({
     cancelClose();
     closeTimer.current = setTimeout(() => setOpen(false), CLOSE_DELAY_MS);
   }, [cancelOpen, cancelClose]);
+
+  // Track the last global input modality so `onFocus` can open only on keyboard focus. A
+  // pointer press (mouse or touch) marks pointer; a keypress marks keyboard. Capture-phase
+  // document listeners see the input wherever it lands — including the click/tap that opens a
+  // dialog, so the focus restored when that dialog closes is still recognised as pointer-driven
+  // and never pops the bubble (issue #474).
+  useEffect(() => {
+    const markPointer = () => {
+      lastInputWasPointer.current = true;
+    };
+    const markKeyboard = () => {
+      lastInputWasPointer.current = false;
+    };
+    document.addEventListener('pointerdown', markPointer, true);
+    document.addEventListener('keydown', markKeyboard, true);
+    return () => {
+      document.removeEventListener('pointerdown', markPointer, true);
+      document.removeEventListener('keydown', markKeyboard, true);
+    };
+  }, []);
 
   useEffect(
     () => () => {
@@ -370,16 +389,25 @@ export function Tooltip({
   // `pointerenter`/`mouseenter` on a tap — acting on that would pop the bubble over the
   // control the finger just pressed (the reported touch bug). Tap handling lives in
   // `onPointerDown` instead.
+  //
+  // A mouse enter is *armed* (at its coordinates) rather than opened outright: the browser also
+  // synthesises one when the trigger simply appears under a stationary cursor — e.g. a dialog
+  // opened by a touch tap closing again, leaving the OS cursor parked on the control the finger
+  // pressed (issue #474). The actual open is deferred to the first genuine move to a *different*
+  // point over the trigger (`onPointerMove`), which a stationary cursor never produces.
+  // `cancelClose` still runs so re-entering from the bubble keeps it open.
   const onPointerEnter = useCallback(
     (e: ReactPointerEvent) => {
       if (e.pointerType !== 'mouse') return;
-      openWithDelay();
+      cancelClose();
+      hoverOpenPending.current = { x: e.clientX, y: e.clientY };
     },
-    [openWithDelay],
+    [cancelClose],
   );
   const onPointerLeave = useCallback(
     (e: ReactPointerEvent) => {
       if (e.pointerType !== 'mouse') return;
+      hoverOpenPending.current = null;
       scheduleClose();
     },
     [scheduleClose],
@@ -392,13 +420,10 @@ export function Tooltip({
   // **long-press** ({@link LONG_PRESS_MS}), which opens the bubble without firing the control.
   // `openOnTap` overrides this per-trigger; when unset it is auto-detected from whether the
   // trigger contains an interactive descendant. Mouse taps are ignored here (hover governs
-  // them). Either way, stamp the press time so the focus it triggers is recognised as
-  // pointer-initiated by `onFocus` and doesn't also open.
+  // them). The focus this press triggers is kept from opening the bubble by the document-level
+  // input-modality tracking above, which marks the press as pointer-driven.
   const onPointerDown = useCallback(
     (e: ReactPointerEvent) => {
-      // Stamp the press so the focus it triggers (fired now for mouse, deferred to release for
-      // touch) is recognised as pointer-initiated by `onFocus` and doesn't force the bubble open.
-      lastPointerDownAt.current = Date.now();
       // Reset the one-shot click guard at the start of every gesture, so a stale peek that
       // never got its synthesised click can't later swallow a genuine click.
       longPressFired.current = false;
@@ -425,17 +450,30 @@ export function Tooltip({
     [openOnTap, cancelPress, show],
   );
 
-  // Movement cancels an armed peek: past a small threshold the gesture is a scroll/drag, not
-  // a deliberate hold, so let the control keep the touch. (pointer-up before the timer and
-  // pointer-cancel likewise disarm it — see the trigger wiring below.)
   const onPointerMove = useCallback(
     (e: ReactPointerEvent) => {
+      // Mouse: a move to a *different* point over an armed trigger confirms a real hover, so
+      // promote it to the delayed open. A stationary synthetic enter (issue #474) yields no
+      // move, or at most a zero-distance one, so the bubble stays shut. Once promoted the arm is
+      // cleared, so continuous mouse jitter never re-defers the open.
+      if (e.pointerType === 'mouse') {
+        const armed = hoverOpenPending.current;
+        if (armed && (e.clientX !== armed.x || e.clientY !== armed.y)) {
+          hoverOpenPending.current = null;
+          openWithDelay();
+        }
+        return;
+      }
+      // Touch/pen: movement past a small threshold cancels an armed long-press-peek — the
+      // gesture is a scroll/drag, not a deliberate hold, so let the control keep the touch.
+      // (pointer-up before the timer and pointer-cancel likewise disarm it — see the trigger
+      // wiring below.)
       if (pressTimer.current === null || pressStart.current === null) return;
       const dx = e.clientX - pressStart.current.x;
       const dy = e.clientY - pressStart.current.y;
       if (dx * dx + dy * dy > MOVE_CANCEL_PX * MOVE_CANCEL_PX) cancelPress();
     },
-    [cancelPress],
+    [openWithDelay, cancelPress],
   );
 
   // One-shot capture guard: when a long-press has just peeked, swallow the `click` that the
@@ -455,19 +493,15 @@ export function Tooltip({
     if (pressStart.current !== null) e.preventDefault();
   }, []);
 
-  // Open on focus **only when it came from the keyboard**. A focus triggered by a
-  // pointer press is skipped: hover (mouse) or the tap-toggle / long-press-peek (touch)
-  // already governs visibility, and force-opening here would render the bubble over the
-  // trigger — on mouse stealing the mouse-up so the click never lands, and on touch popping
-  // the bubble on a plain tap (the reported bug). Touch defers the focus to release, so a
-  // recent-press *timestamp* recognises it where a next-tick flag would already be cleared.
+  // Open on focus **only when it came from the keyboard**. A focus triggered by a pointer is
+  // skipped: hover (mouse) or the tap-toggle / long-press-peek (touch) already governs
+  // visibility, and force-opening here would render the bubble over the trigger — on mouse
+  // stealing the mouse-up so the click never lands, and on touch popping the bubble on a plain
+  // tap. This also covers focus **restored** to the trigger when a dialog opened by a tap/click
+  // is dismissed (issue #474): that restoration follows a pointer interaction, so the modality
+  // tracker still reads pointer and the bubble stays shut. Only genuine keyboard focus opens it.
   const onFocus = useCallback(() => {
-    if (
-      lastPointerDownAt.current !== null &&
-      Date.now() - lastPointerDownAt.current < POINTER_FOCUS_SUPPRESS_MS
-    ) {
-      return;
-    }
+    if (lastInputWasPointer.current) return;
     show();
   }, [show]);
 
