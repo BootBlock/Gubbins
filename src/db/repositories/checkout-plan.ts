@@ -43,9 +43,46 @@ export interface CheckInPlanOptions {
 }
 
 /**
+ * The correlated predicate that is true only while a checkout is still **open** — the database
+ * backstop for the check-in race (issue #296).
+ *
+ * `checkIn` reads the row and decides to return it (the JS `returned_at IS NULL` guard above),
+ * then writes in a *separate* transaction the worker never pairs with that read. Two overlapping
+ * returns for the same loan therefore both observe `returned_at === null` and, without this, both
+ * restore stock and both log `CHECKED_IN` for one physical return. Carrying this guard on every
+ * write statement — and stamping `returned_at` **last** so the guards still see it NULL — collapses
+ * the loser to a pure no-op at the database, not merely in JavaScript. Binds the checkout id once.
+ */
+const OPEN_LOAN_EXISTS = 'EXISTS (SELECT 1 FROM checkouts WHERE id = ? AND returned_at IS NULL)';
+
+/**
+ * Rewrite a builder's `INSERT … VALUES (…)` into `INSERT … SELECT … WHERE {@link OPEN_LOAN_EXISTS}`,
+ * so the row is inserted only while the loan is still open (issue #296). A `SELECT` that matches no
+ * rows inserts nothing — and never reaches any trailing `ON CONFLICT` upsert — so a raced return's
+ * stock restore and ledger entry both vanish.
+ *
+ * Relies on the builder emitting a single `VALUES (…)` tuple whose bound values contain no `)` —
+ * true of {@link historyStatement} and {@link addBatchStatement}, whose bindings are all `?`
+ * placeholders. Throws if that shape ever changes rather than silently emitting an unguarded write
+ * that would re-open the race.
+ */
+function onlyWhileOpen(base: SqlStatement, checkoutId: string): SqlStatement {
+  const sql = base.sql.replace(/VALUES\s*\(([^)]*)\)/, `SELECT $1 WHERE ${OPEN_LOAN_EXISTS}`);
+  if (sql === base.sql) {
+    throw new DbError('UNKNOWN', 'Cannot guard a check-in write: expected a VALUES clause to rewrite.');
+  }
+  const params = Array.isArray(base.params) ? base.params : [];
+  return { sql, params: [...params, checkoutId] };
+}
+
+/**
  * Plan a single loan's return: read the checkout and its item, then build the statements that
  * restore the stock, close the loan and log it. Returns an **empty** list when the loan has
  * already been returned (the idempotent no-op {@link CheckoutRepository.checkIn} relies on).
+ *
+ * Every write is guarded by {@link OPEN_LOAN_EXISTS} and the `returned_at` stamp is emitted last,
+ * so two returns that race past the JS guard (both reading `returned_at IS NULL`) still restore
+ * stock and log `CHECKED_IN` exactly once — the loser's whole transaction no-ops (issue #296).
  *
  * Throws when the checkout does not exist — the caller asked to return something that isn't there.
  */
@@ -89,36 +126,55 @@ export async function planCheckIn(
   const conditionChanged = condition !== undefined && condition !== currentCondition;
 
   return [
+    // Restore the stock lot — guarded, so a raced return does not restore it a second time.
     ...(restoreDelta > 0 && restoreLocationId
-      ? [addBatchStatement(existing.item_id, restoreLocationId, restoreIdentity, restoreDelta)]
+      ? [
+          onlyWhileOpen(
+            addBatchStatement(existing.item_id, restoreLocationId, restoreIdentity, restoreDelta),
+            checkoutId,
+          ),
+        ]
       : []),
-    {
-      // The return note lands in its OWN column — never `note`, which holds the reason the
-      // item was lent out. Writing it here (not `note = COALESCE(?, note)`) means a return
-      // remark no longer clobbers the loan note; both survive independently.
-      sql: `UPDATE checkouts SET returned_at = (${SQL_NOW_MS}), return_note = ? WHERE id = ?;`,
-      params: [note?.trim() || null, checkoutId],
-    },
-    historyStatement(existing.item_id, 'CHECKED_IN', actorId, {
-      quantityDelta: restoreDelta === 0 ? null : restoreDelta,
-      note: note?.trim() || `Returned ${existing.quantity} from loan.`,
-      metadata: { checkoutId },
-    }),
+    // Log CHECKED_IN — guarded, so a raced return does not write a duplicate ledger entry.
+    onlyWhileOpen(
+      historyStatement(existing.item_id, 'CHECKED_IN', actorId, {
+        quantityDelta: restoreDelta === 0 ? null : restoreDelta,
+        note: note?.trim() || `Returned ${existing.quantity} from loan.`,
+        metadata: { checkoutId },
+      }),
+      checkoutId,
+    ),
     // The condition change rides in the same transaction as the return + stock restore, so a
     // returned tool's new state is atomic with its check-in. `updated_at` self-stamps via the
     // items trigger (the UPDATE leaves it untouched), exactly as `ItemRepository.update` relies on.
+    // Both statements carry the open-loan guard so a raced return neither re-applies the condition
+    // nor logs a duplicate CONDITION_CHANGED.
     ...(conditionChanged
       ? [
           {
-            sql: `UPDATE items SET condition = ? WHERE id = ?;`,
-            params: [condition, existing.item_id] as SqlValue[],
+            sql: `UPDATE items SET condition = ? WHERE id = ? AND ${OPEN_LOAN_EXISTS};`,
+            params: [condition, existing.item_id, checkoutId] as SqlValue[],
           },
-          historyStatement(existing.item_id, 'CONDITION_CHANGED', actorId, {
-            note: `Condition changed ${currentCondition ? `from "${currentCondition}" ` : ''}to "${condition}" on return.`,
-            metadata: { from: currentCondition, to: condition, checkoutId },
-          }),
+          onlyWhileOpen(
+            historyStatement(existing.item_id, 'CONDITION_CHANGED', actorId, {
+              note: `Condition changed ${currentCondition ? `from "${currentCondition}" ` : ''}to "${condition}" on return.`,
+              metadata: { from: currentCondition, to: condition, checkoutId },
+            }),
+            checkoutId,
+          ),
         ]
       : []),
+    {
+      // Close the loan LAST, so every guard above still sees `returned_at IS NULL`. The
+      // `AND returned_at IS NULL` predicate is the structural backstop: once another return has
+      // closed the loan this UPDATE — like the guarded writes before it — modifies nothing.
+      //
+      // The return note lands in its OWN column — never `note`, which holds the reason the
+      // item was lent out. Writing it here (not `note = COALESCE(?, note)`) means a return
+      // remark no longer clobbers the loan note; both survive independently.
+      sql: `UPDATE checkouts SET returned_at = (${SQL_NOW_MS}), return_note = ? WHERE id = ? AND returned_at IS NULL;`,
+      params: [note?.trim() || null, checkoutId],
+    },
   ];
 }
 
