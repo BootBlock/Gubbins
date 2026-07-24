@@ -3,6 +3,9 @@
  * (all-day DATE, timed UTC DATE-TIME, ISO-string, exclusive-end arithmetic), and the overall
  * VCALENDAR/VEVENT structure. No DB, no I/O — every rule is exercised directly.
  */
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   addDays,
@@ -11,6 +14,7 @@ import {
   formatCalendar,
   icalDate,
   icalDateFromIso,
+  icalLocalDate,
   icalDateTimeUtc,
   type VEvent,
 } from './emitter.ts';
@@ -46,6 +50,16 @@ describe('date formatting', () => {
     expect(icalDateFromIso('  2028-01-20 ')).toEqual({ kind: 'date', value: '20280120' });
   });
 
+  it('formats an all-day DATE in LOCAL components (the maintenance-due case)', () => {
+    // Correct-by-construction and timezone-agnostic: whatever zone the runner is in, the value is
+    // the host-local calendar day of the instant.
+    const ms = Date.UTC(2025, 5, 15, 2, 0, 0);
+    const d = new Date(ms);
+    const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
+    const expected = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+    expect(icalLocalDate(ms)).toEqual({ kind: 'date', value: expected });
+  });
+
   it('rejects a malformed ISO date', () => {
     expect(icalDateFromIso('2027-3-15')).toBeNull();
     expect(icalDateFromIso('not-a-date')).toBeNull();
@@ -61,6 +75,36 @@ describe('date formatting', () => {
   it('leaves a DATE-TIME untouched when asked to add days', () => {
     const dt = { kind: 'date-time', value: '20250627T045320Z' } as const;
     expect(addDays(dt, 1)).toEqual(dt);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// icalDate vs icalLocalDate divergence — run in a child process pinned to a
+// non-UTC zone (setting process.env.TZ in a worker_threads worker does not re-seat
+// V8's cached zone, so the worker's own TZ can't be trusted for this — mirrors the
+// child-process approach in `src/lib/calendar-days.test.ts`).
+// ---------------------------------------------------------------------------
+
+describe('icalLocalDate vs icalDate across a UTC-day boundary (America/New_York)', () => {
+  it('reads an instant just past UTC midnight as the previous LOCAL day (issue #321)', () => {
+    // `emitter.ts` is dependency-free, so the child imports it directly under type-stripping.
+    const moduleUrl = pathToFileURL(join(import.meta.dirname, 'emitter.ts')).href;
+    const script = `
+      process.env.TZ = 'America/New_York';
+      const { icalDate, icalLocalDate } = await import(${JSON.stringify(moduleUrl)});
+      // 2025-06-15T02:00:00Z is still 2025-06-14 22:00 in New York (EDT, UTC-4).
+      const ms = Date.UTC(2025, 5, 15, 2, 0, 0);
+      process.stdout.write(JSON.stringify({ utc: icalDate(ms).value, local: icalLocalDate(ms).value }));
+    `;
+    const out = execFileSync(
+      process.execPath,
+      ['--experimental-strip-types', '--input-type=module', '-e', script],
+      { encoding: 'utf8' },
+    );
+    const { utc, local } = JSON.parse(out);
+    // UTC read slips the day forward (what a maintenance due date used to do); local read is right.
+    expect(utc).toBe('20250615');
+    expect(local).toBe('20250614');
   });
 });
 

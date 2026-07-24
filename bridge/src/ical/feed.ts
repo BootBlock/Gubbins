@@ -18,9 +18,11 @@
  * "due" by usage, not by a date). Every source is bounded ({@link MAX_EVENTS_PER_SOURCE}) so a
  * huge inventory can't produce an unbounded feed.
  *
- * All-day dates dominate here (a due-back, a warranty, a booking span are day-grained). Dates
- * derived from a UNIX-ms instant use UTC components (see `emitter.ts`); a warranty's stored
- * `YYYY-MM-DD` string is used verbatim (no timezone maths).
+ * All-day dates dominate here (a due-back, a warranty, a booking span are day-grained). A booking
+ * date is stored at midnight UTC (issue #320), so its all-day value uses UTC components; a
+ * maintenance due date is an instant carrying a local time-of-day, so its all-day value uses
+ * *local* components (issue #321 — the bridge runs on the user's machine); a warranty's stored
+ * `YYYY-MM-DD` string is used verbatim (no timezone maths). See `emitter.ts`.
  */
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { CheckoutRepository } from '@/db/repositories/CheckoutRepository.ts';
@@ -41,6 +43,7 @@ import {
   formatCalendar,
   icalDate,
   icalDateFromIso,
+  icalLocalDate,
   icalDateTimeUtc,
   type ICalDate,
   type VCalendar,
@@ -244,7 +247,10 @@ function maintenanceEvent(
   return allDayEvent({
     uid: `maintenance-${schedule.id}${UID_SUFFIX}`,
     dtstamp,
-    day: icalDate(status.dueAt),
+    // `status.dueAt` carries the service's local wall-clock time (issue #321), so read its *local*
+    // calendar day — reading UTC components would slip the due date a day for a service logged near
+    // midnight in a non-UTC zone.
+    day: icalLocalDate(status.dueAt),
     summary: `Maintenance due: ${schedule.name} — ${schedule.itemName}${scope}`,
     description: schedule.note ?? undefined,
     category: 'Maintenance',
