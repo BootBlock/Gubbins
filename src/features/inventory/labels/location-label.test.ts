@@ -78,7 +78,34 @@ describe('toLocationLabelCell', () => {
   it('encodes the location name as the barcode value', () => {
     const cell = toLocationLabelCell({ id: BIN, name: 'BIN3' }, BASE, template({ symbology: 'barcode' }));
     expect(cell.barcodeValue).toBe('BIN3');
+    expect(cell.barcodeFit).toBe('ok');
     expect(cell.barcodeSvg).toContain('<svg');
+  });
+
+  it('falls back to a short id when the name is too long to print readably (issue #331)', () => {
+    // A location name is free text of any length; Code 128 is 11 modules per character,
+    // so this would collapse to about a tenth of a millimetre per bar — a grey smear.
+    const cell = toLocationLabelCell(
+      { id: BIN, name: 'Workshop shelf B, third drawer' },
+      BASE,
+      template({ symbology: 'barcode' }),
+    );
+    expect(cell.barcodeValue).toBe('00000000');
+    expect(cell.barcodeFit).toBe('shortened');
+    expect(cell.barcodeSvg).toContain('<svg');
+    // The name still prints as text — only the barcode gives it up.
+    expect(cell.lines).toContain('Workshop shelf B, third drawer');
+  });
+
+  it('prints no barcode at all on a label too narrow for even the short id', () => {
+    const cell = toLocationLabelCell(
+      { id: BIN, name: 'BIN3' },
+      BASE,
+      template({ symbology: 'barcode', sizeMode: 'die-cut', labelWidthMm: 20, labelHeightMm: 15 }),
+    );
+    expect(cell.barcodeValue).toBeNull();
+    expect(cell.barcodeSvg).toBeNull();
+    expect(cell.barcodeFit).toBe('unprintable');
   });
 });
 

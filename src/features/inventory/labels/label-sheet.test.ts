@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildItemQrUrl } from '@/features/scanner/scan-payload';
 import {
   MAX_LABELS,
+  barcodeWidthMm,
   buildLabelSheetHtml,
   clampLabels,
   itemLabelLines,
@@ -22,6 +23,26 @@ const template = (over: Partial<LabelTemplate> = {}): LabelTemplate => ({
 function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
+
+describe('barcodeWidthMm', () => {
+  it('caps a roomy A4 cell at the stylesheet max-width', () => {
+    expect(barcodeWidthMm(template({ columns: 1 }))).toBe(40);
+    expect(barcodeWidthMm(template({ columns: 3 }))).toBe(40);
+  });
+
+  it('narrows to the grid cell once the columns squeeze it below that cap', () => {
+    // A4 (210mm) less 2 × 10mm page margin = 190mm; less 3 × 6mm gaps, over 4 columns,
+    // less the cell's 2 × 3mm padding.
+    expect(barcodeWidthMm(template({ columns: 4 }))).toBe(37);
+  });
+
+  it('is the die-cut label less its padding', () => {
+    const dieCut = (widthMm: number) =>
+      barcodeWidthMm(template({ sizeMode: 'die-cut', labelWidthMm: widthMm, labelHeightMm: 30 }));
+    expect(dieCut(40)).toBe(37);
+    expect(dieCut(100)).toBe(97);
+  });
+});
 
 describe('toLabelCells', () => {
   it('produces one cell per item, in order, with the deep-link URL and a QR SVG (default template)', () => {
@@ -62,6 +83,33 @@ describe('toLabelCells', () => {
     const cells = toLabelCells([{ id: ID_A, name: 'Res' }], BASE, template({ symbology: 'none' }));
     expect(cells[0]!.qrSvg).toBeNull();
     expect(cells[0]!.barcodeSvg).toBeNull();
+  });
+
+  it('falls back to a short id when the MPN is too long to print readably (issue #331)', () => {
+    const cells = toLabelCells(
+      [{ id: ID_A, name: 'Res', mpn: 'RC0805-10K-0402-VERY-LONG-PART-NUMBER' }],
+      BASE,
+      template({ symbology: 'barcode' }),
+    );
+    expect(cells[0]!.barcodeValue).toBe('11111111');
+    expect(cells[0]!.barcodeFit).toBe('shortened');
+    expect(cells[0]!.barcodeSvg).toContain('<svg');
+  });
+
+  it('prints no barcode on a label too narrow for even the short id', () => {
+    const cells = toLabelCells(
+      [{ id: ID_A, name: 'Res', mpn: 'RC0805-10K' }],
+      BASE,
+      template({ symbology: 'barcode', sizeMode: 'die-cut', labelWidthMm: 20, labelHeightMm: 15 }),
+    );
+    expect(cells[0]!.barcodeSvg).toBeNull();
+    expect(cells[0]!.barcodeValue).toBeNull();
+    expect(cells[0]!.barcodeFit).toBe('unprintable');
+  });
+
+  it('reports no barcode fit at all when the template draws no barcode', () => {
+    const cells = toLabelCells([{ id: ID_A, name: 'Res', mpn: 'RC0805-10K' }], BASE, template());
+    expect(cells[0]!.barcodeFit).toBeNull();
   });
 
   it('caps the set at MAX_LABELS', () => {

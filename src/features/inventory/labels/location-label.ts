@@ -1,10 +1,13 @@
 /**
  * Printable **location** labels (Phase 73 "Label customisation").
  *
- * A location label carries a QR/Code-128 of the location deep-link
+ * A location label carries a QR of the location deep-link
  * (`…/#/inventory?location=<id>`, see {@link buildLocationQrUrl}) so a phone camera —
  * or the in-app scanner — jumps straight to that bin/shelf, plus the location name and
- * (optionally) its ancestor path. It reuses the shared {@link resolveCell} renderer and
+ * (optionally) its ancestor path. A Code 128, where the template asks for one, carries
+ * the location's name (or a short id when the name is too long to print readably) for a
+ * handheld linear scanner, exactly as an item label carries its MPN. It reuses the
+ * shared {@link resolveCell} renderer and
  * print-document wrapper from `label-sheet.ts`, so item and location labels look
  * identical and the QR/barcode logic lives in exactly one place.
  *
@@ -12,7 +15,7 @@
  */
 import { buildLocationQrUrl } from '@/features/scanner/scan-payload';
 import { labelCellHtml, resolveCell, sheetDocument, type LabelCell } from './label-sheet';
-import { labelBarcodeValue, type LabelTemplate } from './label-template';
+import { type LabelTemplate } from './label-template';
 
 /** The fields a location label can surface. */
 export interface LocationLabelInput {
@@ -90,8 +93,11 @@ export function toLocationLabelCell(
       id: loc.id,
       name: loc.name,
       url: buildLocationQrUrl(loc.id, baseUrl),
-      // The barcode encodes the location name (sanitised), falling back to a short id.
-      barcodeValue: labelBarcodeValue({ id: loc.id, mpn: loc.name }),
+      // The barcode prefers the location's own name — a bin called "A-12" is far more
+      // use on a shelf than an opaque id — but a name is free text of any length, so
+      // `resolveCell` swaps in a short id whenever the name would print too small to
+      // scan, and drops the barcode entirely on a label too narrow for either (#331).
+      barcodePreferred: loc.name,
       lines: locationLabelLines(loc, template),
     },
     template,
