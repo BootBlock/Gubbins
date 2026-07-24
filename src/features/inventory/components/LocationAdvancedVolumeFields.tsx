@@ -1,11 +1,11 @@
 import { useId, useState } from 'react';
 import { FormField, Input } from '@/components/foundry';
 import { ChevronRightIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { cn } from '@/lib/utils';
 import { volumeUnitLabel, type VolumeUnit } from '@/lib/volume';
 import { PACKING_PERCENT_MAX, PACKING_PERCENT_MIN } from '../measure-input';
 import type { MeasureDraft } from './measure-draft';
-import { HINT_PACKING_FACTOR, HINT_USABLE_VOLUME } from './location-field-help';
 
 /**
  * The **Advanced** disclosure in the location dialogs (issue #457, Phase 2): the two optional
@@ -42,15 +42,21 @@ export function LocationAdvancedVolumeFields({
 }) {
   const [open, setOpen] = useState(false);
   const regionId = useId();
+  const t = useT();
 
-  const packingError = packingOutOfRange ? `Enter ${PACKING_PERCENT_MIN}–${PACKING_PERCENT_MAX}.` : undefined;
+  const packingError = packingOutOfRange
+    ? t('inventory.location.measure.packingRange', {
+        // Strings so the bounds render verbatim, never a locale-grouped number.
+        vars: { min: String(PACKING_PERCENT_MIN), max: String(PACKING_PERCENT_MAX) },
+      })
+    : undefined;
 
   const usableIssue =
     usableVolumeState.issue === null
       ? undefined
       : usableVolumeState.issue === 'negative'
-        ? 'Must be 0 or more.'
-        : 'Enter a number.';
+        ? t('inventory.location.measure.errorNegative')
+        : t('inventory.location.measure.errorNaN');
 
   // Keep the section expanded whenever a field has a blocking error — its error text lives inside
   // the disclosure, so collapsing it while invalid would leave the disabled Save/Create button
@@ -72,15 +78,17 @@ export function LocationAdvancedVolumeFields({
           aria-hidden
           className={cn('size-4 transition-transform', expanded && 'rotate-90')}
         />
-        Advanced space options
+        {t('inventory.location.advanced.toggle')}
       </button>
 
       {expanded ? (
         <div id={regionId} className="mt-field-gap grid gap-3 sm:grid-cols-2">
           <FormField
-            label={`Usable volume (${volumeUnitLabel(volumeUnit)})`}
+            label={t('inventory.location.advanced.usableVolume', {
+              vars: { unit: volumeUnitLabel(volumeUnit) },
+            })}
             error={usableIssue}
-            hint={HINT_USABLE_VOLUME}
+            hint={t('inventory.location.hint.usableVolume')}
           >
             <Input
               type="number"
@@ -89,11 +97,15 @@ export function LocationAdvancedVolumeFields({
               inputMode="decimal"
               value={usableVolume}
               onChange={(e) => onUsableVolumeChange(e.target.value)}
-              placeholder="From dimensions"
+              placeholder={t('inventory.location.advanced.usableVolumePlaceholder')}
               data-testid="location-usable-volume"
             />
           </FormField>
-          <FormField label="Packing efficiency (%)" error={packingError} hint={HINT_PACKING_FACTOR}>
+          <FormField
+            label={t('inventory.location.advanced.packing')}
+            error={packingError}
+            hint={t('inventory.location.hint.packingFactor')}
+          >
             <div className="flex items-center gap-2">
               <Input
                 type="number"
