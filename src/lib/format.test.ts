@@ -245,9 +245,15 @@ describe('snapMoneyInput', () => {
     expect(snapMoneyInput('8', 3)).toBe('8.000'); // BHD
   });
 
-  it('rounds to the fixed precision', () => {
-    expect(snapMoneyInput('8.005', 2)).toBe('8.01');
-    expect(snapMoneyInput('8.994', 2)).toBe('8.99');
+  it('is lossless: pads up but never rounds away typed precision', () => {
+    // More decimals than the currency writes are kept verbatim — the snap must not change the
+    // number (issue #290). Rounding to a currency's scale is the money seam's job, not the field's.
+    expect(snapMoneyInput('8.005', 2)).toBe('8.005');
+    expect(snapMoneyInput('8.994', 2)).toBe('8.994');
+    // The issue's two data-loss cases: a fractional JPY figure (0 digits) and a 4-decimal GBP
+    // unit cost (2 digits) both survive tabbing through the field.
+    expect(snapMoneyInput('1234.56', 0)).toBe('1234.56'); // JPY base, was → '1235'
+    expect(snapMoneyInput('0.0125', 2)).toBe('0.0125'); // GBP unit cost, was → '0.01'
   });
 
   it('leaves a blank value blank (the field is optional)', () => {

@@ -27,12 +27,15 @@ export interface MoneyInputProps extends Omit<
  * Foundry MoneyInput — the canonical control for **entering** a monetary amount, the input
  * counterpart to the {@link Money} display control.
  *
- * It is a plain numeric field while focused, then on blur snaps the value to the exact number
- * of fraction digits its currency is written with — `8` becomes `8.00` for GBP/USD/EUR, stays
+ * It is a plain numeric field while focused, then on blur pads the value up to the number of
+ * fraction digits its currency is written with — `8` becomes `8.00` for GBP/USD/EUR, stays
  * `8` for JPY, becomes `8.000` for BHD — using {@link Formatters.currencyFractionDigits} so the
- * decimals always match the user's currency localisation. The snap is presentation only: the
- * number is unchanged, just written with its currency's canonical precision. A blank value
- * stays blank (prices are optional) and in-progress/invalid text is left untouched.
+ * decimals always match the user's currency localisation. The snap is presentation only and
+ * **lossless**: it pads to the currency's canonical precision but never rounds away precision
+ * the user typed, so the stored number is unchanged — `1234.56` under JPY stays `1234.56`, a
+ * 4-decimal `0.0125` unit cost under GBP stays `0.0125`. Rounding a figure to its currency's
+ * scale is the money seam's job at compute time, not a side effect of leaving the field. A
+ * blank value stays blank (prices are optional) and in-progress/invalid text is left untouched.
  *
  * Renders a bare {@link Input} — pair it with a `<label>` or drop it inside a `FormField`,
  * which clones in the label/ARIA wiring exactly as it does for a plain `Input`.

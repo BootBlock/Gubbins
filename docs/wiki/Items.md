@@ -26,7 +26,9 @@ Common fields at creation:
 - **Unit cost** and **acquired date** — used for valuation, spend and the
   [[insurance schedule|Insurance-and-Estate-Schedule]]. Type a plain figure like `8` and it
   tidies itself to your currency's decimal places when you move on (`8.00` for pounds, dollars
-  or euros; whole numbers for yen); see [[Language & region|Language-and-Region]].
+  or euros; whole numbers for yen). The tidy-up only *adds* the trailing zeros — a more precise
+  figure you type, like a fraction-of-a-penny unit cost for parts bought in bulk, is kept
+  exactly as entered; see [[Language & region|Language-and-Region]].
 
 > **ℹ️ Note**
 > The **maker** has its own **Manufacturer** field and part codes go in **MPN**, so you needn't
