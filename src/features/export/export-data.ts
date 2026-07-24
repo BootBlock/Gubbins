@@ -4,7 +4,7 @@
  * serialisation is unit-tested in isolation; the wizard wires these to repository
  * reads and the download/zip side-effects.
  */
-import type { Checkout, Contact, Item, ItemHistoryEntry } from '@/db/repositories';
+import type { Checkout, Contact, FieldType, Item, ItemHistoryEntry } from '@/db/repositories';
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import { toCsv, type TabularCell, type TabularColumn } from './tabular-export';
 
@@ -128,7 +128,16 @@ function catalogCsvValue(item: Item, col: CatalogCsvColumn): unknown {
 export interface CatalogCustomFieldColumn {
   readonly fieldId: string;
   readonly header: string;
+  /**
+   * The field's type — needed so an `IMAGE` column exports a short marker rather than its
+   * (potentially huge) base64 `data:` URL, which would bloat and corrupt a spreadsheet and
+   * can't round-trip through import anyway. Optional for back-compat with older callers.
+   */
+  readonly fieldType?: FieldType;
 }
+
+/** Placeholder written for an IMAGE cell — the base64 image never belongs in a CSV. */
+const IMAGE_CELL_MARKER = '[image]';
 
 /**
  * Build a catalog CSV that round-trips through the Phase 67 import wizard
@@ -156,7 +165,12 @@ export function buildCatalogCsv(
     })),
     ...custom.map((c) => ({
       header: c.header,
-      value: (item: Item) => valuesByItem.get(item.id)?.[c.fieldId] ?? null,
+      value: (item: Item) => {
+        const raw = valuesByItem.get(item.id)?.[c.fieldId] ?? null;
+        // Never dump a base64 image into a cell — emit a marker instead.
+        if (c.fieldType === 'IMAGE') return raw ? IMAGE_CELL_MARKER : null;
+        return raw;
+      },
     })),
   ];
   return toCsv(columns, items);

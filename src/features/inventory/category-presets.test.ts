@@ -74,6 +74,16 @@ describe('CATEGORY_PRESETS (importable preset library)', () => {
       expect(preset.seed.category.glyph?.trim()).not.toBe('');
     }
   });
+
+  it('ships a Movie preset that exercises the IMAGE + FILE field types (issue #453)', () => {
+    const movie = CATEGORY_PRESETS.find((p) => p.id === 'movie');
+    expect(movie, 'a "movie" preset must exist').toBeDefined();
+    expect(movie!.name).toBe('Movie'); // deliberately not "Film"
+    expect(movie!.sectionId).toBe('media');
+    const types = movie!.seed.fields.map((f) => f.fieldType);
+    expect(types).toContain('IMAGE'); // cover art stored in the database
+    expect(types).toContain('FILE'); // link to the media file on disk
+  });
 });
 
 describe('preset sections (the picker taxonomy)', () => {

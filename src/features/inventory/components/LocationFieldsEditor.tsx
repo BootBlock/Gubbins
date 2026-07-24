@@ -182,9 +182,13 @@ function LocationFieldValueInput({
   }, [value.value]);
 
   // The selection types commit the moment the user picks — they emit no blur of their own,
-  // so a blur-only commit would silently never fire for them.
+  // so a blur-only commit would silently never fire for them. IMAGE is the same: it emits its
+  // value on pick (asynchronously, after compression) with no meaningful blur (issue #453).
   const commitsOnPick =
-    value.fieldType === 'SELECT' || value.fieldType === 'BOOLEAN' || value.fieldType === 'ON_OFF';
+    value.fieldType === 'SELECT' ||
+    value.fieldType === 'BOOLEAN' ||
+    value.fieldType === 'ON_OFF' ||
+    value.fieldType === 'IMAGE';
 
   return (
     <TypedFieldControl

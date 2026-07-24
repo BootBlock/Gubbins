@@ -48,6 +48,10 @@ export function FieldValue({
           ))}
         </span>
       );
+    case 'image':
+      // A custom-field cover (issue #453): a small bounded thumbnail; the base64 data: URL
+      // is the value itself, so there is nothing to fetch.
+      return <img src={value.src} alt={field.label} className="max-h-8 rounded object-contain" />;
     case 'empty':
       return <span className="text-muted-foreground/60">—</span>;
     case 'text':

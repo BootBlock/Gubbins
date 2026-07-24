@@ -598,6 +598,10 @@ function resolveCustomFieldValues(
       errors.push({ sourceRow, message: `Unknown custom field "${fieldId}".` });
       return null;
     }
+    // An IMAGE field holds binary cover art, not tabular text — a CSV can only carry a marker
+    // (see the export side), never the image itself. Silently skip the column rather than
+    // erroring the row, so importing an exported catalogue round-trips cleanly (issue #453).
+    if (def.fieldType === 'IMAGE') continue;
     const result = validateFieldValue(def, rawValue);
     if (!result.ok) {
       errors.push({ sourceRow, message: result.error });

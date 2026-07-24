@@ -41,6 +41,29 @@ export interface ValidateFieldOptions {
   readonly now?: () => Date;
 }
 
+/**
+ * Upper bound on an `IMAGE` field's stored bytes (the decoded size of its base64 `data:`
+ * URL). The encoder (`encodeFieldImage`) caps dimensions and quality so a normal cover lands
+ * far below this; the ceiling exists so a hand-crafted or imported value can't bloat the
+ * **synced** database (the value rides `item_field_values`, which syncs and backs up).
+ */
+export const MAX_FIELD_IMAGE_BYTES = 512 * 1024;
+
+/** True when `text` looks like an image `data:` URL (`data:image/…;base64,…`). */
+function isImageDataUrl(text: string): boolean {
+  return /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/]+={0,2}$/i.test(text);
+}
+
+/**
+ * The decoded byte length of a base64 `data:` URL, computed from the base64 payload without
+ * allocating the bytes: every 4 base64 chars encode 3 bytes, less one per `=` pad char.
+ */
+function base64DataUrlByteLength(dataUrl: string): number {
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
+
 /** True when a raw value is absent or whitespace-only (i.e. "clears the field"). */
 function isBlank(raw: string | null | undefined): boolean {
   return raw === null || raw === undefined || raw.trim().length === 0;
@@ -65,6 +88,10 @@ function isBlank(raw: string | null | undefined): boolean {
  * - **DATE** ⇒ canonical ISO `YYYY-MM-DD`, validated as a *real* calendar date
  *   (rejects `'2026-13-40'`, `'2026-02-30'`, `'not-a-date'`).
  * - **SELECT** ⇒ must be one of `def.options ?? []`.
+ * - **FILE** ⇒ any non-blank string (a path / UNC / `file://` / `http(s)` link),
+ *   stored verbatim — a browser can't verify it points anywhere real.
+ * - **IMAGE** ⇒ a bounded image `data:` URL (`data:image/…;base64,…`) within
+ *   {@link MAX_FIELD_IMAGE_BYTES}; anything else is rejected.
  *
  * The returned `value` is always the string to persist (values are stored as TEXT).
  */
@@ -138,6 +165,25 @@ export function validateFieldValue(
           ok: false,
           error: `${def.name} must be one of: ${options.join(', ')}.`,
         };
+      }
+      return { ok: true, value: text };
+    }
+
+    case 'FILE':
+      // A link to a file that lives outside the app — a local path, a UNC share, or a
+      // `file://` / `http(s)` URI. We can't verify a local path from a browser, so any
+      // non-blank string is accepted and stored verbatim (only the pointer travels).
+      return { ok: true, value: text };
+
+    case 'IMAGE': {
+      // The control encodes a picked image to a bounded WebP `data:` URL before it ever
+      // reaches here; this validates that shape and enforces the size cap so a hand-set
+      // or imported value can't smuggle an oversized/non-image blob into the synced DB.
+      if (!isImageDataUrl(text)) {
+        return { ok: false, error: `${def.name} must be an image.` };
+      }
+      if (base64DataUrlByteLength(text) > MAX_FIELD_IMAGE_BYTES) {
+        return { ok: false, error: `${def.name} image is too large.` };
       }
       return { ok: true, value: text };
     }

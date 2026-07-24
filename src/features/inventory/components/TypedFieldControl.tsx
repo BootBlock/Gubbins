@@ -1,4 +1,8 @@
-import { Checkbox, Input, Select, Textarea, useRovingRadioGroup } from '@/components/foundry';
+import { useRef, useState } from 'react';
+import { Checkbox, Input, Select, Spinner, Textarea, useRovingRadioGroup } from '@/components/foundry';
+import { CloseIcon, UploadIcon } from '@/components/icons';
+import { encodeFieldImage } from '@/features/images/compression';
+import { useErrorMessage } from '@/features/errors';
 import { cn } from '@/lib/utils';
 import type { FieldType } from '@/db/repositories';
 
@@ -127,9 +131,123 @@ export function TypedFieldControl({
           aria-describedby={controlProps['aria-describedby']}
         />
       );
+    case 'FILE':
+      return (
+        <Input
+          type="text"
+          // Gubbins stores the link, not the file — a path, UNC share, or file:// URI.
+          placeholder={String.raw`\\server\share\movie.mkv  ·  file://…`}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          {...naming}
+          {...controlProps}
+        />
+      );
+    case 'IMAGE':
+      return (
+        <ImageFieldControl
+          value={value}
+          onChange={onChange}
+          ariaLabel={ariaLabel}
+          labelId={labelId}
+          controlProps={controlProps}
+        />
+      );
     default:
       return <Input value={value} onChange={(e) => onChange(e.target.value)} {...naming} {...controlProps} />;
   }
+}
+
+/**
+ * The IMAGE field control: pick an image, compress it to a bounded WebP `data:` URL
+ * ({@link encodeFieldImage}) and store that string in the field value — the whole image
+ * lives in the database, so it stays small and travels with sync/backup.
+ *
+ * Uses a `<button>` + hidden `ref`'d file input rather than a wrapping `<label>`: a caller
+ * (FormField / the item editor) already wraps this control in its own `<label>`, and a
+ * nested `<label>` would be invalid. The button carries the accessible name.
+ */
+function ImageFieldControl({
+  value,
+  onChange,
+  ariaLabel,
+  labelId,
+  controlProps,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  ariaLabel?: string;
+  labelId?: string;
+  controlProps: TypedFieldControlAria;
+}) {
+  const describeError = useErrorMessage();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onChange(await encodeFieldImage(file));
+    } catch (err) {
+      setError(describeError(err, 'That image could not be processed.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-field-gap-compact">
+      {value ? (
+        <div className="relative inline-block">
+          <img
+            src={value}
+            alt={ariaLabel ? `${ariaLabel} preview` : 'Selected image'}
+            className="max-h-32 rounded-lg border border-border object-contain"
+          />
+          <button
+            type="button"
+            aria-label="Remove image"
+            onClick={() => onChange('')}
+            className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-background/80 text-destructive backdrop-blur transition-colors hover:bg-background [&_svg]:size-3.5"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        aria-label={ariaLabel}
+        aria-labelledby={labelId}
+        // `aria-invalid` is not a valid attribute on a button — the image picker surfaces its
+        // own errors below; we still forward `aria-describedby` so a FormField error is linked.
+        aria-describedby={controlProps['aria-describedby']}
+        className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm font-medium text-foreground outline-none transition-colors hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring disabled:opacity-60 [&_svg]:size-4"
+      >
+        {busy ? <Spinner /> : <UploadIcon />}
+        {value ? 'Replace image' : 'Choose image'}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        tabIndex={-1}
+        onChange={onPick}
+      />
+      {error ? (
+        <span role="alert" className="block text-xs text-destructive">
+          {error}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 const YES_NO_OPTIONS = [

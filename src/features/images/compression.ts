@@ -19,6 +19,14 @@ const MAX_THUMB_DIMENSION = 150;
 const FULL_QUALITY = 0.8; // §4.2.3 canvas.toBlob(..., 'image/webp', 0.8)
 const THUMB_QUALITY = 0.7;
 
+/**
+ * Cap for an `IMAGE` custom-field cover (issue #453). Larger than a list thumbnail so a
+ * cover reads cleanly at detail size, but small enough that the base64 value stays well
+ * under the field's byte ceiling — the whole image lives in the synced DB, not OPFS.
+ */
+const MAX_FIELD_IMAGE_DIMENSION = 512;
+const FIELD_IMAGE_QUALITY = 0.75;
+
 export interface ProcessedImage {
   /** The downsampled high-resolution WebP, destined for a raw OPFS file. */
   readonly fullRes: Blob;
@@ -37,6 +45,32 @@ export async function processImageFile(file: Blob): Promise<ProcessedImage> {
   } finally {
     bitmap.close();
   }
+}
+
+/**
+ * Compress a picked image into a single bounded WebP `data:` URL for storage in an `IMAGE`
+ * custom field (issue #453). Unlike {@link processImageFile}, there is no OPFS full-res and
+ * no separate thumbnail — the field holds this one compressed image directly in the database
+ * value, so it must stay small (see `MAX_FIELD_IMAGE_BYTES`). Browser-only (canvas/WebP).
+ */
+export async function encodeFieldImage(file: Blob): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const webp = await encodeScaled(bitmap, MAX_FIELD_IMAGE_DIMENSION, FIELD_IMAGE_QUALITY);
+    return await blobToDataUrl(webp);
+  } finally {
+    bitmap.close();
+  }
+}
+
+/** Read a blob into a `data:` URL (base64) via FileReader. */
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read image data.'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 /** Scale-down dimensions preserving aspect ratio; never upscales below the cap. */

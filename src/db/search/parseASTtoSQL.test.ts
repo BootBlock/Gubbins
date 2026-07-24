@@ -175,9 +175,15 @@ describe('parseASTtoSQL — custom fields (spec §4 Categories & Schema Evolutio
     );
     expect(sql).toBe(
       '(EXISTS (SELECT 1 FROM item_field_effective_values ifv JOIN field_defs fd ON fd.id = ifv.def_id ' +
-        'WHERE ifv.item_id = items.id AND fd.name = ? COLLATE NOCASE AND ifv.value IS NOT NULL))',
+        "WHERE ifv.item_id = items.id AND fd.name = ? COLLATE NOCASE AND fd.field_type <> 'IMAGE' " +
+        'AND ifv.value IS NOT NULL))',
     );
     expect(params).toEqual(['Datasheet']);
+  });
+
+  it('never matches an IMAGE field — its base64 value is not searchable text (issue #453)', () => {
+    const [sql] = parseASTtoSQL(and({ field: 'field:Cover art', operator: 'CONTAINS', value: 'x' }));
+    expect(sql).toContain("fd.field_type <> 'IMAGE'");
   });
 
   it('translates a text CONTAINS to a LIKE with the field name bound first', () => {
