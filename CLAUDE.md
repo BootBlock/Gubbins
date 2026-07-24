@@ -305,21 +305,27 @@ rule applied to issue handling.
    pre-commit hook doesn't bounce the commit, and commit inside the worktree once clean. The
    `/code-review high` pass then runs on the committed diff at the next step.
 6. **Pause before merging so the maintainer can code-review — do _not_ auto-land.** Once the change
-   is implemented, verified and committed, **stop and hand off the pending diff**: name the
-   worktree/branch and give a concise summary of *what* changed, so @BootBlock can run
-   `/code-review high` on it. **Merge, push and close only after** that review has run and every
-   confirmed finding is fixed (re-verify after fixing). This deliberately replaces the former
-   "land without pausing" default — the workflow requires a code review before landing and only the
-   maintainer can run it, so landing autonomously would skip the mandated review. Separately, still
-   surface a genuine, specific question about *this* change — a real design or scope fork, a
-   destructive or ambiguous choice, or something that can't be completed cleanly (see the note at the
-   end of this list) — via `AskUserQuestion` as before.
-7. **Landing mechanics:** merge the worktree branch into `main` with `--no-ff`, then
+   is implemented, verified and committed, **stop and hand off the pending diff**: end your turn
+   with a concise summary of *what* changed and the worktree/branch name, so @BootBlock can run
+   `/code-review high` on it. **That handoff message _is_ the pause** — simply end the turn and
+   wait; do **not** repurpose `AskUserQuestion` as an approval gate (it stays reserved for the
+   specific-question case below). Do **not** proceed to the landing mechanics (steps 7–8) until that
+   review has run and every confirmed finding is fixed and re-verified — steps 7–8 state the
+   commands; this step only sets the condition that unlocks them. This deliberately replaces the
+   former "land without pausing" default: the workflow requires a code review before landing and
+   only the maintainer can run it, so landing autonomously would skip the mandated review.
+   Separately, still surface a genuine, specific question about *this* change — a real design or
+   scope fork, a destructive or ambiguous choice, or something that can't be completed cleanly (see
+   the note at the end of this list) — via `AskUserQuestion` as before.
+7. **Landing mechanics — _only after_ the step-6 code-review has run and every confirmed finding is
+   fixed and re-verified:** merge the worktree branch into `main` with `--no-ff`, then
    `git push origin main` so the issue's referenced commits actually exist on GitHub. Clean up the
    worktree (remove the `node_modules` junction *before* `git worktree remove` — see
-   `feedback-worktree-junction-cleanup`); leave other agents' worktrees alone.
-8. **Comment, then close as completed.** Post a comment (`gh issue comment <id>`) describing *what*
-   was done and *why* in plain user-facing terms. **Before posting, self-audit the drafted comment
+   `feedback-worktree-junction-cleanup`); leave other agents' worktrees alone. If you arrive here
+   without that review having happened, go back to step 6 — do not merge.
+8. **Comment, then close as completed** (only once the change has actually landed via step 7).
+   Post a comment (`gh issue comment <id>`) describing *what* was done and *why* in plain
+   user-facing terms. **Before posting, self-audit the drafted comment
    against these rules — the comment is world-readable and permanent:**
 
    - **Match your voice to who filed it — check the issue's author.** When the author is
