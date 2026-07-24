@@ -17,6 +17,22 @@
         "data": {
           "token": "Access token"
         }
+      },
+      "reauth_confirm": {
+        "title": "Gubbins inventory bridge",
+        "description": "The bridge at {host}:{port} no longer accepts the stored token — it was probably revoked or rotated. Mint a new API token in the Gubbins app (Users → an account → API tokens) and enter it here to reconnect.",
+        "data": {
+          "token": "Access token"
+        }
+      },
+      "reconfigure": {
+        "title": "Gubbins inventory bridge",
+        "description": "Update where the bridge lives. Re-enter the access token — Home Assistant never displays a stored token, so it cannot be pre-filled here.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "token": "Access token"
+        }
       }
     },
     "error": {
@@ -24,7 +40,9 @@
       "invalid_auth": "The bridge did not recognise the token. It may have been mistyped, or revoked in the Gubbins app."
     },
     "abort": {
-      "already_configured": "This Gubbins bridge is already configured."
+      "already_configured": "This Gubbins bridge is already configured.",
+      "reauth_successful": "Reconnected to the Gubbins bridge with the new token.",
+      "reconfigure_successful": "The Gubbins bridge details were updated."
     }
   },
   "services": {

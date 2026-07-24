@@ -4,8 +4,10 @@ A read-only Home Assistant integration that talks to the local Gubbins **bridge*
 companion service that exposes a bearer-token-protected HTTP API over an exported Gubbins
 inventory snapshot. This integration never writes; the bridge is the only data path.
 
-Setup wires four things:
+Setup wires five things:
   * a per-entry :class:`GubbinsClient` (read-only HTTP client) into ``hass.data``;
+  * a per-entry :class:`GubbinsHealthCoordinator` into ``entry.runtime_data``, first-refreshed
+    here so an unreachable bridge or a revoked token fails (or reauthenticates) the *entry*;
   * the conversation intent handler (registered once, see :mod:`.intent`);
   * the read-only ``gubbins.search`` service (registered once, see below);
   * the opt-in ``gubbins.adjust_quantity`` write service (registered once, see below) —
@@ -43,8 +45,9 @@ from .const import (
     SERVICE_ADJUST_QUANTITY,
     SERVICE_SEARCH,
 )
+from .coordinator import GubbinsHealthCoordinator
 from .events import collect_location_ids, normalise_matches
-from .intent import async_register_intent
+from .intent import async_register_intent, async_unregister_intent
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
@@ -72,7 +75,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_PORT],
         entry.data[CONF_TOKEN],
     )
+
+    # Probe the bridge before anything else is wired up. A first refresh here raises
+    # ConfigEntryNotReady (bridge down → retried with backoff) or ConfigEntryAuthFailed
+    # (token revoked → reauth flow), neither of which a forwarded platform may raise.
+    coordinator = GubbinsHealthCoordinator(hass, entry, client)
+    await coordinator.async_config_entry_first_refresh()
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = client
+    entry.runtime_data = coordinator
 
     # Intent and services are global (one handler per type / one service per domain);
     # register them once, on the first entry to load.
@@ -91,9 +102,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         clients: dict = hass.data.get(DOMAIN, {})
         clients.pop(entry.entry_id, None)
         if not clients:
-            # Last entry gone — drop the shared services so they don't dangle.
+            # Last entry gone — drop everything registered once, for the domain as a whole,
+            # so nothing dangles: a left-behind intent handler would keep matching voice
+            # sentences and answer "the bridge isn't set up yet" after the user removed it.
             hass.services.async_remove(DOMAIN, SERVICE_SEARCH)
             hass.services.async_remove(DOMAIN, SERVICE_ADJUST_QUANTITY)
+            async_unregister_intent(hass)
     return unloaded
 
 

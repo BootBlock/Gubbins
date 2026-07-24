@@ -93,6 +93,29 @@ is when it starts, uses the address it advertises, and says which one it found i
 If nothing answers, the bridge just starts without a scale connection and tells you so; set the
 address directly and restart.
 
+## When the token changes, or the bridge moves
+
+The custom integration stores the bridge's address and its [[API token|Bridge-API-Tokens]] against
+its own entry in Home Assistant, and neither is set in stone.
+
+- **If you rotate or revoke the token**, Home Assistant notices that the bridge has started
+  refusing it and raises a **reconnect** prompt against the Gubbins entry. Mint a new token in the
+  app and paste it in — your entities, their history and any automations pointing at them carry on
+  unchanged.
+- **If the bridge moves to a different address or port**, use **Reconfigure** on the entry
+  (*Settings → Devices & services → Gubbins Inventory → ⋮*) to point it at the new one. The details
+  are checked against the bridge before they're saved.
+
+> **ℹ️ Note**
+> Reconfiguring asks for the token again as well as the address. Home Assistant never shows a
+> stored credential back to you, so there's nothing for it to pre-fill — have a token to hand
+> before you start.
+
+> **⚠️ Heads-up**
+> The custom integration needs **Home Assistant 2025.2 or newer**. Everything else on this page —
+> MQTT discovery, webhooks, reading a scale — is plain Home Assistant configuration and has no such
+> requirement.
+
 ## Optional write-back
 
 If you choose to enable it, Home Assistant can also *adjust* stock through the bridge — a peer
