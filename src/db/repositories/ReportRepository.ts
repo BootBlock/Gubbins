@@ -45,6 +45,7 @@ import {
   type DeadStockCandidate,
   type DeadStockReport,
   type InventoryValueReport,
+  type LocationStatsReport,
   type MovementEvent,
   type MovementReport,
   type ValueGroupTotals,
@@ -354,6 +355,97 @@ export class ReportRepository extends BaseRepository {
       unpricedItemCount: categoryRows.reduce((sum, r) => sum + r.unpriced, 0),
       byCategory: sortValueGroups(categoryRows.map(toValueGroupTotals)),
       byLocation: sortValueGroups(locationRows.map(toValueGroupTotals)),
+    };
+  }
+
+  /**
+   * Aggregate statistics for a single location's contents (issue #458): the combined value, the
+   * units and distinct active items physically held there, how many of those are unpriced, and the
+   * value broken down by category. It reads the per-location `item_stock` ledger valued by the same
+   * {@link effectiveUnitValueSql} seam as {@link inventoryValue}'s location breakdown, so a
+   * location's total here equals its row on the Reports "value by location" list — one valuation
+   * rule, never two figures for the same stock.
+   *
+   * With `includeSubtree` the scope is the location **plus every descendant**, resolved up-front by
+   * a recursive CTE (mirroring {@link catalogueScopeFilter}), so "the Garage" rolls up every shelf
+   * beneath it. Active, on-hand, non-unlimited stock only — the same filter the location breakdown
+   * applies — and the base currency is resolved once so a mid-read change can never split a total.
+   *
+   * Both figures are summed **in SQL**: the headline folds one row per distinct item (so an item
+   * split across several shelves counts once and is valued once), and the category breakdown
+   * returns one row per category rather than one per placement, so the cost is the same at 100k
+   * items as at 100.
+   */
+  async locationStats(
+    locationId: string,
+    options: { includeSubtree?: boolean } = {},
+  ): Promise<LocationStatsReport> {
+    const includesSubtree = options.includeSubtree ?? false;
+    const base = this.baseCurrency();
+    const unitValue = effectiveUnitValueSql('i', base);
+
+    // The scope is the location alone, or (with the subtree) it and every descendant — resolved
+    // here so the filter is a bound `IN (…)` of ids, never string-built location names.
+    const scopeIds = includesSubtree
+      ? (
+          await this.driver.query<{ id: string }>(
+            `WITH RECURSIVE subtree(id) AS (
+               SELECT ?
+               UNION
+               SELECT l.id FROM locations l JOIN subtree s ON l.parent_id = s.id
+             )
+             SELECT id FROM subtree;`,
+            [locationId],
+          )
+        ).map((r) => r.id)
+      : [locationId];
+    const scopeClause = `s.location_id IN (${scopeIds.map(() => '?').join(', ')})`;
+
+    // Headline: fold to one row per distinct item first (SUM its stock across the scoped
+    // locations, valued once), then the outer aggregate counts and totals those items — so an
+    // item spread over three drawers is one distinct item, valued once, not three.
+    const headline = await this.driver.queryOne<{
+      quantity: number;
+      value: number;
+      distinct_items: number;
+      priced_items: number;
+    }>(
+      `SELECT COALESCE(SUM(qty), 0) AS quantity,
+              COALESCE(SUM(qty * unit_value), 0) AS value,
+              COUNT(*) AS distinct_items,
+              COUNT(CASE WHEN unit_value > 0 THEN 1 END) AS priced_items
+         FROM (SELECT MAX(SUM(s.quantity), 0) AS qty, ${unitValue} AS unit_value
+                 FROM item_stock s
+                 JOIN items i ON i.id = s.item_id
+                WHERE i.is_active = 1 AND s.quantity > 0 AND ${notUnlimited('i.is_unlimited')}
+                  AND ${scopeClause}
+                GROUP BY s.item_id);`,
+      scopeIds,
+    );
+
+    // Value by category over the same scope — one row per category, ungrouped last.
+    const categoryRows = await this.driver.query<ValuationGroupRow>(
+      `SELECT group_id, group_name, SUM(qty) AS quantity, SUM(qty * unit_value) AS value
+         FROM (SELECT i.category_id AS group_id, c.name AS group_name,
+                      MAX(s.quantity, 0) AS qty, ${unitValue} AS unit_value
+                 FROM item_stock s
+                 JOIN items i ON i.id = s.item_id
+                 LEFT JOIN categories c ON c.id = i.category_id
+                WHERE i.is_active = 1 AND s.quantity > 0 AND ${notUnlimited('i.is_unlimited')}
+                  AND ${scopeClause})
+        GROUP BY group_id, group_name;`,
+      scopeIds,
+    );
+
+    const distinctItemCount = headline?.distinct_items ?? 0;
+    return {
+      includesSubtree,
+      locationCount: scopeIds.length,
+      totalValue: headline?.value ?? 0,
+      totalQuantity: headline?.quantity ?? 0,
+      distinctItemCount,
+      unpricedItemCount: distinctItemCount - (headline?.priced_items ?? 0),
+      byCategory: sortValueGroups(categoryRows.map(toValueGroupTotals)),
     };
   }
 

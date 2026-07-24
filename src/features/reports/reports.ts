@@ -77,6 +77,32 @@ export interface InventoryValueReport {
 }
 
 /**
+ * Aggregate statistics for a single location's contents (issue #458): the combined value of the
+ * stock physically held there and a few headline counts, plus the value broken down by category.
+ *
+ * The figures read the per-location `item_stock` ledger valued by the *same* effective-unit-value
+ * rule as {@link InventoryValueReport}'s location breakdown, so a location's total here equals its
+ * row on the Reports "value by location" list. With {@link includesSubtree} the scope is the
+ * location plus every descendant, so a room rolls up every shelf and drawer beneath it.
+ */
+export interface LocationStatsReport {
+  /** Whether the figures include the location's descendant sub-locations. */
+  readonly includesSubtree: boolean;
+  /** How many locations the figures cover — 1 for the location alone, more with its subtree. */
+  readonly locationCount: number;
+  /** `SUM(quantity × effectiveUnitValue)` across the stock physically held here, base currency. */
+  readonly totalValue: number;
+  /** Total on-hand units held here. */
+  readonly totalQuantity: number;
+  /** Distinct active items with on-hand stock physically held here. */
+  readonly distinctItemCount: number;
+  /** How many of those distinct items carry no usable value (so are excluded from `totalValue`). */
+  readonly unpricedItemCount: number;
+  /** Value of the held stock broken down by category, largest first; ungrouped last. */
+  readonly byCategory: readonly ValueGroup[];
+}
+
+/**
  * Fallback label for a row with no category/location group.
  *
  * @internal Exported for unit tests only.

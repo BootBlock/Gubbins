@@ -399,6 +399,22 @@ try {
   console.warn(`  ✗ location photos — ${err instanceof Error ? err.message : String(err)}`);
 }
 
+// --- Location statistics (issue #458) --------------------------------------------
+// Garage holds nothing loose itself, so roll the figures up its subtree: the shot then shows
+// the scope toggle plus real value (the priced Cordless Drill on Workshop Shelf A beneath it)
+// and the value-by-category breakdown.
+try {
+  const dialog = await openLocationEditor('Garage');
+  await dialog.getByRole('tab', { name: 'Statistics' }).click();
+  await dialog.getByTestId('location-stats-scope-subtree').click();
+  await dialog.getByTestId('location-stats-value').waitFor({ state: 'visible', timeout: 8000 });
+  await shot('location-statistics', dialog, { settle: 600 });
+  await page.keyboard.press('Escape');
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ location statistics — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // A single item card (crop). The card root Surface carries the `select-none` class.
 const firstCard = page
   .locator('#main-content')
