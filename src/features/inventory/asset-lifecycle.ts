@@ -10,7 +10,7 @@
  */
 
 import { WARRANTY_SOON_WINDOW_DAYS } from '@/db/repositories/constants';
-import { addCalendarDays } from '@/lib/calendar-days';
+import { addCalendarDays, startOfLocalDay, utcDayToLocalDay } from '@/lib/calendar-days';
 
 /**
  * Days before warranty expiry at which status changes from `active` to `expiring-soon`.
@@ -37,7 +37,7 @@ export interface AssetLifecycleItem {
  * Derive the warranty status for an item given the current wall-clock date.
  *
  * - `'none'`           — no `warranty_expires_at` is set; the widget is hidden.
- * - `'expired'`        — today is past the warranty expiry date.
+ * - `'expired'`        — the viewer's local calendar day is past the warranty expiry day (issue #319).
  * - `'expiring-soon'`  — the warranty expires within {@link WARRANTY_EXPIRING_SOON_DAYS} days.
  * - `'active'`         — the warranty is valid and not imminently expiring.
  *
@@ -51,7 +51,11 @@ export function warrantyStatus(item: AssetLifecycleItem, now: number): WarrantyS
   const expiryMs = Date.parse(item.warrantyExpiresAt);
   if (!Number.isFinite(expiryMs)) return 'none';
 
-  if (now > expiryMs) return 'expired';
+  // `warranty_expires_at` names a calendar day (a `YYYY-MM-DD` stamp parsed as midnight UTC); it is
+  // expired once the viewer's local day is past that day, not the evening before as a raw `now >
+  // expiryMs` instant compare would flag for a zone behind UTC (issue #319). Re-anchor the stored day
+  // onto the local calendar (utcDayToLocalDay, issue #323) and compare local days.
+  if (utcDayToLocalDay(expiryMs) < startOfLocalDay(now)) return 'expired';
 
   // Calendar-day window (issue #325), mirroring `expiryStatus`: the warranty is expiring-soon once
   // its expiry is within N whole calendar days of now, so the boundary does not slip an hour across

@@ -23,6 +23,12 @@ import {
 } from './cycle-count';
 
 const NOW = 1_700_000_000_000;
+// The midnight-UTC stamp of NOW's *local* calendar day — the value a "best-before today" would store
+// (#320), and the reference the classifiers compare against (issue #319). Deriving test values from
+// it keeps these cases correct in any host zone; the timezone-shifted boundary itself is exercised by
+// `utcDayToLocalDay` in calendar-days.test.ts.
+const nowLocal = new Date(NOW);
+const TODAY = Date.UTC(nowLocal.getFullYear(), nowLocal.getMonth(), nowLocal.getDate());
 
 describe('expiry status (§4 Perishables)', () => {
   it('returns NONE when no expiry date is set', () => {
@@ -31,9 +37,14 @@ describe('expiry status (§4 Perishables)', () => {
     expect(daysUntilExpiry(null, NOW)).toBeNull();
   });
 
-  it('classifies expired (inclusive of exactly now)', () => {
-    expect(expiryStatus(NOW, NOW)).toBe('EXPIRED');
-    expect(expiryStatus(NOW - MS_PER_DAY, NOW)).toBe('EXPIRED');
+  it('is EXPIRED only once the local day is past the expiry day, not the same day (issue #319)', () => {
+    // A best-before stamped for today (or later) is still fresh — never expired the evening before,
+    // as a raw `expiryDate <= now` compare would flag.
+    expect(expiryStatus(TODAY, NOW)).not.toBe('EXPIRED');
+    expect(expiryStatus(TODAY + MS_PER_DAY, NOW)).not.toBe('EXPIRED');
+    // A stamp for a previous calendar day has passed.
+    expect(expiryStatus(TODAY - MS_PER_DAY, NOW)).toBe('EXPIRED');
+    expect(expiryStatus(TODAY - 2 * MS_PER_DAY, NOW)).toBe('EXPIRED');
   });
 
   it('classifies expiring soon within the window and fresh beyond it', () => {
@@ -47,11 +58,10 @@ describe('expiry status (§4 Perishables)', () => {
     expect(expiryStatus(NOW + 2 * MS_PER_DAY, NOW, 3)).toBe('EXPIRING_SOON');
   });
 
-  it('computes whole days until expiry, negative once past', () => {
-    expect(daysUntilExpiry(NOW + 3 * MS_PER_DAY, NOW)).toBe(3);
-    expect(daysUntilExpiry(NOW - 2 * MS_PER_DAY, NOW)).toBe(-2);
-    // 12 hours out floors to 0 — "expires within a day".
-    expect(daysUntilExpiry(NOW + MS_PER_DAY / 2, NOW)).toBe(0);
+  it('counts whole calendar days until expiry: 0 today, negative once past (issue #319)', () => {
+    expect(daysUntilExpiry(TODAY + 3 * MS_PER_DAY, NOW)).toBe(3);
+    expect(daysUntilExpiry(TODAY, NOW)).toBe(0); // a stamp for today reads "expires today", not past
+    expect(daysUntilExpiry(TODAY - 2 * MS_PER_DAY, NOW)).toBe(-2);
   });
 });
 

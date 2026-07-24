@@ -78,21 +78,25 @@ describe('warrantyStatus', () => {
     expect(warrantyStatus(item({ warrantyExpiresAt: 'not-a-date' }), Date.now())).toBe('none');
   });
 
-  it('returns "expired" when now is past the expiry date', () => {
-    const expiry = ms('2024-01-01');
-    // "now" is one day after expiry (past midnight, so strictly greater)
-    const now = expiry + 86_400_000;
+  it('returns "expired" once the local day is past the expiry day', () => {
+    // "now" is local midnight of the day after the expiry day → the expiry day has fully passed.
+    // Local wall-clock instants keep this correct in any host zone (the worker's own zone is not UTC).
+    const now = new Date(2024, 0, 2, 0, 0, 0, 0).getTime(); // local 2 Jan 2024
     expect(warrantyStatus(item({ warrantyExpiresAt: '2024-01-01' }), now)).toBe('expired');
   });
 
-  it('returns "expired" when now is exactly one millisecond past the expiry', () => {
-    const expiry = ms('2025-06-01');
-    expect(warrantyStatus(item({ warrantyExpiresAt: '2025-06-01' }), expiry + 1)).toBe('expired');
+  it('stays unexpired all through the expiry day, flipping only at the next local day (issue #319)', () => {
+    // Late on the expiry day (local) it is not yet expired; the transition waits for the next local
+    // calendar day — never the evening before, as a raw `now > expiryMs` compare would flag.
+    const lateOnExpiryDay = new Date(2025, 5, 1, 23, 59, 59, 999).getTime(); // local 1 Jun 2025
+    const nextDay = new Date(2025, 5, 2, 0, 0, 0, 0).getTime(); // local 2 Jun 2025
+    expect(warrantyStatus(item({ warrantyExpiresAt: '2025-06-01' }), lateOnExpiryDay)).toBe('expiring-soon');
+    expect(warrantyStatus(item({ warrantyExpiresAt: '2025-06-01' }), nextDay)).toBe('expired');
   });
 
   it('returns "expiring-soon" when now is exactly at the expiry instant (0 days remain)', () => {
     const expiry = ms('2025-06-01');
-    // now === expiryMs: not yet past (not expired), but daysRemaining = 0 ≤ 30 → expiring-soon.
+    // now === expiryMs: the expiry day has not yet passed (not expired), but daysRemaining = 0 ≤ 30.
     expect(warrantyStatus(item({ warrantyExpiresAt: '2025-06-01' }), expiry)).toBe('expiring-soon');
   });
 
