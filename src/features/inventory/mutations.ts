@@ -3,11 +3,13 @@
  *
  * Item mutations apply **optimistic updates with onError rollback** — the spec's
  * defence against UI tearing during rapid successive inputs (e.g. repeated gauge
- * or quantity adjustments queuing in OPFS). Each hook snapshots the affected cache
- * slices in `onMutate`, patches them immediately, restores them in `onError`, and
- * reconciles with the worker in `onSettled` via targeted invalidation. A rollback also
- * **tells the user why** (issue #307) — see {@link useReportWriteFailure}; a revert that
- * says nothing is indistinguishable from a UI glitch.
+ * or quantity adjustments queuing in OPFS). Each hook patches the affected item in
+ * `onMutate`, and on failure **inverts that same patch** in `onError` (issue #300) —
+ * reversing only its own contribution rather than restoring a whole-cache snapshot, so a
+ * concurrent optimistic patch from an overlapping write in the same burst survives the
+ * rollback. It reconciles with the worker in `onSettled` via targeted invalidation. A
+ * rollback also **tells the user why** (issue #307) — see {@link useReportWriteFailure};
+ * a revert that says nothing is indistinguishable from a UI glitch.
  *
  * Location mutations reshape a tree whose optimistic mutation is error-prone and
  * low-frequency, so they use straightforward invalidation rather than optimistic
@@ -50,14 +52,13 @@ import { invalidateItems, invalidateItemStock } from './invalidate';
 
 type ItemListData = InfiniteData<Page<Item>, number>;
 
-/** Snapshot of every cached item-list slice, for rollback. */
-type ListSnapshot = Array<[readonly unknown[], ItemListData | undefined]>;
-
-/** Everything {@link patchItem} touches, captured so `onError` can put it all back (issue #295). */
-type ItemSnapshot = {
-  lists: ListSnapshot;
-  detail: { key: readonly unknown[]; data: Item | undefined };
-};
+/**
+ * The rollback an optimistic hook hands `onError`: a patch that reverses **only this
+ * mutation's** contribution to the cached item, applied through {@link patchItem}. Returning an
+ * inverse patch rather than a captured snapshot is what lets a failure mid-burst leave a
+ * concurrent write's still-valid optimistic patch in place (issue #300).
+ */
+type UndoContext = { undo: (item: Item) => Item };
 
 const itemListFilter = {
   // Match only the infinite list queries — exactly ['inventory','items','list',filters].
@@ -87,48 +88,58 @@ function patchItem(client: QueryClient, id: string, patch: (item: Item) => Item)
 }
 
 /**
- * Cancel every in-flight fetch {@link patchItem} writes over, and snapshot those slices so
- * `onError` can restore them (issue #295).
+ * Cancel every in-flight fetch {@link patchItem} is about to write over, so a resolving refetch
+ * can't clobber the optimistic patch (issue #295).
  *
  * This must cover the **detail** query as well as the lists: an outstanding `useItem(id)` refetch
  * that is not cancelled resolves *after* `onMutate` has patched, and overwrites the optimistic
  * value with the pre-write one — the detail card visibly snaps back the moment the user taps ±.
- * The detail slice is snapshotted for the same reason, so a failed write does not leave it
- * holding a number that never happened: the rapid-tap adjusts skip their compensating
- * `invalidateQueries` mid-burst, so until the burst ends nothing else would correct it.
  *
  * Cancellation is `exact` on purpose. `itemHistory(id)` is a *child* of the detail key, and an
  * item's Activity Log is not something this write patches — a prefix cancel would abort a
  * perfectly good history fetch alongside the one slice that needs it.
  */
-async function snapshotItem(client: QueryClient, id: string): Promise<ItemSnapshot> {
-  const detailKey = inventoryKeys.item(id);
+async function cancelItemQueries(client: QueryClient, id: string): Promise<void> {
   await Promise.all([
     client.cancelQueries(itemListFilter),
-    client.cancelQueries({ queryKey: detailKey, exact: true }),
+    client.cancelQueries({ queryKey: inventoryKeys.item(id), exact: true }),
   ]);
-  return {
-    lists: client.getQueriesData<ItemListData>(itemListFilter),
-    detail: { key: detailKey, data: client.getQueryData<Item>(detailKey) },
-  };
+}
+
+/** Read the current cached copy of an item — the detail slice first, then any list page holds it. */
+function readCachedItem(client: QueryClient, id: string): Item | undefined {
+  const detail = client.getQueryData<Item>(inventoryKeys.item(id));
+  if (detail) return detail;
+  for (const [, data] of client.getQueriesData<ItemListData>(itemListFilter)) {
+    const found = data?.pages.flatMap((page) => page.rows).find((row) => row.id === id);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 /**
- * Put back everything {@link snapshotItem} captured.
- *
- * Restoring a *snapshot* rather than un-applying a delta means a failure mid-burst also discards
- * any later tap's patch — tap A (10→11) failing while tap B (11→12) is still in flight leaves the
- * cache reading 10 until B settles. That is the established trade-off of the list rollback this
- * sits beside, and it self-corrects: `inventoryKeys.item(id)` is a descendant of the `items()`
- * prefix, so the `invalidateItems` on the burst's final settle refetches the detail either way.
+ * Build a field-level inverse patch for a set-fields mutation (update / move / soft-delete):
+ * capture the *current* value of each field the write is about to overwrite, and hand back a patch
+ * that puts exactly those fields back. Restoring only the touched fields — not a whole snapshot —
+ * leaves a concurrent write's patch to *other* fields untouched (issue #300).
  */
-function restoreItem(client: QueryClient, snapshot: ItemSnapshot | undefined): void {
-  if (!snapshot) return;
-  snapshot.lists.forEach(([key, data]) => client.setQueryData(key, data));
-  // An undefined snapshot means the detail was never cached, so `patchItem` left it alone and
-  // there is nothing to undo — which matters because `setQueryData(key, undefined)` is a no-op
-  // in TanStack Query rather than a clear, and so could not have undone it anyway.
-  if (snapshot.detail.data !== undefined) client.setQueryData(snapshot.detail.key, snapshot.detail.data);
+function invertFields(
+  client: QueryClient,
+  id: string,
+  changes: Readonly<Record<string, unknown>>,
+): (item: Item) => Item {
+  const current = readCachedItem(client, id) as Record<string, unknown> | undefined;
+  // The item wasn't cached when the patch went out, so `patchItem` touched nothing and there is
+  // nothing to undo — an identity patch, never a spread of `undefined` that would blank the
+  // captured fields should the item have re-entered the cache by the time the write fails.
+  if (!current) return (item) => item;
+  const before = Object.fromEntries(Object.keys(changes).map((key) => [key, current[key]])) as Partial<Item>;
+  return (item) => ({ ...item, ...before });
+}
+
+/** Apply an `onError` rollback: invert this mutation's own patch across the item's cache slices. */
+function undoItem(client: QueryClient, id: string, ctx: UndoContext | undefined): void {
+  if (ctx) patchItem(client, id, ctx.undo);
 }
 
 /** Recompute a gauge item's derived (non-persisted) fields after a net-value change. */
@@ -181,13 +192,15 @@ export function useUpdateItem() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateItemInput }) =>
       getItemRepository().update(id, input),
-    onMutate: async ({ id, input }) => {
-      const snapshot = await snapshotItem(client, id);
-      patchItem(client, id, (item) => ({ ...item, ...stripUndefined(input) }));
-      return { snapshot };
+    onMutate: async ({ id, input }): Promise<UndoContext> => {
+      await cancelItemQueries(client, id);
+      const changes = stripUndefined(input);
+      const undo = invertFields(client, id, changes);
+      patchItem(client, id, (item) => ({ ...item, ...changes }));
+      return { undo };
     },
-    onError: (e, _v, ctx) => {
-      restoreItem(client, ctx?.snapshot);
+    onError: (e, { id }, ctx) => {
+      undoItem(client, id, ctx);
       reportFailure(e);
     },
     onSettled: (_d, _e, { id }) => {
@@ -337,13 +350,14 @@ export function useMoveItem() {
   return useMutation({
     mutationFn: ({ id, locationId }: { id: string; locationId: string }) =>
       getItemRepository().move(id, locationId),
-    onMutate: async ({ id, locationId }) => {
-      const snapshot = await snapshotItem(client, id);
+    onMutate: async ({ id, locationId }): Promise<UndoContext> => {
+      await cancelItemQueries(client, id);
+      const undo = invertFields(client, id, { locationId });
       patchItem(client, id, (item) => ({ ...item, locationId }));
-      return { snapshot };
+      return { undo };
     },
-    onError: (e, _v, ctx) => {
-      restoreItem(client, ctx?.snapshot);
+    onError: (e, { id }, ctx) => {
+      undoItem(client, id, ctx);
       reportFailure(e);
     },
     onSettled: () => {
@@ -363,13 +377,15 @@ export function useAdjustQuantity() {
     mutationKey: ADJUST_QUANTITY_KEY,
     mutationFn: ({ id, delta, note }: { id: string; delta: number; note?: string }) =>
       getItemRepository().adjustQuantity(id, delta, note),
-    onMutate: async ({ id, delta }) => {
-      const snapshot = await snapshotItem(client, id);
+    onMutate: async ({ id, delta }): Promise<UndoContext> => {
+      await cancelItemQueries(client, id);
       patchItem(client, id, (item) => ({ ...item, quantity: Math.max(0, item.quantity + delta) }));
-      return { snapshot };
+      // Reverse this tap's own delta from the *current* value, not from a captured snapshot —
+      // so a rejected tap mid-burst leaves the other taps' still-valid patches in place (#300).
+      return { undo: (item) => ({ ...item, quantity: Math.max(0, item.quantity - delta) }) };
     },
-    onError: (e, _v, ctx) => {
-      restoreItem(client, ctx?.snapshot);
+    onError: (e, { id }, ctx) => {
+      undoItem(client, id, ctx);
       reportFailure(e);
     },
     onSettled: (_d, _e, { id }) => {
@@ -400,15 +416,20 @@ export function useAdjustGauge() {
     mutationKey: ADJUST_GAUGE_KEY,
     mutationFn: ({ id, adjustment }: { id: string; adjustment: GaugeAdjustment }) =>
       getItemRepository().adjustGauge(id, adjustment),
-    onMutate: async ({ id, adjustment }) => {
-      const snapshot = await snapshotItem(client, id);
+    onMutate: async ({ id, adjustment }): Promise<UndoContext> => {
+      await cancelItemQueries(client, id);
       patchItem(client, id, (item) =>
         item.gauge ? withGaugeNet(item, item.gauge.currentNetValue + adjustment.delta) : item,
       );
-      return { snapshot };
+      // Reverse this adjust's own delta from the current net, mirroring the quantity path — a
+      // rejected adjust mid-burst leaves overlapping adjusts' patches intact (#300).
+      return {
+        undo: (item) =>
+          item.gauge ? withGaugeNet(item, item.gauge.currentNetValue - adjustment.delta) : item,
+      };
     },
-    onError: (e, _v, ctx) => {
-      restoreItem(client, ctx?.snapshot);
+    onError: (e, { id }, ctx) => {
+      undoItem(client, id, ctx);
       reportFailure(e);
     },
     onSettled: (_d, _e, { id }) => {
@@ -454,13 +475,14 @@ export function useSoftDeleteItem() {
   const reportFailure = useReportWriteFailure('inventory.writeError.heading.delete');
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) => getItemRepository().softDelete(id, note),
-    onMutate: async ({ id }) => {
-      const snapshot = await snapshotItem(client, id);
+    onMutate: async ({ id }): Promise<UndoContext> => {
+      await cancelItemQueries(client, id);
+      const undo = invertFields(client, id, { isActive: false });
       patchItem(client, id, (item) => ({ ...item, isActive: false }));
-      return { snapshot };
+      return { undo };
     },
-    onError: (e, _v, ctx) => {
-      restoreItem(client, ctx?.snapshot);
+    onError: (e, { id }, ctx) => {
+      undoItem(client, id, ctx);
       reportFailure(e);
     },
     onSettled: () => {
