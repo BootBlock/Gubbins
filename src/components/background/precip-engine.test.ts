@@ -7,7 +7,7 @@
  * is under test, so the grain-vs-crystal path is exercised deterministically rather than by chance.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { startPrecip } from './precip-engine';
+import { startPrecip, snowSideStickChance, snowUnderCatchChance } from './precip-engine';
 import { blizzard } from './flow-field';
 import { NO_SURFACE, type HoverFollow, type SurfaceTracker } from './surface-map';
 
@@ -239,10 +239,13 @@ describe('startPrecip', () => {
  */
 function makeSurfaces(top: number, cols = 340) {
   let tops = new Int16Array(cols).fill(top);
+  // Undersides sit below the fold in these tests (NO_SURFACE), so top-landing behaviour is
+  // exercised in isolation from the underside-catch path.
+  let bots = new Int16Array(cols).fill(NO_SURFACE);
   let generation = 1;
   let hover: HoverFollow | null = null;
   const tracker: SurfaceTracker = {
-    snapshot: () => ({ tops, generation }),
+    snapshot: () => ({ tops, bots, generation }),
     hoverFollow: () => hover,
     stop: () => {},
   };
@@ -259,6 +262,7 @@ function makeSurfaces(top: number, cols = 340) {
     },
     clear() {
       tops = new Int16Array(cols).fill(NO_SURFACE);
+      bots = new Int16Array(cols).fill(NO_SURFACE);
       generation++;
     },
     setHover(next: HoverFollow | null) {
@@ -693,8 +697,9 @@ describe('startPrecip wind-plaster (blizzard side accumulation)', () => {
     const cols = 340;
     const tops = new Int16Array(cols).fill(NO_SURFACE);
     tops[170] = 400;
+    const bots = new Int16Array(cols).fill(NO_SURFACE);
     const tracker: SurfaceTracker = {
-      snapshot: () => ({ tops, generation: 1 }),
+      snapshot: () => ({ tops, bots, generation: 1 }),
       hoverFollow: () => null,
       stop: () => {},
     };
@@ -705,12 +710,67 @@ describe('startPrecip wind-plaster (blizzard side accumulation)', () => {
       reduced: false,
       overlay: makeCanvas(orec),
       surfaces: () => tracker,
-      weather: 'blizzard', // forced: ramps to full rake in ~2.5s, driving flakes into the face
+      weather: 'blizzard', // forced: ramps to full rake, driving flakes into the face (stick p→1)
     });
     let now = 0;
     pump(now);
     for (let i = 0; i < 240; i++) pump((now += 50)); // 12s of storm
     expect(orec.drawImages.length).toBeGreaterThan(0); // plaster rendered and composited
+    ctrl.stop();
+  });
+});
+
+describe('snow stick-chance seams (issue #455 follow-up)', () => {
+  it('side sticking: a floor for a gentle brush, certainty at storm lean, stickier when warm', () => {
+    expect(snowSideStickChance(0, 0)).toBeGreaterThan(0.05); // even a calm brush can take
+    expect(snowSideStickChance(0, 0)).toBeLessThan(0.3); // …but usually brushes off
+    expect(snowSideStickChance(2, 0)).toBe(1); // wind-pressed storm flight always plasters
+    let prev = 0;
+    for (let lean = 0; lean <= 2.5; lean += 0.25) {
+      const p = snowSideStickChance(lean, 0);
+      expect(p).toBeGreaterThanOrEqual(prev); // monotonic in press
+      expect(p).toBeLessThanOrEqual(1);
+      prev = p;
+    }
+    expect(snowSideStickChance(0.5, 1)).toBeGreaterThan(snowSideStickChance(0.5, 0)); // wet sticks
+  });
+
+  it('underside catching: small, warm-boosted, bounded', () => {
+    const dry = snowUnderCatchChance(0);
+    const wet = snowUnderCatchChance(1);
+    expect(dry).toBeGreaterThan(0.02);
+    expect(dry).toBeLessThan(0.25); // undersides collect far less than tops
+    expect(wet).toBeGreaterThan(dry * 2); // wet snow clings under eaves
+    expect(wet).toBeLessThanOrEqual(1);
+  });
+
+  it('catches emerging flakes on underside lips and composites the hanging fringe', () => {
+    // A physically-impossible-but-isolating map: no tops at all (nothing can land or plaster),
+    // only underside lips at y=300 — so any overlay compositing can come solely from the
+    // underside-catch path. Warm snow is forced to lift the catch chance.
+    const cols = 340;
+    const tops = new Int16Array(cols).fill(NO_SURFACE);
+    const bots = new Int16Array(cols).fill(300);
+    const tracker: SurfaceTracker = {
+      snapshot: () => ({ tops, bots, generation: 1 }),
+      hoverFollow: () => null,
+      stop: () => {},
+    };
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: () => tracker,
+      weather: 'warm-snow',
+    });
+    let now = 0;
+    pump(now);
+    // The initial fill scatters flakes across the height; those above the lip line fall through
+    // it and roll the catch chance — with ~a hundred near flakes crossing, some always catch.
+    for (let i = 0; i < 300; i++) pump((now += 50)); // 15s
+    expect(orec.drawImages.length).toBeGreaterThan(0); // the fringe rendered and composited
     ctrl.stop();
   });
 });
