@@ -2,16 +2,17 @@ import { useId, useMemo, useRef, useState } from 'react';
 import { Button, FormField, Input, InfoHint, Modal, Textarea } from '@/components/foundry';
 import type { Location, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
-import { volumeFromDimensions } from '@/lib/volume';
+import { volumeFromDimensions, volumeSystemForDimensionUnit } from '@/lib/volume';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useCreateLocationPath } from '../mutations';
 import { buildParentOptions } from '../parent-options';
 import { locationColorTextClass, type LocationColor } from '../location-color';
 import type { LocationKind } from '../location-kind';
 import { parseLocationBranch } from '../location-path';
-import { resolveDimension } from '../measure-input';
+import { resolveDimension, resolvePackingPercent, resolveVolume } from '../measure-input';
 import { LocationSelect } from './LocationSelect';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
+import { LocationAdvancedVolumeFields } from './LocationAdvancedVolumeFields';
 import { LocationDimensionsFields } from './LocationDimensionsFields';
 import { LocationKindPicker } from './LocationKindPicker';
 import {
@@ -45,6 +46,8 @@ export function CreateLocationDialog({
   const create = useCreateLocationPath();
   const fmt = useFormatters();
   const dimensionUnit = usePreferencesStore((s) => s.dimensionUnit);
+  const defaultPackingFactor = usePreferencesStore((s) => s.defaultPackingFactor);
+  const volumeEntryUnit = volumeSystemForDimensionUnit(dimensionUnit) === 'imperial' ? 'ft3' : 'l';
   const parentLabelId = useId();
   const colorLabelId = useId();
   const kindLabelId = useId();
@@ -63,12 +66,20 @@ export function CreateLocationDialog({
   const [width, setWidth] = useState('');
   const [height, setHeight] = useState('');
   const [depth, setDepth] = useState('');
+  const [usableVolume, setUsableVolume] = useState('');
+  const [packingPercent, setPackingPercent] = useState('');
   const widthState = resolveDimension(width, null, dimensionUnit);
   const heightState = resolveDimension(height, null, dimensionUnit);
   const depthState = resolveDimension(depth, null, dimensionUnit);
+  const usableVolumeState = resolveVolume(usableVolume, null, volumeEntryUnit);
+  const packingState = resolvePackingPercent(packingPercent, null);
   const derivedVolume = volumeFromDimensions(widthState.value, heightState.value, depthState.value);
   const dimensionsValid =
-    widthState.issue === null && heightState.issue === null && depthState.issue === null;
+    widthState.issue === null &&
+    heightState.issue === null &&
+    depthState.issue === null &&
+    usableVolumeState.issue === null &&
+    !packingState.outOfRange;
 
   // The parent choices: "top level" plus every user-created location, each carrying a
   // right-aligned item-count hint (system/archived locations are never valid parents).
@@ -104,6 +115,9 @@ export function CreateLocationDialog({
         width: widthState.value,
         height: heightState.value,
         depth: depthState.value,
+        // Advanced overrides — usable volume (mm³) and packing factor (fraction).
+        usableVolume: usableVolumeState.value,
+        packingFactor: packingState.value,
       },
       {
         onSuccess: (created) => {
@@ -116,6 +130,8 @@ export function CreateLocationDialog({
           setWidth('');
           setHeight('');
           setDepth('');
+          setUsableVolume('');
+          setPackingPercent('');
           // Fanning out siblings yields several leaves; the inline picker selects the first.
           if (created[0]) onCreated?.(created[0]);
           onClose();
@@ -232,6 +248,17 @@ export function CreateLocationDialog({
           onDepthChange={setDepth}
           states={{ width: widthState, height: heightState, depth: depthState }}
           derivedVolume={derivedVolume}
+        />
+
+        <LocationAdvancedVolumeFields
+          volumeUnit={volumeEntryUnit}
+          usableVolume={usableVolume}
+          onUsableVolumeChange={setUsableVolume}
+          usableVolumeState={usableVolumeState}
+          packingPercent={packingPercent}
+          onPackingPercentChange={setPackingPercent}
+          packingOutOfRange={packingState.outOfRange}
+          defaultPackingPercent={Math.round(defaultPackingFactor * 100)}
         />
 
         <div>

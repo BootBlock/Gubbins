@@ -112,9 +112,44 @@ export interface Location {
   readonly updatedAt: number;
 }
 
-/** A location plus its denormalised live item count, for tree/list rendering. */
+/**
+ * The per-location aggregate of the stock physically **placed** there, for cube-utilisation
+ * (issue #457). Produced by a bounded GROUP BY over `item_stock` joined to `items`, reading the
+ * per-location ledger quantity — not `items.quantity` (the grand total spread across placements).
+ * `usedVolume` sums only *measured* items (all three dimensions present); the measured/total unit
+ * split drives the honest "based on N of M items" coverage caption.
+ *
+ * Note the grain differs from {@link LocationWithCount.itemCount}: that counts items by their
+ * **home** location regardless of quantity, whereas these totals count stock by where it
+ * physically sits, on-hand only and excluding unlimited-supply items — so `totalItems` here can
+ * differ from `itemCount` when stock is split across locations.
+ *
+ * This lives in the db layer (the read produces it) and is consumed structurally by the pure
+ * `location-fullness` seam — keep the two shapes in sync.
+ */
+export interface LocationVolumeTotals {
+  /** Σ (item bounding-box volume × units-held-here) over measured items only, canonical mm³. */
+  readonly usedVolume: number;
+  /** Units held here whose item has all three dimensions. */
+  readonly measuredUnits: number;
+  /** Total on-hand units held here (measured or not). */
+  readonly totalUnits: number;
+  /** Distinct measured items here. */
+  readonly measuredItems: number;
+  /** Distinct items present here. */
+  readonly totalItems: number;
+}
+
+/** A location plus its denormalised live item count and volume totals, for tree/list rendering. */
 export interface LocationWithCount extends Location {
   readonly itemCount: number;
+  /**
+   * Aggregated stock volume held directly here (issue #457) — feeds the cube-utilisation gauge.
+   * Present on the app's tree/list reads (`SELECT_WITH_COUNT`); `undefined` on reads that don't
+   * compute it (e.g. the bridge's ad-hoc single-location assembly), where callers fall back to a
+   * zeroed aggregate. Optional for the same reason {@link Item.thumbnailBlob} is.
+   */
+  readonly volumeTotals?: LocationVolumeTotals;
 }
 
 /** A location node with its children resolved, for the nested tree view. */

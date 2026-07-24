@@ -81,12 +81,39 @@ describe('CreateLocationDialog', () => {
     expect(spies.create.mock.calls[0][0]).toMatchObject({ width: 300, height: 200, depth: 150 });
   });
 
+  it('saves the advanced usable-volume and packing-factor overrides', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Bag' } });
+    // The overrides live behind a collapsed disclosure so the common case stays three fields.
+    expect(screen.queryByTestId('location-usable-volume')).toBeNull();
+    fireEvent.click(screen.getByTestId('location-advanced-toggle'));
+    // Default dimension unit is mm (metric), so usable volume is entered in litres.
+    fireEvent.change(screen.getByTestId('location-usable-volume'), { target: { value: '2' } }); // 2 L
+    fireEvent.change(screen.getByTestId('location-packing-factor'), { target: { value: '70' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(spies.create.mock.calls[0][0]).toMatchObject({ usableVolume: 2_000_000, packingFactor: 0.7 });
+  });
+
   it('blocks Create on a negative dimension rather than silently clearing it', () => {
     renderDialog();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Bad' } });
     fireEvent.change(screen.getByTestId('location-width'), { target: { value: '-5' } });
     expect(screen.getByText('Must be 0 or more.')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('rejects a below-floor packing factor and keeps the error visible even if collapsed', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Bin' } });
+    fireEvent.click(screen.getByTestId('location-advanced-toggle'));
+    // 3% is below the 5% floor the global default is clamped to — blocked, not silently accepted.
+    fireEvent.change(screen.getByTestId('location-packing-factor'), { target: { value: '3' } });
+    expect(screen.getByText('Enter 5–100.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true);
+    // Collapsing must not hide a blocking error, or the disabled button would have no reason.
+    fireEvent.click(screen.getByTestId('location-advanced-toggle'));
+    expect(screen.getByTestId('location-packing-factor')).toBeTruthy();
+    expect(screen.getByText('Enter 5–100.')).toBeTruthy();
   });
 
   it('passes a slash-separated path through verbatim so the repo splits it', () => {

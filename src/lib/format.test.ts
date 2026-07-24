@@ -129,6 +129,15 @@ describe('makeFormatters — defaults (§1.2.1 en-GB / GBP)', () => {
     expect(gb.dimension(Number.NaN)).toBe('—');
   });
 
+  it('renders a canonical cubic-millimetre volume, honouring a forced unit for pairs', () => {
+    // Default volumeUnit is 'auto' → a 12.5 L drawer resolves to litres.
+    expect(gb.volume(12_500_000)).toBe('12.5 L');
+    expect(gb.volume(Number.NaN)).toBe('—');
+    // A forced unit keeps a related pair in one unit (so "used of capacity" never mixes scales).
+    expect(gb.volumeUnitFor(30_000_000)).toBe('l');
+    expect(gb.volume(12_000, 'l')).toBe('0.01 L'); // would auto-resolve to cm³ without the force
+  });
+
   it('formats a UNIX-ms instant as a short date', () => {
     // Midday UTC so no machine timezone offset can shift the rendered day.
     expect(gb.date(Date.UTC(2026, 5, 28, 12))).toBe('28 Jun 2026');

@@ -5,11 +5,12 @@ import { CycleCountIcon, HideIcon, HistoryIcon, MoveIcon, PackageIcon } from '@/
 import type { LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { locationPath } from '../location-tree';
-import { locationFullness } from '../location-fullness';
+import { useLocationFullness } from '../use-location-fullness';
 import { locationColorTextClass } from '../location-color';
 import { locationKindLabel } from '../location-kind';
 import { LocationKindIcon } from './LocationKindIcon';
 import { LocationFullnessBar } from './LocationFullnessBar';
+import { describeVolumetricFullness } from './volumetric-fullness-text';
 
 /**
  * A vertically compact, single-row summary of the selected location, shown atop the
@@ -41,7 +42,11 @@ export function LocationInfoCard({
     () => locations.filter((l) => l.parentId === location.id).length,
     [locations, location.id],
   );
-  const fullness = locationFullness(location.itemCount, location.capacity);
+  // Volumetric fullness when the location has a measured size (issue #457), else the count gauge.
+  const fullness = useLocationFullness(location);
+  // A plain-text volume/coverage summary for the sr-only label + hover title (the row is too
+  // narrow for a visible caption — the Edit dialog shows the full caption).
+  const fullnessDetail = fullness ? describeVolumetricFullness(fullness, fmt) : null;
   const kindLabel = locationKindLabel(location.kind);
   const colorClass = locationColorTextClass(location.color);
   // A root location's path is just its own name — no point repeating it beside the name.
@@ -74,8 +79,12 @@ export function LocationInfoCard({
         <Stat icon={<PackageIcon aria-hidden />} label="Items" value={itemsValue} />
 
         {fullness ? (
-          <div className="hidden w-28 items-center sm:flex" data-testid="location-info-fullness">
-            <span className="sr-only">Fullness</span>
+          <div
+            className="hidden w-28 items-center sm:flex"
+            data-testid="location-info-fullness"
+            title={fullnessDetail ?? undefined}
+          >
+            <span className="sr-only">{fullnessDetail ? `Fullness: ${fullnessDetail}` : 'Fullness'}</span>
             <LocationFullnessBar fullness={fullness} className="flex-1" />
           </div>
         ) : null}

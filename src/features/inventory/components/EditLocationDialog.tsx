@@ -27,24 +27,32 @@ import type { DeadStockMode } from '@/db/repositories/constants';
 import { DEAD_STOCK_DAYS_BOUNDS } from '@/features/settings/settings';
 import { DEAD_STOCK_MODE_OPTIONS } from '../dead-stock-options';
 import { useFormatters } from '@/lib/useFormatters';
-import { volumeFromDimensions } from '@/lib/volume';
+import { volumeFromDimensions, volumeSystemForDimensionUnit } from '@/lib/volume';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useUpdateLocation } from '../mutations';
 import { collectDescendantIds, locationPath } from '../location-tree';
 import { buildParentOptions } from '../parent-options';
 import { isLocationColor, locationColorTextClass, type LocationColor } from '../location-color';
 import { isLocationKind, locationKindLabel, type LocationKind } from '../location-kind';
-import { dimensionToInput, resolveDimension } from '../measure-input';
+import {
+  dimensionToInput,
+  resolveDimension,
+  resolvePackingPercent,
+  resolveVolume,
+  volumeToInput,
+} from '../measure-input';
 import { LocationSelect } from './LocationSelect';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
+import { LocationAdvancedVolumeFields } from './LocationAdvancedVolumeFields';
 import { LocationDimensionsFields } from './LocationDimensionsFields';
 import { LocationKindPicker } from './LocationKindPicker';
 import { LocationKindIcon } from './LocationKindIcon';
 import { LocationTagEditor } from './TagEditor';
 import { LocationFieldsEditor } from './LocationFieldsEditor';
 import { LocationStats } from './LocationStats';
-import { locationFullness } from '../location-fullness';
+import { useLocationFullness } from '../use-location-fullness';
 import { LocationFullnessBar } from './LocationFullnessBar';
+import { LocationFullnessCaption } from './LocationFullnessCaption';
 import { useErrorMessage } from '@/features/errors';
 import {
   HINT_CAPACITY,
@@ -106,6 +114,10 @@ export function EditLocationDialog({
   const fmt = useFormatters();
   const t = useT();
   const dimensionUnit = usePreferencesStore((s) => s.dimensionUnit);
+  const defaultPackingFactor = usePreferencesStore((s) => s.defaultPackingFactor);
+  // The usable-volume override is entered in a fixed unit for the dimension system (litres for
+  // metric, cubic feet for imperial) — deterministic, unlike the per-value display unit.
+  const volumeEntryUnit = volumeSystemForDimensionUnit(dimensionUnit) === 'imperial' ? 'ft3' : 'l';
   const enabledFeatures = useEnabledFeatures();
   const parentLabelId = useId();
   const colorLabelId = useId();
@@ -133,6 +145,13 @@ export function EditLocationDialog({
   const [width, setWidth] = useState(() => dimensionToInput(location.width, dimensionUnit));
   const [height, setHeight] = useState(() => dimensionToInput(location.height, dimensionUnit));
   const [depth, setDepth] = useState(() => dimensionToInput(location.depth, dimensionUnit));
+  // Advanced overrides (issue #457): usable volume in the entry unit, packing efficiency as a %.
+  const [usableVolume, setUsableVolume] = useState(() =>
+    volumeToInput(location.usableVolume, volumeEntryUnit),
+  );
+  const [packingPercent, setPackingPercent] = useState(() =>
+    location.packingFactor != null ? String(Math.round(location.packingFactor * 100)) : '',
+  );
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
 
@@ -175,8 +194,14 @@ export function EditLocationDialog({
   const heightState = resolveDimension(height, location.height, dimensionUnit);
   const depthState = resolveDimension(depth, location.depth, dimensionUnit);
   const derivedVolume = volumeFromDimensions(widthState.value, heightState.value, depthState.value);
+  const usableVolumeState = resolveVolume(usableVolume, location.usableVolume, volumeEntryUnit);
+  const packingState = resolvePackingPercent(packingPercent, location.packingFactor);
   const dimensionsValid =
-    widthState.issue === null && heightState.issue === null && depthState.issue === null;
+    widthState.issue === null &&
+    heightState.issue === null &&
+    depthState.issue === null &&
+    usableVolumeState.issue === null &&
+    !packingState.outOfRange;
   const dirty =
     trimmed !== location.name ||
     (parentId || null) !== location.parentId ||
@@ -190,10 +215,13 @@ export function EditLocationDialog({
     deadStockDaysValue !== location.deadStockDays ||
     widthState.dirty ||
     heightState.dirty ||
-    depthState.dirty;
+    depthState.dirty ||
+    usableVolumeState.dirty ||
+    packingState.dirty;
 
   const kindLabel = locationKindLabel(location.kind);
-  const fullness = locationFullness(location.itemCount, location.capacity);
+  // Volumetric fullness when the location has a measured size (issue #457), else the count gauge.
+  const fullness = useLocationFullness(location);
   const archived = location.archivedAt != null;
 
   const submit = () => {
@@ -226,6 +254,9 @@ export function EditLocationDialog({
           width: widthState.value,
           height: heightState.value,
           depth: depthState.value,
+          // Advanced overrides — usable volume in canonical mm³, packing factor as a fraction.
+          usableVolume: usableVolumeState.value,
+          packingFactor: packingState.value,
         },
       },
       {
@@ -330,6 +361,17 @@ export function EditLocationDialog({
         derivedVolume={derivedVolume}
       />
 
+      <LocationAdvancedVolumeFields
+        volumeUnit={volumeEntryUnit}
+        usableVolume={usableVolume}
+        onUsableVolumeChange={setUsableVolume}
+        usableVolumeState={usableVolumeState}
+        packingPercent={packingPercent}
+        onPackingPercentChange={setPackingPercent}
+        packingOutOfRange={packingState.outOfRange}
+        defaultPackingPercent={Math.round(defaultPackingFactor * 100)}
+      />
+
       <FormField
         label="Walk order (optional)"
         hint={HINT_WALK_ORDER}
@@ -406,9 +448,11 @@ export function EditLocationDialog({
         <InfoRow
           icon={<PackageIcon />}
           label="Items stored"
+          // The count/limit form depends on a *count* capacity, not on whether a fullness bar
+          // shows — a location can now be full by volume without a count limit set (issue #457).
           value={
-            fullness
-              ? `${fmt.quantity(location.itemCount)} / ${fmt.quantity(location.capacity!)}`
+            location.capacity != null && location.capacity > 0
+              ? `${fmt.quantity(location.itemCount)} / ${fmt.quantity(location.capacity)}`
               : fmt.quantity(location.itemCount)
           }
         />
@@ -416,8 +460,9 @@ export function EditLocationDialog({
         {fullness ? (
           <div className="col-span-2">
             <dt className="text-xs uppercase tracking-wide text-muted-foreground">Fullness</dt>
-            <dd className="mt-1">
+            <dd className="mt-1 space-y-1">
               <LocationFullnessBar fullness={fullness} />
+              <LocationFullnessCaption fullness={fullness} />
             </dd>
           </div>
         ) : null}

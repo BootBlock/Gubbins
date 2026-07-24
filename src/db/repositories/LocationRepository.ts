@@ -17,6 +17,7 @@ import { markCountedStatement } from './location-count';
 import { UNASSIGNED_LOCATION_ID, clampDeadStockDays } from './constants';
 import { rowToLocation } from './mappers';
 import { parseLocationBranch } from '@/features/inventory/location-path';
+import { PACKING_FACTOR_BOUNDS } from '@/lib/volume';
 import { tombstoneStatement } from './tombstone';
 import type {
   CreateLocationInput,
@@ -31,6 +32,11 @@ import type {
 
 interface LocationCountRow extends LocationRow {
   readonly item_count: number;
+  readonly used_volume: number;
+  readonly measured_units: number;
+  readonly total_units: number;
+  readonly measured_items: number;
+  readonly total_items: number;
 }
 
 /**
@@ -44,7 +50,38 @@ interface LocationCountRow extends LocationRow {
  *
  * `COALESCE` covers a location with no counter row: the cache only gains one when a location
  * first holds an item, so "no row" and "zero" are the same statement.
+ *
+ * The volume totals (issue #457) come from a bounded aggregate over the per-location `item_stock`
+ * ledger joined to `items` — the "supply" side of cube utilisation, measuring the stock that
+ * physically occupies space *here*. It groups by `item_stock.location_id` (the placement) and
+ * reads the ledger quantity, never `items.quantity` (the grand total spread across every
+ * placement), so stock split across drawers is measured where it actually sits. `used_volume`
+ * sums `w·h·d·qty` only for fully-measured items — SQLite's `SUM` skips the NULL product of an
+ * item missing any dimension — while the measured/total unit split (needed for the honest
+ * coverage caption) uses the `CASE` idiom the valuation reports use. On-hand only (`quantity > 0`)
+ * and unlimited-supply items excluded (their quantity is meaningless for space). Indexed by
+ * `idx_item_stock_location_id`, so the grouped scan stays bounded.
+ *
+ * Note this is a *different grain* from the `location_item_counts` counter above, which counts
+ * active items by their **home** `location_id` regardless of quantity: so `total_items` here
+ * (distinct items with stock physically placed at this location) can legitimately differ from
+ * `item_count` (items homed here) when stock is split across locations or an item is unlimited.
  */
+const VOLUME_TOTALS_SUBQUERY = `
+  SELECT s.location_id AS location_id,
+         SUM(i.width * i.height * i.depth * s.quantity) AS used_volume,
+         SUM(CASE WHEN i.width IS NOT NULL AND i.height IS NOT NULL AND i.depth IS NOT NULL
+                  THEN s.quantity ELSE 0 END) AS measured_units,
+         SUM(s.quantity) AS total_units,
+         COUNT(CASE WHEN i.width IS NOT NULL AND i.height IS NOT NULL AND i.depth IS NOT NULL
+                    THEN 1 END) AS measured_items,
+         COUNT(*) AS total_items
+  FROM item_stock s
+  JOIN items i ON i.id = s.item_id
+  WHERE i.is_active = 1 AND s.quantity > 0 AND i.is_unlimited = 0
+  GROUP BY s.location_id
+`;
+
 const SELECT_WITH_COUNT = `
   SELECT l.id, l.name, l.parent_id, l.is_system, l.description, l.color,
          l.kind, l.capacity, l.is_default, l.archived_at, l.last_counted_at,
@@ -52,9 +89,15 @@ const SELECT_WITH_COUNT = `
          l.width, l.height, l.depth, l.usable_volume, l.packing_factor,
          l.walk_order,
          l.updated_at,
-         COALESCE(c.item_count, 0) AS item_count
+         COALESCE(c.item_count, 0) AS item_count,
+         COALESCE(v.used_volume, 0) AS used_volume,
+         COALESCE(v.measured_units, 0) AS measured_units,
+         COALESCE(v.total_units, 0) AS total_units,
+         COALESCE(v.measured_items, 0) AS measured_items,
+         COALESCE(v.total_items, 0) AS total_items
   FROM locations l
   LEFT JOIN location_item_counts c ON c.location_id = l.id
+  LEFT JOIN (${VOLUME_TOTALS_SUBQUERY}) v ON v.location_id = l.id
 `;
 
 /**
@@ -578,7 +621,17 @@ export class LocationRepository extends BaseRepository {
 }
 
 function toWithCount(row: LocationCountRow): LocationWithCount {
-  return { ...rowToLocation(row), itemCount: Number(row.item_count) };
+  return {
+    ...rowToLocation(row),
+    itemCount: Number(row.item_count),
+    volumeTotals: {
+      usedVolume: Number(row.used_volume),
+      measuredUnits: Number(row.measured_units),
+      totalUnits: Number(row.total_units),
+      measuredItems: Number(row.measured_items),
+      totalItems: Number(row.total_items),
+    },
+  };
 }
 
 /** Trim a free-text/key field, collapsing blank/whitespace-only input to NULL. */
@@ -609,14 +662,15 @@ function normaliseDimension(value: number | null | undefined): number | null {
 }
 
 /**
- * Coerce a per-location packing factor to the `(0, 1]` fraction the DB CHECK allows, or NULL to
- * defer to the global `defaultPackingFactor` preference (issue #457). Zero, negative, > 1, NaN
- * or non-finite all collapse to NULL — a factor of exactly 0 would model an unfillable
- * container, which is meaningless, so it reads as "no override" rather than tripping the CHECK.
+ * Coerce a per-location packing factor to the safe `[min, 1]` fraction, or NULL to defer to the
+ * global `defaultPackingFactor` preference (issue #457). Zero, negative, > 1, NaN or non-finite
+ * collapse to NULL ("no override"); a positive-but-below-floor value is clamped **up** to the same
+ * floor the global default and the entry field enforce, so no write path (import, sync, API) can
+ * store a near-zero factor that would make a measured location read as wildly over-full.
  */
 function normalisePackingFactor(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value) || value <= 0 || value > 1) return null;
-  return value;
+  return Math.max(PACKING_FACTOR_BOUNDS.min, value);
 }
 
 /**

@@ -1,9 +1,12 @@
 # Volumetric locations — implementation plan (issue #457)
 
-> **Status:** 🟢 ACTIVE — phase 1 (data + entry) shipped; phases 2–5 build on it. Phase 1
-> landed all five schema columns, the `lib/volume.ts` seam, the `volumeUnit` preference +
-> formatter, the shared `measure-input.ts` helper, and the location dialogs' W×H×D entry with a
-> derived-volume preview. Grounding analysis for the "why" lives on
+> **Status:** 🟢 ACTIVE — phases 1–2 shipped; phase 3 (fit-checking) next. Phase 1 landed the
+> five schema columns, the `lib/volume.ts` seam, the `volumeUnit` preference + formatter, the
+> shared `measure-input.ts` helper, and the W×H×D entry with a derived-volume preview. Phase 2
+> added the volumetric `location-fullness` layer + resolver + coverage, the per-location
+> volume-totals read, the `defaultPackingFactor` preference, the Advanced (usable-volume /
+> packing-factor) disclosure, and wired the fullness bar (tree, info card, edit dialog) to cube
+> utilisation with a coverage caption. Grounding analysis for the "why" lives on
 > [issue #457](https://github.com/BootBlock/Gubbins/issues/457).
 
 ## Summary

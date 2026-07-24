@@ -569,6 +569,15 @@ try {
   // The outer wrapper holds both the header + fields and the volume-preview line.
   const group = dialog.getByText('Dimensions (optional)', { exact: true }).locator('xpath=ancestor::div[2]');
   await shot('location-dimensions', group.first(), { settle: 400 });
+
+  // The Advanced disclosure (Phase 2): the usable-volume override + packing-efficiency % that
+  // refine cube utilisation. Open it and fill both so the shot shows real values, not blanks.
+  await dialog.getByTestId('location-advanced-toggle').click();
+  await dialog.getByTestId('location-usable-volume').waitFor({ state: 'visible', timeout: 8000 });
+  await dialog.getByTestId('location-usable-volume').fill('28');
+  await dialog.getByTestId('location-packing-factor').fill('70');
+  const advanced = dialog.getByTestId('location-advanced-toggle').locator('xpath=ancestor::div[1]');
+  await shot('location-advanced', advanced.first(), { settle: 400 });
   await page.keyboard.press('Escape').catch(() => {});
 } catch (err) {
   failed += 1;

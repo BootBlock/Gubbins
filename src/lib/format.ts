@@ -10,7 +10,13 @@
 import { moneyDecimals } from './money';
 import { formatWeight, type WeightUnit } from './weight';
 import { formatDimension, type DimensionUnit } from './dimensions';
-import { DEFAULT_VOLUME_UNIT, formatVolume, resolveVolumeUnit, type VolumeUnitPreference } from './volume';
+import {
+  DEFAULT_VOLUME_UNIT,
+  formatVolume,
+  resolveVolumeUnit,
+  type VolumeUnit,
+  type VolumeUnitPreference,
+} from './volume';
 import { nowMs } from './clock';
 
 /** The locked default locale (§1.2.1) — also the fallback for non-reactive callers. */
@@ -136,8 +142,19 @@ export interface Formatters {
    * picked *per value* from the `dimensionUnit` this bundle was built with (metric →
    * cm³/litres/m³, imperial → in³/ft³), so a drawer never renders as `0.0000027 m³`. The stored
    * mm³ are unchanged, only the presentation. See `lib/volume.ts`.
+   *
+   * Pass an explicit `unit` to force that unit instead of resolving one — used to render a pair
+   * of volumes (e.g. `used of capacity`) in a **single** unit so they read consistently, rather
+   * than each auto-resolving its own (which could yield "12 mL of 30 L"). Get the unit for the
+   * reference value from {@link Formatters.volumeUnitFor}.
    */
-  volume(mm3: number): string;
+  volume(mm3: number, unit?: VolumeUnit): string;
+  /**
+   * The volume unit {@link Formatters.volume} would resolve for `mm3` under the current
+   * `volumeUnit`/`dimensionUnit` preferences — so a caller can format several related volumes in
+   * one consistent unit (see the `unit` param above).
+   */
+  volumeUnitFor(mm3: number): VolumeUnit;
   /** A UNIX-ms instant as a short date (e.g. `28 Jun 2026`). */
   date(ms: number): string;
   /** A UNIX-ms instant as a date *and* time (e.g. `28 Jun 2026, 14:30`). */
@@ -288,10 +305,14 @@ export function makeFormatters(
     dimension(mm) {
       return formatDimension(mm, dimensionUnit, locale);
     },
-    volume(mm3) {
-      // `'auto'` resolves per value (a drawer → litres/in³, a bay → m³/ft³); a fixed
-      // preference is used as-is. A non-finite value falls through to `formatVolume`'s `—`.
-      return formatVolume(mm3, resolveVolumeUnit(volumeUnit, mm3, dimensionUnit), locale);
+    volume(mm3, unit) {
+      // `'auto'` resolves per value (a drawer → litres/in³, a bay → m³/ft³); a fixed preference —
+      // or an explicit `unit` argument — is used as-is. A non-finite value falls through to
+      // `formatVolume`'s `—`.
+      return formatVolume(mm3, unit ?? resolveVolumeUnit(volumeUnit, mm3, dimensionUnit), locale);
+    },
+    volumeUnitFor(mm3) {
+      return resolveVolumeUnit(volumeUnit, mm3, dimensionUnit);
     },
     date(ms) {
       return dateFormat.format(new Date(ms));

@@ -57,8 +57,34 @@ const VOLUME_UNIT_LABELS: Readonly<Record<VolumeUnit, string>> = {
   ft3: 'ft³',
 };
 
+/** How a volume unit is written for display (e.g. `'l'` → `'L'`, `'m3'` → `'m³'`). */
+export function volumeUnitLabel(unit: VolumeUnit): string {
+  return VOLUME_UNIT_LABELS[unit];
+}
+
 /** The default `volumeUnit` preference — derive a readable unit per value from the length unit. */
 export const DEFAULT_VOLUME_UNIT: VolumeUnitPreference = 'auto';
+
+/**
+ * Packing efficiency — the fraction of a location's raw usable volume that is realistically
+ * fillable (issue #457). Lives here (the shared, dependency-free volume domain) so the *same*
+ * bounds are enforced everywhere a packing factor is set or applied: the global-default
+ * preference, the per-location entry field, the repository normaliser, and the cube-utilisation
+ * maths. Before this was split out, only the global default was floored, so a per-location value
+ * could slip below the floor and collapse a location's effective capacity to near-zero.
+ *
+ * The default is `1.0` (no haircut — trust the raw volume; opt into a haircut rather than
+ * imposing one). The floor is a small non-zero value rather than 0 so a stale/typo'd value can
+ * never make a measured location read as wildly over-full. Decimals are kept (0.7 is meaningful).
+ */
+export const DEFAULT_PACKING_FACTOR = 1;
+export const PACKING_FACTOR_BOUNDS = { min: 0.05, max: 1 } as const;
+
+/** Clamp a packing factor to {@link PACKING_FACTOR_BOUNDS}; non-finite falls back to the default. */
+export function clampPackingFactor(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_PACKING_FACTOR;
+  return Math.min(PACKING_FACTOR_BOUNDS.max, Math.max(PACKING_FACTOR_BOUNDS.min, value));
+}
 
 /** Choices for the Settings "Volume unit" control (Automatic listed first, then largest→smallest). */
 export const VOLUME_UNIT_OPTIONS = [

@@ -329,6 +329,8 @@ describe('EditLocationDialog — saving', () => {
     width: null,
     height: null,
     depth: null,
+    usableVolume: null,
+    packingFactor: null,
     // Walk order (issue #461) rides in the payload too; the fixture leaves it unplaced.
     walkOrder: null,
   };
@@ -474,6 +476,30 @@ describe('EditLocationDialog — saving', () => {
     fireEvent.change(dialog().getByTestId('location-width'), { target: { value: 'abc' } });
     expect(dialog().queryByTestId('location-volume-preview')).toBeNull();
     expect(saveButton().disabled).toBe(true);
+  });
+
+  it('shows volumetric fullness with a coverage caption when the location is measured', () => {
+    // 100×100×100 mm = 1,000,000 mm³ capacity; 500,000 used → 50%; 1 of 2 items measured.
+    renderDialog({
+      width: 100,
+      height: 100,
+      depth: 100,
+      volumeTotals: { usedVolume: 500_000, measuredUnits: 1, totalUnits: 2, measuredItems: 1, totalItems: 2 },
+    });
+    expect(dialog().getByText('Fullness')).toBeInTheDocument();
+    expect(dialog().getByText('50%')).toBeInTheDocument();
+    expect(dialog().getByTestId('location-fullness-caption').textContent).toContain('1 of 2 items measured');
+  });
+
+  it('saves the advanced usable-volume and packing-factor overrides', () => {
+    renderDialog();
+    fireEvent.click(dialog().getByTestId('location-advanced-toggle'));
+    fireEvent.change(dialog().getByTestId('location-packing-factor'), { target: { value: '70' } });
+    fireEvent.click(saveButton());
+    expect(spies.update).toHaveBeenCalledWith(
+      { id: 'cabinet', input: { ...fullPayload, packingFactor: 0.7 } },
+      expect.anything(),
+    );
   });
 
   it('surfaces a failed save in an alert and keeps the dialog open', () => {

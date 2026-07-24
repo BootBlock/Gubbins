@@ -13,8 +13,11 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  clampPackingFactor,
   clampPageSize,
   CURRENCY_OPTIONS,
+  DEFAULT_PACKING_FACTOR,
+  PACKING_FACTOR_BOUNDS,
   DEFAULT_CARD_CLICK_ACTION,
   DEFAULT_ITEMS_PER_PAGE,
   DEFAULT_WINDOW_MONTHS,
@@ -102,6 +105,25 @@ describe('clampLowStockQty', () => {
   it('falls back to the default threshold for non-finite input', () => {
     expect(clampLowStockQty(Number.NaN)).toBe(LOW_STOCK_QTY_THRESHOLD);
     expect(clampLowStockQty(Number.POSITIVE_INFINITY)).toBe(LOW_STOCK_QTY_THRESHOLD);
+  });
+});
+
+describe('clampPackingFactor', () => {
+  it('passes an in-range fraction through unrounded (decimals are meaningful)', () => {
+    expect(clampPackingFactor(0.7)).toBe(0.7);
+    expect(clampPackingFactor(1)).toBe(1);
+    expect(clampPackingFactor(0.333)).toBe(0.333);
+  });
+
+  it('clamps to (0,1]-with-floor bounds so utilisation maths can never divide by ~zero', () => {
+    expect(clampPackingFactor(0)).toBe(PACKING_FACTOR_BOUNDS.min);
+    expect(clampPackingFactor(-1)).toBe(PACKING_FACTOR_BOUNDS.min);
+    expect(clampPackingFactor(2)).toBe(PACKING_FACTOR_BOUNDS.max);
+  });
+
+  it('falls back to the default (no haircut) for non-finite input', () => {
+    expect(clampPackingFactor(Number.NaN)).toBe(DEFAULT_PACKING_FACTOR);
+    expect(clampPackingFactor(Number.POSITIVE_INFINITY)).toBe(DEFAULT_PACKING_FACTOR);
   });
 });
 

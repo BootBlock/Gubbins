@@ -130,6 +130,9 @@ export function LocationTreeItem({
   receivingItem,
   ref,
 }: TreeItemProps) {
+  // The compact tree row shows a *count* (`count / capacity`), so its tint stays count-based —
+  // a volumetric over/full state would tint a number it doesn't describe (issue #457 review).
+  // Volume utilisation is surfaced (with a bar + caption) on the info card and edit dialog.
   const fullness = locationFullness(count, capacity);
   // True while a draggable *item* or *location* is over this (drop-enabled) row. Registering the
   // drop target and reading the highlight both flow through the pointer-drag provider; a row with
