@@ -20,7 +20,7 @@
  */
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { buttonVariants, MenuLink, SplitButton } from '@/components/foundry';
+import { Button, buttonVariants, MenuLink } from '@/components/foundry';
 import { AddIcon, ScanIcon, ImportIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
@@ -53,32 +53,36 @@ export function DashboardActions() {
       {showQuickActions ? (
         <>
           {/* Split button: the primary half adds an item; the attached chevron opens a
-              menu of related create actions (currently Import…). Both halves are `Link`s
-              on the shared Foundry primitive, keeping the add/scan intent pattern. */}
-          <SplitButton
+              menu of related create actions (currently Import…). The primary is a `Link`
+              styled through the Button primitive (`asChild`), keeping the add/scan intent
+              pattern while the chevron + dropdown come from the same control. */}
+          <Button
+            asChild
+            variant="primary"
             menuLabel={t('dashboard.actions.moreAddItem')}
-            triggerProps={{ 'data-testid': 'dashboard-add-menu' }}
-            primary={
-              <Link
+            menuTriggerProps={{ 'data-testid': 'dashboard-add-menu' }}
+            menu={
+              <MenuLink
                 to="/inventory"
-                onClick={() => useInventoryEntry.getState().requestIntent('add')}
-                className={cn(buttonVariants({ variant: 'primary' }))}
-                data-testid="dashboard-add-item"
+                icon={<ImportIcon />}
+                onSelect={() => useInventoryEntry.getState().requestIntent('import')}
+                data-testid="dashboard-import"
               >
-                <AddIcon />
-                {t('dashboard.actions.addItem')}
-              </Link>
+                {t('dashboard.actions.import')}
+              </MenuLink>
             }
           >
-            <MenuLink
+            {/* No `className` here — the enclosing `Button` supplies the primary variant
+                styling (and squares off the inner edge) via `asChild`. */}
+            <Link
               to="/inventory"
-              icon={<ImportIcon />}
-              onSelect={() => useInventoryEntry.getState().requestIntent('import')}
-              data-testid="dashboard-import"
+              onClick={() => useInventoryEntry.getState().requestIntent('add')}
+              data-testid="dashboard-add-item"
             >
-              {t('dashboard.actions.import')}
-            </MenuLink>
-          </SplitButton>
+              <AddIcon />
+              {t('dashboard.actions.addItem')}
+            </Link>
+          </Button>
           {scannerEnabled ? (
             <Link
               to="/inventory"

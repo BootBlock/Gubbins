@@ -8,7 +8,6 @@
  */
 export { Button, buttonVariants, type ButtonProps } from './button';
 export { CloseButton, type CloseButtonProps } from './close-button';
-export { SplitButton, type SplitButtonProps } from './split-button';
 export { Banner, bannerVariants, type BannerProps } from './banner';
 export { Surface, type SurfaceProps } from './surface';
 // The shared visual language for a selectable option-card tile — base chrome plus the

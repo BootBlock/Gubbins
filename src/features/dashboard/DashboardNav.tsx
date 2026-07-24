@@ -21,6 +21,7 @@ import { Link } from '@tanstack/react-router';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import {
+  Button,
   buttonVariants,
   LiveRegion,
   NAV_OPEN_DELAY_MS,
@@ -448,15 +449,12 @@ export function DashboardNav() {
 
                 const tileClassName =
                   'block h-full w-full cursor-pointer rounded-2xl text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+                // Shape/spacing/motion shared by every tile card, whether it's the plain Surface
+                // card below or the Inventory call-to-action Button.
+                const cardClassName =
+                  'relative flex h-full items-center gap-2.5 p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 [&_svg]:size-5 [&_svg]:shrink-0';
                 const surface = (
-                  <Surface
-                    className={cn(
-                      'relative flex h-full items-center gap-2.5 p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 [&_svg]:size-5 [&_svg]:shrink-0',
-                      isInventory
-                        ? 'border-transparent bg-primary text-primary-foreground shadow-primary/20 hover:shadow-primary/30'
-                        : cn('hover:shadow-primary/10', GROUP_CARD_TINTS[group]),
-                    )}
-                  >
+                  <Surface className={cn(cardClassName, 'hover:shadow-primary/10', GROUP_CARD_TINTS[group])}>
                     {body}
                   </Surface>
                 );
@@ -477,6 +475,21 @@ export function DashboardNav() {
                         >
                           {surface}
                         </button>
+                      ) : isInventory ? (
+                        // The hub's primary call-to-action: rendered through the Foundry `Button`
+                        // (as a router `Link` via `asChild`) so it *is* a primary button — solid
+                        // fill, shadow and the signature hover sheen — rather than a bespoke tinted
+                        // card. The card classes override the button's default pill height/padding/
+                        // radius so it fills the tile like its Surface siblings.
+                        <Button
+                          asChild
+                          variant="primary"
+                          className={cn(cardClassName, 'w-full justify-start rounded-2xl text-left')}
+                        >
+                          <Link to={dest.to} aria-label={countLabel}>
+                            {body}
+                          </Link>
+                        </Button>
                       ) : (
                         <Link
                           to={dest.to}

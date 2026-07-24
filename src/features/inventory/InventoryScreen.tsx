@@ -45,7 +45,6 @@ import {
   MenuSub,
   PageContainer,
   PageHeader,
-  SplitButton,
   Tooltip,
   useViewTransitionsEnabled,
   withViewTransition,
@@ -666,24 +665,24 @@ function InventoryWorkspace() {
                 (mirroring the dashboard hero's Search → Add item → Scan order) so the primary
                 actions stay grouped together at the front of the row; if the row must wrap at
                 a narrow width, it's the less-common view controls below that give way first. */}
-            <SplitButton
+            <Button
+              onClick={() => setAddOpen(true)}
+              data-testid="inventory-add-item"
               menuLabel="More add-item actions"
-              triggerProps={{ 'data-testid': 'inventory-add-menu' }}
-              primary={
-                <Button onClick={() => setAddOpen(true)} data-testid="inventory-add-item">
-                  <AddIcon />
-                  Add item
-                </Button>
+              menuTriggerProps={{ 'data-testid': 'inventory-add-menu' }}
+              menu={
+                <MenuAction
+                  icon={<ImportIcon />}
+                  onSelect={() => setImportOpen(true)}
+                  data-testid="open-catalog-import"
+                >
+                  Import…
+                </MenuAction>
               }
             >
-              <MenuAction
-                icon={<ImportIcon />}
-                onSelect={() => setImportOpen(true)}
-                data-testid="open-catalog-import"
-              >
-                Import…
-              </MenuAction>
-            </SplitButton>
+              <AddIcon />
+              Add item
+            </Button>
 
             {scannerEnabled ? (
               <Button variant="outline" onClick={() => setScannerOpen(true)}>
