@@ -23,6 +23,7 @@ import {
   type MeasureIssue,
 } from './measure-draft';
 import { useCategories } from '../categories';
+import { ITEM_NAME_EDIT_HINT } from '../item-field-copy';
 import { useUpdateItem } from '../mutations';
 import { useFieldSuggestions } from '../queries';
 import { TRACKING_MODE_LABELS } from './inventory-ui';
@@ -212,7 +213,8 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
       <FormField
         label="Name"
         error={draft.name.length > 0 ? undefined : 'Please enter a name.'}
-        hint="The item’s display name — how it appears in lists, search and on labels. Renames are recorded in the activity log."
+        hintSize="md"
+        hint={ITEM_NAME_EDIT_HINT}
       >
         <Input value={name} onChange={(e) => setName(e.target.value)} data-testid="item-details-name" />
       </FormField>

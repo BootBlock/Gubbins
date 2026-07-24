@@ -15,7 +15,9 @@ can be filled in now or later.
 
 Common fields at creation:
 
-- **Name** — what the item is called. The only required field.
+- **Name** — what the item is called. The only required field. Name it by *what it is*,
+  specifically and consistently (`M3 × 10 socket screws`, not `screws`), so similar things sort
+  together.
 - **Tracking** — how its quantity behaves (Bulk, Serialised, Consumable, Untracked). This is
   the one choice worth getting right up front; see [[Tracking modes|Tracking-Modes]].
 - **Initial quantity** — how many you have now (Bulk items). Consumable items instead ask for a
@@ -25,6 +27,12 @@ Common fields at creation:
   [[insurance schedule|Insurance-and-Estate-Schedule]]. Type a plain figure like `8` and it
   tidies itself to your currency's decimal places when you move on (`8.00` for pounds, dollars
   or euros; whole numbers for yen); see [[Language & region|Language-and-Region]].
+
+> **ℹ️ Note**
+> The **maker** has its own **Manufacturer** field and part codes go in **MPN**, so you needn't
+> repeat them in the name. Leading with the brand (*ASUS Q27 monitor*) is fine when it's how
+> you'd recognise the item — just stay consistent. The `(i)` next to the Name field says the
+> same, right where you're typing.
 
 > **💡 Tip**
 > For a one-off, always-available supply (tap water, sunlight, a shared mains outlet) you can

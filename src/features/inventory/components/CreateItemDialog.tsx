@@ -62,6 +62,7 @@ import {
 import { gaugeTareWeightUnit, tareFieldValue } from '../tare-presets';
 import { TarePresetPickerButton } from './TarePresetPickerButton';
 import { useFieldSuggestions } from '../queries';
+import { ITEM_NAME_HINT } from '../item-field-copy';
 import { useApplyScrape, useCreateItem, useCreateSerialisedItems, useCreateSupplierPart } from '../mutations';
 import { useAddItemImage } from '../media';
 import { buildItemLocationOptions } from '../parent-options';
@@ -773,20 +774,7 @@ export function CreateItemDialog({
         </div>
       ) : null}
 
-      <FormField
-        label="Name"
-        error={errors.name?.message}
-        hintSize="md"
-        hint={
-          'The item’s display name — how it appears in lists, search and on labels.\n\n' +
-          'Be **specific and consistent** so similar parts stay together:\n\n' +
-          '| Prefer | Avoid |\n' +
-          '| --- | --- |\n' +
-          '| `M3 × 10 socket screws` | `screws` |\n' +
-          '| `NE555 timer IC` | `chip` |\n\n' +
-          '> Supplier part numbers go in **MPN** below, not here.'
-        }
-      >
+      <FormField label="Name" error={errors.name?.message} hintSize="md" hint={ITEM_NAME_HINT}>
         <Input
           placeholder="e.g. M3 × 10 socket screws"
           {...(() => {
