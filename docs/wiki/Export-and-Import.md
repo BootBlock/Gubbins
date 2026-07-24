@@ -58,6 +58,15 @@ A [[project's bill of materials|Projects-and-BOM]] and a
 detection — so a BOM export, a supplier basket or a typed shopping list can be brought in without
 going through the item importer first.
 
+> **ℹ️ Note**
+> A quantity of **1 is only assumed when your file gives none** — a blank cell, or no quantity
+> column at all. Anything the file *does* say is taken at its word. On a bill of materials a
+> quantity of **0** stays zero, which is how a line is marked "not needed for this build"; on a
+> purchase list a **0** means that row isn't being bought, so it's left out. A negative quantity,
+> a fractional one such as `2.5`, or a cell like `n/a` leaves its row out too. Every row left out
+> is listed in the review with its row number and the value your file gave, so a quantity is never
+> quietly changed on the way in.
+
 > **⚠️ Heads-up**
 > A **serialised** item is a single tracked instance, so its quantity is always 1. If a row says
 > it's serialised but asks for a quantity of 5, the review flags it rather than quietly importing

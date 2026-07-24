@@ -47,7 +47,9 @@ describe('parsePurchaseList — rejection', () => {
 
 describe('parsePurchaseList — delimited', () => {
   it('maps the common purchase columns', () => {
-    const [line] = parsePurchaseList(
+    const {
+      lines: [line],
+    } = parsePurchaseList(
       'Description,Qty,Unit price,Supplier,Link,Note\nM3 bolt,50,0.04,Fastenings Direct,https://example.com/m3,Hex head',
     );
     expect(line).toEqual({
@@ -62,64 +64,113 @@ describe('parsePurchaseList — delimited', () => {
   });
 
   it('recognises header synonyms regardless of case and punctuation', () => {
-    const [line] = parsePurchaseList('Product Name,QTY,Price Each\nWidget,3,1.50');
+    const {
+      lines: [line],
+    } = parsePurchaseList('Product Name,QTY,Price Each\nWidget,3,1.50');
     expect(line).toMatchObject({ name: 'Widget', quantity: 3, unitPrice: 1.5 });
   });
 
   it('splits manufacturer part numbers from supplier order codes', () => {
-    const [line] = parsePurchaseList('MPN,Order code,Qty\nNE555P,FE-1234,10');
+    const {
+      lines: [line],
+    } = parsePurchaseList('MPN,Order code,Qty\nNE555P,FE-1234,10');
     expect(line).toMatchObject({ mpn: 'NE555P', supplierSku: 'FE-1234', quantity: 10 });
   });
 
-  it('defaults a missing, blank or unusable quantity to 1', () => {
-    const lines = parsePurchaseList('Name,Qty\nA,\nB,0\nC,lots');
-    expect(lines.map((l) => l.quantity)).toEqual([1, 1, 1]);
+  it('defaults a missing or blank quantity to 1', () => {
+    const { lines, problems } = parsePurchaseList('Name,Qty\nA,\nB,  ');
+    expect(lines.map((l) => l.quantity)).toEqual([1, 1]);
+    expect(problems).toEqual([]);
   });
 
   it('derives the unit price from a line total when no unit price is given', () => {
-    const [line] = parsePurchaseList('Name,Qty,Total\nWidget,4,10.00');
+    const {
+      lines: [line],
+    } = parsePurchaseList('Name,Qty,Total\nWidget,4,10.00');
     expect(line!.unitPrice).toBe(2.5);
   });
 
   it('prefers an explicit unit price over a line total', () => {
-    const [line] = parsePurchaseList('Name,Qty,Unit price,Total\nWidget,4,3.00,10.00');
+    const {
+      lines: [line],
+    } = parsePurchaseList('Name,Qty,Unit price,Total\nWidget,4,3.00,10.00');
     expect(line!.unitPrice).toBe(3);
   });
 
   it('leaves the price unknown rather than inventing a zero', () => {
-    const [line] = parsePurchaseList('Name,Qty\nWidget,4');
+    const {
+      lines: [line],
+    } = parsePurchaseList('Name,Qty\nWidget,4');
     expect(line!.unitPrice).toBeNull();
   });
 
   it('reads a currency-formatted price', () => {
-    const [line] = parsePurchaseList('Name,Price\nWidget,"£1,234.56"');
+    const {
+      lines: [line],
+    } = parsePurchaseList('Name,Price\nWidget,"£1,234.56"');
     expect(line!.unitPrice).toBe(1234.56);
   });
 
   it('skips a blank row without failing the import', () => {
-    const lines = parsePurchaseList('Name,Qty\nA,1\n,\nB,2');
+    const { lines } = parsePurchaseList('Name,Qty\nA,1\n,\nB,2');
     expect(lines.map((l) => l.name)).toEqual(['A', 'B']);
   });
 
   it('accepts a tab-separated paste', () => {
-    const lines = parsePurchaseList('Name\tQty\nWidget\t2');
+    const { lines } = parsePurchaseList('Name\tQty\nWidget\t2');
     expect(lines).toEqual([{ ...EMPTY, name: 'Widget', quantity: 2 }]);
+  });
+});
+
+describe('parsePurchaseList — quantities the file actually stated (issue #350)', () => {
+  it('leaves out a zero-quantity row instead of ordering one of it', () => {
+    const { lines, problems } = parsePurchaseList('Name,Qty\nWanted,2\nDeselected,0');
+    expect(lines.map((l) => l.name)).toEqual(['Wanted']);
+    expect(problems).toEqual([{ sourceRow: 2, label: 'Deselected', reason: 'zero', value: '0' }]);
+  });
+
+  it('reports an unreadable quantity rather than ordering one', () => {
+    const { lines, problems } = parsePurchaseList('Name,Qty\nWidget,lots');
+    expect(lines).toEqual([]);
+    expect(problems).toEqual([{ sourceRow: 1, label: 'Widget', reason: 'unreadable', value: 'lots' }]);
+  });
+
+  it('reports a fractional quantity rather than rounding it up', () => {
+    const { problems } = parsePurchaseList('Name,Qty\nWidget,2.5');
+    expect(problems).toEqual([{ sourceRow: 1, label: 'Widget', reason: 'fractional', value: '2.5' }]);
+  });
+
+  it('reports a negative quantity', () => {
+    const { problems } = parsePurchaseList('Name,Qty\nWidget,-4');
+    expect(problems).toEqual([{ sourceRow: 1, label: 'Widget', reason: 'negative', value: '-4' }]);
+  });
+
+  it('explains a wholly de-selected file instead of claiming every row was blank', () => {
+    const { lines, problems } = parsePurchaseList('Name,Qty\nA,0\nB,0');
+    expect(lines).toEqual([]);
+    expect(problems).toHaveLength(2);
+  });
+
+  it('leaves out a zero-quantity line in a typed free-form list', () => {
+    const { lines, problems } = parsePurchaseList('3x M3 bolts\n0 tea towels', { format: 'lines' });
+    expect(lines.map((l) => l.name)).toEqual(['M3 bolts']);
+    expect(problems).toEqual([{ sourceRow: 2, label: 'tea towels', reason: 'zero', value: '0' }]);
   });
 });
 
 describe('parsePurchaseList — structured formats', () => {
   it('reads an array of JSON objects', () => {
-    const lines = parsePurchaseList('[{"name":"Widget","qty":2,"price":"1.50"}]');
+    const { lines } = parsePurchaseList('[{"name":"Widget","qty":2,"price":"1.50"}]');
     expect(lines).toEqual([{ ...EMPTY, name: 'Widget', quantity: 2, unitPrice: 1.5 }]);
   });
 
   it('reads a Markdown table', () => {
-    const lines = parsePurchaseList('| Name | Qty |\n| --- | --- |\n| Widget | 3 |');
+    const { lines } = parsePurchaseList('| Name | Qty |\n| --- | --- |\n| Widget | 3 |');
     expect(lines).toEqual([{ ...EMPTY, name: 'Widget', quantity: 3 }]);
   });
 
   it('reads an HTML table', () => {
-    const lines = parsePurchaseList(
+    const { lines } = parsePurchaseList(
       '<table><tr><th>Name</th><th>Qty</th></tr><tr><td>Widget</td><td>3</td></tr></table>',
     );
     expect(lines).toEqual([{ ...EMPTY, name: 'Widget', quantity: 3 }]);
@@ -128,13 +179,13 @@ describe('parsePurchaseList — structured formats', () => {
 
 describe('parsePurchaseList — free-form list', () => {
   it('takes one thing per line', () => {
-    const lines = parsePurchaseList('Masking tape\nSandpaper', { format: 'lines' });
+    const { lines } = parsePurchaseList('Masking tape\nSandpaper', { format: 'lines' });
     expect(lines.map((l) => l.name)).toEqual(['Masking tape', 'Sandpaper']);
     expect(lines.every((l) => l.quantity === 1)).toBe(true);
   });
 
   it('honours a leading quantity', () => {
-    const lines = parsePurchaseList('3x M3 bolts\n2 × sanding blocks\n5 tea towels', { format: 'lines' });
+    const { lines } = parsePurchaseList('3x M3 bolts\n2 × sanding blocks\n5 tea towels', { format: 'lines' });
     expect(lines).toEqual([
       { ...EMPTY, name: 'M3 bolts', quantity: 3 },
       { ...EMPTY, name: 'sanding blocks', quantity: 2 },
@@ -143,27 +194,29 @@ describe('parsePurchaseList — free-form list', () => {
   });
 
   it('honours a trailing quantity', () => {
-    const lines = parsePurchaseList('Sanding blocks x4', { format: 'lines' });
+    const { lines } = parsePurchaseList('Sanding blocks x4', { format: 'lines' });
     expect(lines).toEqual([{ ...EMPTY, name: 'Sanding blocks', quantity: 4 }]);
   });
 
   it('prefers a leading quantity over a trailing one', () => {
-    const lines = parsePurchaseList('2x Widget x4', { format: 'lines' });
+    const { lines } = parsePurchaseList('2x Widget x4', { format: 'lines' });
     expect(lines).toEqual([{ ...EMPTY, name: 'Widget x4', quantity: 2 }]);
   });
 
   it('strips list bullets and numbering', () => {
-    const lines = parsePurchaseList('- Masking tape\n* Sandpaper\n1. Glue\n• Brushes', { format: 'lines' });
+    const { lines } = parsePurchaseList('- Masking tape\n* Sandpaper\n1. Glue\n• Brushes', {
+      format: 'lines',
+    });
     expect(lines.map((l) => l.name)).toEqual(['Masking tape', 'Sandpaper', 'Glue', 'Brushes']);
   });
 
   it('ignores blank lines', () => {
-    const lines = parsePurchaseList('Tape\n\n\nGlue', { format: 'lines' });
+    const { lines } = parsePurchaseList('Tape\n\n\nGlue', { format: 'lines' });
     expect(lines).toHaveLength(2);
   });
 
   it('is chosen by auto-detection for a plain typed list', () => {
-    const lines = parsePurchaseList('Masking tape\nSandpaper\nGlue');
+    const { lines } = parsePurchaseList('Masking tape\nSandpaper\nGlue');
     expect(lines.map((l) => l.name)).toEqual(['Masking tape', 'Sandpaper', 'Glue']);
   });
 

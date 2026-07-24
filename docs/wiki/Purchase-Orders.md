@@ -61,6 +61,10 @@ as**. Columns are matched by their headings, so `Description`, `Qty`, `Unit pric
 `Supplier` and `Link` are all understood however they're capitalised or punctuated. Where a row
 gives only a **line total**, the unit price is worked out from the quantity.
 
+A row asking for **0** — a basket row you de-selected — isn't bought: it's left out and listed in
+the preview, as is any row whose quantity couldn't be ordered (a negative, a fraction, or text
+that isn't a number). Only a row that gives *no* quantity at all is taken as one.
+
 Everything is **previewed before anything is written**, so you can see exactly what will be added.
 
 > **💡 Tip**

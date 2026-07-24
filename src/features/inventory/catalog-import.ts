@@ -340,10 +340,11 @@ export function parseNumericCell(text: string): number | null {
  * suffix only on the integer count fields, never on amounts, is deliberate: a leading-integer
  * fallback on `1.5 kg` would silently drop the fraction (issue #339 keeps amounts strict).
  *
- * Unlike {@link parseCountCell} it does **not** round — a fractional value such as `1.5` is
- * passed through so the schema's whole-number rule reports it, rather than the parser quietly
- * altering the count the user wrote. That fractional-reporting is a separate #339 decision this
- * change deliberately leaves intact; only the suffix gap is closed.
+ * It does **not** round — a fractional value such as `1.5` is passed through so the schema's
+ * whole-number rule reports it, rather than the parser quietly altering the count the user
+ * wrote. The BOM and purchase-list importers reach the same outcome by a different route:
+ * {@link readCountCell} reports a fractional quantity as an unusable cell (issue #350), so no
+ * importer rounds a count behind the user's back.
  *
  * @internal Exported for unit tests only.
  */
