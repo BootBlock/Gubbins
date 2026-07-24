@@ -82,6 +82,28 @@ export function isLow(item: ReorderItem, defaults: ReorderDefaults): boolean {
 }
 
 /**
+ * Whether an item is **out of bulk stock** — fully depleted.
+ *
+ * Unlike {@link isLow} this is deliberately **not opt-in**: an item that has run to zero is out
+ * whether or not a reorder point was ever configured, so it must never be gated behind `isLow`.
+ * Mirrors `outOfStockPredicateSql` exactly — an unlimited-supply item is never out (its on-hand
+ * count is ignored), a CONSUMABLE_GAUGE is out only once it has real capacity and has emptied, and
+ * SERIALISED / UNTRACKED items have no bulk stock level to deplete so neither ever qualifies.
+ *
+ * Abstract variant parents (items with children hold no stock of their own) are excluded at the
+ * SQL layer, which this pure form cannot see — it has no child data — so a caller scanning raw
+ * item rows inherits the same tiny limitation the pure `isLow` already has for parents.
+ */
+export function isOutOfStock(item: ReorderItem): boolean {
+  if (item.isUnlimited) return false;
+  if (item.trackingMode === 'CONSUMABLE_GAUGE') {
+    return item.gauge != null && item.gauge.grossCapacity > 0 && item.gauge.percentageRemaining <= 0;
+  }
+  if (item.trackingMode === 'SERIALISED' || item.trackingMode === 'UNTRACKED') return false;
+  return item.quantity <= 0;
+}
+
+/**
  * Coarse stock-health band for a plain DISCRETE item, for the Visual card's hero (spec §3):
  * - `out` — nothing on hand (`quantity <= 0`).
  * - `low` — on hand but at/below the effective reorder point ({@link isLow}).

@@ -19,7 +19,7 @@
  */
 import { activityKindForAction, type ActivityKind } from '@/features/activity/activity-kind.ts';
 import { describeHistoryEntry } from '@/features/inventory/history-format.ts';
-import { isLow, type ReorderDefaults, type ReorderItem } from '@/features/inventory/reorder-policy.ts';
+import { isLow, isOutOfStock, type ReorderDefaults } from '@/features/inventory/reorder-policy.ts';
 import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD } from '@/db/repositories/constants.ts';
 import type { HistoryAction } from '@/db/repositories/constants.ts';
 import type { ActivityFeedEntry, Item } from '@/db/repositories/types';
@@ -228,15 +228,22 @@ function baseEvent({ entry, summary }: ResolvedEntry): LedgerEvent {
 
 /**
  * The derived low/out-of-stock event for a stock movement, or null when the item is not a
- * stock item, is not low, or could not be resolved. The id suffixes the base ledger id so it
- * is deterministic and distinct (a sink can dedupe on it).
+ * stock item, is neither low nor out of stock, or could not be resolved. The id suffixes the
+ * base ledger id so it is deterministic and distinct (a sink can dedupe on it).
+ *
+ * Out-of-stock is judged **independently** of low-stock: an item that has run to zero raises
+ * `item.out_of_stock` whether or not a reorder point was ever configured (running out is a
+ * fact, not opt-in). Low-stock stays opt-in — a `item.low_stock` event fires only when the
+ * item is below its effective reorder floor. When an item is both, the out-of-stock event
+ * takes precedence.
  */
 function statusEvent(resolved: ResolvedEntry, defaults: ReorderDefaults): LedgerEvent | null {
   const { entry, item, summary } = resolved;
   if (item === null || !isStockAction(entry.action)) return null;
-  if (!isLow(item, defaults)) return null;
 
-  const empty = isStockEmpty(item);
+  const empty = isOutOfStock(item);
+  if (!empty && !isLow(item, defaults)) return null;
+
   const type = empty ? OUT_OF_STOCK_TYPE : LOW_STOCK_TYPE;
   const base = baseEvent(resolved);
   return {
@@ -245,18 +252,6 @@ function statusEvent(resolved: ResolvedEntry, defaults: ReorderDefaults): Ledger
     occurredAt: base.occurredAt,
     data: { ...base.data, item: summary },
   };
-}
-
-/**
- * Whether a stock item is fully depleted (nothing on hand / gauge empty). Exported so the EI-5
- * MQTT state projection derives its out-of-stock count from the exact same rule as the
- * `item.out_of_stock` event (no fork).
- */
-export function isStockEmpty(item: ReorderItem): boolean {
-  if (item.trackingMode === 'CONSUMABLE_GAUGE') {
-    return !item.gauge || item.gauge.percentageRemaining <= 0;
-  }
-  return item.quantity <= 0;
 }
 
 /** The summary event appended when a generation's fan-out is capped. */

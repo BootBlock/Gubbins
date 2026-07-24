@@ -147,6 +147,15 @@ describe('buildEvents', () => {
     expect(events[1]!.id).toBe('e3:out_of_stock');
   });
 
+  it('emits item.out_of_stock when a movement depletes an item that has no reorder point', () => {
+    // Out-of-stock is not opt-in: running to zero raises the event even with no reorder floor set
+    // (the default configuration). Previously this was silently gated behind the low-stock check.
+    const e = entry({ id: 'e3b', createdAt: 3_500, action: 'QUANTITY_CHANGE', quantityDelta: -1 });
+    const events = buildEvents([resolved(e, discreteItem(0))]); // depleted, no reorder point
+    expect(events.map((ev) => ev.type)).toEqual(['stock.adjusted', 'item.out_of_stock']);
+    expect(events[1]!.id).toBe('e3b:out_of_stock');
+  });
+
   it('emits no status event for a healthy stock level or a non-stock action', () => {
     const healthy = buildEvents([resolved(entry({ id: 'e4', createdAt: 4_000 }), discreteItem(50))]);
     expect(healthy.map((ev) => ev.type)).toEqual(['stock.adjusted']);

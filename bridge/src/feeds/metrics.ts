@@ -4,7 +4,7 @@
  *
  * A **read-only projection through the app's own repositories** — never bespoke SQL, mirroring the
  * iCal feed and the MQTT state projection. The low/out-of-stock counts come from the shared
- * {@link countStockLevels} (reusing the EI-1 event model's `isLow` / `isStockEmpty` seams), the
+ * {@link countStockLevels} (reusing the app reorder policy's `isLow` / `isOutOfStock` seams), the
  * *same* helper the EI-5 MQTT state projection uses — so a scraped `gubbins_low_stock_items` can
  * never drift from the `item.low_stock` events or the MQTT `gubbins/summary` counts. Per-location
  * fullness reuses the app's own `locationFullness` seam (the maths behind the Edit-location gauge).
@@ -37,7 +37,7 @@ export interface MetricsSnapshot {
   readonly itemsTotal: number;
   /** How many active items are at/below their low-stock threshold. */
   readonly lowStockItems: number;
-  /** How many active items are fully depleted (a subset of {@link lowStockItems}). */
+  /** How many active items are fully depleted (counted independently of {@link lowStockItems}). */
   readonly outOfStockItems: number;
   /** How many user-defined locations exist (system buckets excluded). */
   readonly locationsTotal: number;

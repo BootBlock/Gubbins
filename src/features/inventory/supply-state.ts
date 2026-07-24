@@ -19,7 +19,7 @@
  * Pure — no DB, no clock, no React — so the precedence rules below are exhaustively testable.
  */
 import type { ReorderDefaults, ReorderItem } from './reorder-policy';
-import { isLow, shortfall } from './reorder-policy';
+import { isLow, isOutOfStock, shortfall } from './reorder-policy';
 
 /**
  * What an item's supply needs from the user right now:
@@ -71,23 +71,6 @@ export interface ResolvedSupply {
 }
 
 /**
- * Whether an item is out of bulk stock — the unwatched half of "needs ordering".
- *
- * Unlike {@link isLow} this is *not* opt-in: an item that has run to zero needs ordering
- * whether or not a reorder point was ever configured. Mirrors `outOfStockPredicateSql` — an
- * unlimited-supply item is never out, and SERIALISED / UNTRACKED items have no bulk stock
- * level to deplete, so neither ever qualifies.
- */
-function isOut(item: ReorderItem): boolean {
-  if (item.isUnlimited) return false;
-  if (item.trackingMode === 'CONSUMABLE_GAUGE') {
-    return item.gauge != null && item.gauge.grossCapacity > 0 && item.gauge.percentageRemaining <= 0;
-  }
-  if (item.trackingMode === 'SERIALISED' || item.trackingMode === 'UNTRACKED') return false;
-  return item.quantity <= 0;
-}
-
-/**
  * Resolve one item's supply state.
  *
  * Precedence is `on-order` → `needs-ordering` → `stocked`: anything genuinely inbound answers
@@ -104,7 +87,7 @@ export function resolveSupplyState({ item, defaults, onOrderQty }: SupplyInputs)
     const covered = suggestedQty > 0 && inbound >= suggestedQty;
     return { state: 'on-order', onOrderQty: inbound, suggestedQty, covered };
   }
-  if (isLow(item, defaults) || isOut(item)) {
+  if (isLow(item, defaults) || isOutOfStock(item)) {
     return { state: 'needs-ordering', onOrderQty: 0, suggestedQty, covered: false };
   }
   return { state: 'stocked', onOrderQty: 0, suggestedQty: 0, covered: false };

@@ -64,7 +64,7 @@ export function formatMetrics(snapshot: MetricsSnapshot): string {
     scalar('low_stock_items', 'Active items at or below their low-stock threshold.', snapshot.lowStockItems),
     scalar(
       'out_of_stock_items',
-      'Active items that are fully depleted (a subset of low-stock).',
+      'Active items that are fully depleted (counted independently of low-stock).',
       snapshot.outOfStockItems,
     ),
     scalar(
