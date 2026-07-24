@@ -515,7 +515,7 @@ function InventoryWorkspace() {
   // Pick the list's entrance so it reflects whichever input changed. A view-mode switch
   // (Visual ↔ Data) slides the list in horizontally, tracking the segmented control: Data
   // (the right segment) enters from the right, Visual (the left segment) from the left. A
-  // location change keeps the quick vertical swap-in. We remount the list wrapper on either
+  // location change keeps the gentle vertical swap-in. We remount the list wrapper on either
   // change (via `listKey`) and compare the previous density to know which entrance to play.
   const prevDensity = useRef(density);
   const densityChanged = prevDensity.current !== density;
@@ -533,7 +533,7 @@ function InventoryWorkspace() {
       : density === 'visual'
         ? 'animate-slide-in-left'
         : 'animate-slide-in-right'
-    : 'animate-swap-in';
+    : 'animate-swap-in-slow';
   // Re-key (and so replay the entrance) when the *arrangement* changes: switching between
   // flat and grouped swaps the whole region. Grouped mode keeps a density-stable key so a
   // Data↔Visual restyle doesn't remount and lose the sections' expanded state, and it
@@ -1090,7 +1090,7 @@ function InventoryWorkspace() {
 
             {/* Keyed by the selected location *and* the density so switching either re-mounts
               this region and replays an entrance — the list visibly arrives rather than
-              blinking into place. A location change plays the quick vertical swap-in; a
+              blinking into place. A location change plays the gentle vertical swap-in; a
               view-mode change plays the horizontal slide chosen in `listEntrance`.
               (Search-as-you-type deliberately doesn't re-key, so typing never flashes the
               list.) Reduced-motion is handled by the global catch-all. */}
