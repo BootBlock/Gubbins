@@ -320,6 +320,81 @@ describe('ReportRepository', () => {
     });
   });
 
+  // Issue #458 — aggregate statistics for a single location's contents. The figures read the same
+  // per-location `item_stock` ledger and value it by the same seam as `inventoryValue`'s location
+  // breakdown, so a location's total here must equal its row there.
+  describe('locationStats (issue #458)', () => {
+    it('totals value, counts distinct items and units, and groups by category for one location', async () => {
+      const caps = await categories.create({ name: 'Capacitors' });
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const other = await locations.create({ name: 'Shelf B' });
+
+      await items.create({
+        name: 'Cap',
+        categoryId: caps.id,
+        locationId: shelf.id,
+        quantity: 10,
+        unitCost: 2,
+      });
+      await items.create({ name: 'Resistor', locationId: shelf.id, quantity: 100, unitCost: 1 });
+      await items.create({ name: 'Unpriced', locationId: shelf.id, quantity: 5, unitCost: null });
+      // Stock in a different location must not bleed into this location's figures.
+      await items.create({ name: 'Elsewhere', locationId: other.id, quantity: 3, unitCost: 50 });
+
+      const stats = await reports.locationStats(shelf.id);
+      expect(stats.includesSubtree).toBe(false);
+      expect(stats.locationCount).toBe(1);
+      expect(stats.totalValue).toBe(120); // 10*2 + 100*1; the unpriced item adds nothing
+      expect(stats.totalQuantity).toBe(115);
+      expect(stats.distinctItemCount).toBe(3);
+      expect(stats.unpricedItemCount).toBe(1);
+      // Value descending, with the ungrouped bucket forced last regardless of its size.
+      expect(stats.byCategory.map((g) => [g.name, g.value])).toEqual([
+        ['Capacitors', 20],
+        ['Ungrouped', 100],
+      ]);
+
+      // A location's total here equals its row on the valuation report's location breakdown.
+      const fromReport = (await reports.inventoryValue()).byLocation.find((g) => g.id === shelf.id);
+      expect(fromReport).toMatchObject({ value: stats.totalValue, quantity: stats.totalQuantity });
+    });
+
+    it('rolls the whole subtree up when asked, and dedupes an item split across it', async () => {
+      const garage = await locations.create({ name: 'Garage' });
+      const shelf = await locations.create({ name: 'Shelf', parentId: garage.id });
+
+      // A discrete item first placed in the garage, then split so half of it sits on the shelf.
+      const bolts = await items.create({ name: 'Bolts', locationId: garage.id, quantity: 20, unitCost: 1 });
+      await items.transferStock(bolts.id, garage.id, shelf.id, 8);
+      // A second item living only on the shelf.
+      await items.create({ name: 'Nuts', locationId: shelf.id, quantity: 4, unitCost: 5 });
+
+      // The garage alone: only the 12 bolts still there.
+      const garageOnly = await reports.locationStats(garage.id);
+      expect(garageOnly.includesSubtree).toBe(false);
+      expect(garageOnly.distinctItemCount).toBe(1);
+      expect(garageOnly.totalQuantity).toBe(12);
+      expect(garageOnly.totalValue).toBe(12);
+
+      // The whole subtree: both items, and the split "Bolts" counts once at its full quantity.
+      const subtree = await reports.locationStats(garage.id, { includeSubtree: true });
+      expect(subtree.includesSubtree).toBe(true);
+      expect(subtree.locationCount).toBe(2);
+      expect(subtree.distinctItemCount).toBe(2); // Bolts (across both) + Nuts, not three placements
+      expect(subtree.totalQuantity).toBe(24); // 20 bolts + 4 nuts
+      expect(subtree.totalValue).toBe(40); // 20*1 + 4*5
+    });
+
+    it('is empty for a location holding no stock', async () => {
+      const empty = await locations.create({ name: 'Empty' });
+      const stats = await reports.locationStats(empty.id);
+      expect(stats.distinctItemCount).toBe(0);
+      expect(stats.totalValue).toBe(0);
+      expect(stats.totalQuantity).toBe(0);
+      expect(stats.byCategory).toEqual([]);
+    });
+  });
+
   // Issue #411 — the schedule summary is summed by the database, so the delicate money-rounding
   // rule (`roundMoney`) is now stated in SQL as well as in the pure seam. These tests pin the two
   // against each other: the classic tie values SQLite's own `ROUND()` gets wrong, and a randomised

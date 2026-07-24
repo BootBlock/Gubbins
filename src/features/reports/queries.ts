@@ -87,6 +87,20 @@ export function useInventoryValue() {
   });
 }
 
+/**
+ * Aggregate statistics for a single location's contents (issue #458) — combined value, counts and
+ * a category breakdown over the stock it physically holds. `includeSubtree` widens the scope to the
+ * location and all its descendants. Keyed by the base currency like every valuation read (#284), so
+ * switching currency in Settings recomputes rather than re-labelling a stale figure.
+ */
+export function useLocationStats(locationId: string, includeSubtree: boolean) {
+  const currency = useValuationCurrency();
+  return useQuery({
+    queryKey: [...reportKeys.all, 'location-stats', locationId, includeSubtree, currency],
+    queryFn: () => getReportRepository().locationStats(locationId, { includeSubtree }),
+  });
+}
+
 export function useConsumptionRate(windowDays: number = REPORT_WINDOW_DAYS) {
   return useQuery({
     queryKey: [...reportKeys.all, 'consumption', windowDays],

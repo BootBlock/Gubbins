@@ -121,6 +121,30 @@ The full behaviour, including what happens when you withdraw an offer, is covere
 A location can be given a **capacity**, after which Gubbins shows a fullness gauge — handy for
 knowing when a shelf or bin is running out of room before you over-fill it.
 
+## Statistics for a location
+
+Every location's **Edit** dialog has a **Statistics** tab that adds up what's stored there, so
+you can see a location's worth and contents at a glance without opening the full reports:
+
+- **Total value** — the combined value of all the stock physically held here, in your base
+  currency. It uses the same valuation as [[Valuation & spend|Valuation-and-Spend]] (an item's
+  manual current value, else its cost, else its preferred supplier's price), so a location's figure
+  here always matches its row on that report's *value by location* breakdown.
+- **Items** — how many distinct items have stock here.
+- **Units** — the total on-hand quantity across those items.
+- **Value by category** — where that value sits, broken down by category, largest first.
+
+![The Statistics tab of a location's Edit dialog: Total value, Items and Units tiles above a value-by-category breakdown](images/location-statistics.png)
+
+If the location has sub-locations, a **This location / With sub-locations** switch lets you roll
+the figures up its whole subtree — so *Garage* can show the value of everything on every shelf and
+in every drawer beneath it, not just what sits loose in the garage itself.
+
+> **ℹ️ Note**
+> An item with no value set is still counted under **Items** and **Units**, but adds nothing to
+> **Total value** — a line beneath the tiles tells you how many items that affects, so a total is
+> never quietly short without saying so.
+
 ## Watching a location for dead stock
 
 A location can be set to report everything stored in it as **dead stock** once it goes unused —

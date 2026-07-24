@@ -17,6 +17,7 @@ import {
   ImageIcon,
   PackageIcon,
   MoveIcon,
+  ReportIcon,
 } from '@/components/icons';
 import type { LocationWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
@@ -37,6 +38,7 @@ import { LocationKindPicker } from './LocationKindPicker';
 import { LocationKindIcon } from './LocationKindIcon';
 import { LocationTagEditor } from './TagEditor';
 import { LocationFieldsEditor } from './LocationFieldsEditor';
+import { LocationStats } from './LocationStats';
 import { locationFullness } from '../location-fullness';
 import { LocationFullnessBar } from './LocationFullnessBar';
 import { useErrorMessage } from '@/features/errors';
@@ -377,6 +379,14 @@ export function EditLocationDialog({
       label: t('inventory.location.detailsTab'),
       icon: <EditIcon />,
       content: details,
+    },
+    {
+      id: 'stats',
+      label: t('inventory.locationStats.tab'),
+      icon: <ReportIcon />,
+      // The rail mounts only the active panel, so the aggregate queries never run until the
+      // user opens this tab — a rename of a shelf pays nothing for it.
+      content: <LocationStats locationId={location.id} hasChildren={childCount > 0} />,
     },
     ...(enabledFeatures.has('location-photos')
       ? [
