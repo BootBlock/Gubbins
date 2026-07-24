@@ -298,31 +298,31 @@ rule applied to issue handling.
    trusting types alone. If the change reaches anything the bridge imports (`bridge/**`, and much of
    `src/db` and the search/backup modules), also run `npm run smoke:bridge` — it is the only check
    that exercises Node's strip-only loader, which `tsc` and Vitest both bypass.
-5. **Self-review, then commit.** You **cannot** invoke `/code-review` yourself — it is a built-in
-   skill marked `disable-model-invocation`, so only the maintainer typing `/code-review high`
-   triggers it. So do a thorough **manual** self-review of the diff, fix what you find, and re-verify.
-   Then format the changed files (`npm run format`, or `npx prettier --write <files>`) so the
-   pre-commit hook doesn't bounce the commit, and commit inside the worktree once clean. The
-   `/code-review high` pass then runs on the committed diff at the next step.
-6. **Pause before merging so the maintainer can code-review — do _not_ auto-land.** Once the change
-   is implemented, verified and committed, **stop and hand off the pending diff**: end your turn
-   with a concise summary of *what* changed and the worktree/branch name, so @BootBlock can run
-   `/code-review high` on it. **That handoff message _is_ the pause** — simply end the turn and
-   wait; do **not** repurpose `AskUserQuestion` as an approval gate (it stays reserved for the
-   specific-question case below). Do **not** proceed to the landing mechanics (steps 7–8) until that
-   review has run and every confirmed finding is fixed and re-verified — steps 7–8 state the
-   commands; this step only sets the condition that unlocks them. This deliberately replaces the
-   former "land without pausing" default: the workflow requires a code review before landing and
-   only the maintainer can run it, so landing autonomously would skip the mandated review.
-   Separately, still surface a genuine, specific question about *this* change — a real design or
-   scope fork, a destructive or ambiguous choice, or something that can't be completed cleanly (see
-   the note at the end of this list) — via `AskUserQuestion` as before.
-7. **Landing mechanics — _only after_ the step-6 code-review has run and every confirmed finding is
-   fixed and re-verified:** merge the worktree branch into `main` with `--no-ff`, then
+5. **Self-review, commit, then run `/auto-review high`.** Do a thorough **manual** self-review of the
+   diff, fix what you find, and re-verify. Format the changed files (`npm run format`, or
+   `npx prettier --write <files>`) so the pre-commit hook doesn't bounce the commit, and commit inside
+   the worktree once clean. Then **run the custom `/auto-review high` skill** on the committed diff via
+   the Skill tool — it **is** model-invocable, unlike the bundled `/code-review`, which the agent
+   cannot call (`disable-model-invocation` + not on the Skill-tool allowlist). `/auto-review` reviews
+   the working-tree diff against `main` with the same high-signal, find→validate rubric as
+   `/code-review` (it is a maintained duplicate of the public source — see the memory note
+   `auto-review-skill`), and it is the **mandated review gate** for issue work. Fix every confirmed
+   finding and re-verify after each fix, committing the fixes.
+6. **Do _not_ pause — land autonomously once `/auto-review high` is clean.** Once the change is
+   implemented, verified, committed, and the step-5 `/auto-review high` pass has run with every
+   confirmed finding fixed and re-verified, proceed **directly** to the landing mechanics below. Do
+   **not** stop and hand off for a maintainer to run `/code-review` — the agent now runs the mandated
+   review itself via `/auto-review high`, so there is no approval gate to wait on, and you must not
+   repurpose `AskUserQuestion` as one. The *only* reason to stop is a genuine, specific question about
+   *this* change — a real design or scope fork, a destructive or ambiguous choice, or something that
+   can't be completed cleanly (see the note at the end of this list) — which you raise via
+   `AskUserQuestion`.
+7. **Landing mechanics — _only after_ the step-5 `/auto-review high` pass has run and every confirmed
+   finding is fixed and re-verified:** merge the worktree branch into `main` with `--no-ff`, then
    `git push origin main` so the issue's referenced commits actually exist on GitHub. Clean up the
    worktree (remove the `node_modules` junction *before* `git worktree remove` — see
    `feedback-worktree-junction-cleanup`); leave other agents' worktrees alone. If you arrive here
-   without that review having happened, go back to step 6 — do not merge.
+   without that review having happened, go back to step 5 — do not merge.
 8. **Comment, then close as completed** (only once the change has actually landed via step 7).
    Post a comment (`gh issue comment <id>`) describing *what* was done and *why* in plain
    user-facing terms. **Before posting, self-audit the drafted comment
