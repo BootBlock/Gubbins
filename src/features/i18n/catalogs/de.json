@@ -526,6 +526,8 @@
   "inventory.locations.search.clear": "Ortssuche löschen",
   "inventory.locations.search.empty": "Keine Orte stimmen mit „{query}“ überein.",
   "inventory.locations.tags.empty": "Keine Orte tragen die ausgewählten Schlagwörter.",
+  "inventory.locations.tree.volumeFullness": "Volumen zu {percent}% gefüllt",
+  "inventory.locations.tree.volumeFullnessOver": "Volumen über Kapazität ({percent}% gefüllt)",
   "inventory.location.fields.remove": "{name} entfernen",
   "inventory.location.fields.saving": "Wird gespeichert…",
   "inventory.location.fields.emptyNoFields": "Es gibt noch keine benutzerdefinierten Felder. Legen Sie eines unter „Kategorien & Schemata“ an und setzen Sie hier seinen Wert, um ihn mit den enthaltenen Artikeln zu teilen.",

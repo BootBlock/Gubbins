@@ -157,6 +157,11 @@ caption reads *"based on N of M items measured"*, so a half-measured drawer neve
 deceptively empty — an item with no size simply doesn't count toward the space used. A location
 with no size at all keeps its familiar item-count gauge.
 
+The same reading also rides the **location tree** itself: a measured location shows a slim fill bar
+beside its item count, turning red when its contents spill past the space. It sits apart from the
+count so the number always means the item count — the bar is the volume story. Locations without a
+size show no bar, keeping the tree quiet.
+
 > **ℹ️ Note**
 > Only items placed **directly** in a location count toward its space used — a cabinet doesn't
 > automatically total up the volume inside its drawers. Each level reports what sits at that
