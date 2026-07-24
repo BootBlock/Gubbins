@@ -14,7 +14,10 @@ interface LocationRowActionsProps {
  * *no* layout space until the row is hovered or holds keyboard focus — so a long location name
  * is never truncated by buttons that aren't even visible. On reveal, the container eases its
  * width (and fades) open with the house cubic-bezier; the reduced-motion catch-all in index.css
- * neutralises this transition for users who ask for minimal motion. Every button is
+ * neutralises this transition for users who ask for minimal motion. On a device that cannot
+ * hover, the `touch:` variant pins the cluster open instead — a collapsed, transparent container
+ * offers a touch user no reveal *and* no hit target, which put these actions out of reach
+ * altogether on a tablet or phone; the name simply truncates a little sooner there. Every button is
  * `tabindex={-1}` (mouse / keyboard-key driven) so the treeitem itself stays the only tab stop,
  * and each carries a Foundry {@link Tooltip} so the icon-only control's purpose is discoverable
  * on hover (its `aria-label` already names it for assistive tech).
@@ -38,6 +41,8 @@ export function LocationRowActions({
         'transition-[max-width,opacity] duration-300 ease-emphasized',
         'group-hover:max-w-[7.5rem] group-hover:opacity-100',
         'group-focus-within:max-w-[7.5rem] group-focus-within:opacity-100',
+        // No hover means no reveal and no hit target, so a touch device gets them pinned open.
+        'touch:max-w-[7.5rem] touch:opacity-100',
       )}
     >
       {onPrintLabel ? (

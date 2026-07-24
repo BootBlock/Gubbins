@@ -51,6 +51,29 @@
   }
 }
 
+/*
+ * `touch:` variant — the user's primary input cannot hover at all (issue #258).
+ *
+ * A control revealed by `group-hover:` simply never appears on a phone or tablet: there is no
+ * hover state to enter, and once the collapsed container is also zero-width or zero-opacity
+ * there isn't even a hit target left to tap. That silently removes whole actions — printing a
+ * label for a location, deleting a photo — on the hardware this app is most used on.
+ *
+ * `(hover: none)` is the precise question to ask, and deliberately *not* `(pointer: coarse)`
+ * like the two variants above: those ask "how precise is the pointer" to size and lay things
+ * out, whereas this asks "will a hover-reveal ever fire". A touchscreen laptop answers
+ * `hover: hover` for its primary input (the mouse), so it correctly keeps the hover reveal —
+ * only genuinely hover-less devices pin the affordance open.
+ *
+ * Reach for it when a control is *revealed* by hover; ordinary hover styling (a background
+ * tint, a cursor) needs no touch counterpart, because losing it costs the user nothing.
+ */
+@custom-variant touch {
+  @media (hover: none) {
+    @slot;
+  }
+}
+
 :root {
   color-scheme: light;
 

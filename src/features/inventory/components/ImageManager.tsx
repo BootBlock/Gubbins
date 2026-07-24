@@ -29,8 +29,9 @@ export function ImageManager({ itemId }: { itemId: string }) {
           content={
             'Add one or more photos of the item. Each is **compressed to WebP** in the browser; ' +
             'the full-resolution image is stored as a file, and only a small **thumbnail** lives in ' +
-            'the database — so syncing and backups stay lean.\n\nHover a thumbnail and click the ' +
-            '✕ to remove it.'
+            'the database — so syncing and backups stay lean.\n\nTo remove a photo, press the ✕ on ' +
+            'its thumbnail — it appears when you hover the thumbnail, and stays visible on a ' +
+            'touch screen.'
           }
         />
       </div>
@@ -42,11 +43,13 @@ export function ImageManager({ itemId }: { itemId: string }) {
             className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-secondary/30"
           >
             <Thumbnail bytes={img.thumbnailBlob} alt="Item image" className="size-full" />
+            {/* `touch:` keeps the remove control visible where there is no hover to reveal it
+                (issue #258) — otherwise it is an invisible, undiscoverable target on a tablet. */}
             <button
               type="button"
               aria-label="Remove image"
               onClick={() => removeImage.mutate({ id: img.id, itemId })}
-              className="absolute right-1 top-1 grid size-6 origin-top-right scale-90 place-items-center rounded-full bg-background/80 text-destructive opacity-0 backdrop-blur transition-all duration-200 ease-emphasized group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 [&_svg]:size-3.5"
+              className="absolute right-1 top-1 grid size-6 origin-top-right scale-90 place-items-center rounded-full bg-background/80 text-destructive opacity-0 backdrop-blur transition-all duration-200 ease-emphasized group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 touch:scale-100 touch:opacity-100 [&_svg]:size-3.5"
             >
               <CloseIcon />
             </button>

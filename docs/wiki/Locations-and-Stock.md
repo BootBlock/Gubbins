@@ -28,6 +28,10 @@ Selecting a location **filters** the inventory to what it holds, including every
 beneath it, and shows the location's description (if it has one) above the items. Select
 **All items** to clear the filter.
 
+Each row also carries two small buttons — **print a label** for the location, and **edit** it.
+With a mouse they slide into view when you hover the row (so long names have the full width to
+themselves); on a touch screen, where there is no hover, they are always shown.
+
 ## Finding a location
 
 Above the tree is a **search box**. Type into it and the tree narrows to the locations that
