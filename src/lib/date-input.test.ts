@@ -5,7 +5,13 @@
  * day to the *same* instant, so the spend and valuation-trend reports bucket them together.
  */
 import { describe, expect, it } from 'vitest';
-import { fromDateInputValue, toDateInputValue, todayDateInputValue } from './date-input';
+import {
+  fromDateInputValue,
+  fromDueDateInputValue,
+  toDateInputValue,
+  toDueDateInputValue,
+  todayDateInputValue,
+} from './date-input';
 import {
   fromDateInputValue as inventoryFrom,
   toDateInputValue as inventoryTo,
@@ -54,6 +60,31 @@ describe('todayDateInputValue', () => {
 
   it('defaults to now', () => {
     expect(todayDateInputValue()).toBe(todayDateInputValue(Date.now()));
+  });
+});
+
+describe('due-date convention (local calendar day)', () => {
+  // Deliberately local, unlike the midnight-UTC pair above: a loan due "on the 20th" should read
+  // as the 20th and only count as overdue once that local day is over (issue #318).
+  it('anchors a picked day at local end-of-day', () => {
+    const ms = fromDueDateInputValue('2026-07-20');
+    expect(ms).toBe(new Date(2026, 6, 20, 23, 59, 59).getTime());
+  });
+
+  it('reads a due-date instant back as its local calendar day', () => {
+    const ms = new Date(2026, 6, 20, 23, 59, 59).getTime();
+    expect(toDueDateInputValue(ms)).toBe('2026-07-20');
+  });
+
+  it('round-trips a day through the input in any host timezone', () => {
+    const day = '2026-02-01';
+    expect(toDueDateInputValue(fromDueDateInputValue(day))).toBe(day);
+  });
+
+  it('treats blank as no due date, and null as an empty field', () => {
+    expect(fromDueDateInputValue('')).toBeNull();
+    expect(fromDueDateInputValue('   ')).toBeNull();
+    expect(toDueDateInputValue(null)).toBe('');
   });
 });
 

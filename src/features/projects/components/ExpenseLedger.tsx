@@ -78,7 +78,7 @@ export function ExpenseLedger({
                   <td className="px-3 py-2">{expense.description ?? '—'}</td>
                   <td className="px-3 py-2 text-muted-foreground">{categoryName(expense.categoryId)}</td>
                   <td className="px-3 py-2 tabular-nums text-muted-foreground">
-                    {fmt.date(expense.incurredAt)}
+                    {fmt.calendarDate(expense.incurredAt)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     <Money value={expense.amount} formatters={fmt} />

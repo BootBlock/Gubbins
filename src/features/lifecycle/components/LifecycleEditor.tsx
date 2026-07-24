@@ -89,8 +89,8 @@ export function LifecycleEditor({ item }: { item: Item }) {
         >
           {status === 'EXPIRED' ? <WarningIcon /> : <DueDateIcon />}
           {status === 'EXPIRED'
-            ? `Expired ${fmt.date(item.expiryDate)}`
-            : `Expires ${fmt.date(item.expiryDate)}${days !== null ? ` (${days} ${plural(days, 'day')})` : ''}`}
+            ? `Expired ${fmt.calendarDate(item.expiryDate)}`
+            : `Expires ${fmt.calendarDate(item.expiryDate)}${days !== null ? ` (${days} ${plural(days, 'day')})` : ''}`}
         </p>
       ) : null}
 

@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import type { CheckoutWithNames } from '@/db/repositories';
+import { fromDueDateInputValue } from '@/lib/date-input';
 
 /**
  * Behaviour tests for {@link RenewLoanDialog} (spec §4 Borrowing, B3 "renew a loan"). This pins
  * the dialog's contract: the date field is seeded from the loan's current due date; submitting a
- * new date calls the renew mutation with the parsed UNIX-ms instant; clearing the field renews to
- * an open-ended loan (`null`); and a failed renew surfaces the error without closing. Per the
- * component-test conventions the renew mutation hook is mocked; the pure `to/fromDateInputValue`
- * seam runs for real.
+ * new date calls the renew mutation with the local end-of-day instant a due date encodes; clearing
+ * the field renews to an open-ended loan (`null`); and a failed renew surfaces the error without
+ * closing. Per the component-test conventions the renew mutation hook is mocked; the pure
+ * `to/fromDueDateInputValue` seam runs for real. Building the expected instants from the same
+ * helper keeps every assertion timezone-independent (issue #318).
  */
 
 const h = vi.hoisted(() => ({ mutate: vi.fn() }));
@@ -21,9 +23,9 @@ import { RenewLoanDialog } from './RenewLoanDialog';
 
 const onClose = vi.fn();
 
-/** 2026-01-15 at midnight UTC — a clean instant that round-trips through the date input. */
-const JAN_15_2026 = Date.parse('2026-01-15');
-const FEB_01_2026 = Date.parse('2026-02-01');
+/** The instants a loan due on these local days encodes — the exact values the dialog produces. */
+const JAN_15_2026 = fromDueDateInputValue('2026-01-15')!;
+const FEB_01_2026 = fromDueDateInputValue('2026-02-01')!;
 
 function makeCheckout(overrides: Partial<CheckoutWithNames> = {}): CheckoutWithNames {
   return {

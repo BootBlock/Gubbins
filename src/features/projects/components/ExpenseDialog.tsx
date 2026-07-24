@@ -55,7 +55,10 @@ export function ExpenseDialog({
       description: description.trim() || null,
       amount: parsed,
       categoryId: categoryId || null,
-      incurredAt: fromDateInputValue(incurred) ?? Date.now(),
+      // Fall back to *today* as a day-grained value (midnight UTC of the local day) when the
+      // field is cleared, so a blank-date expense stays on the same convention every other
+      // day-grained field uses and the ledger's `calendarDate` renders it on the right day.
+      incurredAt: fromDateInputValue(incurred) ?? fromDateInputValue(todayDateInputValue()) ?? Date.now(),
     };
     const onSuccess = () => {
       show({

@@ -869,5 +869,5 @@ function renderField(line: CatalogueLine, key: CatalogueFieldKey, ctx: RenderCtx
 function formatAcquired(acquiredAt: string | null, f: Formatters): ReactNode {
   if (!acquiredAt) return <Blank />;
   const ms = Date.parse(acquiredAt);
-  return Number.isFinite(ms) ? f.date(ms) : <Blank />;
+  return Number.isFinite(ms) ? f.calendarDate(ms) : <Blank />;
 }

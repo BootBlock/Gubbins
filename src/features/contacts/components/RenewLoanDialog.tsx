@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Button, FormField, Input, Modal } from '@/components/foundry';
 import { DueDateIcon } from '@/components/icons';
 import type { CheckoutWithNames } from '@/db/repositories';
-import { fromDateInputValue, toDateInputValue } from '@/features/inventory/components/inventory-ui';
+import { fromDueDateInputValue, toDueDateInputValue } from '@/lib/date-input';
 import { useRenewLoan } from '../contacts';
 import { useErrorMessage } from '@/features/errors';
 
@@ -27,7 +27,7 @@ export function RenewLoanDialog({
   checkout: CheckoutWithNames;
 }) {
   const renew = useRenewLoan();
-  const [dueDate, setDueDate] = useState(() => toDateInputValue(checkout.dueDate));
+  const [dueDate, setDueDate] = useState(() => toDueDateInputValue(checkout.dueDate));
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
   const dueDateRef = useRef<HTMLInputElement>(null);
@@ -35,7 +35,7 @@ export function RenewLoanDialog({
   const submit = () => {
     setError(null);
     renew.mutate(
-      { checkoutId: checkout.id, dueDate: fromDateInputValue(dueDate) },
+      { checkoutId: checkout.id, dueDate: fromDueDateInputValue(dueDate) },
       {
         onSuccess: () => onClose(),
         onError: (e) => setError(describeError(e, 'Could not renew the loan.')),

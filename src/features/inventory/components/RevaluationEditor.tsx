@@ -20,7 +20,7 @@ import { useItemRevaluations } from '../queries';
 import { useRecordRevaluation, useUpdateItem } from '../mutations';
 import { buildRevaluationSeries, describeValueChange, type ValueDirection } from '../valuation';
 import { sparklinePolyline } from '../price-history';
-import { fromDateInputValue } from './inventory-ui';
+import { fromDateInputValue, toDateInputValue } from './inventory-ui';
 
 const SPARK_WIDTH = 140;
 const SPARK_HEIGHT = 28;
@@ -244,7 +244,7 @@ export function RevaluationEditor({ item }: { item: Item }) {
                 <Money value={p.value} formatters={fmt} className="text-foreground" />
                 <span className="flex items-center gap-2">
                   {p.note ? <span className="truncate">{p.note}</span> : null}
-                  <time dateTime={new Date(p.revaluedAt).toISOString()}>{fmt.date(p.revaluedAt)}</time>
+                  <time dateTime={toDateInputValue(p.revaluedAt)}>{fmt.calendarDate(p.revaluedAt)}</time>
                 </span>
               </li>
             ))}

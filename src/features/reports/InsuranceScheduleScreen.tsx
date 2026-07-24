@@ -638,5 +638,5 @@ function PrintDocument({
 function formatAcquired(acquiredAt: string | null, f: Formatters): string {
   if (!acquiredAt) return '—';
   const ms = Date.parse(acquiredAt);
-  return Number.isFinite(ms) ? f.date(ms) : '—';
+  return Number.isFinite(ms) ? f.calendarDate(ms) : '—';
 }

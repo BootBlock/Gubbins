@@ -173,7 +173,7 @@ export function StockBreakdown({ item }: { item: Item }) {
                           {batchLabel(b)}
                           {b.expiryDate ? (
                             <span className="ml-1.5 text-muted-foreground/70">
-                              · exp {fmt.date(b.expiryDate)}
+                              · exp {fmt.calendarDate(b.expiryDate)}
                             </span>
                           ) : null}
                         </span>
