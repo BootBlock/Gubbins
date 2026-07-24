@@ -12,6 +12,7 @@ import {
   loadStaleAfterFailures,
 } from './config.ts';
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC } from './rate-limit.ts';
+import { HOSTED_APP_ORIGIN } from './cors.ts';
 import { DEFAULT_LOOKUP_DEBOUNCE_MS, MAX_LOOKUP_DEBOUNCE_MS } from './events/lookup.ts';
 import { DEFAULT_STALE_AFTER_FAILURES } from './snapshot-health.ts';
 
@@ -26,6 +27,7 @@ describe('loadConfig (HA-3)', () => {
       host: DEFAULT_HOST,
       port: DEFAULT_PORT,
       rateLimit: { capacity: DEFAULT_RATE_CAPACITY, refillPerSec: DEFAULT_RATE_REFILL_PER_SEC },
+      allowedOrigins: { wildcard: false, origins: new Set([HOSTED_APP_ORIGIN]) },
       mdns: false,
       mdnsInstanceName: undefined,
       allowWrites: false,
@@ -275,6 +277,25 @@ describe('loadConfig (HA-3)', () => {
   it('rejects a non-numeric rate capacity', () => {
     expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_RATE_CAPACITY: 'lots' })).toThrow(
       /GUBBINS_BRIDGE_RATE_CAPACITY/,
+    );
+  });
+
+  it('defaults the CORS allow-list to the hosted app origin and honours an override', () => {
+    expect(loadConfig(VALID).allowedOrigins).toEqual({
+      wildcard: false,
+      origins: new Set([HOSTED_APP_ORIGIN]),
+    });
+    expect(
+      loadConfig({ ...VALID, GUBBINS_BRIDGE_ALLOWED_ORIGINS: 'https://app.example.com' }).allowedOrigins,
+    ).toEqual({ wildcard: false, origins: new Set(['https://app.example.com']) });
+    expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_ALLOWED_ORIGINS: '*' }).allowedOrigins).toEqual({
+      wildcard: true,
+    });
+  });
+
+  it('rejects a malformed CORS origin so a typo fails loudly at startup', () => {
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_ALLOWED_ORIGINS: 'not-a-url' })).toThrow(
+      /GUBBINS_BRIDGE_ALLOWED_ORIGINS/,
     );
   });
 
