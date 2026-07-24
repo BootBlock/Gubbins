@@ -58,6 +58,24 @@ export function startOfUtcDay(ms: number): number {
 }
 
 /**
+ * Re-anchor a **day-grained UTC instant** — a `YYYY-MM-DD` value snapped to midnight UTC by the
+ * storage convention every date-only column uses ({@link startOfUtcDay}, issue #320) — onto the
+ * *local* calendar, returning local midnight of the **same** calendar day it names.
+ *
+ * Report windows and stock ages are measured against the user's wall clock (`nowMs`,
+ * {@link addCalendarDays}), but a stored acquisition/expiry day sits at midnight UTC — so east of
+ * UTC a value dated "today" lands *hours in the future* of `now`, and a half-open `< now` window
+ * test silently drops it until the local clock catches up (issue #323). This maps the day back onto
+ * the timeline the window uses: read the calendar fields in UTC (where the value was snapped) and
+ * re-emit them at local midnight, so "today" is always at or before `now`. Pure given the host time
+ * zone; a no-op in UTC itself, where local and UTC midnight coincide.
+ */
+export function utcDayToLocalDay(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime();
+}
+
+/**
  * `ms` shifted by `days` whole calendar days, preserving the local wall-clock time of day across
  * any DST transition in the span (issue #325). `days` may be negative to step backwards.
  *

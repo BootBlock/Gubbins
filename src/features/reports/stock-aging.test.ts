@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { MS_PER_DAY } from '@/db/repositories/constants';
 
-import { bucketStockAging, parseAcquiredAt, type AgingInput } from './stock-aging';
+import { utcDayToLocalDay } from '@/lib/calendar-days';
+
+import { acquiredAtReportInstant, bucketStockAging, parseAcquiredAt, type AgingInput } from './stock-aging';
 
 /** A fixed reference instant for deterministic age maths (2026-06-30T00:00:00Z). */
 const NOW = Date.UTC(2026, 5, 30);
@@ -47,6 +49,35 @@ describe('parseAcquiredAt', () => {
   it('returns null for null / undefined', () => {
     expect(parseAcquiredAt(null)).toBeNull();
     expect(parseAcquiredAt(undefined)).toBeNull();
+  });
+});
+
+describe('acquiredAtReportInstant', () => {
+  // Routing only — the timezone-sensitive divergence (issue #323, a value dated "today" landing
+  // ahead of `now` east of UTC) lives in `utcDayToLocalDay`, exercised under pinned zones in
+  // `calendar-days.test.ts`. These cases assert against `utcDayToLocalDay` directly rather than a
+  // hard-coded instant, so they hold whatever zone the worker runs in: a bare day is re-anchored
+  // through it, a datetime is passed through untouched.
+
+  it('re-anchors a bare `YYYY-MM-DD` through utcDayToLocalDay', () => {
+    expect(acquiredAtReportInstant('2026-07-20')).toBe(utcDayToLocalDay(Date.parse('2026-07-20')));
+  });
+
+  it('passes a value with a time component through as a genuine instant', () => {
+    const iso = '2026-01-15T08:30:00Z';
+    expect(acquiredAtReportInstant(iso)).toBe(Date.parse(iso));
+  });
+
+  it('trims surrounding whitespace before deciding the value is date-only', () => {
+    expect(acquiredAtReportInstant('  2026-07-20  ')).toBe(utcDayToLocalDay(Date.parse('2026-07-20')));
+  });
+
+  it('returns null for null / empty / garbage, exactly like parseAcquiredAt', () => {
+    expect(acquiredAtReportInstant(null)).toBeNull();
+    expect(acquiredAtReportInstant(undefined)).toBeNull();
+    expect(acquiredAtReportInstant('')).toBeNull();
+    expect(acquiredAtReportInstant('   ')).toBeNull();
+    expect(acquiredAtReportInstant('not-a-date')).toBeNull();
   });
 });
 
