@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import { buildCalendar, buildCalendarEvents } from './feed.ts';
-import { icalDate, icalDateFromIso, type VEvent } from './emitter.ts';
+import { icalDate, icalDateFromIso, icalLocalDate, type VEvent } from './emitter.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-calendar-snapshot.json', import.meta.url);
 
@@ -80,8 +80,8 @@ describe('maintenance', () => {
     const service = maint[0]!;
     expect(service.uid).toBe('maintenance-sched-time-drill@gubbins.invalid');
     expect(service.summary).toBe('Maintenance due: Chuck lubrication — Cordless Drill');
-    // last_performed_at + interval_days·86_400_000.
-    expect(service.start).toEqual(icalDate(1748000000000 + 90 * 86400000));
+    // last_performed_at + interval_days·86_400_000, read as its LOCAL calendar day (issue #321).
+    expect(service.start).toEqual(icalLocalDate(1748000000000 + 90 * 86400000));
     expect(service.categories).toEqual(['Gubbins', 'Maintenance']);
   });
 });

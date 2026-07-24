@@ -64,15 +64,31 @@ function pad2(n: number): string {
 /**
  * An all-day `DATE` value derived from a UNIX-ms instant, using **UTC** calendar components.
  *
- * The bridge does not know the user's timezone, so an instant that represents a *local* day
- * start (e.g. a booking day) is read in UTC. For most of the world this is the intended day; a
- * far-eastern-timezone local midnight can land on the previous UTC day — a documented, minor
- * limitation of a timezone-less feed. Values that are already calendar dates (a warranty
- * `YYYY-MM-DD` string) avoid this entirely via {@link icalDateFromIso}.
+ * Suits a value already snapped to **midnight UTC** — a day-grained column such as a booking date
+ * (issue #320), where the UTC day *is* the calendar day the user picked, so it reads correctly in
+ * every zone. For an instant that instead carries a real local time-of-day (a maintenance due
+ * instant), use {@link icalLocalDate} so the day is not read a frame off. Values that are already
+ * calendar dates (a warranty `YYYY-MM-DD` string) avoid the question entirely via
+ * {@link icalDateFromIso}.
  */
 export function icalDate(unixMs: number): ICalDate {
   const d = new Date(unixMs);
   const value = `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}`;
+  return { kind: 'date', value };
+}
+
+/**
+ * An all-day `DATE` value derived from a UNIX-ms instant, using **local** calendar components.
+ *
+ * For a value that carries a real time-of-day in the host's own frame — a maintenance due instant
+ * (`lastPerformedAt` + interval, which keeps the service's wall-clock time) — the calendar day the
+ * user means is the *local* day it falls on, not the UTC one. The bridge runs on the user's own
+ * machine, so `getFullYear()/getMonth()/getDate()` name that day directly (issue #321). Contrast
+ * {@link icalDate}, which reads UTC components and so suits a value already at midnight UTC.
+ */
+export function icalLocalDate(unixMs: number): ICalDate {
+  const d = new Date(unixMs);
+  const value = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
   return { kind: 'date', value };
 }
 
