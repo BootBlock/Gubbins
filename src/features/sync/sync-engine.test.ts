@@ -51,6 +51,16 @@ async function makeDevice(): Promise<{
 
 const NO_QUOTA = { skipQuotaCheck: true } as const;
 
+/**
+ * A stamp pinned this far *ahead* of `now` forces the auto-stamp trigger's `MAX(now, OLD + 1)`
+ * ratchet deterministically — `now` provably cannot advance past it — without racing the coarse
+ * wall clock. It must stay **within** the trigger's `FUTURE_STAMP_REBASE_MS` window (issue #393):
+ * a gap past that reads as a since-corrected-clock inflation and is re-based onto `now` instead
+ * of ratcheted, which is the very case those tests are *not* about. A minute is comfortably
+ * inside that window while still dwarfing any real clock coarseness.
+ */
+const AHEAD_WITHIN_RATCHET_MS = 60_000;
+
 /** Read a row's raw stored `updated_at` (the LWW column isn't on the mapped item type). */
 async function itemUpdatedAt(driver: MemoryDriver, id: string): Promise<number> {
   const rows = await driver.query<{ updated_at: number }>('SELECT updated_at FROM items WHERE id = ?;', [id]);
@@ -696,11 +706,12 @@ describe('monotonic updated_at keeps an edit newer than the row it derived from 
   it('bumps an edit strictly past the row even when the wall clock cannot advance it', async () => {
     // The real defect: the wall clock is too coarse (~15.6ms on Windows) to distinguish an edit
     // from the write it followed, so both share a millisecond and LWW — which breaks ties for the
-    // remote — silently discards the edit. Forcing the row's stamp into the future makes `now`
-    // provably unable to advance it, so this exercises the `MAX(now, OLD.updated_at + 1)` branch
-    // deterministically rather than racing the clock.
+    // remote — silently discards the edit. Forcing the row's stamp a little into the future makes
+    // `now` provably unable to advance it, so this exercises the `MAX(now, OLD.updated_at + 1)`
+    // branch deterministically rather than racing the clock (kept within the re-base window so the
+    // ratchet, not the issue #393 clamp, is what runs — see AHEAD_WITHIN_RATCHET_MS).
     const item = await a.items.create({ name: 'ESP32', locationId: UNASSIGNED_LOCATION_ID });
-    const future = Date.now() + 1_000_000_000;
+    const future = Date.now() + AHEAD_WITHIN_RATCHET_MS;
     await a.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [future, item.id]);
 
     await a.items.update(item.id, { name: 'ESP32-REV' });
@@ -713,9 +724,10 @@ describe('monotonic updated_at keeps an edit newer than the row it derived from 
     await runSync(a.driver, provider, NO_QUOTA);
     await runSync(b.driver, provider, NO_QUOTA);
 
-    // Pin B's pulled copy to a fixed stamp, then edit it: the edit must land strictly later than
-    // that stamp (via the monotonic trigger), regardless of what B's wall clock reads right now.
-    const pinned = Date.now() + 1_000_000_000;
+    // Pin B's pulled copy to a fixed stamp just ahead of now, then edit it: the edit must land
+    // strictly later than that stamp (via the monotonic trigger), regardless of what B's wall
+    // clock reads right now. The gap stays within the re-base window so the ratchet runs.
+    const pinned = Date.now() + AHEAD_WITHIN_RATCHET_MS;
     await b.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [pinned, item.id]);
     await b.items.update(item.id, { name: 'ESP32-REV-B' });
     expect(await itemUpdatedAt(b.driver, item.id)).toBeGreaterThan(pinned);
@@ -841,8 +853,9 @@ describe('`sync-lww-tie` lab flag reproduces the LWW-tie re-upsert churn', () =>
   it('leaves a genuinely newer local row untouched when the flag is off (default)', async () => {
     const item = await sharedItem('Widget');
     // B's local copy is pinned strictly ahead of what A last published — a routine resync
-    // should be a no-op (LOCAL_WINS, nothing to apply).
-    const future = Date.now() + 1_000_000_000;
+    // should be a no-op (LOCAL_WINS, nothing to apply). Kept within the re-base window so the
+    // pin reads as a genuinely-newer edit, not a since-corrected-clock inflation (issue #393).
+    const future = Date.now() + AHEAD_WITHIN_RATCHET_MS;
     await b.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [future, item.id]);
 
     await runSync(b.driver, provider, NO_QUOTA);
@@ -852,7 +865,7 @@ describe('`sync-lww-tie` lab flag reproduces the LWW-tie re-upsert churn', () =>
 
   it('forces a tie while on, re-upserting identical content and bumping updated_at (the churn bug)', async () => {
     const item = await sharedItem('Widget');
-    const future = Date.now() + 1_000_000_000;
+    const future = Date.now() + AHEAD_WITHIN_RATCHET_MS;
     await b.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [future, item.id]);
 
     useLabStore.getState().setFlag('sync-lww-tie', true);

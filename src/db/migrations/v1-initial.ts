@@ -67,12 +67,28 @@ import { BASELINE_REVISION_KEY, SQL_NOW_MS, baselineFingerprint, type Migration 
  * Trigger semantics: on UPDATE the auto-stamp trigger stamps `updated_at` **only when the
  * caller left it unchanged**. An UPDATE that sets `updated_at` explicitly (as the §7.3 sync
  * engine does, applying a remote Last-Write-Wins value) is passed through untouched — exactly
- * the behaviour LWW reconciliation needs. The stamp is now `MAX(now, OLD.updated_at + 1)` so an
+ * the behaviour LWW reconciliation needs. The stamp is `MAX(now, OLD.updated_at + 1)` so an
  * edit is always strictly newer than the row it derived from even when the wall clock is too
- * coarse to show it — see {@link updatedAtTrigger}. Every syncable table now uses that one
- * helper (the six that formerly inlined an identical trigger were folded onto it), so the
- * monotonic guarantee can never again be applied to some tables and missed on others.
+ * coarse to show it — but the `+ 1` future-ratchet is bounded so a stamp left implausibly far
+ * ahead by a since-corrected clock is re-based rather than inflated forever (issue #393) — see
+ * {@link updatedAtTrigger}. Every syncable table now uses that one helper (the six that formerly
+ * inlined an identical trigger were folded onto it), so the monotonic guarantee can never again
+ * be applied to some tables and missed on others.
  */
+
+/**
+ * The gap, in ms, past which a stored `updated_at` sitting *ahead* of `now` is treated as clock
+ * inflation to re-base rather than a value to preserve (issue #393).
+ *
+ * Nothing honest stamps a row this far into the future. The `+ 1` ratchet below exists to bridge
+ * causes measured in milliseconds to a couple of seconds — clock coarseness (~15.6ms on Windows),
+ * OS scheduler/suspend jitter, an NTP step correction, sync round-trip measurement error. A gap of
+ * *minutes* has only one cause: a device whose clock was fast stamped the row that far ahead, and
+ * the skew has since been corrected. Five minutes sits ~two orders of magnitude above the largest
+ * honest cause, so it never re-bases a legitimately-recent row, while catching the inflation this
+ * threshold exists to unstick.
+ */
+const FUTURE_STAMP_REBASE_MS = 5 * 60 * 1000;
 
 /**
  * Build the canonical auto-stamp trigger for a syncable table keyed by `id` (§7.1).
@@ -85,6 +101,18 @@ import { BASELINE_REVISION_KEY, SQL_NOW_MS, baselineFingerprint, type Migration 
  * the remote — silently discarding the edit on the very next sync. Forcing the stamp strictly
  * past `OLD.updated_at` keeps an edit provably newer than what it derived from, whatever the
  * clock's resolution, so causality survives even when wall time cannot express it.
+ *
+ * The ratchet is one-directional, though, so on its own it can never recover from a clock that was
+ * *wrong* and then corrected (issue #393): a device a week fast stamps rows a week ahead, and once
+ * the system clock is fixed `now` stays far below those stamps, so every later edit takes the
+ * `OLD.updated_at + 1` branch and the row drifts 1ms further into the future forever — winning LWW
+ * against every other device's genuinely-newer edit indefinitely. So the ratchet is *bounded*: when
+ * `OLD.updated_at` is more than {@link FUTURE_STAMP_REBASE_MS} ahead of `now` the stamp is re-based
+ * straight onto `now`, un-inflating the row. That gap is far larger than any coarseness the ratchet
+ * bridges (ms–seconds) and far smaller than a skew worth correcting (minutes+), so the two cases
+ * never overlap: a same-millisecond edit still ratchets, an inflated stamp is brought back to real
+ * time. (Both branches read `unixepoch('now')`, which SQLite evaluates once per statement, so the
+ * comparison and the value it re-bases to are the same instant.)
  */
 function updatedAtTrigger(table: string): string {
   return `
@@ -93,7 +121,10 @@ function updatedAtTrigger(table: string): string {
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
     BEGIN
-      UPDATE ${table} SET updated_at = MAX((${SQL_NOW_MS}), OLD.updated_at + 1) WHERE id = NEW.id;
+      UPDATE ${table} SET updated_at = CASE
+        WHEN OLD.updated_at - (${SQL_NOW_MS}) > ${FUTURE_STAMP_REBASE_MS} THEN (${SQL_NOW_MS})
+        ELSE MAX((${SQL_NOW_MS}), OLD.updated_at + 1)
+      END WHERE id = NEW.id;
     END;
   `;
 }

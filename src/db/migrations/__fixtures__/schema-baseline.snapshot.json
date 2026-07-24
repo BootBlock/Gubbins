@@ -497,7 +497,7 @@
       "type": "table",
       "name": "field_defs",
       "tbl_name": "field_defs",
-      "sql": "CREATE TABLE field_defs (\n          id          TEXT    PRIMARY KEY NOT NULL,\n          name        TEXT    NOT NULL,\n          field_type  TEXT    NOT NULL,\n          options     TEXT,                            -- JSON array for SELECT fields\n          description TEXT,                            -- optional help note shown on the control\n          updated_at  INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (field_type IN ('TEXT', 'LONG_TEXT', 'URL', 'NUMBER', 'RATING', 'BOOLEAN', 'ON_OFF', 'DATE', 'SELECT'))\n        ) STRICT"
+      "sql": "CREATE TABLE field_defs (\n          id          TEXT    PRIMARY KEY NOT NULL,\n          name        TEXT    NOT NULL,\n          field_type  TEXT    NOT NULL,\n          options     TEXT,                            -- JSON array for SELECT fields\n          description TEXT,                            -- optional help note shown on the control\n          updated_at  INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (field_type IN ('TEXT', 'LONG_TEXT', 'URL', 'NUMBER', 'RATING', 'BOOLEAN', 'ON_OFF', 'DATE', 'SELECT', 'FILE', 'IMAGE'))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -779,7 +779,7 @@
       "type": "trigger",
       "name": "trg_api_tokens_updated_at",
       "tbl_name": "api_tokens",
-      "sql": "CREATE TRIGGER trg_api_tokens_updated_at\n    AFTER UPDATE ON api_tokens\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE api_tokens SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_api_tokens_updated_at\n    AFTER UPDATE ON api_tokens\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE api_tokens SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -791,61 +791,61 @@
       "type": "trigger",
       "name": "trg_asset_bookings_updated_at",
       "tbl_name": "asset_bookings",
-      "sql": "CREATE TRIGGER trg_asset_bookings_updated_at\n    AFTER UPDATE ON asset_bookings\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE asset_bookings SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_asset_bookings_updated_at\n    AFTER UPDATE ON asset_bookings\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE asset_bookings SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_capabilities_updated_at",
       "tbl_name": "capabilities",
-      "sql": "CREATE TRIGGER trg_capabilities_updated_at\n    AFTER UPDATE ON capabilities\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE capabilities SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_capabilities_updated_at\n    AFTER UPDATE ON capabilities\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE capabilities SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_categories_updated_at",
       "tbl_name": "categories",
-      "sql": "CREATE TRIGGER trg_categories_updated_at\n    AFTER UPDATE ON categories\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE categories SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_categories_updated_at\n    AFTER UPDATE ON categories\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE categories SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_category_fields_updated_at",
       "tbl_name": "category_fields",
-      "sql": "CREATE TRIGGER trg_category_fields_updated_at\n    AFTER UPDATE ON category_fields\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE category_fields SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_category_fields_updated_at\n    AFTER UPDATE ON category_fields\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE category_fields SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_checkouts_updated_at",
       "tbl_name": "checkouts",
-      "sql": "CREATE TRIGGER trg_checkouts_updated_at\n    AFTER UPDATE ON checkouts\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE checkouts SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_checkouts_updated_at\n    AFTER UPDATE ON checkouts\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE checkouts SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_contacts_updated_at",
       "tbl_name": "contacts",
-      "sql": "CREATE TRIGGER trg_contacts_updated_at\n    AFTER UPDATE ON contacts\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE contacts SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_contacts_updated_at\n    AFTER UPDATE ON contacts\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE contacts SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_field_defs_updated_at",
       "tbl_name": "field_defs",
-      "sql": "CREATE TRIGGER trg_field_defs_updated_at\n    AFTER UPDATE ON field_defs\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE field_defs SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_field_defs_updated_at\n    AFTER UPDATE ON field_defs\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE field_defs SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_item_aliases_updated_at",
       "tbl_name": "item_aliases",
-      "sql": "CREATE TRIGGER trg_item_aliases_updated_at\n    AFTER UPDATE ON item_aliases\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_aliases SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_item_aliases_updated_at\n    AFTER UPDATE ON item_aliases\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_aliases SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_item_attachments_updated_at",
       "tbl_name": "item_attachments",
-      "sql": "CREATE TRIGGER trg_item_attachments_updated_at\n    AFTER UPDATE ON item_attachments\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_attachments SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_item_attachments_updated_at\n    AFTER UPDATE ON item_attachments\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_attachments SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_item_field_values_updated_at",
       "tbl_name": "item_field_values",
-      "sql": "CREATE TRIGGER trg_item_field_values_updated_at\n    AFTER UPDATE ON item_field_values\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_field_values SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_item_field_values_updated_at\n    AFTER UPDATE ON item_field_values\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_field_values SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -857,13 +857,13 @@
       "type": "trigger",
       "name": "trg_item_images_updated_at",
       "tbl_name": "item_images",
-      "sql": "CREATE TRIGGER trg_item_images_updated_at\n    AFTER UPDATE ON item_images\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_images SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_item_images_updated_at\n    AFTER UPDATE ON item_images\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_images SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_item_relations_updated_at",
       "tbl_name": "item_relations",
-      "sql": "CREATE TRIGGER trg_item_relations_updated_at\n    AFTER UPDATE ON item_relations\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_relations SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_item_relations_updated_at\n    AFTER UPDATE ON item_relations\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_relations SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -887,25 +887,25 @@
       "type": "trigger",
       "name": "trg_item_stock_updated_at",
       "tbl_name": "item_stock",
-      "sql": "CREATE TRIGGER trg_item_stock_updated_at\n    AFTER UPDATE ON item_stock\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_stock SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_item_stock_updated_at\n    AFTER UPDATE ON item_stock\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_stock SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_items_updated_at",
       "tbl_name": "items",
-      "sql": "CREATE TRIGGER trg_items_updated_at\n    AFTER UPDATE ON items\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE items SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_items_updated_at\n    AFTER UPDATE ON items\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE items SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_kit_components_updated_at",
       "tbl_name": "kit_components",
-      "sql": "CREATE TRIGGER trg_kit_components_updated_at\n    AFTER UPDATE ON kit_components\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE kit_components SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_kit_components_updated_at\n    AFTER UPDATE ON kit_components\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE kit_components SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_location_field_values_updated_at",
       "tbl_name": "location_field_values",
-      "sql": "CREATE TRIGGER trg_location_field_values_updated_at\n    AFTER UPDATE ON location_field_values\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_field_values SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_location_field_values_updated_at\n    AFTER UPDATE ON location_field_values\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_field_values SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -935,13 +935,13 @@
       "type": "trigger",
       "name": "trg_location_photos_updated_at",
       "tbl_name": "location_photos",
-      "sql": "CREATE TRIGGER trg_location_photos_updated_at\n    AFTER UPDATE ON location_photos\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_photos SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_location_photos_updated_at\n    AFTER UPDATE ON location_photos\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_photos SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_location_regions_updated_at",
       "tbl_name": "location_regions",
-      "sql": "CREATE TRIGGER trg_location_regions_updated_at\n    AFTER UPDATE ON location_regions\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_regions SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_location_regions_updated_at\n    AFTER UPDATE ON location_regions\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_regions SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -959,55 +959,55 @@
       "type": "trigger",
       "name": "trg_locations_updated_at",
       "tbl_name": "locations",
-      "sql": "CREATE TRIGGER trg_locations_updated_at\n    AFTER UPDATE ON locations\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE locations SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_locations_updated_at\n    AFTER UPDATE ON locations\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE locations SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_maintenance_schedules_updated_at",
       "tbl_name": "maintenance_schedules",
-      "sql": "CREATE TRIGGER trg_maintenance_schedules_updated_at\n    AFTER UPDATE ON maintenance_schedules\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE maintenance_schedules SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_maintenance_schedules_updated_at\n    AFTER UPDATE ON maintenance_schedules\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE maintenance_schedules SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_project_bom_lines_updated_at",
       "tbl_name": "project_bom_lines",
-      "sql": "CREATE TRIGGER trg_project_bom_lines_updated_at\n    AFTER UPDATE ON project_bom_lines\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE project_bom_lines SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_project_bom_lines_updated_at\n    AFTER UPDATE ON project_bom_lines\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE project_bom_lines SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_project_budget_categories_updated_at",
       "tbl_name": "project_budget_categories",
-      "sql": "CREATE TRIGGER trg_project_budget_categories_updated_at\n    AFTER UPDATE ON project_budget_categories\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE project_budget_categories SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_project_budget_categories_updated_at\n    AFTER UPDATE ON project_budget_categories\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE project_budget_categories SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_project_expenses_updated_at",
       "tbl_name": "project_expenses",
-      "sql": "CREATE TRIGGER trg_project_expenses_updated_at\n    AFTER UPDATE ON project_expenses\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE project_expenses SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_project_expenses_updated_at\n    AFTER UPDATE ON project_expenses\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE project_expenses SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_projects_updated_at",
       "tbl_name": "projects",
-      "sql": "CREATE TRIGGER trg_projects_updated_at\n    AFTER UPDATE ON projects\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE projects SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_projects_updated_at\n    AFTER UPDATE ON projects\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE projects SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_purchase_order_lines_updated_at",
       "tbl_name": "purchase_order_lines",
-      "sql": "CREATE TRIGGER trg_purchase_order_lines_updated_at\n    AFTER UPDATE ON purchase_order_lines\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE purchase_order_lines SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_purchase_order_lines_updated_at\n    AFTER UPDATE ON purchase_order_lines\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE purchase_order_lines SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_purchase_orders_updated_at",
       "tbl_name": "purchase_orders",
-      "sql": "CREATE TRIGGER trg_purchase_orders_updated_at\n    AFTER UPDATE ON purchase_orders\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE purchase_orders SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_purchase_orders_updated_at\n    AFTER UPDATE ON purchase_orders\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE purchase_orders SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_revaluations_updated_at",
       "tbl_name": "revaluations",
-      "sql": "CREATE TRIGGER trg_revaluations_updated_at\n    AFTER UPDATE ON revaluations\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE revaluations SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_revaluations_updated_at\n    AFTER UPDATE ON revaluations\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE revaluations SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -1019,7 +1019,7 @@
       "type": "trigger",
       "name": "trg_roles_updated_at",
       "tbl_name": "roles",
-      "sql": "CREATE TRIGGER trg_roles_updated_at\n    AFTER UPDATE ON roles\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE roles SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_roles_updated_at\n    AFTER UPDATE ON roles\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE roles SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -1043,43 +1043,43 @@
       "type": "trigger",
       "name": "trg_stock_batches_updated_at",
       "tbl_name": "stock_batches",
-      "sql": "CREATE TRIGGER trg_stock_batches_updated_at\n    AFTER UPDATE ON stock_batches\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE stock_batches SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_stock_batches_updated_at\n    AFTER UPDATE ON stock_batches\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE stock_batches SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_supplier_part_price_history_updated_at",
       "tbl_name": "supplier_part_price_history",
-      "sql": "CREATE TRIGGER trg_supplier_part_price_history_updated_at\n    AFTER UPDATE ON supplier_part_price_history\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE supplier_part_price_history SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_supplier_part_price_history_updated_at\n    AFTER UPDATE ON supplier_part_price_history\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE supplier_part_price_history SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_supplier_parts_updated_at",
       "tbl_name": "supplier_parts",
-      "sql": "CREATE TRIGGER trg_supplier_parts_updated_at\n    AFTER UPDATE ON supplier_parts\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE supplier_parts SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_supplier_parts_updated_at\n    AFTER UPDATE ON supplier_parts\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE supplier_parts SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_suppliers_updated_at",
       "tbl_name": "suppliers",
-      "sql": "CREATE TRIGGER trg_suppliers_updated_at\n    AFTER UPDATE ON suppliers\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE suppliers SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_suppliers_updated_at\n    AFTER UPDATE ON suppliers\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE suppliers SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_tags_updated_at",
       "tbl_name": "tags",
-      "sql": "CREATE TRIGGER trg_tags_updated_at\n    AFTER UPDATE ON tags\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE tags SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_tags_updated_at\n    AFTER UPDATE ON tags\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE tags SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_tare_presets_updated_at",
       "tbl_name": "tare_presets",
-      "sql": "CREATE TRIGGER trg_tare_presets_updated_at\n    AFTER UPDATE ON tare_presets\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE tare_presets SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_tare_presets_updated_at\n    AFTER UPDATE ON tare_presets\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE tare_presets SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_test_records_updated_at",
       "tbl_name": "test_records",
-      "sql": "CREATE TRIGGER trg_test_records_updated_at\n    AFTER UPDATE ON test_records\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE test_records SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_test_records_updated_at\n    AFTER UPDATE ON test_records\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE test_records SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -1103,19 +1103,19 @@
       "type": "trigger",
       "name": "trg_users_updated_at",
       "tbl_name": "users",
-      "sql": "CREATE TRIGGER trg_users_updated_at\n    AFTER UPDATE ON users\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE users SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_users_updated_at\n    AFTER UPDATE ON users\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE users SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_webhooks_updated_at",
       "tbl_name": "webhooks",
-      "sql": "CREATE TRIGGER trg_webhooks_updated_at\n    AFTER UPDATE ON webhooks\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE webhooks SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_webhooks_updated_at\n    AFTER UPDATE ON webhooks\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE webhooks SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
       "name": "trg_wishlist_updated_at",
       "tbl_name": "wishlist",
-      "sql": "CREATE TRIGGER trg_wishlist_updated_at\n    AFTER UPDATE ON wishlist\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE wishlist SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+      "sql": "CREATE TRIGGER trg_wishlist_updated_at\n    AFTER UPDATE ON wishlist\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE wishlist SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "view",
