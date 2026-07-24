@@ -31,12 +31,33 @@ function cellText(value: TabularCell): string {
 }
 
 /**
+ * Leading characters a spreadsheet (Excel, LibreOffice, Sheets) may treat as the start of a
+ * formula when it opens a CSV / TSV cell — the CSV-injection / DDE vector (issue #180). RFC-4180
+ * quoting does *not* defuse this, so a cell beginning with one is neutralised below. Tab and CR
+ * are included because some spreadsheets strip leading whitespace before deciding a `=…` cell is
+ * a formula.
+ */
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+
+/**
+ * Defuse spreadsheet formula injection: prefix a formula-triggering cell with a single quote,
+ * which spreadsheets honour as "treat the rest as literal text" and hide on display. Applied only
+ * to *string* cells — numbers and booleans are the app's own computed values (a spreadsheet reads
+ * a leading-`-` number such as `-5` as the value, never a formula), so leaving them untouched
+ * keeps genuine figures intact.
+ */
+function neutraliseFormula(value: TabularCell, text: string): string {
+  return typeof value === 'string' && FORMULA_TRIGGER.test(text) ? `'${text}` : text;
+}
+
+/**
  * Quote a delimited-file cell per RFC-4180: wrap in double quotes (doubling any inner
  * quote) when it contains the delimiter, a quote, or a CR / LF. Shared by CSV (comma)
- * and TSV (tab) so a value carrying the delimiter round-trips intact.
+ * and TSV (tab) so a value carrying the delimiter round-trips intact. A leading formula
+ * trigger is neutralised first (issue #180) so opening the file can't execute a cell.
  */
 function delimitedCell(value: TabularCell, delimiter: string): string {
-  const text = cellText(value);
+  const text = neutraliseFormula(value, cellText(value));
   return text.includes(delimiter) || /["\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

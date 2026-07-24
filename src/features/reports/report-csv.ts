@@ -28,13 +28,26 @@ export type ReportCsvKind =
   | 'SPEND';
 
 /**
+ * Leading characters a spreadsheet may evaluate as a formula on open — the CSV-injection / DDE
+ * vector (issue #180). Report rows carry user-controlled text (item names, hygiene sample
+ * details), so a string cell beginning with one is neutralised below; RFC-4180 quoting alone
+ * does not stop the evaluation. Tab / CR are included because leading whitespace can be stripped
+ * before the formula check.
+ */
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+
+/**
  * RFC-4180 cell quoting (mirrors the items-CSV exporter). Numeric cells shed their
  * binary-float noise first (issue #291) so a summed valuation reads `0.3`, not
- * `0.30000000000000004`.
+ * `0.30000000000000004`. A string cell that would open as a formula is first prefixed with a
+ * single quote (issue #180) — spreadsheets honour that as "literal text" and hide it on display;
+ * numbers are the app's own figures and stay untouched.
  */
 function cell(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const text = typeof value === 'number' ? String(stripFloatNoise(value)) : String(value);
+  const isNumber = typeof value === 'number';
+  const raw = isNumber ? String(stripFloatNoise(value)) : String(value);
+  const text = !isNumber && FORMULA_TRIGGER.test(raw) ? `'${raw}` : raw;
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

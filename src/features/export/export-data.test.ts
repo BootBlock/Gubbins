@@ -62,6 +62,14 @@ describe('export-data builders', () => {
     expect(row).toContain('"a ""good"" one"');
   });
 
+  // Issue #180: an item field that would open as a spreadsheet formula is neutralised with a
+  // leading single quote, so opening the export cannot execute a DDE / WEBSERVICE payload.
+  it('neutralises a formula-injection payload in an exported item field', () => {
+    const csv = buildItemsCsv([makeItem({ name: 'Bolt', description: '=1+cmd|"/c calc"!A1' })]);
+    const [, row] = csv.split('\r\n');
+    expect(row).toContain('"\'=1+cmd|""/c calc""!A1"');
+  });
+
   it('exports isUnlimited and leaves the quantity cell blank for an unlimited row (Phase 82)', () => {
     const csv = buildItemsCsv([
       makeItem({ id: 'fin', name: 'Bolt', quantity: 12, isUnlimited: false }),
