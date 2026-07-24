@@ -135,12 +135,16 @@ export async function ingestSnapshot(options: IngestOptions): Promise<PushSummar
   const mutex = options.mutex ?? createSnapshotMutex();
   const now = options.now ?? Date.now;
 
-  // Stream (lock-free) to a sibling temp, bounded — an over-large upload is rejected before it is
-  // all on disk, and a long upload does not hold the lock and stall every write for its duration.
+  // Everything hangs off one temp file; the finally removes it on EVERY exit — a size-cap
+  // rejection, a parse error, an aborted/failed upload mid-stream, or a clean publish (the merge
+  // path leaves it behind; the replace path renames it away, and force + catch makes the redundant
+  // remove a no-op). So a dropped connection can't strand a `.tmp` on a constrained host.
   const tmp = tempSiblingPath(options.snapshotPath, 'push');
-  await streamBodyToTemp(options.body, tmp, options.maxBytes); // throws PushError(413) + cleans up
-
   try {
+    // Stream (lock-free) to the temp, bounded — an over-large upload is rejected before it is all
+    // on disk, and a long upload does not hold the lock and stall every write for its duration.
+    await streamBodyToTemp(options.body, tmp, options.maxBytes); // throws PushError(413)
+
     // Validate + parse the incoming snapshot (pure; lock-free). A bad/newer snapshot is rejected
     // here, before the served file is touched at all.
     const incoming = parseIncomingSnapshot(await readFile(tmp, 'utf8'));
@@ -149,13 +153,14 @@ export async function ingestSnapshot(options: IngestOptions): Promise<PushSummar
     // silently discarded (issue #154).
     return await mutex.runExclusive(() => publishIncoming(options.snapshotPath, tmp, incoming, now));
   } finally {
-    // The merge path writes a fresh merged file and leaves the temp behind; the replace path
-    // renames it away. force + catch covers both — a rename that already consumed it is fine.
     await rm(tmp, { force: true }).catch(() => {});
   }
 }
 
-/** Stream the request body to `tmp`, rejecting (and cleaning up) once it exceeds `maxBytes`. */
+/**
+ * Stream the request body to `tmp`, rejecting once it exceeds `maxBytes`. The caller owns the
+ * temp's lifetime (it removes it on every exit), so this only enforces the cap and never cleans up.
+ */
 async function streamBodyToTemp(
   body: AsyncIterable<Uint8Array>,
   tmp: string,
@@ -178,7 +183,6 @@ async function streamBodyToTemp(
   }
 
   if (tooLarge) {
-    await rm(tmp, { force: true }).catch(() => {});
     throw new PushError(
       413,
       'payload_too_large',
