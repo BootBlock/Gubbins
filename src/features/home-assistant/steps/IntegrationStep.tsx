@@ -8,6 +8,7 @@ import {
   TerminalIcon,
   WarningIcon,
 } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { CommandBlock, ChoiceCards, BranchPanel, StepCard } from '../components';
 import { useGuide, tokenForDisplay } from '../context';
 import { GuideLink } from '../links';
@@ -23,6 +24,7 @@ type InstallMethod = 'hacs' | 'manual' | 'yaml';
  * like, which we flag here.
  */
 export function IntegrationStep() {
+  const t = useT();
   const { token } = useGuide();
   const displayToken = tokenForDisplay(token);
   const [method, setMethod] = useState<InstallMethod | null>(null);
@@ -37,6 +39,7 @@ export function IntegrationStep() {
           recipe skips installing anything and just wires up the voice question — good if you'd rather not add
           a custom component.
         </p>
+        <p className="text-sm text-muted-foreground">{t('homeAssistant.install.minVersion')}</p>
       </StepCard>
 
       <ChoiceCards

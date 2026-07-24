@@ -87,3 +87,15 @@ def async_register_intent(hass: HomeAssistant) -> None:
         return
     intent.async_register(hass, GubbinsWhereIsIntent())
     hass.data[_REGISTERED_KEY] = True
+
+
+def async_unregister_intent(hass: HomeAssistant) -> None:
+    """Remove the conversation intent handler, once the last entry has unloaded.
+
+    Symmetrical with :func:`async_register_intent`: clearing the flag alongside the handler
+    is what lets a later entry register it again. Without this the handler outlives the
+    integration and keeps answering voice queries with its "not set up yet" fallback.
+    """
+    if not hass.data.pop(_REGISTERED_KEY, False):
+        return
+    intent.async_remove(hass, INTENT_WHERE_IS)

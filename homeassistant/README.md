@@ -34,7 +34,7 @@ the only data path; this integration only issues `GET` requests.
 | Piece | Purpose |
 | --- | --- |
 | **Conversation intent** `GubbinsWhereIs` | The voice experience — "where are my {item}", "find my {item}", "how many {item} do I have". Speaks the bridge's ready-made sentence back. |
-| **Config flow** (UI setup) | Enter host, port and token in the UI. The token is stored by Home Assistant, never in YAML or this repo. |
+| **Config flow** (UI setup) | Enter host, port and token in the UI. The token is stored by Home Assistant, never in YAML or this repo. A rotated token prompts you to reconnect, and *Reconfigure* moves the entry to a new host/port — neither needs the entry re-added. |
 | **`gubbins.search` service** | A read-only search you can call from scripts/automations; returns the matched items as response data. |
 | **`gubbins.adjust_quantity` service** | **Opt-in** check-in / check-out (negative delta = check out). Only works when the bridge runs with `GUBBINS_BRIDGE_ALLOW_WRITES=on`; the change syncs back to the app conflict-free. |
 | **Inventory-items sensor** | Optional `/health` sensor (item count + snapshot timestamp) for dashboards and "bridge offline" automations. |
@@ -50,6 +50,10 @@ below; pick the one that fits your setup.
 ## Option A — the custom integration (recommended)
 
 ### 1. Install the files
+
+> **Requires Home Assistant 2025.2 or newer.** The integration is built against current Home
+> Assistant config-flow and update-coordinator APIs, so older releases cannot load it. Options
+> B and C below are plain Home Assistant configuration and have no such requirement.
 
 **Via HACS (recommended).** The integration lives at the **root** of the Gubbins repository
 (`custom_components/gubbins/`, with `hacs.json` alongside it), which is exactly the layout
@@ -94,6 +98,22 @@ Then restart Home Assistant.
      that it binds `0.0.0.0` if HA is on another machine).
    - *"The bridge did not recognise the token"* → it was mistyped, or it has been revoked in
      the Gubbins app. Create a fresh one and paste that; the bridge needs no restart.
+
+### If the token is rotated, or the bridge moves
+
+Neither case needs the entry deleted and re-added.
+
+- **Rotated or revoked token.** The bridge starts rejecting the stored token, and Home
+  Assistant raises a **"Reconfigure/reauthenticate"** notification for the Gubbins entry.
+  Mint a fresh API token in Gubbins (Users → an account → API tokens), paste it in, and the
+  entry reconnects with its entities and history intact.
+- **Bridge moved to a different host or port.** Open *Settings → Devices & services →
+  Gubbins Inventory → ⋮ → **Reconfigure***, and change the host, port and token together.
+  The new details are verified against `GET /health` before they are saved, and the entry
+  reloads itself afterwards.
+
+  You have to re-enter the token on this step: Home Assistant never displays a stored
+  credential back to you, so there is nothing to pre-fill it with.
 
 ### 3. Wire the voice sentences into Assist
 
@@ -495,8 +515,9 @@ there; the voice sentences and this guide stay under `homeassistant/`.
     manifest.json                            # integration metadata (HACS-compatible)
     const.py                                 # domain + config keys
     api.py                                   # thin HTTP client (read-only + the opt-in adjust_quantity write)
-    __init__.py                              # setup: client, intent, gubbins.search + gubbins.adjust_quantity services
-    config_flow.py                           # UI config flow: manual host/port/token + zeroconf auto-discovery (verifies /health)
+    __init__.py                              # setup: client, coordinator, intent, gubbins.search + gubbins.adjust_quantity services
+    coordinator.py                           # /health polling coordinator (drives reauth when the token is rejected)
+    config_flow.py                           # UI config flow: manual host/port/token, zeroconf discovery, reauth + reconfigure (all verify /health)
     intent.py                                # GubbinsWhereIs conversation intent handler
     sensor.py                                # optional /health item-count sensor
     services.yaml                            # gubbins.search + gubbins.adjust_quantity schemas

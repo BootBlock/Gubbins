@@ -2,28 +2,27 @@
 
 Exposes the bridge's item count as a sensor, with the snapshot timestamp and liveness as
 attributes — handy for a dashboard card or an automation that reacts to the bridge going
-away. Read-only and cheap: it polls ``GET /health`` on a slow interval.
+away. Read-only and cheap: it rides the shared :class:`.GubbinsHealthCoordinator`, which
+polls ``GET /health`` on a slow interval.
+
+The coordinator is built and first-refreshed by the integration's own ``async_setup_entry``,
+not here — a forwarded platform must not raise ``ConfigEntryNotReady`` /
+``ConfigEntryAuthFailed``, so the "bridge is down" and "token was revoked" outcomes have to
+be decided before the platforms are forwarded.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .api import GubbinsClient, GubbinsError
-from .const import CONF_HOST, CONF_PORT, DOMAIN, HEALTH_SCAN_INTERVAL
-
-_LOGGER = logging.getLogger(__name__)
+from .const import CONF_HOST, CONF_PORT, DOMAIN
+from .coordinator import GubbinsHealthCoordinator
 
 
 async def async_setup_entry(
@@ -32,22 +31,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the bridge health sensor for a config entry."""
-    client: GubbinsClient = hass.data[DOMAIN][entry.entry_id]
-
-    async def _fetch() -> dict[str, Any]:
-        try:
-            return await client.health()
-        except GubbinsError as err:
-            raise UpdateFailed(str(err)) from err
-
-    coordinator: DataUpdateCoordinator[dict[str, Any]] = DataUpdateCoordinator(
-        hass,
-        logger=_LOGGER,
-        name="Gubbins bridge health",
-        update_method=_fetch,
-        update_interval=HEALTH_SCAN_INTERVAL,
-    )
-    await coordinator.async_config_entry_first_refresh()
+    coordinator: GubbinsHealthCoordinator = entry.runtime_data
     async_add_entities([GubbinsItemCountSensor(coordinator, entry)])
 
 
@@ -61,7 +45,7 @@ class GubbinsItemCountSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(
         self,
-        coordinator: DataUpdateCoordinator[dict[str, Any]],
+        coordinator: GubbinsHealthCoordinator,
         entry: ConfigEntry,
     ) -> None:
         super().__init__(coordinator)
