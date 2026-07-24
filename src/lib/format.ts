@@ -366,17 +366,39 @@ export function getFormatters(
 }
 
 /**
- * Snap a user-entered monetary string to the fixed number of fraction digits its currency
+ * Snap a user-entered monetary string to at least the number of fraction digits its currency
  * uses (`fractionDigits` from {@link Formatters.currencyFractionDigits}): `8` → `8.00` for a
  * 2-digit currency, `8` for a 0-digit one (JPY), `8.000` for a 3-digit one (BHD). A blank
  * value stays blank — the field is optional — and anything that isn't a finite number is
- * returned unchanged so an in-progress edit is never clobbered. The result is `.`-separated,
- * exactly what an `<input type="number">` expects for its value.
+ * returned unchanged so an in-progress edit is never clobbered.
+ *
+ * The snap is **presentation only and lossless**: it *pads* up to the currency's canonical
+ * precision but never *rounds away* precision the user actually typed, so the number is
+ * unchanged. A stored `1234.56` under JPY (0 digits) stays `1234.56`, and a legitimately
+ * 4-decimal `0.0125` unit cost under GBP (2 digits) stays `0.0125` — rounding a figure to its
+ * currency's scale is the money seam's job at compute/display time ({@link roundMoney}), not a
+ * side effect of tabbing through the field.
+ *
+ * The input is `.`-separated — an `<input type="number">` normalises to a period decimal
+ * regardless of the user's locale — so `.` parsing here is correct; the result is likewise
+ * `.`-separated, exactly what the input expects for its value.
  */
 export function snapMoneyInput(raw: string, fractionDigits: number): string {
   const trimmed = raw.trim();
   if (trimmed === '') return '';
   const value = Number(trimmed);
   if (!Number.isFinite(value)) return raw;
-  return value.toFixed(Math.max(0, fractionDigits));
+  // Never below what was typed: a period-decimal `type=number` value carries its precision in
+  // the digits after the point, so padding to `max(currency digits, entered digits)` keeps the
+  // exact same number while still reaching the currency's canonical scale for shorter entries.
+  const dot = trimmed.indexOf('.');
+  const enteredDigits = dot === -1 ? 0 : trimmed.length - dot - 1;
+  // `toFixed` only accepts 0–100 digits; clamp so a pasted over-long decimal can't throw (a
+  // double can't hold that precision anyway, and the round-trip guard below keeps it honest).
+  const digits = Math.min(100, Math.max(0, fractionDigits, enteredDigits));
+  const snapped = value.toFixed(digits);
+  // Belt-and-braces: if the snapped string somehow represents a different number than what was
+  // entered (e.g. exponent notation the digit count above can't see), keep the entry untouched
+  // rather than silently rounding it.
+  return Number(snapped) === value ? snapped : trimmed;
 }

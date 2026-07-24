@@ -31,11 +31,30 @@ describe('MoneyInput', () => {
     expect(input.value).toBe('');
   });
 
-  it('snaps to an override currency’s digits (e.g. JPY → zero decimals)', () => {
+  it('pads a bare integer to an override currency’s digits (e.g. JPY → whole)', () => {
     render(<Harness currency="JPY" />);
     const input = screen.getByLabelText('Price') as HTMLInputElement;
-    fireEvent.change(input, { target: { value: '8.4' } });
+    fireEvent.change(input, { target: { value: '8' } });
     fireEvent.blur(input);
-    expect(input.value).toBe('8');
+    expect(input.value).toBe('8'); // JPY → no decimals added
+  });
+
+  it('never rounds away precision the user typed (issue #290)', () => {
+    // A fractional figure under a zero-decimal currency must survive the blur unchanged —
+    // snapping is presentation-only, not a lossy round-trip into form state (and the DB).
+    render(<Harness currency="JPY" />);
+    const input = screen.getByLabelText('Price') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '1234.56' } });
+    fireEvent.blur(input);
+    expect(input.value).toBe('1234.56');
+  });
+
+  it('keeps a longer-than-currency unit cost intact on blur (issue #290)', () => {
+    // A legitimately 4-decimal GBP unit cost (e.g. per-resistor pricing) is not truncated to 2dp.
+    render(<Harness />);
+    const input = screen.getByLabelText('Price') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '0.0125' } });
+    fireEvent.blur(input);
+    expect(input.value).toBe('0.0125');
   });
 });
