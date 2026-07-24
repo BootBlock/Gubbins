@@ -75,6 +75,7 @@ export {
   LOCATION_TAGS_TABLE,
   ITEM_REGIONS_TABLE,
   ITEM_HISTORY_TABLE,
+  NOT_SYNCED,
   TOMBSTONE_TABLES,
   isTombstoneTable,
   SYNC_EXCLUDED_COLUMNS,
@@ -91,7 +92,7 @@ export {
   locationTagTombstoneStatement,
   clearLocationTagTombstoneStatement,
 } from './tombstone';
-export type { Tombstone, SyncTable } from './tombstone';
+export type { Tombstone, SyncTable, NotSyncedTable } from './tombstone';
 export type {
   ItemListFilters,
   ItemSort,
