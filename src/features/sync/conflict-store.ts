@@ -10,11 +10,14 @@
  * version via {@link restoreConflictVersion}.
  *
  * Conflicts accumulate across syncs until reviewed, de-duplicated by their deterministic id
- * so re-detecting the same discarded version never piles up.
+ * so re-detecting the same discarded version never piles up. Because each record carries two
+ * full row snapshots against a shared `localStorage` budget, the backlog is bounded on merge
+ * by age and count (see {@link mergeConflicts}) so it can never grow without limit (#373).
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { adoptUnversioned } from '@/lib/persisted-state';
+import { mergeConflicts } from './conflict-store-ops';
 import type { SyncConflict } from './types';
 
 interface SyncConflictsStore {
@@ -41,14 +44,9 @@ export const useSyncConflictsStore = create<SyncConflictsStore>()(
       add: (incoming) =>
         set((state) => {
           if (incoming.length === 0) return state;
-          const byId = new Map<string, SyncConflict>();
-          // Newest first: this sync's conflicts ahead of the existing backlog. A re-detected id
-          // is identical (deterministic id + captured versions), so either copy is equivalent;
-          // the first-seen (incoming) is kept and its duplicate in the backlog dropped.
-          for (const c of [...incoming, ...state.conflicts]) {
-            if (!byId.has(c.id)) byId.set(c.id, c);
-          }
-          return { conflicts: [...byId.values()] };
+          // Dedupe (newest first), drop aged-out entries, and cap the backlog — the maths
+          // lives in the pure seam; the store just supplies the wall clock.
+          return { conflicts: mergeConflicts(state.conflicts, incoming, Date.now()) };
         }),
 
       resolve: (id) => set((state) => ({ conflicts: state.conflicts.filter((c) => c.id !== id) })),
@@ -63,9 +61,13 @@ export const useSyncConflictsStore = create<SyncConflictsStore>()(
       partialize: (state): PersistedState => ({ conflicts: [...state.conflicts] }),
       merge: (persisted, current) => {
         const p = persisted as Partial<PersistedState>;
+        const stored = Array.isArray(p.conflicts) ? p.conflicts : [];
         return {
           ...current,
-          conflicts: Array.isArray(p.conflicts) ? p.conflicts : [],
+          // Bound the rehydrated backlog too (age + cap), so an already-oversized store from
+          // before this cap existed is trimmed on load — freeing quota without waiting for a
+          // sync (#373).
+          conflicts: mergeConflicts(stored, [], Date.now()),
         };
       },
     },
