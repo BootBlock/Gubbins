@@ -217,31 +217,12 @@ export function LocationTreeItem({
             {isDefault ? (
               <PreferredIcon className="ml-1 size-3.5 shrink-0 text-warning" aria-label="Default location" />
             ) : null}
-            {nesting ? (
-              // The re-parent is in flight — a spinner takes the count's place so the row visibly
-              // reports "moving…" until the tree reshapes (the count would be stale anyway).
-              <Spinner className="ml-auto size-3.5 shrink-0" label={`Moving ${label}`} />
-            ) : receivingItem ? (
-              // An item is landing here — a spinner takes the count's place for the brief in-flight
-              // window so the drop reads as "something's happening" before the count refreshes.
-              <Spinner className="ml-auto size-3.5 shrink-0" label={`Moving item into ${label}`} />
-            ) : (
-              <span
-                className={cn(
-                  'ml-auto pl-1 text-xs tabular-nums',
-                  fullness?.over
-                    ? 'text-glyph-danger'
-                    : fullness?.full
-                      ? 'text-warning'
-                      : 'text-muted-foreground',
-                )}
-              >
-                {capacity != null ? `${count}/${capacity}` : count}
-              </span>
-            )}
           </>
         )}
       </span>
+      {/* Hover actions sit to the *left* of the item count so revealing them never shoves the
+          count leftward — the count stays pinned to the row's right edge, vertically aligned with
+          every other row's count (issue #478). */}
       {!editing && (onEdit || onPrintLabel) ? (
         <LocationRowActions
           onPrintLabel={onPrintLabel}
@@ -249,6 +230,30 @@ export function LocationTreeItem({
           onEdit={onEdit}
           editLabel={editLabel}
         />
+      ) : null}
+      {!editing ? (
+        nesting ? (
+          // The re-parent is in flight — a spinner takes the count's place so the row visibly
+          // reports "moving…" until the tree reshapes (the count would be stale anyway).
+          <Spinner className="size-3.5 shrink-0" label={`Moving ${label}`} />
+        ) : receivingItem ? (
+          // An item is landing here — a spinner takes the count's place for the brief in-flight
+          // window so the drop reads as "something's happening" before the count refreshes.
+          <Spinner className="size-3.5 shrink-0" label={`Moving item into ${label}`} />
+        ) : (
+          <span
+            className={cn(
+              'shrink-0 pl-1 text-xs tabular-nums',
+              fullness?.over
+                ? 'text-glyph-danger'
+                : fullness?.full
+                  ? 'text-warning'
+                  : 'text-muted-foreground',
+            )}
+          >
+            {capacity != null ? `${count}/${capacity}` : count}
+          </span>
+        )
       ) : null}
     </div>
   );
