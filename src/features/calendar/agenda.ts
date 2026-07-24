@@ -135,19 +135,27 @@ export interface AgendaSources {
 }
 
 // ---------------------------------------------------------------------------
-// Formatting helpers
+// Formatting seam
 // ---------------------------------------------------------------------------
 
-/** ISO date (YYYY-MM-DD) of a UNIX-ms instant, for terse human-readable detail copy. */
-function isoDate(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
-}
+/**
+ * Renders a UNIX-ms instant as a human-readable date for the agenda's detail copy. Injected
+ * (rather than sliced from an ISO string here) so every date in the agenda reads exactly as the
+ * same field does elsewhere in the app — the shared `useFormatters().date` seam, in the user's
+ * locale — instead of a UTC-sliced `YYYY-MM-DD` that can even land on the wrong day. Kept a pure
+ * parameter so the seam stays free of React/preferences and remains exhaustively unit-testable.
+ */
+export type AgendaDateFormatter = (ms: number) => string;
 
 // ---------------------------------------------------------------------------
 // Lane builders (pure; each emits zero or one event per source row)
 // ---------------------------------------------------------------------------
 
-function buildMaintenanceEvents(sources: readonly MaintenanceAgendaSource[], now: number): AgendaEvent[] {
+function buildMaintenanceEvents(
+  sources: readonly MaintenanceAgendaSource[],
+  now: number,
+  formatDate: AgendaDateFormatter,
+): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   for (const s of sources) {
     let dueAt: number;
@@ -157,7 +165,7 @@ function buildMaintenanceEvents(sources: readonly MaintenanceAgendaSource[], now
       // TIME schedule — a real calendar due date (past or future).
       dueAt = s.dueAtMs;
       hasDate = true;
-      detail = `Schedule "${s.scheduleName}" — due ${isoDate(s.dueAtMs)}.`;
+      detail = `Schedule "${s.scheduleName}" — due ${formatDate(s.dueAtMs)}.`;
     } else if (s.usageDue) {
       // USAGE schedule with no calendar date — surfaced only while actually due.
       dueAt = now;
@@ -179,7 +187,10 @@ function buildMaintenanceEvents(sources: readonly MaintenanceAgendaSource[], now
   return events;
 }
 
-function buildWarrantyEvents(sources: readonly WarrantyAgendaSource[]): AgendaEvent[] {
+function buildWarrantyEvents(
+  sources: readonly WarrantyAgendaSource[],
+  formatDate: AgendaDateFormatter,
+): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   for (const s of sources) {
     if (s.warrantyExpiresAt == null) continue;
@@ -189,7 +200,7 @@ function buildWarrantyEvents(sources: readonly WarrantyAgendaSource[]): AgendaEv
       id: `warranty:${s.id}:${s.warrantyExpiresAt}`,
       kind: 'warranty',
       title: `Warranty expiry — ${s.name}`,
-      detail: `Warranty expires ${isoDate(dueAt)}.`,
+      detail: `Warranty expires ${formatDate(dueAt)}.`,
       dueAt,
       hasDate: true,
       target: { route: '/inventory', itemId: s.id },
@@ -198,7 +209,10 @@ function buildWarrantyEvents(sources: readonly WarrantyAgendaSource[]): AgendaEv
   return events;
 }
 
-function buildExpiryEvents(sources: readonly ExpiryAgendaSource[]): AgendaEvent[] {
+function buildExpiryEvents(
+  sources: readonly ExpiryAgendaSource[],
+  formatDate: AgendaDateFormatter,
+): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   for (const s of sources) {
     if (s.expiryDate == null) continue;
@@ -206,7 +220,7 @@ function buildExpiryEvents(sources: readonly ExpiryAgendaSource[]): AgendaEvent[
       id: `expiry:${s.id}`,
       kind: 'expiry',
       title: `Expiry — ${s.name}`,
-      detail: `Expires ${isoDate(s.expiryDate)}.`,
+      detail: `Expires ${formatDate(s.expiryDate)}.`,
       dueAt: s.expiryDate,
       hasDate: true,
       target: { route: '/inventory', itemId: s.id },
@@ -215,7 +229,11 @@ function buildExpiryEvents(sources: readonly ExpiryAgendaSource[]): AgendaEvent[
   return events;
 }
 
-function buildCheckoutEvents(sources: readonly CheckoutAgendaSource[], now: number): AgendaEvent[] {
+function buildCheckoutEvents(
+  sources: readonly CheckoutAgendaSource[],
+  now: number,
+  formatDate: AgendaDateFormatter,
+): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   for (const s of sources) {
     if (s.dueDate == null) continue;
@@ -225,8 +243,8 @@ function buildCheckoutEvents(sources: readonly CheckoutAgendaSource[], now: numb
     // already-passed loan sorting to the top of the chronological view.
     const overdue = s.dueDate < now;
     const detail = overdue
-      ? `On loan to ${s.borrowerName} — ${overdueLabel(daysOverdue(s.dueDate, now))} (due ${isoDate(s.dueDate)}).`
-      : `On loan to ${s.borrowerName} — due ${isoDate(s.dueDate)}.`;
+      ? `On loan to ${s.borrowerName} — ${overdueLabel(daysOverdue(s.dueDate, now))} (due ${formatDate(s.dueDate)}).`
+      : `On loan to ${s.borrowerName} — due ${formatDate(s.dueDate)}.`;
     events.push({
       id: `checkout-due:${s.id}`,
       kind: 'checkout-due',
@@ -262,7 +280,11 @@ function buildReorderEvents(sources: readonly ReorderAgendaSource[], now: number
  * (Today) rather than being pushed into Overdue by its past start. The hook only feeds active
  * (non-cancelled, non-converted) bookings whose window has not entirely passed.
  */
-function buildBookingEvents(sources: readonly BookingAgendaSource[], now: number): AgendaEvent[] {
+function buildBookingEvents(
+  sources: readonly BookingAgendaSource[],
+  now: number,
+  formatDate: AgendaDateFormatter,
+): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   for (const s of sources) {
     const endExclusive = startOfLocalDay(s.endDate) + MS_PER_DAY;
@@ -273,8 +295,8 @@ function buildBookingEvents(sources: readonly BookingAgendaSource[], now: number
       kind: 'booking',
       title: `Booking — ${s.itemName}`,
       detail: active
-        ? `Booked through ${isoDate(s.endDate)}${forWhom}.`
-        : `Booked ${isoDate(s.startDate)} – ${isoDate(s.endDate)}${forWhom}.`,
+        ? `Booked through ${formatDate(s.endDate)}${forWhom}.`
+        : `Booked ${formatDate(s.startDate)} – ${formatDate(s.endDate)}${forWhom}.`,
       dueAt: active ? now : s.startDate,
       hasDate: !active,
       target: { route: '/bookings', itemId: s.itemId },
@@ -291,16 +313,22 @@ function buildBookingEvents(sources: readonly BookingAgendaSource[], now: number
  * Fold the five sources into a single `AgendaEvent[]`, soonest first.
  *
  * Sort: by `dueAt` ascending (overdue → far future), tie-broken by deterministic `id` so the
- * order is stable across renders. `now` is injected for the date-less lanes and testability.
+ * order is stable across renders. `now` is injected for the date-less lanes and testability;
+ * `formatDate` renders every date in the detail copy through the shared formatter seam (issue
+ * #328) so the agenda matches the date shown for the same field elsewhere in the app.
  */
-export function buildAgenda(sources: AgendaSources, now: number): AgendaEvent[] {
+export function buildAgenda(
+  sources: AgendaSources,
+  now: number,
+  formatDate: AgendaDateFormatter,
+): AgendaEvent[] {
   const all: AgendaEvent[] = [
-    ...buildMaintenanceEvents(sources.maintenance, now),
-    ...buildWarrantyEvents(sources.warranty),
-    ...buildExpiryEvents(sources.expiry),
-    ...buildCheckoutEvents(sources.checkouts, now),
+    ...buildMaintenanceEvents(sources.maintenance, now, formatDate),
+    ...buildWarrantyEvents(sources.warranty, formatDate),
+    ...buildExpiryEvents(sources.expiry, formatDate),
+    ...buildCheckoutEvents(sources.checkouts, now, formatDate),
     ...buildReorderEvents(sources.reorder, now),
-    ...buildBookingEvents(sources.bookings, now),
+    ...buildBookingEvents(sources.bookings, now, formatDate),
   ];
   return all.slice().sort((a, b) => {
     if (a.dueAt !== b.dueAt) return a.dueAt - b.dueAt;

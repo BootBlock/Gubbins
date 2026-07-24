@@ -13,6 +13,11 @@ import {
 } from './report-csv';
 import { buildHygieneReport } from './data-hygiene';
 
+// The date-column builders take an injected formatter (the production caller passes the shared
+// `useFormatters().date` seam — issue #328). These assertions cover the ISO shape a spreadsheet
+// gets, so the suite injects an ISO stamp: the column reflecting it also proves the seam is wired.
+const isoDate = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
 describe('report CSV builders', () => {
   it('valuation CSV writes a summed value without binary-float noise (issue #291)', () => {
     const csv = buildValuationCsv({
@@ -40,29 +45,35 @@ describe('report CSV builders', () => {
   });
 
   it('consumption CSV emits a single summary row with ISO window dates', () => {
-    const csv = buildConsumptionCsv({
-      windowStart: 0,
-      windowEnd: 10 * MS_PER_DAY,
-      windowDays: 10,
-      totalConsumed: 50,
-      perDay: 5,
-    });
+    const csv = buildConsumptionCsv(
+      {
+        windowStart: 0,
+        windowEnd: 10 * MS_PER_DAY,
+        windowDays: 10,
+        totalConsumed: 50,
+        perDay: 5,
+      },
+      isoDate,
+    );
     const lines = csv.split('\r\n');
     expect(lines[0]).toBe('windowStart,windowEnd,windowDays,totalConsumed,perDay');
     expect(lines[1]).toBe('1970-01-01,1970-01-11,10,50,5');
   });
 
   it('movement CSV emits one row per bucket plus a totals row', () => {
-    const csv = buildMovementCsv({
-      windowStart: 0,
-      windowEnd: 2 * MS_PER_DAY,
-      buckets: [
-        { start: 0, end: MS_PER_DAY, in: 4, out: 1 },
-        { start: MS_PER_DAY, end: 2 * MS_PER_DAY, in: 0, out: 3 },
-      ],
-      totalIn: 4,
-      totalOut: 4,
-    });
+    const csv = buildMovementCsv(
+      {
+        windowStart: 0,
+        windowEnd: 2 * MS_PER_DAY,
+        buckets: [
+          { start: 0, end: MS_PER_DAY, in: 4, out: 1 },
+          { start: MS_PER_DAY, end: 2 * MS_PER_DAY, in: 0, out: 3 },
+        ],
+        totalIn: 4,
+        totalOut: 4,
+      },
+      isoDate,
+    );
     const lines = csv.split('\r\n');
     expect(lines).toHaveLength(4); // header + 2 buckets + total
     expect(lines[3]).toBe('Total,,4,4');
@@ -145,17 +156,20 @@ describe('report CSV builders', () => {
   });
 
   it('valuation-trend CSV emits one dated row per sample', () => {
-    const csv = buildValuationTrendCsv({
-      windowStart: 0,
-      windowEnd: MS_PER_DAY,
-      points: [
-        { at: 0, value: 30 },
-        { at: MS_PER_DAY, value: 20 },
-      ],
-      startValue: 30,
-      endValue: 20,
-      changeValue: -10,
-    });
+    const csv = buildValuationTrendCsv(
+      {
+        windowStart: 0,
+        windowEnd: MS_PER_DAY,
+        points: [
+          { at: 0, value: 30 },
+          { at: MS_PER_DAY, value: 20 },
+        ],
+        startValue: 30,
+        endValue: 20,
+        changeValue: -10,
+      },
+      isoDate,
+    );
     const lines = csv.split('\r\n');
     expect(lines[0]).toBe('date,value');
     expect(lines[1]).toBe('1970-01-01,30');
