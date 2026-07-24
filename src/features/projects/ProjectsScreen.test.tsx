@@ -10,7 +10,7 @@
  * so the test stays in happy-dom without extra providers.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 
 // ─── dependency stubs ─────────────────────────────────────────────────────────
 
@@ -53,12 +53,14 @@ vi.mock('./components/ProjectDetail', () => ({
 
 type ProjectRow = { id: string; name: string; lineCount: number; status: string };
 
-let projectsState: { isLoading: boolean; data?: { rows: ProjectRow[] } } = {
+let projectsState: { isLoading: boolean; isError?: boolean; data?: { rows: ProjectRow[] } } = {
   isLoading: true,
+  isError: false,
 };
+const refetch = vi.fn();
 
 vi.mock('./projects', () => ({
-  useProjects: () => projectsState,
+  useProjects: () => ({ ...projectsState, refetch }),
 }));
 
 // ─── component under test ─────────────────────────────────────────────────────
@@ -74,7 +76,8 @@ function makeProject(id: string, name: string): ProjectRow {
 afterEach(cleanup);
 
 beforeEach(() => {
-  projectsState = { isLoading: true };
+  projectsState = { isLoading: true, isError: false };
+  refetch.mockClear();
 });
 
 // ─── tests ────────────────────────────────────────────────────────────────────
@@ -129,5 +132,27 @@ describe('ProjectsScreen — aria-live result-count (WCAG 4.1.3, Phase 64)', () 
     render(<ProjectsScreen />);
     const region = screen.getByTestId('projects-count-live');
     expect(region.className).toContain('sr-only');
+  });
+});
+
+describe('ProjectsScreen — failed load (issue #306)', () => {
+  it('reports the error instead of the "no projects yet" empty state', () => {
+    projectsState = { isLoading: false, isError: true };
+    render(<ProjectsScreen />);
+    expect(screen.getByRole('alert').textContent).toContain('couldn’t be loaded');
+    expect(screen.queryByText(/No projects yet/)).toBeNull();
+  });
+
+  it('offers a retry that refetches', () => {
+    projectsState = { isLoading: false, isError: true };
+    render(<ProjectsScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it('the count live region stays silent on failure (the alert speaks instead)', () => {
+    projectsState = { isLoading: false, isError: true };
+    render(<ProjectsScreen />);
+    expect(screen.getByTestId('projects-count-live').textContent).toBe('');
   });
 });

@@ -92,6 +92,11 @@ The most common cause is the browser clearing its storage for Gubbins. Restore f
 [[backup|Backup-and-Restore]] or re-[[sync|Cloud-Sync]]. To prevent it, [[install the
 app|Installing-Gubbins]] and grant **persistent storage**.
 
+> **ℹ️ Note**
+> If a list couldn't be read this time — rather than being genuinely empty — Gubbins now says so
+> in place with a short "couldn't be loaded" message and a **Try again** button, instead of looking
+> empty. That usually clears on a retry; if it keeps happening, reload the app.
+
 **I'm running low on storage.**
 Use [[storage triage|Storage-Triage]] to see what's using space and reclaim it (downgrading old
 images usually helps most), keeping a [[backup|Backup-and-Restore]] first.

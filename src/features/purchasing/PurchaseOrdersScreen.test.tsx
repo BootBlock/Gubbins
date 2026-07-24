@@ -22,10 +22,12 @@ import type { PurchaseOrderWithLines } from '@/db/repositories';
 let poData: PurchaseOrderWithLines | undefined;
 let setStatusSpy: ReturnType<typeof vi.fn>;
 let receiveLineSpy: ReturnType<typeof vi.fn>;
+const refetchOrders = vi.fn();
 
 /** Controls usePurchaseOrders for the master-list result-count tests (Phase 64). */
 let ordersState: {
   isLoading: boolean;
+  isError?: boolean;
   data?: { rows: PurchaseOrderWithLines[] };
 } = {
   isLoading: false,
@@ -43,7 +45,7 @@ let ordersState: {
 };
 
 vi.mock('./queries', () => ({
-  usePurchaseOrders: () => ordersState,
+  usePurchaseOrders: () => ({ ...ordersState, refetch: refetchOrders }),
   usePurchaseOrder: () => ({
     isLoading: false,
     data: poData,
@@ -183,6 +185,8 @@ beforeEach(() => {
       ],
     },
   };
+
+  refetchOrders.mockClear();
 
   // setStatus spy: synchronously calls onSuccess when invoked.
   setStatusSpy = vi.fn((_vars: unknown, callbacks?: { onSuccess?: () => void }) => {
@@ -388,5 +392,27 @@ describe("PurchaseOrdersScreen — an order's total renders in the order's curre
     const line = screen.getAllByTestId('po-line-row')[0]!;
     expect(line.textContent).toContain('€50.00');
     expect(line.textContent).not.toContain('£');
+  });
+});
+
+describe('PurchaseOrdersScreen — failed order-list load (issue #306)', () => {
+  it('reports the error instead of the "no purchase orders yet" empty state', () => {
+    ordersState = { isLoading: false, isError: true };
+    render(<PurchaseOrdersScreen />);
+    expect(screen.getByTestId('po-error').textContent).toContain('couldn’t be loaded');
+    expect(screen.queryByTestId('po-empty')).toBeNull();
+  });
+
+  it('offers a retry that refetches', () => {
+    ordersState = { isLoading: false, isError: true };
+    render(<PurchaseOrdersScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(refetchOrders).toHaveBeenCalled();
+  });
+
+  it('the count live region stays silent on failure (the alert speaks instead)', () => {
+    ordersState = { isLoading: false, isError: true };
+    render(<PurchaseOrdersScreen />);
+    expect(screen.getByTestId('po-list-count-live').textContent).toBe('');
   });
 });
