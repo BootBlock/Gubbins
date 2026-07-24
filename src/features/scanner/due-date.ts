@@ -40,12 +40,16 @@ export function daysUntil(dueDate: number, now: number = nowMs()): number {
  * Classify a checkout's urgency. `dueDate` of `null` is `NONE`. Past due is
  * `OVERDUE`; within `dueSoonDays` (default 2) is `DUE_SOON`; otherwise `UPCOMING`.
  *
+ * The "due soon" window steps `dueSoonDays` whole calendar days on from `now`
+ * ({@link addCalendarDays}) rather than a fixed span, so the boundary does not slip an hour
+ * across a DST change (issue #325) — mirroring `expiryStatus`.
+ *
  * @internal Exported for unit tests only.
  */
 export function dueStatus(dueDate: number | null, now: number = nowMs(), dueSoonDays = 2): DueStatus {
   if (dueDate === null) return 'NONE';
   if (dueDate < now) return 'OVERDUE';
-  if (dueDate - now <= dueSoonDays * MS_PER_DAY) return 'DUE_SOON';
+  if (dueDate <= addCalendarDays(now, dueSoonDays)) return 'DUE_SOON';
   return 'UPCOMING';
 }
 
