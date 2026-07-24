@@ -36,11 +36,11 @@ export type ApiErrorCode =
   // A pushed snapshot exceeded the configured size cap — HTTP 413. Only reachable when the
   // opt-in snapshot-ingest endpoint (GUBBINS_BRIDGE_ALLOW_PUSH=on) is enabled.
   | 'payload_too_large'
-  // A scale reading that could not be used — HTTP 409. Only reachable when the opt-in Home
-  // Assistant read (GUBBINS_BRIDGE_HA=on) is enabled. Kept as three distinct codes because they
-  // need different words in front of the user: hardware/integration, configuration, wrong entity.
+  // A genuine scale that could not be read — HTTP 409. Only reachable when the opt-in Home
+  // Assistant read (GUBBINS_BRIDGE_HA=on) is enabled. Two distinct codes because they need
+  // different words in front of the user: hardware/integration versus a sensor not reporting a
+  // number. An entity that isn't a scale is answered as a `404`, not one of these (issue #179).
   | 'scale_unavailable'
-  | 'scale_unsupported_unit'
   | 'scale_not_a_number'
   // The bridge could not talk to Home Assistant, or was refused by it — HTTP 502/404. Likewise
   // only reachable when the Home Assistant read is enabled.

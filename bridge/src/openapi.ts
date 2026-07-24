@@ -1152,10 +1152,13 @@ export const openapiDocument: JsonValue = {
         tags: ['scale'],
         summary: 'Read the current weight from a scale entity, in grams',
         description:
-          'Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Reconciles the sensor’s own ' +
-          'unit (mg, g, kg, oz, lb, st) to canonical grams. A reading that cannot be used is a 409 ' +
-          '— never a 200 with a zero weight — because the caller turns this number into a stock ' +
-          'count: scale_unavailable, scale_unsupported_unit or scale_not_a_number.',
+          'Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Only entities that qualify ' +
+          'as scales (a convertible mass unit — mg, g, kg, oz, lb, st) can be read; any other ' +
+          'entity, or an unknown one, answers 404 exactly like a missing entity, so the endpoint ' +
+          'reveals nothing about the rest of your Home Assistant instance. The sensor’s own unit ' +
+          'is reconciled to canonical grams. A genuine scale that cannot be read is a 409 — never ' +
+          'a 200 with a zero weight — because the caller turns this number into a stock count: ' +
+          'scale_unavailable or scale_not_a_number.',
         parameters: [
           {
             name: 'entity_id',
@@ -1191,8 +1194,18 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
+          404: {
+            description:
+              'The Home Assistant read is disabled, or the entity is not a scale (or does not ' +
+              'exist). A non-scale entity is deliberately indistinguishable from a missing one.',
+            content: {
+              'application/json': {
+                example: { error: { code: 'not_found', message: 'No such entity.' } },
+              },
+            },
+          },
           409: {
-            description: 'The scale is unavailable, reports an unconvertible unit, or is not numeric.',
+            description: 'A genuine scale that is unavailable, or is not reporting a numeric weight.',
             content: {
               'application/json': {
                 example: {

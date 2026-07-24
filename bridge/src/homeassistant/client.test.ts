@@ -78,6 +78,42 @@ describe('createHaClient', () => {
     expect(calls[0]!.url).toBe('http://ha.test:8123/api/states/sensor.bench_scale');
   });
 
+  // Issue #179: a read of an entity that isn't a scale is answered exactly like a missing one —
+  // the same 404, the same message — so a token holder can't probe the rest of the user's home.
+  it('answers a non-scale entity as a 404, identical to a missing one', async () => {
+    const nonScale = fakeFetch({
+      json: async () => ({
+        entity_id: 'sensor.lounge_temperature',
+        state: '21.5',
+        attributes: { unit_of_measurement: '°C', friendly_name: 'Lounge temperature' },
+        last_updated: '2026-07-18T09:00:00.000Z',
+      }),
+    });
+    const nonScaleClient = createHaClient({
+      baseUrl: 'http://ha.test:8123',
+      token: TOKEN,
+      fetchImpl: nonScale.impl,
+    });
+    const nonScaleError = await nonScaleClient
+      .readScale('sensor.lounge_temperature')
+      .catch((e: unknown) => e);
+
+    const missing = fakeFetch({ ok: false, status: 404 });
+    const missingClient = createHaClient({
+      baseUrl: 'http://ha.test:8123',
+      token: TOKEN,
+      fetchImpl: missing.impl,
+    });
+    const missingError = await missingClient.readScale('sensor.nope').catch((e: unknown) => e);
+
+    expect(nonScaleError).toBeInstanceOf(HaError);
+    // Same status, code and message as a genuinely-unknown entity — no oracle.
+    expect(nonScaleError).toMatchObject({ status: 404, code: 'not_found' });
+    expect((nonScaleError as HaError).status).toBe((missingError as HaError).status);
+    expect((nonScaleError as HaError).code).toBe((missingError as HaError).code);
+    expect((nonScaleError as HaError).message).toBe((missingError as HaError).message);
+  });
+
   it('maps a rejected token to a generic 502 that never echoes the token', async () => {
     const { impl } = fakeFetch({ ok: false, status: 401 });
     const client = createHaClient({ baseUrl: 'http://ha.test:8123', token: TOKEN, fetchImpl: impl });
