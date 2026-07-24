@@ -8,7 +8,7 @@
  * once), and replays them chronologically over the item's original capacity to obtain
  * the true converged value. All pure and unit-tested.
  */
-import type { GaugeHistoryDelta } from './types';
+import type { GaugeHistoryDelta, StockQuantityDelta } from './types';
 
 /**
  * Merge two delta lists, de-duplicating by id and ordering chronologically.
@@ -53,4 +53,28 @@ export function reconcileGauge(
   remoteDeltas: readonly GaugeHistoryDelta[],
 ): number {
   return replayGaugeValue(grossCapacity, mergeDeltas(localDeltas, remoteDeltas));
+}
+
+/**
+ * The discrete-stock analogue of {@link reconcileGauge} (issue #188). A `(item, location, batch)`
+ * placement's converged quantity is the id-unioned sum of every signed `stock_deltas` movement,
+ * over a base of **0** (a batch has no structural capacity — its whole life is deltas), clamped at
+ * a floor of 0. De-duplication by the delta's own id means the same physical movement seen on two
+ * devices counts once; the union is commutative, so both devices reach the same quantity.
+ *
+ * The floor is the only clamp (there is no ceiling): concurrent over-consumption that drives the
+ * sum negative converges to 0 on every replay rather than leaving a latent negative. Recomputing
+ * from the deltas each sync makes this self-correcting, exactly as the gauge re-clamps its value.
+ */
+export function reconcileStockQuantity(
+  localDeltas: readonly StockQuantityDelta[],
+  remoteDeltas: readonly StockQuantityDelta[],
+): number {
+  const byId = new Map<string, StockQuantityDelta>();
+  for (const delta of [...localDeltas, ...remoteDeltas]) {
+    if (!byId.has(delta.id)) byId.set(delta.id, delta);
+  }
+  let sum = 0;
+  for (const delta of byId.values()) sum += delta.quantityDelta;
+  return sum < 0 ? 0 : sum;
 }

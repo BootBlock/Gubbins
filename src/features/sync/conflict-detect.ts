@@ -19,9 +19,17 @@ import type { SyncConflict, SyncTable } from './types';
  * Neither is authoritative on the items row, so a difference in them is not a lost edit — and
  * restoring them would clobber the CRDT-merged value or be silently undone by the recompute
  * trigger. Detection, the diff view and the restore-UPDATE all consult this set.
+ *
+ * Issue #188 extends the same reasoning down the ledger: `stock_batches.quantity` is now merged
+ * by the discrete-stock Delta-CRDT (replaying the `stock_deltas` ledger), and `item_stock.quantity`
+ * is the trigger-derived SUM of it. So a divergence in either is a converged value, not a lost
+ * edit — surfacing it as a conflict, or restoring the losing side's quantity, would misreport the
+ * merge and be undone by the recompute triggers.
  */
 export const NON_LWW_COLUMNS: Partial<Record<SyncTable, ReadonlySet<string>>> = {
   items: new Set(['current_net_value', 'quantity']),
+  item_stock: new Set(['quantity']),
+  stock_batches: new Set(['quantity']),
 };
 
 /** The non-LWW columns for a table (empty when none), for conflict detection/diff/restore. */

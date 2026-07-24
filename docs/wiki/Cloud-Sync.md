@@ -33,6 +33,22 @@ changed on two devices before they sync that Gubbins has to pick one, and it doe
 **last-write-wins** — the most recent change prevails — so syncing is safe without you refereeing
 every difference.
 
+### When two devices change the same stock count
+
+An item's **quantity** is the one thing that is *not* last-write-wins, because picking one side
+would quietly lose real stock movements. Say a part has 10 on hand: you use 3 on your phone (down
+to 7) while your workshop tablet uses 4 (down to 6), both offline. Last-write-wins would land on 6
+*or* 7 — pretending one of those movements never happened. Instead Gubbins **adds the movements
+up**: both the −3 and the −4 are kept, so after syncing every device shows **3**, the true
+remainder. The same applies to receipts, sales, write-offs, transfers between locations, and every
+other stock change — each one counts once, on every device, no matter where it was made. A
+consumable gauge's level merges the same way.
+
+> **ℹ️ Note**
+> If two devices between them use *more* than was on hand — say both sell the last of a nearly-empty
+> part — the count simply settles at **0** rather than going negative. It never silently discards a
+> movement to avoid that.
+
 ### When two devices create the same thing
 
 Some things are identified by their **name** rather than by which device made them — tags,

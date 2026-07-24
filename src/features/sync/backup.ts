@@ -256,6 +256,8 @@ export function parseBackupJson(text: string): SyncSnapshot {
     // Issue #81: item-to-region placements — older backups predate this, so default to empty.
     itemRegions: validateEdges<ItemRegionEdge>(obj.itemRegions, ['itemId', 'regionId']),
     itemHistory: validateRows(obj.itemHistory),
+    // Issue #188: the stock-delta convergence ledger — older backups predate it, so default to empty.
+    stockDeltas: validateRows(obj.stockDeltas),
   };
 }
 
