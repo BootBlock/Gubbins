@@ -30,6 +30,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   rejectedCycles: [],
   serialisedLoansClosed: [],
   collisions: [],
+  flagRepairs: [],
   historyInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],

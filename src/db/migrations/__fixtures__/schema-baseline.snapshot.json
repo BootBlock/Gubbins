@@ -399,6 +399,18 @@
     },
     {
       "type": "index",
+      "name": "idx_supplier_parts_one_preferred",
+      "tbl_name": "supplier_parts",
+      "sql": "CREATE UNIQUE INDEX idx_supplier_parts_one_preferred\n              ON supplier_parts(item_id) WHERE is_preferred = 1"
+    },
+    {
+      "type": "index",
+      "name": "idx_supplier_parts_one_price_source",
+      "tbl_name": "supplier_parts",
+      "sql": "CREATE UNIQUE INDEX idx_supplier_parts_one_price_source\n              ON supplier_parts(item_id) WHERE is_price_source = 1"
+    },
+    {
+      "type": "index",
       "name": "idx_supplier_parts_supplier_id",
       "tbl_name": "supplier_parts",
       "sql": "CREATE INDEX idx_supplier_parts_supplier_id ON supplier_parts(supplier_id)"
@@ -5653,21 +5665,35 @@
       ],
       "indexes": [
         {
-          "seq": 1,
+          "seq": 3,
           "name": "idx_supplier_parts_item_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
+          "seq": 1,
+          "name": "idx_supplier_parts_one_preferred",
+          "unique": 1,
+          "origin": "c",
+          "partial": 1
+        },
+        {
           "seq": 0,
+          "name": "idx_supplier_parts_one_price_source",
+          "unique": 1,
+          "origin": "c",
+          "partial": 1
+        },
+        {
+          "seq": 2,
           "name": "idx_supplier_parts_supplier_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 2,
+          "seq": 4,
           "name": "sqlite_autoindex_supplier_parts_1",
           "unique": 1,
           "origin": "pk",

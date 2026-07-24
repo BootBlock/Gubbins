@@ -1346,6 +1346,20 @@ const baselineStatements: SqlStatement[] = [
     // Drives the supplier-side reads: a supplier's parts, and the RESTRICT check on delete.
     sql: `CREATE INDEX idx_supplier_parts_supplier_id ON supplier_parts(supplier_id);`,
   },
+  {
+    // At most one preferred and one price-source supplier part per item — enforced at the
+    // schema level, not just by the app's demote-then-set writes (issues #157, #192). Two
+    // offline devices that each pin a *different* supplier converge, per-row LWW, to two rows
+    // both flagged; the sync engine's cross-row repair (`reconcile`) demotes all but one
+    // deterministic winner before the merge applies, and these partial indexes are the backstop
+    // that keeps any path — an app bug, a hand-written import — from re-introducing the state.
+    sql: `CREATE UNIQUE INDEX idx_supplier_parts_one_preferred
+              ON supplier_parts(item_id) WHERE is_preferred = 1;`,
+  },
+  {
+    sql: `CREATE UNIQUE INDEX idx_supplier_parts_one_price_source
+              ON supplier_parts(item_id) WHERE is_price_source = 1;`,
+  },
   { sql: updatedAtTrigger('supplier_parts') },
   {
     sql: `
