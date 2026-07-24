@@ -26,6 +26,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   localUpserts: [],
   localDeletes: [],
   gaugeResolutions: [],
+  stockResolutions: [],
   reparented: [],
   rejectedCycles: [],
   collisions: [],

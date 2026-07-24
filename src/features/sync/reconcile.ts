@@ -39,7 +39,7 @@ import {
 import type { SqlRow } from '@/db/rpc/driver';
 import { applyOffset } from './clock';
 import { buildConflict, nonLwwColumns } from './conflict-detect';
-import { reconcileGauge } from './delta-crdt';
+import { reconcileGauge, reconcileStockQuantity } from './delta-crdt';
 import { FK_REFS } from './fk-refs';
 import { resolveLww } from './lww';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
@@ -48,6 +48,8 @@ import { resolveUniqueKeyCollisions } from './unique-keys';
 import type {
   GaugeHistoryDelta,
   GaugeResolution,
+  StockQuantityDelta,
+  StockResolution,
   ItemTagEdge,
   ItemTagEdgeDelete,
   ItemRegionEdge,
@@ -91,6 +93,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   localUpserts: [],
   localDeletes: [],
   gaugeResolutions: [],
+  stockResolutions: [],
   reparented: [],
   rejectedCycles: [],
   collisions: [],
@@ -190,6 +193,9 @@ export function reconcile(
   // --- §7.3 Delta-CRDT gauge reconciliation -------------------------------------
   const gaugeResolutions = reconcileGauges(local, remote, finalItems);
 
+  // --- Issue #188 Delta-CRDT discrete-stock reconciliation ----------------------
+  const stockResolutions = reconcileStock(local, remote, finalItemIds);
+
   // --- Phase 11: non-LWW sections (append-only ledger + M:N membership) ----------
   // Both reference parents (items/tags), so they are filtered to the rows that will
   // survive the merge to keep the atomic apply FK-safe.
@@ -257,6 +263,7 @@ export function reconcile(
     localUpserts,
     localDeletes,
     gaugeResolutions,
+    stockResolutions,
     reparented,
     rejectedCycles,
     collisions,
@@ -910,6 +917,76 @@ function reconcileGauges(
     resolutions.push({ itemId: id, netValue });
   }
   return resolutions;
+}
+
+/**
+ * Issue #188 Delta-CRDT: replay the merged `stock_deltas` for every `(item, location, batch)`
+ * placement **contested on both sides**, converging `stock_batches.quantity` to
+ * `clamp₀(Σ id-unioned deltas)`.
+ *
+ * Deliberately conservative, mirroring {@link reconcileGauges}: a placement with deltas on only
+ * one side is left to keep its Last-Write-Wins value (the merge upsert already carried the newer
+ * side's quantity, and its ledger equals that quantity by the S0 capture invariant). Only a
+ * placement both devices moved needs the commutative sum — and restricting to the contested set is
+ * also what makes the pass safe, since it can never set a quantity from an empty delta sum and so
+ * can never zero out a placement whose ledger this device happens not to carry.
+ */
+function reconcileStock(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  finalItemIds: ReadonlySet<string>,
+): StockResolution[] {
+  const localByPlacement = byPlacement(local.stockDeltas ?? []);
+  const remoteByPlacement = byPlacement(remote.stockDeltas ?? []);
+  const resolutions: StockResolution[] = [];
+  for (const [placementId, localEntry] of localByPlacement) {
+    const remoteEntry = remoteByPlacement.get(placementId);
+    // Only a placement both devices moved can have diverged; a one-sided one keeps its LWW value.
+    if (!remoteEntry) continue;
+    if (!finalItemIds.has(localEntry.key.itemId)) continue;
+    const quantity = reconcileStockQuantity(localEntry.deltas, remoteEntry.deltas);
+    resolutions.push({
+      itemId: localEntry.key.itemId,
+      locationId: localEntry.key.locationId,
+      batchKey: localEntry.key.batchKey,
+      quantity,
+    });
+  }
+  return resolutions;
+}
+
+/** A `(item, location, batch)` placement key. */
+interface PlacementKey {
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly batchKey: string;
+}
+
+/**
+ * Group raw `stock_deltas` rows by their placement, keyed by a stable string id so the same
+ * placement matches across two independently-built snapshots. Each entry projects its rows to the
+ * `{ id, quantityDelta }` the pure {@link reconcileStockQuantity} replays.
+ */
+function byPlacement(
+  deltas: readonly SqlRow[],
+): Map<string, { key: PlacementKey; deltas: StockQuantityDelta[] }> {
+  const map = new Map<string, { key: PlacementKey; deltas: StockQuantityDelta[] }>();
+  for (const d of deltas) {
+    const key: PlacementKey = {
+      itemId: String(d.item_id),
+      locationId: String(d.location_id),
+      batchKey: String(d.batch_key),
+    };
+    // `\0` cannot occur in a UUID or a batch key, so this composite id never collides.
+    const placementId = `${key.itemId}\0${key.locationId}\0${key.batchKey}`;
+    let entry = map.get(placementId);
+    if (!entry) {
+      entry = { key, deltas: [] };
+      map.set(placementId, entry);
+    }
+    entry.deltas.push({ id: String(d.id), quantityDelta: num(d.quantity_delta) });
+  }
+  return map;
 }
 
 function byItem(deltas: readonly GaugeHistoryDelta[]): Map<string, GaugeHistoryDelta[]> {

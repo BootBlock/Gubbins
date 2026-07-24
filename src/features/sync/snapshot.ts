@@ -807,6 +807,17 @@ export async function applyPlan(
     });
   }
 
+  // Issue #188 Delta-CRDT discrete-stock corrections. Applied after the LWW upserts (so they
+  // override the last-write-wins quantity) and inside the capture-disabled batch (so the
+  // correction is not itself recorded as a fresh delta). The recompute triggers re-derive
+  // `item_stock` and `items.quantity` from the corrected batch quantity.
+  for (const { itemId, locationId, batchKey, quantity } of plan.stockResolutions) {
+    statements.push({
+      sql: 'UPDATE stock_batches SET quantity = ? WHERE item_id = ? AND location_id = ? AND batch_key = ?;',
+      params: [quantity, itemId, locationId, batchKey],
+    });
+  }
+
   // §7.5.2 conflict logs.
   for (const { itemId } of plan.reparented) {
     statements.push(reparentHistoryStatement(itemId));

@@ -109,6 +109,28 @@ export interface GaugeResolution {
 }
 
 /**
+ * A signed stock movement extracted from `stock_deltas` (issue #188 Delta-CRDT). Identified by
+ * the delta row's own id so the same movement seen on two devices is de-duplicated rather than
+ * double-counted, exactly like {@link GaugeHistoryDelta}.
+ */
+export interface StockQuantityDelta {
+  readonly id: string;
+  readonly quantityDelta: number;
+}
+
+/**
+ * A merged `(item, location, batch)` placement quantity to write onto `stock_batches` (issue #188
+ * Delta-CRDT). Overrides the Last-Write-Wins value the merge upserted; the recompute triggers then
+ * roll it up to `item_stock` and `items.quantity`.
+ */
+export interface StockResolution {
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly batchKey: string;
+  readonly quantity: number;
+}
+
+/**
  * A genuine concurrent-edit collision surfaced for user review (§7.3, issue #72).
  *
  * Row-level LWW resolves every field silently by newest-timestamp-wins; that is correct
@@ -197,6 +219,12 @@ export interface ReconciliationPlan {
   readonly localDeletes: readonly Tombstone[];
   /** Merged gauge values to set (§7.3 Delta-CRDT), applied after upserts. */
   readonly gaugeResolutions: readonly GaugeResolution[];
+  /**
+   * Issue #188: merged `stock_batches` placement quantities to set (discrete-stock Delta-CRDT),
+   * applied after the LWW upserts to override them. The recompute triggers then re-derive
+   * `item_stock` and `items.quantity`.
+   */
+  readonly stockResolutions: readonly StockResolution[];
   /** §7.5.2 automatic re-parents to Unassigned, to log in each item's Activity Ledger. */
   readonly reparented: readonly ReparentLog[];
   /** §7.5.3 location moves discarded because they would create a nesting cycle. */

@@ -5,7 +5,10 @@ import { migrations } from '@/db/migrations';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
 import { LocationRepository } from '@/db/repositories/LocationRepository';
 import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE, SYNC_TABLES } from '@/db/repositories/tombstone';
-import { buildLocalSnapshot, buildCloneStatements, buildSchemaDictionary } from './snapshot';
+import { applyPlan, buildLocalSnapshot, buildCloneStatements, buildSchemaDictionary } from './snapshot';
+import { reconcile } from './reconcile';
+import { reconcileStockQuantity } from './delta-crdt';
+import type { StockQuantityDelta } from './types';
 
 /**
  * The `stock_deltas` convergence ledger (issue #188), phase S0.
@@ -162,6 +165,100 @@ describe('stock_deltas — capture invariant (issue #188, S0)', () => {
       for (const row of check) expect(Number(row.s)).toBe(Number(row.q));
     } finally {
       await deviceB.close();
+    }
+  });
+});
+
+describe('reconcileStockQuantity — pure replay (issue #188, S1)', () => {
+  const d = (id: string, quantityDelta: number): StockQuantityDelta => ({ id, quantityDelta });
+
+  it('sums the id-union of both sides over a base of zero', () => {
+    // Shared seed (+10), then each device drew the placement down independently.
+    const local = [d('seed', 10), d('a', -3)];
+    const remote = [d('seed', 10), d('b', -4)];
+    expect(reconcileStockQuantity(local, remote)).toBe(3); // 10 − 3 − 4, NOT 6 or 7
+  });
+
+  it('de-duplicates a delta seen on both sides (counts it once)', () => {
+    const local = [d('seed', 10), d('a', -3)];
+    // The remote already saw a's decrement (it synced); it must not be double-subtracted.
+    const remote = [d('seed', 10), d('a', -3)];
+    expect(reconcileStockQuantity(local, remote)).toBe(7);
+  });
+
+  it('is commutative — both devices reach the same quantity', () => {
+    const local = [d('seed', 10), d('a', -3), d('c', 2)];
+    const remote = [d('seed', 10), d('b', -4)];
+    expect(reconcileStockQuantity(local, remote)).toBe(reconcileStockQuantity(remote, local));
+  });
+
+  it('floors concurrent over-consumption at zero rather than going negative', () => {
+    // Both devices sold 8 of a shared 10 — 16 drawn from 10. The honest remainder is negative.
+    const local = [d('seed', 10), d('a', -8)];
+    const remote = [d('seed', 10), d('b', -8)];
+    expect(reconcileStockQuantity(local, remote)).toBe(0);
+  });
+});
+
+describe('discrete-stock convergence — the #188 scenario end-to-end (S1)', () => {
+  it('converges two concurrent decrements to the true remainder, losing neither', async () => {
+    const dictOf = (driver: MemoryDriver) =>
+      buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE]);
+
+    // Device A creates the item, then clones its exact state (including the +10 seed delta, with
+    // its id preserved) to a fresh device B — the "same starting point" the two then diverge from.
+    const a = createMemoryDriver();
+    const b = createMemoryDriver();
+    try {
+      await runMigrations(a, migrations);
+      const itemsA = new ItemRepository(a);
+      const loc = await new LocationRepository(a).create({ name: 'Workshop' });
+      const item = await itemsA.create({ name: 'Bracket', quantity: 10, locationId: loc.id });
+
+      await runMigrations(b, migrations);
+      const start = await buildLocalSnapshot(a);
+      await b.transaction(buildCloneStatements(start, await dictOf(b)));
+      const itemsB = new ItemRepository(b);
+
+      // Concurrent, offline: A checks out 3 units (10 → 7), B checks out 4 (10 → 6). Under plain
+      // LWW they would converge to 6 or 7 — never 3 — silently discarding one decrement.
+      await itemsA.adjustQuantity(item.id, -3);
+      await itemsB.adjustQuantity(item.id, -4);
+
+      const snapA = await buildLocalSnapshot(a);
+      const snapB = await buildLocalSnapshot(b);
+
+      // Each device merges the other's snapshot from its own side (as the real sync does).
+      const dictA = await dictOf(a);
+      const dictB = await dictOf(b);
+      await applyPlan(a, reconcile(snapA, snapB, { offset: 0, dictionary: dictA }), dictA);
+      await applyPlan(b, reconcile(snapB, snapA, { offset: 0, dictionary: dictB }), dictB);
+
+      // Both devices converge to the true remainder, 3, and the derived total agrees.
+      expect((await itemsA.getById(item.id))!.quantity).toBe(3);
+      expect((await itemsB.getById(item.id))!.quantity).toBe(3);
+
+      // Neither movement was lost: both decrements survive in the ledger on both devices, and the
+      // capture invariant still holds (quantity == Σ deltas) because no floor was hit.
+      for (const driver of [a, b]) {
+        const decrements = await driver.queryOne<{ n: number }>(
+          'SELECT COUNT(*) AS n FROM stock_deltas WHERE item_id = ? AND quantity_delta < 0;',
+          [item.id],
+        );
+        expect(Number(decrements?.n), 'both concurrent decrements are recorded').toBe(2);
+        const row = await driver.queryOne<{ q: number; s: number }>(
+          `SELECT sb.quantity AS q,
+                  (SELECT COALESCE(SUM(quantity_delta), 0) FROM stock_deltas
+                   WHERE item_id = sb.item_id AND location_id = sb.location_id AND batch_key = sb.batch_key) AS s
+           FROM stock_batches sb WHERE sb.item_id = ?;`,
+          [item.id],
+        );
+        expect(Number(row?.q)).toBe(3);
+        expect(Number(row?.s)).toBe(3);
+      }
+    } finally {
+      await a.close();
+      await b.close();
     }
   });
 });
