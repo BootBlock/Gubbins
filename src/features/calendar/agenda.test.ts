@@ -18,6 +18,11 @@ import {
 const NOW = startOfLocalDay(Date.parse('2026-06-30T12:00:00Z')) + 12 * 60 * 60 * 1000;
 const SOD = startOfLocalDay(NOW);
 
+// A deterministic date formatter for the pure seam under test. The production hook injects
+// `useFormatters().date` (locale-aware); the suite only asserts on names / relative phrasing /
+// ordering, never the date text, so a fixed ISO stamp keeps the expectations timezone-stable.
+const fmtDate = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
 const EMPTY: AgendaSources = {
   maintenance: [],
   warranty: [],
@@ -76,6 +81,7 @@ describe('buildAgenda — lane builders', () => {
         ],
       },
       NOW,
+      fmtDate,
     );
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
@@ -95,11 +101,11 @@ describe('buildAgenda — lane builders', () => {
       scheduleName: 'Service',
       dueAtMs: null,
     };
-    const due = buildAgenda({ ...EMPTY, maintenance: [{ ...base, usageDue: true }] }, NOW);
+    const due = buildAgenda({ ...EMPTY, maintenance: [{ ...base, usageDue: true }] }, NOW, fmtDate);
     expect(due).toHaveLength(1);
     expect(due[0]).toMatchObject({ dueAt: NOW, hasDate: false });
 
-    const notDue = buildAgenda({ ...EMPTY, maintenance: [{ ...base, usageDue: false }] }, NOW);
+    const notDue = buildAgenda({ ...EMPTY, maintenance: [{ ...base, usageDue: false }] }, NOW, fmtDate);
     expect(notDue).toHaveLength(0);
   });
 
@@ -114,6 +120,7 @@ describe('buildAgenda — lane builders', () => {
         ],
       },
       NOW,
+      fmtDate,
     );
     expect(events.map((e) => e.id)).toEqual(['warranty:a:2026-12-01']);
     expect(events[0].dueAt).toBe(Date.parse('2026-12-01'));
@@ -130,6 +137,7 @@ describe('buildAgenda — lane builders', () => {
         ],
       },
       NOW,
+      fmtDate,
     );
     expect(events.map((e) => e.id)).toEqual(['expiry:x']);
     expect(events[0].dueAt).toBe(exp);
@@ -146,6 +154,7 @@ describe('buildAgenda — lane builders', () => {
         ],
       },
       NOW,
+      fmtDate,
     );
     expect(events.map((e) => e.id)).toEqual(['checkout-due:k1']);
     expect(events[0].detail).toContain('Sam');
@@ -162,6 +171,7 @@ describe('buildAgenda — lane builders', () => {
         ],
       },
       NOW,
+      fmtDate,
     );
     expect(events).toHaveLength(1);
     expect(events[0].kind).toBe('checkout-due');
@@ -181,6 +191,7 @@ describe('buildAgenda — lane builders', () => {
         ],
       },
       NOW,
+      fmtDate,
     );
     expect(events.map((e) => e.id)).toEqual(['checkout-due:late', 'checkout-due:soon']);
   });
@@ -195,6 +206,7 @@ describe('buildAgenda — lane builders', () => {
         ],
       },
       NOW,
+      fmtDate,
     );
     expect(events).toHaveLength(2);
     for (const e of events) {
@@ -217,6 +229,7 @@ describe('buildAgenda — lane builders', () => {
         ],
       },
       NOW,
+      fmtDate,
     );
     expect(events).toHaveLength(1);
     const event = events[0]!;
@@ -245,6 +258,7 @@ describe('buildAgenda — lane builders', () => {
         ],
       },
       NOW,
+      fmtDate,
     );
     expect(events[0]!.dueAt).toBe(NOW);
     expect(events[0]!.hasDate).toBe(false);
@@ -262,6 +276,7 @@ describe('buildAgenda — lane builders', () => {
         reorder: [{ itemId: 'r', itemName: 'R', shortfall: 2 }], // dueAt = NOW (earliest)
       },
       NOW,
+      fmtDate,
     );
     expect(events.map((e) => e.id)).toEqual(['reorder:r', 'expiry:soon', 'expiry:late']);
   });
@@ -280,6 +295,7 @@ describe('bucketAgenda', () => {
         reorder: [{ itemId: 'today', itemName: 'T', shortfall: 1 }], // today
       },
       NOW,
+      fmtDate,
     );
     const sections = bucketAgenda(events, NOW);
     expect(sections.map((s) => s.bucket)).toEqual(['overdue', 'today', 'week', 'later']);
@@ -304,6 +320,7 @@ describe('filterByKind', () => {
       reorder: [{ itemId: 'r', itemName: 'R', shortfall: 1 }],
     },
     NOW,
+    fmtDate,
   );
 
   it('keeps only the enabled kinds', () => {

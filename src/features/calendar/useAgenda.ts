@@ -20,6 +20,7 @@ import { maintenanceStatus } from '@/features/lifecycle/maintenance';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { buildAgenda, maintenanceDueAtMs, type AgendaEvent, type AgendaSources } from './agenda';
 import { nowMs } from '@/lib/clock';
+import { useFormatters } from '@/lib/useFormatters';
 
 /**
  * Lookahead window (days) for the warranty/expiry feeds — ~100 years, i.e. effectively
@@ -54,6 +55,9 @@ export function useAgenda(): {
   readonly isError: boolean;
 } {
   const now = nowMs();
+  // Format every date in the agenda copy through the shared formatter seam so a due/expiry/booking
+  // date reads in the user's locale, exactly as the same field does elsewhere (issue #328).
+  const { date: formatDate } = useFormatters();
 
   // Modular UI (Phase 7): each date-driven lane gates on its owning feature. A disabled lane
   // skips its source fetch (`enabled: false`) AND feeds an empty array into the pure
@@ -193,7 +197,7 @@ export function useAgenda(): {
       : [],
   };
 
-  const events = buildAgenda(sources, now);
+  const events = buildAgenda(sources, now, formatDate);
 
   return { events, now, isLoading, isError };
 }

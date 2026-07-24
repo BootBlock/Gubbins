@@ -56,10 +56,14 @@ function toCsv(header: readonly string[], rows: readonly (readonly unknown[])[])
   return lines.join('\r\n');
 }
 
-/** A date-only ISO stamp (UTC) for window/boundary columns. */
-function isoDate(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
-}
+/**
+ * Renders a UNIX-ms instant as the date shown in a window/boundary column. Injected by the caller
+ * (rather than sliced from an ISO string here) so a report CSV's dates read exactly as the same
+ * dates do on the Reports screen — the shared `useFormatters().date` seam, in the user's locale —
+ * instead of a UTC-sliced `YYYY-MM-DD` that can even land on the wrong day (issue #328). Kept a
+ * pure parameter so the serialisers stay free of React/preferences and remain unit-testable.
+ */
+export type ReportDateFormatter = (ms: number) => string;
 
 /** Valuation CSV: the category breakdown then the location breakdown, tagged by dimension. */
 export function buildValuationCsv(report: InventoryValueReport): string {
@@ -70,13 +74,13 @@ export function buildValuationCsv(report: InventoryValueReport): string {
 }
 
 /** Consumption CSV: a single summary row for the window. */
-export function buildConsumptionCsv(report: ConsumptionRateReport): string {
+export function buildConsumptionCsv(report: ConsumptionRateReport, formatDate: ReportDateFormatter): string {
   return toCsv(
     ['windowStart', 'windowEnd', 'windowDays', 'totalConsumed', 'perDay'],
     [
       [
-        isoDate(report.windowStart),
-        isoDate(report.windowEnd),
+        formatDate(report.windowStart),
+        formatDate(report.windowEnd),
         report.windowDays,
         report.totalConsumed,
         report.perDay,
@@ -86,8 +90,8 @@ export function buildConsumptionCsv(report: ConsumptionRateReport): string {
 }
 
 /** Movement CSV: one row per time bucket (ins/outs), then a totals row. */
-export function buildMovementCsv(report: MovementReport): string {
-  const rows: unknown[][] = report.buckets.map((b) => [isoDate(b.start), isoDate(b.end), b.in, b.out]);
+export function buildMovementCsv(report: MovementReport, formatDate: ReportDateFormatter): string {
+  const rows: unknown[][] = report.buckets.map((b) => [formatDate(b.start), formatDate(b.end), b.in, b.out]);
   rows.push(['Total', '', report.totalIn, report.totalOut]);
   return toCsv(['bucketStart', 'bucketEnd', 'in', 'out'], rows);
 }
@@ -118,8 +122,11 @@ export function buildAgingCsv(report: StockAgingReport): string {
 }
 
 /** Valuation-trend CSV: one row per reconstructed sample (chronological). */
-export function buildValuationTrendCsv(report: ValuationTrendReport): string {
-  const rows: unknown[][] = report.points.map((p) => [isoDate(p.at), p.value]);
+export function buildValuationTrendCsv(
+  report: ValuationTrendReport,
+  formatDate: ReportDateFormatter,
+): string {
+  const rows: unknown[][] = report.points.map((p) => [formatDate(p.at), p.value]);
   return toCsv(['date', 'value'], rows);
 }
 
@@ -131,7 +138,7 @@ export function buildValuationTrendCsv(report: ValuationTrendReport): string {
  * records how many, directly under the total it is missing from — an exported figure is read away
  * from the screen that would otherwise have carried the warning.
  */
-export function buildSpendCsv(report: SpendReport): string {
+export function buildSpendCsv(report: SpendReport, formatDate: ReportDateFormatter): string {
   const rows: unknown[][] = [];
   rows.push(['Total', '', report.total, 1]);
   if (report.excludedForeignCurrency > 0) {
@@ -140,7 +147,7 @@ export function buildSpendCsv(report: SpendReport): string {
   for (const s of report.bySource) rows.push(['Source', SPEND_SOURCE_LABEL[s.source], s.total, s.share]);
   for (const g of report.bySupplier) rows.push(['Supplier', g.name, g.total, g.share]);
   for (const g of report.byCategory) rows.push(['Category', g.name, g.total, g.share]);
-  for (const b of report.buckets) rows.push(['Bucket', isoDate(b.start), b.total, '']);
+  for (const b of report.buckets) rows.push(['Bucket', formatDate(b.start), b.total, '']);
   return toCsv(['dimension', 'group', 'total', 'share'], rows);
 }
 

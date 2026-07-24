@@ -11,6 +11,7 @@ import { ScrapeBridgeProvider } from '@/features/scraping';
 import { ActiveTabScrapeListener } from '@/features/inventory/components/ActiveTabScrapeListener';
 import { FirstItemCelebration } from '@/features/inventory/components/FirstItemCelebration';
 import { ReminderNotifications } from '@/features/alerts/ReminderNotifications';
+import { OrphanImageSweeper } from '@/features/maintenance/OrphanImageSweeper';
 import { useApplyTheme } from '@/features/settings/useApplyTheme';
 import { useApplyLanguage } from '@/features/i18n';
 import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
@@ -76,6 +77,10 @@ export function App() {
                     handles their clicks. Inside BootGate so the alert feeds it reads have a ready
                     database; renders nothing. Opt-in and silent unless enabled + permission granted. */}
                   <ReminderNotifications />
+                  {/* Reclaims full-resolution image files left in OPFS by item deletes and sync
+                    merges (#206). Inside BootGate so the database it queries is ready; renders
+                    nothing and runs a throttled, race-safe background sweep. */}
+                  <OrphanImageSweeper />
                 </SignInGate>
               </BootGate>
             </ScrapeBridgeProvider>
