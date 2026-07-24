@@ -43,14 +43,25 @@ describe('startOfLocalDay', () => {
 });
 
 describe('bucketForDueAt', () => {
-  it('classifies past instants as overdue', () => {
-    expect(bucketForDueAt(NOW - 1, NOW)).toBe('overdue');
+  it('classifies instants before today as overdue', () => {
+    expect(bucketForDueAt(SOD - 1, NOW)).toBe('overdue'); // one ms before today started
     expect(bucketForDueAt(SOD - MS_PER_DAY, NOW)).toBe('overdue');
   });
 
-  it('classifies the rest of today as today', () => {
-    expect(bucketForDueAt(NOW, NOW)).toBe('today'); // exactly now is not "past"
-    expect(bucketForDueAt(SOD + MS_PER_DAY - 1, NOW)).toBe('today');
+  it('classifies the whole of today as today, including earlier today', () => {
+    expect(bucketForDueAt(SOD, NOW)).toBe('today'); // start of today
+    expect(bucketForDueAt(NOW - 1, NOW)).toBe('today'); // earlier today, before `now`
+    expect(bucketForDueAt(NOW, NOW)).toBe('today');
+    expect(bucketForDueAt(SOD + MS_PER_DAY - 1, NOW)).toBe('today'); // last ms of today
+  });
+
+  it('keeps an event due earlier today in Today, not Overdue (issue #322)', () => {
+    // Warranty/expiry dates are anchored at the START of their day, so an event due today is
+    // already earlier than a midday `now`. Bucketing on `dueAt < now` swept every one of them into
+    // Overdue; they must sit in Today. `SOD` (start of today) is the worst case and is strictly
+    // before `NOW` in every zone, since `NOW` is deliberately noon-of-its-local-day.
+    expect(SOD).toBeLessThan(NOW);
+    expect(bucketForDueAt(SOD, NOW)).toBe('today');
   });
 
   it('classifies the next 7 days as week, then 30 days as month, then later', () => {
@@ -179,6 +190,24 @@ describe('buildAgenda — lane builders', () => {
     // Overdue events keep their real (past) due date so they sort to the top and bucket overdue.
     expect(events[0].dueAt).toBe(SOD - 3 * MS_PER_DAY);
     expect(bucketForDueAt(events[0].dueAt, NOW)).toBe('overdue');
+  });
+
+  it('reads a loan due today plainly in Today, never tagged Overdue (issue #322)', () => {
+    // `SOD` is the start of today and strictly before the midday `NOW`, so the old `dueDate < now`
+    // affordance would have tagged it "Overdue" — yet it buckets into Today. The affordance now
+    // keys off the same calendar-day boundary, so the heading and the copy agree.
+    const events = buildAgenda(
+      {
+        ...EMPTY,
+        checkouts: [{ id: 'k1', itemId: 'i1', itemName: 'Camera', borrowerName: 'Sam', dueDate: SOD }],
+      },
+      NOW,
+      fmtDate,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].detail).not.toContain('overdue');
+    expect(events[0].detail).not.toContain('Overdue');
+    expect(bucketForDueAt(events[0].dueAt, NOW)).toBe('today');
   });
 
   it('sorts an overdue loan ahead of a soon-due one (overdue before upcoming)', () => {

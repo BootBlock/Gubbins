@@ -238,10 +238,13 @@ function buildCheckoutEvents(
   for (const s of sources) {
     if (s.dueDate == null) continue;
     // A late loan reads its shortfall the same way low stock does: the overdue span is spelled
-    // out ("N days overdue") ahead of the raw date, so the "Overdue" bucket carries the same
-    // at-a-glance urgency here as on the dashboard. Anchoring at the real `dueDate` keeps an
-    // already-passed loan sorting to the top of the chronological view.
-    const overdue = s.dueDate < now;
+    // out ("N days overdue") ahead of the raw date. The affordance keys off the same calendar-day
+    // boundary the agenda buckets on (issue #322) — a loan counts as overdue only once its due
+    // *day* has fully passed — so a loan due today sits in "Today" reading plainly, never under the
+    // "Today" heading tagged "Overdue". `daysOverdue` still measures the real elapsed span for the
+    // "N days overdue" copy, and the event still anchors at the real `dueDate` so an already-passed
+    // loan sorts to the top of the chronological view.
+    const overdue = s.dueDate < startOfLocalDay(now);
     const detail = overdue
       ? `On loan to ${s.borrowerName} — ${overdueLabel(daysOverdue(s.dueDate, now))} (due ${formatDate(s.dueDate)}).`
       : `On loan to ${s.borrowerName} — due ${formatDate(s.dueDate)}.`;
@@ -370,15 +373,22 @@ export function startOfLocalDay(now: number): number {
 
 /**
  * Classify a single event into its chronological bucket relative to `now`:
- * - **overdue** — already in the past (`dueAt < now`).
- * - **today**   — the remainder of the current calendar day.
+ * - **overdue** — before the start of today's local calendar day.
+ * - **today**   — anywhere within the current calendar day (including earlier today).
  * - **week**    — within the next 7 calendar days.
  * - **month**   — within the next 30 calendar days.
  * - **later**   — beyond 30 days (the catch-all).
+ *
+ * Every boundary hangs off {@link startOfLocalDay}, not the raw `now` instant, so bucketing is
+ * calendar-day-aligned rather than a rolling clock. That is what keeps a same-day event in
+ * "Today": warranty and expiry dates are anchored at UTC midnight, so an event due *today* is
+ * already earlier than `now` from the start of the working day onward — testing `dueAt < now`
+ * (rather than `dueAt < startOfLocalDay(now)`) would sweep every one of them into "Overdue" and
+ * leave "Today" reachable only by the date-less reorder/usage entries (issue #322).
  */
 export function bucketForDueAt(dueAt: number, now: number): AgendaBucket {
-  if (dueAt < now) return 'overdue';
   const startOfDay = startOfLocalDay(now);
+  if (dueAt < startOfDay) return 'overdue';
   if (dueAt < startOfDay + MS_PER_DAY) return 'today';
   if (dueAt < startOfDay + 7 * MS_PER_DAY) return 'week';
   if (dueAt < startOfDay + 30 * MS_PER_DAY) return 'month';
