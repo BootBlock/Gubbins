@@ -298,19 +298,22 @@ rule applied to issue handling.
    trusting types alone. If the change reaches anything the bridge imports (`bridge/**`, and much of
    `src/db` and the search/backup modules), also run `npm run smoke:bridge` — it is the only check
    that exercises Node's strip-only loader, which `tsc` and Vitest both bypass.
-5. **Code review before committing.** Run `/code-review high` on the diff and **fix every confirmed
-   finding** before proceeding. Re-verify after fixing. Format the changed files (`npm run format`,
-   or `npx prettier --write <files>`) so the pre-commit hook doesn't bounce the commit, then commit
-   inside the worktree once clean.
-6. **Land it — by default, don't pause for approval.** The maintainer (@BootBlock) has standing
-   authorization to land issue fixes: once the change is implemented, verified and review-clean,
-   **merge, push and go on to close it** without a separate go-ahead. Only **pause to ask** when
-   there is a genuine, specific question about *this* change — a real design or scope fork, a
-   destructive or ambiguous choice, or something that can't be completed cleanly (see the note at
-   the end of this list). A bare "shall I land it?" is **not** such a question: if the only choice
-   on offer is Land / Hold / Drop, just **land it**. When you *do* need to ask, use
-   `AskUserQuestion` for that specific decision — not as an approval gate — though a concise summary
-   of what changed is always welcome alongside the landing.
+5. **Self-review, then commit.** You **cannot** invoke `/code-review` yourself — it is a built-in
+   skill marked `disable-model-invocation`, so only the maintainer typing `/code-review high`
+   triggers it. So do a thorough **manual** self-review of the diff, fix what you find, and re-verify.
+   Then format the changed files (`npm run format`, or `npx prettier --write <files>`) so the
+   pre-commit hook doesn't bounce the commit, and commit inside the worktree once clean. The
+   `/code-review high` pass then runs on the committed diff at the next step.
+6. **Pause before merging so the maintainer can code-review — do _not_ auto-land.** Once the change
+   is implemented, verified and committed, **stop and hand off the pending diff**: name the
+   worktree/branch and give a concise summary of *what* changed, so @BootBlock can run
+   `/code-review high` on it. **Merge, push and close only after** that review has run and every
+   confirmed finding is fixed (re-verify after fixing). This deliberately replaces the former
+   "land without pausing" default — the workflow requires a code review before landing and only the
+   maintainer can run it, so landing autonomously would skip the mandated review. Separately, still
+   surface a genuine, specific question about *this* change — a real design or scope fork, a
+   destructive or ambiguous choice, or something that can't be completed cleanly (see the note at the
+   end of this list) — via `AskUserQuestion` as before.
 7. **Landing mechanics:** merge the worktree branch into `main` with `--no-ff`, then
    `git push origin main` so the issue's referenced commits actually exist on GitHub. Clean up the
    worktree (remove the `node_modules` junction *before* `git worktree remove` — see
