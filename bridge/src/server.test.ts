@@ -105,7 +105,15 @@ describe('GET /health', () => {
       expect(await health('/health')).toMatchObject({ ok: true, snapshotStale: false });
       // Issue #394: the staleness verdict also rides every read as a response header, so a
       // consumer of /search or any /api/v1 read learns about it without polling /health.
-      expect((await head('/search?q=ESP32')).headers.get('x-gubbins-snapshot-stale')).toBe('false');
+      const fresh = await head('/search?q=ESP32');
+      expect(fresh.headers.get('x-gubbins-snapshot-stale')).toBe('false');
+      // …and it is exposed for CORS, so a cross-origin browser (the PWA) can actually read it.
+      expect(fresh.headers.get('access-control-expose-headers')).toContain('X-Gubbins-Snapshot-Stale');
+
+      // Set only after the auth gate: an unauthenticated caller never learns the verdict.
+      const unauth = await fetch(`http://127.0.0.1:${port}/search?q=ESP32`);
+      expect(unauth.status).toBe(401);
+      expect(unauth.headers.get('x-gubbins-snapshot-stale')).toBeNull();
 
       report = summarizeSnapshotHealth({
         consecutiveFailures: 3,

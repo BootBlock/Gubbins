@@ -78,8 +78,9 @@ function originBlock(version: string): Record<string, unknown> {
 
 /**
  * Build every discovery config for the current state: the four aggregate count sensors, a
- * low-stock binary sensor, and one item-count sensor per location. A caller republishes these
- * (retained) on every (re)connect and whenever the location set changes.
+ * low-stock binary sensor, a snapshot-stale binary sensor (issue #394), and one item-count sensor
+ * per location. A caller republishes these (retained) on every (re)connect and whenever the
+ * location set changes.
  *
  * Entity `name`s are **device-relative**: an MQTT entity with a `device` gets
  * `has_entity_name = True`, so HA already prefixes the device name ("Gubbins"). Repeating it here

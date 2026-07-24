@@ -157,6 +157,34 @@ describe('tools/call', () => {
     expect(result.isError).toBe(false);
   });
 
+  it('does not caveat a write (mutating) tool result even when the read snapshot is stale (issue #394)', async () => {
+    // A write executes against a freshly-read snapshot, not the watcher's stale read driver, so its
+    // confirmation must not carry the read-staleness caveat.
+    const writeTool: McpTool = {
+      name: 'gubbins_pretend_write',
+      mutates: true,
+      description: 'A stand-in mutating tool.',
+      inputSchema: { type: 'object', additionalProperties: false },
+      run: async () => ({ updated: true }),
+    };
+    const staleReport = summarizeSnapshotHealth({ ...HEALTHY_RELOAD, consecutiveFailures: 9 });
+    const stale = createMcpDispatcher({
+      getState: () => state,
+      getSnapshotHealth: () => staleReport,
+      tools: [writeTool],
+    });
+    const res = await stale({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: writeTool.name, arguments: {} },
+    });
+    const result = (res as JsonRpcResponse).result as { content: { text: string }[] };
+    // Single block, no caveat — the write result stands on its own.
+    expect(result.content).toHaveLength(1);
+    expect(JSON.parse(result.content[0]!.text)).toEqual({ updated: true });
+  });
+
   it('returns a normal (non-error) result with found:false for an unknown item id', async () => {
     const res = await call({
       jsonrpc: '2.0',

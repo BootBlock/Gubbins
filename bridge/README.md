@@ -253,11 +253,12 @@ Consumers that poll `/health` — a Home Assistant availability template, a dash
 — should key off `ok` so they degrade to *unavailable* rather than displaying confidently stale
 stock levels.
 
-The same verdict rides **every** response as an `X-Gubbins-Snapshot-Stale: true|false` header,
-so a consumer of `/search`, `/where`, `/metrics` or any `/api/v1` read learns the data is stale
-at the point it reads it — no separate `/health` poll needed. The header carries the boolean
-only; the counters above stay on `/health`. It is present on every response (including errors)
-whenever the bridge tracks reload health, which it always does when run normally.
+The same verdict rides every **authenticated** response as an `X-Gubbins-Snapshot-Stale: true|false`
+header, so a consumer of `/search`, `/where`, `/metrics` or any `/api/v1` read learns the data is
+stale at the point it reads it — no separate `/health` poll needed. The header carries the boolean
+only; the counters above stay on `/health`. It is stamped only *after* the auth/permission gates (so
+it is never disclosed to an unauthenticated caller) and is named in `Access-Control-Expose-Headers`,
+so a cross-origin browser (the PWA is almost always a different origin) is allowed to read it back.
 
 The same staleness is also surfaced over [MQTT](#mqtt-publishing) (a dedicated
 `snapshot/state` topic and a Home Assistant *Snapshot stale* binary sensor) and to the

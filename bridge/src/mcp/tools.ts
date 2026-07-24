@@ -67,6 +67,12 @@ export interface McpTool {
   readonly description: string;
   /** JSON-Schema for the tool's arguments (sent verbatim in `tools/list`). */
   readonly inputSchema: JsonSchema;
+  /**
+   * True for a write tool (issue #394): its result reflects a mutation the executor applied to a
+   * freshly-read snapshot, not the watcher's possibly-stale *read* driver, so the stale-snapshot
+   * caveat the dispatcher prepends to read results must not be attached to it. Read tools omit it.
+   */
+  readonly mutates?: boolean;
   /** Execute the tool against the hydrated driver, returning JSON-serialisable data. */
   run(driver: IDatabaseDriver, args: Readonly<Record<string, unknown>>): Promise<unknown>;
 }
@@ -306,6 +312,7 @@ const NOTE_SCHEMA: JsonSchema = {
 export function createWriteTools(execute: WriteExecutor): readonly McpTool[] {
   const adjustQuantityTool: McpTool = {
     name: 'gubbins_adjust_quantity',
+    mutates: true,
     description:
       "Adjust a DISCRETE item's stock at its home location by a signed whole number — a positive " +
       'delta checks stock in, a negative delta checks it out (e.g. delta -2 to take two). Records ' +
@@ -336,6 +343,7 @@ export function createWriteTools(execute: WriteExecutor): readonly McpTool[] {
 
   const adjustGaugeTool: McpTool = {
     name: 'gubbins_adjust_gauge',
+    mutates: true,
     description:
       "Adjust a CONSUMABLE_GAUGE item's net value by a signed amount (e.g. a part-used bottle or " +
       "reel). The result is clamped to the item's [0, capacity] range. Records the change in the " +

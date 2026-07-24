@@ -169,8 +169,10 @@ async function callTool(
     // the model reads it before the data and can qualify anything it reports (issue #394). The
     // structured payload is left untouched — the staleness is metadata about the answer, not part
     // of it — and the caveat is skipped entirely when the data is current, so a healthy call keeps
-    // its existing single-block shape.
-    const caveat = getSnapshotHealth ? stalenessCaveat(getSnapshotHealth()) : null;
+    // its existing single-block shape. A *write* tool's result reflects the mutation the executor
+    // applied to a freshly-read snapshot, not the watcher's stale read driver, so it is never
+    // caveated — the staleness verdict is about the read surface, which the write did not use.
+    const caveat = getSnapshotHealth && !tool.mutates ? stalenessCaveat(getSnapshotHealth()) : null;
     const dataBlock = { type: 'text', text: JSON.stringify(data, null, 2) };
     return {
       content: caveat === null ? [dataBlock] : [{ type: 'text', text: caveat }, dataBlock],
