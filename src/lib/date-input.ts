@@ -44,3 +44,35 @@ export function todayDateInputValue(now: number = Date.now()): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+
+/**
+ * The date-input convention for a **loan due date** — a different rule from the midnight-UTC
+ * pair above, and deliberately so.
+ *
+ * A due date is a *deadline in the user's own day*: a loan due "20 July" should read as due on
+ * the 20th and only count as overdue once the 20th has ended where the borrower lives. So the
+ * two rules here are local, not UTC:
+ *
+ * - {@link fromDueDateInputValue} anchors the picked day at **local end-of-day** (23:59:59), so
+ *   the `due_date < now` overdue test stays false until the local day is actually over.
+ * - {@link toDueDateInputValue} reads that instant back as the **local** calendar day, so it is
+ *   the exact inverse — reopening the renew editor shows the day that was saved.
+ *
+ * This mirrors the local-day convention asset bookings already use (`startOfLocalDay`). Do not
+ * route due dates through {@link fromDateInputValue}/{@link toDateInputValue}: midnight UTC would
+ * both flag a loan overdue a day early in the Americas and render its due date a day early.
+ */
+export function fromDueDateInputValue(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const ms = new Date(`${trimmed}T23:59:59`).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Read a due-date instant back as the `yyyy-MM-dd` local calendar day it falls on, or `''`. */
+export function toDueDateInputValue(ms: number | null): string {
+  if (ms === null) return '';
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}

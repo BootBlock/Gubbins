@@ -155,8 +155,17 @@ export interface Formatters {
    * one consistent unit (see the `unit` param above).
    */
   volumeUnitFor(mm3: number): VolumeUnit;
-  /** A UNIX-ms instant as a short date (e.g. `28 Jun 2026`). */
+  /** A UNIX-ms instant as a short date in the host timezone (e.g. `28 Jun 2026`). */
   date(ms: number): string;
+  /**
+   * A **day-grained** value — one stored at midnight UTC via the `lib/date-input` seam, so the
+   * instant *is* the calendar day the user picked — rendered as that day in **every** timezone
+   * (e.g. `28 Jun 2026`). Unlike {@link date}, which renders in the host zone and so slips a
+   * midnight-UTC value to the previous day west of UTC (all of the Americas). Use this for
+   * expiry / revaluation / test / warranty / acquired dates; use {@link date} for genuine
+   * instants that carry a real time-of-day.
+   */
+  calendarDate(ms: number): string;
   /** A UNIX-ms instant as a date *and* time (e.g. `28 Jun 2026, 14:30`). */
   dateTime(ms: number): string;
   /**
@@ -237,6 +246,14 @@ export function makeFormatters(
     month: 'short',
     year: 'numeric',
   });
+  // Same shape as `dateFormat`, but pinned to UTC so a day-grained value (stored at midnight
+  // UTC) renders as the calendar day it encodes rather than being shifted into the host zone.
+  const calendarDateFormat = new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
   const dateTimeFormat = new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -316,6 +333,9 @@ export function makeFormatters(
     },
     date(ms) {
       return dateFormat.format(new Date(ms));
+    },
+    calendarDate(ms) {
+      return calendarDateFormat.format(new Date(ms));
     },
     dateTime(ms) {
       return dateTimeFormat.format(new Date(ms));

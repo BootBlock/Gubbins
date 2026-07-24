@@ -94,7 +94,7 @@ export function AssetEditor({ item }: { item: Item }) {
           {WARRANTY_LABEL[status]}
           {item.warrantyExpiresAt ? (
             <span className="font-normal text-muted-foreground">
-              · expires {fmt.date(Date.parse(item.warrantyExpiresAt))}
+              · expires {fmt.calendarDate(Date.parse(item.warrantyExpiresAt))}
             </span>
           ) : null}
         </p>

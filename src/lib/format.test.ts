@@ -143,6 +143,14 @@ describe('makeFormatters — defaults (§1.2.1 en-GB / GBP)', () => {
     expect(gb.date(Date.UTC(2026, 5, 28, 12))).toBe('28 Jun 2026');
   });
 
+  it('formats a day-grained (midnight-UTC) value as its calendar day in every timezone', () => {
+    // The value a date input stores for "28 Jun": midnight UTC. `date()` would slip this to
+    // "27 Jun" west of UTC (all of the Americas); `calendarDate()` must render "28 Jun"
+    // regardless of the host zone, which is the whole point of issue #318.
+    expect(gb.calendarDate(Date.UTC(2026, 5, 28))).toBe('28 Jun 2026');
+    expect(us.calendarDate(Date.UTC(2026, 5, 28))).toBe('Jun 28, 2026');
+  });
+
   it('formats a UNIX-ms instant as a date and time (TZ-independent assertion)', () => {
     // Time-of-day is machine-TZ-dependent, so assert the date part is present.
     const out = gb.dateTime(Date.UTC(2026, 5, 28, 12));

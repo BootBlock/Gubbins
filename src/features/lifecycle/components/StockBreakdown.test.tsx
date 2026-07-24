@@ -27,7 +27,7 @@ vi.mock('@/features/inventory/queries', () => ({
   useLocations: () => ({ data: { rows: [{ id: 'loc-1', name: 'Shelf A' }] } }),
 }));
 vi.mock('@/lib/useFormatters', () => ({
-  useFormatters: () => ({ date: (n: number) => String(n) }),
+  useFormatters: () => ({ date: (n: number) => String(n), calendarDate: (n: number) => String(n) }),
 }));
 
 import { StockBreakdown } from './StockBreakdown';

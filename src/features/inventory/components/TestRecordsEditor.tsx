@@ -31,7 +31,7 @@ import {
   type TestRecordPlanError,
   type TestResultTone,
 } from '../test-records';
-import { fromDateInputValue } from './inventory-ui';
+import { fromDateInputValue, toDateInputValue } from './inventory-ui';
 
 /** Design-token status tone for each result badge (semantic tokens, dark-mode-correct). */
 const TONE_CLASS: Record<TestResultTone, string> = {
@@ -289,7 +289,7 @@ export function TestRecordsEditor({ item }: { item: Item }) {
                 <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                   <span>{TEST_RECORD_KIND_LABELS[r.kind]}</span>
                   {r.note ? <span className="truncate">· {r.note}</span> : null}
-                  <time dateTime={new Date(r.performedAt).toISOString()}>· {fmt.date(r.performedAt)}</time>
+                  <time dateTime={toDateInputValue(r.performedAt)}>· {fmt.calendarDate(r.performedAt)}</time>
                 </div>
               </div>
               <Button

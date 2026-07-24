@@ -23,7 +23,7 @@ vi.mock('../mutations', () => ({
 }));
 
 vi.mock('@/lib/useFormatters', () => ({
-  useFormatters: () => ({ date: () => '1 Jan 2026' }),
+  useFormatters: () => ({ date: () => '1 Jan 2026', calendarDate: () => '1 Jan 2026' }),
 }));
 
 // Imported after the mocks are registered.

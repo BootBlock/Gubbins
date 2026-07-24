@@ -39,6 +39,7 @@ vi.mock('@/lib/useFormatters', () => ({
     bytes: () => '0B',
     measure: (v: number, u: string) => `${v}${u}`,
     date: () => '09 Jul 2026',
+    calendarDate: () => '09 Jul 2026',
     dateTime: () => '09 Jul 2026, 00:00',
   }),
 }));

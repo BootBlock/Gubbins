@@ -323,7 +323,7 @@ function ExpiringWidget() {
             <WidgetRow
               key={item.id}
               label={item.name}
-              meta={item.expiryDate ? fmt.date(item.expiryDate) : undefined}
+              meta={item.expiryDate ? fmt.calendarDate(item.expiryDate) : undefined}
             />
           ))
       )}

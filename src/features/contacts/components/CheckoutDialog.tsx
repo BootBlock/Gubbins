@@ -11,6 +11,7 @@ import { useProjects } from '@/features/projects/projects';
 import { useFeature } from '@/features/modules/useFeature';
 import { useContacts, useCheckoutItem } from '../contacts';
 import { MS_PER_DAY } from '@/features/scanner/due-date';
+import { fromDueDateInputValue, todayDateInputValue } from '@/lib/date-input';
 import { useErrorMessage } from '@/features/errors';
 
 /** Sentinel for "lend whatever FEFO picks" — distinct from the untracked default key (''). */
@@ -175,8 +176,9 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
   );
 
   const setPreset = (days: number) => {
-    const d = new Date(Date.now() + days * MS_PER_DAY);
-    setDueDate(d.toISOString().slice(0, 10));
+    // The preset's day is the user's local calendar day N days out, matching how the picked
+    // due date is stored (local, via `fromDueDateInputValue`) rather than a UTC slice.
+    setDueDate(todayDateInputValue(Date.now() + days * MS_PER_DAY));
   };
 
   const submit = async () => {
@@ -192,7 +194,7 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
       );
       return;
     }
-    const dueMs = dueDate ? new Date(`${dueDate}T23:59:59`).getTime() : null;
+    const dueMs = fromDueDateInputValue(dueDate);
     // Exactly one borrower target per the tagged union (B4): a contact name (resolve-or-create),
     // an existing project id, or an existing location id. Every loan in this submit shares it —
     // for a contact the resolve-or-create settles on the same person for each.
