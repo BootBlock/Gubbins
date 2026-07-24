@@ -35,6 +35,7 @@ import { historyStatement } from '@/db/repositories/item/history';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
+import { dedupeDefaultLocations, defaultLocationWinner } from './location-default-flag';
 import { buildSchemaDictionary } from './schema-dictionary';
 import { ALWAYS_PRESENT_ROW_IDS, repairSnapshotIntegrity } from './snapshot-integrity';
 import { dedupeSupplierPartFlags, supplierPartFlagClears } from './supplier-part-flags';
@@ -620,6 +621,16 @@ export async function applyPlan(
     });
   }
 
+  // Issue #191: the same repair for the *global* `locations.is_default` — demote every default but
+  // the winner ahead of the upserts, for the identical reason (the winner's write would otherwise
+  // momentarily leave two rows flagged and trip the partial unique index, aborting the merge).
+  if (plan.defaultLocationWinnerId !== null) {
+    statements.push({
+      sql: `UPDATE locations SET is_default = 0 WHERE is_default = 1 AND id <> ?;`,
+      params: [plan.defaultLocationWinnerId],
+    });
+  }
+
   // UPSERTs, parents before children.
   const upserts = [...plan.localUpserts].sort((a, b) => tableIndex(a.table) - tableIndex(b.table));
   for (const { table, row } of upserts) {
@@ -803,14 +814,17 @@ export function buildCloneStatements(
   statements.push({ sql: 'DELETE FROM tombstones;' });
 
   for (const table of SYNC_TABLES) {
-    // Issues #157 / #192: a foreign snapshot can carry two rows sharing a one-of-N supplier-part
-    // flag for one item. `INSERT OR REPLACE` would resolve the partial unique index by *deleting*
-    // the conflicting row wholesale (losing its supplier link and price), so reduce the flag to a
-    // single winner before writing. The table was wiped just above, so no local row can conflict.
+    // A foreign snapshot can carry two rows that share a partial-unique flag: two supplier parts
+    // pinned for one item (issues #157 / #192), or two locations both marked `is_default` (#191).
+    // `INSERT OR REPLACE` would resolve the index by *deleting* the conflicting row wholesale
+    // (losing a supplier link + price, or a whole location), so reduce the flag to a single winner
+    // before writing. The table was wiped just above, so no local row can conflict.
     const rows =
       table === 'supplier_parts'
         ? dedupeSupplierPartFlags(remote.tables[table] ?? [])
-        : (remote.tables[table] ?? []);
+        : table === 'locations'
+          ? dedupeDefaultLocations(remote.tables[table] ?? [])
+          : (remote.tables[table] ?? []);
     for (const snapshotRow of rows) {
       const row = decodeRowForTable(table, snapshotRow);
       const cols = requireColumns(dictionary, table).filter((c) => c in row);
@@ -883,19 +897,31 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   const statements: SqlStatement[] = [];
 
   for (const table of SYNC_TABLES) {
-    // Issues #157 / #192: reduce the backup's supplier-part rows to one winner per one-of-N flag
-    // per item, then — because this restore is a non-destructive UPSERT, not a wipe — clear that
-    // flag on any *other* local row for a pinned item first, so the winner's `ON CONFLICT(id)`
-    // write does not leave two rows sharing the flag and abort the whole restore on the index.
+    // Reduce a foreign backup's rows to one winner per partial-unique flag — a pinned supplier part
+    // per item (issues #157 / #192) or a single default location (#191) — then, because this
+    // restore is a non-destructive UPSERT rather than a wipe, clear that flag on any *other* local
+    // row first, so the winner's `ON CONFLICT(id)` write does not leave two rows sharing the flag
+    // (e.g. the backup's default plus a different local one it never touches) and abort the whole
+    // restore on the index.
     const rows =
       table === 'supplier_parts'
         ? dedupeSupplierPartFlags(snapshot.tables[table] ?? [])
-        : (snapshot.tables[table] ?? []);
+        : table === 'locations'
+          ? dedupeDefaultLocations(snapshot.tables[table] ?? [])
+          : (snapshot.tables[table] ?? []);
     if (table === 'supplier_parts') {
       for (const { column, itemId } of supplierPartFlagClears(rows)) {
         statements.push({
           sql: `UPDATE supplier_parts SET ${column} = 0 WHERE item_id = ? AND ${column} = 1;`,
           params: [itemId],
+        });
+      }
+    } else if (table === 'locations') {
+      const winnerId = defaultLocationWinner(rows);
+      if (winnerId !== null) {
+        statements.push({
+          sql: `UPDATE locations SET is_default = 0 WHERE is_default = 1 AND id <> ?;`,
+          params: [winnerId],
         });
       }
     }

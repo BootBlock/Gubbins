@@ -39,6 +39,7 @@ import {
 } from '@/db/repositories/tombstone';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { decodeRowForTable } from './blob-codec';
+import { defaultLocationWinner } from './location-default-flag';
 import { forceLwwTies } from './lww-tie-override';
 import { reconcile } from './reconcile';
 import { supplierPartFlagClears } from './supplier-part-flags';
@@ -288,6 +289,20 @@ async function cloneWithSalvage(
       params: [itemId],
     });
   }
+
+  // Issue #191: the same for the salvaged default location — clear the one default the clone wrote
+  // for the remote before the salvage re-sets the locally-nominated one, or the two collide on the
+  // partial unique index. The local DB is index-clean, so the salvage set holds at most one default.
+  const salvageDefault = defaultLocationWinner(
+    salvageRows.filter((s) => s.table === 'locations').map((s) => s.row),
+  );
+  if (salvageDefault !== null) {
+    statements.push({
+      sql: `UPDATE locations SET is_default = 0 WHERE is_default = 1 AND id <> ?;`,
+      params: [salvageDefault],
+    });
+  }
+
   for (const { table, row } of salvageRows) {
     statements.push(upsert(table, row, requireColumns(dictionary, table)));
   }

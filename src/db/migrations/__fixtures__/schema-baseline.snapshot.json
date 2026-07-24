@@ -291,6 +291,12 @@
     },
     {
       "type": "index",
+      "name": "idx_locations_one_default",
+      "tbl_name": "locations",
+      "sql": "CREATE UNIQUE INDEX idx_locations_one_default ON locations(is_default) WHERE is_default = 1"
+    },
+    {
+      "type": "index",
       "name": "idx_locations_parent_id",
       "tbl_name": "locations",
       "sql": "CREATE INDEX idx_locations_parent_id ON locations(parent_id)"
@@ -4248,13 +4254,20 @@
       "indexes": [
         {
           "seq": 0,
+          "name": "idx_locations_one_default",
+          "unique": 1,
+          "origin": "c",
+          "partial": 1
+        },
+        {
+          "seq": 1,
           "name": "idx_locations_parent_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 1,
+          "seq": 2,
           "name": "sqlite_autoindex_locations_1",
           "unique": 1,
           "origin": "pk",

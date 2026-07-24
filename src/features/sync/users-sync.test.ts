@@ -31,6 +31,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   serialisedLoansClosed: [],
   collisions: [],
   flagRepairs: [],
+  defaultLocationWinnerId: null,
   historyInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
