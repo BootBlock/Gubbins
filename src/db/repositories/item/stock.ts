@@ -11,7 +11,7 @@ import type { SqlStatement } from '../../rpc/driver';
 import { planTransfer } from '@/features/inventory/stock';
 import { isDefaultBatch, planBatchConsumption, planBatchSelection } from '@/features/inventory/batches';
 import { effectiveUnitCost } from '@/features/inventory/supplier-cost';
-import { roundMoney } from '@/lib/money';
+import { fromStoredMoney, roundMoney } from '@/lib/money';
 import { stockRowId } from '../stock';
 import {
   addBatchStatement,
@@ -490,9 +490,17 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
             )
           : await placementDeltaStatements(this.driver, itemId, fromLocationId, -quantity);
 
-      const unitCostAtSale = effectiveUnitCost(
-        { unitCost: item.unit_cost },
-        item.preferred_unit_cost === null ? [] : [{ unitCost: item.preferred_unit_cost, isPreferred: true }],
+      // `item.unit_cost` / `preferred_unit_cost` are raw micro-unit columns (issue #286); the
+      // resolved cost is converted to major units so the `unitCostAtSale` written into the ledger
+      // metadata — which the sales/margin report reads back as a major-unit figure — is on the
+      // same scale as the sale price beside it.
+      const unitCostAtSale = fromStoredMoney(
+        effectiveUnitCost(
+          { unitCost: item.unit_cost },
+          item.preferred_unit_cost === null
+            ? []
+            : [{ unitCost: item.preferred_unit_cost, isPreferred: true }],
+        ),
       );
 
       return { quantity, fromLocationId, fromBatchKey, stockStatements, unitCostAtSale };

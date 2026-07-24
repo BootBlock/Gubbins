@@ -6,6 +6,7 @@
  * components never write SQL. Multi-row writes go through `driver.transaction` for
  * atomicity, and project deletion records a tombstone so it propagates on sync (§7.2).
  */
+import { toStoredMoney } from '@/lib/money';
 import { DbError } from '../../errors';
 import type { SqlValue } from '../../rpc/driver';
 import { BaseRepository } from '../base';
@@ -30,13 +31,14 @@ interface ProjectCountRow extends ProjectRow {
 }
 
 /**
- * Coerce a budget input to a stored value: a non-negative finite number, or NULL to
- * clear it. A negative or non-finite value clears the budget rather than persisting a
- * nonsensical figure (the §4 budget is optional, so "no valid budget" is a clean state).
+ * Coerce a budget input to a stored value: a non-negative finite number in integer micro-units
+ * (the on-disk money scale, issue #286), or NULL to clear it. A negative or non-finite value
+ * clears the budget rather than persisting a nonsensical figure (the §4 budget is optional, so
+ * "no valid budget" is a clean state).
  */
 function normaliseBudget(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value) || value < 0) return null;
-  return value;
+  return toStoredMoney(value);
 }
 
 /**

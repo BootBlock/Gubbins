@@ -131,9 +131,11 @@ export const FK_REFS: Partial<Record<SyncTable, readonly FkRef[]>> = {
   capabilities: [{ col: 'item_id', parent: 'items', nullable: false }],
   checkouts: [
     { col: 'item_id', parent: 'items', nullable: false },
-    // §7.5 (Phase 14): a peer hard-deleting a contact cascades its loans (ON DELETE
-    // CASCADE, NOT NULL). Without this the deleting device would re-download an orphaned
-    // checkout and trip the FK on its next sync.
+    // §7.5 (Phase 14): a peer hard-deleting a contact cascades its loans (ON DELETE CASCADE).
+    // The column is itself nullable (the borrower is a tagged union — contact XOR project XOR
+    // location), but the row is *dropped* rather than nulled because the cascade means the loan
+    // is meant to die with the contact; without this the deleting device would re-download an
+    // orphaned checkout and trip the FK on its next sync.
     { col: 'contact_id', parent: 'contacts', nullable: false },
     // Phase 26: the per-location lend-from pointer. Nullable (NO ACTION) — an incoming
     // checkout whose source location did not survive the merge keeps the loan but clears

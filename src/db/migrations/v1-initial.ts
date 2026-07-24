@@ -773,7 +773,14 @@ const baselineStatements: SqlStatement[] = [
   { sql: updatedAtTrigger('item_attachments') },
   { sql: `ALTER TABLE items ADD COLUMN mpn TEXT;` },
   { sql: `ALTER TABLE items ADD COLUMN manufacturer TEXT;` },
-  { sql: `ALTER TABLE items ADD COLUMN unit_cost REAL CHECK (unit_cost IS NULL OR unit_cost >= 0);` },
+  // Money convention (issue #286): every monetary column is an INTEGER count of **micro-units** —
+  // millionths of a major currency unit — not a binary REAL. A fixed 1e6 scale (six decimal
+  // places, above every currency's minor unit) is exact, decouples storage from the mutable base
+  // currency, and makes SQL SUMs exact and order-independent. The app works in major units on both
+  // sides of the repository boundary; `src/lib/money.ts` (`toStoredMoney`/`fromStoredMoney`) is the
+  // only place the scale is applied. This applies to every money column below. The CHECK (issue
+  // #349) is scale-invariant — 0 and non-negativity mean the same in micro-units.
+  { sql: `ALTER TABLE items ADD COLUMN unit_cost INTEGER CHECK (unit_cost IS NULL OR unit_cost >= 0);` },
   { sql: `CREATE INDEX idx_items_mpn ON items(mpn COLLATE NOCASE);` },
   // Retail barcode (GTIN — EAN/UPC): an item's own scannable article code, distinct
   // from the MPN and stored verbatim as printed. Indexed for the scanner's exact
@@ -841,7 +848,7 @@ const baselineStatements: SqlStatement[] = [
           reserved_qty       INTEGER NOT NULL DEFAULT 0,
           reservation_status TEXT    NOT NULL DEFAULT 'NONE',
           procurement_status TEXT    NOT NULL DEFAULT 'NONE',
-          unit_cost_snapshot REAL,
+          unit_cost_snapshot INTEGER,                          -- money: integer micro-units (issue #286)
           position           INTEGER NOT NULL DEFAULT 0,
           created_at         INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at         INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -1216,6 +1223,95 @@ const baselineStatements: SqlStatement[] = [
         END;
       `,
   },
+  {
+    // The discrete-stock convergence ledger (issue #188). The discrete twin of the gauge's
+    // `item_history.net_value_delta`: an append-only, immutable, union-by-id record of every
+    // signed change to a `(item, location, batch)` placement's quantity, so reconciliation can
+    // replay the id-unioned deltas to converge `stock_batches.quantity` instead of resolving it
+    // by last-write-wins (which silently discards one device's concurrent decrement). Rows are
+    // written automatically by the capture triggers below, never by hand.
+    //
+    // `location_id` / `batch_key` are plain columns, not foreign keys: they are the historical
+    // coordinates of a movement, and a batch row may legitimately be gone (fully consumed, or its
+    // location removed) while its deltas remain — an FK here would either abort a delete or,
+    // RESTRICT-style, block one. `item_id` keeps its cascade so an item's deltas retire with it,
+    // exactly like `item_history`.
+    sql: `
+        CREATE TABLE stock_deltas (
+          id             TEXT    PRIMARY KEY NOT NULL,
+          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          location_id    TEXT    NOT NULL,
+          batch_key      TEXT    NOT NULL,
+          quantity_delta INTEGER NOT NULL,
+          created_at     INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+  },
+  { sql: `CREATE INDEX idx_stock_deltas_item_id ON stock_deltas(item_id, created_at);` },
+  {
+    sql: `CREATE INDEX idx_stock_deltas_placement ON stock_deltas(item_id, location_id, batch_key);`,
+  },
+  {
+    // Immutable, append-only — the ledger's facts never change. Scoped to every column (there is
+    // no FK-action column to exempt, unlike `item_history`'s `actor_user_id`); a cascade DELETE is
+    // still permitted, as SQLite applies FK actions without firing triggers.
+    sql: `
+        CREATE TRIGGER trg_stock_deltas_immutable
+        BEFORE UPDATE OF id, item_id, location_id, batch_key, quantity_delta, created_at
+        ON stock_deltas
+        FOR EACH ROW
+        BEGIN
+          SELECT RAISE(ABORT, 'stock_deltas is an immutable, append-only ledger.');
+        END;
+      `,
+  },
+  {
+    // Local-only capture switch (issue #188). The capture triggers below record a delta for every
+    // `stock_batches` quantity change EXCEPT while this switch is off — which the sync/backup apply
+    // turns off around its writes, because the rows it applies already carry their deltas via the
+    // unioned `stock_deltas` section (recording a second, local delta would double-count). It is
+    // device-local session state: never synced, backed up, cloned, restored or tombstoned, and —
+    // like `location_item_counts` — carries no foreign key so a restore's table ordering can never
+    // abort on it.
+    sql: `
+        CREATE TABLE stock_delta_capture (
+          id      INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))
+        ) STRICT;
+      `,
+  },
+  { sql: `INSERT INTO stock_delta_capture (id, enabled) VALUES (1, 1);` },
+  {
+    // Capture a delta for every batch placement that gains stock. `NEW.quantity - 0` on insert;
+    // the recompute triggers write `item_stock`/`items`, not `stock_batches`, so this never
+    // recurses (recursive_triggers is off). A zero-quantity seed row records nothing.
+    sql: `
+        CREATE TRIGGER trg_stock_batches_capture_ins
+        AFTER INSERT ON stock_batches
+        FOR EACH ROW
+        WHEN NEW.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
+        BEGIN
+          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta)
+          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity);
+        END;
+      `,
+  },
+  {
+    // Capture the actually-applied, CHECK-clamped change on every quantity move. `NEW - OLD` is
+    // reality (the `CHECK (quantity >= 0)` has already vetoed any write that would go negative), so
+    // `stock_batches.quantity == Σ(stock_deltas)` holds by construction for every write path.
+    sql: `
+        CREATE TRIGGER trg_stock_batches_capture_upd
+        AFTER UPDATE OF quantity ON stock_batches
+        FOR EACH ROW
+        WHEN NEW.quantity <> OLD.quantity AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
+        BEGIN
+          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta)
+          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key,
+                  NEW.quantity - OLD.quantity);
+        END;
+      `,
+  },
   { sql: `ALTER TABLE checkouts ADD COLUMN source_batch_key TEXT;` },
   // A return keeps its own note, distinct from the checkout `note`, so a return remark
   // never overwrites the loan's own note (both ends retain their text). NULL while open.
@@ -1226,14 +1322,14 @@ const baselineStatements: SqlStatement[] = [
   { sql: `ALTER TABLE item_attachments ADD COLUMN origin_device_id TEXT;` },
   { sql: `ALTER TABLE locations ADD COLUMN description TEXT;` },
   { sql: `ALTER TABLE locations ADD COLUMN color TEXT;` },
-  { sql: `ALTER TABLE projects ADD COLUMN budget REAL;` },
+  { sql: `ALTER TABLE projects ADD COLUMN budget INTEGER;` },
   {
     sql: `
         CREATE TABLE project_budget_categories (
           id         TEXT    PRIMARY KEY NOT NULL,
           project_id TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
           name       TEXT    NOT NULL,
-          amount     REAL    NOT NULL DEFAULT 0,
+          amount     INTEGER NOT NULL DEFAULT 0,             -- money: integer micro-units (issue #286)
           position   INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -1253,7 +1349,7 @@ const baselineStatements: SqlStatement[] = [
           project_id  TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
           category_id TEXT    REFERENCES project_budget_categories(id) ON DELETE SET NULL,
           description TEXT,
-          amount      REAL    NOT NULL DEFAULT 0,
+          amount      INTEGER NOT NULL DEFAULT 0,            -- money: integer micro-units (issue #286)
           incurred_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -1318,7 +1414,7 @@ const baselineStatements: SqlStatement[] = [
           -- meaningless once the supplier is gone. Contrast purchase_orders below.
           supplier_id   TEXT    NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
           order_code    TEXT,
-          unit_cost     REAL,
+          unit_cost     INTEGER,                             -- money: integer micro-units (issue #286)
           currency      TEXT,
           pack_qty      INTEGER,
           min_order_qty INTEGER,
@@ -1397,7 +1493,7 @@ const baselineStatements: SqlStatement[] = [
           description      TEXT,
           ordered_qty      INTEGER NOT NULL,
           received_qty     INTEGER NOT NULL DEFAULT 0,
-          unit_cost        REAL,
+          unit_cost        INTEGER,                          -- money: integer micro-units (issue #286)
           created_at       INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at       INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (ordered_qty > 0),
@@ -1420,7 +1516,7 @@ const baselineStatements: SqlStatement[] = [
   { sql: `ALTER TABLE items ADD COLUMN acquired_at TEXT;` },
   { sql: `ALTER TABLE items ADD COLUMN warranty_expires_at TEXT;` },
   {
-    sql: `ALTER TABLE items ADD COLUMN purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0);`,
+    sql: `ALTER TABLE items ADD COLUMN purchase_price INTEGER CHECK (purchase_price IS NULL OR purchase_price >= 0);`,
   },
   {
     sql: `ALTER TABLE items ADD COLUMN depreciation_months INTEGER CHECK (depreciation_months IS NULL OR depreciation_months > 0);`,
@@ -1479,7 +1575,7 @@ const baselineStatements: SqlStatement[] = [
         CREATE TABLE supplier_part_price_history (
           id               TEXT    PRIMARY KEY NOT NULL,
           supplier_part_id TEXT    NOT NULL REFERENCES supplier_parts(id) ON DELETE CASCADE,
-          unit_cost        REAL    NOT NULL,                  -- the recorded cost at recorded_at
+          unit_cost        INTEGER NOT NULL,                  -- recorded cost at recorded_at (micro-units, issue #286)
           currency         TEXT,                              -- null ⇒ base currency
           source           TEXT    NOT NULL DEFAULT 'MANUAL', -- 'MANUAL' | 'SCRAPE'
           recorded_at      INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -1501,6 +1597,17 @@ const baselineStatements: SqlStatement[] = [
   },
   {
     sql: `ALTER TABLE locations ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1));`,
+  },
+  {
+    // At most one location carries `is_default` — enforced at the schema level, not just by the
+    // app's demote-then-set writes (issue #191). Two offline devices that each nominate a
+    // *different* default converge, per-row LWW, to two rows both flagged (their demote-UPDATEs
+    // touched different siblings, so neither is seen across the merge). The sync engine's cross-row
+    // repair (`reconcile`) demotes all but one deterministic winner before the merge applies, and
+    // this partial index is the backstop that keeps any path — an app bug, a hand-written import —
+    // from re-introducing the state. `is_default` is a *global* single-default, so the index is
+    // over the flag column alone: every indexed row shares the value 1, so uniqueness admits one.
+    sql: `CREATE UNIQUE INDEX idx_locations_one_default ON locations(is_default) WHERE is_default = 1;`,
   },
   { sql: `ALTER TABLE locations ADD COLUMN archived_at INTEGER;` },
   // --- Stock-take G1: durable "last counted" timestamp -------------------------
@@ -1554,14 +1661,14 @@ const baselineStatements: SqlStatement[] = [
   // Additive: a live manual per-unit value on items, plus an append-only LWW log of the
   // valuation points that set it (value can move up or down, independent of depreciation).
   {
-    sql: `ALTER TABLE items ADD COLUMN current_value REAL CHECK (current_value IS NULL OR current_value >= 0);`,
+    sql: `ALTER TABLE items ADD COLUMN current_value INTEGER CHECK (current_value IS NULL OR current_value >= 0);`,
   },
   {
     sql: `
         CREATE TABLE revaluations (
           id          TEXT    PRIMARY KEY NOT NULL,
           item_id     TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-          value       REAL    NOT NULL,                    -- the recorded per-unit value at revalued_at
+          value       INTEGER NOT NULL,                    -- recorded per-unit value at revalued_at (micro-units, issue #286)
           revalued_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}), -- effective date of the valuation (UNIX-ms)
           note        TEXT,
           created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -1613,7 +1720,7 @@ const baselineStatements: SqlStatement[] = [
           name         TEXT    NOT NULL,
           note         TEXT,                           -- optional free-text context
           url          TEXT,                           -- optional http(s) link (app-sanitised)
-          target_price REAL    CHECK (target_price IS NULL OR target_price >= 0),
+          target_price INTEGER CHECK (target_price IS NULL OR target_price >= 0), -- money: micro-units (issue #286)
           priority     TEXT    NOT NULL DEFAULT 'NONE', -- HIGH | MEDIUM | LOW | NONE (app-enforced)
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})

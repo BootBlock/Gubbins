@@ -3,6 +3,7 @@
  * SQLite STRICT stores booleans as 0/1 integers and JSON blobs as TEXT; mapping
  * is centralised here so every read returns consistently shaped, typed domain data.
  */
+import { fromStoredMoney } from '@/lib/money';
 import { currentGrossWeight, percentageRemaining } from './gauge';
 import type {
   ApiToken,
@@ -167,7 +168,8 @@ export function rowToItem(row: ItemRow): Item {
     manufacturer: row.manufacturer,
     barcode: row.barcode,
     serialNumber: row.serial_number,
-    unitCost: row.unit_cost,
+    // Money columns are stored as integer micro-units (issue #286); the app works in major units.
+    unitCost: fromStoredMoney(row.unit_cost),
     expiryDate: row.expiry_date,
     batchNumber: row.batch_number,
     lotNumber: row.lot_number,
@@ -185,7 +187,7 @@ export function rowToItem(row: ItemRow): Item {
     // Asset lifecycle facet (Phase 66, v24); all null for pre-v24 items (additive).
     acquiredAt: row.acquired_at,
     warrantyExpiresAt: row.warranty_expires_at,
-    purchasePrice: row.purchase_price,
+    purchasePrice: fromStoredMoney(row.purchase_price),
     depreciationMonths: row.depreciation_months,
     // Intrinsic mass in canonical grams (issue #25); null when no weight is recorded.
     weight: row.weight,
@@ -194,7 +196,7 @@ export function rowToItem(row: ItemRow): Item {
     height: row.height,
     depth: row.depth,
     // Manual current / market value (feature-gap G9, v4); null for items never revalued.
-    currentValue: row.current_value,
+    currentValue: fromStoredMoney(row.current_value),
     isActive: row.is_active === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -238,7 +240,7 @@ export function rowToSupplierPart(row: SupplierPartRow): SupplierPart {
     supplierId: row.supplier_id,
     supplierName: row.supplier_name,
     orderCode: row.order_code,
-    unitCost: row.unit_cost,
+    unitCost: fromStoredMoney(row.unit_cost),
     currency: row.currency,
     packQty: row.pack_qty,
     minOrderQty: row.min_order_qty,
@@ -257,7 +259,7 @@ export function rowToSupplierPartPriceHistory(
   return {
     id: row.id,
     supplierPartId: row.supplier_part_id,
-    unitCost: row.unit_cost,
+    unitCost: fromStoredMoney(row.unit_cost),
     currency: row.currency,
     source: row.source,
     recordedAt: row.recorded_at,
@@ -269,7 +271,7 @@ export function rowToRevaluation(row: RevaluationRow): Revaluation {
   return {
     id: row.id,
     itemId: row.item_id,
-    value: row.value,
+    value: fromStoredMoney(row.value),
     revaluedAt: row.revalued_at,
     note: row.note,
     createdAt: row.created_at,
@@ -287,7 +289,7 @@ export function rowToWishlistEntry(row: WishlistRow): WishlistEntry {
     name: row.name,
     note: row.note,
     url: row.url,
-    targetPrice: row.target_price,
+    targetPrice: fromStoredMoney(row.target_price),
     priority: normaliseWishlistPriority(row.priority),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -457,7 +459,7 @@ export function rowToPurchaseOrderLine(row: PurchaseOrderLineRow): PurchaseOrder
     description: row.description,
     orderedQty: Number(row.ordered_qty),
     receivedQty: Number(row.received_qty),
-    unitCost: row.unit_cost,
+    unitCost: fromStoredMoney(row.unit_cost),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -733,7 +735,7 @@ export function rowToProject(row: ProjectRow): Project {
     icon: row.icon,
     status: row.status,
     costingMode: row.costing_mode,
-    budget: row.budget,
+    budget: fromStoredMoney(row.budget),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -744,7 +746,7 @@ export function rowToBudgetCategory(row: ProjectBudgetCategoryRow): ProjectBudge
     id: row.id,
     projectId: row.project_id,
     name: row.name,
-    amount: row.amount,
+    amount: fromStoredMoney(row.amount),
     position: row.position,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -757,7 +759,7 @@ export function rowToExpense(row: ProjectExpenseRow): ProjectExpense {
     projectId: row.project_id,
     categoryId: row.category_id,
     description: row.description,
-    amount: row.amount,
+    amount: fromStoredMoney(row.amount),
     incurredAt: row.incurred_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -779,7 +781,7 @@ export function rowToBomLine(row: ProjectBomLineRow): ProjectBomLine {
     picked: row.picked === 1,
     reservationStatus: row.reservation_status,
     procurementStatus: row.procurement_status,
-    unitCostSnapshot: row.unit_cost_snapshot,
+    unitCostSnapshot: fromStoredMoney(row.unit_cost_snapshot),
     position: row.position,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

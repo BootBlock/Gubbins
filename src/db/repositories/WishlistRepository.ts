@@ -11,6 +11,7 @@
  * glue around it. Creates/updates grow storage and are therefore Hard-Stop gated; deletes (which
  * free space) are not, and record a tombstone so the deletion propagates on the next sync (§7.2).
  */
+import { toStoredMoney } from '@/lib/money';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { rowToWishlistEntry } from './mappers';
@@ -88,7 +89,8 @@ export class WishlistRepository extends BaseRepository {
     const { name, note, url, targetPrice, priority } = plan.entry;
     await this.driver.execute(
       `INSERT INTO wishlist (id, name, note, url, target_price, priority) VALUES (?, ?, ?, ?, ?, ?);`,
-      [id, name, note, url, targetPrice, priority],
+      // `target_price` is stored in integer micro-units (issue #286).
+      [id, name, note, url, toStoredMoney(targetPrice), priority],
     );
     return (await this.getById(id))!;
   }
@@ -127,7 +129,8 @@ export class WishlistRepository extends BaseRepository {
       const targetPrice = normaliseTargetPrice(input.targetPrice);
       if (targetPrice === undefined) throw new DbError('SQLITE_CONSTRAINT', REJECTION_MESSAGE.INVALID_PRICE);
       sets.push('target_price = ?');
-      params.push(targetPrice);
+      // Stored in integer micro-units (issue #286); `null` (cleared price) passes through.
+      params.push(toStoredMoney(targetPrice));
     }
     if (input.priority !== undefined) {
       sets.push('priority = ?');

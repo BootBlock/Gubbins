@@ -30,6 +30,7 @@
 import {
   SYNC_TABLES,
   ITEM_HISTORY_TABLE,
+  STOCK_DELTAS_TABLE,
   ITEM_TAGS_TABLE,
   ITEM_REGIONS_TABLE,
   LOCATION_TAGS_TABLE,
@@ -39,6 +40,7 @@ import {
 } from '@/db/repositories/tombstone';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { decodeRowForTable } from './blob-codec';
+import { defaultLocationWinner } from './location-default-flag';
 import { forceLwwTies } from './lww-tie-override';
 import { reconcile } from './reconcile';
 import { supplierPartFlagClears } from './supplier-part-flags';
@@ -50,12 +52,14 @@ import {
   historyInsertStatement,
   requireColumns,
   shiftSnapshotTimestamps,
+  stockDeltaInsertStatement,
   tombstoneDeleteStatement,
+  withCaptureDisabled,
 } from './snapshot';
 import type { SchemaDictionary, SyncConflict, SyncSnapshot, SyncTable, Tombstone } from './types';
 
-/** Tables read into the schema dictionary: the LWW set plus the unioned ledger. */
-const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE];
+/** Tables read into the schema dictionary: the LWW set plus the two unioned ledgers. */
+const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE];
 
 /**
  * Which of the three §7.3 paths this pass takes. The orchestrator decides — the choice needs
@@ -291,6 +295,20 @@ async function cloneWithSalvage(
       params: [itemId],
     });
   }
+
+  // Issue #191: the same for the salvaged default location — clear the one default the clone wrote
+  // for the remote before the salvage re-sets the locally-nominated one, or the two collide on the
+  // partial unique index. The local DB is index-clean, so the salvage set holds at most one default.
+  const salvageDefault = defaultLocationWinner(
+    salvageRows.filter((s) => s.table === 'locations').map((s) => s.row),
+  );
+  if (salvageDefault !== null) {
+    statements.push({
+      sql: `UPDATE locations SET is_default = 0 WHERE is_default = 1 AND id <> ?;`,
+      params: [salvageDefault],
+    });
+  }
+
   for (const { table, row } of salvageRows) {
     statements.push(upsert(table, row, requireColumns(dictionary, table)));
   }
@@ -319,6 +337,13 @@ async function cloneWithSalvage(
 
   for (const row of salvage.itemHistory) {
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
+  }
+  // Issue #188: re-union the offline-only stock-delta rows the wholesale clone did not carry,
+  // the direct sibling of the item_history re-union above. With capture disabled around the whole
+  // batch (below), the salvage `stock_batches` upserts record no fresh deltas, so these preserved
+  // rows — with their original ids — are the sole record of the offline movements.
+  for (const row of salvage.stockDeltas) {
+    statements.push(stockDeltaInsertStatement(row, dictionary[STOCK_DELTAS_TABLE]));
   }
   for (const { itemId, tagId } of salvage.itemTags) {
     if (removedItemEdges.has(itemTagEdgeId(itemId, tagId))) continue;
@@ -353,7 +378,11 @@ async function cloneWithSalvage(
     statements.push(tombstone(t));
   }
 
-  await driver.transaction(statements);
+  // Issue #188: the clone AND the salvage both re-insert `stock_batches` rows whose deltas travel
+  // in the (re-unioned) ledger, so the whole batch runs capture-disabled — otherwise the salvage
+  // upserts would re-capture and double-count. `buildCloneStatements` is a plain builder now, so
+  // the guard wraps everything here at the transaction boundary.
+  await driver.transaction(withCaptureDisabled(statements));
 }
 
 // --- statement builders ----------------------------------------------------------

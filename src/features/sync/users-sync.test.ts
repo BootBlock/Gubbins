@@ -18,7 +18,7 @@ import {
 } from '@/db/repositories';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
 import { UserRepository } from '@/db/repositories/UserRepository';
-import { applyPlan, buildCloneStatements, buildLocalSnapshot } from './snapshot';
+import { applyPlan, buildCloneStatements, buildLocalSnapshot, withCaptureDisabled } from './snapshot';
 import { buildSchemaDictionary } from './schema-dictionary';
 import type { ReconciliationPlan } from './types';
 
@@ -26,13 +26,16 @@ const EMPTY_PLAN: ReconciliationPlan = {
   localUpserts: [],
   localDeletes: [],
   gaugeResolutions: [],
+  stockResolutions: [],
   reparented: [],
   rejectedCycles: [],
   serialisedLoansClosed: [],
   bookingsCancelled: [],
   collisions: [],
   flagRepairs: [],
+  defaultLocationWinnerId: null,
   historyInserts: [],
+  stockDeltaInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
   locationTagUpserts: [],
@@ -73,7 +76,7 @@ describe('users + roles across a sync', () => {
 
     // The whole point: this must not abort. A bare `DELETE FROM users` would raise
     // "The built-in System and Admin users cannot be deleted." and roll the clone back.
-    await driver.transaction(buildCloneStatements(remote, dictionary));
+    await driver.transaction(withCaptureDisabled(buildCloneStatements(remote, dictionary)));
 
     const rows = await driver.query<{ id: string }>('SELECT id FROM users ORDER BY id;');
     expect(rows.map((r) => r.id)).toContain(SYSTEM_USER_ID);

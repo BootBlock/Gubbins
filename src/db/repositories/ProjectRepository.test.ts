@@ -7,6 +7,7 @@ import { IN_TRANSIT_LOCATION_ID, UNASSIGNED_LOCATION_ID } from './constants';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { ProjectRepository } from './ProjectRepository';
+import { assemblyId } from './project/assembly';
 
 describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
   let driver: MemoryDriver;
@@ -493,6 +494,50 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     const result = await projects.finaliseAssembly(p.id, { outcome: 'SINGULAR_OBJECT' });
     const assembled = await items.getById(result.itemId!);
     expect(assembled?.locationId).toBe(UNASSIGNED_LOCATION_ID);
+  });
+
+  // --- assembly idempotency under sync (issue #195) ------------------------------
+
+  it('CONTAINER: derives the container id from the project so concurrent finalises converge', async () => {
+    const p = await projects.create({ name: 'Lamp' });
+    const a = await items.create({ name: 'LED' });
+    await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
+
+    const result = await projects.finaliseAssembly(p.id, { outcome: 'CONTAINER' });
+    // The container id is a pure function of the project id, not a fresh random UUID — the
+    // property that makes two devices' offline finalises mint the *same* location and merge
+    // to one, rather than leaving two identical containers.
+    expect(result.locationId).toBe(await assemblyId('container', p.id));
+  });
+
+  it('SINGULAR_OBJECT: derives the assembled item id from the project so concurrent finalises converge', async () => {
+    const p = await projects.create({ name: 'Sensor Board' });
+    const a = await items.create({ name: 'MCU' });
+    await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
+
+    const result = await projects.finaliseAssembly(p.id, { outcome: 'SINGULAR_OBJECT' });
+    expect(result.itemId).toBe(await assemblyId('object', p.id));
+  });
+
+  it('derives assembly ledger-entry ids from the project so the union-by-id log does not duplicate', async () => {
+    const p = await projects.create({ name: 'Glue Job' });
+    const a = await items.create({ name: 'Epoxy' });
+    await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
+
+    await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
+    const consumed = (await items.getHistory(a.id)).rows.find((h) => h.action === 'CONSUMED');
+    expect(consumed?.id).toBe(await assemblyId(`hist:CONSUMED:${a.id}`, p.id));
+  });
+
+  it('rejects finalising an already-completed project', async () => {
+    const p = await projects.create({ name: 'Done Already' });
+    const a = await items.create({ name: 'Part' });
+    await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
+
+    await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
+    // A second finalise is a one-shot violation — rejected cleanly rather than re-minting the
+    // same derived ids into a primary-key clash.
+    await expect(projects.finaliseAssembly(p.id, { outcome: 'CONTAINER' })).rejects.toBeInstanceOf(DbError);
   });
 
   // --- picking worksheet (issue #121 location-aware gather-and-tick) --------------

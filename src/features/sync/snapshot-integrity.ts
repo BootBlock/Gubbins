@@ -105,6 +105,14 @@ const HISTORY_REFS: readonly SnapshotFkRef[] = [
   { col: 'actor_user_id', parent: 'users', nullable: false, fallback: SYSTEM_USER_ID },
 ];
 
+/**
+ * The `stock_deltas` references (issue #188). Only `item_id` is a foreign key — NOT NULL /
+ * ON DELETE CASCADE, so a delta whose item was written mid-read is dropped (a delta for an absent
+ * item would replay the convergence CRDT against nothing). `location_id` / `batch_key` are plain
+ * historical coordinates with no FK, so they need no repair.
+ */
+const STOCK_DELTAS_REFS: readonly SnapshotFkRef[] = [{ col: 'item_id', parent: 'items', nullable: false }];
+
 /** The ids of `table` that a consumer of this snapshot will actually be able to reference. */
 function presentIds(rows: readonly SqlRow[] | undefined, table: SyncTable): Set<string> {
   const ids = new Set<string>(ALWAYS_PRESENT_ROW_IDS[table] ?? []);
@@ -196,6 +204,14 @@ export function repairSnapshotIntegrity(snapshot: SyncSnapshot, options: RepairO
     const repaired = repairRow(row, HISTORY_REFS);
     if (repaired !== undefined) itemHistory.push(repaired);
   }
+  // The stock-delta convergence ledger, repaired against its only reference (item_id) exactly as
+  // the history ledger above — a delta whose item was caught mid-read is dropped rather than
+  // aborting the whole restore transaction (issue #405).
+  const stockDeltas: SqlRow[] = [];
+  for (const row of snapshot.stockDeltas ?? []) {
+    const repaired = repairRow(row, STOCK_DELTAS_REFS);
+    if (repaired !== undefined) stockDeltas.push(repaired);
+  }
   // The gauge deltas are filtered by their **item**, not by whether the matching ledger row
   // survived. The two are read by separate queries — the gauge read has its own `WHERE`, and
   // `readItemHistory` pages by `(created_at, id)` and can fail on its own — so `itemHistory`
@@ -210,6 +226,7 @@ export function repairSnapshotIntegrity(snapshot: SyncSnapshot, options: RepairO
     ...snapshot,
     tables,
     itemHistory,
+    stockDeltas,
     gaugeHistory,
     itemTags: (snapshot.itemTags ?? []).filter(
       (edge) => holds('items', items, edge.itemId) && holds('tags', tags, edge.tagId),

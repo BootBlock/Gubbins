@@ -7,6 +7,7 @@
  * ledger can never drift from the item state. Reads are strictly paginated (§2.1).
  * Storage-growing writes are gated by the Hard Stop; deletions are always permitted.
  */
+import { toStoredMoney } from '@/lib/money';
 import { DbError } from '../../errors';
 import type { SqlStatement, SqlValue } from '../../rpc/driver';
 import { buildFtsMatch } from '../../search/fts';
@@ -379,7 +380,9 @@ export class ItemCoreRepository extends BaseRepository {
       const unitCost = normaliseUnitCost(input.unitCost);
       sets.push('unit_cost = ?');
       params.push(unitCost);
-      track('unitCost', 'unit cost', existing.unitCost, unitCost);
+      // Compare in stored micro-units (issue #286): `unitCost` is already scaled, and
+      // `existing.unitCost` is the mapped DTO (major units), so a no-op edit still matches.
+      track('unitCost', 'unit cost', toStoredMoney(existing.unitCost), unitCost);
     }
     if (input.expiryDate !== undefined) {
       const expiryDate = normaliseExpiry(input.expiryDate);
@@ -466,7 +469,8 @@ export class ItemCoreRepository extends BaseRepository {
       const purchasePrice = normalisePurchasePrice(input.purchasePrice);
       sets.push('purchase_price = ?');
       params.push(purchasePrice);
-      track('purchasePrice', 'purchase price', existing.purchasePrice, purchasePrice);
+      // Compare in stored micro-units (issue #286), as for `unitCost` above.
+      track('purchasePrice', 'purchase price', toStoredMoney(existing.purchasePrice), purchasePrice);
     }
     if (input.depreciationMonths !== undefined) {
       sets.push('depreciation_months = ?');
@@ -495,7 +499,8 @@ export class ItemCoreRepository extends BaseRepository {
       const currentValue = normaliseCurrentValue(input.currentValue);
       sets.push('current_value = ?');
       params.push(currentValue);
-      track('currentValue', 'current value', existing.currentValue, currentValue);
+      // Compare in stored micro-units (issue #286), as for `unitCost` above.
+      track('currentValue', 'current value', toStoredMoney(existing.currentValue), currentValue);
     }
     if (input.operationalMetadata !== undefined) {
       // §4.1.1 schema-less map; an empty/cleared set stores SQL NULL. Serialised here

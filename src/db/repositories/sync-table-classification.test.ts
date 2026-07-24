@@ -24,6 +24,7 @@ import {
   LOCATION_TAGS_TABLE,
   ITEM_REGIONS_TABLE,
   ITEM_HISTORY_TABLE,
+  STOCK_DELTAS_TABLE,
   NOT_SYNCED,
 } from './tombstone';
 
@@ -90,6 +91,7 @@ describe('issue #245 — every schema table is classified as synced or explicitl
       LOCATION_TAGS_TABLE: [LOCATION_TAGS_TABLE],
       ITEM_REGIONS_TABLE: [ITEM_REGIONS_TABLE],
       ITEM_HISTORY_TABLE: [ITEM_HISTORY_TABLE],
+      STOCK_DELTAS_TABLE: [STOCK_DELTAS_TABLE],
       NOT_SYNCED,
     };
 
@@ -121,6 +123,7 @@ describe('issue #245 — every schema table is classified as synced or explicitl
       LOCATION_TAGS_TABLE,
       ITEM_REGIONS_TABLE,
       ITEM_HISTORY_TABLE,
+      STOCK_DELTAS_TABLE,
     ]);
     const overlap = NOT_SYNCED.filter((t) => syncedish.has(t));
     expect(overlap).toEqual([]);

@@ -11,6 +11,7 @@
  * the pure `summariseBudget` (features/projects/budget.ts) turns them into
  * spent/remaining/projected/status. Category/expense deletions are tombstoned for sync (§7.2).
  */
+import { fromStoredMoney, toStoredMoney } from '@/lib/money';
 import { DbError } from '../../errors';
 import type { SqlValue } from '../../rpc/driver';
 import { normaliseText } from '../item/normalise';
@@ -34,12 +35,15 @@ import type {
 import type { Constructor } from './mixin';
 import type { ProjectCoreRepository } from './core';
 
-/** Validate a money amount: a non-negative finite number (the CHECK also enforces ≥ 0). */
+/**
+ * Validate a money amount: a non-negative finite number (the CHECK also enforces ≥ 0), returned
+ * in integer micro-units — the on-disk money scale (issue #286).
+ */
 function requireAmount(value: number): number {
   if (!Number.isFinite(value) || value < 0) {
     throw new DbError('SQLITE_CONSTRAINT', 'An amount must be a non-negative number.');
   }
-  return value;
+  return toStoredMoney(value);
 }
 
 export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Base: TBase) {
@@ -81,12 +85,14 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
 
       return {
         projectId,
+        // `project.budget` is already major-unit (mapped DTO). The SUM aggregates are computed over
+        // integer micro-unit costs — exact — and converted back to major units here (issue #286).
         budget: project.budget,
-        estimatedCost: Number(bom?.estimated ?? 0),
-        committedFromBom: Number(bom?.committed ?? 0),
-        manualExpenseTotal: Number(expenses?.total ?? 0),
+        estimatedCost: fromStoredMoney(Number(bom?.estimated ?? 0)),
+        committedFromBom: fromStoredMoney(Number(bom?.committed ?? 0)),
+        manualExpenseTotal: fromStoredMoney(Number(expenses?.total ?? 0)),
         categories,
-        uncategorisedExpenseTotal: Number(expenses?.uncategorised ?? 0),
+        uncategorisedExpenseTotal: fromStoredMoney(Number(expenses?.uncategorised ?? 0)),
       };
     }
 
@@ -124,13 +130,14 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
          ORDER BY p.name COLLATE NOCASE ASC;`,
       );
 
+      // Every figure is read from a raw money column / SUM in integer micro-units (issue #286).
       return rows.map((r) => ({
         projectId: r.project_id,
         projectName: r.project_name,
-        budget: Number(r.budget),
-        estimatedCost: Number(r.estimated),
-        committedFromBom: Number(r.committed),
-        manualExpenseTotal: Number(r.manual),
+        budget: fromStoredMoney(Number(r.budget)),
+        estimatedCost: fromStoredMoney(Number(r.estimated)),
+        committedFromBom: fromStoredMoney(Number(r.committed)),
+        manualExpenseTotal: fromStoredMoney(Number(r.manual)),
       }));
     }
 
@@ -155,9 +162,10 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
       return rows.map((r) => ({
         id: r.id,
         name: r.name,
-        amount: Number(r.amount),
+        // `amount` and `spent` (SUM of expenses) are integer micro-units (issue #286).
+        amount: fromStoredMoney(Number(r.amount)),
         position: Number(r.position),
-        spent: Number(r.spent),
+        spent: fromStoredMoney(Number(r.spent)),
       }));
     }
 
