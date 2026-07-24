@@ -12,6 +12,7 @@
  * supplier cost" rule lives in exactly one place across the app.
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
+import { addCalendarDays } from '@/lib/calendar-days';
 import { effectiveUnitCost as resolveCostPrecedence } from '@/features/inventory/supplier-cost';
 
 import { inTimeWindow } from './window-membership';
@@ -350,7 +351,9 @@ export function selectDeadStock(
     consideredCount += 1;
     const thresholdDays = candidate.thresholdDays ?? sinceDays;
     const reference = candidate.lastMovedAt ?? candidate.createdAt;
-    if (reference > now - thresholdDays * MS_PER_DAY) continue; // still live
+    // Calendar-day idle threshold (issue #325): the "still live" cutoff is N calendar days back
+    // from now, so it does not slip an hour across a DST change.
+    if (reference > addCalendarDays(now, -thresholdDays)) continue; // still live
     const idleDays = Math.max(0, Math.floor((now - reference) / MS_PER_DAY));
     const value = Math.max(0, candidate.quantity) * effectiveUnitCost(candidate);
     totalValue += value;

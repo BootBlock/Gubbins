@@ -3,8 +3,9 @@
  * projections over the item table that power the dashboard widgets and surface the
  * items needing attention soonest.
  */
-import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD, MS_PER_DAY } from '../constants';
+import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD } from '../constants';
 import type { HistoryAction } from '../constants';
+import { addCalendarDays } from '@/lib/calendar-days';
 import type { SqlValue } from '../../rpc/driver';
 import { rowToActivityFeedEntry, rowToItem } from '../mappers';
 import type {
@@ -170,7 +171,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
 
     /** Convenience: perishables expiring within `withinDays` of `now` (inclusive). */
     async listExpiringWithin(withinDays: number, now: number, params: PageParams = {}): Promise<Page<Item>> {
-      return this.listExpiring(now + withinDays * MS_PER_DAY, params);
+      return this.listExpiring(addCalendarDays(now, withinDays), params);
     }
 
     /**
@@ -243,7 +244,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       // 'YYYY-MM-DD' so ISO-ordered string comparison gives correct date ordering.
       // We include items already past expiry (warranty_expires_at <= today) as well
       // as those expiring within the window (warranty_expires_at <= cutoff date).
-      const cutoff = new Date(now + withinDays * MS_PER_DAY).toISOString().slice(0, 10);
+      const cutoff = new Date(addCalendarDays(now, withinDays)).toISOString().slice(0, 10);
       const rows = await this.driver.query<ItemRow>(
         // The warranty predicate is shared with the inventory list's status filter — see
         // `attention-sql.ts` — so the alert-centre feed and the filter can never diverge.

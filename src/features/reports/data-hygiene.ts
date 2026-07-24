@@ -10,6 +10,7 @@
  * read-only over data already stored, **no schema change**.
  */
 
+import { addCalendarDays } from '@/lib/calendar-days';
 import { plural } from '@/lib/plural';
 
 // ---------------------------------------------------------------------------
@@ -195,7 +196,9 @@ export function buildHygieneReport(
   options: HygieneOptions,
 ): HygieneReport {
   const sampleLimit = options.sampleLimit ?? DEFAULT_SAMPLE_LIMIT;
-  const staleBefore = options.now - Math.max(0, options.staleDays) * MS_PER_DAY;
+  // Calendar-day staleness cutoff (issue #325): N calendar days back from now, not a fixed span,
+  // so it holds steady across a DST change.
+  const staleBefore = addCalendarDays(options.now, -Math.max(0, options.staleDays));
 
   const byName = (a: HygieneItemFlags, b: HygieneItemFlags) =>
     a.name.localeCompare(b.name) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);

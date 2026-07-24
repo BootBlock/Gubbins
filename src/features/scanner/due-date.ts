@@ -6,6 +6,7 @@
  * "Overdue Items" tracker (§3) and the checkout UI share one tested implementation
  * with no clock hidden inside them (callers pass `now`).
  */
+import { addCalendarDays } from '@/lib/calendar-days';
 import { nowMs } from '@/lib/clock';
 
 export const MS_PER_DAY = 86_400_000;
@@ -14,15 +15,16 @@ export const MS_PER_DAY = 86_400_000;
 export type DueStatus = 'NONE' | 'UPCOMING' | 'DUE_SOON' | 'OVERDUE';
 
 /**
- * Convert a "due in `days` days" choice into an absolute UNIX-ms due date — simply
- * `from + days × MS_PER_DAY`. Returns `null` for a non-positive or non-finite day
- * count (i.e. "no due date").
+ * Convert a "due in `days` days" choice into an absolute UNIX-ms due date — `days` whole calendar
+ * days on from `from`, preserving the wall-clock time so "due in 14 days" lands at the same time of
+ * day rather than an hour adrift across a DST change (issue #325). Returns `null` for a non-positive
+ * or non-finite day count (i.e. "no due date").
  *
  * @internal Exported for unit tests only.
  */
 export function dueDateFromDays(days: number, from: number = Date.now()): number | null {
   if (!Number.isFinite(days) || days <= 0) return null;
-  return from + Math.round(days) * MS_PER_DAY;
+  return addCalendarDays(from, Math.round(days));
 }
 
 /**

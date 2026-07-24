@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MS_PER_DAY } from '@/db/repositories/constants';
+import { addCalendarDays } from '@/lib/calendar-days';
 import { expiryStatus, daysUntilExpiry } from './expiry';
 import { validateVariantLink, variantRejectionMessage } from './variants';
 import {
@@ -102,7 +103,9 @@ describe('maintenance scheduling (§4.3)', () => {
     );
     expect(overdue.due).toBe(true);
     expect(overdue.remainingDays).toBe(-10);
-    expect(overdue.dueAt).toBe(lastPerformedAt + 90 * MS_PER_DAY);
+    // Calendar-day arithmetic (issue #325): 90 calendar days on from the anchor, which differs from
+    // a fixed 90 × MS_PER_DAY by the DST offset when the span crosses a transition.
+    expect(overdue.dueAt).toBe(addCalendarDays(lastPerformedAt, 90));
 
     const fresh = maintenanceStatus(
       {

@@ -10,7 +10,7 @@ import { itemDisplayName } from '@/features/inventory/item-display';
 import { useProjects } from '@/features/projects/projects';
 import { useFeature } from '@/features/modules/useFeature';
 import { useContacts, useCheckoutItem } from '../contacts';
-import { MS_PER_DAY } from '@/features/scanner/due-date';
+import { addCalendarDays } from '@/lib/calendar-days';
 import { useErrorMessage } from '@/features/errors';
 
 /** Sentinel for "lend whatever FEFO picks" — distinct from the untracked default key (''). */
@@ -175,7 +175,9 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
   );
 
   const setPreset = (days: number) => {
-    const d = new Date(Date.now() + days * MS_PER_DAY);
+    // Whole calendar days from today (issue #325), so "1 month" lands on the same date regardless
+    // of a DST change in between rather than slipping an hour and, near midnight, a day.
+    const d = new Date(addCalendarDays(Date.now(), days));
     setDueDate(d.toISOString().slice(0, 10));
   };
 

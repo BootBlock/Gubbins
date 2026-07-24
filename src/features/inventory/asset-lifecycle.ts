@@ -10,6 +10,7 @@
  */
 
 import { WARRANTY_SOON_WINDOW_DAYS } from '@/db/repositories/constants';
+import { addCalendarDays } from '@/lib/calendar-days';
 
 /**
  * Days before warranty expiry at which status changes from `active` to `expiring-soon`.
@@ -52,9 +53,10 @@ export function warrantyStatus(item: AssetLifecycleItem, now: number): WarrantyS
 
   if (now > expiryMs) return 'expired';
 
-  const msPerDay = 86_400_000;
-  const daysRemaining = (expiryMs - now) / msPerDay;
-  if (daysRemaining <= WARRANTY_EXPIRING_SOON_DAYS) return 'expiring-soon';
+  // Calendar-day window (issue #325), mirroring `expiryStatus`: the warranty is expiring-soon once
+  // its expiry is within N whole calendar days of now, so the boundary does not slip an hour across
+  // a DST change.
+  if (expiryMs <= addCalendarDays(now, WARRANTY_EXPIRING_SOON_DAYS)) return 'expiring-soon';
 
   return 'active';
 }

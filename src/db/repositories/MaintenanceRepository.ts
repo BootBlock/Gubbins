@@ -26,13 +26,25 @@ import type {
   PageParams,
 } from './types';
 import { nowMs } from '@/lib/clock';
+import { addCalendarDays } from '@/lib/calendar-days';
 
 /**
- * SQL fragment yielding the instant a TIME schedule falls due (UNIX-ms), qualified
- * to the `ms` alias used by the join queries: it is due once
- * `COALESCE(last_performed_at, created_at) + interval_days·86 400 000 ≤ now`.
+ * SQL fragment yielding the instant a TIME schedule falls due (UNIX-ms), qualified to the `ms`
+ * alias used by the join queries.
+ *
+ * The app maintains a stored `time_due_at` = `addCalendarDays(COALESCE(last_performed_at,
+ * created_at), interval_days)` on every write, so a day is a DST-safe *calendar* day rather than a
+ * fixed 86,400,000 ms (issue #325) — the same arithmetic the pure {@link maintenanceStatus} and
+ * `maintenanceDueAtMs` use, keeping the read here in step with what the UI shows. Calendar
+ * arithmetic can't be done portably in raw SQL (SQLite's `localtime` differs between the app's WASM
+ * build and the bridge's Node build), which is why the value is computed in the app and stored.
+ *
+ * The `COALESCE` fallback to the fixed-ms expression covers only a row with no stored value — one
+ * predating the column (an older backup or peer). Being an hour imprecise at a DST boundary twice a
+ * year beats a NULL silently reading as "never due"; every row the app writes carries the exact
+ * calendar value.
  */
-const TIME_DUE_AT = `(COALESCE(ms.last_performed_at, ms.created_at) + ms.interval_days * 86400000)`;
+const TIME_DUE_AT = `COALESCE(ms.time_due_at, COALESCE(ms.last_performed_at, ms.created_at) + ms.interval_days * 86400000)`;
 
 /**
  * Derived checkout-hours accrued to a schedule since its service anchor (§4.3, Phase 22).
@@ -217,10 +229,17 @@ export class MaintenanceRepository extends BaseRepository {
     const locationId = input.locationId || null;
 
     const id = crypto.randomUUID();
+    // `created_at` is set here rather than left to the column default so the derived `time_due_at`
+    // can be computed from the very same anchor. It is a persisted timestamp, so it uses the real
+    // clock (`Date.now()`), never the shiftable evaluation clock (see `@/lib/clock`).
+    const createdAt = Date.now();
+    // A TIME schedule's due instant is derived once, with calendar-day arithmetic (issue #325), and
+    // stored so reads never fall back to fixed-ms day maths; a USAGE schedule has no calendar date.
+    const timeDueAt = input.basis === 'TIME' ? addCalendarDays(createdAt, intervalDays ?? 0) : null;
     await this.driver.execute(
       `INSERT INTO maintenance_schedules
-         (id, item_id, name, basis, interval_days, interval_usage, usage_unit, accrue_checkout_hours, location_id, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+         (id, item_id, name, basis, interval_days, interval_usage, usage_unit, accrue_checkout_hours, location_id, note, created_at, time_due_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         input.itemId,
@@ -232,6 +251,8 @@ export class MaintenanceRepository extends BaseRepository {
         accrueCheckoutHours ? 1 : 0,
         locationId,
         input.note?.trim() || null,
+        createdAt,
+        timeDueAt,
       ],
     );
     return (await this.getById(id))!;
@@ -247,10 +268,14 @@ export class MaintenanceRepository extends BaseRepository {
     this.assertPermission('maintenance:write');
     this.assertWritable();
     const schedule = await this.requireSchedule(id);
+    // Servicing resets the TIME clock to `now`, so its derived due instant advances one interval
+    // from there (calendar-day arithmetic, issue #325) — recomputed from the same `now` written to
+    // `last_performed_at` so the stored value and the anchor never drift. USAGE schedules keep NULL.
+    const timeDueAt = schedule.basis === 'TIME' ? addCalendarDays(now, schedule.intervalDays ?? 0) : null;
     await this.driver.transaction([
       {
-        sql: 'UPDATE maintenance_schedules SET last_performed_at = ?, usage_since_service = 0 WHERE id = ?;',
-        params: [now, id],
+        sql: 'UPDATE maintenance_schedules SET last_performed_at = ?, usage_since_service = 0, time_due_at = ? WHERE id = ?;',
+        params: [now, timeDueAt, id],
       },
       historyStatement(schedule.itemId, 'MAINTENANCE_LOGGED', this.actorId(), {
         note,

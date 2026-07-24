@@ -53,7 +53,8 @@ import {
 } from '@/features/settings/settings';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { AppRoutePath } from '@/components/nav/nav-destinations';
-import { nowDate } from '@/lib/clock';
+import { nowMs } from '@/lib/clock';
+import { addCalendarDays, startOfLocalDay } from '@/lib/calendar-days';
 
 /** One counted tile's badge: the figure, the spoken nouns and the attention tone. */
 export interface NavCount {
@@ -70,14 +71,9 @@ export interface NavCount {
   readonly tone: NavCountTone;
 }
 
-/** Milliseconds in a day — the width of the "starting this week" booking window. */
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 /** The instant at the start of the local day — the cut-off for a booking still being upcoming. */
 function startOfToday(): number {
-  const d = nowDate();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+  return startOfLocalDay(nowMs());
 }
 
 // --- pure count selectors: (rows, metric) → count -----------------------------
@@ -128,7 +124,9 @@ export function countBookings(rows: readonly BookingRow[], metric: string): numb
   const live = rows.filter((b) => !b.cancelledAt && !b.convertedCheckoutId);
   if (metric === 'thisWeek') {
     const start = startOfToday();
-    const end = start + 7 * DAY_MS;
+    // Whole calendar week from the start of today (issue #325), so the window edge stays at local
+    // midnight rather than slipping an hour across a DST change.
+    const end = addCalendarDays(start, 7);
     return live.filter((b) => b.startDate >= start && b.startDate < end).length;
   }
   const cutoff = startOfToday();

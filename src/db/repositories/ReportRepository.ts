@@ -19,10 +19,10 @@ import type { SqlValue } from '@/db/rpc/driver';
 import {
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
-  MS_PER_DAY,
   UNASSIGNED_LOCATION_ID,
   type DeadStockMode,
 } from './constants';
+import { addCalendarDays } from '@/lib/calendar-days';
 import { buildAncestorChain } from '@/features/inventory/location-inheritance';
 import { effectiveUnitValue } from '@/features/inventory/valuation';
 import {
@@ -845,7 +845,7 @@ export class ReportRepository extends BaseRepository {
    * gauge net-value reductions. `windowEnd` defaults to `now`.
    */
   async consumptionRate(windowDays: number, now: number = nowMs()): Promise<ConsumptionRateReport> {
-    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+    const windowStart = addCalendarDays(now, -Math.max(1, windowDays));
     const rows = await this.driver.query<{ created_at: number; consumed: number }>(
       `SELECT created_at,
               ( COALESCE(-MIN(quantity_delta, 0), 0)
@@ -872,7 +872,7 @@ export class ReportRepository extends BaseRepository {
     buckets: number = DEFAULT_MOVEMENT_BUCKETS,
     now: number = nowMs(),
   ): Promise<MovementReport> {
-    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+    const windowStart = addCalendarDays(now, -Math.max(1, windowDays));
     const rows = await this.driver.query<{ created_at: number; quantity_delta: number | null }>(
       `SELECT created_at, quantity_delta
          FROM item_history
@@ -1186,7 +1186,7 @@ export class ReportRepository extends BaseRepository {
    */
   async abcAnalysis(windowDays: number = DEFAULT_ABC_WINDOW_DAYS, now: number = nowMs()): Promise<AbcReport> {
     const base = this.baseCurrency();
-    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+    const windowStart = addCalendarDays(now, -Math.max(1, windowDays));
     const rows = await this.driver.query<{
       id: string;
       name: string;
@@ -1226,7 +1226,7 @@ export class ReportRepository extends BaseRepository {
    */
   async turnover(windowDays: number, now: number = nowMs()): Promise<TurnoverReport> {
     const base = this.baseCurrency();
-    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+    const windowStart = addCalendarDays(now, -Math.max(1, windowDays));
     const rows = await this.driver.query<{
       id: string;
       name: string;
@@ -1338,7 +1338,7 @@ export class ReportRepository extends BaseRepository {
     now: number = nowMs(),
   ): Promise<ValuationTrendReport> {
     const base = this.baseCurrency();
-    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+    const windowStart = addCalendarDays(now, -Math.max(1, windowDays));
 
     // Current total value — the anchor the trend is reconstructed backward from. Summed by the
     // database over the same predicates and the same value rule as the {@link inventoryValue}
@@ -1461,7 +1461,7 @@ export class ReportRepository extends BaseRepository {
    */
   async spendAnalytics(windowDays: number, buckets: number, now: number = nowMs()): Promise<SpendReport> {
     const windowEnd = now;
-    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+    const windowStart = addCalendarDays(now, -Math.max(1, windowDays));
     const events: SpendEvent[] = [];
     // Resolved once per report so a change mid-report cannot split one total across two
     // currencies, exactly as `inventoryValue` does (#284).
@@ -1535,7 +1535,7 @@ export class ReportRepository extends BaseRepository {
     // pre-filter (`acquired_at >= <windowStart − 1 day, as YYYY-MM-DD>`) bounds the scan to roughly
     // the window without dropping any valid row (ISO-8601 dates sort lexically; the one-day margin
     // covers the timezone-less date → UTC-midnight parse). The pure seam re-applies the exact filter.
-    const acquiredLowerBound = new Date(windowStart - MS_PER_DAY).toISOString().slice(0, 10);
+    const acquiredLowerBound = new Date(addCalendarDays(windowStart, -1)).toISOString().slice(0, 10);
     const acquisitionRows = await this.driver.query<{
       amount: number;
       acquired_at: string | null;
@@ -1609,7 +1609,7 @@ export class ReportRepository extends BaseRepository {
    */
   async salesAnalytics(windowDays: number, buckets: number, now: number = nowMs()): Promise<SalesReport> {
     const windowEnd = now;
-    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+    const windowStart = addCalendarDays(now, -Math.max(1, windowDays));
 
     const rows = await this.driver.query<{
       instant: number;
