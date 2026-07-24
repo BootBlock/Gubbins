@@ -401,14 +401,18 @@ const TUNING = {
     },
     /**
      * Snow squall ({@link squall}): where a blizzard *rakes*, a squall *dumps* — a sudden dense
-     * burst of near-vertical snowfall with gusty churn and a hard visibility crash, over in
-     * seconds. It wakes the same reserve pool as the blizzard (both are "much more snow"), but
-     * pushes fall speed and turbulence instead of directional wind.
+     * burst of fast, near-vertical snowfall with a hard visibility crash, over in seconds. It
+     * wakes the same reserve pool as the blizzard (both are "much more snow"), but its identity
+     * is the vertical dump: a strong fall boost, only a modest lift to churn and gustiness (a
+     * heavy sideways lean would just read as blizzard-lite), and the deepest haze. Squalls also
+     * deliberately do NOT motion-streak — streaks rotate a sprite along its velocity, and with
+     * no prevailing wind a squall's per-flake velocity direction jitters with the churn, which
+     * draws as flakes warping/distorting rather than streaking (see {@link drawSnow}).
      */
     squallEvent: {
-      fallBoost: 0.9,
-      turbBoost: 1.6,
-      gustBoost: 1.2,
+      fallBoost: 1.25,
+      turbBoost: 0.9,
+      gustBoost: 0.5,
       hazeAlpha: 0.24,
     },
     /**
@@ -2568,10 +2572,14 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       );
       alpha *= 1 + frameStormy * st.waveAmp * wave;
       // Motion streaks: wind-raked flakes elongate along their velocity (shutter blur — the
-      // photoreal cheat), scaling with how hard the storm has them leaning. (A squall's flakes
-      // lean less, so it naturally streaks less than a blizzard — the lean term is the model.)
+      // photoreal cheat), scaling with how hard the storm has them leaning. Keyed to the
+      // *blizzard* envelope alone: a blizzard's dominant wind keeps each flake's velocity
+      // direction steady, so the velocity-aligned stretch reads as coherent streaks — while a
+      // squall's gusty churn swings direction and lean frame to frame, which the same drawing
+      // renders as flakes warping and wobbling. Squall flakes stay unstreaked dots and
+      // crystals: a dense fast vertical dump reads right without blur.
       const lean = p.vy > 1 ? Math.abs(p.vx) / p.vy : 0;
-      stretch = clamp(1 + frameStormy * st.streakGain * lean, 1, st.streakMax);
+      stretch = clamp(1 + frameStorm * st.streakGain * lean, 1, st.streakMax);
     }
     // The streak path engages while the sprite is still essentially unstretched (≈2%), so the
     // handoff is length-continuous and the rotation change is imperceptible on these (near-)
