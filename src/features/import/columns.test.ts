@@ -7,6 +7,7 @@ import {
   mapColumns,
   parseAmountCell,
   parseCountCell,
+  leadingIntegerCount,
 } from './columns';
 
 describe('headerKey', () => {
@@ -102,6 +103,19 @@ describe('parseCountCell (the shared numeric rule — issue #340)', () => {
   it('keeps the leading integer of a unit-suffixed quantity, unlike an amount', () => {
     expect(parseCountCell('3 pcs')).toBe(3);
     expect(parseAmountCell('3 pcs')).toBeNull();
+  });
+});
+
+describe('leadingIntegerCount (shared suffix rule — issue #391)', () => {
+  it('reads the leading integer of a space-separated unit suffix', () => {
+    expect(leadingIntegerCount('3 pcs')).toBe(3);
+    expect(leadingIntegerCount('10 units')).toBe(10);
+  });
+
+  it('requires a boundary after the digits, so a run-together suffix is unreadable', () => {
+    expect(leadingIntegerCount('2x')).toBeNull();
+    expect(leadingIntegerCount('abc')).toBeNull();
+    expect(leadingIntegerCount('')).toBeNull();
   });
 });
 

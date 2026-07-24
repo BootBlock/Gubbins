@@ -20,6 +20,7 @@ import {
   applyCatalogImportPlan,
   normaliseTrackingMode,
   parseNumericCell,
+  parseNumericCountCell,
   type CatalogItemRepository,
   type ColumnMapping,
 } from './catalog-import';
@@ -862,6 +863,37 @@ describe('parseNumericCell (issue #339)', () => {
   });
 });
 
+describe('parseNumericCountCell (whole-count fields — issue #391)', () => {
+  it('keeps the leading integer of a unit-suffixed quantity, as the BOM importer does', () => {
+    expect(parseNumericCountCell('3 pcs')).toBe(3);
+    expect(parseNumericCountCell('10 units')).toBe(10);
+  });
+
+  it('still reads a plain, grouped or currency-marked count exactly as the amount rule does', () => {
+    expect(parseNumericCountCell('42')).toBe(42);
+    expect(parseNumericCountCell('1,500')).toBe(1500);
+  });
+
+  it('passes a fraction through unrounded so the schema still reports it (issue #339 intact)', () => {
+    // Unlike parseCountCell, this must NOT round 1.5 to 2 — the whole-number rule reports it.
+    expect(parseNumericCountCell('1.5')).toBe(1.5);
+    expect(parseNumericCountCell('2.0')).toBe(2);
+  });
+
+  it('does not guess a suffix run together with the digits, matching the shared rule', () => {
+    // The shared leading-integer rule needs a boundary after the digits, so "2x" is unreadable
+    // in the BOM importer too; leaving it null keeps the importers consistent.
+    expect(parseNumericCountCell('2x')).toBeNull();
+  });
+
+  it('still rejects a cell with no leading number at all', () => {
+    expect(parseNumericCountCell('abc')).toBeNull();
+    expect(parseNumericCountCell('~12')).toBeNull();
+    expect(parseNumericCountCell('n/a')).toBeNull();
+    expect(parseNumericCountCell('')).toBeNull();
+  });
+});
+
 describe('buildCatalogImportPlan — numeric cells (issue #339)', () => {
   it('imports a grouped-thousands quantity at full value', () => {
     const csv = 'name,quantity\r\nM3 bolt,"1,500"';
@@ -910,6 +942,28 @@ describe('buildCatalogImportPlan — numeric cells (issue #339)', () => {
     expect(plan.errors).toEqual([]);
     expect(plan.create[0]!.input.quantity).toBe(0);
     expect(plan.create[0]!.input.unitCost).toBeNull();
+  });
+});
+
+describe('buildCatalogImportPlan — unit-suffixed counts match the BOM importer (issue #391)', () => {
+  it('imports a unit-suffixed quantity by its leading integer, like the BOM importer', () => {
+    const csv = 'name,quantity,reorderPoint,reorderQty\r\nM3 bolt,3 pcs,5 units,10 pcs';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.input.quantity).toBe(3);
+    expect(plan.create[0]!.input.reorderPoint).toBe(5);
+    expect(plan.create[0]!.input.reorderQty).toBe(10);
+  });
+
+  it('still rejects a unit suffix on a measured or monetary cell, never dropping its fraction', () => {
+    // A leading-integer fallback on `1.5 kg` would silently import 1, so amounts stay strict.
+    const weight = buildCatalogImportPlan('name,weight\r\nSpool,1.5 kg', null, []);
+    expect(weight.create).toHaveLength(0);
+    expect(weight.errors[0]!.message).toMatch(/Weight \(g\): "1\.5 kg" is not a number/);
+
+    const cost = buildCatalogImportPlan('name,unitCost\r\nWidget,2.50 each', null, []);
+    expect(cost.create).toHaveLength(0);
+    expect(cost.errors[0]!.message).toMatch(/Unit cost: "2\.50 each" is not a number/);
   });
 });
 

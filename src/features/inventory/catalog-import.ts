@@ -16,7 +16,7 @@
  */
 import { z } from 'zod';
 import { parseCsv } from '@/features/import/tabular';
-import { parseAmountCell } from '@/features/import/columns';
+import { parseAmountCell, leadingIntegerCount } from '@/features/import/columns';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
@@ -301,7 +301,7 @@ function rawCell(row: readonly string[], index: number | null | undefined): stri
 }
 
 /**
- * Parse one numeric cell, by the same rule every other importer uses (issue #340).
+ * Parse one measured/monetary cell, by the same rule every other importer uses (issue #340).
  *
  * The whole cell must be a number, so a partially-numeric value (`12kg`, `~12`, `n/a`) is
  * rejected rather than truncated to its leading digits the way `parseInt` would (issue #339).
@@ -316,6 +316,10 @@ function rawCell(row: readonly string[], index: number | null | undefined): stri
  * other tail is a fraction) rather than reported, so a single file cannot import differently
  * depending on which importer reads it. That consistency is the point of issue #340.
  *
+ * A whole-count cell (a quantity, a reorder point) reads more loosely — see
+ * {@link parseNumericCountCell}; a leading unit suffix such as `3 pcs` is tolerated there but
+ * not here, since `1.5 kg` must report rather than drop its fraction.
+ *
  * Returns the number, or `null` when the cell is present but unreadable — the caller
  * turns that into a row error, so the import never quietly invents a value.
  *
@@ -323,6 +327,28 @@ function rawCell(row: readonly string[], index: number | null | undefined): stri
  */
 export function parseNumericCell(text: string): number | null {
   return parseAmountCell(text);
+}
+
+/**
+ * Parse one whole-count cell — a quantity, reorder point or reorder quantity — tolerating a
+ * trailing unit suffix the way the BOM and purchase-list importers do (issue #391).
+ *
+ * It reads everything {@link parseNumericCell} reads, and when that fails, falls back to the
+ * shared {@link leadingIntegerCount} rule so a hand-written `3 pcs` or `10 units` keeps its
+ * leading integer instead of being reported unreadable — the same suffixed cell now imports
+ * as three whether the BOM importer or the catalogue importer opens the file. Tolerating the
+ * suffix only on the integer count fields, never on amounts, is deliberate: a leading-integer
+ * fallback on `1.5 kg` would silently drop the fraction (issue #339 keeps amounts strict).
+ *
+ * Unlike {@link parseCountCell} it does **not** round — a fractional value such as `1.5` is
+ * passed through so the schema's whole-number rule reports it, rather than the parser quietly
+ * altering the count the user wrote. That fractional-reporting is a separate #339 decision this
+ * change deliberately leaves intact; only the suffix gap is closed.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function parseNumericCountCell(text: string): number | null {
+  return parseNumericCell(text) ?? leadingIntegerCount(text);
 }
 
 /**
@@ -375,6 +401,14 @@ type NumericCatalogField = Extract<
   'quantity' | 'unitCost' | 'weight' | 'width' | 'height' | 'depth' | 'reorderPoint' | 'reorderQty'
 >;
 
+/**
+ * The numeric fields that are whole counts rather than measured/monetary amounts. These read
+ * by the looser {@link parseNumericCountCell} rule so a unit-suffixed quantity (`3 pcs`) keeps
+ * its leading integer, matching the BOM and purchase-list importers (issue #391). Every other
+ * numeric field stays on the strict {@link parseNumericCell} amount rule.
+ */
+const COUNT_CATALOG_FIELDS = new Set<NumericCatalogField>(['quantity', 'reorderPoint', 'reorderQty']);
+
 /** The outcome of coercing one raw row: the typed data plus any unreadable cells. */
 interface CoercedRow {
   readonly data: CatalogRowData;
@@ -404,7 +438,7 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRo
   const num = (field: NumericCatalogField): number | undefined => {
     const text = raw[field] ?? null;
     if (text === null) return undefined;
-    const value = parseNumericCell(text);
+    const value = COUNT_CATALOG_FIELDS.has(field) ? parseNumericCountCell(text) : parseNumericCell(text);
     if (value === null) {
       unreadable.push(`${CATALOG_FIELD_LABELS[field]}: "${text}" is not a number.`);
       return undefined;
