@@ -56,6 +56,7 @@ import {
   HINT_KIND,
   HINT_NAME,
   HINT_PARENT,
+  HINT_WALK_ORDER,
 } from './location-field-help';
 
 /**
@@ -119,6 +120,8 @@ export function EditLocationDialog({
   );
   const [kind, setKind] = useState<LocationKind | null>(isLocationKind(location.kind) ? location.kind : null);
   const [capacity, setCapacity] = useState(location.capacity != null ? String(location.capacity) : '');
+  // Picking-sweep position (issue #461); blank = unplaced (sorts after every placed location).
+  const [walkOrder, setWalkOrder] = useState(location.walkOrder != null ? String(location.walkOrder) : '');
   const [isDefault, setIsDefault] = useState(location.isDefault);
   const [deadStockMode, setDeadStockMode] = useState<DeadStockMode>(location.deadStockMode);
   const [deadStockDays, setDeadStockDays] = useState(
@@ -153,6 +156,10 @@ export function EditLocationDialog({
   const capacityValue = capacity.trim() === '' ? null : Math.floor(Number(capacity));
   const capacityValid =
     capacity.trim() === '' || (Number.isFinite(Number(capacity)) && Number(capacity) >= 0);
+  // Blank ⇒ unplaced (null), the same clear-vs-set discipline as capacity above.
+  const walkOrderValue = walkOrder.trim() === '' ? null : Math.floor(Number(walkOrder));
+  const walkOrderValid =
+    walkOrder.trim() === '' || (Number.isFinite(Number(walkOrder)) && Number(walkOrder) >= 0);
   // Blank ⇒ no override (defer to the location above, then the global default), matching
   // how the repository persists it.
   const deadStockDaysValue = deadStockDays.trim() === '' ? null : Math.floor(Number(deadStockDays));
@@ -177,6 +184,7 @@ export function EditLocationDialog({
     color !== (isLocationColor(location.color) ? location.color : null) ||
     kind !== (isLocationKind(location.kind) ? location.kind : null) ||
     capacityValue !== location.capacity ||
+    walkOrderValue !== location.walkOrder ||
     isDefault !== location.isDefault ||
     deadStockMode !== location.deadStockMode ||
     deadStockDaysValue !== location.deadStockDays ||
@@ -189,7 +197,16 @@ export function EditLocationDialog({
   const archived = location.archivedAt != null;
 
   const submit = () => {
-    if (trimmed.length === 0 || !dirty || !capacityValid || !deadStockDaysValid || !dimensionsValid) return;
+    if (
+      trimmed.length === 0 ||
+      !dirty ||
+      !capacityValid ||
+      !walkOrderValid ||
+      !deadStockDaysValid ||
+      !dimensionsValid
+    ) {
+      return;
+    }
     setError(null);
     update.mutate(
       {
@@ -201,6 +218,7 @@ export function EditLocationDialog({
           color,
           kind,
           capacity: capacityValue,
+          walkOrder: walkOrderValue,
           isDefault,
           deadStockMode,
           deadStockDays: deadStockDaysValue,
@@ -311,6 +329,23 @@ export function EditLocationDialog({
         states={{ width: widthState, height: heightState, depth: depthState }}
         derivedVolume={derivedVolume}
       />
+
+      <FormField
+        label="Walk order (optional)"
+        hint={HINT_WALK_ORDER}
+        error={walkOrderValid ? undefined : 'Walk order must be a whole number of 0 or more.'}
+      >
+        <Input
+          type="number"
+          min={0}
+          step={1}
+          inputMode="numeric"
+          value={walkOrder}
+          onChange={(e) => setWalkOrder(e.target.value)}
+          placeholder="Not on the picking route"
+          data-testid="location-walk-order"
+        />
+      </FormField>
 
       <label className="flex cursor-pointer items-center gap-2 text-sm">
         <input
@@ -506,6 +541,7 @@ export function EditLocationDialog({
                   trimmed.length === 0 ||
                   !dirty ||
                   !capacityValid ||
+                  !walkOrderValid ||
                   !deadStockDaysValid ||
                   !dimensionsValid
                 }

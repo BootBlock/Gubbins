@@ -50,6 +50,7 @@ const SELECT_WITH_COUNT = `
          l.kind, l.capacity, l.is_default, l.archived_at, l.last_counted_at,
          l.dead_stock_mode, l.dead_stock_days,
          l.width, l.height, l.depth, l.usable_volume, l.packing_factor,
+         l.walk_order,
          l.updated_at,
          COALESCE(c.item_count, 0) AS item_count
   FROM locations l
@@ -155,8 +156,8 @@ export class LocationRepository extends BaseRepository {
     statements.push({
       sql: `INSERT INTO locations (id, name, parent_id, description, color, kind, capacity, is_default,
                                    dead_stock_mode, dead_stock_days,
-                                   width, height, depth, usable_volume, packing_factor)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+                                   width, height, depth, usable_volume, packing_factor, walk_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         name,
@@ -180,6 +181,9 @@ export class LocationRepository extends BaseRepository {
         normaliseDimension(input.depth),
         normaliseDimension(input.usableVolume),
         normalisePackingFactor(input.packingFactor),
+        // Walk-order ordinal (issue #461); null when unplaced, coerced to a non-negative
+        // integer so a bad value can never trip the CHECK.
+        normaliseWalkOrder(input.walkOrder),
       ],
     });
     await this.driver.transaction(statements);
@@ -318,6 +322,12 @@ export class LocationRepository extends BaseRepository {
     if (input.packingFactor !== undefined) {
       sets.push('packing_factor = ?');
       params.push(normalisePackingFactor(input.packingFactor));
+    }
+    // Picking-sweep position (issue #461): null clears (unplaced, sorts last), a number is
+    // coerced to a non-negative integer. Undefined leaves the stored value untouched.
+    if (input.walkOrder !== undefined) {
+      sets.push('walk_order = ?');
+      params.push(normaliseWalkOrder(input.walkOrder));
     }
 
     // Only guard when nesting under a real parent — a move to the root (null) can never cycle.
@@ -607,6 +617,17 @@ function normaliseDimension(value: number | null | undefined): number | null {
 function normalisePackingFactor(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value) || value <= 0 || value > 1) return null;
   return value;
+}
+
+/**
+ * Coerce a walk-order ordinal to a non-negative integer, or NULL for "unplaced" (issue #461).
+ * A blank, NaN, negative or non-finite value collapses to NULL so a cleared field drops the
+ * location off the route — where it sorts after every placed location. Floored to a whole
+ * number: walk order is a rung on a sequence, not a measured quantity.
+ */
+function normaliseWalkOrder(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value) || value < 0) return null;
+  return Math.floor(value);
 }
 
 /**

@@ -123,6 +123,9 @@ export function rowToLocation(row: LocationRow): Location {
     depth: row.depth,
     usableVolume: row.usable_volume,
     packingFactor: row.packing_factor,
+    // Walk-order ordinal (issue #461) is an INTEGER column, already `number | null` off the
+    // driver — pass through uncoerced like the dimension columns above.
+    walkOrder: row.walk_order,
     updatedAt: row.updated_at,
   };
 }

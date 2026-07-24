@@ -9,6 +9,7 @@
  * appends nothing to the Activity Log; the actual consumption still happens at
  * {@link withAssembly.finaliseAssembly}, which "all picked" naturally leads into.
  */
+import { orderByRoute } from '@/features/projects/picking';
 import { rowToBomLine } from '../mappers';
 import type { ItemStockPlacement, PickLine, ProjectBomLine, ProjectBomLineRow } from '../types';
 import type { Constructor } from './mixin';
@@ -17,12 +18,19 @@ import type { ProjectCoreRepository } from './core';
 export function withPicking<TBase extends Constructor<ProjectCoreRepository>>(Base: TBase) {
   return class ProjectPickingRepository extends Base {
     /**
-     * The picking worksheet for a project: every BOM line in declared order, each paired
-     * with the per-location breakdown of where its matched item's stock sits (empty for an
-     * unmatched line or one with nothing on hand). The placements are gathered in a single
-     * batched query over `item_stock` — the same shape as {@link ItemStockRepository.listStock}
-     * but for every matched part at once — so the walk-and-tick view costs two reads regardless
-     * of the BOM's size.
+     * The picking worksheet for a project: every BOM line paired with the per-location
+     * breakdown of where its matched item's stock sits (empty for an unmatched line or one
+     * with nothing on hand). The placements are gathered in a single batched query over
+     * `item_stock` — the same shape as {@link ItemStockRepository.listStock} but for every
+     * matched part at once — so the walk-and-tick view costs two reads regardless of the BOM's
+     * size.
+     *
+     * Both the lines and each line's placements are ordered by the locations' **walk order**
+     * (issue #461) so the worksheet reads as one physical picking sweep: within a part its
+     * holding locations run in route order, and the lines themselves are ordered by the
+     * earliest point on the route a part can be grabbed. An unplaced location (`walk_order`
+     * NULL) sorts after every placed one, falling back to the prior busiest-first / declared
+     * order — so a project whose locations carry no walk order is unaffected.
      */
     async listPickList(projectId: string): Promise<PickLine[]> {
       const lineRows = await this.driver.query<ProjectBomLineRow>(
@@ -34,6 +42,9 @@ export function withPicking<TBase extends Constructor<ProjectCoreRepository>>(Ba
 
       const itemIds = [...new Set(lines.map((l) => l.itemId).filter((id): id is string => id !== null))];
       const placementsByItem = new Map<string, ItemStockPlacement[]>();
+      // The lowest walk order among a part's holding locations — its position on the sweep.
+      // `undefined` (or a location with a NULL walk order) means "unplaced", handled by orderByRoute.
+      const routeKeyByItem = new Map<string, number>();
       if (itemIds.length > 0) {
         const placeholders = itemIds.map(() => '?').join(', ');
         const rows = await this.driver.query<{
@@ -41,11 +52,14 @@ export function withPicking<TBase extends Constructor<ProjectCoreRepository>>(Ba
           location_id: string;
           location_name: string;
           quantity: number;
+          walk_order: number | null;
         }>(
-          `SELECT s.item_id, s.location_id, l.name AS location_name, s.quantity
+          // Route order first (placed locations by ascending walk order), then the prior
+          // busiest-first / name tie-break so an unplaced or tied location is unchanged.
+          `SELECT s.item_id, s.location_id, l.name AS location_name, s.quantity, l.walk_order
            FROM item_stock s JOIN locations l ON l.id = s.location_id
            WHERE s.item_id IN (${placeholders}) AND s.quantity > 0
-           ORDER BY s.quantity DESC, l.name COLLATE NOCASE ASC;`,
+           ORDER BY (l.walk_order IS NULL), l.walk_order ASC, s.quantity DESC, l.name COLLATE NOCASE ASC;`,
           itemIds,
         );
         for (const r of rows) {
@@ -56,13 +70,21 @@ export function withPicking<TBase extends Constructor<ProjectCoreRepository>>(Ba
             quantity: Number(r.quantity),
           });
           placementsByItem.set(r.item_id, list);
+          if (r.walk_order !== null) {
+            const current = routeKeyByItem.get(r.item_id);
+            if (current === undefined || r.walk_order < current) routeKeyByItem.set(r.item_id, r.walk_order);
+          }
         }
       }
 
-      return lines.map((line) => ({
+      const worksheet = lines.map((line) => ({
         line,
         placements: line.itemId ? (placementsByItem.get(line.itemId) ?? []) : [],
       }));
+      // Reorder the lines into sweep order; unplaced parts keep their declared order at the end.
+      return orderByRoute(worksheet, (row) =>
+        row.line.itemId ? (routeKeyByItem.get(row.line.itemId) ?? null) : null,
+      );
     }
 
     /**

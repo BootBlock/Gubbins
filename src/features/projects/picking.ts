@@ -67,3 +67,22 @@ export function describePlacements(placements: readonly PlacementLike[]): string
 export function totalOnHand(placements: readonly PlacementLike[]): number {
   return placements.reduce((sum, p) => sum + p.quantity, 0);
 }
+
+/**
+ * Stable-sort worksheet lines into physical picking-sweep order (issue #461): a line whose
+ * stock sits at a walk-ordered location comes first, in ascending walk order — the earliest
+ * point on the sweep a user can grab that part — while a line with no route position (no
+ * matched item, nothing in stock, or every holding location left unplaced) keeps its original
+ * relative order at the end.
+ *
+ * `routeKeyOf` returns the line's route position (typically the lowest walk order among its
+ * holding locations) or `null` for "unplaced". The sort is pure and stable, so a worksheet with
+ * no walk orders set anywhere yields every key `null` and is returned in its original order —
+ * i.e. this is a no-op until a user actually places a location on the route.
+ */
+export function orderByRoute<T>(lines: readonly T[], routeKeyOf: (line: T) => number | null): T[] {
+  return lines
+    .map((line, index) => ({ line, index, key: routeKeyOf(line) ?? Infinity }))
+    .sort((a, b) => a.key - b.key || a.index - b.index)
+    .map((entry) => entry.line);
+}

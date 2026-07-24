@@ -526,6 +526,38 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(worksheet[2].placements).toEqual([]);
   });
 
+  it('orders the worksheet by walk order — lines and placements follow the picking sweep (issue #461)', async () => {
+    const near = await locations.create({ name: 'Near bench', walkOrder: 1 });
+    const far = await locations.create({ name: 'Far shelf', walkOrder: 5 });
+    const p = await projects.create({ name: 'Kit' });
+
+    // A part split across both: most of its stock is far away, but the sweep passes Near first.
+    const split = await items.create({ name: 'Split', quantity: 10, locationId: far.id });
+    await items.transferStock(split.id, far.id, near.id, 1); // Far 9, Near 1
+    // A part only far away, declared FIRST; a part only near, declared LAST.
+    const farOnly = await items.create({ name: 'FarOnly', quantity: 3, locationId: far.id });
+    const nearOnly = await items.create({ name: 'NearOnly', quantity: 3, locationId: near.id });
+
+    const splitLine = await projects.addLine(p.id, { itemId: split.id, requiredQty: 1 });
+    const farLine = await projects.addLine(p.id, { itemId: farOnly.id, requiredQty: 1 });
+    const nearLine = await projects.addLine(p.id, { itemId: nearOnly.id, requiredQty: 1 });
+
+    const worksheet = await projects.listPickList(p.id);
+
+    // Lines run in sweep order by each part's earliest location: split & nearOnly both start at
+    // Near (walk order 1), farOnly at Far (5). The two ties fall back to declared order (split
+    // was added before nearOnly), so the declared-first far-only part is pushed to the end.
+    expect(worksheet.map((w) => w.line.id)).toEqual([splitLine.id, nearLine.id, farLine.id]);
+
+    // Within the split part, the nearer location leads despite holding far less stock —
+    // busiest-first would have put Far first.
+    const splitRow = worksheet.find((w) => w.line.id === splitLine.id)!;
+    expect(splitRow.placements.map((s) => [s.locationName, s.quantity])).toEqual([
+      ['Near bench', 1],
+      ['Far shelf', 9],
+    ]);
+  });
+
   it('ticks and un-ticks a line as picked without moving stock or logging history', async () => {
     const p = await projects.create({ name: 'Kit' });
     const item = await items.create({ name: 'Bolt', quantity: 5 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarisePicking, describePlacements, totalOnHand } from './picking';
+import { summarisePicking, describePlacements, totalOnHand, orderByRoute } from './picking';
 
 describe('summarisePicking (issue #121 gather-and-tick progress)', () => {
   it('rolls up picked vs total with the completed fraction', () => {
@@ -71,5 +71,53 @@ describe('totalOnHand', () => {
 
   it('is zero for a part with no placements', () => {
     expect(totalOnHand([])).toBe(0);
+  });
+});
+
+describe('orderByRoute (issue #461 picking-sweep order)', () => {
+  const keyOf = (line: { key: number | null }) => line.key;
+
+  it('sorts placed lines by ascending route key', () => {
+    const ordered = orderByRoute(
+      [
+        { id: 'a', key: 3 },
+        { id: 'b', key: 1 },
+        { id: 'c', key: 2 },
+      ],
+      keyOf,
+    );
+    expect(ordered.map((l) => l.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('sends unplaced lines (null key) to the end, keeping their original relative order', () => {
+    const ordered = orderByRoute(
+      [
+        { id: 'a', key: null },
+        { id: 'b', key: 5 },
+        { id: 'c', key: null },
+        { id: 'd', key: 1 },
+      ],
+      keyOf,
+    );
+    expect(ordered.map((l) => l.id)).toEqual(['d', 'b', 'a', 'c']);
+  });
+
+  it('is a stable no-op when nothing is placed (every key null → original order)', () => {
+    const lines = [
+      { id: 'a', key: null },
+      { id: 'b', key: null },
+      { id: 'c', key: null },
+    ];
+    expect(orderByRoute(lines, keyOf).map((l) => l.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('breaks ties on the original order (a stable sort)', () => {
+    const lines = [
+      { id: 'a', key: 2 },
+      { id: 'b', key: 2 },
+      { id: 'c', key: 1 },
+      { id: 'd', key: 2 },
+    ];
+    expect(orderByRoute(lines, keyOf).map((l) => l.id)).toEqual(['c', 'a', 'b', 'd']);
   });
 });

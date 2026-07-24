@@ -42,6 +42,11 @@ export interface LocationRow {
    * global `defaultPackingFactor` preference.
    */
   readonly packing_factor: number | null;
+  /**
+   * Position on a physical picking sweep (issue #461); NULL = unplaced. The picking worksheet
+   * visits placed locations in ascending order, NULLs last, so a multi-item pick is one sweep.
+   */
+  readonly walk_order: number | null;
   readonly updated_at: number;
 }
 
@@ -96,6 +101,14 @@ export interface Location {
    * global `defaultPackingFactor` preference. Phase 1 leaves this unset.
    */
   readonly packingFactor: number | null;
+  /**
+   * This location's position on a physical picking sweep (issue #461); `null` = unplaced. A
+   * small non-negative ordinal — "by the door" before "far shelving" — that the project picking
+   * worksheet sorts by so a user gathers parts in one route rather than doubling back. Unplaced
+   * locations sort after every placed one, so leaving it `null` preserves the prior busiest-first
+   * order. Deliberately lighter than X/Y/Z coordinates + pathfinding (issue #461 discussion).
+   */
+  readonly walkOrder: number | null;
   readonly updatedAt: number;
 }
 
@@ -127,6 +140,8 @@ export interface CreateLocationInput {
   readonly usableVolume?: number | null;
   /** Packing-efficiency fraction `0 < f ≤ 1` (issue #457); omit/null to use the global default. */
   readonly packingFactor?: number | null;
+  /** Position on the physical picking sweep (issue #461); omit/null for unplaced (sorts last). */
+  readonly walkOrder?: number | null;
 }
 
 export interface UpdateLocationInput {
@@ -152,4 +167,6 @@ export interface UpdateLocationInput {
   readonly usableVolume?: number | null;
   /** Packing-efficiency fraction `0 < f ≤ 1` (issue #457); null clears, omit leaves untouched. */
   readonly packingFactor?: number | null;
+  /** Position on the picking sweep (issue #461); null clears (unplaced), omit leaves untouched. */
+  readonly walkOrder?: number | null;
 }
