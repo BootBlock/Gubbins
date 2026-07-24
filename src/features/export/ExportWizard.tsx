@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button, LiveRegion, Modal, Select, Surface } from '@/components/foundry';
 import { ExportIcon, ImportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
-import { getItemRepository, getProjectRepository } from '@/db/repositories';
+import { getItemRepository, getLocationRepository, getProjectRepository } from '@/db/repositories';
+import { buildItemLocationOptions } from '@/features/inventory/parent-options';
+import { useFormatters } from '@/lib/useFormatters';
 import { runExport } from './run-export';
 import { useExportStore, type ExportFormat, type ExportScope, type ReportExportKind } from './useExportStore';
 import { useErrorMessage } from '@/features/errors';
@@ -21,7 +23,10 @@ import { useErrorMessage } from '@/features/errors';
  * Phase 61 adds a fourth format — a §3 aggregate **report CSV** (valuation / consumption /
  * movement / dead-stock) — routed through this same wizard so the remembered-settings and
  * download paths are shared, not duplicated. Phase 67 adds a fifth format — a catalog CSV
- * that round-trips through the import wizard without requiring manual column mapping.
+ * that round-trips through the import wizard without requiring manual column mapping. A
+ * `LOCATION` scope exports one location and everything whose primary home is there, and
+ * — via `initialLocationId` — is auto-selected when the calling screen has a location in
+ * view, so opening Export defaults to what's currently on screen instead of last time's scope.
  */
 const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof ExportIcon }[] = [
   {
@@ -55,6 +60,7 @@ const SCOPES: { value: ExportScope; label: string }[] = [
   { value: 'ALL', label: 'Whole inventory' },
   { value: 'ITEM', label: 'A single item' },
   { value: 'PROJECT', label: 'A project / BOM' },
+  { value: 'LOCATION', label: 'A location' },
 ];
 
 const REPORT_KINDS: { value: ReportExportKind; label: string }[] = [
@@ -70,7 +76,23 @@ const REPORT_KINDS: { value: ReportExportKind; label: string }[] = [
   { value: 'SPEND', label: 'Spend analytics' },
 ];
 
-export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ExportWizard({
+  open,
+  onClose,
+  initialLocationId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /**
+   * The location currently in view on the calling screen (e.g. the Inventory sidebar's
+   * selection), if any. Pre-selects the `LOCATION` scope on each fresh open so "Export"
+   * defaults to exporting what the user is actually looking at, rather than silently
+   * replaying whatever scope was last remembered. Ignored (no forced pre-selection) when
+   * the caller has no such context — e.g. viewing "All items", or opened from a screen
+   * (like Reports) with no location concept at all.
+   */
+  initialLocationId?: string | null;
+}) {
   const {
     format,
     scope,
@@ -83,10 +105,20 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
     setIncludeInactive,
     setReportKind,
   } = useExportStore();
+  const formatters = useFormatters();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
+
+  // Re-derive the default scope from the current page every time the dialog opens fresh
+  // (not while it stays open) so it reflects whatever the user is looking at right now.
+  useEffect(() => {
+    if (open && initialLocationId) {
+      setScope('LOCATION');
+      setScopeTargetId(initialLocationId);
+    }
+  }, [open, initialLocationId, setScope, setScopeTargetId]);
 
   const isReport = format === 'REPORTS';
   // CATALOG_CSV always exports the whole catalogue — no scope picker needed.
@@ -102,6 +134,11 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
     queryKey: ['export', 'project-picker'],
     queryFn: () => getProjectRepository().list({ limit: 100 }),
     enabled: open && scope === 'PROJECT',
+  });
+  const locationList = useQuery({
+    queryKey: ['export', 'location-picker'],
+    queryFn: () => getLocationRepository().list({ limit: 100 }),
+    enabled: open && scope === 'LOCATION',
   });
 
   const needsTarget = hasScope && scope !== 'ALL';
@@ -177,7 +214,7 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
           </div>
         ) : null}
 
-        {/* §4.5 scope (item/project/whole-inventory exports only; not shown for report or catalog CSV) */}
+        {/* §4.5 scope (item/project/location/whole-inventory exports only; not shown for report or catalog CSV) */}
         {hasScope ? (
           <div className="space-y-2">
             <span
@@ -217,6 +254,19 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
                 options={[
                   { value: '', label: 'Choose a project…' },
                   ...(projectList.data?.rows ?? []).map((p) => ({ value: p.id, label: p.name })),
+                ]}
+              />
+            ) : null}
+
+            {scope === 'LOCATION' ? (
+              <Select
+                value={scopeTargetId ?? ''}
+                onChange={(value) => setScopeTargetId(value || null)}
+                data-testid="export-target-location"
+                aria-label="Location to export"
+                options={[
+                  { value: '', label: 'Choose a location…' },
+                  ...buildItemLocationOptions(locationList.data?.rows ?? [], formatters.quantity),
                 ]}
               />
             ) : null}

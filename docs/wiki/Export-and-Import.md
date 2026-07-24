@@ -17,8 +17,10 @@ Get your data out in whichever form suits:
 - **Raw `.sqlite`** — the database file itself, for anyone who wants the data directly.
 - **CSV** — from [[reports|Reports-Overview]], for spreadsheets.
 
-Exports can be **scoped** — the whole inventory, a single item, or a
-[[project's|Projects-and-BOM]] sub-folder.
+Exports can be **scoped** — the whole inventory, a single item, a
+[[project's|Projects-and-BOM]] sub-folder, or a single **location** (that location plus
+every item whose home is there). Open the wizard while you're viewing a location and it
+defaults to exporting that location, so **Export** starts from whatever you're looking at.
 
 > **⚠️ Heads-up** An export is a one-way trip *out* of Gubbins — it is not a backup. The
 > **JSON data export** in particular cannot be loaded back in, and Gubbins will tell you so if

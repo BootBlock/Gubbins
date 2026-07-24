@@ -1258,7 +1258,11 @@ function InventoryWorkspace() {
           requestHighlight(item.id);
         }}
       />
-      <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
+      <ExportWizard
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        initialLocationId={selectedLocationId}
+      />
       <ImportDataDialog open={importOpen} onClose={() => setImportOpen(false)} />
       {/* Deep-linked item detail (e.g. from a Reports data-hygiene row): open the card directly
           so the user lands on the item rather than hunting for it. Rendered only once the record
