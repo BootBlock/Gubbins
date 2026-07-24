@@ -160,6 +160,22 @@ describe('CommandPalette', () => {
     expect(useInventoryEntry.getState().pendingSearch).toBe('220 ohm resistor');
   });
 
+  it('scrolls the newly highlighted row into view, including on wrap-around (issue #450)', async () => {
+    // jsdom stubs scrollIntoView as a no-op; spy on it to prove the wrapped-to selection is
+    // asked to reveal itself so the user can always see what's highlighted.
+    const scrollSpy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => {});
+    useCommandPaletteStore.setState({ open: true });
+    render(<CommandPalette />);
+    const input = screen.getByTestId('command-palette-input');
+    fireEvent.change(input, { target: { value: 'resistor' } });
+    await screen.findAllByTestId('command-palette-result');
+    scrollSpy.mockClear();
+    // ArrowUp from the first row wraps to the last — the row that was previously off-screen.
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(scrollSpy).toHaveBeenCalledWith({ block: 'nearest' });
+    scrollSpy.mockRestore();
+  });
+
   it('always shows the usage help, including the > hint', () => {
     useCommandPaletteStore.setState({ open: true });
     render(<CommandPalette />);
