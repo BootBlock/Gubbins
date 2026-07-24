@@ -1,42 +1,48 @@
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode, type Ref, useMemo } from 'react';
 import { CURRENCY_OPTIONS } from '@/lib/format';
-import { Select, SelectField, type SelectOption } from './select';
-import { type TooltipSize } from './tooltip';
+import { AutocompleteField } from './autocomplete';
+import { Select, type SelectOption } from './select';
+
+/** Popular currencies as `CODE — Name` rows, shared by both currency controls below. */
+const CURRENCY_SUGGESTIONS = CURRENCY_OPTIONS.map((c) => `${c.value} — ${c.label}`);
 
 /**
- * The label the "no explicit currency" row falls back to when a caller doesn't supply its
- * own (translated) one. Callers that go through the i18n seam pass a `t()` value; the
- * not-yet-translated screens rely on this English default.
+ * Default guidance shown in the editable field's `(i)` hint when a caller doesn't supply its
+ * own. Tells the user what a valid value looks like — the request behind this control — and
+ * that blank falls back to the base currency.
  */
-export const DEFAULT_CURRENCY_NONE_LABEL = 'Use base currency';
+export const DEFAULT_CURRENCY_HINT =
+  'Pick a currency from the list, or type its three-letter ISO 4217 code (e.g. `GBP`, `USD`, ' +
+  '`EUR`). Leave it blank to use your base currency.';
 
 /**
- * Build the option list a currency picker offers: the popular {@link CURRENCY_OPTIONS} as
- * `CODE — Name` rows, optionally led by a blank "use base currency" row for the fields where
- * a currency is *optional*. A non-empty `value` that isn't one of the offered codes is
- * appended verbatim so an existing off-list code (imported or entered before it was offered)
- * still shows and round-trips rather than silently blanking.
+ * Reduce an accepted currency value to a bare, upper-cased ISO code: a chosen suggestion
+ * `"EUR — Euro"` becomes `"EUR"`, and a free-typed `"eur"` becomes `"EUR"`. Exported so the
+ * few call sites that manage their own state normalise identically.
  */
-function buildCurrencyOptions(value: string, allowNone: boolean, noneLabel: string): SelectOption[] {
-  const options: SelectOption[] = [];
-  if (allowNone) options.push({ value: '', label: noneLabel });
-  for (const c of CURRENCY_OPTIONS) options.push({ value: c.value, label: `${c.value} — ${c.label}` });
+export function currencyCodeFromInput(value: string): string {
+  return value.split(' — ')[0]!.trim().toUpperCase();
+}
+
+/**
+ * Build the option list the select-only picker offers: the popular {@link CURRENCY_OPTIONS} as
+ * `CODE — Name` rows. A non-empty `value` that isn't one of the offered codes is appended
+ * verbatim so an existing off-list code still shows and round-trips rather than silently
+ * blanking.
+ */
+function buildCurrencyOptions(value: string): SelectOption[] {
+  const options: SelectOption[] = CURRENCY_OPTIONS.map((c) => ({
+    value: c.value,
+    label: `${c.value} — ${c.label}`,
+  }));
   if (value && !CURRENCY_OPTIONS.some((c) => c.value === value)) options.push({ value, label: value });
   return options;
 }
 
 export interface CurrencySelectProps {
-  /** The current ISO-4217 code, or `''` for "none" when {@link CurrencySelectProps.allowNone} is set. */
+  /** The current ISO-4217 code. */
   readonly value: string;
   readonly onChange: (value: string) => void;
-  /**
-   * Offer a leading blank row for the fields where a currency is optional (a supplier's
-   * default, a purchase order's currency): choosing it clears the value to `''`, which the
-   * caller stores as "use the base currency". Omitted, the picker only offers real codes.
-   */
-  readonly allowNone?: boolean;
-  /** Label for the blank row; defaults to {@link DEFAULT_CURRENCY_NONE_LABEL}. */
-  readonly noneLabel?: string;
   readonly className?: string;
   readonly disabled?: boolean;
   readonly placeholder?: string;
@@ -48,20 +54,19 @@ export interface CurrencySelectProps {
 }
 
 /**
- * Foundry CurrencySelect — the app-wide control for picking a currency, the bare combobox
- * counterpart to {@link CurrencyField}. It wraps the Foundry {@link Select} pre-loaded with
- * the offered {@link CURRENCY_OPTIONS} so every currency field (Settings' base currency, a
- * supplier's default, a supplier part's or purchase order's currency) offers the same list
- * and reads the same way — one definition, not a picker hand-rolled per screen.
+ * Foundry CurrencySelect — a **select-only** currency picker (one of the offered codes),
+ * wrapping the Foundry {@link Select} pre-loaded with {@link CURRENCY_OPTIONS}. This is the
+ * control for a **required** currency that must be a valid `Intl` code — namely the base
+ * currency, which drives every money format app-wide and would break formatting if it were an
+ * arbitrary string. For the *optional, per-record* currency fields, where the user may need a
+ * currency outside the popular list, use {@link CurrencyAutocompleteField} instead.
  *
- * Name it with `aria-label`/`aria-labelledby` (a `role="combobox"` element can't be named by
- * a wrapping `<label>`); the {@link CurrencyField} wrapper handles the labelled-field case.
+ * Name it with `aria-label`/`aria-labelledby` (a `role="combobox"` element can't be named by a
+ * wrapping `<label>`).
  */
 export function CurrencySelect({
   value,
   onChange,
-  allowNone = false,
-  noneLabel = DEFAULT_CURRENCY_NONE_LABEL,
   className,
   disabled,
   placeholder,
@@ -71,10 +76,7 @@ export function CurrencySelect({
   'aria-invalid': ariaInvalid,
   'data-testid': testId,
 }: CurrencySelectProps) {
-  const options = useMemo(
-    () => buildCurrencyOptions(value, allowNone, noneLabel),
-    [value, allowNone, noneLabel],
-  );
+  const options = useMemo(() => buildCurrencyOptions(value), [value]);
   return (
     <Select
       value={value}
@@ -92,40 +94,54 @@ export function CurrencySelect({
   );
 }
 
-export interface CurrencyFieldProps {
+export interface CurrencyAutocompleteFieldProps {
   readonly label: ReactNode;
+  /** The current ISO-4217 code, or `''` to fall back to the base currency. */
   readonly value: string;
   readonly onChange: (value: string) => void;
-  /** See {@link CurrencySelectProps.allowNone}. */
-  readonly allowNone?: boolean;
-  /** Label for the blank row; defaults to {@link DEFAULT_CURRENCY_NONE_LABEL}. */
-  readonly noneLabel?: string;
   /** Validation message; when present the control is marked invalid and this is announced. */
   readonly error?: string;
-  /** Optional rich-Markdown help, surfaced via an `i` badge (like {@link SelectField}). */
+  /**
+   * `(i)` help content (Markdown); defaults to {@link DEFAULT_CURRENCY_HINT}. Pass a richer,
+   * context-specific hint where the field carries extra meaning (e.g. how a non-base currency
+   * affects valuation totals).
+   */
   readonly hint?: string;
-  readonly hintSize?: TooltipSize;
   readonly className?: string;
   readonly placeholder?: string;
   readonly disabled?: boolean;
+  readonly inputRef?: Ref<HTMLInputElement>;
   readonly 'data-testid'?: string;
 }
 
 /**
- * A labelled {@link CurrencySelect} — the currency counterpart to
- * {@link import('./select').SelectField}. It is what a form field for a currency uses, wiring
- * the label, hint badge and validation error exactly as a labelled Select does.
+ * Foundry CurrencyAutocompleteField — the **editable** currency control: a real free-text
+ * field that *also* offers the popular {@link CURRENCY_OPTIONS} as a filtered dropdown, built
+ * on the Foundry {@link AutocompleteField}. It suits the optional, per-record currency fields
+ * (a supplier's default, a supplier part's or a purchase order's currency), where the user
+ * usually wants one of the common currencies but must be able to enter any ISO-4217 code — a
+ * code outside the popular list is stored and shown exactly as typed, never converted.
+ *
+ * Every accepted value — whether picked from the list or typed — is normalised to a bare,
+ * upper-cased code via {@link currencyCodeFromInput}, so `"EUR — Euro"` and `"eur"` both store
+ * `"EUR"`. A blank field means "use the base currency". The `(i)` hint spells out what a valid
+ * value looks like.
  */
-export function CurrencyField({
+export function CurrencyAutocompleteField({
   value,
   onChange,
-  allowNone = false,
-  noneLabel = DEFAULT_CURRENCY_NONE_LABEL,
+  hint = DEFAULT_CURRENCY_HINT,
   ...rest
-}: CurrencyFieldProps) {
-  const options = useMemo(
-    () => buildCurrencyOptions(value, allowNone, noneLabel),
-    [value, allowNone, noneLabel],
+}: CurrencyAutocompleteFieldProps) {
+  return (
+    <AutocompleteField
+      value={value}
+      onChange={(next) => onChange(currencyCodeFromInput(next))}
+      suggestions={CURRENCY_SUGGESTIONS}
+      maxOptions={CURRENCY_SUGGESTIONS.length}
+      maxLength={3}
+      hint={hint}
+      {...rest}
+    />
   );
-  return <SelectField value={value} onChange={onChange} options={options} {...rest} />;
 }

@@ -48,8 +48,8 @@ spot when a supplier's price has crept up.
 > [[reorder|Reorder-and-Shopping-List]] and [[purchase order|Purchase-Orders]] flows.
 
 > **⚠️ Heads-up**
-> A supplier part can be priced in **a different currency** — picked from the same list as your
-> base currency — and Gubbins shows it exactly as entered — it
+> A supplier part can be priced in **a different currency** — pick one from the list, or type any
+> three-letter ISO 4217 code — and Gubbins shows it exactly as entered — it
 > never converts. Because of that, a price in anything other than your base currency **can't be
 > counted in valuation totals**, and the item is left out of them (the reports say how many).
 > Give the item its own **unit cost** if you need it counted. See

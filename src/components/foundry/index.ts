@@ -27,10 +27,11 @@ export {
 export { Select, SelectField, type SelectProps, type SelectFieldProps, type SelectOption } from './select';
 export {
   CurrencySelect,
-  CurrencyField,
-  DEFAULT_CURRENCY_NONE_LABEL,
+  CurrencyAutocompleteField,
+  DEFAULT_CURRENCY_HINT,
+  currencyCodeFromInput,
   type CurrencySelectProps,
-  type CurrencyFieldProps,
+  type CurrencyAutocompleteFieldProps,
 } from './currency-select';
 export {
   Autocomplete,

@@ -24,8 +24,8 @@ export const DEFAULT_CURRENCY = 'GBP';
  * English name so the longer list stays scannable. `GBP` stays first as the locked
  * default. Every code here must be representable by {@link Intl.NumberFormat}.
  *
- * This is the single source of truth for the offered currencies: the {@link CurrencySelect}
- * / {@link CurrencyField} Foundry primitives render it, and `guessBaseCurrency` maps a
+ * This is the single source of truth for the offered currencies: the `CurrencySelect` /
+ * `CurrencyAutocompleteField` Foundry primitives render it, and `guessBaseCurrency` maps a
  * browser region onto one of these codes.
  */
 export const CURRENCY_OPTIONS = [

@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { Button, CurrencyField, FormField, Input, Modal, Textarea } from '@/components/foundry';
+import { Button, CurrencyAutocompleteField, FormField, Input, Modal, Textarea } from '@/components/foundry';
 import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/repositories';
 import { SUPPORTED_SUPPLIER_LABELS } from '@/features/scraping';
 import { SupplierPicker, supplierRefFrom, type SupplierPickerValue } from '@/features/suppliers';
@@ -19,12 +19,12 @@ const URL_HINT = [
 
 /** Help for the Currency picker (the chosen currency drives the displayed symbol). */
 const CURRENCY_HINT =
-  "Pick this supplier's currency from the list. Its costs are then shown with that currency's " +
-  'own symbol — e.g. `€1.23` — exactly as entered and **never converted**. Because of that, a ' +
-  'cost in anything other than your base currency is **left out of valuation and report totals** ' +
-  'rather than added to them as if it were base currency; give the item its own unit cost if you ' +
-  'need it counted. Leave it on **Use base currency** to fall back to your base currency (set in ' +
-  'Settings).';
+  "Pick this supplier's currency from the list, or type its three-letter ISO 4217 code (e.g. " +
+  '`EUR`, `JPY`). Its costs are then shown with that currency’s own symbol — e.g. `€1.23` — ' +
+  'exactly as entered and **never converted**. Because of that, a cost in anything other than ' +
+  'your base currency is **left out of valuation and report totals** rather than added to them ' +
+  'as if it were base currency; give the item its own unit cost if you need it counted. Leave it ' +
+  'blank to use your base currency (set in Settings).';
 
 /**
  * Add/edit dialog for a single supplier part (§4 supplier facet; Phase 60). Local controlled
@@ -220,12 +220,12 @@ export function SupplierPartFormDialog({
               data-testid="supplier-part-unit-cost"
             />
           </FormField>
-          <CurrencyField
+          <CurrencyAutocompleteField
             label="Currency"
             hint={CURRENCY_HINT}
             value={currency}
             onChange={setCurrency}
-            allowNone
+            placeholder="Use base currency"
             data-testid="supplier-part-currency"
           />
           <FormField

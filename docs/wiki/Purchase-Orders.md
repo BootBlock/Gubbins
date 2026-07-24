@@ -16,8 +16,8 @@ you can see what's inbound.
 
 ## Ordering in another currency
 
-An order can record its own **currency**, picked from the same list as your Settings base currency.
-Leave it on **Use base currency** and the order is in your base currency (set in Settings). Gubbins
+An order can record its own **currency** — pick a common one from the list, or type any three-letter
+ISO 4217 code such as `USD`. Leave it blank and the order is in your base currency (set in Settings). Gubbins
 stores the currency you chose and **never converts** between currencies, because it holds no
 exchange rates.
 
