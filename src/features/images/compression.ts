@@ -93,7 +93,23 @@ async function encodeScaled(bitmap: ImageBitmap, maxDim: number, quality: number
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
-      (blob) => (blob ? resolve(blob) : reject(new Error('Image WebP encoding failed.'))),
+      (blob) => {
+        if (!blob) {
+          reject(new Error('Image WebP encoding failed.'));
+          return;
+        }
+        // Per the HTML spec, `toBlob` silently falls back to `image/png` when the browser
+        // cannot encode the requested type, still invoking the callback with a valid blob.
+        // The bytes are stored as WebP downstream (`item_images.thumbnail_blob`, OPFS full-res
+        // under a path the pipeline treats as WebP), so an unchecked fallback misattributes
+        // the data and quietly breaks the tiny-thumbnail size assumptions (issue #259). Reject
+        // loudly, naming the actual type, rather than store mislabelled bytes.
+        if (blob.type !== 'image/webp') {
+          reject(new Error(`Image WebP encoding is unsupported here (got "${blob.type}").`));
+          return;
+        }
+        resolve(blob);
+      },
       'image/webp',
       quality,
     );
