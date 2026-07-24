@@ -62,6 +62,18 @@ export const HINT_DIMENSIONS =
   'just re-displays the same measurements — nothing is converted or lost. Leave them blank if you ' +
   "don't measure this location.";
 
+export const HINT_USABLE_VOLUME =
+  'Optional **override** for the usable volume inside this location, for a container that isn’t a ' +
+  'neat box — a bag, a bin with sloped walls, a shelf with a lip. When set, Gubbins uses this ' +
+  'figure for **space used** instead of multiplying the width × height × depth above.\n\n' +
+  'Leave it blank to just use the box measurements.';
+
+export const HINT_PACKING_FACTOR =
+  'Optional **packing efficiency** for this location — the share of its volume that’s realistically ' +
+  'fillable, since rigid items leave gaps and you can’t pack to 100%. A lower value gives a more ' +
+  'conservative **space used** reading.\n\n' +
+  'Leave it blank to use the global default from **Settings → Measurements**.';
+
 export const HINT_DEAD_STOCK_MODE =
   'Whether items stored here are flagged on the **Dead stock** report once they go unused ' +
   '— a handy way to watch a whole cupboard without setting each item individually.\n\n' +

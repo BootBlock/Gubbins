@@ -185,6 +185,11 @@ export function clampBudgetWarnPercent(value: number): number {
   return Math.min(BUDGET_WARN_BOUNDS.max, Math.max(BUDGET_WARN_BOUNDS.min, Math.round(value)));
 }
 
+// Packing-efficiency bounds/clamp live in the shared volume domain (`lib/volume.ts`) so the same
+// floor is enforced everywhere a packing factor is set or applied (issue #457). Re-exported here
+// so Settings / the store keep importing them from the settings barrel.
+export { DEFAULT_PACKING_FACTOR, PACKING_FACTOR_BOUNDS, clampPackingFactor } from '@/lib/volume';
+
 /**
  * Which metric the Visual-mode item card shows in its hero slot for a plain DISCRETE
  * item (spec §3). The card's ± stepper already shows the on-hand quantity, so a big

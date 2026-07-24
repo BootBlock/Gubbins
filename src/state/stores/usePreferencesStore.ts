@@ -22,8 +22,10 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  clampPackingFactor,
   clampPageSize,
   DEFAULT_CARD_CLICK_ACTION,
+  DEFAULT_PACKING_FACTOR,
   DEFAULT_ITEMS_PER_PAGE,
   DEFAULT_NAV_COUNT_METRICS,
   DEFAULT_VISUAL_CARD_METRIC,
@@ -145,6 +147,13 @@ interface PreferencesStore {
    * `0.0000027 m³`. A user who prefers a fixed unit can pin one.
    */
   readonly volumeUnit: VolumeUnitPreference;
+  /**
+   * The global default **packing efficiency** — the fraction (0 < f ≤ 1) of a location's raw
+   * usable volume that is realistically fillable — applied to a location that leaves its own
+   * `packingFactor` unset when computing cube utilisation (issue #457). Defaults to `1.0` (no
+   * haircut). Clamped on write so a stale value can never break the utilisation maths.
+   */
+  readonly defaultPackingFactor: number;
   /** Light / dark / system — the base neutral palette (spec §2.1). */
   readonly mode: Mode;
   /** Brand accent colour, applied in either mode (accent-only recolour). */
@@ -536,6 +545,8 @@ interface PreferencesStore {
   setDimensionUnit: (unit: DimensionUnit) => void;
   /** Choose the unit volumes are shown in, or `'auto'` to derive one (stored volumes stay mm³). */
   setVolumeUnit: (unit: VolumeUnitPreference) => void;
+  /** Set the global default packing efficiency used for locations that don't override it. */
+  setDefaultPackingFactor: (factor: number) => void;
   setMode: (mode: Mode) => void;
   setAccent: (accent: Accent) => void;
   setOledDark: (enabled: boolean) => void;
@@ -666,6 +677,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       weightUnit: DEFAULT_WEIGHT_UNIT,
       dimensionUnit: DEFAULT_DIMENSION_UNIT,
       volumeUnit: DEFAULT_VOLUME_UNIT,
+      defaultPackingFactor: DEFAULT_PACKING_FACTOR,
       mode: 'dark',
       accent: 'violet',
       oledDark: false,
@@ -745,6 +757,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setDimensionUnit: (unit) => set({ dimensionUnit: normaliseDimensionUnit(unit) }),
       // Normalise so a stale/unknown persisted value can never reach the formatter (preserves 'auto').
       setVolumeUnit: (unit) => set({ volumeUnit: normaliseVolumeUnit(unit) }),
+      // Clamp to (0,1] so a stale/typed value can never collapse a location's effective capacity.
+      setDefaultPackingFactor: (factor) => set({ defaultPackingFactor: clampPackingFactor(factor) }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam.
       setMode: (mode) => set({ mode: normaliseMode(mode) }),
       setAccent: (accent) => set({ accent: normaliseAccent(accent) }),

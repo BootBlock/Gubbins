@@ -64,6 +64,7 @@ import {
   LOW_STOCK_QTY_BOUNDS,
   NAV_COUNT_METRIC_CONFIG,
   NAV_COUNT_ROUTES,
+  PACKING_FACTOR_BOUNDS,
   PAGE_SIZE_BOUNDS,
   VISUAL_CARD_METRIC_FALLBACK_OPTIONS,
   VISUAL_CARD_METRIC_OPTIONS,
@@ -73,6 +74,7 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  clampPackingFactor,
   clampPageSize,
   guessBaseCurrency,
   normaliseNavCountMetric,
@@ -516,6 +518,35 @@ export default function SettingsDialog({
               }
               options={VOLUME_UNIT_OPTIONS.map((u) => ({ value: u.value, label: u.label }))}
             />
+          </SettingRow>
+          <SettingRow
+            label="Default packing efficiency"
+            description="How much of a location's raw volume counts as realistically fillable, unless the location sets its own."
+            hint={
+              'When Gubbins shows a location’s **space used** by volume (issue #457), it can’t assume ' +
+              'a container fills to 100% — rigid items leave gaps. This is the share of a location’s ' +
+              'raw internal volume treated as **realistically fillable**, used for any location that ' +
+              'doesn’t set its own packing efficiency.\n\n' +
+              `**100%** trusts the raw volume (no haircut); lower it for a more conservative estimate. ` +
+              `Range ${Math.round(PACKING_FACTOR_BOUNDS.min * 100)}–${Math.round(PACKING_FACTOR_BOUNDS.max * 100)}%.`
+            }
+          >
+            <div className="flex items-center gap-2">
+              <Input
+                aria-label="Default packing efficiency"
+                data-testid="setting-packing-factor"
+                type="number"
+                calc={false}
+                min={Math.round(PACKING_FACTOR_BOUNDS.min * 100)}
+                max={Math.round(PACKING_FACTOR_BOUNDS.max * 100)}
+                className="h-9 w-24"
+                value={Math.round(prefs.defaultPackingFactor * 100)}
+                onChange={(e) =>
+                  prefs.setDefaultPackingFactor(clampPackingFactor(Number(e.target.value) / 100))
+                }
+              />
+              <span className="text-sm text-muted-foreground">%</span>
+            </div>
           </SettingRow>
           <SettingRow
             label={t('settings.language.label')}

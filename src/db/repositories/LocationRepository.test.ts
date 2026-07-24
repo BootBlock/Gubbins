@@ -189,8 +189,7 @@ describe('LocationRepository', () => {
       expect(listed).toMatchObject({ width: 400, height: 300, depth: 300 });
     });
 
-    it('round-trips a usable-volume override and clamps a packing factor to (0,1]', async () => {
-      // The entry UI for these two arrives in Phase 2, but the repository path exists now.
+    it('round-trips a usable-volume override and clamps a packing factor to the safe range', async () => {
       const loc = await locations.create({
         name: 'Bag',
         usableVolume: 5_000_000,
@@ -203,6 +202,10 @@ describe('LocationRepository', () => {
       expect(overOne.packingFactor).toBeNull(); // > 1 → no override
       const zero = await locations.update(loc.id, { packingFactor: 0 });
       expect(zero.packingFactor).toBeNull(); // 0 → no override
+      // A positive-but-below-floor value is floored (not nulled), so no write path can store a
+      // near-zero factor that would make a measured location read as wildly over-full.
+      const tiny = await locations.update(loc.id, { packingFactor: 0.01 });
+      expect(tiny.packingFactor).toBe(0.05);
       const negVolume = await locations.update(loc.id, { usableVolume: -1 });
       expect(negVolume.usableVolume).toBeNull();
     });
@@ -221,6 +224,74 @@ describe('LocationRepository', () => {
       expect(workshop?.width).toBeNull();
       expect(workshop?.height).toBeNull();
       expect(workshop?.depth).toBeNull();
+    });
+  });
+
+  describe('volume totals for cube utilisation (issue #457)', () => {
+    it('aggregates measured stock volume and the measured/total unit split per location', async () => {
+      const drawer = await locations.create({ name: 'Drawer' });
+      // Two measured items (different quantities) + one unmeasured item held here.
+      await items.create({
+        name: 'Measured A',
+        locationId: drawer.id,
+        quantity: 2,
+        width: 100,
+        height: 100,
+        depth: 100, // 1,000,000 mm³ each × 2 = 2,000,000
+      });
+      await items.create({
+        name: 'Measured B',
+        locationId: drawer.id,
+        quantity: 1,
+        width: 200,
+        height: 100,
+        depth: 50, // 1,000,000 mm³ × 1 = 1,000,000
+      });
+      await items.create({ name: 'Unmeasured', locationId: drawer.id, quantity: 5 });
+
+      const row = (await locations.list()).rows.find((l) => l.id === drawer.id);
+      expect(row?.volumeTotals).toEqual({
+        usedVolume: 3_000_000,
+        measuredUnits: 3,
+        totalUnits: 8,
+        measuredItems: 2,
+        totalItems: 3,
+      });
+    });
+
+    it('reports a zeroed aggregate for a location holding nothing', async () => {
+      const empty = await locations.create({ name: 'Empty' });
+      const row = (await locations.getTree()).find((n) => n.id === empty.id);
+      expect(row?.volumeTotals).toEqual({
+        usedVolume: 0,
+        measuredUnits: 0,
+        totalUnits: 0,
+        measuredItems: 0,
+        totalItems: 0,
+      });
+    });
+
+    it('counts stock at the ledger grain, so a moved unit lands in its new location only', async () => {
+      const from = await locations.create({ name: 'From', width: 100, height: 100, depth: 100 });
+      const to = await locations.create({ name: 'To' });
+      const item = await items.create({
+        name: 'Widget',
+        locationId: from.id,
+        quantity: 3,
+        width: 100,
+        height: 100,
+        depth: 100,
+      });
+      await items.transferStock(item.id, from.id, to.id, 1);
+
+      const rows = (await locations.list()).rows;
+      const fromRow = rows.find((l) => l.id === from.id);
+      const toRow = rows.find((l) => l.id === to.id);
+      // 2 units remain at From, 1 unit moved to To — used volume follows the units.
+      expect(fromRow?.volumeTotals?.totalUnits).toBe(2);
+      expect(fromRow?.volumeTotals?.usedVolume).toBe(2_000_000);
+      expect(toRow?.volumeTotals?.totalUnits).toBe(1);
+      expect(toRow?.volumeTotals?.usedVolume).toBe(1_000_000);
     });
   });
 

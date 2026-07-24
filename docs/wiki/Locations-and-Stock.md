@@ -144,6 +144,43 @@ behaves exactly as before.
 > switching between millimetres, inches or metres in **Settings** simply re-displays the same
 > size. Nothing is converted or lost.
 
+### Space used, by volume
+
+Once a location has a size, its **fullness gauge** stops counting items and starts measuring the
+**space they take up**. Gubbins adds up the volume of the items placed directly here — from each
+item's own width × height × depth — and shows it against the location's usable volume. It's a far
+more honest picture than a plain item count: fifty resistors and one big toolbox aren't "two
+things", they're wildly different amounts of space.
+
+The gauge is always honest about how much it knows. When some items here have no measurements, a
+caption reads *"based on N of M items measured"*, so a half-measured drawer never looks
+deceptively empty — an item with no size simply doesn't count toward the space used. A location
+with no size at all keeps its familiar item-count gauge.
+
+> **ℹ️ Note**
+> Only items placed **directly** in a location count toward its space used — a cabinet doesn't
+> automatically total up the volume inside its drawers. Each level reports what sits at that
+> level, the same way the item count does.
+
+### Fine-tuning: usable volume & packing efficiency
+
+Real containers rarely fill to 100%, and few are perfect boxes. Two optional settings — behind
+**Advanced space options** when you add or edit a location — let you make the estimate more honest:
+
+![The Advanced space options on a location's Edit dialog: a usable-volume override and a packing-efficiency percentage](images/location-advanced.png)
+
+- **Usable volume** overrides the width × height × depth figure for a container that isn't a neat
+  box — a bag, a bin with sloped walls, a shelf with a lip. Set it and Gubbins uses your figure
+  for space used instead of the box calculation.
+- **Packing efficiency** is the share of the volume that's realistically fillable, since rigid
+  items leave gaps. Set it below 100% for a more conservative reading, or leave it blank to use the
+  global default from **Settings → Measurements** — where **Default packing efficiency** sets the
+  fallback for every location that doesn't specify its own.
+
+> **💡 Tip**
+> Both are optional. With just the three dimensions and everything left on its defaults, the gauge
+> already gives a useful read — reach for these only when you want to tune it.
+
 ## Walk order: picking in one sweep
 
 A location can be given a **walk order** — a plain number saying where it sits on the route you
