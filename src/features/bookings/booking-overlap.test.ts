@@ -6,8 +6,10 @@ import {
   normaliseDayRange,
   rangesOverlap,
   findFirstOverlap,
+  resolveBookingConflicts,
   type DayRange,
   type OverlapCandidate,
+  type BookingWindow,
 } from './booking-overlap';
 
 // A fixed, timezone-robust day-start anchor. We never hard-code raw day-boundary ms
@@ -139,5 +141,56 @@ describe('findFirstOverlap', () => {
 
   it('returns null for an empty list', () => {
     expect(findFirstOverlap(candidate, [])).toBeNull();
+  });
+});
+
+describe('resolveBookingConflicts (issue #194)', () => {
+  const win = (id: string, start: number, end: number, createdAt: number): BookingWindow => ({
+    id,
+    start: day(start),
+    end: day(end),
+    createdAt,
+  });
+
+  it('keeps a single booking untouched', () => {
+    const res = resolveBookingConflicts([win('a', 1, 3, 100)]);
+    expect(res.kept).toEqual(['a']);
+    expect(res.cancelled).toEqual([]);
+  });
+
+  it('keeps non-overlapping bookings all together', () => {
+    const res = resolveBookingConflicts([win('a', 1, 2, 100), win('b', 4, 5, 200)]);
+    expect(res.kept).toEqual(['a', 'b']);
+    expect(res.cancelled).toEqual([]);
+  });
+
+  it('cancels the later-created of two overlapping bookings', () => {
+    const res = resolveBookingConflicts([win('later', 2, 4, 200), win('first', 1, 3, 100)]);
+    expect(res.kept).toEqual(['first']);
+    expect(res.cancelled).toEqual([{ id: 'later', clashesWith: 'first' }]);
+  });
+
+  it('breaks a created_at tie by the smaller id, so both devices agree', () => {
+    const res = resolveBookingConflicts([win('b', 1, 3, 100), win('a', 2, 4, 100)]);
+    expect(res.kept).toEqual(['a']);
+    expect(res.cancelled).toEqual([{ id: 'b', clashesWith: 'a' }]);
+  });
+
+  it('keeps two disjoint bookings that each merely abut the cancelled middle one', () => {
+    // a (Mon–Wed) and c (Fri–Sat) do not overlap each other; b (Wed–Fri) overlaps both. Overlap is
+    // not transitive, so a and c both survive and only the later b is cancelled — against a, the
+    // earlier of the two it clashes with.
+    const res = resolveBookingConflicts([win('a', 1, 3, 100), win('c', 5, 6, 200), win('b', 3, 5, 300)]);
+    expect(new Set(res.kept)).toEqual(new Set(['a', 'c']));
+    expect(res.cancelled).toEqual([{ id: 'b', clashesWith: 'a' }]);
+  });
+
+  it('cancels every later booking that clashes with a surviving earlier one', () => {
+    const res = resolveBookingConflicts([win('first', 1, 10, 100), win('x', 2, 3, 200), win('y', 8, 9, 300)]);
+    expect(res.kept).toEqual(['first']);
+    expect(res.cancelled).toEqual([
+      { id: 'x', clashesWith: 'first' },
+      { id: 'y', clashesWith: 'first' },
+    ]);
   });
 });

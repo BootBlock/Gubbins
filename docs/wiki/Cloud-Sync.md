@@ -59,6 +59,16 @@ one place. The item then correctly reads as out to that one borrower, and the cl
 its [[history|Loans-Check-Out-and-In]] as a record. The Sync screen notes it in the summary when it
 happens.
 
+### When an asset is booked for the same dates on two devices
+
+A [[booking|Bookings]] reserves one identifiable asset for a span of days, so the same asset can't
+be booked twice over overlapping days. Gubbins stops you creating a clashing booking — but two
+devices offline can't see each other, so each *can* reserve the same asset for overlapping dates.
+When they sync, Gubbins keeps the booking that was **made first** and cancels the later one(s) that
+clash with it, since the asset could only really be held by one of them. The cancelled booking stays
+on record (marked *cancelled*) rather than vanishing, and the Sync screen notes it in the summary
+when it happens. Bookings for the same asset on dates that *don't* overlap are all kept.
+
 ### Reviewing overwritten edits
 
 Last-write-wins means one side's change to that same field is set aside. So you never lose that

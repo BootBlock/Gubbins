@@ -20,6 +20,12 @@ Gubbins checks for **clashes**: if you try to book an item that's already reserv
 overlapping period, it tells you — so two people can't unknowingly claim the same thing on the
 same day.
 
+> **ℹ️ Note**
+> If two devices are offline and each books the same asset for overlapping dates, they can't see
+> each other's reservation at the time. When they next [[sync|Cloud-Sync]], Gubbins keeps the
+> booking made **first** and cancels the later clashing one — see
+> [[Cloud sync → overlapping bookings|Cloud-Sync]].
+
 > **💡 Tip**
 > Bookings turn Gubbins into a simple shared-equipment scheduler. Reserve the good camera for a
 > shoot next week, and anyone else booking it sees it's taken.

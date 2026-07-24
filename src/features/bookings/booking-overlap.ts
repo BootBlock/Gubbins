@@ -115,3 +115,72 @@ export function findFirstOverlap(
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Post-merge conflict resolution (issue #194)
+// ---------------------------------------------------------------------------
+
+/**
+ * One active booking to rank when resolving a post-merge double-booking (issue #194). `start`
+ * and `end` are day-start UNIX-ms instants (a normalised {@link DayRange}); `createdAt` is the
+ * booking's creation instant and `id` its UUID — together the deterministic priority key.
+ */
+export interface BookingWindow {
+  readonly id: string;
+  readonly start: number;
+  readonly end: number;
+  readonly createdAt: number;
+}
+
+/** A booking cancelled by {@link resolveBookingConflicts}, and the kept booking it clashed with. */
+export interface BookingCancellation {
+  readonly id: string;
+  /** The earlier-reserved booking whose slot this one overlapped. */
+  readonly clashesWith: string;
+}
+
+/** The outcome of resolving one asset's overlapping bookings into a conflict-free set. */
+export interface BookingConflictResolution {
+  /** Ids kept — an earliest-first set with no two overlapping. */
+  readonly kept: readonly string[];
+  /** Ids cancelled, each paired with the kept booking it clashed with. */
+  readonly cancelled: readonly BookingCancellation[];
+}
+
+/**
+ * Deterministic booking priority: the **earlier-created** booking has the legitimate claim, ties
+ * broken by the lexicographically smaller id so every device reaches the identical verdict without
+ * reference to which side is "local". `createdAt` is safe to compare because it is never clock-frame
+ * shifted on the wire (see `shiftSnapshotTimestamps`), so it is byte-identical everywhere.
+ */
+function compareBookingPriority(a: BookingWindow, b: BookingWindow): number {
+  if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
+/**
+ * Reduce one asset's active bookings to a conflict-free set by cancelling the minimum needed
+ * (issue #194). The read-then-write overlap guard in `AssetBookingRepository.create` holds only
+ * within one device's database, so two devices booking the same asset for overlapping dates each
+ * pass their local check and the id-keyed sync union keeps both — leaving the same unit reserved
+ * twice over the same days. This is the deterministic post-merge repair.
+ *
+ * Bookings are ranked by {@link compareBookingPriority} (earliest-created first), then walked in
+ * order: a booking is **kept** if it overlaps none already kept, else **cancelled** and paired with
+ * the earlier booking it clashed with. Because overlap is not transitive (a Mon–Wed and a Fri–Sat
+ * booking can both survive alongside a cancelled Wed–Fri one), this greedy keeps every booking that
+ * does not actually clash with a surviving earlier one rather than blindly collapsing to a single
+ * winner. Both devices run this same pure rule over the same union of rows and agree.
+ */
+export function resolveBookingConflicts(bookings: readonly BookingWindow[]): BookingConflictResolution {
+  const ranked = [...bookings].sort(compareBookingPriority);
+  const kept: BookingWindow[] = [];
+  const cancelled: BookingCancellation[] = [];
+  for (const booking of ranked) {
+    const clash = kept.find((k) => rangesOverlap(booking.start, booking.end, k.start, k.end));
+    if (clash) cancelled.push({ id: booking.id, clashesWith: clash.id });
+    else kept.push(booking);
+  }
+  return { kept: kept.map((k) => k.id), cancelled };
+}
