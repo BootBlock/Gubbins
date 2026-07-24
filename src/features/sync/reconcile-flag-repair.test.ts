@@ -312,21 +312,23 @@ describe('supplier-part flag invariant over node:sqlite (issues #157 / #192)', (
   it('restores a backup that pins a different part than the local one, adopting the backup pin', async () => {
     await insertPart('p1', { price: 1 }, 100); // local pins p1
     await insertPart('p2', { price: 0 }, 50);
-    // A clean backup that pins p2 instead — restore must clear p1 before writing p2.
+    // A backup that pins p2 and does NOT carry p1 at all: only the clear-first UPDATE (not p1's
+    // own upsert, since there is none) can free the index before p2's write, so this isolates it.
     const snap = await buildLocalSnapshot(driver, 1);
     const backup: SyncSnapshot = {
       ...snap,
       tables: {
         ...snap.tables,
         supplier_parts: [
-          { ...snap.tables.supplier_parts!.find((r) => r.id === 'p1')!, is_price_source: 0 },
           { ...snap.tables.supplier_parts!.find((r) => r.id === 'p2')!, is_price_source: 1, updated_at: 200 },
         ],
       },
     };
 
     await restoreSnapshot(driver, backup);
-    expect(await pinnedPriceSource()).toEqual(['p2']);
+    expect(await pinnedPriceSource()).toEqual(['p2']); // p1's stale pin cleared; p1 row still present
+    const ids = await driver.query<{ id: string }>('SELECT id FROM supplier_parts ORDER BY id;');
+    expect(ids.map((r) => r.id)).toEqual(['p1', 'p2']);
   });
 
   it('clones a remote with two flagged rows without silently dropping one (INSERT OR REPLACE)', async () => {
