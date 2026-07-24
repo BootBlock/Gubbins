@@ -19,10 +19,12 @@ export const EXPORT_FORMATS = ['JSON', 'CSV', 'VAULT', 'REPORTS', 'CATALOG_CSV']
 
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 /**
- * §4.5 granularity: the whole inventory, a single item, or a Project/BOM scope. The chosen
- * target id (an item or project) lives in {@link ExportStore.scopeTargetId}.
+ * §4.5 granularity: the whole inventory, a single item, a Project/BOM scope, or a single
+ * Location (and everything whose primary location is exactly that one — no sub-location
+ * expansion, mirroring the Inventory sidebar's own location filter). The chosen target id
+ * (an item, project, or location) lives in {@link ExportStore.scopeTargetId}.
  */
-export const EXPORT_SCOPES = ['ALL', 'ITEM', 'PROJECT'] as const;
+export const EXPORT_SCOPES = ['ALL', 'ITEM', 'PROJECT', 'LOCATION'] as const;
 
 export type ExportScope = (typeof EXPORT_SCOPES)[number];
 
@@ -69,7 +71,7 @@ export function normaliseReportExportKind(value: unknown): ReportExportKind {
 interface ExportStore {
   readonly format: ExportFormat;
   readonly scope: ExportScope;
-  /** Selected item id (scope `ITEM`) or project id (scope `PROJECT`); null for `ALL`. */
+  /** Selected item/project/location id (scope `ITEM`/`PROJECT`/`LOCATION`); null for `ALL`. */
   readonly scopeTargetId: string | null;
   readonly includeInactive: boolean;
   /** Last-used report for the `REPORTS` format — remembered like every other setting (§3). */
