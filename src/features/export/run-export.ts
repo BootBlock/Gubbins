@@ -50,6 +50,7 @@ import {
 } from '@/features/reports/queries';
 import { normaliseAnalyticsWindow } from '@/features/reports/analytics-windows';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { getFormatters } from '@/lib/format';
 import {
   buildCatalogCsv,
   buildItemsCsv,
@@ -91,6 +92,18 @@ const REPORT_FILE_SLUG: Record<ReportExportKind, string> = {
 };
 
 /**
+ * The shared date formatter (issue #328), bound to the user's current preferences. A report CSV's
+ * date columns render through the same `useFormatters().date` seam the Reports screen uses, so an
+ * exported window/bucket date reads identically to the one on screen (and in the user's locale)
+ * rather than a UTC-sliced ISO stamp. Read outside React via `getState()`; only the locale affects
+ * the date, but the full bundle is fetched from its process-wide cache so nothing is rebuilt.
+ */
+function reportDateFormatter(): (ms: number) => string {
+  const p = usePreferencesStore.getState();
+  return getFormatters(p.locale, p.baseCurrency, p.weightUnit, p.dimensionUnit, p.volumeUnit).date;
+}
+
+/**
  * Build the CSV string for the chosen §3 report through `ReportRepository` (Phase 61).
  *
  * Where a report is driven by a user-selectable window on the Reports screen, the export reads
@@ -107,17 +120,19 @@ const REPORT_FILE_SLUG: Record<ReportExportKind, string> = {
  */
 async function buildReportCsv(kind: ReportExportKind): Promise<string> {
   const repo = getReportRepository();
+  const formatDate = reportDateFormatter();
   switch (kind) {
     case 'VALUATION':
       return buildValuationCsv(await repo.inventoryValue());
     case 'CONSUMPTION':
-      return buildConsumptionCsv(await repo.consumptionRate(REPORT_WINDOW_DAYS));
+      return buildConsumptionCsv(await repo.consumptionRate(REPORT_WINDOW_DAYS), formatDate);
     case 'MOVEMENT':
       return buildMovementCsv(
         await repo.movement(
           normaliseAnalyticsWindow(usePreferencesStore.getState().reportsMovementWindow),
           REPORT_MOVEMENT_BUCKETS,
         ),
+        formatDate,
       );
     case 'DEAD_STOCK':
       // Dead stock is bound to the configured idle threshold rather than an analytics window.
@@ -136,6 +151,7 @@ async function buildReportCsv(kind: ReportExportKind): Promise<string> {
           normaliseAnalyticsWindow(usePreferencesStore.getState().reportsAnalyticsWindow),
           VALUATION_TREND_POINTS,
         ),
+        formatDate,
       );
     case 'DATA_HYGIENE':
       return buildDataHygieneCsv(await repo.dataHygiene(DATA_HYGIENE_STALE_DAYS));
@@ -145,6 +161,7 @@ async function buildReportCsv(kind: ReportExportKind): Promise<string> {
           normaliseAnalyticsWindow(usePreferencesStore.getState().reportsSpendWindow),
           SPEND_BUCKETS,
         ),
+        formatDate,
       );
   }
 }
