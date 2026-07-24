@@ -165,6 +165,17 @@ const NAV_TOOLTIP_KEYS: Record<
   '/about': 'dashboard.nav.tooltip.about',
 };
 
+/**
+ * Dashboard-specific tile labels that override a route's global nav label, kept short so the
+ * text doesn't wrap in the hub's two-column tile grid. Only routes whose full nav label would
+ * wrap need an entry — every other tile uses its {@link NavDestination.messageKey}. The global
+ * {@link AppNav} menu and the command palette keep the full label; this is display text for the
+ * hub tiles alone.
+ */
+const DASHBOARD_TILE_LABEL_KEYS: Partial<Record<AppRoutePath, MessageKey>> = {
+  '/purchase-orders': 'dashboard.nav.purchaseOrdersShort',
+};
+
 export function DashboardNav() {
   const t = useT();
   // The translated heading for a nav group — reused by the section aria-label/heading, the move/pin
@@ -302,8 +313,9 @@ export function DashboardNav() {
                 const navCount = navCounts[dest.to];
                 const count = navCount?.count;
                 const showCount = typeof count === 'number' && count > 0;
-                // The tile's translated label (its route label, or "Open inventory" for the CTA).
-                const tileLabel = isInventory ? t('dashboard.nav.openInventory') : t(dest.messageKey);
+                // The tile's translated label — normally its route label, but shortened for the
+                // hub where the full nav label would wrap the tile (see DASHBOARD_TILE_LABEL_KEYS).
+                const tileLabel = t(DASHBOARD_TILE_LABEL_KEYS[dest.to] ?? dest.messageKey);
                 // Spoken form of the count for the tile's accessible name — a bare "3" next to
                 // "Projects" is ambiguous, so name it ("Projects — 3 active projects"). The count
                 // *noun* comes from the nav-count metric config (a separate subsystem, not yet

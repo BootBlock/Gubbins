@@ -216,7 +216,7 @@
   "dashboard.nav.group.manage": "Verwalten",
   "dashboard.nav.group.system": "System",
   "dashboard.nav.ariaLabel": "Hauptnavigation",
-  "dashboard.nav.openInventory": "Inventar öffnen",
+  "dashboard.nav.purchaseOrdersShort": "Einkauf",
   "dashboard.nav.resetTilesTooltip": "Die Standardreihenfolge der Kacheln wiederherstellen — jede Kachel zurück in ihre ursprüngliche Gruppe und Position. (Das Widget-Board hat ein eigenes Zurücksetzen.)",
   "dashboard.nav.resetTiles": "Kacheln zurücksetzen",
   "dashboard.nav.resetAnnounce": "Navigationskacheln auf ihre Standardreihenfolge zurückgesetzt.",

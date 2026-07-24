@@ -216,7 +216,7 @@
   "dashboard.nav.group.manage": "Manage",
   "dashboard.nav.group.system": "System",
   "dashboard.nav.ariaLabel": "Primary navigation",
-  "dashboard.nav.openInventory": "Open inventory",
+  "dashboard.nav.purchaseOrdersShort": "Purchasing",
   "dashboard.nav.resetTilesTooltip": "Restore the default tile order — every tile back in its original group and position. (The widget board has its own Reset.)",
   "dashboard.nav.resetTiles": "Reset tiles",
   "dashboard.nav.resetAnnounce": "Navigation tiles reset to their default order.",

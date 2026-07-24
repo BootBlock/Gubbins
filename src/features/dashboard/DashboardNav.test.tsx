@@ -57,7 +57,7 @@ function customise(): void {
   fireEvent.click(screen.getByTestId('customise-nav'));
 }
 
-/** The tile for a route, found via its anchor `href` (labels differ, e.g. "Open inventory"). */
+/** The tile for a route, found via its anchor `href` (labels differ, e.g. "Purchasing"). */
 function tile(to: string): HTMLElement | null {
   return document.querySelector(`a[href="${to}"]`);
 }
@@ -115,7 +115,7 @@ describe('DashboardNav — collection count pills', () => {
     expect(screen.getByTestId('nav-count-/inventory')).toHaveTextContent('42');
     // The spoken name disambiguates the bare number.
     expect(tile('/projects')).toHaveAttribute('aria-label', 'Projects — 3 active projects');
-    expect(tile('/inventory')).toHaveAttribute('aria-label', 'Open inventory — 42 items');
+    expect(tile('/inventory')).toHaveAttribute('aria-label', 'Inventory — 42 items');
   });
 
   it('names a tile with the plural for its current (re-pointed) metric', () => {
@@ -147,7 +147,7 @@ describe('DashboardNav — collection count pills', () => {
 
     expect(screen.getByTestId('nav-count-/inventory')).toHaveTextContent('999+');
     // The exact figure still rides on the accessible name.
-    expect(tile('/inventory')).toHaveAttribute('aria-label', 'Open inventory — 100000 items');
+    expect(tile('/inventory')).toHaveAttribute('aria-label', 'Inventory — 100000 items');
   });
 
   it('tints a "problem"-tone count with a warning/destructive token, not the group hue (A2)', () => {
