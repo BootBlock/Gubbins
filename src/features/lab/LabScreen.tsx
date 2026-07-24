@@ -8,11 +8,13 @@
  *
  * The screen is registry-driven so future switches cost one entry rather than a new screen:
  * {@link OCCASIONS} render as three-way garnish gates and {@link LAB_FLAGS} as grouped on/off
- * rows. Three things sit outside that pattern because they are not booleans — the **date override**,
- * which shifts what the whole app considers "today"; the **effects** section, which plays a one-off
- * animation on demand rather than storing anything; and the **actions** section, which is separated
- * and confirmation-gated precisely because (unlike every switch above it) it writes to the user's
- * real data.
+ * rows. A few things sit outside that pattern because they are not booleans — the **date
+ * override**, which shifts what the whole app considers "today"; the **snow weather** override,
+ * which forces one of the Snow background effect's occasional events (blizzard, squall, diamond
+ * dust, graupel, warm snow, thundersnow) so it can be eyeballed on demand; the **effects**
+ * section, which plays a one-off animation on demand rather than storing anything; and the
+ * **actions** section, which is separated and confirmation-gated precisely because (unlike every
+ * switch above it) it writes to the user's real data.
  */
 import { useMemo, useState } from 'react';
 import {
@@ -31,6 +33,8 @@ import {
 import { useDecorationFlourishReduced } from '@/components/foundry/decoration-motion';
 import { CelebrateIcon, LabIcon, ResetIcon, WarningIcon } from '@/components/icons';
 import { OCCASIONS, resolveOccasion, type OccasionMode } from '@/components/background/seasonal';
+import type { SnowWeatherMode } from '@/components/background/precip-engine';
+import type { MessageKey } from '@/features/i18n/messages';
 import { useT } from '@/features/i18n';
 import { nowDate } from '@/lib/clock';
 import { getItemRepository } from '@/db/repositories';
@@ -98,6 +102,8 @@ export function LabScreen() {
         </div>
 
         <DateOverrideSection value={dateOverride} onChange={setDateOverride} />
+
+        <SnowWeatherSection />
 
         <Surface className="p-5" aria-labelledby="lab-seasonal-heading">
           <h2 id="lab-seasonal-heading" className="text-sm font-semibold text-foreground">
@@ -190,6 +196,61 @@ export function LabScreen() {
         <SeedSection />
       </main>
     </PageContainer>
+  );
+}
+
+/** The snow-weather modes in display order, with their catalog keys. */
+const WEATHER_MODES: ReadonlyArray<{ value: SnowWeatherMode; labelKey: MessageKey }> = [
+  { value: 'auto', labelKey: 'lab.weather.mode.auto' },
+  { value: 'calm', labelKey: 'lab.weather.mode.calm' },
+  { value: 'blizzard', labelKey: 'lab.weather.mode.blizzard' },
+  { value: 'squall', labelKey: 'lab.weather.mode.squall' },
+  { value: 'diamond-dust', labelKey: 'lab.weather.mode.diamondDust' },
+  { value: 'graupel', labelKey: 'lab.weather.mode.graupel' },
+  { value: 'warm-snow', labelKey: 'lab.weather.mode.warmSnow' },
+  { value: 'thundersnow', labelKey: 'lab.weather.mode.thundersnow' },
+];
+
+/**
+ * The snow-weather override: leave the Snow effect's weather to its own scheduler, hold it calm,
+ * or force one of its occasional events so it can be seen on demand instead of waiting minutes
+ * for its slot. The row reports when the override can't show anything because the background
+ * effect isn't set to Snow.
+ */
+function SnowWeatherSection() {
+  const t = useT();
+  const weatherMode = useLabStore((s) => s.weatherMode);
+  const setWeatherMode = useLabStore((s) => s.setWeatherMode);
+  const backgroundEffect = usePreferencesStore((s) => s.backgroundEffect);
+
+  const options = useMemo(() => WEATHER_MODES.map((m) => ({ value: m.value, label: t(m.labelKey) })), [t]);
+
+  return (
+    <Surface className="p-5" aria-labelledby="lab-weather-heading">
+      <h2 id="lab-weather-heading" className="text-sm font-semibold text-foreground">
+        {t('lab.weather.heading')}
+      </h2>
+      <p className="mt-1 text-xs text-muted-foreground">{t('lab.weather.intro')}</p>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">{t('lab.weather.label')}</div>
+          <p className="text-xs text-muted-foreground">{t('lab.weather.description')}</p>
+        </div>
+        <Select
+          aria-label={t('lab.weather.label')}
+          data-testid="lab-weather-mode"
+          className="h-10 w-44 shrink-0"
+          value={weatherMode}
+          onChange={(value) => setWeatherMode(value as SnowWeatherMode)}
+          options={options}
+        />
+      </div>
+      {backgroundEffect !== 'snow' && weatherMode !== 'auto' ? (
+        <p className="mt-3 text-xs text-muted-foreground" role="status" data-testid="lab-weather-status">
+          {t('lab.weather.needsSnow')}
+        </p>
+      ) : null}
+    </Surface>
   );
 }
 

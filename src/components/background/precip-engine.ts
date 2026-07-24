@@ -28,6 +28,16 @@
  *    the blizzard-geometry ground truth), flakes elongate into motion streaks, a reserve storm
  *    pool fades in so the fall visibly thickens, a whiteout haze veils the scene, and slow
  *    density "curtains" sweep across — then it all dies away and the calm drift returns.
+ *  - **A wider snow-weather repertoire** (issue #455 follow-up), each on its own scheduler and
+ *    each grounded in its real signature: **squalls** slam in near-instantly and dump dense,
+ *    near-vertical snow with gusty churn and a hard visibility crash; **diamond dust** shimmers
+ *    a sparse haze of near-stationary glinting ice motes into deeply cold calm air; **graupel
+ *    showers** rattle through as fast, straight, dense pellets whose size genuinely couples to
+ *    speed; **warm-snow spells** gradually turn the field over into big, uniformly-falling lazy
+ *    clumps; **dead-air lulls** drop the wind out entirely; and — rarely, only inside a deep
+ *    blizzard — **thundersnow** steps a diffuse multi-stroke lightning flicker across the whole
+ *    scene. The hidden lab screen can force any of these ({@link SnowWeatherMode}) so an
+ *    occasional event is testable on demand.
  *
  * ## Look — the particles themselves
  *
@@ -109,7 +119,21 @@
  * reduced-motion preference the engine paints a single calm static frame, never starts the loop,
  * and leaves the interaction layer entirely inert.
  */
-import { gust, flurry, curlField, gustPulse, blizzard, blizzardWind, smooth01 } from './flow-field';
+import {
+  gust,
+  flurry,
+  curlField,
+  gustPulse,
+  blizzard,
+  blizzardWind,
+  squall,
+  diamondDust,
+  graupelShower,
+  warmSnow,
+  deadAir,
+  lightningFlash,
+  smooth01,
+} from './flow-field';
 import { COLUMN_WIDTH, NO_SURFACE, type SurfaceSnapshot, type SurfaceTracker } from './surface-map';
 
 /**
@@ -127,10 +151,31 @@ export interface GarnishOptions {
 /** Which particle system the canvas runs. */
 export type PrecipKind = 'rain' | 'snow';
 
+/**
+ * Snow-weather override, driven by the hidden lab screen: `auto` (the shipped behaviour) leaves
+ * the deterministic schedulers in charge; `calm` suppresses every event; each named mode forces
+ * that one event to full strength (eased in over a second or so) so an occasional effect can be
+ * eyeballed on demand instead of waiting minutes for its epoch. Ignored by the rain layer.
+ * The value array is the SSOT — the lab store normalises its persisted mode against it.
+ */
+export const SNOW_WEATHER_MODES = [
+  'auto',
+  'calm',
+  'blizzard',
+  'squall',
+  'diamond-dust',
+  'graupel',
+  'warm-snow',
+  'thundersnow',
+] as const;
+export type SnowWeatherMode = (typeof SNOW_WEATHER_MODES)[number];
+
 /** Handle returned by {@link startPrecip} to control a running layer. */
 export interface PrecipController {
   /** Re-read the theme colours and rebuild the sprites (call on a light/dark change). */
   refresh(): void;
+  /** Switch the snow-weather override without restarting the layer (no-op for rain). */
+  setWeather(mode: SnowWeatherMode): void;
   /** Stop the loop and detach every listener (idempotent). */
   stop(): void;
 }
@@ -165,6 +210,8 @@ export interface StartPrecipOptions {
    * effect" flag). The base particle pool is left empty; everything else is unchanged.
    */
   readonly suppressBase?: boolean;
+  /** Initial snow-weather override (lab); defaults to `auto`. See {@link SnowWeatherMode}. */
+  readonly weather?: SnowWeatherMode;
 }
 
 /** Per-kind tuning. `density` = viewport px² per particle (lower ⇒ denser), clamped to [min, max]. */
@@ -284,15 +331,37 @@ const TUNING = {
     scale: [0.45, 1.3] as const,
     alpha: [0.32, 0.9] as const,
     /**
-     * Deep background layers (depth < 0), mirroring rain's: a slice of the field extrapolates to
-     * tiny, slow, faint grains — the hazy far backdrop that widens the parallax range downward.
-     * Like rain's, they're added on top of the main count and get an alpha lift so the raw
-     * extrapolation doesn't fade them to nothing.
+     * Deep background layers (depth < 0): a ladder of five progressively smaller, slower,
+     * fainter strata behind the main field. The z values follow a *detuned* geometric-ish step
+     * (deliberately irrational ratios — exact 0.5-style ratios between layer speeds beat into
+     * visible moiré bands), and the per-flake depth jitter detunes them further. Per the
+     * motion-transparency literature the eye can only segregate ~2–3 overlapping motion planes,
+     * so the deepest layers are *meant* to merge into one receding haze — that merging is the
+     * depth cue, not a failure. Far flakes draw with the fog-blended {@link SNOW_FAR} sprite
+     * (aerial perspective pulls distant colour toward the background, it doesn't just fade it)
+     * and their alpha follows {@link deepAlpha} — an explicit exponential-ish ladder (each step
+     * ~0.78× the last, floored well above the 8-bit-alpha banding threshold) instead of the raw
+     * lerp extrapolation, which would invert the ordering near z = 0.
      */
-    deepLayers: [-0.12, -0.24] as const,
-    deepLayerFraction: 0.15,
+    deepLayers: [-0.1, -0.19, -0.27, -0.36, -0.44] as const,
+    deepLayerFraction: 0.3,
     deepLayerJitter: 0.03,
-    deepAlphaBoost: 0.12,
+    /** Far-layer alpha at the shallowest (−0.1) and deepest (−0.44) deep layer. */
+    deepAlpha: [0.3, 0.11] as const,
+    /**
+     * Far-layer draw scale at the shallowest and deepest stratum. Decoupled from the main
+     * depth→scale lerp on purpose: extrapolating that line to −0.44 lands under a pixel, and
+     * the energy-conserving clamp would then dim the deepest strata into invisibility — dead
+     * cost with no visible output. This ladder keeps the deepest dot ≈ 2.5 css px (the ~2px
+     * perceptual floor for a moving mote), so every stratum both shows up and stays cheap.
+     */
+    deepScale: [0.5, 0.28] as const,
+    /**
+     * Energy-conserving size floor (css px): a deep flake whose drawn size falls below this is
+     * clamped to it with alpha cut by the lost area ratio — sub-pixel sprites alias into
+     * unstable shimmer, while a clamped-and-dimmed dot keeps the same visual energy.
+     */
+    deepMinPx: 2,
     /**
      * Foreground bokeh layer (depth > 1): a sparse handful of big, soft, *low-alpha* out-of-focus
      * discs drifting fastest of all — the camera-side end of the parallax curve (a flake between
@@ -308,28 +377,112 @@ const TUNING = {
     },
     /**
      * Blizzard behaviour, driven by the {@link blizzard} envelope. Wind strong enough to rake
-     * near flakes ~75–80° off vertical (real blizzard trajectories run 80–87°, softened here —
-     * this is an ambient backdrop, not a survival sim); the drift-ratio cap relaxes to let that
-     * happen; flakes elongate into motion streaks with speed; a reserve pool ({@link extra} ×
-     * the base count) fades in so the fall thickens; a whiteout haze veils the scene; and slow
-     * density "curtains" ({@link waveAmp}…) sweep across the field like real turbulent sheets.
+     * near flakes ~83° off vertical (real blizzard trajectories run 80–87°) and cross the
+     * screen in a second or two; the drift-ratio cap relaxes to let that happen; flakes
+     * elongate into motion streaks with speed; a reserve pool ({@link extra} × the base count)
+     * fades in so the fall thickens; a whiteout haze veils the scene; and slow density
+     * "curtains" ({@link waveAmp}…) sweep across the field like real turbulent sheets.
      */
     storm: {
       extra: 0.8,
-      wind: 480,
+      wind: 700,
       fallBoost: 0.35,
       /** maxDriftRatio multiplier grows to (1 + this) at full storm — near-horizontal flight. */
-      driftBoost: 1.6,
+      driftBoost: 2.6,
       /** Peak whiteout-haze opacity at full storm. */
       hazeAlpha: 0.17,
       /** Motion-streak elongation: stretch = 1 + storm · gain · (|vx|/vy), capped. */
       streakGain: 0.55,
-      streakMax: 2.6,
+      streakMax: 3.2,
       /** Density curtains: ± alpha modulation, spatial wavelength (css px), sweep rate (rad/s). */
       waveAmp: 0.35,
       waveLength: 480,
       waveSpeed: 0.9,
     },
+    /**
+     * Snow squall ({@link squall}): where a blizzard *rakes*, a squall *dumps* — a sudden dense
+     * burst of near-vertical snowfall with gusty churn and a hard visibility crash, over in
+     * seconds. It wakes the same reserve pool as the blizzard (both are "much more snow"), but
+     * pushes fall speed and turbulence instead of directional wind.
+     */
+    squallEvent: {
+      fallBoost: 0.9,
+      turbBoost: 1.6,
+      gustBoost: 1.2,
+      hazeAlpha: 0.24,
+    },
+    /**
+     * Diamond dust ({@link diamondDust}): the clear-sky ice-crystal haze of deep cold and calm
+     * air. Its whole read is the *glint* — near-stationary pin-points that flare briefly as
+     * crystals catch the light — so the sparkle is temporal alpha modulation on a tiny pool of
+     * pre-rendered glint sprites, the standard cheap "glitter" trick. Suppressed while storms
+     * blow (it is a calm-air phenomenon).
+     */
+    dust: {
+      density: 26_000,
+      min: 12,
+      max: 44,
+      /** Fall speed range (far → near), css px/s — near-suspended. */
+      speed: [6, 16] as const,
+      /** Glint cycle period range (s) per mote, and the flare's attack/decay (s). */
+      glintPeriod: [2, 6] as const,
+      glintAttack: 0.08,
+      glintDecay: 0.3,
+      /** Alpha at rest (barely-there) and at full flare. */
+      alpha: [0.1, 0.95] as const,
+      /** Glint sprite radius (css px) and how much a flare grows the drawn size. */
+      radius: 2.5,
+      flareScale: 0.6,
+    },
+    /**
+     * Graupel shower ({@link graupelShower}): a brief rattle of dense rimed pellets. Unlike
+     * flakes, graupel's fall speed genuinely couples to size (v ∝ D^~0.9), it falls 2–4× faster
+     * than snow, and it barely feels turbulence — so pellets get per-pellet size that scales
+     * their speed, near-straight paths, and a much smaller turbulence factor. They don't settle:
+     * real graupel bounces off hard surfaces rather than sticking.
+     */
+    graupel: {
+      density: 30_000,
+      min: 10,
+      max: 40,
+      /** Fall speed range (far → near), css px/s, before the per-pellet size factor. */
+      speed: [150, 300] as const,
+      /** Per-pellet size multiplier range — bigger pellet = visibly faster, per the physics. */
+      size: [0.7, 1.3] as const,
+      /** How much of the flake-grade wind/turbulence a dense pellet actually feels. */
+      windFactor: 0.4,
+      turbFactor: 0.18,
+      alpha: [0.45, 0.9] as const,
+      scale: [0.55, 1.1] as const,
+      /** Pellet sprite radius (css px). */
+      radius: 2.4,
+    },
+    /**
+     * Warm-snow spells ({@link warmSnow}): near 0 °C flakes aggregate into big clumps whose fall
+     * speed is nearly size-independent — so during a spell, *newly spawned* flakes come up
+     * bigger (sizeBoost), with their speed jitter flattened toward uniform and their flutter
+     * calmed (heavy clumps swing less). The field turns over into the spell as flakes recycle,
+     * which is exactly how a real transition reads — gradual, not a switch.
+     */
+    warm: {
+      sizeBoost: [0.2, 0.5] as const,
+      jitterFlatten: 0.7,
+      flutterCalm: 0.35,
+      dendriteBias: 0.3,
+    },
+    /**
+     * Thundersnow ({@link lightningFlash}): a diffuse whole-sky flash — through heavy snow you
+     * see the world light up, not the bolt — stepping through multi-stroke flicker. Natural
+     * flashes only fire inside a deep blizzard ({@link gate}); `alpha` is the peak full-screen
+     * flash opacity and `brighten` how much the flakes themselves light up with it.
+     */
+    flash: {
+      gate: [0.55, 0.8] as const,
+      alpha: 0.45,
+      brighten: 0.5,
+    },
+    /** How hard a full dead-air lull damps the wind terms (gusts, pulses, curl turbulence). */
+    deadAirDamp: 0.9,
   },
 } as const;
 
@@ -445,6 +598,31 @@ const SETTLE = {
      * snow's angle of repose is ~35–40°; the extra headroom keeps gentle shoulders collecting.)
      */
     slopeMax: 1.2,
+    /**
+     * Wind-plaster (issue #455 follow-up): in a blizzard the snow travels near-horizontally,
+     * so it stops landing on tops and starts hitting the *windward faces* of controls — the way
+     * driven snow plasters the windward side of poles and walls. A strongly wind-driven near
+     * flake ({@link minLean} — |vx| ≥ that multiple of vy, which only storms produce) that flies
+     * into a vertical face sticks: a per-face depth builds and renders as a tapered strip of
+     * plaster hugging the face, thickest at the top corner where it meets the top mound.
+     */
+    side: {
+      /** Plaster depth added per face hit (css px), and its cap. */
+      deposit: 1.4,
+      maxDepth: 7,
+      /** Depth below which a face's plaster isn't worth drawing (css px). */
+      minVisibleDepth: 0.5,
+      /**
+       * How far down a face the plaster smears (css px) — the map only knows top edges, so
+       * this bounds both the hit test and the rendered strip when the face's true extent is
+       * unknown; a known lower neighbouring surface bounds it tighter.
+       */
+      maxLen: 30,
+      /** Only flakes leaning at least this many times their fall speed plaster faces. */
+      minLean: 2,
+      /** Plaster opacity by depth (thin → deep), like the mounds' fill. */
+      alpha: [0.3, 0.85] as const,
+    },
   },
   rain: {
     /** Only near drops (depth ≥ this) splash; far and deep-background drops don't interact. */
@@ -496,6 +674,14 @@ const FALLBACK_COLOR: Record<PrecipKind, string> = {
 /** Largest delta-time step honoured per frame (s) — caps a resume-from-hidden jump. */
 const MAX_STEP = 0.05;
 
+/**
+ * Vertical spawn/recycle margins for the dust and graupel event pools (css px): each covers its
+ * sprite's largest drawn half-extent (a fully-flared dust mote ≈ 10.4, a max-size pellet ≈ 5)
+ * so a recycled particle never enters or leaves with a sliver on screen.
+ */
+const DUST_MARGIN = 12;
+const GRAUPEL_MARGIN = 8;
+
 interface Particle {
   x: number;
   y: number;
@@ -519,7 +705,13 @@ interface Particle {
   /** Flutter swing frequency (rad/s) and peak side-slip speed (css px/s); 0/0 for rain. */
   flutter: number;
   flutterAmp: number;
-  /** Reserve storm-pool member: dormant (not stepped, not drawn) until a blizzard fades it in. */
+  /**
+   * Per-particle draw-size multiplier on top of the depth scale (1 for rain): warm-snow spells
+   * spawn bigger clumps, graupel pellets carry their size here (which also scales their speed),
+   * and a diamond-dust mote grows slightly as it flares.
+   */
+  sizeBoost: number;
+  /** Reserve storm-pool member: dormant (not stepped, not drawn) until a storm fades it in. */
   storm: boolean;
 }
 
@@ -569,10 +761,12 @@ interface Sprite {
   halfH: number;
 }
 
-/** Snow sprite-set indices. Grains/bokeh are angularly symmetric (no rotation); crystals rotate. */
+/** Snow sprite-set indices. Grains/bokeh/far are angularly symmetric (no rotation); crystals rotate. */
 const SNOW_GRAIN = 0;
 /** The foreground out-of-focus disc (depth > 1). */
 const SNOW_BOKEH = 3;
+/** The fog-blended far-layer dot (depth < 0) — aerial perspective baked into the sprite. */
+const SNOW_FAR = 4;
 
 /** Uniform random in [min, max). Positions/timings only — no security concern. */
 function rand(min: number, max: number): number {
@@ -736,6 +930,95 @@ function buildSnowHaze(dpr: number, color: string): HTMLCanvasElement {
 }
 
 /**
+ * Build the far-layer dot: a small soft disc whose colour is pre-blended toward the page
+ * background. Aerial perspective doesn't just fade distant things — it pulls them toward the
+ * ambient haze colour — and baking that into the sprite keeps the runtime a plain blit while
+ * making the deep layers read as *far away* rather than as faint noise on top of the page.
+ */
+function buildSnowFar(dpr: number, color: string, background: string): HTMLCanvasElement {
+  const r = 2.2;
+  const size = Math.ceil(r * 4);
+  const far = `color-mix(in oklab, ${color} 45%, ${background} 55%)`;
+  const [c, g] = makeCanvas(size, size, dpr);
+  if (g) {
+    const cx = size / 2;
+    const grad = g.createRadialGradient(cx, cx, 0, cx, cx, r * 1.8);
+    grad.addColorStop(0, far);
+    grad.addColorStop(0.55, colorWithAlpha(far, 0.5));
+    grad.addColorStop(1, 'transparent');
+    g.fillStyle = grad;
+    g.beginPath();
+    g.arc(cx, cx, r * 1.8, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
+}
+
+/**
+ * Build the diamond-dust glint sprite: a bright pin-point with a four-point star flare (the
+ * cross a camera or squinting eye puts on a specular glint). At rest alpha it reads as a barely
+ * visible mote; at full flare the arms read as the sparkle.
+ */
+function buildDustGlint(dpr: number, color: string): HTMLCanvasElement {
+  const r = TUNING.snow.dust.radius;
+  const arm = r * 2.2;
+  const size = Math.ceil(arm * 2 + 2);
+  const [c, g] = makeCanvas(size, size, dpr);
+  if (g) {
+    const cx = size / 2;
+    // Bright core.
+    const core = g.createRadialGradient(cx, cx, 0, cx, cx, r);
+    core.addColorStop(0, color);
+    core.addColorStop(0.5, colorWithAlpha(color, 0.7));
+    core.addColorStop(1, 'transparent');
+    g.fillStyle = core;
+    g.beginPath();
+    g.arc(cx, cx, r, 0, Math.PI * 2);
+    g.fill();
+    // Four thin flare arms, fading to the tips.
+    g.lineCap = 'round';
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      const ex = cx + Math.cos(a) * arm;
+      const ey = cx + Math.sin(a) * arm;
+      const ga = g.createLinearGradient(cx, cx, ex, ey);
+      ga.addColorStop(0, colorWithAlpha(color, 0.9));
+      ga.addColorStop(1, 'transparent');
+      g.strokeStyle = ga;
+      g.lineWidth = 0.9;
+      g.beginPath();
+      g.moveTo(cx, cx);
+      g.lineTo(ex, ey);
+      g.stroke();
+    }
+  }
+  return c;
+}
+
+/**
+ * Build the graupel-pellet sprite: a small opaque disc with a hard edge and a slight top-left
+ * light bias — denser and harder than a snow grain's soft blur, which is exactly the visual
+ * difference between a rimed pellet and a flake.
+ */
+function buildGraupelPellet(dpr: number, color: string): HTMLCanvasElement {
+  const r = TUNING.snow.graupel.radius;
+  const size = Math.ceil(r * 2 + 2);
+  const [c, g] = makeCanvas(size, size, dpr);
+  if (g) {
+    const cx = size / 2;
+    const grad = g.createRadialGradient(cx - r * 0.3, cx - r * 0.3, 0, cx, cx, r);
+    grad.addColorStop(0, color);
+    grad.addColorStop(0.75, colorWithAlpha(color, 0.85));
+    grad.addColorStop(1, colorWithAlpha(color, 0.15));
+    g.fillStyle = grad;
+    g.beginPath();
+    g.arc(cx, cx, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
+}
+
+/**
  * Build a six-armed ice-crystal sprite. `dendrite` adds side-branches to each arm (a fuller
  * snowflake); otherwise it's a plain six-point star. A faint central glow and bright core dot give
  * it body. Drawn small and soft so at background scale it reads as a delicate flake, not an icon.
@@ -880,7 +1163,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   const ctx = canvas.getContext('2d');
   // No 2D context (very old browser or a jsdom test): nothing to do — a no-op controller keeps the
   // caller's lifecycle simple and the app fully functional without the decoration.
-  if (!ctx) return { refresh: () => {}, stop: () => {} };
+  if (!ctx) return { refresh: () => {}, setWeather: () => {}, stop: () => {} };
 
   const overlay = opts.overlay ?? null;
   const octx = overlay ? overlay.getContext('2d') : null;
@@ -923,8 +1206,26 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   let frameStorm = 0;
   let frameStormWind = 0;
   let framePulse = 0;
+  // The other snow-event envelopes (all 0 for rain, and 0 on a static reduced-motion frame).
+  let frameSquall = 0;
+  let frameDust = 0;
+  let frameGraupel = 0;
+  let frameWarm = 0;
+  let frameDead = 0;
+  let frameFlash = 0;
+  /** max(blizzard, squall) — the "a lot more snow is falling" channel both storms share. */
+  let frameStormy = 0;
+  /** Lab weather override; `auto` leaves the schedulers in charge. */
+  let weatherMode: SnowWeatherMode = opts.weather ?? 'auto';
   /** The blizzard whiteout-haze strip (snow only), stretched over the viewport per frame. */
   let hazeSprite: Sprite | null = null;
+  /** Diamond-dust glint and graupel-pellet sprites, and the flash overlay colour (snow only). */
+  let dustSprite: Sprite | null = null;
+  let graupelSprite: Sprite | null = null;
+  let flashColor = FALLBACK_COLOR.snow;
+  /** Dedicated event pools — dormant (neither stepped nor drawn) while their envelope is ~0. */
+  let dusts: Particle[] = [];
+  let graupels: Particle[] = [];
   /** How far off each edge a particle travels before it wraps/recycles (kept fully off-screen). */
   let edgeMargin = 0;
   /**
@@ -942,6 +1243,11 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   let surfGen = -1;
   /** Settled-snow depth per column (css px). */
   let depths = new Float32Array(0);
+  /**
+   * Wind-plaster depth per column *face* (css px): [c·2] is the left face of a control edge in
+   * column c, [c·2 + 1] its right face. Reset alongside {@link depths} whenever the layout moves.
+   */
+  let sideDepths = new Float32Array(0);
   /** Whether the last mound render actually drew anything (skips the per-frame blit when not). */
   let moundVisible = false;
   /** The mound layer needs re-rendering (a flake landed, the layout moved, or the theme changed). */
@@ -978,13 +1284,19 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     if (kind === 'rain') {
       sprites = TUNING.rain.variants.map((v) => toSprite(buildRainStreak(dpr, color, v.width, v.len)));
     } else {
+      // The far-layer sprite is pre-blended toward the page background (aerial perspective).
+      const background = readToken('--background', 'oklch(0.16 0.01 250)');
       sprites = [
         toSprite(buildSnowGrain(dpr, color)),
         toSprite(buildSnowCrystal(dpr, color, false)),
         toSprite(buildSnowCrystal(dpr, color, true)),
         toSprite(buildSnowBokeh(dpr, color)), // SNOW_BOKEH
+        toSprite(buildSnowFar(dpr, color, background)), // SNOW_FAR
       ];
       hazeSprite = toSprite(buildSnowHaze(dpr, color));
+      dustSprite = toSprite(buildDustGlint(dpr, color));
+      graupelSprite = toSprite(buildGraupelPellet(dpr, color));
+      flashColor = color;
     }
     spriteMaxHalfH = sprites.reduce((m, s) => Math.max(m, s.halfH), 0);
     // Streaks stretch (rain in the wind, snow in a blizzard) and every sprite scales up with
@@ -1000,9 +1312,13 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     }
     // The margin has to keep the *largest* drawn thing fully off-screen before it wraps, and a
     // garnish emoji is several times a flake's size — so both sprite sets are measured here.
-    // Snow's largest draw scale isn't scale[1]: the bokeh layer extrapolates beyond depth 1.
+    // Snow's largest draw scale isn't scale[1]: the bokeh layer extrapolates beyond depth 1,
+    // and a warm-snow spell's sizeBoost multiplies on top of that.
     const t = TUNING[kind];
-    const maxScale = kind === 'snow' ? lerp(t.scale[0], t.scale[1], TUNING.snow.bokeh.z[1]) : t.scale[1];
+    const maxScale =
+      kind === 'snow'
+        ? lerp(t.scale[0], t.scale[1], TUNING.snow.bokeh.z[1]) * (1 + TUNING.snow.warm.sizeBoost[1])
+        : t.scale[1];
     edgeMargin =
       Math.max(spriteMaxHalfH * 2 * maxScale * maxStretch, garnishMaxHalfH * 2 * GARNISH.scale[1]) + 8;
     vertMargin = spriteMaxHalfH * maxScale * maxStretch + 4;
@@ -1030,37 +1346,57 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       const st = TUNING.snow;
       p.jitter = rand(st.speedJitter[0], st.speedJitter[1]);
       p.flutter = rand(st.flutterRate[0], st.flutterRate[1]);
-      // A slice of the field goes to the deep background layers (depth < 0, tiny slow haze) and
-      // a sparse slice to the foreground bokeh layer (depth > 1, big soft out-of-focus discs);
-      // the rest keep the main-field depth. Same pattern as rain's deep layers.
+      p.sizeBoost = 1;
+      // A slice of the field goes to the deep background ladder (depth < 0, five strata of tiny
+      // slow haze) and a sparse slice to the foreground bokeh layer (depth > 1, big soft
+      // out-of-focus discs); the rest keep the main-field depth.
       const sample = Math.random();
       if (sample < st.deepLayerFraction) {
-        const layer = st.deepLayers[Math.random() < 0.5 ? 0 : 1];
+        const pick = Math.min(st.deepLayers.length - 1, (Math.random() * st.deepLayers.length) | 0);
+        const layer = st.deepLayers[pick] ?? st.deepLayers[0];
         p.z = layer + rand(-st.deepLayerJitter, st.deepLayerJitter);
       } else if (sample > 1 - st.bokeh.fraction) {
         p.z = rand(st.bokeh.z[0], st.bokeh.z[1]);
+      }
+      // A warm-snow spell reshapes flakes *as they spawn* (sampled from the live envelope): the
+      // field turns over into big, uniformly-falling, calm clumps as it recycles — a gradual
+      // transition, the way a real warm-up reads — and back out again the same way.
+      const warm = frameWarm;
+      if (warm > 0) {
+        p.jitter = 1 + (p.jitter - 1) * (1 - st.warm.jitterFlatten * warm);
+        p.sizeBoost = 1 + warm * rand(st.warm.sizeBoost[0], st.warm.sizeBoost[1]);
       }
       if (p.z > 1) {
         p.variant = SNOW_BOKEH;
         p.spin = 0;
         p.flutterAmp = st.flutterAmp;
+      } else if (p.z < 0) {
+        // The deep ladder draws with the fog-blended far sprite — and no spin or flutter to
+        // speak of: distant motion reads laminar (small-scale detail is below acuity out there).
+        p.variant = SNOW_FAR;
+        p.spin = 0;
+        p.flutterAmp = st.flutterAmp * 0.4;
       } else if (p.z < st.grainMaxZ) {
         p.variant = SNOW_GRAIN;
         p.spin = 0;
         p.flutterAmp = st.flutterAmp * 0.8;
       } else {
-        p.variant = Math.random() < 0.5 ? 1 : 2; // plain star or branched dendrite
+        // Plain star or branched dendrite; a warm spell favours dendrites (big aggregates).
+        p.variant = Math.random() < 0.5 + warm * st.warm.dendriteBias ? 2 : 1;
         p.spin = rand(st.spin[0], st.spin[1]);
         // Branched dendrites flutter least: lacy shapes are the aerodynamically stable ones
         // (they stay steady well past the Reynolds numbers that set plain plates zigzagging).
         p.flutterAmp = st.flutterAmp * (p.variant === 2 ? 0.5 : 1);
       }
+      // Warm clumps are heavy: they swing less however they were shaped above.
+      p.flutterAmp *= 1 - st.warm.flutterCalm * warm;
     } else {
       p.variant = Math.random() < 0.5 ? 0 : 1; // streak thickness
       p.spin = 0;
       p.jitter = 1;
       p.flutter = 0;
       p.flutterAmp = 0;
+      p.sizeBoost = 1;
       // A slice of the field belongs to the two deep-background layers (depth < 0): pick one and
       // jitter its depth so its drops don't move in lockstep. The rest keep the main-field depth.
       const rt = TUNING.rain;
@@ -1095,6 +1431,51 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     // wait each), so the garnish starts trickling in shortly after the layer appears instead of
     // leaving a suspiciously empty minute.
     p.delay = initial ? rand(0, gap[1]) : rand(gap[0], gap[1]);
+  }
+
+  /**
+   * (Re)place one diamond-dust mote: near-suspended, minimal wind response, and a per-mote glint
+   * cycle. `flutter` is repurposed as the glint period (s) and `phase` as its offset — the mote
+   * spends most of each cycle barely visible and flares briefly when its window comes round.
+   */
+  function spawnDust(p: Particle, initial: boolean): void {
+    const d = TUNING.snow.dust;
+    p.z = Math.random();
+    p.vx = 0;
+    p.vy = 0;
+    p.variant = 0;
+    p.spin = 0;
+    p.jitter = 1;
+    p.flutter = rand(d.glintPeriod[0], d.glintPeriod[1]);
+    p.flutterAmp = 0;
+    p.sizeBoost = 1;
+    p.phase = rand(0, p.flutter);
+    p.storm = false;
+    p.x = rand(-edgeMargin, cssWidth + edgeMargin);
+    // Margin covers a fully-flared mote (sprite half-extent × max flare scale ≈ 11 css px), so
+    // a respawn never materialises with a sliver — or a flare — already on screen.
+    p.y = initial ? rand(0, cssHeight) : -rand(DUST_MARGIN, DUST_MARGIN + cssHeight * 0.2);
+  }
+
+  /**
+   * (Re)place one graupel pellet. Its hashed size multiplier also scales its fall speed — for
+   * dense rimed pellets (unlike flakes) bigger genuinely is faster.
+   */
+  function spawnGraupel(p: Particle, initial: boolean): void {
+    const gr = TUNING.snow.graupel;
+    p.z = Math.random();
+    p.vx = 0;
+    p.vy = 0;
+    p.variant = 0;
+    p.spin = 0;
+    p.jitter = 1;
+    p.flutter = 0;
+    p.flutterAmp = 0;
+    p.sizeBoost = rand(gr.size[0], gr.size[1]);
+    p.phase = rand(0, Math.PI * 2);
+    p.storm = false;
+    p.x = rand(-edgeMargin, cssWidth + edgeMargin);
+    p.y = initial ? rand(0, cssHeight) : -rand(GRAUPEL_MARGIN, GRAUPEL_MARGIN + cssHeight * 0.2);
   }
 
   function spawnVortex(v: Vortex, initial: boolean): void {
@@ -1151,6 +1532,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
         jitter: 1,
         flutter: 0,
         flutterAmp: 0,
+        sizeBoost: 1,
         storm: i >= count - stormExtra,
       }));
       for (const p of particles) spawn(p, true);
@@ -1172,10 +1554,43 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
           jitter: 1,
           flutter: 0,
           flutterAmp: 0,
+          sizeBoost: 1,
           storm: false,
           delay: 0,
         }));
         for (const g of garnishes) spawnGarnish(g, true);
+      }
+    }
+
+    if (kind === 'snow' && !suppressBase) {
+      // The diamond-dust and graupel event pools: dormant (neither stepped nor drawn) outside
+      // their events, so like the storm reserve they cost nothing in ordinary weather.
+      const newParticle = (): Particle => ({
+        x: 0,
+        y: 0,
+        z: 0,
+        vx: 0,
+        vy: 0,
+        variant: 0,
+        spin: 0,
+        phase: 0,
+        jitter: 1,
+        flutter: 0,
+        flutterAmp: 0,
+        sizeBoost: 1,
+        storm: false,
+      });
+      const d = TUNING.snow.dust;
+      const dCount = Math.round(clamp(area / d.density, d.min, d.max));
+      if (dusts.length !== dCount) {
+        dusts = Array.from({ length: dCount }, newParticle);
+        for (const p of dusts) spawnDust(p, true);
+      }
+      const gr = TUNING.snow.graupel;
+      const gCount = Math.round(clamp(area / gr.density, gr.min, gr.max));
+      if (graupels.length !== gCount) {
+        graupels = Array.from({ length: gCount }, newParticle);
+        for (const p of graupels) spawnGraupel(p, true);
       }
     }
 
@@ -1211,6 +1626,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       // self-healing (the rebuild's reconcile knocks any misplaced snow straight off).
       surfTops = new Int16Array(0);
       depths = new Float32Array(0);
+      sideDepths = new Float32Array(0);
       surfGen = -1;
       moundVisible = false;
       moundDirty = false;
@@ -1229,9 +1645,15 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     const next = snap.tops;
     const prev = surfTops;
     if (depths.length !== next.length) depths = new Float32Array(next.length);
+    if (sideDepths.length !== next.length * 2) sideDepths = new Float32Array(next.length * 2);
     for (let c = 0; c < next.length; c++) {
       const before = c < prev.length ? (prev[c] ?? NO_SURFACE) : NO_SURFACE;
-      if (Math.abs((next[c] ?? NO_SURFACE) - before) > SETTLE.moveTolerance) depths[c] = 0;
+      if (Math.abs((next[c] ?? NO_SURFACE) - before) > SETTLE.moveTolerance) {
+        depths[c] = 0;
+        // The control moved: its face plaster is knocked off with its top drift.
+        sideDepths[c * 2] = 0;
+        sideDepths[c * 2 + 1] = 0;
+      }
     }
     surfTops = next;
     surfGen = snap.generation;
@@ -1357,6 +1779,52 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     spawn(p, false);
   }
 
+  /**
+   * Wind-plaster (issue #455 follow-up): a strongly wind-driven near flake that flies into the
+   * vertical face of a control sticks to it. The map only stores top edges, but a face is
+   * implied wherever a flake crosses into a column whose surface top is *above* it having been
+   * in open air the column before — sweeping the columns crossed this frame (storm winds cover
+   * a few per step) finds the first such face in the direction of travel. Deposits build the
+   * per-face plaster field; the flake is consumed. Returns whether the flake was consumed.
+   */
+  function trySide(p: Particle, prevX: number): boolean {
+    const s = SETTLE.snow.side;
+    if (p.z < SETTLE.snow.minZ || p.z > 1) return false;
+    const ay = Math.abs(p.vy);
+    // Only near-horizontal flight plasters faces — ordinary falling snow lands on tops instead.
+    if (Math.abs(p.vx) < s.minLean * (ay < 1 ? 1 : ay)) return false;
+    const c0 = Math.floor(prevX / COLUMN_WIDTH);
+    const c1 = Math.floor(p.x / COLUMN_WIDTH);
+    if (c0 === c1) return false;
+    const step = c1 > c0 ? 1 : -1;
+    for (let c = c0 + step; step > 0 ? c <= c1 : c >= c1; c += step) {
+      // A sweep may start in the off-screen wrap margin (that's where wrapped flakes re-enter):
+      // skip out-of-range columns rather than aborting, or faces near the upwind screen edge
+      // would never collect (the flakes reaching them cross from the margin that same frame).
+      if (c < 0 || c >= surfTops.length) continue;
+      const top = topAt(c);
+      if (top === NO_SURFACE) continue;
+      if (p.y <= top + 1) continue; // above this surface: the flake passes over the top
+      if (p.y - top > s.maxLen) continue; // too deep below the known edge: passes behind
+      // Only a genuine cliff is a face; inside a control (or over a walkable step) the flake
+      // was already below the previous column's surface and no new face was crossed.
+      const prevTop = c - step >= 0 && c - step < surfTops.length ? topAt(c - step) : NO_SURFACE;
+      if (prevTop !== NO_SURFACE && prevTop - top <= SNOW_CLIFF_STEP) continue;
+      const idx = c * 2 + (step > 0 ? 0 : 1); // travelling right hits a left face, and vice versa
+      // A saturated face swallows the flake without re-dirtying the render cache — otherwise a
+      // storm's steady face hits would keep the throttled mound render churning for nothing.
+      const before = sideDepths[idx] ?? 0;
+      if (before < s.maxDepth) {
+        const d = before + s.deposit;
+        sideDepths[idx] = d > s.maxDepth ? s.maxDepth : d;
+        moundDirty = true;
+      }
+      spawn(p, false);
+      return true;
+    }
+    return false;
+  }
+
   /** Start a splash at a free pool slot (skipped when the pool is saturated — it's decorative). */
   function spawnSplash(x: number, y: number, z: number): void {
     for (const s of splashes) {
@@ -1404,6 +1872,45 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       if (moundCtx) drawMoundRun(c, end);
       c = end + 1;
     }
+    // Wind-plastered faces render after the top mounds, so a strip's thick top corner sits over
+    // the drift it joins. Cheap sweep: almost every column has zero plaster.
+    for (let f = 0; f < n; f++) {
+      drawSideStrip(f, 0);
+      drawSideStrip(f, 1);
+    }
+  }
+
+  /**
+   * Draw one face's wind-plaster: a shallow wedge hugging the vertical face, thickest at the
+   * top corner (where it meets the top drift) and easing to nothing down the face. The face's
+   * extent is bounded by the neighbouring surface where one is known, else by the side cap.
+   * Marks the mound layer visible whether or not the cache context exists (mirroring the run
+   * pass), so the overlay keeps compositing whenever plaster is present.
+   */
+  function drawSideStrip(c: number, side: 0 | 1): void {
+    const s = SETTLE.snow.side;
+    const depth = sideDepths[c * 2 + side] ?? 0;
+    if (depth < s.minVisibleDepth) return;
+    const top = topAt(c);
+    if (top === NO_SURFACE) return;
+    const nb =
+      side === 0 ? (c > 0 ? topAt(c - 1) : NO_SURFACE) : c + 1 < surfTops.length ? topAt(c + 1) : NO_SURFACE;
+    const len = Math.min(s.maxLen, nb === NO_SURFACE ? s.maxLen : Math.max(0, nb - top));
+    if (len < 3) return;
+    moundVisible = true;
+    if (!moundCtx) return;
+    // A left face sits at the column's left edge and bulges into the open air on its left;
+    // a right face mirrors that at the column's right edge.
+    const x = side === 0 ? c * COLUMN_WIDTH : (c + 1) * COLUMN_WIDTH;
+    const dir = side === 0 ? -1 : 1;
+    const g = moundCtx;
+    const ramp = Math.sqrt(clamp(depth / s.maxDepth, 0, 1));
+    g.beginPath();
+    g.moveTo(x, top);
+    g.quadraticCurveTo(x + dir * depth * 2, top + len * 0.35, x, top + len);
+    g.closePath();
+    g.fillStyle = colorWithAlpha(overlayColor, lerp(s.alpha[0], s.alpha[1], ramp));
+    g.fill();
   }
 
   /** x of a column's crest point (its centre). */
@@ -1657,33 +2164,110 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   function stepSnow(p: Particle, dt: number): void {
     const t = TUNING.snow;
     const depth = 0.45 + p.z; // nearer flakes catch more wind (deep layers less, bokeh more)
+    // A dead-air lull damps every wind term toward stillness (fall speed is gravity's, untouched).
+    const wind = 1 - t.deadAirDamp * frameDead;
     // Flutter: the zigzag side-slip of vortex shedding. One sine drives both the sideways swing
     // and the coupled fall-speed dip at the swing extremes (a swinging flake visibly hesitates).
     const swing = Math.sin(elapsed * p.flutter + p.phase * 1.7);
     const fall =
       lerp(t.speed[0], t.speed[1], p.z) *
       p.jitter *
-      (1 + frameStorm * t.storm.fallBoost) *
+      (1 + frameStorm * t.storm.fallBoost + frameSquall * t.squallEvent.fallBoost) *
       (1 - t.flutterFallPulse * swing * swing);
-    const c = curlField(p.x, p.y, elapsed);
+    // Far layers sample the curl field at compressed coordinates: the same turbulence, but its
+    // features look bigger and smoother out there — distant snow drifts laminar, not busy.
+    const nz = p.z < 0 ? 1 + p.z : 1;
+    const c = curlField(p.x * nz, p.y * nz, elapsed);
     // Preferential sweeping: downdraft-side turbulence settles flakes harder than updrafts lift.
     const sweepY = c.y > 0 ? 1 + t.sweep : 1;
+    // A squall churns rather than rakes: it boosts gustiness and turbulence, not the storm wind.
+    const turb = t.turb * (1 + frameSquall * t.squallEvent.turbBoost) * wind;
     p.vx =
-      frameGust * t.wind * (0.5 + frameFlurry) * depth +
-      framePulse * t.pulseWind * depth +
+      frameGust * t.wind * (0.5 + frameFlurry) * (1 + frameSquall * t.squallEvent.gustBoost) * depth * wind +
+      framePulse * t.pulseWind * depth * wind +
       frameStormWind * t.storm.wind * depth +
-      c.x * t.turb * depth +
-      swing * p.flutterAmp * (0.35 + 0.65 * clamp(p.z, 0, 1));
-    p.vy = fall + c.y * t.turb * 0.5 * depth * sweepY;
+      c.x * turb * depth +
+      swing * p.flutterAmp * (0.35 + 0.65 * clamp(p.z, 0, 1)) * wind;
+    p.vy = fall + c.y * turb * 0.5 * depth * sweepY;
     addVortices(p, t.vortexFactor);
     // Never let a flake fly purely sideways in calm air; a blizzard relaxes the cap so the
     // field can rake near-horizontal, and it tightens back as the storm dies.
     const driftCap = fall * t.maxDriftRatio * (1 + frameStorm * t.storm.driftBoost);
     p.vx = clamp(p.vx, -driftCap, driftCap);
     const prevY = p.y;
+    const prevX = p.x;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    if (interact) tryLand(p, prevY);
+    // Wind-plastered faces first (only near-horizontal storm flight qualifies), then top landings.
+    if (interact && !trySide(p, prevX)) tryLand(p, prevY);
+  }
+
+  /** Advance one diamond-dust mote: near-suspended drift, barely touched by the wind. */
+  function stepDust(p: Particle, dt: number): void {
+    const d = TUNING.snow.dust;
+    const c = curlField(p.x, p.y, elapsed);
+    p.vx = frameGust * 8 * p.z + c.x * 6;
+    p.vy = lerp(d.speed[0], d.speed[1], p.z) + c.y * 4;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.x < -edgeMargin) p.x += cssWidth + 2 * edgeMargin;
+    else if (p.x > cssWidth + edgeMargin) p.x -= cssWidth + 2 * edgeMargin;
+    if (p.y - DUST_MARGIN > cssHeight) spawnDust(p, false);
+  }
+
+  /**
+   * Advance one graupel pellet: fast, straight and dense — its size multiplier scales its speed
+   * (real graupel's near-linear size→speed coupling), and it barely feels the turbulence.
+   */
+  function stepGraupel(p: Particle, dt: number): void {
+    const gr = TUNING.snow.graupel;
+    const wind = 1 - TUNING.snow.deadAirDamp * frameDead;
+    const depth = 0.45 + p.z;
+    const c = curlField(p.x, p.y, elapsed);
+    const fall = lerp(gr.speed[0], gr.speed[1], p.z) * p.sizeBoost;
+    // Dense pellets feel a fraction of every wind term — including a blizzard's, so a natural
+    // storm+shower overlap leans the pellets with the raked field instead of ignoring it.
+    p.vx =
+      (frameGust * TUNING.snow.wind + frameStormWind * TUNING.snow.storm.wind) *
+        gr.windFactor *
+        depth *
+        wind +
+      c.x * TUNING.snow.turb * gr.turbFactor * depth;
+    p.vy = fall + c.y * TUNING.snow.turb * gr.turbFactor * depth;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.x < -edgeMargin) p.x += cssWidth + 2 * edgeMargin;
+    else if (p.x > cssWidth + edgeMargin) p.x -= cssWidth + 2 * edgeMargin;
+    // Graupel doesn't settle — real pellets bounce off hard surfaces rather than sticking — so
+    // pellets simply pass behind the UI like the far field does.
+    if (p.y - GRAUPEL_MARGIN > cssHeight) spawnGraupel(p, false);
+  }
+
+  /** Blit one dust mote: mostly a barely-there pin-point, briefly flaring on its glint cycle. */
+  function drawDust(p: Particle): void {
+    if (!dustSprite) return;
+    const d = TUNING.snow.dust;
+    // Where in this mote's glint cycle we are (p.flutter = period, p.phase = offset).
+    const u = (elapsed + p.phase) % p.flutter;
+    let glint = 0;
+    if (u < d.glintAttack) glint = u / d.glintAttack;
+    else if (u < d.glintAttack + d.glintDecay) glint = 1 - (u - d.glintAttack) / d.glintDecay;
+    const scale = lerp(0.6, 1, p.z) * (1 + glint * d.flareScale);
+    const w = dustSprite.halfW * 2 * scale;
+    const h = dustSprite.halfH * 2 * scale;
+    ctx!.globalAlpha = clamp(frameDust * lerp(d.alpha[0], d.alpha[1], glint), 0, 1);
+    ctx!.drawImage(dustSprite.canvas, p.x - w / 2, p.y - h / 2, w, h);
+  }
+
+  /** Blit one graupel pellet (angularly symmetric — no rotation needed at this size). */
+  function drawGraupel(p: Particle): void {
+    if (!graupelSprite) return;
+    const gr = TUNING.snow.graupel;
+    const scale = lerp(gr.scale[0], gr.scale[1], p.z) * p.sizeBoost;
+    const w = graupelSprite.halfW * 2 * scale;
+    const h = graupelSprite.halfH * 2 * scale;
+    ctx!.globalAlpha = clamp(frameGraupel * lerp(gr.alpha[0], gr.alpha[1], p.z), 0, 1);
+    ctx!.drawImage(graupelSprite.canvas, p.x - w / 2, p.y - h / 2, w, h);
   }
 
   /**
@@ -1761,44 +2345,61 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     const s = sprites[p.variant];
     if (!s) return;
     const t = TUNING.snow;
-    // Depth-extrapolated like rain: deep layers (z < 0) shrink below scale[0], bokeh (z > 1)
-    // grows past scale[1] — the widened parallax range.
-    const scale = lerp(t.scale[0], t.scale[1], p.z);
-    const w = s.halfW * 2 * scale;
-    const h = s.halfH * 2 * scale;
+    // Depth-extrapolated like rain: deep layers (z < 0) use their own scale ladder, bokeh
+    // (z > 1) grows past scale[1] — the widened parallax range. sizeBoost carries warm-snow
+    // clumping (and, for the far ladder, keeps a warm clump's dot a touch bigger too).
+    const deepQ = p.variant === SNOW_FAR ? clamp((-p.z - 0.1) / 0.34, 0, 1) : 0;
+    const scale =
+      (p.variant === SNOW_FAR
+        ? lerp(t.deepScale[0], t.deepScale[1], deepQ)
+        : lerp(t.scale[0], t.scale[1], p.z)) * p.sizeBoost;
+    let w = s.halfW * 2 * scale;
+    let h = s.halfH * 2 * scale;
     let alpha: number;
     if (p.variant === SNOW_BOKEH) {
       // The bokeh disc fades *further* the closer it sits to the viewer — more defocus, dimmer —
       // and doesn't twinkle (an out-of-focus blob has no glinting facets).
       const q = (p.z - t.bokeh.z[0]) / (t.bokeh.z[1] - t.bokeh.z[0]);
       alpha = lerp(t.bokeh.alpha[0], t.bokeh.alpha[1], clamp(q, 0, 1));
+    } else if (p.variant === SNOW_FAR) {
+      // The deep ladder: an explicit alpha ladder (deeper = fainter, floored well above the
+      // 8-bit banding threshold), dithered per flake (the phase makes a free stable random), and
+      // no twinkle — shimmering sub-pixel dots read as noise, not snow. The deepScale ladder
+      // keeps every stratum at or above the ~2px perceptual floor; the energy-conserving clamp
+      // below is a backstop, not the normal path.
+      alpha = lerp(t.deepAlpha[0], t.deepAlpha[1], deepQ) * (0.8 + 0.4 * (p.phase / (Math.PI * 2)));
+      if (w < t.deepMinPx) {
+        alpha *= (w / t.deepMinPx) * (w / t.deepMinPx);
+        w = t.deepMinPx;
+        h = t.deepMinPx;
+      }
     } else {
       // A flurry lifts the whole field's opacity a touch (surges read as "thicker"); a faint
-      // per-flake twinkle keeps close crystals from looking static; the deep background layers
-      // get the same alpha lift as rain's so extrapolation never fades them to nothing.
+      // per-flake twinkle keeps close crystals from looking static.
       const twinkle = 1 - t.twinkleAmp * (0.5 + 0.5 * Math.sin(elapsed * t.twinkleSpeed + p.phase));
-      alpha =
-        (lerp(t.alpha[0], t.alpha[1], p.z) + (p.z < 0 ? t.deepAlphaBoost : 0)) *
-        (0.85 + frameFlurry * 0.15) *
-        twinkle;
+      alpha = lerp(t.alpha[0], t.alpha[1], p.z) * (0.85 + frameFlurry * 0.15) * twinkle;
     }
-    // Storm-pool flakes ride the blizzard envelope, so the thickening fades in and out with it.
-    if (p.storm) alpha *= frameStorm;
+    // Storm-pool flakes ride the storm envelope (blizzard or squall — whichever is thickening
+    // the fall), so the extra density fades in and out with it.
+    if (p.storm) alpha *= frameStormy;
+    // A lightning flash momentarily lights the flakes up along with the sky.
+    if (frameFlash > 0) alpha *= 1 + frameFlash * t.flash.brighten;
     let stretch = 1;
-    if (frameStorm > 0.02) {
+    if (frameStormy > 0.02) {
       const st = t.storm;
       // Density "curtains": a slow spatial wave sweeping with the storm wind modulates local
-      // opacity, so the blizzard arrives in turbulent sheets rather than a uniform wall.
+      // opacity, so the storm arrives in turbulent sheets rather than a uniform wall.
       const wave = Math.sin(
         (p.x * Math.PI * 2) / st.waveLength -
           elapsed * st.waveSpeed * (frameStormWind < 0 ? -1 : 1) +
           p.z * 2,
       );
-      alpha *= 1 + frameStorm * st.waveAmp * wave;
+      alpha *= 1 + frameStormy * st.waveAmp * wave;
       // Motion streaks: wind-raked flakes elongate along their velocity (shutter blur — the
-      // photoreal cheat), scaling with how hard the storm has them leaning.
+      // photoreal cheat), scaling with how hard the storm has them leaning. (A squall's flakes
+      // lean less, so it naturally streaks less than a blizzard — the lean term is the model.)
       const lean = p.vy > 1 ? Math.abs(p.vx) / p.vy : 0;
-      stretch = clamp(1 + frameStorm * st.streakGain * lean, 1, st.streakMax);
+      stretch = clamp(1 + frameStormy * st.streakGain * lean, 1, st.streakMax);
     }
     // The streak path engages while the sprite is still essentially unstretched (≈2%), so the
     // handoff is length-continuous and the rotation change is imperceptible on these (near-)
@@ -1814,8 +2415,8 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       ctx!.restore();
       return;
     }
-    if (p.variant === SNOW_GRAIN || p.variant === SNOW_BOKEH) {
-      // Grains and bokeh discs are angularly symmetric — a plain blit, the cheapest path.
+    if (p.variant !== 1 && p.variant !== 2) {
+      // Grains, far dots and bokeh discs are angularly symmetric — a plain blit, cheapest path.
       ctx!.drawImage(s.canvas, p.x - w / 2, p.y - h / 2, w, h);
       return;
     }
@@ -1827,19 +2428,83 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     ctx!.restore();
   }
 
+  /**
+   * The envelope rate limiter: every weather envelope moves toward its target by at most this
+   * much of its full range per second. Chosen just above the fastest natural scheduler slope
+   * (the squall's 1.5s slam), so steady `auto` weather passes through unchanged — but *any*
+   * discontinuity in the targets (a lab mode switch in either direction, including back to an
+   * `auto` schedule that is mid-event) eases over ~1.2s instead of snapping between frames.
+   * The lightning flash is exempt: its instant attack is the point.
+   */
+  const WEATHER_RAMP_RATE = 1 / 1.2;
+
+  /** Move `cur` toward `target`, limited to `step` per call. */
+  function approach(cur: number, target: number, step: number): number {
+    return cur + clamp(target - cur, -step, step);
+  }
+
+  /**
+   * Compute this frame's weather state. Under `auto` the deterministic schedulers decide the
+   * targets; a lab override forces one event's target to full strength and the rest to zero.
+   * Either way the frame envelopes chase the targets through the rate limiter above, so every
+   * transition — natural or forced, in or out — is continuous. Thundersnow's natural flashes
+   * are gated behind a deep blizzard, which is what keeps real thundersnow rare.
+   */
+  function computeWeather(dt: number): void {
+    const t = TUNING.snow;
+    let tStorm = 0;
+    let tStormWind = 0;
+    let tSquall = 0;
+    let tDust = 0;
+    let tGraupel = 0;
+    let tWarm = 0;
+    let tDead = 0;
+    frameFlash = 0;
+    framePulse = weatherMode === 'calm' ? 0 : gustPulse(elapsed);
+    if (weatherMode === 'auto') {
+      tStorm = blizzard(elapsed);
+      tStormWind = blizzardWind(elapsed);
+      tSquall = squall(elapsed);
+      tGraupel = graupelShower(elapsed);
+      tWarm = warmSnow(elapsed);
+      tDead = deadAir(elapsed);
+      // Diamond dust is a calm-air phenomenon: any storm sweeps the crystal haze away.
+      tDust = diamondDust(elapsed) * (1 - Math.max(tStorm, tSquall));
+      const gate = smooth01((frameStorm - t.flash.gate[0]) / (t.flash.gate[1] - t.flash.gate[0]));
+      frameFlash = gate > 0 ? lightningFlash(elapsed) * gate : 0;
+    } else if (weatherMode === 'blizzard' || weatherMode === 'thundersnow') {
+      tStorm = 1;
+      tStormWind = 1;
+      if (weatherMode === 'thundersnow') frameFlash = lightningFlash(elapsed, true) * frameStorm;
+    } else if (weatherMode === 'squall') {
+      tSquall = 1;
+    } else if (weatherMode === 'diamond-dust') {
+      tDust = 1;
+    } else if (weatherMode === 'graupel') {
+      tGraupel = 1;
+    } else if (weatherMode === 'warm-snow') {
+      tWarm = 1;
+    }
+    const step = dt * WEATHER_RAMP_RATE;
+    frameStorm = approach(frameStorm, tStorm, step);
+    frameStormWind = approach(frameStormWind, tStormWind, step);
+    frameSquall = approach(frameSquall, tSquall, step);
+    frameDust = approach(frameDust, tDust, step);
+    frameGraupel = approach(frameGraupel, tGraupel, step);
+    frameWarm = approach(frameWarm, tWarm, step);
+    frameDead = approach(frameDead, tDead, step);
+    frameStormy = Math.max(frameStorm, frameSquall);
+    // A storm is at least as intense as a full flurry: folding the storm envelope into the
+    // flurry channel lifts the field's opacity and gust response with it for free.
+    frameFlurry = Math.max(frameFlurry, frameStormy);
+  }
+
   function paint(animate: boolean, dt: number): void {
     ctx!.clearRect(0, 0, cssWidth, cssHeight);
     if (animate) {
       frameGust = gust(elapsed);
       frameFlurry = flurry(elapsed);
-      if (kind === 'snow') {
-        frameStorm = blizzard(elapsed);
-        frameStormWind = blizzardWind(elapsed);
-        framePulse = gustPulse(elapsed);
-        // A blizzard is at least as intense as a full flurry: folding the storm envelope into
-        // the flurry channel lifts the field's opacity and gust response with it for free.
-        frameFlurry = Math.max(frameFlurry, frameStorm);
-      }
+      if (kind === 'snow') computeWeather(dt);
       advanceVortices(dt);
       if (interact) {
         // Adopt the surface map *before* the particle step, so landings test current geometry.
@@ -1847,12 +2512,14 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
         if (snap.generation !== surfGen) reconcileSurfaces(snap);
       }
     }
-    // (`frameStorm` stays 0 on a static reduced-motion frame, so the calm scene has no haze.)
-    const stormActive = frameStorm > 0.02;
-    if (stormActive && hazeSprite) {
+    // (Every envelope stays 0 on a static reduced-motion frame, so the calm scene has no haze,
+    // no storm pool, no event pools and no flash.)
+    const stormActive = frameStormy > 0.02;
+    const haze = frameStorm * TUNING.snow.storm.hazeAlpha + frameSquall * TUNING.snow.squallEvent.hazeAlpha;
+    if (haze > 0.005 && hazeSprite) {
       // The whiteout veil, behind the flakes: one stretched blit of the cached gradient strip,
-      // its opacity riding the storm envelope.
-      ctx!.globalAlpha = frameStorm * TUNING.snow.storm.hazeAlpha;
+      // its opacity riding the storm envelopes (a squall's visibility crash runs deeper).
+      ctx!.globalAlpha = Math.min(haze, 0.3);
       ctx!.drawImage(hazeSprite.canvas, 0, 0, cssWidth, cssHeight);
       ctx!.globalAlpha = 1;
     }
@@ -1875,6 +2542,19 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
         }
         drawSnow(p);
       }
+      // The event pools, equally dormant outside their spells.
+      if (frameDust > 0.02) {
+        for (const p of dusts) {
+          if (animate) stepDust(p, dt);
+          drawDust(p);
+        }
+      }
+      if (frameGraupel > 0.02) {
+        for (const p of graupels) {
+          if (animate) stepGraupel(p, dt);
+          drawGraupel(p);
+        }
+      }
     }
     // The garnish draws last, in front of the field it rides: it is the thing meant to be noticed,
     // and a present half-hidden behind a snow flurry reads as a rendering glitch rather than a
@@ -1882,6 +2562,13 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     for (const g of garnishes) {
       if (animate) stepGarnish(g, dt);
       drawGarnish(g);
+    }
+    // Thundersnow: the diffuse whole-sky flash — a plain full-canvas fill (solid colour, no
+    // gradient work), stepping through the flicker envelope over everything on this layer.
+    if (frameFlash > 0.01) {
+      ctx!.globalAlpha = frameFlash * TUNING.snow.flash.alpha;
+      ctx!.fillStyle = flashColor;
+      ctx!.fillRect(0, 0, cssWidth, cssHeight);
     }
     ctx!.globalAlpha = 1;
     if (interact && animate) drawOverlay(dt);
@@ -1941,6 +2628,11 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       if (stopped) return;
       buildSprites();
       if (reduced) paint(false, 0);
+    },
+    setWeather(mode) {
+      // Just retarget: the envelope rate limiter in computeWeather carries every transition —
+      // whatever was blowing eases out while the newly forced event eases in.
+      weatherMode = mode;
     },
     stop() {
       stopped = true;
