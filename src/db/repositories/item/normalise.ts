@@ -61,21 +61,36 @@ export function normaliseExpiry(value: number | null | undefined): number | null
 
 /**
  * Validate an optional ISO calendar-date string (Phase 66 asset lifecycle, v24).
- * Null/empty clears the field. A non-parseable value is rejected so the DB never
- * stores a string that `Date.parse` would return `NaN` on. Normalises to the
- * `YYYY-MM-DD` slice only — no time component — matching `<input type="date">` format.
+ * Null/empty clears the field, and the stored form is the canonical `YYYY-MM-DD` slice
+ * (no time component) matching `<input type="date">` — the format every caller already
+ * supplies.
+ *
+ * The calendar fields are read straight out of the string and range-checked in **UTC**;
+ * the field must not go through `Date.parse` → `toISOString()`. That round-trip silently
+ * shifted the day for any value `Date.parse` reads as *local* time (`2026/07/20`, an
+ * RFC-2822-ish string): local midnight re-serialised to UTC lands on the previous day in
+ * every UTC-positive zone, and `acquired_at` / `warranty_expires_at` are read back as UTC
+ * midnight, so the stored day no longer matched the day the user meant (#327). Anything
+ * that is not a bare `YYYY-MM-DD` is rejected rather than coerced, so an import path can
+ * never inherit that silent shift.
  */
 export function normaliseIsoDate(value: string | null | undefined): string | null {
   if (value == null) return null;
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
-  const ms = Date.parse(trimmed);
-  if (!Number.isFinite(ms)) {
-    throw new DbError('SQLITE_CONSTRAINT', 'Date must be a valid ISO calendar date (YYYY-MM-DD).');
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    // Require the calendar fields to round-trip through Date.UTC unchanged, so overflow
+    // (e.g. 2026-02-30 → 2026-03-02) and impossible months/days are rejected, not coerced.
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day) {
+      return trimmed;
+    }
   }
-  // Re-serialise to the canonical YYYY-MM-DD slice so callers don't rely on the
-  // exact string the user typed (the date-input value is always this format already).
-  return new Date(ms).toISOString().slice(0, 10);
+  throw new DbError('SQLITE_CONSTRAINT', 'Date must be a valid ISO calendar date (YYYY-MM-DD).');
 }
 
 /**
