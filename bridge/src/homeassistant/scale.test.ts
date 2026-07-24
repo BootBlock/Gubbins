@@ -128,31 +128,27 @@ describe('parseScaleReading', () => {
     });
   });
 
-  it('reports an unavailable scale distinctly from a bad unit', () => {
-    expect(parseScaleReading(state({ value: 'unavailable' }))).toMatchObject({
-      ok: false,
-      issue: 'unavailable',
-    });
-    expect(parseScaleReading(state({ value: 'unknown' }))).toMatchObject({ ok: false, issue: 'unavailable' });
-    expect(parseScaleReading(state({ value: '' }))).toMatchObject({ ok: false, issue: 'unavailable' });
+  it('reports an unavailable scale (one with a supported unit but no value)', () => {
+    // The unit defaults to 'g' in the helper, so these are genuine scales that are simply off.
+    expect(parseScaleReading(state({ value: 'unavailable' }))).toEqual({ ok: false, issue: 'unavailable' });
+    expect(parseScaleReading(state({ value: 'unknown' }))).toEqual({ ok: false, issue: 'unavailable' });
+    expect(parseScaleReading(state({ value: '' }))).toEqual({ ok: false, issue: 'unavailable' });
   });
 
-  it('reports an unsupported unit, carrying the offending unit for the message', () => {
-    expect(parseScaleReading(state({ value: '3', unit: 'ml' }))).toEqual({
-      ok: false,
-      issue: 'unsupported-unit',
-      unit: 'ml',
-    });
+  // An unconvertible unit means the entity isn't a scale at all — so it is reported exactly like a
+  // non-scale entity, never as its own outcome that would echo the offending unit back (issue #179).
+  it('reports an unconvertible unit as not-a-scale, echoing nothing about the entity', () => {
+    expect(parseScaleReading(state({ value: '3', unit: 'ml' }))).toEqual({ ok: false, issue: 'not-a-scale' });
   });
 
-  it('reports a non-numeric state rather than coercing it', () => {
-    expect(parseScaleReading(state({ value: 'on' }))).toMatchObject({ ok: false, issue: 'not-a-number' });
+  it('reports a non-numeric state on a genuine scale rather than coercing it', () => {
+    expect(parseScaleReading(state({ value: 'on' }))).toEqual({ ok: false, issue: 'not-a-number' });
   });
 
   // The unit must come from the attribute; reading it out of the state string would let a
   // sensor reporting "12kg" be silently taken as 12 grams.
   it('refuses a state with a unit glued onto the number', () => {
-    expect(parseScaleReading(state({ value: '12kg', unit: 'g' }))).toMatchObject({
+    expect(parseScaleReading(state({ value: '12kg', unit: 'g' }))).toEqual({
       ok: false,
       issue: 'not-a-number',
     });
@@ -165,8 +161,28 @@ describe('parseScaleReading', () => {
     });
   });
 
-  it('handles a malformed payload without throwing', () => {
-    expect(parseScaleReading(null)).toMatchObject({ ok: false, issue: 'unavailable' });
-    expect(parseScaleReading({})).toMatchObject({ ok: false, issue: 'unavailable' });
+  // The security gate (issue #179): anything that isn't a scale — a non-weight sensor, an entity
+  // with no unit, or a malformed payload — collapses to the single `not-a-scale` outcome, whatever
+  // its state, so the endpoint cannot be used to tell one non-scale entity from another, or from
+  // one that doesn't exist. No state, unit or last_updated ever comes back.
+  it('collapses every non-scale entity to not-a-scale, whatever its state', () => {
+    expect(parseScaleReading(state({ entityId: 'light.hall', value: 'on', unit: null }))).toEqual({
+      ok: false,
+      issue: 'not-a-scale',
+    });
+    expect(parseScaleReading(state({ entityId: 'sensor.lounge', value: '21.5', unit: '°C' }))).toEqual({
+      ok: false,
+      issue: 'not-a-scale',
+    });
+    // Even "unavailable" must not distinguish a non-scale entity from a missing one.
+    expect(parseScaleReading(state({ entityId: 'lock.front', value: 'unavailable', unit: null }))).toEqual({
+      ok: false,
+      issue: 'not-a-scale',
+    });
+  });
+
+  it('treats a malformed payload as not-a-scale rather than throwing', () => {
+    expect(parseScaleReading(null)).toEqual({ ok: false, issue: 'not-a-scale' });
+    expect(parseScaleReading({})).toEqual({ ok: false, issue: 'not-a-scale' });
   });
 });

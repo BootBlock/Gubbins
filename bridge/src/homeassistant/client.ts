@@ -207,8 +207,16 @@ export function createHaClient(options: HaClientOptions): HaClient {
 
   return {
     listScaleEntities: async () => projectScaleEntities(await get('/api/states')),
-    readScale: async (entityId: string) =>
-      parseScaleReading(await get(`/api/states/${encodeURIComponent(entityId)}`)),
+    readScale: async (entityId: string) => {
+      const outcome = parseScaleReading(await get(`/api/states/${encodeURIComponent(entityId)}`));
+      // An entity that isn't a scale is answered exactly like a missing one — the same `404`, the
+      // same message — so a token holder can't tell "exists but isn't a scale" from "doesn't
+      // exist", nor read state from any entity outside the scale picker's set (issue #179).
+      if (!outcome.ok && outcome.issue === 'not-a-scale') {
+        throw new HaError(404, 'not_found', 'No such entity.');
+      }
+      return outcome;
+    },
     // Deliberately the list-states read, discarded: it proves reachability *and* the token in one
     // call, and keeps the client's two-reads-only posture (nothing new is callable).
     probe: async () => void (await get('/api/states')),

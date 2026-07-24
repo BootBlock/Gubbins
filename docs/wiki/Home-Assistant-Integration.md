@@ -65,7 +65,10 @@ covers the settings on its **Run the bridge** step.
 > **ℹ️ Note**
 > The token lives on the bridge, not in the app — the app only ever receives the resulting weight.
 > The bridge can *read* entity states and nothing else: it cannot call a Home Assistant service, so
-> it can't switch, unlock or actuate anything in your home.
+> it can't switch, unlock or actuate anything in your home. The read is also **scoped to scales** —
+> only an entity reporting a convertible weight can be read; asking for anything else (a light, a
+> thermostat, a sensor) is answered as though the entity doesn't exist, so this feature can't be
+> turned into a way to inspect the rest of your home.
 
 The reading goes through the bridge rather than the app talking to Home Assistant directly,
 because a browser on a secure page isn't allowed to contact a plain-`http` address on your

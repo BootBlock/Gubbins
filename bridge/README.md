@@ -1573,20 +1573,27 @@ Both use the same tokens and rate limit as every other endpoint, and both requir
 > authenticate and these paths answer `503` like everything else. See
 > [Identities & permissions](#identities--permissions).
 
-### Units, and why an unknown one is refused
+### Only scales can be read, and unknown units are refused
 
-Gubbins stores mass canonically in grams; a scale entity reports whatever unit its integration
-chose. The bridge converts `mg`, `g`, `kg`, `oz`, `lb` and `st` — and **rejects anything else with
-a `409` rather than assuming**. That strictness is deliberate: a mis-read unit would not produce a
-slightly-wrong number, it would multiply the resulting stock count by a factor of a thousand.
+`state` will only read an entity that qualifies as a scale — one reporting a unit the bridge can
+convert. **Any other entity, or one that doesn't exist, answers `404` exactly like a missing
+entity.** That is deliberate: the token is scoped to your inventory and this one Home Assistant
+capability, so the endpoint must not double as a way to probe the rest of your home. A light, a
+thermostat or a presence sensor is indistinguishable from an entity that was never there — the
+bridge never reports its state, its unit, or when it last changed.
 
-A reading that can't be used is likewise a `409`, never a `200` with a zero weight:
+Gubbins stores mass canonically in grams; a scale reports whatever unit its integration chose. The
+bridge converts `mg`, `g`, `kg`, `oz`, `lb` and `st` — and treats anything else as **not a scale**
+(so, a `404`) rather than guessing. That strictness is deliberate: a mis-read unit would not
+produce a slightly-wrong number, it would multiply the resulting stock count by a factor of a
+thousand.
+
+A **genuine** scale that can't be read right now is a `409`, never a `200` with a zero weight:
 
 | Code | Meaning |
 | --- | --- |
 | `scale_unavailable` | The scale is off, asleep, or its integration has lost the connection. |
-| `scale_unsupported_unit` | The sensor reports a unit that cannot be converted to grams. |
-| `scale_not_a_number` | That entity doesn't report a numeric weight (it probably isn't a scale). |
+| `scale_not_a_number` | The sensor isn't reporting a numeric weight right now. |
 | `home_assistant_unreachable` / `home_assistant_unauthorised` | The bridge couldn't reach Home Assistant, or the token was rejected. |
 
 ### Using it in the app

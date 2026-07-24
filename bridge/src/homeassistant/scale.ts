@@ -39,9 +39,6 @@ const GRAMS_PER_HA_UNIT: Readonly<Record<string, number>> = {
   st: 6350.29318,
 };
 
-/** Every mass unit a scale entity may report, for iteration and for the "unsupported" message. */
-export const SUPPORTED_HA_WEIGHT_UNITS = Object.keys(GRAMS_PER_HA_UNIT);
-
 /**
  * The Home Assistant `device_class` that marks a sensor as reporting a mass. Present on
  * well-behaved integrations; its absence is not disqualifying (see {@link isScaleEntity}).
@@ -79,13 +76,22 @@ export interface ScaleReadingDto {
   readonly lastUpdated: string | null;
 }
 
-/** Why a state could not be turned into a reading — distinguished so the UI can explain it. */
-export type ScaleReadingIssue = 'not-a-number' | 'unsupported-unit' | 'unavailable';
+/**
+ * Why a state could not be turned into a reading — distinguished so the caller can explain it.
+ *
+ * `not-a-scale` is the **security-relevant** one: the requested entity is not a weight sensor the
+ * picker would ever have offered (a light, a thermostat, a presence sensor — or an entity that
+ * doesn't exist). It is deliberately *not* given a distinct user-facing outcome; the client maps
+ * it onto the very same `404` a missing entity produces, so a token holder cannot use this
+ * endpoint to probe the rest of the user's home (issue #179). The other two describe a genuine
+ * scale that simply can't be read right now.
+ */
+export type ScaleReadingIssue = 'not-a-number' | 'unavailable' | 'not-a-scale';
 
 /** A parse attempt: the reading, or the specific reason there isn't one. */
 export type ScaleReadingOutcome =
   | { readonly ok: true; readonly reading: ScaleReadingDto }
-  | { readonly ok: false; readonly issue: ScaleReadingIssue; readonly unit: string | null };
+  | { readonly ok: false; readonly issue: ScaleReadingIssue };
 
 /**
  * The two state strings Home Assistant uses for "this entity has no value right now" — a scale
@@ -164,30 +170,45 @@ export function projectScaleEntities(payload: unknown): ScaleEntityDto[] {
 }
 
 /**
- * Turn one entity's state into a grams reading, or say precisely why it can't be. The three
- * failure modes are kept apart because they need different words in front of the user: an
- * unavailable scale is a hardware/integration problem, an unsupported unit is a configuration
- * problem, and a non-numeric state is a "that entity isn't a scale" problem.
+ * Turn one entity's state into a grams reading, or say precisely why it can't be.
+ *
+ * **The read is gated on {@link isScaleEntity} first**, exactly the test the picker applies: an
+ * entity that isn't a convertible-mass sensor (or doesn't exist) yields `not-a-scale` and is never
+ * inspected further — its state, unit and `last_updated` are not surfaced, and the caller answers
+ * it as a plain `404`. That is what keeps this endpoint from being a read oracle over the user's
+ * other Home Assistant entities (issue #179); it also means an unrecognised unit can no longer
+ * reach a distinct, unit-echoing response, because such an entity simply isn't a scale.
+ *
+ * Beyond the gate the two remaining failure modes describe a genuine scale that can't be read
+ * right now, kept apart because they need different words: an unavailable scale is a
+ * hardware/integration problem, a non-numeric state is a "that sensor isn't reporting a weight"
+ * problem.
  */
 export function parseScaleReading(payload: unknown): ScaleReadingOutcome {
   const state = (typeof payload === 'object' && payload !== null ? payload : {}) as HaState;
-  const entityId = readEntityId(state);
-  const unit = readAttribute(state, 'unit_of_measurement');
+
+  // Only an entity the picker itself would offer may be read at all; everything else — a non-scale
+  // sensor, an unconvertible unit, a malformed payload — is indistinguishable from "no such entity".
+  if (!isScaleEntity(state)) return { ok: false, issue: 'not-a-scale' };
+
+  // Guaranteed non-null by the gate above (a scale entity has an id and a supported unit).
+  const entityId = readEntityId(state)!;
+  const unit = readAttribute(state, 'unit_of_measurement')!;
 
   const rawState = typeof state.state === 'string' ? state.state.trim() : '';
-  if (entityId === null || UNAVAILABLE_STATES.has(rawState.toLowerCase()) || rawState === '') {
-    return { ok: false, issue: 'unavailable', unit };
+  if (UNAVAILABLE_STATES.has(rawState.toLowerCase()) || rawState === '') {
+    return { ok: false, issue: 'unavailable' };
   }
 
   // `Number` (not `parseFloat`) so a trailing-garbage state like "12kg" is rejected rather than
   // silently read as 12 — the unit must come from the attribute, never from the state string.
   const value = Number(rawState);
-  if (!Number.isFinite(value)) return { ok: false, issue: 'not-a-number', unit };
+  if (!Number.isFinite(value)) return { ok: false, issue: 'not-a-number' };
 
-  if (!isSupportedWeightUnit(unit)) return { ok: false, issue: 'unsupported-unit', unit };
-
-  const grams = haUnitToGrams(value, unit!);
-  if (grams === null) return { ok: false, issue: 'unsupported-unit', unit };
+  // The unit is known-supported and the value is finite, so this cannot be null — but treat a
+  // broken invariant as "not a scale" rather than risk a wrong grams figure.
+  const grams = haUnitToGrams(value, unit);
+  if (grams === null) return { ok: false, issue: 'not-a-scale' };
 
   return {
     ok: true,
@@ -195,7 +216,7 @@ export function parseScaleReading(payload: unknown): ScaleReadingOutcome {
       entityId,
       grams,
       value,
-      unit: unit!.trim().toLowerCase(),
+      unit: unit.trim().toLowerCase(),
       lastUpdated: typeof state.last_updated === 'string' ? state.last_updated : null,
     },
   };

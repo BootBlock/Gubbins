@@ -33,11 +33,7 @@ import { buildWebhookTestEvent } from '../events/webhook-test.ts';
 import { redactUrl } from '../events/webhook.ts';
 import { BRIDGE_VERSION, BRIDGE_SCHEMA_VERSION } from '../version.ts';
 import { HaError } from '../homeassistant/client.ts';
-import {
-  SUPPORTED_HA_WEIGHT_UNITS,
-  type ScaleReadingIssue,
-  type ScaleReadingOutcome,
-} from '../homeassistant/scale.ts';
+import type { ScaleReadingIssue } from '../homeassistant/scale.ts';
 import { WriteError, type WriteOperation } from '../write.ts';
 import {
   sendError,
@@ -516,7 +512,13 @@ async function handleScale(
       }
       const outcome = await scale.client.readScale(entityId);
       if (!outcome.ok) {
-        return void sendError(res, 409, SCALE_ISSUE_CODES[outcome.issue], scaleIssueMessage(outcome), {
+        // A non-scale entity is answered as a missing one, so this endpoint reveals nothing about
+        // the user's other Home Assistant entities (issue #179). The client already maps this to a
+        // thrown 404; handling it here too keeps the guarantee even if a client returns it inline.
+        if (outcome.issue === 'not-a-scale') {
+          return void sendError(res, 404, 'not_found', 'No such entity.', { v1: true });
+        }
+        return void sendError(res, 409, SCALE_ISSUE_CODES[outcome.issue], scaleIssueMessage(outcome.issue), {
           v1: true,
         });
       }
@@ -533,30 +535,30 @@ async function handleScale(
 }
 
 /**
- * Map each reading issue to its published error code. An explicit table rather than a derived
- * string (`scale_${issue.replace(…)}`): the codes are part of the API contract, so they must be
- * checkable against {@link ApiErrorCode} and greppable, and adding an issue must not silently
- * mint an undocumented code.
+ * Map each **`409`** reading issue to its published error code. An explicit table rather than a
+ * derived string (`scale_${issue.replace(…)}`): the codes are part of the API contract, so they
+ * must be checkable against {@link ApiErrorCode} and greppable, and adding an issue must not
+ * silently mint an undocumented code. `not-a-scale` is absent by design — it is answered as a
+ * `404`, never a `409`, so it has no scale-specific code (issue #179).
  */
-const SCALE_ISSUE_CODES: Readonly<Record<ScaleReadingIssue, ApiErrorCode>> = {
+type ScaleConflictIssue = Exclude<ScaleReadingIssue, 'not-a-scale'>;
+
+const SCALE_ISSUE_CODES: Readonly<Record<ScaleConflictIssue, ApiErrorCode>> = {
   unavailable: 'scale_unavailable',
-  'unsupported-unit': 'scale_unsupported_unit',
   'not-a-number': 'scale_not_a_number',
 };
 
 /**
- * A plain, secret-free explanation of why a reading couldn't be used. The unsupported-unit case
- * names both the offending unit and the ones that do work, because that is a configuration
- * problem the user can actually fix (change the sensor's unit in Home Assistant).
+ * A plain, secret-free explanation of why a genuine scale couldn't be read. Both cases describe a
+ * scale that is present but not reporting a usable weight; neither names the entity or echoes any
+ * of its state back, so nothing about the wider home leaks through the message.
  */
-function scaleIssueMessage(outcome: Extract<ScaleReadingOutcome, { ok: false }>): string {
-  switch (outcome.issue) {
+function scaleIssueMessage(issue: ScaleConflictIssue): string {
+  switch (issue) {
     case 'unavailable':
       return 'The scale is unavailable in Home Assistant.';
     case 'not-a-number':
       return 'That entity does not report a numeric weight.';
-    case 'unsupported-unit':
-      return `That entity reports weights in "${outcome.unit ?? 'no unit'}", which cannot be converted. Supported units: ${SUPPORTED_HA_WEIGHT_UNITS.join(', ')}.`;
   }
 }
 

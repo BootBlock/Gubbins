@@ -76,7 +76,7 @@ function fakeScale(overrides: {
       },
       readScale: async () => {
         if (overrides.throws) throw overrides.throws;
-        return overrides.reading ?? { ok: false, issue: 'unavailable', unit: null };
+        return overrides.reading ?? { ok: false, issue: 'unavailable' };
       },
     },
   };
@@ -152,20 +152,29 @@ describe('GET /api/v1/scale/state', () => {
   });
 
   it('reports an unavailable scale as a 409, never a zero reading', async () => {
-    const get = await start(fakeScale({ reading: { ok: false, issue: 'unavailable', unit: 'g' } }));
+    const get = await start(fakeScale({ reading: { ok: false, issue: 'unavailable' } }));
     const res = await get('/api/v1/scale/state?entity_id=sensor.bench_scale');
     expect(res.status).toBe(409);
     expect((await res.json()).error.code).toBe('scale_unavailable');
   });
 
-  it('names the offending unit and the supported ones when it cannot convert', async () => {
-    const get = await start(fakeScale({ reading: { ok: false, issue: 'unsupported-unit', unit: 'ml' } }));
-    const res = await get('/api/v1/scale/state?entity_id=sensor.bench_scale');
-    expect(res.status).toBe(409);
+  // Issue #179: an entity that isn't a scale is answered as a missing one — a 404 with the generic
+  // `not_found` code and no detail — so the endpoint can't be used to probe other HA entities. The
+  // real client throws this; the route also collapses an inline `not-a-scale` outcome the same way.
+  it('answers a non-scale entity as a plain 404, revealing nothing about it', async () => {
+    const get = await start(fakeScale({ reading: { ok: false, issue: 'not-a-scale' } }));
+    const res = await get('/api/v1/scale/state?entity_id=sensor.lounge_temperature');
+    expect(res.status).toBe(404);
     const { error } = await res.json();
-    expect(error.code).toBe('scale_unsupported_unit');
-    expect(error.message).toContain('ml');
-    expect(error.message).toContain('kg');
+    expect(error.code).toBe('not_found');
+    expect(error.message).toBe('No such entity.');
+  });
+
+  it('answers a thrown 404 (an unknown entity) identically to a non-scale one', async () => {
+    const get = await start(fakeScale({ throws: new HaError(404, 'not_found', 'No such entity.') }));
+    const res = await get('/api/v1/scale/state?entity_id=sensor.nope');
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toEqual({ code: 'not_found', message: 'No such entity.' });
   });
 
   it('surfaces a Home Assistant failure with its status, without leaking internals', async () => {
