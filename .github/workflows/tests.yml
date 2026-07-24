@@ -1,8 +1,9 @@
 name: Tests
 
-# Runs the unit tests on every push to main and on pull requests. Two jobs: the app suite
-# (root Vitest config) and the bridge suite (its own Node-only config + a type-check). Both
-# need a recent Node — the app's `:memory:` test driver and the bridge both use `node:sqlite`,
+# Runs on every push to main and on pull requests. A secret-scan gate (shared with the local
+# pre-commit hook) plus a quality job (lint/format/type-check), then the unit tests: the app
+# suite (root Vitest config) and the bridge suite (its own Node-only config + a type-check). The
+# test and quality jobs both need a recent Node — the app's `:memory:` test driver and the bridge both use `node:sqlite`,
 # and Gubbins' schema needs `node:sqlite`'s FTS5 support (Node >= 22.16 or >= 24 — NOT any
 # v23.x build, FTS5 was never backported there). The bridge additionally runs TypeScript
 # directly via Node's built-in type-stripping — so all jobs pin Node 25, which satisfies the
@@ -17,6 +18,46 @@ permissions:
   contents: read
 
 jobs:
+  # Authoritative secret-scan gate. The local pre-commit hook runs the same scanner, but only on
+  # a developer's machine and only if the hook was wired — a `--no-verify` commit or a clone that
+  # never ran `npm install` bypasses it. This job re-scans the lines a push or PR adds so a
+  # credential still fails the build. It shares `scripts/secret-scan.mjs` with the hook (one
+  # pattern set, no drift) and needs neither an install nor a recent Node — only git history.
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history so the scan can diff the pushed/PR range, not just the tip snapshot.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 25
+
+      - name: Scan added lines for credential-shaped content
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            base="$PR_BASE"
+          else
+            # A brand-new branch reports an all-zero "before". A force-push to main reports a now
+            # orphaned tip that history no longer reaches. In either case there is no usable base,
+            # so fall back to HEAD's parent (and HEAD itself if there is no parent) — the scan then
+            # covers the newest commit rather than failing the build on an unreachable ref.
+            base="$PUSH_BEFORE"
+            case "$base" in '' | 0000000000000000000000000000000000000000) base='' ;; esac
+            if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then base=''; fi
+            [ -n "$base" ] || base="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"
+          fi
+          node scripts/secret-scan.mjs --diff "$base"
+
   quality:
     name: Lint, format & type-check
     runs-on: ubuntu-latest

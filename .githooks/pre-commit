@@ -8,7 +8,9 @@
 # Any failure aborts the commit. In a genuine emergency, bypass with `git commit --no-verify`.
 #
 # Auto-wired by the "prepare" npm script (sets core.hooksPath = .githooks) on `npm install`.
-# CI still runs the full type-check + lint + format:check as the authoritative gate.
+# CI runs the full type-check + lint + format:check as the authoritative gate — and the same
+# secret scan below (`.github/workflows/tests.yml`), so a `--no-verify` commit or a clone that
+# never ran `npm install` (and so never wired this hook) is still caught before it lands.
 
 set -u
 
@@ -27,31 +29,11 @@ err() { printf '%spre-commit: %s%s\n' "$red" "$*" "$reset" >&2; }
 staged="$(git diff --cached --name-only --diff-filter=ACM)"
 
 # --- (a) Secret scan of the staged diff ------------------------------------------------
-# Only inspect ADDED lines, and drop obvious placeholders so example snippets don't trip it.
-added="$(git diff --cached --no-color -U0 --diff-filter=ACM | grep '^+' | grep -v '^+++' || true)"
-
-# Generic `key = "value"` assignment (kept in a variable so the quote chars stay readable).
-kv_pattern="(password|passwd|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key)[\"' ]*[:=][ ]*[\"'][^\"' ]{8,}"
-
-secret_hits="$(printf '%s\n' "$added" \
-  | grep -nEi \
-    -e '-----BEGIN[ A-Z]*PRIVATE KEY-----' \
-    -e 'AKIA[0-9A-Z]{16}' \
-    -e 'sk-[A-Za-z0-9]{20,}' \
-    -e '(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}' \
-    -e 'github_pat_[A-Za-z0-9_]{20,}' \
-    -e 'xox[baprs]-[A-Za-z0-9-]{10,}' \
-    -e 'AIza[0-9A-Za-z_-]{35}' \
-    -e "$kv_pattern" \
-  | grep -viE 'xxxx|<[^>]*>|example|placeholder|your[_-]|changeme|redacted|dummy|noreply' \
-  || true)"
-
-if [ -n "$secret_hits" ]; then
-  err 'possible secret in staged changes — commit blocked.'
-  note 'This is a PUBLIC repository; a secret is effectively permanent once pushed.'
-  note 'Suspect added lines (review, then remove the secret or use a placeholder):'
-  printf '%s\n' "$secret_hits" >&2
-  note 'False positive? Use a placeholder (<YOUR_API_KEY>, sk-xxxx) or `git commit --no-verify`.'
+# The credential patterns live in one place — `scripts/secret-scan.mjs` — so the hook and the
+# CI backstop can never drift apart. The script scans only ADDED lines and drops obvious
+# placeholders, and exits non-zero (printing the suspect lines) if anything looks credential-shaped.
+if ! node scripts/secret-scan.mjs --staged; then
+  note 'In a genuine emergency this check can be skipped with `git commit --no-verify`.'
   fail=1
 fi
 
