@@ -71,7 +71,9 @@ If you collect a lot of tags, the list splits into pages using the same
 
 Attach the documents and images that belong with an item:
 
-- **Photos** — snapped or uploaded, compressed and stored on your device.
+- **Photos** — snapped or uploaded, compressed and stored on your device. To remove one, press
+  the **✕** in the corner of its thumbnail; with a mouse it appears when you hover the thumbnail,
+  and on a touch screen it is always shown.
 - **Datasheets and files** — either a **link** (a URL to a datasheet online) or a **local file
   pointer**. Great for keeping a part's datasheet, manual, or receipt one click away.
 
