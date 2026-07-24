@@ -422,7 +422,20 @@ export function CreateItemDialog({
       setValue('reorderGaugePercent', String(LOW_STOCK_GAUGE_SUGGESTED));
     }
   };
-  const isPending = createItem.isPending || createSerialised.isPending;
+  // Submit is a *chain*, not a single mutation: the create resolves, then aliases map, an image
+  // attaches and a supplier part persists before `done()` closes the dialog (issue #294). The
+  // create mutations' own `isPending` only covers the first link, so it drops back to false
+  // mid-chain — re-enabling the button while the form is still on screen, so a second click
+  // creates a duplicate item. `isSubmitting` stays true for the *whole* chain (set at the top of
+  // `onSubmit`, cleared only by `done()` or `onError`) and is what gates the button + status.
+  // The ref is a synchronous re-entry guard: RHF's `handleSubmit` validates asynchronously, so
+  // two rapid Enter presses can both clear validation before any state update lands — the ref is
+  // flipped before either can proceed, so the second call bails immediately.
+  const submittingRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // The button + progress status track the whole chain: `isSubmitting` covers it end-to-end,
+  // and the mutations' own `isPending` is folded in so the in-flight create still reads busy.
+  const isBusy = isSubmitting || createItem.isPending || createSerialised.isPending;
 
   // Every location is a valid home — including the system Unassigned / In Transit rows —
   // each tinted with its colour swatch and showing its item count (mirrors MoveItemDialog).
@@ -581,6 +594,13 @@ export function CreateItemDialog({
   };
 
   const onSubmit = (values: FormValues) => {
+    // Re-entry guard (issue #294): bail if a submit is already in flight, so a second click or a
+    // double Enter can't kick off a parallel create-chain and duplicate the item. Set before any
+    // async work so the check-and-set is atomic within a single synchronous call.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
+
     // Resolve the low-stock policy to the stored floor(s): 'default' → omit (null), 'never'
     // → 0 (hard exemption), 'custom' → the entered trigger. Unlimited / serialised / untracked
     // items never watch stock, so they carry no reorder fields.
@@ -635,6 +655,8 @@ export function CreateItemDialog({
       ...reorderFields,
     };
     const done = () => {
+      submittingRef.current = false;
+      setIsSubmitting(false);
       reset();
       trackingModeTouched.current = false;
       conditionTouched.current = false;
@@ -681,12 +703,16 @@ export function CreateItemDialog({
     // sit silently open on any error (e.g. a `no such column` from a schema-stale local DB),
     // giving the user no signal that nothing was saved. The raw message is shown so the
     // cause is diagnosable; the dialog stays open so a corrected retry loses nothing.
-    const onError = (e: unknown) =>
+    const onError = (e: unknown) => {
+      // Release the guard so a corrected retry can submit — the dialog stays open on error.
+      submittingRef.current = false;
+      setIsSubmitting(false);
       show({
         tone: 'danger',
         heading: 'Couldn’t create item',
         message: describeError(e, 'The item was not saved. Please try again.'),
       });
+    };
 
     if (values.trackingMode === 'SERIALISED') {
       // Auto-clone N distinct instance records sharing a name (spec §4).
@@ -739,6 +765,8 @@ export function CreateItemDialog({
   };
 
   const handleClose = () => {
+    submittingRef.current = false;
+    setIsSubmitting(false);
     reset();
     trackingModeTouched.current = false;
     conditionTouched.current = false;
@@ -1395,7 +1423,7 @@ export function CreateItemDialog({
             {/* Progress feedback while the create is in flight (issue #57): a disabled Create
                 button alone doesn't tell the user anything is happening. This status label sits
                 to the left of the buttons (mr-auto) and is announced politely to assistive tech. */}
-            {isPending ? (
+            {isBusy ? (
               <span
                 role="status"
                 aria-live="polite"
@@ -1409,7 +1437,7 @@ export function CreateItemDialog({
             <Button type="button" variant="ghost" onClick={handleClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isPending}>
+            <Button type="submit" disabled={isBusy}>
               Create item
             </Button>
           </>

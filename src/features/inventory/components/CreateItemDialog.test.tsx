@@ -128,6 +128,25 @@ describe('CreateItemDialog', () => {
     expect(itemDialog().getByRole('button', { name: 'Create item' })).toBeDisabled();
   });
 
+  it('guards against a double-submit creating a duplicate item (issue #294)', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'M3 screws' } });
+
+    // Two rapid submits before the create-chain settles — the create mutation's stub never
+    // fires its onSuccess, so `done()` never runs and the dialog stays open with the form
+    // intact, reproducing the window the bug exploited. RHF validation is async, so both
+    // clicks clear validation before either lands; only the first must reach the mutation.
+    const createButton = itemDialog().getByRole('button', { name: 'Create item' });
+    fireEvent.click(createButton);
+    fireEvent.click(createButton);
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+
+    // The button stays disabled (and the status stays announced) for the whole post-create
+    // chain, not just the create mutation — so no further click can duplicate the item.
+    expect(itemDialog().getByRole('button', { name: 'Create item' })).toBeDisabled();
+    expect(itemDialog().getByTestId('create-item-status')).toHaveTextContent('Creating item…');
+  });
+
   it('submits description, notes and a custom per-item low-stock override', async () => {
     renderDialog();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'M3 screws' } });
