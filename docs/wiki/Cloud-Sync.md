@@ -79,6 +79,12 @@ restore your version instead of losing it.
 > same-field clashes appear; a device simply catching up on newer changes is not a conflict and is
 > never listed.
 
+> **⚠️ Heads-up**
+> The list keeps your **most recent** unreviewed conflicts, not an unlimited history. If a great
+> many pile up without being reviewed — or one sits untouched for months — the oldest are cleared
+> automatically so this device's storage stays healthy. Review anything you want to keep or restore
+> soon after it appears rather than leaving it indefinitely.
+
 ## When the shared copy can't be read
 
 Your devices meet through a single **shared copy** of your inventory — a file in the folder or
