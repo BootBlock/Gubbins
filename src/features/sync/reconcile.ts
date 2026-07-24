@@ -98,6 +98,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   serialisedLoansClosed: [],
   collisions: [],
   flagRepairs: [],
+  defaultLocationWinnerId: null,
   historyInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
@@ -237,6 +238,12 @@ export function reconcile(
   // parts converge to two flagged rows; this reduces each (item, flag) to one deterministic winner.
   const flagRepairs = repairSupplierPartFlags(local, localUpserts, localDeletes, offset);
 
+  // --- Issue #191: "at most one default location" cross-row repair ---------------
+  // The same shape as the supplier-part repair above, but for the *global* `locations.is_default`:
+  // per-row LWW cannot enforce a single default, so two devices each nominating a different one
+  // converge to two flagged rows; this keeps one deterministic winner across the whole table.
+  const defaultLocationWinnerId = repairDefaultLocation(local, localUpserts, localDeletes, offset);
+
   // --- §7.3 Delta-CRDT gauge reconciliation -------------------------------------
   const gaugeResolutions = reconcileGauges(local, remote, finalItems);
 
@@ -305,6 +312,7 @@ export function reconcile(
     serialisedLoansClosed,
     collisions,
     flagRepairs,
+    defaultLocationWinnerId,
     historyInserts,
     itemTagUpserts,
     itemTagDeletes,
@@ -797,6 +805,101 @@ function repairSupplierPartFlags(
     }
   }
   return repairs;
+}
+
+/**
+ * Reduce the `locations` table to a single default after the merge (issue #191).
+ *
+ * The structural twin of {@link repairSupplierPartFlags}, but for the *global* `locations.is_default`:
+ * it marks the one place "Add item" pre-selects, maintained locally by a demote-then-set so the
+ * schema's partial unique index never trips on a single device. Per-row LWW cannot see that
+ * demotion across a merge, though: two devices that each nominated a *different* default converge to
+ * two flagged rows — a state the index now forbids. This picks one deterministic winner across the
+ * whole table ({@link flagWinner}: newest `updated_at`, ties broken by the smaller id so **both**
+ * devices reach the same verdict without reference to which side is "local") and clears the flag
+ * everywhere else:
+ *
+ *  - a losing *upsert* row has its flag zeroed in place, so its own write no longer re-sets it;
+ *  - losing *stored* rows are cleared by the returned winner id, which `applyPlan` uses to run a
+ *    demoting UPDATE ahead of the upserts (freeing the index before the winner's write).
+ *
+ * Returns the winner id only when a *stored* DB row other than the winner still holds the flag —
+ * a surviving loser, or one being deleted this merge (its DELETE is ordered after the upserts, so
+ * it still occupies the index when the winner's write runs). Otherwise `null`: nothing carries the
+ * flag among survivors, or the only offenders were losing upserts (already zeroed above).
+ *
+ * The winner keeps `updated_at`; the demotion re-stamps via the §7.1 trigger, so a genuine
+ * de-selection propagates by LWW and the repair reaches a fixpoint once a single row is flagged.
+ */
+function repairDefaultLocation(
+  local: SyncSnapshot,
+  localUpserts: TableRow[],
+  localDeletes: readonly Tombstone[],
+  offset: number,
+): string | null {
+  const table: SyncTable = 'locations';
+  const deleted = new Set<string>();
+  for (const d of localDeletes) if (d.tableName === table) deleted.add(d.id);
+
+  // Stored rows that physically hold the flag right now. A DELETE the merge is applying is ordered
+  // AFTER the upserts, so a to-be-deleted flagged row still occupies the index the instant the
+  // winner's write runs — it must be demoted exactly like a surviving loser.
+  const storedFlagged: string[] = [];
+  for (const row of local.tables[table] ?? []) {
+    if (num(row.is_default) === 1) storedFlagged.push(String(row.id));
+  }
+
+  // The rows that will exist after the merge: stored rows overlaid by upserts, minus deletes. A
+  // stored row's timestamp is offset-adjusted (the frame the upserts already sit in); an upsert's
+  // is taken as-is — the same footing `resolveUniqueKeyCollisions` compares on.
+  interface FinalRow {
+    readonly updatedAt: number;
+    readonly isDefault: boolean;
+    readonly upsertIndex?: number;
+  }
+  const finalById = new Map<string, FinalRow>();
+  for (const row of local.tables[table] ?? []) {
+    const id = String(row.id);
+    if (deleted.has(id)) continue;
+    finalById.set(id, {
+      updatedAt: applyOffset(num(row.updated_at), offset),
+      isDefault: num(row.is_default) === 1,
+    });
+  }
+  localUpserts.forEach((u, i) => {
+    if (u.table !== table) return;
+    const id = String(u.row.id);
+    if (deleted.has(id)) return;
+    finalById.set(id, {
+      updatedAt: num(u.row.updated_at),
+      isDefault: num(u.row.is_default) === 1,
+      upsertIndex: i,
+    });
+  });
+
+  // Surviving rows that will carry the flag after the merge — the winner is chosen among these,
+  // never a row the merge is deleting.
+  const flagged: FlagCandidate[] = [];
+  for (const [id, entry] of finalById) {
+    if (!entry.isDefault) continue;
+    flagged.push({ id, updatedAt: entry.updatedAt, upsertIndex: entry.upsertIndex });
+  }
+  if (flagged.length === 0) return null;
+
+  let winner = flagged[0]!;
+  for (const c of flagged) winner = flagWinner(winner, c);
+
+  // Zero every losing *upsert* in place so its own write no longer competes for the key.
+  for (const c of flagged) {
+    if (c.id === winner.id || c.upsertIndex === undefined) continue;
+    const u = localUpserts[c.upsertIndex]!;
+    localUpserts[c.upsertIndex] = { table, row: { ...u.row, is_default: 0 } };
+  }
+
+  // A demoting UPDATE is needed only when a *stored* DB row other than the winner still holds the
+  // flag: a surviving stored loser, or one being deleted this merge (see above). A losing upsert of
+  // a brand-new row needs none — it simply inserts already zeroed.
+  return storedFlagged.some((id) => id !== winner.id) ? winner.id : null;
 }
 
 /** Ids of a (LWW) table that survive the merge: local rows − deletes + upserts. */

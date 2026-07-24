@@ -237,6 +237,17 @@ export interface ReconciliationPlan {
   readonly collisions: readonly CollisionResolution[];
   /** Issues #157 / #192: "one flag per item" reductions to apply before the upserts (see {@link FlagRepair}). */
   readonly flagRepairs: readonly FlagRepair[];
+  /**
+   * Issue #191: the single location that keeps `is_default = 1` after the merge, or `null` when no
+   * cross-row repair is needed (0/1 default among survivors, or every offending row is a losing
+   * upsert already zeroed in place). When set, `applyPlan` runs a demoting UPDATE clearing the flag
+   * on every *other* row *before* the upserts — otherwise the winner's write would trip the partial
+   * unique index the same backstop adds at the schema level. Per-row LWW cannot see across rows, so
+   * two devices that each nominated a *different* default converge to two flagged rows; `reconcile`
+   * picks one deterministic winner (newest `updated_at`, ties broken by the smaller id so both
+   * devices agree) and clears the flag everywhere else.
+   */
+  readonly defaultLocationWinnerId: string | null;
   /** Phase 11: remote `item_history` rows missing locally (union-by-id), to INSERT. */
   readonly historyInserts: readonly SqlRow[];
   /** Phase 11: `item_tags` edges to add locally (membership union). */

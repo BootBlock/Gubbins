@@ -1502,6 +1502,17 @@ const baselineStatements: SqlStatement[] = [
   {
     sql: `ALTER TABLE locations ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1));`,
   },
+  {
+    // At most one location carries `is_default` — enforced at the schema level, not just by the
+    // app's demote-then-set writes (issue #191). Two offline devices that each nominate a
+    // *different* default converge, per-row LWW, to two rows both flagged (their demote-UPDATEs
+    // touched different siblings, so neither is seen across the merge). The sync engine's cross-row
+    // repair (`reconcile`) demotes all but one deterministic winner before the merge applies, and
+    // this partial index is the backstop that keeps any path — an app bug, a hand-written import —
+    // from re-introducing the state. `is_default` is a *global* single-default, so the index is
+    // over the flag column alone: every indexed row shares the value 1, so uniqueness admits one.
+    sql: `CREATE UNIQUE INDEX idx_locations_one_default ON locations(is_default) WHERE is_default = 1;`,
+  },
   { sql: `ALTER TABLE locations ADD COLUMN archived_at INTEGER;` },
   // --- Stock-take G1: durable "last counted" timestamp -------------------------
   { sql: `ALTER TABLE locations ADD COLUMN last_counted_at INTEGER;` },
