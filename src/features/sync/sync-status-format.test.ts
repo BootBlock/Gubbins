@@ -10,6 +10,7 @@ function makeResult(overrides: Partial<SyncResult> = {}): SyncResult {
     deleted: 0,
     reparented: 0,
     rejectedCycles: 0,
+    serialisedLoansClosed: 0,
     prunedTombstones: 0,
     clockOffset: 0,
     historyInserted: 0,
@@ -53,6 +54,18 @@ describe('describeSyncOutcome', () => {
     expect(withExtras).toContain('brought in 1 update');
     expect(withExtras).toContain('2 items moved to Unassigned');
     expect(withExtras).toContain('1 location move skipped to avoid a loop');
+  });
+
+  it('flags a serialised item closed because it was already on loan elsewhere (#193)', () => {
+    const plain = describeSyncOutcome(makeResult({ status: 'SYNCED' }));
+    expect(plain).not.toMatch(/duplicate loan/);
+
+    expect(describeSyncOutcome(makeResult({ serialisedLoansClosed: 1 }))).toContain(
+      '1 duplicate loan closed (an item was already checked out elsewhere).',
+    );
+    expect(describeSyncOutcome(makeResult({ serialisedLoansClosed: 2 }))).toContain(
+      '2 duplicate loans closed',
+    );
   });
 
   it('flags overwritten local edits for review (#72), with correct pluralisation', () => {

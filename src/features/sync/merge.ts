@@ -100,6 +100,7 @@ export interface SnapshotMergeResult {
   readonly deleted: number;
   readonly reparented: number;
   readonly rejectedCycles: number;
+  readonly serialisedLoansClosed: number;
   readonly historyInserted: number;
   readonly tagEdgesAdded: number;
   readonly tagEdgesRemoved: number;
@@ -171,6 +172,7 @@ async function reconcileAndApply(
     deleted: plan.localDeletes.length,
     reparented: plan.reparented.length,
     rejectedCycles: plan.rejectedCycles.length,
+    serialisedLoansClosed: plan.serialisedLoansClosed.length,
     historyInserted: plan.historyInserts.length,
     tagEdgesAdded: plan.itemTagUpserts.length + plan.locationTagUpserts.length,
     tagEdgesRemoved: plan.itemTagDeletes.length + plan.locationTagDeletes.length,
@@ -239,6 +241,7 @@ function emptyResult(merged: SyncSnapshot): SnapshotMergeResult {
     deleted: 0,
     reparented: 0,
     rejectedCycles: 0,
+    serialisedLoansClosed: 0,
     historyInserted: 0,
     tagEdgesAdded: 0,
     tagEdgesRemoved: 0,

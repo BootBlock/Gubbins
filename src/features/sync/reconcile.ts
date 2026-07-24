@@ -56,6 +56,7 @@ import type {
   ReconciliationPlan,
   ReparentLog,
   SchemaDictionary,
+  SerialisedLoanClosure,
   SyncConflict,
   SyncSnapshot,
   SyncTable,
@@ -92,6 +93,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   gaugeResolutions: [],
   reparented: [],
   rejectedCycles: [],
+  serialisedLoansClosed: [],
   collisions: [],
   historyInserts: [],
   itemTagUpserts: [],
@@ -166,6 +168,11 @@ export function reconcile(
   // Runs before every later phase: it can drop upserts, retire ids and repoint references,
   // all of which the FK guard, the tag-edge sections and the apply must see settled.
   const { collisions, rekeys } = resolveUniqueKeyCollisions(local, localUpserts, localDeletes, offset);
+
+  // --- Issue #193 serialised-loan cardinality -----------------------------------
+  // Collapse a serialised item that the id-keyed union left on loan more than once. Runs after
+  // collision resolution so it sees the settled (possibly contact-repointed) checkout upserts.
+  const serialisedLoansClosed = resolveSerialisedLoanConflicts(local, localUpserts, localDeletes);
 
   // --- §7.5.2 orphan re-parenting ------------------------------------------------
   const { reparented, finalItems, activeLocationIds } = reparentOrphans(local, localUpserts, localDeletes);
@@ -250,6 +257,7 @@ export function reconcile(
     gaugeResolutions,
     reparented,
     rejectedCycles,
+    serialisedLoansClosed,
     collisions,
     historyInserts,
     itemTagUpserts,
@@ -388,6 +396,96 @@ function reparentOrphans(
   }
 
   return { reparented, finalItems, activeLocationIds };
+}
+
+/**
+ * Issue #193: a SERIALISED item is a single physical instance, so it can have **at most one open
+ * checkout**. `CheckoutRepository.checkout`'s pre-flight probe enforces that on one device, but
+ * two offline devices can each pass it and INSERT a checkout with its own UUID; the id-keyed LWW
+ * union then keeps both, leaving the instance on loan to two borrowers at once. This pass
+ * collapses that: for every serialised item left with more than one open loan after the merge, it
+ * keeps exactly one and closes the rest, mutating `localUpserts` in place.
+ *
+ * The survivor is the loan **checked out first** (smallest `checked_out_at`, ties broken by the
+ * lexicographically smaller id) — the unit physically left with that borrower, so a later "loan"
+ * of the same instance could not really have happened. Both devices run this same pure rule over
+ * the same rows and pick the same survivor without reference to which side is local; `checked_out_at`
+ * is safe to compare because `shiftSnapshotTimestamps` shifts only `updated_at`, never it, so it is
+ * byte-identical on every device (the determinism `unique-keys.ts` relies on for the same reason).
+ *
+ * A loser is **closed, not deleted**: stamping `returned_at` keeps the loan in the item's history
+ * (an honest record that the instance was double-booked) and makes the derived on-loan status
+ * correct, so returning the survivor now clears the item — the symptom the issue describes. The
+ * stamp is deterministic: `returned_at` = the loser's own `checked_out_at` (a zero-duration loan,
+ * which satisfies the `returned_at >= checked_out_at` CHECK) and `updated_at` bumped by 1. That
+ * bump is frame-invariant under the linear push-shift, so both devices converge on the identical
+ * pushed row with no last-write-wins churn, and — being strictly greater than the old value — it
+ * also skips the `updated_at` self-stamp trigger so the deterministic value survives. Serialised
+ * loans never move stock (they are pinned to quantity 1), so closing one needs no stock restore.
+ */
+function resolveSerialisedLoanConflicts(
+  local: SyncSnapshot,
+  localUpserts: TableRow[],
+  localDeletes: readonly Tombstone[],
+): SerialisedLoanClosure[] {
+  // Tracking mode of every item that will exist after the merge (upserts override local rows).
+  const trackingMode = new Map<string, string>();
+  for (const row of local.tables.items ?? []) trackingMode.set(String(row.id), String(row.tracking_mode));
+  for (const u of localUpserts) {
+    if (u.table === 'items') trackingMode.set(String(u.row.id), String(u.row.tracking_mode));
+  }
+
+  // The checkout rows that survive the merge: local rows overlaid with winning upserts, minus deletes.
+  const finalCheckouts = new Map<string, SqlRow>();
+  for (const row of local.tables.checkouts ?? []) finalCheckouts.set(String(row.id), row);
+  for (const u of localUpserts) if (u.table === 'checkouts') finalCheckouts.set(String(u.row.id), u.row);
+  for (const d of localDeletes) if (d.tableName === 'checkouts') finalCheckouts.delete(d.id);
+
+  // Group the still-open loans of each serialised item.
+  const openByItem = new Map<string, SqlRow[]>();
+  for (const row of finalCheckouts.values()) {
+    if (row.returned_at !== null && row.returned_at !== undefined) continue; // already returned
+    const itemId = String(row.item_id);
+    if (trackingMode.get(itemId) !== 'SERIALISED') continue;
+    const list = openByItem.get(itemId) ?? [];
+    list.push(row);
+    openByItem.set(itemId, list);
+  }
+
+  const upsertIndex = new Map<string, number>();
+  localUpserts.forEach((u, i) => {
+    if (u.table === 'checkouts') upsertIndex.set(String(u.row.id), i);
+  });
+
+  const closures: SerialisedLoanClosure[] = [];
+  for (const [itemId, open] of openByItem) {
+    if (open.length < 2) continue; // the ordinary case — nothing to collapse
+    const winner = open.reduce(earlierLoan);
+    for (const loser of open) {
+      if (loser === winner) continue;
+      const loserId = String(loser.id);
+      // Zero-duration return + a deterministic +1 bump (see the doc comment): both devices
+      // produce the byte-identical closed row after the push-shift, so it converges churn-free.
+      const closed: SqlRow = {
+        ...loser,
+        returned_at: num(loser.checked_out_at),
+        updated_at: num(loser.updated_at) + 1,
+      };
+      const existing = upsertIndex.get(loserId);
+      if (existing !== undefined) localUpserts[existing] = { table: 'checkouts', row: closed };
+      else localUpserts.push({ table: 'checkouts', row: closed });
+      closures.push({ itemId, closedCheckoutId: loserId, keptCheckoutId: String(winner.id) });
+    }
+  }
+  return closures;
+}
+
+/** The loan checked out first (smaller `checked_out_at`, id-tiebroken) — the merge survivor. */
+function earlierLoan(a: SqlRow, b: SqlRow): SqlRow {
+  const ca = num(a.checked_out_at);
+  const cb = num(b.checked_out_at);
+  if (ca !== cb) return ca < cb ? a : b;
+  return String(a.id) < String(b.id) ? a : b;
 }
 
 /**
