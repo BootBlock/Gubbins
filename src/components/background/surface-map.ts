@@ -83,21 +83,34 @@ const EXCLUDED_ANCESTOR_SELECTOR =
 
 /**
  * A control's landable extent: its top edge between `left` and `right`, with the top corner radii
- * so the map can follow a rounded corner's arc instead of shelving flatly across it (all css px).
+ * so the map can follow a rounded corner's arc instead of shelving flatly across it, plus its
+ * bottom edge so wind-blown snow can catch on the underside lip (all css px).
  */
 export interface SurfaceRect {
   readonly left: number;
   readonly top: number;
   readonly right: number;
+  readonly bottom: number;
   /** Top-left / top-right border radius (0 = square corner). */
   readonly radiusLeft: number;
   readonly radiusRight: number;
 }
 
-/** The current map plus a change counter (bumped only when the map's content changed). */
+/** The per-column top and bottom edges of the topmost control, as parallel arrays. */
+export interface SurfaceMaps {
+  readonly tops: Int16Array;
+  readonly bots: Int16Array;
+}
+
+/** The current maps plus a change counter (bumped only when the content changed). */
 export interface SurfaceSnapshot {
   /** Per-column y of the topmost control edge, or {@link NO_SURFACE}. Swapped, never mutated. */
   readonly tops: Int16Array;
+  /**
+   * Per-column y of that same control's bottom edge, or {@link NO_SURFACE} where there is no
+   * surface or the bottom sits below the fold (an off-screen underside has nothing to show).
+   */
+  readonly bots: Int16Array;
   readonly generation: number;
 }
 
@@ -163,19 +176,21 @@ function surfaceTopAt(r: SurfaceRect, x: number): number {
 }
 
 /**
- * Fold `rects` into a per-column topmost-edge map, sampling each rect's corner-aware top profile
+ * Fold `rects` into per-column topmost-edge maps, sampling each rect's corner-aware top profile
  * at the column centre. A rect only registers if its top edge is actually inside the viewport —
- * an element scrolled partly off the top has no visible top edge to land on. Pure; the DOM never
- * enters here.
+ * an element scrolled partly off the top has no visible top edge to land on. `bots` records the
+ * winning (topmost) control's bottom edge per column — the underside lip snow can catch on —
+ * or {@link NO_SURFACE} when that bottom sits below the fold. Pure; the DOM never enters here.
  */
 export function buildSurfaceMap(
   rects: readonly SurfaceRect[],
   viewportWidth: number,
   viewportHeight: number,
   columnWidth: number = COLUMN_WIDTH,
-): Int16Array {
+): SurfaceMaps {
   const cols = Math.max(1, Math.ceil(viewportWidth / columnWidth));
   const tops = new Int16Array(cols).fill(NO_SURFACE);
+  const bots = new Int16Array(cols).fill(NO_SURFACE);
   for (const r of rects) {
     if (r.top < 0 || r.top >= viewportHeight) continue;
     if (r.right <= 0 || r.left >= viewportWidth) continue;
@@ -188,10 +203,14 @@ export function buildSurfaceMap(
       // A corner arc can dip below the fold even when the flat top is above it — keep the old
       // guarantee that every recorded top is on-screen.
       if (top >= viewportHeight) continue;
-      if (top < (tops[c] ?? NO_SURFACE)) tops[c] = top;
+      if (top < (tops[c] ?? NO_SURFACE)) {
+        tops[c] = top;
+        const bottom = Math.round(r.bottom);
+        bots[c] = bottom < viewportHeight ? bottom : NO_SURFACE;
+      }
     }
   }
-  return tops;
+  return { tops, bots };
 }
 
 /**
@@ -292,8 +311,10 @@ function collectControlRects(
     if (typeof el.checkVisibility === 'function' && !el.checkVisibility()) continue;
     const r = el.getBoundingClientRect();
     if (r.width < MIN_SURFACE_WIDTH || r.height < MIN_SURFACE_HEIGHT) continue;
-    // Undo the hover lift for the hovered control so the map holds its resting position.
-    const top = el === hovered ? r.top - transformOffsetY(el) : r.top;
+    // Undo the hover lift for the hovered control so the map holds its resting position (the
+    // bottom edge shifts with the same lift, so it gets the same correction).
+    const lift = el === hovered ? transformOffsetY(el) : 0;
+    const top = r.top - lift;
     if (top < 0 || top >= viewportHeight || r.right <= 0 || r.left >= viewportWidth) continue;
     // Top corner radii, so the map can follow rounded corners. The raw longhands are cached per
     // element (style resolution is the scan's expensive part); the CSS overflow scaling runs per
@@ -301,7 +322,7 @@ function collectControlRects(
     // read sits in the same write-free batch as the rect — one layout pass.
     const [rawTL, rawTR, rawBL, rawBR] = rawTopRadii(el);
     const [radiusLeft, radiusRight] = resolveTopRadii(rawTL, rawTR, rawBL, rawBR, r.width, r.height);
-    rects.push({ left: r.left, top, right: r.right, radiusLeft, radiusRight });
+    rects.push({ left: r.left, top, right: r.right, bottom: r.bottom - lift, radiusLeft, radiusRight });
   }
   return rects;
 }
@@ -324,7 +345,11 @@ export function trackSurfaces(): SurfaceTracker {
   const root: ParentNode = document.getElementById('root') ?? document.body;
   // One mutable snapshot, updated in place on change — the engine polls it every frame, so
   // handing out a stable object keeps the frame loop allocation-free.
-  const snap = { tops: new Int16Array(0) as Int16Array, generation: 0 };
+  const snap = {
+    tops: new Int16Array(0) as Int16Array,
+    bots: new Int16Array(0) as Int16Array,
+    generation: 0,
+  };
   let timer: ReturnType<typeof setTimeout> | 0 = 0;
   let firstRequestAt = 0;
   let stopped = false;
@@ -357,8 +382,9 @@ export function trackSurfaces(): SurfaceTracker {
     const w = typeof innerWidth === 'number' ? innerWidth : 0;
     const h = typeof innerHeight === 'number' ? innerHeight : 0;
     const next = buildSurfaceMap(collectControlRects(root, w, h, hoverEl), w, h);
-    if (!mapsEqual(next, snap.tops)) {
-      snap.tops = next;
+    if (!mapsEqual(next.tops, snap.tops) || !mapsEqual(next.bots, snap.bots)) {
+      snap.tops = next.tops;
+      snap.bots = next.bots;
       snap.generation++;
     }
   }

@@ -599,12 +599,14 @@ const SETTLE = {
      */
     slopeMax: 1.2,
     /**
-     * Wind-plaster (issue #455 follow-up): in a blizzard the snow travels near-horizontally,
-     * so it stops landing on tops and starts hitting the *windward faces* of controls — the way
-     * driven snow plasters the windward side of poles and walls. A strongly wind-driven near
-     * flake ({@link minLean} — |vx| ≥ that multiple of vy, which only storms produce) that flies
-     * into a vertical face sticks: a per-face depth builds and renders as a tapered strip of
-     * plaster hugging the face, thickest at the top corner where it meets the top mound.
+     * Wind-plaster (issue #455 follow-up): snow flying into the *vertical face* of a control may
+     * stick — the way driven snow plasters the windward side of poles and walls. Sticking is a
+     * *chance*, not a gate: the probability rises with how hard the flake presses into the face
+     * (its lean, |vx|/|vy| — a storm's near-horizontal flight makes sticking certain, a calm
+     * drift's gentle brush only occasionally takes) and wet warm-spell snow is stickier
+     * ({@link warmStick}). A stuck flake builds a per-face depth rendered as a tapered strip of
+     * plaster hugging the face, thickest at the top corner where it meets the top mound; a
+     * failed roll lets the flake carry on behind the control.
      */
     side: {
       /** Plaster depth added per face hit (css px), and its cap. */
@@ -618,10 +620,34 @@ const SETTLE = {
        * unknown; a known lower neighbouring surface bounds it tighter.
        */
       maxLen: 30,
-      /** Only flakes leaning at least this many times their fall speed plaster faces. */
-      minLean: 2,
+      /** Stick chance for the gentlest brush (lean → 0)… */
+      stickBase: 0.12,
+      /** …rising to certainty at this lean (near-horizontal storm flight). */
+      stickFullLean: 2,
+      /** Multiplier headroom a full warm spell adds — wet snow is sticky snow. */
+      warmStick: 1.5,
       /** Plaster opacity by depth (thin → deep), like the mounds' fill. */
       alpha: [0.3, 0.85] as const,
+    },
+    /**
+     * Underside catch (issue #455 follow-up): a flake drifting out below a control's bottom edge
+     * has a small chance of catching on the lip — dry snow mostly falls on past, wet warm-spell
+     * snow clings ({@link warmBoost}) — building a shallow hanging fringe under the control.
+     * Bottom edges come from the surface map's {@link import('./surface-map').SurfaceSnapshot.bots}.
+     */
+    under: {
+      /** Base catch chance per emergence below a lip… */
+      chance: 0.12,
+      /** …times (1 + this × warm envelope): wet snow clings under eaves. */
+      warmBoost: 2.5,
+      /** Fringe depth added per catch (css px), spread over the neighbour columns, and its cap. */
+      deposit: 0.9,
+      kernel: [1, 0.45] as const,
+      maxDepth: 4.5,
+      /** Depth below which a column's fringe isn't worth drawing (css px). */
+      minVisibleDepth: 0.5,
+      /** Fringe opacity by depth (thin → deep) — a touch dimmer than the lit top drifts. */
+      alpha: [0.22, 0.7] as const,
     },
   },
   rain: {
@@ -781,6 +807,29 @@ function lerp(a: number, b: number, t: number): number {
 /** Clamp `v` into [min, max]. */
 function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
+}
+
+/**
+ * Chance a snow flake sticks to a vertical control face it has flown into. `lean` is |vx|/|vy|
+ * (how hard the flake presses into the face) and `warm` the warm-snow envelope [0, 1]. Grounded
+ * in how snow actually behaves: dry drifting snow mostly brushes off a wall (a small floor
+ * chance), wind-pressed snow plasters on (certain at storm lean), and wet near-0°C snow is
+ * sticky everywhere. Pure and exported for unit tests.
+ */
+export function snowSideStickChance(lean: number, warm: number): number {
+  const s = SETTLE.snow.side;
+  const press = smooth01(lean / s.stickFullLean);
+  return clamp((s.stickBase + (1 - s.stickBase) * press) * (1 + s.warmStick * warm), 0, 1);
+}
+
+/**
+ * Chance a snow flake drifting out below a control's bottom edge catches on the underside lip.
+ * Flat and small — undersides collect far less than tops — but wet warm-spell snow clings.
+ * Pure and exported for unit tests.
+ */
+export function snowUnderCatchChance(warm: number): number {
+  const u = SETTLE.snow.under;
+  return clamp(u.chance * (1 + u.warmBoost * warm), 0, 1);
 }
 
 /** Resolve a CSS custom property on `<html>` to its computed value, with a fallback. */
@@ -1248,6 +1297,10 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
    * column c, [c·2 + 1] its right face. Reset alongside {@link depths} whenever the layout moves.
    */
   let sideDepths = new Float32Array(0);
+  /** The adopted bottom-edge map (parallel to {@link surfTops}) — the underside lips. */
+  let surfBots: Int16Array = new Int16Array(0);
+  /** Under-fringe depth per column (css px) — snow caught hanging below a control's lip. */
+  let underDepths = new Float32Array(0);
   /** Whether the last mound render actually drew anything (skips the per-frame blit when not). */
   let moundVisible = false;
   /** The mound layer needs re-rendering (a flake landed, the layout moved, or the theme changed). */
@@ -1625,8 +1678,10 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       // tracker's debounce window — the brief spell where landings test pre-reflow geometry is
       // self-healing (the rebuild's reconcile knocks any misplaced snow straight off).
       surfTops = new Int16Array(0);
+      surfBots = new Int16Array(0);
       depths = new Float32Array(0);
       sideDepths = new Float32Array(0);
+      underDepths = new Float32Array(0);
       surfGen = -1;
       moundVisible = false;
       moundDirty = false;
@@ -1643,19 +1698,33 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
    */
   function reconcileSurfaces(snap: SurfaceSnapshot): void {
     const next = snap.tops;
+    const nextBots = snap.bots;
     const prev = surfTops;
+    const prevBots = surfBots;
     if (depths.length !== next.length) depths = new Float32Array(next.length);
     if (sideDepths.length !== next.length * 2) sideDepths = new Float32Array(next.length * 2);
+    if (underDepths.length !== next.length) underDepths = new Float32Array(next.length);
     for (let c = 0; c < next.length; c++) {
       const before = c < prev.length ? (prev[c] ?? NO_SURFACE) : NO_SURFACE;
-      if (Math.abs((next[c] ?? NO_SURFACE) - before) > SETTLE.moveTolerance) {
+      const beforeBot = c < prevBots.length ? (prevBots[c] ?? NO_SURFACE) : NO_SURFACE;
+      const topMoved = Math.abs((next[c] ?? NO_SURFACE) - before) > SETTLE.moveTolerance;
+      const botMoved = Math.abs((nextBots[c] ?? NO_SURFACE) - beforeBot) > SETTLE.moveTolerance;
+      if (topMoved) {
+        // The control moved: everything clinging to it — top drift, face plaster, under-fringe —
+        // is knocked off together.
         depths[c] = 0;
-        // The control moved: its face plaster is knocked off with its top drift.
         sideDepths[c * 2] = 0;
         sideDepths[c * 2 + 1] = 0;
+        underDepths[c] = 0;
+      } else if (botMoved) {
+        // Only the bottom edge moved (content reflow below a stable roof — a list growing, a
+        // widget updating): the lip's fringe is shaken off, but the roof drift and the face
+        // plaster hanging from the unmoved top corner survive.
+        underDepths[c] = 0;
       }
     }
     surfTops = next;
+    surfBots = nextBots;
     surfGen = snap.generation;
     // Splashes are absolutely positioned: one whose surface moved would hang mid-air, so expire
     // it (splashes on unmoved surfaces play out normally).
@@ -1684,6 +1753,12 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   }
   function depthAt(c: number): number {
     return depths[c] ?? 0;
+  }
+  function botAt(c: number): number {
+    return surfBots[c] ?? NO_SURFACE;
+  }
+  function underDepthAt(c: number): number {
+    return underDepths[c] ?? 0;
   }
 
   /**
@@ -1780,19 +1855,19 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   }
 
   /**
-   * Wind-plaster (issue #455 follow-up): a strongly wind-driven near flake that flies into the
-   * vertical face of a control sticks to it. The map only stores top edges, but a face is
-   * implied wherever a flake crosses into a column whose surface top is *above* it having been
-   * in open air the column before — sweeping the columns crossed this frame (storm winds cover
-   * a few per step) finds the first such face in the direction of travel. Deposits build the
-   * per-face plaster field; the flake is consumed. Returns whether the flake was consumed.
+   * Wind-plaster (issue #455 follow-up): a near flake that flies into the vertical face of a
+   * control *may* stick to it — certain when wind-pressed near-horizontal (a storm), only
+   * occasional for a calm drift's gentle brush, stickier during warm spells; the roll lives in
+   * {@link snowSideStickChance}. The map only stores top edges, but a face is implied wherever
+   * a flake crosses into a column whose surface top is *above* it having been in open air the
+   * column before — sweeping the columns crossed this frame (storm winds cover a few per step)
+   * finds the first such face in the direction of travel. A stuck flake deposits into the
+   * per-face plaster field and is consumed; a failed roll lets it carry on behind the control.
+   * Returns whether the flake was consumed.
    */
   function trySide(p: Particle, prevX: number): boolean {
     const s = SETTLE.snow.side;
     if (p.z < SETTLE.snow.minZ || p.z > 1) return false;
-    const ay = Math.abs(p.vy);
-    // Only near-horizontal flight plasters faces — ordinary falling snow lands on tops instead.
-    if (Math.abs(p.vx) < s.minLean * (ay < 1 ? 1 : ay)) return false;
     const c0 = Math.floor(prevX / COLUMN_WIDTH);
     const c1 = Math.floor(p.x / COLUMN_WIDTH);
     if (c0 === c1) return false;
@@ -1810,6 +1885,12 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       // was already below the previous column's surface and no new face was crossed.
       const prevTop = c - step >= 0 && c - step < surfTops.length ? topAt(c - step) : NO_SURFACE;
       if (prevTop !== NO_SURFACE && prevTop - top <= SNOW_CLIFF_STEP) continue;
+      // The flake has hit this face — does it stick? Press = its lean into the face. A failed
+      // roll brushes it off *this* face but the sweep continues: a fast flake that crossed two
+      // faces this frame still gets its roll at the second one.
+      const ay = Math.abs(p.vy);
+      const lean = Math.abs(p.vx) / (ay < 1 ? 1 : ay);
+      if (Math.random() >= snowSideStickChance(lean, frameWarm)) continue;
       const idx = c * 2 + (step > 0 ? 0 : 1); // travelling right hits a left face, and vice versa
       // A saturated face swallows the flake without re-dirtying the render cache — otherwise a
       // storm's steady face hits would keep the throttled mound render churning for nothing.
@@ -1823,6 +1904,41 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       return true;
     }
     return false;
+  }
+
+  /**
+   * Underside catch (issue #455 follow-up): a near flake drifting out below a control's bottom
+   * edge — one that slid behind after failing to stick to a face, or spawned back there — has a
+   * small chance ({@link snowUnderCatchChance}; wet warm-spell snow clings hardest) of catching
+   * on the lip as it emerges, building a shallow hanging fringe. Returns whether it caught.
+   */
+  function tryUnder(p: Particle, prevY: number): boolean {
+    const u = SETTLE.snow.under;
+    if (p.z < SETTLE.snow.minZ || p.z > 1) return false;
+    const c = surfaceCol(p.x);
+    if (c < 0) return false;
+    const bot = botAt(c);
+    if (bot === NO_SURFACE) return false;
+    const line = bot + underDepthAt(c);
+    if (prevY >= line || p.y < line) return false; // didn't cross the lip line downward
+    if (Math.random() >= snowUnderCatchChance(frameWarm)) return false; // falls on past
+    const reach = u.kernel.length - 1;
+    let changed = false;
+    for (let o = -reach; o <= reach; o++) {
+      const cc = c + o;
+      if (cc < 0 || cc >= surfBots.length) continue;
+      // Spread only along the same lip (per-distance join allowance, like the top mounds).
+      if (Math.abs(botAt(cc) - bot) > SNOW_JOIN_STEP * Math.max(1, Math.abs(o))) continue;
+      const d = underDepthAt(cc) + u.deposit * (u.kernel[Math.abs(o)] ?? 0);
+      const capped = d > u.maxDepth ? u.maxDepth : d;
+      if (capped !== underDepthAt(cc)) {
+        underDepths[cc] = capped;
+        changed = true;
+      }
+    }
+    if (changed) moundDirty = true;
+    spawn(p, false);
+    return true;
   }
 
   /** Start a splash at a free pool slot (skipped when the pool is saturated — it's decorative). */
@@ -1878,6 +1994,61 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       drawSideStrip(f, 0);
       drawSideStrip(f, 1);
     }
+    // Hanging under-fringes along controls' bottom lips, in runs like the top mounds.
+    let uf = 0;
+    while (uf < n) {
+      if (botAt(uf) === NO_SURFACE || underDepthAt(uf) < SETTLE.snow.under.minVisibleDepth) {
+        uf++;
+        continue;
+      }
+      let end = uf;
+      while (
+        end + 1 < n &&
+        botAt(end + 1) !== NO_SURFACE &&
+        underDepthAt(end + 1) >= SETTLE.snow.under.minVisibleDepth &&
+        Math.abs(botAt(end + 1) - botAt(end)) <= SNOW_JOIN_STEP
+      ) {
+        end++;
+      }
+      moundVisible = true;
+      if (moundCtx) drawUnderRun(uf, end);
+      uf = end + 1;
+    }
+  }
+
+  /** y of a column's fringe dip: the bottom lip plus the caught depth hanging below it. */
+  function underY(c: number): number {
+    return botAt(c) + underDepthAt(c);
+  }
+
+  /**
+   * Fill one contiguous under-fringe: along the bottom lip, back along the midpoint-smoothed dip
+   * line. The fringe is shallow (capped at a few px), so one run-averaged opacity is enough — no
+   * per-column gradient stops.
+   */
+  function drawUnderRun(c0: number, c1: number): void {
+    const g = moundCtx!;
+    const u = SETTLE.snow.under;
+    let sum = 0;
+    for (let c = c0; c <= c1; c++) sum += underDepthAt(c);
+    const ramp = Math.sqrt(clamp(sum / (c1 - c0 + 1) / u.maxDepth, 0, 1));
+    g.beginPath();
+    // Hug each column's actual lip on the way out (a joined run may step within the join
+    // tolerance — a straight chord would float off the shorter control and paint onto the
+    // taller one), then return along the smoothed dip line.
+    g.moveTo(c0 * COLUMN_WIDTH, botAt(c0));
+    for (let c = c0; c <= c1; c++) g.lineTo(crestX(c), botAt(c));
+    g.lineTo((c1 + 1) * COLUMN_WIDTH, botAt(c1));
+    g.lineTo(crestX(c1), underY(c1));
+    for (let c = c1; c > c0; c--) {
+      const mx = (crestX(c) + crestX(c - 1)) / 2;
+      const my = (underY(c) + underY(c - 1)) / 2;
+      g.quadraticCurveTo(crestX(c), underY(c), mx, my);
+    }
+    g.lineTo(crestX(c0), underY(c0));
+    g.closePath();
+    g.fillStyle = colorWithAlpha(overlayColor, lerp(u.alpha[0], u.alpha[1], ramp));
+    g.fill();
   }
 
   /**
@@ -2198,8 +2369,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     const prevX = p.x;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    // Wind-plastered faces first (only near-horizontal storm flight qualifies), then top landings.
-    if (interact && !trySide(p, prevX)) tryLand(p, prevY);
+    // Face hits first (a chance to stick, certain in storm flight), then underside lips, then
+    // ordinary top landings.
+    if (interact && !trySide(p, prevX) && !tryUnder(p, prevY)) tryLand(p, prevY);
   }
 
   /** Advance one diamond-dust mote: near-suspended drift, barely touched by the wind. */

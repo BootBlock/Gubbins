@@ -26,14 +26,14 @@ function mockRect(el: Element, left: number, top: number, width: number, height:
   } as DOMRect);
 }
 
-/** A square-cornered rect literal (the common case in these tests). */
-function rect(left: number, top: number, right: number) {
-  return { left, top, right, radiusLeft: 0, radiusRight: 0 };
+/** A square-cornered rect literal (the common case in these tests); 40px tall by default. */
+function rect(left: number, top: number, right: number, bottom: number = top + 40) {
+  return { left, top, right, bottom, radiusLeft: 0, radiusRight: 0 };
 }
 
 describe('buildSurfaceMap', () => {
   it('records the topmost control edge per column (whatever is under cover stays clear)', () => {
-    const tops = buildSurfaceMap([rect(0, 100, 40), rect(20, 50, 60)], 80, 600, 4);
+    const { tops, bots } = buildSurfaceMap([rect(0, 100, 40), rect(20, 50, 60)], 80, 600, 4);
     expect(tops.length).toBe(20);
     // Columns only the first rect covers keep its top…
     expect(tops[0]).toBe(100);
@@ -47,10 +47,15 @@ describe('buildSurfaceMap', () => {
     // …and uncovered columns have no surface at all.
     expect(tops[15]).toBe(NO_SURFACE);
     expect(tops[19]).toBe(NO_SURFACE);
+    // The bottoms track the same winning control per column.
+    expect(bots[0]).toBe(140);
+    expect(bots[5]).toBe(90);
+    expect(bots[14]).toBe(90);
+    expect(bots[15]).toBe(NO_SURFACE);
   });
 
   it('ignores rects whose top edge is outside the viewport', () => {
-    const tops = buildSurfaceMap(
+    const { tops } = buildSurfaceMap(
       [
         rect(0, -5, 40), // scrolled off the top — no visible edge to land on
         rect(0, 700, 40), // below the fold
@@ -64,16 +69,22 @@ describe('buildSurfaceMap', () => {
     expect(Array.from(tops).every((t) => t === NO_SURFACE)).toBe(true);
   });
 
+  it('records no underside for a control whose bottom sits below the fold', () => {
+    const { tops, bots } = buildSurfaceMap([rect(0, 100, 40, 700)], 80, 600, 4);
+    expect(tops[0]).toBe(100); // the top is landable…
+    expect(bots[0]).toBe(NO_SURFACE); // …but there is no visible underside to catch on
+  });
+
   it('clamps partially off-screen rects to the viewport columns', () => {
-    const tops = buildSurfaceMap([rect(-20, 30, 1000)], 80, 600, 4);
+    const { tops } = buildSurfaceMap([rect(-20, 30, 1000)], 80, 600, 4);
     expect(tops[0]).toBe(30);
     expect(tops[19]).toBe(30);
   });
 
   it('follows rounded top corners down their arc instead of shelving flatly across them', () => {
     // A 16px-radius card corner: the surface the map reports must drop toward the card's edge.
-    const tops = buildSurfaceMap(
-      [{ left: 0, top: 100, right: 80, radiusLeft: 16, radiusRight: 16 }],
+    const { tops } = buildSurfaceMap(
+      [{ left: 0, top: 100, right: 80, bottom: 180, radiusLeft: 16, radiusRight: 16 }],
       80,
       600,
       4,
@@ -157,6 +168,7 @@ describe('trackSurfaces', () => {
     expect(snap.tops.length).toBe(Math.ceil(innerWidth / COLUMN_WIDTH));
     expect(snap.tops[Math.floor(10 / COLUMN_WIDTH)]).toBe(40);
     expect(snap.tops[Math.floor(89 / COLUMN_WIDTH)]).toBe(40);
+    expect(snap.bots[Math.floor(10 / COLUMN_WIDTH)]).toBe(70); // the same control's underside
     expect(snap.tops[Math.floor(200 / COLUMN_WIDTH)]).toBe(NO_SURFACE);
     expect(snap.tops[Math.floor(300 / COLUMN_WIDTH)]).toBe(NO_SURFACE);
     expect(snap.tops[Math.floor(450 / COLUMN_WIDTH)]).toBe(60);
