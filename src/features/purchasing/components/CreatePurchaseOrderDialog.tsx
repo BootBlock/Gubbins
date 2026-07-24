@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { Button, CurrencyField, FormField, Input, Modal } from '@/components/foundry';
+import { Button, CurrencyAutocompleteField, FormField, Input, Modal } from '@/components/foundry';
 import type { CreatePurchaseOrderInput } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { EMPTY_SUPPLIER_VALUE, SupplierPicker, supplierRefFrom } from '@/features/suppliers';
@@ -85,12 +85,12 @@ export function CreatePurchaseOrderDialog({
               data-testid="po-reference"
             />
           </FormField>
-          <CurrencyField
+          <CurrencyAutocompleteField
             label="Currency"
-            hint="Leave it on **Use base currency** to fall back to your base currency; a chosen currency is stored for fidelity only, never converted."
+            hint="Pick one from the list, or type its three-letter ISO 4217 code (e.g. **USD**). Leave it blank to use your base currency; a chosen currency is stored for fidelity only, never converted."
             value={currency}
             onChange={setCurrency}
-            allowNone
+            placeholder="Use base currency"
           />
         </div>
 

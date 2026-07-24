@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Button, CurrencyField, FormField, Input, Modal, Textarea } from '@/components/foundry';
+import { Button, CurrencyAutocompleteField, FormField, Input, Modal, Textarea } from '@/components/foundry';
 import { DeleteIcon } from '@/components/icons';
 import type { SupplierWithCounts } from '@/db/repositories';
 import { useT } from '@/features/i18n';
@@ -157,13 +157,12 @@ export function SupplierFormDialog({
           />
         </FormField>
 
-        <CurrencyField
+        <CurrencyAutocompleteField
           label={t('suppliers.form.currency')}
           hint={t('suppliers.form.currency.hint')}
           value={currency}
           onChange={setCurrency}
-          allowNone
-          noneLabel={t('suppliers.form.currency.useBase')}
+          placeholder={t('suppliers.form.currency.placeholder')}
           data-testid="supplier-currency"
         />
 
