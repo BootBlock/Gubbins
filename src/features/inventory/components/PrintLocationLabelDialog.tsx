@@ -22,19 +22,6 @@ import { LabelSizeControls } from './LabelSizeControls';
 
 const COPY_OPTIONS = [1, 2, 4, 6, 8, 12, 24];
 
-/** Rich-Markdown help for the **Code** (symbology) picker. */
-const CODE_HINT = [
-  'The machine-readable code printed on the label.',
-  '',
-  '- **QR** — a 2-D square encoding a **deep-link to this location**, so scanning it jumps',
-  '  straight to the bin/shelf in Gubbins. The fastest to scan with a **phone camera**, the',
-  '  most forgiving of small print sizes, and the usual choice.',
-  '- **Barcode (Code 128)** — a 1-D barcode carrying the **location name** for a',
-  '  **laser/linear barcode scanner**; suits existing warehouse-style hardware, but needs',
-  '  far more width. A name too long for the label falls back to a short code.',
-  '- **QR + barcode** prints both, for a location read by either kind of scanner.',
-].join('\n');
-
 /** Rich-Markdown help for the **Copies** picker. */
 const COPIES_HINT = [
   'How many **identical copies** of this one location label to print.',
@@ -200,7 +187,7 @@ export function PrintLocationLabelDialog({
 
           <CompactSelect
             label="Code"
-            hint={CODE_HINT}
+            hint={t('inventory.labels.codeHintLocation')}
             value={symbology}
             onChange={(value) => setSymbology(value as LabelSymbology)}
             data-testid="loc-label-symbology"

@@ -138,7 +138,7 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     fireEvent.blur(width);
 
     expect(screen.getByTestId('labels-barcode-too-narrow')).toBeTruthy();
-    // The "too narrow" warning stands alone — no barcode prints, shortened or otherwise.
+    // Nothing was merely shortened — no label on this sheet can carry a barcode at all.
     expect(screen.queryByTestId('labels-barcode-shortened')).toBeNull();
     screen.getAllByTestId('label-cell').forEach((cell) => {
       expect(cell.querySelector('svg')).toBeNull();

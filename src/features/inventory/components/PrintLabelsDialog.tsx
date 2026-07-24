@@ -82,9 +82,11 @@ export function PrintLabelsDialog({
   const qrTooLong = templateHasQr(template) && cells.length > 0 && cells.every((c) => c.qrSvg === null);
   // Code 128 needs a minimum bar width to scan, so a label this narrow can't carry one at
   // all — and an MPN too long for the space falls back to a short item code (issue #331).
-  // Say which, rather than silently printing a different code or none.
+  // Say which, rather than silently printing a different code or none. A sheet can be in
+  // both states at once (symbol width depends on the value, not just the label), so the two
+  // are independent rather than exclusive.
   const barcodeTooNarrow = cells.some((c) => c.barcodeFit === 'unprintable');
-  const barcodeShortened = !barcodeTooNarrow && cells.some((c) => c.barcodeFit === 'shortened');
+  const barcodeShortened = cells.some((c) => c.barcodeFit === 'shortened');
   const dirty = useMemo(
     () => JSON.stringify(template) !== JSON.stringify(normaliseLabelTemplate(storedTemplate)),
     [template, storedTemplate],
