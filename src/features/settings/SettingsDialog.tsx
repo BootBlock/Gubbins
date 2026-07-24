@@ -89,6 +89,7 @@ import {
 } from './theme-registry';
 import { WEIGHT_UNIT_OPTIONS } from '@/lib/weight';
 import { DIMENSION_UNIT_OPTIONS } from '@/lib/dimensions';
+import { VOLUME_UNIT_OPTIONS } from '@/lib/volume';
 
 /** Animation-level choices for the Appearance `Select`, liveliest → calmest (registry order). */
 const ANIMATION_LEVEL_OPTIONS = ANIMATION_LEVELS.map((l) => ({ value: l.id, label: l.label }));
@@ -490,6 +491,30 @@ export default function SettingsDialog({
                 prefs.setDimensionUnit(value as (typeof DIMENSION_UNIT_OPTIONS)[number]['value'])
               }
               options={DIMENSION_UNIT_OPTIONS.map((u) => ({ value: u.value, label: u.label }))}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Volume unit"
+            description="The unit a location's internal volume is shown in."
+            hint={
+              'The unit a **location**’s derived internal **volume** is shown in (issue #457). ' +
+              'A location’s width, height and depth give its volume; this chooses how that ' +
+              'volume reads. **Automatic** matches your dimension unit — litres or cubic metres ' +
+              'for metric, cubic feet or inches for imperial — and picks a readable scale for ' +
+              'each value, so a drawer shows in litres and a whole bay in cubic metres. Pick a ' +
+              'fixed unit to pin it. Volumes are stored independently, so changing this only ' +
+              're-displays them.'
+            }
+          >
+            <Select
+              aria-label="Volume unit"
+              data-testid="setting-volume-unit"
+              className="h-9 w-56"
+              value={prefs.volumeUnit}
+              onChange={(value) =>
+                prefs.setVolumeUnit(value as (typeof VOLUME_UNIT_OPTIONS)[number]['value'])
+              }
+              options={VOLUME_UNIT_OPTIONS.map((u) => ({ value: u.value, label: u.label }))}
             />
           </SettingRow>
           <SettingRow

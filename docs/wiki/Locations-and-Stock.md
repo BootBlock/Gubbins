@@ -121,6 +121,29 @@ The full behaviour, including what happens when you withdraw an offer, is covere
 A location can be given a **capacity**, after which Gubbins shows a fullness gauge — handy for
 knowing when a shelf or bin is running out of room before you over-fill it.
 
+## Dimensions & space
+
+Alongside a count-based capacity, a location can record its **internal size** — the usable
+width, height and depth inside it. Enter all three when you add or edit a location and Gubbins
+works out the **volume** for you, shown right below the fields.
+
+![The Dimensions fields on a location's Edit dialog — width, height and depth in millimetres with a derived volume of about 30 litres shown underneath](images/location-dimensions.png)
+
+Sizes are entered and shown in your chosen **dimension unit** (change it in **Settings →
+Measurements**), and the volume in your **volume unit** — left on **Automatic**, that picks a
+readable scale for you, so a drawer reads in litres and a whole storage bay in cubic metres.
+Measurements are optional: leave them blank for anything you don't measure, and the location
+behaves exactly as before.
+
+> **ℹ️ Note**
+> The width, height and depth are the **inside** of the container — the space you can actually
+> fill — not its outside footprint. Measuring the interior is what makes the volume honest.
+
+> **💡 Tip**
+> The unit is only how the size is *shown* — the measurement itself is stored independently, so
+> switching between millimetres, inches or metres in **Settings** simply re-displays the same
+> size. Nothing is converted or lost.
+
 ## Watching a location for dead stock
 
 A location can be set to report everything stored in it as **dead stock** once it goes unused —

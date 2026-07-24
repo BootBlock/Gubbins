@@ -42,8 +42,8 @@ describe('CreateLocationDialog', () => {
 
   it('gives every field an information badge', () => {
     renderDialog();
-    // Name, Parent, Description, Type, Colour, Capacity, Default.
-    expect(screen.getAllByLabelText('More information')).toHaveLength(7);
+    // Name, Parent, Description, Type, Colour, Capacity, Dimensions, Default.
+    expect(screen.getAllByLabelText('More information')).toHaveLength(8);
   });
 
   it('submits the richer metadata', () => {
@@ -61,6 +61,32 @@ describe('CreateLocationDialog', () => {
       capacity: 20,
       isDefault: true,
     });
+  });
+
+  it('shows a derived-volume preview and stores the dimensions in canonical mm', () => {
+    renderDialog();
+    // The default dimension unit is mm, so the entered numbers are stored verbatim.
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Drawer' } });
+    expect(screen.queryByTestId('location-volume-preview')).toBeNull();
+    fireEvent.change(screen.getByTestId('location-width'), { target: { value: '300' } });
+    fireEvent.change(screen.getByTestId('location-height'), { target: { value: '200' } });
+    // Only complete once all three are present.
+    expect(screen.queryByTestId('location-volume-preview')).toBeNull();
+    fireEvent.change(screen.getByTestId('location-depth'), { target: { value: '150' } });
+
+    // 300 × 200 × 150 mm = 9,000,000 mm³ = 9 L (auto volume unit for a metric drawer).
+    expect(screen.getByTestId('location-volume-preview').textContent).toContain('9 L');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(spies.create.mock.calls[0][0]).toMatchObject({ width: 300, height: 200, depth: 150 });
+  });
+
+  it('blocks Create on a negative dimension rather than silently clearing it', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Bad' } });
+    fireEvent.change(screen.getByTestId('location-width'), { target: { value: '-5' } });
+    expect(screen.getByText('Must be 0 or more.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('passes a slash-separated path through verbatim so the repo splits it', () => {

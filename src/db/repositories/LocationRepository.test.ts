@@ -140,6 +140,90 @@ describe('LocationRepository', () => {
     });
   });
 
+  describe('volumetric dimension fields (issue #457)', () => {
+    it('defaults every dimension/volume field to null', async () => {
+      const loc = await locations.create({ name: 'Shelf' });
+      expect(loc.width).toBeNull();
+      expect(loc.height).toBeNull();
+      expect(loc.depth).toBeNull();
+      expect(loc.usableVolume).toBeNull();
+      expect(loc.packingFactor).toBeNull();
+    });
+
+    it('round-trips canonical-mm dimensions through create and getById', async () => {
+      const loc = await locations.create({ name: 'Drawer', width: 300, height: 200, depth: 150.5 });
+      expect(loc).toMatchObject({ width: 300, height: 200, depth: 150.5 });
+      const reread = await locations.getById(loc.id);
+      expect(reread).toMatchObject({ width: 300, height: 200, depth: 150.5 });
+    });
+
+    it('keeps REAL dimensions unrounded, unlike the integer capacity', async () => {
+      const loc = await locations.create({ name: 'Bin', width: 12.7, height: 12.7, depth: 12.7 });
+      // A dimension is a real measurement (mm), so it is NOT floored the way capacity is.
+      expect(loc.width).toBe(12.7);
+    });
+
+    it('coerces a blank/negative/non-finite dimension to null', async () => {
+      const loc = await locations.create({
+        name: 'Odd',
+        width: -5,
+        height: Number.NaN,
+        depth: Number.POSITIVE_INFINITY,
+      });
+      expect(loc.width).toBeNull();
+      expect(loc.height).toBeNull();
+      expect(loc.depth).toBeNull();
+    });
+
+    it('updates dimensions and clears them back to null', async () => {
+      const loc = await locations.create({ name: 'Box', width: 100, height: 100, depth: 100 });
+      const saved = await locations.update(loc.id, { width: 250, height: null });
+      expect(saved.width).toBe(250);
+      expect(saved.height).toBeNull();
+      expect(saved.depth).toBe(100); // untouched
+    });
+
+    it('returns the fields from the list read that feeds the location tree', async () => {
+      const loc = await locations.create({ name: 'Crate', width: 400, height: 300, depth: 300 });
+      const listed = (await locations.list()).rows.find((l) => l.id === loc.id);
+      expect(listed).toMatchObject({ width: 400, height: 300, depth: 300 });
+    });
+
+    it('round-trips a usable-volume override and clamps a packing factor to (0,1]', async () => {
+      // The entry UI for these two arrives in Phase 2, but the repository path exists now.
+      const loc = await locations.create({
+        name: 'Bag',
+        usableVolume: 5_000_000,
+        packingFactor: 0.7,
+      });
+      expect(loc.usableVolume).toBe(5_000_000);
+      expect(loc.packingFactor).toBe(0.7);
+
+      const overOne = await locations.update(loc.id, { packingFactor: 1.5 });
+      expect(overOne.packingFactor).toBeNull(); // > 1 → no override
+      const zero = await locations.update(loc.id, { packingFactor: 0 });
+      expect(zero.packingFactor).toBeNull(); // 0 → no override
+      const negVolume = await locations.update(loc.id, { usableVolume: -1 });
+      expect(negVolume.usableVolume).toBeNull();
+    });
+
+    it('fans dimensions out to every createPath leaf, leaving ancestors bare', async () => {
+      const created = await locations.createPath({
+        name: 'Workshop/Bin 1, Bin 2',
+        width: 200,
+        height: 200,
+        depth: 200,
+      });
+      expect(created).toHaveLength(2);
+      expect(created.every((l) => l.width === 200 && l.height === 200 && l.depth === 200)).toBe(true);
+
+      const workshop = (await locations.getTree()).find((n) => n.name === 'Workshop');
+      expect(workshop?.width).toBeNull();
+      expect(workshop?.height).toBeNull();
+      expect(workshop?.depth).toBeNull();
+    });
+  });
+
   describe('createPath (nested-create shortcut §4)', () => {
     it('creates the whole branch from a slash-separated path and returns the leaf', async () => {
       const [leaf] = await locations.createPath({ name: 'Workshop/Cabinet A/Drawer 3' });

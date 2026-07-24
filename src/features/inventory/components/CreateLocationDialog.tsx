@@ -2,13 +2,17 @@ import { useId, useMemo, useRef, useState } from 'react';
 import { Button, FormField, Input, InfoHint, Modal, Textarea } from '@/components/foundry';
 import type { Location, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
+import { volumeFromDimensions } from '@/lib/volume';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useCreateLocationPath } from '../mutations';
 import { buildParentOptions } from '../parent-options';
 import { locationColorTextClass, type LocationColor } from '../location-color';
 import type { LocationKind } from '../location-kind';
 import { parseLocationBranch } from '../location-path';
+import { resolveDimension } from '../measure-input';
 import { LocationSelect } from './LocationSelect';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
+import { LocationDimensionsFields } from './LocationDimensionsFields';
 import { LocationKindPicker } from './LocationKindPicker';
 import {
   HINT_CAPACITY,
@@ -40,6 +44,7 @@ export function CreateLocationDialog({
 }) {
   const create = useCreateLocationPath();
   const fmt = useFormatters();
+  const dimensionUnit = usePreferencesStore((s) => s.dimensionUnit);
   const parentLabelId = useId();
   const colorLabelId = useId();
   const kindLabelId = useId();
@@ -51,6 +56,19 @@ export function CreateLocationDialog({
   const [kind, setKind] = useState<LocationKind | null>(null);
   const [capacity, setCapacity] = useState('');
   const [isDefault, setIsDefault] = useState(false);
+  // Internal size (issue #457): entered in the user's dimension unit, stored canonical mm. A
+  // fresh location has no stored value, so each field resolves against `null` — this gives the
+  // same clear-vs-error semantics the item editor uses (a bad number blocks the save, blank
+  // means "not measured"), and the parsed mm values feed both the volume preview and the save.
+  const [width, setWidth] = useState('');
+  const [height, setHeight] = useState('');
+  const [depth, setDepth] = useState('');
+  const widthState = resolveDimension(width, null, dimensionUnit);
+  const heightState = resolveDimension(height, null, dimensionUnit);
+  const depthState = resolveDimension(depth, null, dimensionUnit);
+  const derivedVolume = volumeFromDimensions(widthState.value, heightState.value, depthState.value);
+  const dimensionsValid =
+    widthState.issue === null && heightState.issue === null && depthState.issue === null;
 
   // The parent choices: "top level" plus every user-created location, each carrying a
   // right-aligned item-count hint (system/archived locations are never valid parents).
@@ -68,7 +86,7 @@ export function CreateLocationDialog({
   const showPreview = ancestors.length > 0 || multipleLeaves;
 
   const submit = () => {
-    if (leaves.length === 0) return;
+    if (leaves.length === 0 || !dimensionsValid) return;
     const capacityNum = capacity.trim() === '' ? null : Number(capacity);
     create.mutate(
       {
@@ -82,6 +100,10 @@ export function CreateLocationDialog({
         capacity: capacityNum,
         // Only a single location can be the default, so a multi-sibling create never sets it.
         isDefault: multipleLeaves ? false : isDefault,
+        // Canonical mm; each fans out onto every leaf sibling (createPath spreads the input).
+        width: widthState.value,
+        height: heightState.value,
+        depth: depthState.value,
       },
       {
         onSuccess: (created) => {
@@ -91,6 +113,9 @@ export function CreateLocationDialog({
           setKind(null);
           setCapacity('');
           setIsDefault(false);
+          setWidth('');
+          setHeight('');
+          setDepth('');
           // Fanning out siblings yields several leaves; the inline picker selects the first.
           if (created[0]) onCreated?.(created[0]);
           onClose();
@@ -197,6 +222,18 @@ export function CreateLocationDialog({
           />
         </FormField>
 
+        <LocationDimensionsFields
+          dimensionUnit={dimensionUnit}
+          width={width}
+          height={height}
+          depth={depth}
+          onWidthChange={setWidth}
+          onHeightChange={setHeight}
+          onDepthChange={setDepth}
+          states={{ width: widthState, height: heightState, depth: depthState }}
+          derivedVolume={derivedVolume}
+        />
+
         <div>
           <label
             className={`flex items-center gap-2 text-sm ${
@@ -227,7 +264,7 @@ export function CreateLocationDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={create.isPending || leaves.length === 0}>
+          <Button onClick={submit} disabled={create.isPending || leaves.length === 0 || !dimensionsValid}>
             Create
           </Button>
         </div>

@@ -539,6 +539,26 @@ try {
   console.warn(`  ✗ location-inheritable-fields.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
+// ── Location dimensions & derived volume (issue #457) ────────────────────────
+// The internal size fields on the Edit-location dialog: width, height and depth (in the user's
+// dimension unit) with the live derived-volume preview beneath. Filled to 400 × 300 × 250 mm =
+// 30,000,000 mm³ = 30 L so the "Volume ≈ 30 L" line is captured. Not saved — the shot is of the
+// live preview, so this leaves the synthetic Garage location unchanged for later captures.
+try {
+  const dialog = await openLocationEditor('Garage');
+  await dialog.getByTestId('location-width').fill('400');
+  await dialog.getByTestId('location-height').fill('300');
+  await dialog.getByTestId('location-depth').fill('250');
+  await dialog.getByTestId('location-volume-preview').waitFor({ state: 'visible', timeout: 8000 });
+  // The outer wrapper holds both the header + fields and the volume-preview line.
+  const group = dialog.getByText('Dimensions (optional)', { exact: true }).locator('xpath=ancestor::div[2]');
+  await shot('location-dimensions', group.first(), { settle: 400 });
+  await page.keyboard.press('Escape').catch(() => {});
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ location-dimensions.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // The item's side: the source picker on the Classification tab, offering
 // "Inherit — <value> (from <location>)" beside the option to set the item's own value.
 try {

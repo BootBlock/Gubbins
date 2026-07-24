@@ -26,13 +26,17 @@ import type { DeadStockMode } from '@/db/repositories/constants';
 import { DEAD_STOCK_DAYS_BOUNDS } from '@/features/settings/settings';
 import { DEAD_STOCK_MODE_OPTIONS } from '../dead-stock-options';
 import { useFormatters } from '@/lib/useFormatters';
+import { volumeFromDimensions } from '@/lib/volume';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useUpdateLocation } from '../mutations';
 import { collectDescendantIds, locationPath } from '../location-tree';
 import { buildParentOptions } from '../parent-options';
 import { isLocationColor, locationColorTextClass, type LocationColor } from '../location-color';
 import { isLocationKind, locationKindLabel, type LocationKind } from '../location-kind';
+import { dimensionToInput, resolveDimension } from '../measure-input';
 import { LocationSelect } from './LocationSelect';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
+import { LocationDimensionsFields } from './LocationDimensionsFields';
 import { LocationKindPicker } from './LocationKindPicker';
 import { LocationKindIcon } from './LocationKindIcon';
 import { LocationTagEditor } from './TagEditor';
@@ -98,6 +102,7 @@ export function EditLocationDialog({
   const update = useUpdateLocation();
   const fmt = useFormatters();
   const t = useT();
+  const dimensionUnit = usePreferencesStore((s) => s.dimensionUnit);
   const enabledFeatures = useEnabledFeatures();
   const parentLabelId = useId();
   const colorLabelId = useId();
@@ -117,6 +122,12 @@ export function EditLocationDialog({
   const [deadStockDays, setDeadStockDays] = useState(
     location.deadStockDays != null ? String(location.deadStockDays) : '',
   );
+  // Internal size (issue #457): shown/entered in the user's dimension unit, stored canonical mm.
+  // Initialised from the stored mm re-expressed in the current unit (like capacity above); the
+  // dialog remounts per location, so no re-sync effect is needed.
+  const [width, setWidth] = useState(() => dimensionToInput(location.width, dimensionUnit));
+  const [height, setHeight] = useState(() => dimensionToInput(location.height, dimensionUnit));
+  const [depth, setDepth] = useState(() => dimensionToInput(location.depth, dimensionUnit));
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
 
@@ -148,6 +159,15 @@ export function EditLocationDialog({
     (Number.isFinite(Number(deadStockDays)) &&
       Number(deadStockDays) >= DEAD_STOCK_DAYS_BOUNDS.min &&
       Number(deadStockDays) <= DEAD_STOCK_DAYS_BOUNDS.max);
+  // Each dimension resolves its dirty flag + canonical-mm value against its stored value, so an
+  // untouched field never re-saves via the unit round-trip's floating-point error, and a bad
+  // entry surfaces its issue and keeps the stored value rather than clearing it (issue #345).
+  const widthState = resolveDimension(width, location.width, dimensionUnit);
+  const heightState = resolveDimension(height, location.height, dimensionUnit);
+  const depthState = resolveDimension(depth, location.depth, dimensionUnit);
+  const derivedVolume = volumeFromDimensions(widthState.value, heightState.value, depthState.value);
+  const dimensionsValid =
+    widthState.issue === null && heightState.issue === null && depthState.issue === null;
   const dirty =
     trimmed !== location.name ||
     (parentId || null) !== location.parentId ||
@@ -157,14 +177,17 @@ export function EditLocationDialog({
     capacityValue !== location.capacity ||
     isDefault !== location.isDefault ||
     deadStockMode !== location.deadStockMode ||
-    deadStockDaysValue !== location.deadStockDays;
+    deadStockDaysValue !== location.deadStockDays ||
+    widthState.dirty ||
+    heightState.dirty ||
+    depthState.dirty;
 
   const kindLabel = locationKindLabel(location.kind);
   const fullness = locationFullness(location.itemCount, location.capacity);
   const archived = location.archivedAt != null;
 
   const submit = () => {
-    if (trimmed.length === 0 || !dirty || !capacityValid || !deadStockDaysValid) return;
+    if (trimmed.length === 0 || !dirty || !capacityValid || !deadStockDaysValid || !dimensionsValid) return;
     setError(null);
     update.mutate(
       {
@@ -179,6 +202,10 @@ export function EditLocationDialog({
           isDefault,
           deadStockMode,
           deadStockDays: deadStockDaysValue,
+          // Canonical mm; an untouched field keeps its exact stored value (widthState.value).
+          width: widthState.value,
+          height: heightState.value,
+          depth: depthState.value,
         },
       },
       {
@@ -270,6 +297,18 @@ export function EditLocationDialog({
           placeholder="No limit"
         />
       </FormField>
+
+      <LocationDimensionsFields
+        dimensionUnit={dimensionUnit}
+        width={width}
+        height={height}
+        depth={depth}
+        onWidthChange={setWidth}
+        onHeightChange={setHeight}
+        onDepthChange={setDepth}
+        states={{ width: widthState, height: heightState, depth: depthState }}
+        derivedVolume={derivedVolume}
+      />
 
       <label className="flex cursor-pointer items-center gap-2 text-sm">
         <input
@@ -453,7 +492,12 @@ export function EditLocationDialog({
               <Button
                 onClick={submit}
                 disabled={
-                  update.isPending || trimmed.length === 0 || !dirty || !capacityValid || !deadStockDaysValid
+                  update.isPending ||
+                  trimmed.length === 0 ||
+                  !dirty ||
+                  !capacityValid ||
+                  !deadStockDaysValid ||
+                  !dimensionsValid
                 }
               >
                 Save changes

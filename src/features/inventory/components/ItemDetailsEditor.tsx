@@ -12,16 +12,11 @@ import {
 import { CONVERTIBLE_TRACKING_MODES, type Item, type TrackingMode } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { fromGrams, toGrams, type WeightUnit } from '@/lib/weight';
-import { fromMm, toMm, type DimensionUnit } from '@/lib/dimensions';
 import { BarcodeScanDialog } from '@/features/scanner/components/BarcodeScanDialog';
 import { useT } from '@/features/i18n';
 import { BarcodeField } from './BarcodeField';
-import {
-  parseOptionalNumber,
-  resolveMeasureDraft,
-  type MeasureDraft,
-  type MeasureIssue,
-} from './measure-draft';
+import { dimensionToInput, resolveDimension } from '../measure-input';
+import { parseOptionalNumber, resolveMeasureDraft, type MeasureIssue } from './measure-draft';
 import { useCategories } from '../categories';
 import { ITEM_NAME_EDIT_HINT } from '../item-field-copy';
 import { useUpdateItem } from '../mutations';
@@ -40,26 +35,6 @@ const isTrackingEditable = (mode: TrackingMode): boolean =>
 function weightToInput(grams: number | null, unit: WeightUnit): string {
   if (grams == null) return '';
   return String(Number(fromGrams(grams, unit).toFixed(6)));
-}
-
-/**
- * Render a stored canonical-millimetre dimension as an input string in `unit` (blank when
- * unset), with conversion floating-point noise trimmed — the dimension counterpart to
- * {@link weightToInput}.
- */
-function dimensionToInput(mm: number | null, unit: DimensionUnit): string {
-  if (mm == null) return '';
-  return String(Number(fromMm(mm, unit).toFixed(6)));
-}
-
-/** Derive one dimension field's draft state — {@link resolveMeasureDraft} bound to mm↔unit. */
-function resolveDimension(input: string, stored: number | null, unit: DimensionUnit): MeasureDraft {
-  return resolveMeasureDraft(
-    input,
-    stored,
-    (entered) => toMm(entered, unit),
-    (mm) => dimensionToInput(mm, unit),
-  );
 }
 
 /** Rich help for the "Unlimited supply" modifier (Phase 82). */

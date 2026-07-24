@@ -58,6 +58,11 @@ function loc(overrides: Partial<LocationWithCount> = {}): LocationWithCount {
     lastCountedAt: null,
     deadStockMode: 'inherit',
     deadStockDays: null,
+    width: null,
+    height: null,
+    depth: null,
+    usableVolume: null,
+    packingFactor: null,
     updatedAt: 1_700_000_000_000,
     itemCount: 4,
     ...overrides,
@@ -298,6 +303,10 @@ describe('EditLocationDialog — saving', () => {
     isDefault: false,
     deadStockMode: 'inherit',
     deadStockDays: null,
+    // An untouched dimension field re-saves its stored value; the fixture has none, so null.
+    width: null,
+    height: null,
+    depth: null,
   };
 
   it('dispatches the whole location payload, not just the changed field', () => {
@@ -397,6 +406,30 @@ describe('EditLocationDialog — saving', () => {
     fireEvent.change(dialog().getByLabelText('Name'), { target: { value: 'Cabinet B' } });
     fireEvent.click(saveButton());
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows stored dimensions with a volume preview and threads an edit through', () => {
+    // 400 × 300 × 250 mm = 30,000,000 mm³ = 30 L.
+    renderDialog({ width: 400, height: 300, depth: 250 });
+    expect((dialog().getByTestId('location-width') as HTMLInputElement).value).toBe('400');
+    expect(dialog().getByTestId('location-volume-preview').textContent).toContain('30 L');
+
+    fireEvent.change(dialog().getByTestId('location-depth'), { target: { value: '500' } });
+    fireEvent.click(saveButton());
+    expect(spies.update).toHaveBeenCalledWith(
+      { id: 'cabinet', input: { ...fullPayload, width: 400, height: 300, depth: 500 } },
+      expect.anything(),
+    );
+  });
+
+  it('hides the volume preview while a dimension is invalid, rather than showing a stale value', () => {
+    renderDialog({ width: 100, height: 200, depth: 300 });
+    expect(dialog().getByTestId('location-volume-preview')).toBeTruthy();
+    // Typing rubbish keeps the stored value under the hood (so nothing is erased) but must not
+    // leave a volume on screen that contradicts the "Enter a number." error beside the field.
+    fireEvent.change(dialog().getByTestId('location-width'), { target: { value: 'abc' } });
+    expect(dialog().queryByTestId('location-volume-preview')).toBeNull();
+    expect(saveButton().disabled).toBe(true);
   });
 
   it('surfaces a failed save in an alert and keeps the dialog open', () => {

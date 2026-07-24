@@ -13,8 +13,9 @@ export function useFormatters(): Formatters {
   const currency = usePreferencesStore((s) => s.baseCurrency);
   const weightUnit = usePreferencesStore((s) => s.weightUnit);
   const dimensionUnit = usePreferencesStore((s) => s.dimensionUnit);
+  const volumeUnit = usePreferencesStore((s) => s.volumeUnit);
   // `getFormatters` returns a stable, process-wide-cached bundle per `[locale, currency,
-  // weightUnit, dimensionUnit]`, so the reference is already stable across renders (and shared
-  // across every component) — no per-component `useMemo` needed.
-  return getFormatters(locale, currency, weightUnit, dimensionUnit);
+  // weightUnit, dimensionUnit, volumeUnit]`, so the reference is already stable across renders
+  // (and shared across every component) — no per-component `useMemo` needed.
+  return getFormatters(locale, currency, weightUnit, dimensionUnit, volumeUnit);
 }

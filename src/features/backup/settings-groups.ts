@@ -91,7 +91,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
     labelKey: 'backup.settingsGroup.regional.label',
     hintKey: 'backup.settingsGroup.regional.hint',
     defaultOn: true,
-    prefFields: ['baseCurrency', 'locale', 'weightUnit', 'dimensionUnit'],
+    prefFields: ['baseCurrency', 'locale', 'weightUnit', 'dimensionUnit', 'volumeUnit'],
   },
   {
     id: 'cards',
