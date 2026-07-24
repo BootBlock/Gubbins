@@ -5,10 +5,10 @@
  * that each pin a *different* supplier part offline converge to two rows sharing the flag. Left
  * alone that double-orders an item (#157) or refreshes the wrong supplier's cost (#192).
  *
- * The fix is a schema partial unique index (at most one flagged row per item) plus the cross-row
- * repair `reconcile` performs before the merge applies. The pure tests assert the repair's plan;
- * the integration tests run it over `node:sqlite` with the real migrations, because the claim that
- * the merge no longer trips the index is about what the database actually does.
+ * The fix is a schema partial unique index (at most one flagged row per item) plus a repair before
+ * every write. The pure tests assert the reconcile plan; the integration tests run the merge,
+ * restore and clone paths over `node:sqlite` with the real migrations, because the claim that none
+ * of them trips the index is about what the database actually does.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
@@ -17,7 +17,7 @@ import { migrations } from '@/db/migrations';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import { SYNC_TABLES, ITEM_HISTORY_TABLE } from '@/db/repositories/tombstone';
 import { reconcile } from './reconcile';
-import { applyPlan, buildLocalSnapshot } from './snapshot';
+import { applyPlan, buildCloneStatements, buildLocalSnapshot, restoreSnapshot } from './snapshot';
 import { buildSchemaDictionary } from './schema-dictionary';
 import type { SqlRow } from '@/db/rpc/driver';
 import type { SyncSnapshot, Tombstone } from './types';
@@ -50,9 +50,8 @@ function part(over: Partial<SqlRow> & { id: string; item_id: string; updated_at:
 const opts = { offset: 0, dictionary: DICTIONARY };
 
 describe('reconcile — one flag per item repair (§7.3, issues #157 / #192)', () => {
-  it('reduces two converged price-source rows to the newest, demoting the local loser', () => {
-    // Local pinned p1; the remote pinned p2 more recently. LWW leaves p1 (local-only change) and
-    // makes p2 an upsert, so both end flagged — the exact converged bug.
+  it('demotes a stored loser when the remote pins a different supplier part', () => {
+    // Local pinned p1 (stored, survives); the remote pinned p2 more recently → p2 is an upsert.
     const local = snapshot({
       supplier_parts: [
         part({ id: 'p1', item_id: 'i1', is_price_source: 1, updated_at: 100 }),
@@ -65,16 +64,16 @@ describe('reconcile — one flag per item repair (§7.3, issues #157 / #192)', (
 
     const plan = reconcile(local, remote, opts);
 
+    // p1 is a stored loser → a demoting UPDATE (FlagRepair), not an upsert.
     expect(plan.flagRepairs).toEqual([
       { table: 'supplier_parts', itemId: 'i1', column: 'is_price_source', winnerId: 'p2' },
     ]);
-    // p1 is a stored loser: handled by the demoting UPDATE, never added as an upsert.
     expect(plan.localUpserts.map((u) => u.row.id)).toEqual(['p2']);
     expect(plan.localUpserts[0]!.row.is_price_source).toBe(1);
   });
 
-  it('zeroes the flag on a losing *upsert* row so its own write does not re-pin it', () => {
-    // Both rows arrive newer from the remote, so both are upserts; the older-stamped one loses.
+  it('zeroes a losing *upsert* in place with no demotion when no stored row holds the flag', () => {
+    // Both rows arrive newer from the remote (fresh pins), so both are upserts; the older loses.
     const local = snapshot({
       supplier_parts: [
         part({ id: 'p1', item_id: 'i1', updated_at: 10 }),
@@ -90,16 +89,20 @@ describe('reconcile — one flag per item repair (§7.3, issues #157 / #192)', (
 
     const plan = reconcile(local, remote, opts);
 
-    expect(plan.flagRepairs).toEqual([
-      { table: 'supplier_parts', itemId: 'i1', column: 'is_price_source', winnerId: 'p1' },
-    ]);
+    // No stored row was flagged, so no DB demotion is needed — the loser's own upsert is zeroed.
+    expect(plan.flagRepairs).toHaveLength(0);
     const byId = new Map(plan.localUpserts.map((u) => [u.row.id, u.row]));
     expect(byId.get('p1')!.is_price_source).toBe(1);
-    expect(byId.get('p2')!.is_price_source).toBe(0); // loser upsert demoted in place
+    expect(byId.get('p2')!.is_price_source).toBe(0);
   });
 
   it('breaks an exact updated_at tie by the smaller id, so both devices agree on the winner', () => {
-    const local = snapshot({ supplier_parts: [part({ id: 'p-b', item_id: 'i1', updated_at: 10 })] });
+    const local = snapshot({
+      supplier_parts: [
+        part({ id: 'p-a', item_id: 'i1', updated_at: 10 }),
+        part({ id: 'p-b', item_id: 'i1', updated_at: 10 }),
+      ],
+    });
     const remote = snapshot({
       supplier_parts: [
         part({ id: 'p-b', item_id: 'i1', is_price_source: 1, updated_at: 200 }),
@@ -107,23 +110,45 @@ describe('reconcile — one flag per item repair (§7.3, issues #157 / #192)', (
       ],
     });
 
-    const plan = reconcile(local, remote, opts);
-
-    expect(plan.flagRepairs[0]!.winnerId).toBe('p-a');
-    expect(new Map(plan.localUpserts.map((u) => [u.row.id, u.row])).get('p-b')!.is_price_source).toBe(0);
+    const byId = new Map(reconcile(local, remote, opts).localUpserts.map((u) => [u.row.id, u.row]));
+    expect(byId.get('p-a')!.is_price_source).toBe(1); // smaller id keeps the flag
+    expect(byId.get('p-b')!.is_price_source).toBe(0);
   });
 
-  it('repairs the two flags independently — a preferred contest and a price-source contest at once', () => {
+  it('demotes a previously-pinned part that is being deleted in the same merge (re-pin + delete)', () => {
+    // The regression the schema index would otherwise re-introduce: the old pin `p2` still holds
+    // the flag when the winner's upsert runs (its DELETE is ordered later), so it must be demoted
+    // even though only one flagged row *survives*.
     const local = snapshot({
       supplier_parts: [
-        part({ id: 'p1', item_id: 'i1', is_preferred: 1, updated_at: 100 }),
-        part({ id: 'p2', item_id: 'i1', updated_at: 50 }),
+        part({ id: 'p2', item_id: 'i1', is_price_source: 1, updated_at: 50 }),
+        part({ id: 'p1', item_id: 'i1', updated_at: 40 }),
+      ],
+    });
+    const remote = snapshot(
+      { supplier_parts: [part({ id: 'p1', item_id: 'i1', is_price_source: 1, updated_at: 200 })] },
+      [{ tableName: 'supplier_parts', id: 'p2', deletedAt: 200 }],
+    );
+
+    const plan = reconcile(local, remote, opts);
+
+    expect(plan.localDeletes.map((d) => d.id)).toContain('p2');
+    expect(plan.flagRepairs).toEqual([
+      { table: 'supplier_parts', itemId: 'i1', column: 'is_price_source', winnerId: 'p1' },
+    ]);
+  });
+
+  it('repairs the two flags independently against two stored losers', () => {
+    // p1 (stored) held both flags; the remote pins a different part for each. Each stored loser
+    // gets its own demotion.
+    const local = snapshot({
+      supplier_parts: [
+        part({ id: 'p1', item_id: 'i1', is_preferred: 1, is_price_source: 1, updated_at: 100 }),
       ],
     });
     const remote = snapshot({
       supplier_parts: [
         part({ id: 'p2', item_id: 'i1', is_preferred: 1, updated_at: 200 }),
-        part({ id: 'p1', item_id: 'i1', is_preferred: 1, is_price_source: 1, updated_at: 100 }),
         part({ id: 'p3', item_id: 'i1', is_price_source: 1, updated_at: 300 }),
       ],
     });
@@ -131,8 +156,8 @@ describe('reconcile — one flag per item repair (§7.3, issues #157 / #192)', (
     const plan = reconcile(local, remote, opts);
 
     const repairs = new Map(plan.flagRepairs.map((r) => [r.column, r.winnerId]));
-    expect(repairs.get('is_preferred')).toBe('p2'); // 200 beats p1's 100
-    expect(repairs.get('is_price_source')).toBe('p3'); // 300 beats p1's 100
+    expect(repairs.get('is_preferred')).toBe('p2');
+    expect(repairs.get('is_price_source')).toBe('p3');
     expect(plan.flagRepairs).toHaveLength(2);
   });
 
@@ -200,6 +225,14 @@ describe('supplier-part flag invariant over node:sqlite (issues #157 / #192)', (
     );
   }
 
+  async function pinnedPriceSource(): Promise<string[]> {
+    const rows = await driver.query<{ id: string; is_price_source: number }>(
+      'SELECT id, is_price_source FROM supplier_parts WHERE item_id = ? ORDER BY id;',
+      ['i1'],
+    );
+    return rows.filter((r) => Number(r.is_price_source) === 1).map((r) => r.id);
+  }
+
   it('the partial unique index forbids a second pinned price source for one item', async () => {
     await insertPart('p1', { price: 1 });
     await expect(insertPart('p2', { price: 1 })).rejects.toThrow(/UNIQUE|constraint/i);
@@ -211,8 +244,7 @@ describe('supplier-part flag invariant over node:sqlite (issues #157 / #192)', (
   });
 
   it('the merge converges two pinned rows to one without tripping the index', async () => {
-    // This device pinned p1; a peer pinned p2 more recently. Seed the local state, then craft the
-    // remote the peer would push and run the real reconcile + apply over it.
+    // This device pinned p1; a peer pinned p2 more recently. Seed local, craft the peer's push.
     await insertPart('p1', { price: 1 }, 100);
     await insertPart('p2', { price: 0 }, 50);
 
@@ -223,15 +255,101 @@ describe('supplier-part flag invariant over node:sqlite (issues #157 / #192)', (
     );
     const remote: SyncSnapshot = { ...local, tables: { ...local.tables, supplier_parts: remoteParts } };
 
-    const plan = reconcile(local, remote, { offset: 0, dictionary });
-    // The apply must not throw — the demotion frees the index before the winner's write.
-    await applyPlan(driver, plan, dictionary);
+    await applyPlan(driver, reconcile(local, remote, { offset: 0, dictionary }), dictionary);
 
-    const rows = await driver.query<{ id: string; is_price_source: number }>(
-      'SELECT id, is_price_source FROM supplier_parts WHERE item_id = ? ORDER BY id;',
-      ['i1'],
-    );
-    const pinned = rows.filter((r) => Number(r.is_price_source) === 1);
-    expect(pinned.map((r) => r.id)).toEqual(['p2']); // exactly one, the newer pin
+    expect(await pinnedPriceSource()).toEqual(['p2']); // exactly one, the newer pin
+  });
+
+  it('a re-pin that also deletes the old pinned part does not trip the index (regression)', async () => {
+    // Local pins p1; a peer re-pinned p2 and deleted p1. The delete applies after the upserts, so
+    // p1 still holds the flag when p2's write lands — the merge must demote it first.
+    await insertPart('p1', { price: 1 }, 100);
+    await insertPart('p2', { price: 0 }, 50);
+
+    const dictionary = await buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+    const local = await buildLocalSnapshot(driver, 1);
+    const remote: SyncSnapshot = {
+      ...local,
+      tables: {
+        ...local.tables,
+        supplier_parts: [
+          {
+            ...(local.tables.supplier_parts ?? []).find((r) => r.id === 'p2')!,
+            is_price_source: 1,
+            updated_at: 200,
+          },
+        ],
+      },
+      tombstones: [{ tableName: 'supplier_parts', id: 'p1', deletedAt: 200 }],
+    };
+
+    await applyPlan(driver, reconcile(local, remote, { offset: 0, dictionary }), dictionary);
+
+    expect(await pinnedPriceSource()).toEqual(['p2']); // p1 deleted, p2 the sole pin — no abort
+  });
+
+  it('restores a backup that carries two rows sharing a flag, keeping the newer', async () => {
+    // A backup taken on a build that hit the bug carries two is_price_source=1 rows for one item.
+    await insertPart('p1', { price: 0 }, 1); // seed the parts so the backup can overwrite them
+    await insertPart('p2', { price: 0 }, 1);
+    const snap = await buildLocalSnapshot(driver, 1);
+    const corrupt: SyncSnapshot = {
+      ...snap,
+      tables: {
+        ...snap.tables,
+        supplier_parts: [
+          { ...snap.tables.supplier_parts!.find((r) => r.id === 'p1')!, is_price_source: 1, updated_at: 100 },
+          { ...snap.tables.supplier_parts!.find((r) => r.id === 'p2')!, is_price_source: 1, updated_at: 200 },
+        ],
+      },
+    };
+
+    // Without the dedupe the second row's INSERT would trip the index and abort the whole restore.
+    await restoreSnapshot(driver, corrupt);
+    expect(await pinnedPriceSource()).toEqual(['p2']);
+  });
+
+  it('restores a backup that pins a different part than the local one, adopting the backup pin', async () => {
+    await insertPart('p1', { price: 1 }, 100); // local pins p1
+    await insertPart('p2', { price: 0 }, 50);
+    // A clean backup that pins p2 instead — restore must clear p1 before writing p2.
+    const snap = await buildLocalSnapshot(driver, 1);
+    const backup: SyncSnapshot = {
+      ...snap,
+      tables: {
+        ...snap.tables,
+        supplier_parts: [
+          { ...snap.tables.supplier_parts!.find((r) => r.id === 'p1')!, is_price_source: 0 },
+          { ...snap.tables.supplier_parts!.find((r) => r.id === 'p2')!, is_price_source: 1, updated_at: 200 },
+        ],
+      },
+    };
+
+    await restoreSnapshot(driver, backup);
+    expect(await pinnedPriceSource()).toEqual(['p2']);
+  });
+
+  it('clones a remote with two flagged rows without silently dropping one (INSERT OR REPLACE)', async () => {
+    await insertPart('p1', { price: 0 }, 1);
+    await insertPart('p2', { price: 0 }, 1);
+    const dictionary = await buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+    const snap = await buildLocalSnapshot(driver, 1);
+    const remote: SyncSnapshot = {
+      ...snap,
+      tables: {
+        ...snap.tables,
+        supplier_parts: [
+          { ...snap.tables.supplier_parts!.find((r) => r.id === 'p1')!, is_price_source: 1, updated_at: 100 },
+          { ...snap.tables.supplier_parts!.find((r) => r.id === 'p2')!, is_price_source: 1, updated_at: 200 },
+        ],
+      },
+    };
+
+    await driver.transaction(buildCloneStatements(remote, dictionary));
+
+    // Both rows survive (REPLACE would have deleted one); exactly one keeps the flag.
+    const all = await driver.query<{ id: string }>('SELECT id FROM supplier_parts ORDER BY id;');
+    expect(all.map((r) => r.id)).toEqual(['p1', 'p2']);
+    expect(await pinnedPriceSource()).toEqual(['p2']);
   });
 });

@@ -43,6 +43,7 @@ import { FK_REFS } from './fk-refs';
 import { resolveLww } from './lww';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
 import { sanitiseRow } from './schema-dictionary';
+import { SUPPLIER_PART_FLAG_COLUMNS, flagWinner, type FlagRanked } from './supplier-part-flags';
 import { resolveUniqueKeyCollisions } from './unique-keys';
 import type {
   FlagRepair,
@@ -543,17 +544,8 @@ function enforceForeignKeys(
   }
 }
 
-/**
- * The `supplier_parts` one-of-N flag columns, each of which must have at most one row set per
- * item (issues #157 `is_preferred`, #192 `is_price_source`). Fixed code literals — never derived
- * from row data — so it is safe to splice into the repair's SQL identifier.
- */
-const SUPPLIER_PART_FLAG_COLUMNS = ['is_preferred', 'is_price_source'] as const;
-
 /** A row that will carry a flag after the merge — either a surviving local row or a pending upsert. */
-interface FlagCandidate {
-  readonly id: string;
-  readonly updatedAt: number;
+interface FlagCandidate extends FlagRanked {
   /** Index into `localUpserts` when this candidate is a pending upsert rather than a stored row. */
   readonly upsertIndex?: number;
 }
@@ -565,9 +557,9 @@ interface FlagCandidate {
  * the same flag set — a state the app's demote-then-set never produces locally, and which the
  * schema's partial unique index now forbids. Left alone the merge would either draft a
  * double-order (#157) or refresh the wrong supplier's cost (#192), and the apply would trip the
- * index. This picks one deterministic winner per (item, flag) — newest `updated_at`, ties broken by
- * the lexicographically smaller id so **both** devices reach the same verdict without reference to
- * which side is "local" — and clears the flag everywhere else:
+ * index. This picks one deterministic winner per (item, flag) — {@link flagWinner}: newest
+ * `updated_at`, ties broken by the smaller id so **both** devices reach the same verdict without
+ * reference to which side is "local" — and clears the flag everywhere else:
  *
  *  - a losing *upsert* row has its flag zeroed in place, so its own write no longer re-sets it;
  *  - losing *stored* rows are cleared by the {@link FlagRepair} the caller hands `applyPlan`, which
@@ -623,6 +615,20 @@ function repairSupplierPartFlags(
 
   const repairs: FlagRepair[] = [];
   for (const column of SUPPLIER_PART_FLAG_COLUMNS) {
+    // Stored rows that physically hold the flag right now. A DELETE the merge is applying is
+    // ordered AFTER the upserts, so a to-be-deleted flagged row still occupies the index the
+    // instant the winner's write runs — it must be demoted exactly like a surviving loser.
+    const storedFlaggedByItem = new Map<string, string[]>();
+    for (const row of local.tables[table] ?? []) {
+      if (num(row[column]) !== 1) continue;
+      const item = String(row.item_id);
+      const ids = storedFlaggedByItem.get(item);
+      if (ids) ids.push(String(row.id));
+      else storedFlaggedByItem.set(item, [String(row.id)]);
+    }
+
+    // Surviving rows that will carry the flag after the merge — the winner is chosen among these,
+    // never a row the merge is deleting.
     const flaggedByItem = new Map<string, FlagCandidate[]>();
     for (const [id, entry] of finalById) {
       if (deletedItems.has(entry.itemId)) continue; // the item is going, its parts cascade away
@@ -634,29 +640,24 @@ function repairSupplierPartFlags(
     }
 
     for (const [itemId, flagged] of flaggedByItem) {
-      if (flagged.length <= 1) continue; // already a single winner — nothing to repair
       let winner = flagged[0]!;
-      for (const c of flagged) winner = pickFlagWinner(winner, c);
+      for (const c of flagged) winner = flagWinner(winner, c);
+      // Zero every losing *upsert* in place so its own write no longer competes for the key.
       for (const c of flagged) {
         if (c.id === winner.id || c.upsertIndex === undefined) continue;
-        // Zero the losing upsert's flag in place so its write no longer competes for the key.
         const u = localUpserts[c.upsertIndex]!;
         localUpserts[c.upsertIndex] = { table, row: { ...u.row, [column]: 0 } };
       }
-      repairs.push({ table, itemId, column, winnerId: winner.id });
+      // A demoting UPDATE is needed only when a *stored* DB row other than the winner still holds
+      // the flag: a surviving stored loser, or one being deleted this merge (see above). A losing
+      // upsert of a brand-new row needs none — it simply inserts already zeroed.
+      const stored = storedFlaggedByItem.get(itemId);
+      if (stored?.some((id) => id !== winner.id)) {
+        repairs.push({ table, itemId, column, winnerId: winner.id });
+      }
     }
   }
   return repairs;
-}
-
-/**
- * Pick the row that keeps a one-of-N flag: newest `updated_at`, an exact tie broken by the
- * lexicographically smaller id — the same device-independent rule {@link winnerOf} uses in
- * `unique-keys`, so both sides of a sync converge on the identical winner.
- */
-function pickFlagWinner(a: FlagCandidate, b: FlagCandidate): FlagCandidate {
-  if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
-  return a.id < b.id ? a : b;
 }
 
 /** Ids of a (LWW) table that survive the merge: local rows − deletes + upserts. */

@@ -41,6 +41,7 @@ import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/d
 import { decodeRowForTable } from './blob-codec';
 import { forceLwwTies } from './lww-tie-override';
 import { reconcile } from './reconcile';
+import { supplierPartFlagClears } from './supplier-part-flags';
 import { buildSchemaDictionary } from './schema-dictionary';
 import {
   applyPlan,
@@ -272,6 +273,18 @@ async function cloneWithSalvage(
   // salvage as local-wins — all in one transaction.
   const statements: SqlStatement[] = buildCloneStatements(remote, dictionary, historyPrunedBefore);
 
+  // Issues #157 / #192: a salvaged supplier part re-pinned offline (local-wins) must clear the
+  // one-of-N flag the clone just wrote for the same item, or the salvage upsert leaves two rows
+  // sharing it and trips the partial unique index. The local DB is index-clean, so the salvage set
+  // holds at most one flagged row per item — a straight clear-then-set, ahead of the upserts.
+  for (const { column, itemId } of supplierPartFlagClears(
+    salvageRows.filter((s) => s.table === 'supplier_parts').map((s) => s.row),
+  )) {
+    statements.push({
+      sql: `UPDATE supplier_parts SET ${column} = 0 WHERE item_id = ? AND ${column} = 1;`,
+      params: [itemId],
+    });
+  }
   for (const { table, row } of salvageRows) {
     statements.push(upsert(table, row, requireColumns(dictionary, table)));
   }

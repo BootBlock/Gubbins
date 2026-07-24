@@ -37,6 +37,7 @@ import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
 import { buildSchemaDictionary } from './schema-dictionary';
 import { ALWAYS_PRESENT_ROW_IDS, repairSnapshotIntegrity } from './snapshot-integrity';
+import { dedupeSupplierPartFlags, supplierPartFlagClears } from './supplier-part-flags';
 import type {
   GaugeHistoryDelta,
   ItemRegionEdge,
@@ -802,7 +803,15 @@ export function buildCloneStatements(
   statements.push({ sql: 'DELETE FROM tombstones;' });
 
   for (const table of SYNC_TABLES) {
-    for (const snapshotRow of remote.tables[table] ?? []) {
+    // Issues #157 / #192: a foreign snapshot can carry two rows sharing a one-of-N supplier-part
+    // flag for one item. `INSERT OR REPLACE` would resolve the partial unique index by *deleting*
+    // the conflicting row wholesale (losing its supplier link and price), so reduce the flag to a
+    // single winner before writing. The table was wiped just above, so no local row can conflict.
+    const rows =
+      table === 'supplier_parts'
+        ? dedupeSupplierPartFlags(remote.tables[table] ?? [])
+        : (remote.tables[table] ?? []);
+    for (const snapshotRow of rows) {
       const row = decodeRowForTable(table, snapshotRow);
       const cols = requireColumns(dictionary, table).filter((c) => c in row);
       statements.push({
@@ -874,7 +883,23 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   const statements: SqlStatement[] = [];
 
   for (const table of SYNC_TABLES) {
-    for (const snapshotRow of snapshot.tables[table] ?? []) {
+    // Issues #157 / #192: reduce the backup's supplier-part rows to one winner per one-of-N flag
+    // per item, then — because this restore is a non-destructive UPSERT, not a wipe — clear that
+    // flag on any *other* local row for a pinned item first, so the winner's `ON CONFLICT(id)`
+    // write does not leave two rows sharing the flag and abort the whole restore on the index.
+    const rows =
+      table === 'supplier_parts'
+        ? dedupeSupplierPartFlags(snapshot.tables[table] ?? [])
+        : (snapshot.tables[table] ?? []);
+    if (table === 'supplier_parts') {
+      for (const { column, itemId } of supplierPartFlagClears(rows)) {
+        statements.push({
+          sql: `UPDATE supplier_parts SET ${column} = 0 WHERE item_id = ? AND ${column} = 1;`,
+          params: [itemId],
+        });
+      }
+    }
+    for (const snapshotRow of rows) {
       const row = decodeRowForTable(table, snapshotRow);
       const cols = requireColumns(dictionary, table).filter((c) => c in row);
       const updates = cols
