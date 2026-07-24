@@ -110,72 +110,82 @@ function CycleCountBody({
       </LiveRegion>
 
       {/*
-        Plain-language explanation of the workflow — shown in every "before you finish"
-        state (loading / empty / counting) and dropped once the count is applied so the
-        result view stays uncluttered. Cycle counting is unfamiliar to most users, so the
-        dialog says what it is and why it's worth doing rather than assuming the term.
+        The intro primer and the state below it (loading / empty / counting / result) are stacked
+        with a `space-y-5` gap so the bordered primer card never crowds the section beneath it —
+        e.g. the "Serialised instances" heading, which otherwise sat flush against the card's
+        bottom edge. The LiveRegion stays *outside* this wrapper: it is empty in the form view, so
+        including it here would let `space-y` push the primer down by a phantom gap. The intro is
+        the wrapper's first child (no top margin), so it stays snug under the dialog header.
       */}
-      {applied === null ? <CycleCountIntro /> : null}
+      <div className="space-y-5">
+        {/*
+          Plain-language explanation of the workflow — shown in every "before you finish"
+          state (loading / empty / counting) and dropped once the count is applied so the
+          result view stays uncluttered. Cycle counting is unfamiliar to most users, so the
+          dialog says what it is and why it's worth doing rather than assuming the term.
+        */}
+        {applied === null ? <CycleCountIntro /> : null}
 
-      {applied !== null ? (
-        // Result view — shown after a successful reconciliation.
-        <div className="space-y-4 py-2 text-center">
-          <Button onClick={onClose}>Done</Button>
-        </div>
-      ) : isLoading ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">Loading items…</p>
-      ) : isEmpty ? (
-        <div className="space-y-4 py-2">
-          <p className="text-sm text-muted-foreground">No countable items in this location to audit.</p>
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={onClose}>
-              Close
-            </Button>
-            <Button
-              onClick={() => void authorise()}
-              disabled={pending}
-              data-testid="authorise-reconciliation"
-            >
-              Mark counted
-            </Button>
+        {applied !== null ? (
+          // Result view — shown after a successful reconciliation.
+          <div className="space-y-4 py-2 text-center">
+            <Button onClick={onClose}>Done</Button>
           </div>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <CycleCountLines count={count} />
-
-          <div className="flex items-center justify-between pt-1">
-            <p className="text-xs text-muted-foreground">
-              {drift.length + missing.length} {plural(drift.length + missing.length, 'adjustment')} to
-              authorise
-              {missing.length > 0 ? ` (${missing.length} missing)` : ''}
-            </p>
-            <div className="flex gap-2">
+        ) : isLoading ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">Loading items…</p>
+        ) : isEmpty ? (
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">No countable items in this location to audit.</p>
+            <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={onClose}>
-                Cancel
+                Close
               </Button>
-              <Tooltip
-                content={
-                  totalToApply > 0
-                    ? 'Commit the counted variances: each drifted line writes a Reconciliation Adjustment (new quantity + a `RECONCILED` history entry), and each missing instance is soft-deleted.'
-                    : 'Confirm this count. With nothing drifted, this just records the location as counted.'
-                }
-                triggerTabIndex={-1}
+              <Button
+                onClick={() => void authorise()}
+                disabled={pending}
+                data-testid="authorise-reconciliation"
               >
-                <span>
-                  <Button
-                    onClick={() => void authorise()}
-                    disabled={pending}
-                    data-testid="authorise-reconciliation"
-                  >
-                    {totalToApply > 0 ? `Authorise (${totalToApply})` : 'Mark counted'}
-                  </Button>
-                </span>
-              </Tooltip>
+                Mark counted
+              </Button>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="space-y-4">
+            <CycleCountLines count={count} />
+
+            <div className="flex items-center justify-between pt-1">
+              <p className="text-xs text-muted-foreground">
+                {drift.length + missing.length} {plural(drift.length + missing.length, 'adjustment')} to
+                authorise
+                {missing.length > 0 ? ` (${missing.length} missing)` : ''}
+              </p>
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Tooltip
+                  content={
+                    totalToApply > 0
+                      ? 'Commit the counted variances: each drifted line writes a Reconciliation Adjustment (new quantity + a `RECONCILED` history entry), and each missing instance is soft-deleted.'
+                      : 'Confirm this count. With nothing drifted, this just records the location as counted.'
+                  }
+                  triggerTabIndex={-1}
+                >
+                  <span>
+                    <Button
+                      onClick={() => void authorise()}
+                      disabled={pending}
+                      data-testid="authorise-reconciliation"
+                    >
+                      {totalToApply > 0 ? `Authorise (${totalToApply})` : 'Mark counted'}
+                    </Button>
+                  </span>
+                </Tooltip>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </>
   );
 }
