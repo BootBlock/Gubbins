@@ -58,9 +58,14 @@ going through the item importer first.
 
 > **ℹ️ Note**
 > Numbers copied straight out of a spreadsheet are read as they appear, so a quantity written
-> `1,500` imports as one thousand five hundred. A cell that isn't a plain number — `12kg`, `~12`,
-> `n/a`, or a quantity with a fractional part — is flagged in the review with the column and the
-> value, rather than being imported as a rounded-down or empty figure.
+> `1,500` imports as one thousand five hundred. A **quantity** (or reorder point / reorder
+> quantity) may carry a trailing unit the way a hand-written parts list does — `3 pcs` and
+> `10 units` import as three and ten — so a count column brought in from a project's bill of
+> materials reads the same in the item catalogue. A **price, weight or dimension** still has to
+> be a plain number: a cell like `12kg`, `~12` or `n/a` is flagged in the review with the column
+> and the value rather than being imported as a rounded-down or empty figure, because keeping its
+> leading digits would silently drop the rest (`1.5 kg` is not one). A quantity with a fractional
+> part is flagged the same way, rather than being quietly rounded.
 >
 > Every importer reads numbers by the same rule, whichever decimal convention your spreadsheet
 > uses: `£1,234.56` and `1.234,56 €` both mean the same price, and prices quoted to four decimal

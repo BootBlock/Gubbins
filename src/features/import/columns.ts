@@ -67,8 +67,24 @@ export function cellAt(row: readonly string[], index: number | undefined): strin
   return value.length > 0 ? value : null;
 }
 
-/** A quantity written with a trailing unit, e.g. `"3 pcs"`, `"10 units"`, `"2x"`. */
+/** A quantity written with a trailing unit, e.g. `"3 pcs"`, `"10 units"`. */
 const LEADING_INTEGER_RE = /^(\d+)\b/;
+
+/**
+ * The leading whole integer of a unit-suffixed count (`"3 pcs"` → 3, `"10 units"` → 10), or
+ * `null` when the cell does not begin with digits followed by a boundary. A unit written with
+ * no separating space (`"2x"`) is *not* matched — the digits must end at a word boundary, so a
+ * bare `2x` is left unreadable rather than guessed at.
+ *
+ * This is the shared suffix rule the whole-count readers sit on: {@link parseCountCell} rounds
+ * on top of it, and the item-catalogue importer preserves any fraction for its schema to report
+ * (issue #391). Keeping the rule here means a suffixed count reads identically through every
+ * importer rather than each re-deriving the fallback.
+ */
+export function leadingIntegerCount(raw: string): number | null {
+  const suffixed = LEADING_INTEGER_RE.exec(raw.trim());
+  return suffixed ? Number.parseInt(suffixed[1]!, 10) : null;
+}
 
 /** A number in exponent form (`1e3`, `-2.5E-4`), which the money heuristic does not read. */
 const EXPONENT_NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)e[+-]?\d+$/i;
@@ -105,8 +121,7 @@ export function parseAmountCell(raw: string): number | null {
  */
 export function parseCountCell(raw: string): number | null {
   // A unit suffix ("3 pcs") defeats the amount reader, so fall back to the leading integer.
-  const suffixed = LEADING_INTEGER_RE.exec(raw.trim());
-  const parsed = parseAmountCell(raw) ?? (suffixed ? Number.parseInt(suffixed[1]!, 10) : null);
+  const parsed = parseAmountCell(raw) ?? leadingIntegerCount(raw);
   return parsed === null ? null : Math.round(parsed);
 }
 
