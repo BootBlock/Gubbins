@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { toStoredMoney } from '@/lib/money';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
@@ -1271,10 +1272,11 @@ describe('ReportRepository', () => {
     it('composes spend from PO lines, project expenses and acquisitions, tagged by source', async () => {
       // Category shared by the PO-line item and the acquisition.
       await driver.execute("INSERT INTO categories (id, name) VALUES ('cat-r', 'Resistors');");
-      // An acquired asset: purchase_price 500 on 2026-06-10 (inside the 90-day window).
+      // An acquired asset: purchase_price 500 on 2026-06-10 (inside the 90-day window). Money
+      // columns are seeded in stored micro-units (issue #286), via `toStoredMoney`.
       await driver.execute(
         `INSERT INTO items (id, name, location_id, category_id, quantity, purchase_price, acquired_at)
-         VALUES ('it-1', 'Scope', ?, 'cat-r', 1, 500, '2026-06-10');`,
+         VALUES ('it-1', 'Scope', ?, 'cat-r', 1, ${toStoredMoney(500)}, '2026-06-10');`,
         [UNASSIGNED_LOCATION_ID],
       );
       // A received PO line: 5 received @ £2 = £10 from supplier "RS", ordered 5 days ago.
@@ -1285,12 +1287,12 @@ describe('ReportRepository', () => {
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
-         VALUES ('pol-1', 'po-1', 'it-1', 5, 5, 2);`,
+         VALUES ('pol-1', 'po-1', 'it-1', 5, 5, ${toStoredMoney(2)});`,
       );
       // A manual project expense: £30, incurred 3 days ago.
       await driver.execute("INSERT INTO projects (id, name) VALUES ('pr-1', 'Build');");
       await driver.execute(
-        "INSERT INTO project_expenses (id, project_id, amount, incurred_at) VALUES ('ex-1', 'pr-1', 30, ?);",
+        `INSERT INTO project_expenses (id, project_id, amount, incurred_at) VALUES ('ex-1', 'pr-1', ${toStoredMoney(30)}, ?);`,
         [day(-3)],
       );
       // An OUT-OF-WINDOW received PO (400 days ago) — must be excluded.
@@ -1301,7 +1303,7 @@ describe('ReportRepository', () => {
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
-         VALUES ('pol-old', 'po-old', 'it-1', 100, 100, 9);`,
+         VALUES ('pol-old', 'po-old', 'it-1', 100, 100, ${toStoredMoney(9)});`,
       );
 
       const report = await reports.spendAnalytics(90, 10, NOW);
@@ -1334,7 +1336,7 @@ describe('ReportRepository', () => {
       // received_qty 0 → no spend yet.
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, ordered_qty, received_qty, unit_cost)
-         VALUES ('pol-2', 'po-2', 5, 0, 2);`,
+         VALUES ('pol-2', 'po-2', 5, 0, ${toStoredMoney(2)});`,
       );
       const report = await reports.spendAnalytics(90, 10, NOW);
       expect(report.total).toBe(0);
@@ -1362,7 +1364,7 @@ describe('ReportRepository', () => {
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
-         VALUES ('pol-gbp', 'po-gbp', 'it-1', 1, 1, 500);`,
+         VALUES ('pol-gbp', 'po-gbp', 'it-1', 1, 1, ${toStoredMoney(500)});`,
       );
 
       const abroad = await suppliers.resolveOrCreate('Stateside Inc');
@@ -1372,7 +1374,7 @@ describe('ReportRepository', () => {
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
-         VALUES ('pol-usd', 'po-usd', 'it-1', 1, 1, 500);`,
+         VALUES ('pol-usd', 'po-usd', 'it-1', 1, 1, ${toStoredMoney(500)});`,
       );
 
       const report = await gbp.spendAnalytics(90, 10, NOW);
@@ -1403,7 +1405,7 @@ describe('ReportRepository', () => {
       for (const po of ['po-null', 'po-scruffy']) {
         await driver.execute(
           `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
-           VALUES (?, ?, 'it-1', 1, 1, 10);`,
+           VALUES (?, ?, 'it-1', 1, 1, ${toStoredMoney(10)});`,
           [`pol-${po}`, po],
         );
       }
@@ -1428,7 +1430,7 @@ describe('ReportRepository', () => {
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
-         VALUES ('pol-orphan', 'po-orphan', 'it-1', 1, 1, 500);`,
+         VALUES ('pol-orphan', 'po-orphan', 'it-1', 1, 1, ${toStoredMoney(500)});`,
       );
 
       const report = await gbp.spendAnalytics(90, 10, NOW);
@@ -1451,7 +1453,7 @@ describe('ReportRepository', () => {
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
-         VALUES ('pol-blank', 'po-blank', 'it-1', 1, 1, 40);`,
+         VALUES ('pol-blank', 'po-blank', 'it-1', 1, 1, ${toStoredMoney(40)});`,
       );
 
       const report = await gbp.spendAnalytics(90, 10, NOW);
@@ -1473,7 +1475,7 @@ describe('ReportRepository', () => {
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
-         VALUES ('pol-usd', 'po-usd', 'it-1', 1, 1, 500);`,
+         VALUES ('pol-usd', 'po-usd', 'it-1', 1, 1, ${toStoredMoney(500)});`,
       );
 
       const report = await reports.spendAnalytics(90, 10, NOW);

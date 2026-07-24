@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   MONEY_DECIMALS,
   MONEY_EPSILON,
+  MONEY_STORAGE_DECIMALS,
+  MONEY_STORAGE_SCALE,
+  fromStoredMoney,
   moneyDecimals,
   moneyExceeds,
   moneyReaches,
   roundMoney,
   sumMoney,
+  toStoredMoney,
 } from './money';
 
 describe('moneyDecimals', () => {
@@ -159,5 +163,59 @@ describe('moneyExceeds / moneyReaches', () => {
     expect(moneyExceeds(0.1 + 0.2 - 0.3, 0)).toBe(false); // 5.55e-17 is not money
     expect(moneyExceeds(-5, 0)).toBe(false);
     expect(moneyReaches(-5, -5)).toBe(true);
+  });
+});
+
+describe('toStoredMoney / fromStoredMoney (micro-unit storage, issue #286)', () => {
+  it('scales a major-unit amount to integer micro-units and back exactly', () => {
+    expect(MONEY_STORAGE_DECIMALS).toBe(6);
+    expect(MONEY_STORAGE_SCALE).toBe(1_000_000);
+    for (const value of [0, 1, 12.34, 1499.99, 0.07, 0.1, 1.005, 999_999.99]) {
+      const stored = toStoredMoney(value);
+      expect(Number.isInteger(stored)).toBe(true);
+      expect(fromStoredMoney(stored)).toBeCloseTo(value, 6);
+    }
+  });
+
+  it('stores exact integer micro-units for the amounts a REAL column could not hold', () => {
+    expect(toStoredMoney(0.07)).toBe(70_000);
+    expect(toStoredMoney(12.5)).toBe(12_500_000);
+    expect(toStoredMoney(1499.99)).toBe(1_499_990_000);
+    // Six-place sub-penny precision (BOM part costs) survives the round-trip.
+    expect(toStoredMoney(0.000001)).toBe(1);
+    expect(fromStoredMoney(1)).toBe(0.000001);
+  });
+
+  it('makes a summed column exact where REAL drifted (the issue’s worked example)', () => {
+    // 5,000 rows at £0.07 summed as REAL gave 349.9999999999724; as integer micro-units it is 350.
+    const rows = Array.from({ length: 5000 }, () => toStoredMoney(0.07));
+    const totalMicros = rows.reduce((sum, n) => sum + n, 0);
+    expect(totalMicros).toBe(350_000_000);
+    expect(fromStoredMoney(totalMicros)).toBe(350);
+  });
+
+  it('two accumulation orders agree exactly (===), unlike a REAL sum', () => {
+    const micros = [1.1, 2.2, 0.3, 1.7, 0.5, -0.5].map((n) => toStoredMoney(n));
+    const forward = micros.reduce((sum, n) => sum + n, 0);
+    const reversed = [...micros].reverse().reduce((sum, n) => sum + n, 0);
+    expect(forward).toBe(reversed); // integer addition is order-independent
+    expect(fromStoredMoney(forward)).toBe(5.3);
+  });
+
+  it('rounds to the nearest micro-unit, away from zero on a tie', () => {
+    // Below the micro-unit floor: rounds rather than storing a fractional integer.
+    expect(toStoredMoney(0.0000004)).toBe(0);
+    expect(toStoredMoney(0.0000005)).toBe(1);
+    expect(toStoredMoney(-0.0000005)).toBe(-1);
+  });
+
+  it('maps null / undefined / non-finite to null rather than a spurious zero', () => {
+    expect(toStoredMoney(null)).toBeNull();
+    expect(toStoredMoney(undefined)).toBeNull();
+    expect(toStoredMoney(Number.NaN)).toBeNull();
+    expect(toStoredMoney(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(fromStoredMoney(null)).toBeNull();
+    expect(fromStoredMoney(undefined)).toBeNull();
+    expect(fromStoredMoney(Number.NaN)).toBeNull();
   });
 });

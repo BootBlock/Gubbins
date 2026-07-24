@@ -3,6 +3,7 @@
  * Point-in-Time costing, and the automated Shopping List). Both are read-only
  * projections over a project's BOM lines.
  */
+import { fromStoredMoney } from '@/lib/money';
 import type { ProjectCosting, ShoppingListEntry } from '../types';
 import type { Constructor } from './mixin';
 import type { ProjectCoreRepository } from './core';
@@ -39,7 +40,9 @@ export function withCosting<TBase extends Constructor<ProjectCoreRepository>>(Ba
 
       return {
         costingMode: project.costingMode,
-        totalCost: Number(row?.total ?? 0),
+        // `total` is SUM(required_qty × cost) over integer micro-unit costs — exact — converted
+        // back to a major-unit amount here at the repository boundary (issue #286).
+        totalCost: fromStoredMoney(Number(row?.total ?? 0)),
         unpricedLineCount: Number(row?.unpriced ?? 0),
         lineCount: Number(row?.line_count ?? 0),
       };
@@ -83,7 +86,8 @@ export function withCosting<TBase extends Constructor<ProjectCoreRepository>>(Ba
 
       return rows.map((r) => {
         const shortfallQty = Number(r.shortfall);
-        const unitCost = r.unit_cost == null ? null : Number(r.unit_cost);
+        // `unit_cost` is stored in integer micro-units (issue #286); back to major units here.
+        const unitCost = r.unit_cost == null ? null : fromStoredMoney(Number(r.unit_cost));
         return {
           itemId: r.item_id,
           label: r.label ?? 'Unknown part',

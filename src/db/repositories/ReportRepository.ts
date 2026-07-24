@@ -84,7 +84,7 @@ import {
 } from '@/features/reports/parts-catalogue';
 import { THUMBNAIL_SUBQUERY } from './item/sql';
 import { notAVariantParentSql } from './item/attention-sql';
-import { roundMoney } from '@/lib/money';
+import { MONEY_STORAGE_DECIMALS, fromStoredMoney, roundMoney } from '@/lib/money';
 import {
   buildReorderPlan,
   type ReorderPlanGroup,
@@ -210,36 +210,39 @@ function effectiveUnitValueSql(alias: string, baseCurrency: string | null): stri
 }
 
 /**
- * SQL expression for one schedule line's replacement value as an **integer count of minor units** —
- * `roundMoney(quantity × effectiveUnitValue, decimals)` reproduced exactly in SQL so the whole
- * schedule can be summed **by the database** (issue #411) instead of shipping one row per asset to
- * the worker to fold in JS. At 100k assets that transfer was the bulk of the read; a `SUM … GROUP
- * BY` returns one row per room.
+ * SQL expression for one schedule line's replacement value as an **integer count of the reporting
+ * currency's minor units** — `roundMoney(quantity × effectiveUnitValue, decimals)` reproduced exactly
+ * in SQL so the whole schedule can be summed **by the database** (issue #411) instead of shipping one
+ * row per asset to the worker to fold in JS. At 100k assets that transfer was the bulk of the read; a
+ * `SUM … GROUP BY` returns one row per room.
  *
- * The rule is delicate and is now stated twice — here and in `@/lib/money`'s `roundMoney` — so
- * `ReportRepository.test.ts` pins this against the pure seam over randomised fixtures at each
- * supported minor unit (0dp, 2dp, 3dp). Two things make it match where a naive `ROUND()` does not:
+ * The per-unit value from {@link effectiveUnitValueSql} is in stored **micro-units** (the ×10^6 money
+ * scale, issue #286), so `quantity × value` is a line total in micro-units — already an exact integer.
+ * Re-quantising it to the reporting currency's minor unit is therefore a **divide** by
+ * `10^(storageDecimals − reportingDecimals)` (∈ {10^6, 10^4, 10^3} for 0/2/3dp currencies), rounded
+ * half-up, rather than the multiply the major-unit REAL column needed. Two things make it match
+ * `roundMoney` where a naive `ROUND()` does not:
  *
- *  - **`printf('%.15g', …)` is `toPrecision(15)`.** `roundMoney` re-reads the scaled value at 15
- *    significant digits to collapse binary representation error (`1.005 × 100` is stored as
- *    `100.49999999999999`) back onto the decimal the user entered, so a tie rounds the way a person
- *    expects. SQLite's own `ROUND()` rounds the raw binary double and gets those ties wrong — the
- *    reason the totals could not previously move to SQL.
- *  - **Integer minor units, half away from zero.** Emitting `round(value × 10^decimals)` as an
- *    integer makes the `SUM` exact and order-independent (integer addition is associative), which is
- *    what lets the totals agree to the penny regardless of the row order SQLite scans in. The
- *    per-unit value is always ≥ 0 (see {@link effectiveUnitValueSql}) and the quantity is floored at
- *    0, so the product is non-negative and `CAST(x + 0.5 AS INTEGER)` is exactly `Math.round` of it —
- *    no negative/away-from-zero case is reachable.
+ *  - **`printf('%.15g', …)` is `toPrecision(15)`.** It re-reads the scaled quotient at 15 significant
+ *    digits to collapse the binary representation error a division introduces, so a tie rounds the way
+ *    a person expects. SQLite's own `ROUND()` rounds the raw binary double and gets those ties wrong.
+ *  - **Integer minor units, half away from zero.** Emitting the rounded quotient as an integer keeps
+ *    the `SUM` exact and order-independent (integer addition is associative), so the totals agree to
+ *    the penny regardless of scan order. The per-unit value is always ≥ 0 (see
+ *    {@link effectiveUnitValueSql}) and the quantity is floored at 0, so the quotient is non-negative
+ *    and `CAST(x + 0.5 AS INTEGER)` is exactly `Math.round` of it.
  *
- * `decimals` is the reporting currency's minor unit; `10 ** decimals` is a controlled integer with
- * no quoting or injection surface. The per-unit value is floored again by {@link effectiveUnitValueSql}
- * but the explicit `MAX(…, 0)` mirrors `scheduleLineValue`'s `Math.max(0, …)` defence exactly.
+ * The divisor is forced to a REAL literal (`.0`) so the division is floating-point, not SQLite's
+ * integer division; `10 ** n` is a controlled integer with no quoting or injection surface. The
+ * explicit `MAX(…, 0)` mirrors `scheduleLineValue`'s `Math.max(0, …)` defence exactly. `ReportRepository.test.ts`
+ * pins this against the pure seam over randomised fixtures at each supported minor unit (0dp, 2dp, 3dp).
  */
 function scheduleLineMinorUnitsSql(alias: string, baseCurrency: string | null, decimals: number): string {
-  const factor = 10 ** decimals;
-  const lineValue = `MAX(${alias}.quantity, 0) * MAX(${effectiveUnitValueSql(alias, baseCurrency)}, 0)`;
-  return `CAST(CAST(printf('%.15g', (${lineValue}) * ${factor}) AS REAL) + 0.5 AS INTEGER)`;
+  // `quantity × effectiveUnitValue` in stored micro-units (issue #286).
+  const lineMicros = `MAX(${alias}.quantity, 0) * MAX(${effectiveUnitValueSql(alias, baseCurrency)}, 0)`;
+  // micro-units → the reporting currency's minor units: divide by 10^(6 − reportingDecimals).
+  const divisor = 10 ** (MONEY_STORAGE_DECIMALS - decimals);
+  return `CAST(CAST(printf('%.15g', (${lineMicros}) / ${divisor}.0) AS REAL) + 0.5 AS INTEGER)`;
 }
 
 /** One already-summed valuation group as the `GROUP BY` queries return it. */
@@ -250,9 +253,18 @@ interface ValuationGroupRow {
   value: number;
 }
 
-/** Adapt a raw grouped row to the pure {@link sortValueGroups} input shape. */
+/**
+ * Adapt a raw grouped row to the pure {@link sortValueGroups} input shape. The `value` arrives as an
+ * exact integer micro-unit SUM (issue #286) and is converted to a major-unit amount here — the same
+ * repository read boundary the mappers use.
+ */
 function toValueGroupTotals(row: ValuationGroupRow): ValueGroupTotals {
-  return { id: row.group_id, name: row.group_name, value: row.value, quantity: row.quantity };
+  return {
+    id: row.group_id,
+    name: row.group_name,
+    value: fromStoredMoney(row.value),
+    quantity: row.quantity,
+  };
 }
 
 /**
@@ -350,7 +362,9 @@ export class ReportRepository extends BaseRepository {
     );
 
     return {
-      totalValue: categoryRows.reduce((sum, r) => sum + r.value, 0),
+      // The per-group `value`s are exact integer micro-unit SUMs; add them as integers (exact,
+      // order-independent) and convert the headline once (issue #286).
+      totalValue: fromStoredMoney(categoryRows.reduce((sum, r) => sum + r.value, 0)),
       totalQuantity: categoryRows.reduce((sum, r) => sum + r.quantity, 0),
       unpricedItemCount: categoryRows.reduce((sum, r) => sum + r.unpriced, 0),
       byCategory: sortValueGroups(categoryRows.map(toValueGroupTotals)),
@@ -441,7 +455,8 @@ export class ReportRepository extends BaseRepository {
     return {
       includesSubtree,
       locationCount: scopeIds.length,
-      totalValue: headline?.value ?? 0,
+      // `value` is an exact integer micro-unit SUM; converted to major units here (issue #286).
+      totalValue: fromStoredMoney(headline?.value ?? 0),
       totalQuantity: headline?.quantity ?? 0,
       distinctItemCount,
       unpricedItemCount: distinctItemCount - (headline?.priced_items ?? 0),
@@ -572,11 +587,12 @@ export class ReportRepository extends BaseRepository {
           quantity: r.quantity,
           acquiredAt: r.acquired_at,
           warrantyExpiresAt: r.warranty_expires_at,
-          purchasePrice: r.purchase_price,
-          unitCost: r.unit_cost,
+          // Money columns are stored in micro-units (issue #286); back to major units at this boundary.
+          purchasePrice: fromStoredMoney(r.purchase_price),
+          unitCost: fromStoredMoney(r.unit_cost),
           // Feature-gap G9: the manual current value wins over the replacement cost.
-          currentValuePerUnit: r.current_value,
-          preferredSupplierCost: r.preferred_supplier_cost,
+          currentValuePerUnit: fromStoredMoney(r.current_value),
+          preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
           locationId: r.location_id,
           thumbnail: r.thumbnail_blob ?? null,
         },
@@ -681,9 +697,10 @@ export class ReportRepository extends BaseRepository {
       mpn: r.mpn,
       manufacturer: r.manufacturer,
       supplier: r.supplier_name,
-      unitCost: r.unit_cost,
-      preferredSupplierCost: r.preferred_supplier_cost,
-      purchasePrice: r.purchase_price,
+      // Money columns are stored in micro-units (issue #286); back to major units at this boundary.
+      unitCost: fromStoredMoney(r.unit_cost),
+      preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
+      purchasePrice: fromStoredMoney(r.purchase_price),
       acquiredAt: r.acquired_at,
       warrantyExpiresAt: r.warranty_expires_at,
       notes: r.notes,
@@ -965,8 +982,9 @@ export class ReportRepository extends BaseRepository {
         id: r.id,
         name: r.name,
         quantity: r.quantity,
-        unitCost: r.unit_cost,
-        preferredSupplierCost: r.preferred_supplier_cost,
+        // Stored in micro-units (issue #286); major units for the pure valuation seam.
+        unitCost: fromStoredMoney(r.unit_cost),
+        preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
         lastMovedAt: r.last_moved_at,
         createdAt: r.created_at,
         thresholdDays: policy.thresholdDays,
@@ -1059,7 +1077,8 @@ export class ReportRepository extends BaseRepository {
               supplierPartId: r.supplier_part_id,
               supplierId: r.supplier_id!,
               supplierName: r.supplier_name!,
-              unitCost: r.unit_cost,
+              // Stored in micro-units (issue #286); major units for the reorder-plan costing.
+              unitCost: fromStoredMoney(r.unit_cost),
               packQty: r.pack_qty,
               minOrderQty: r.min_order_qty,
               // Threaded through so the plan can cost each line at its computed order quantity
@@ -1116,8 +1135,9 @@ export class ReportRepository extends BaseRepository {
     const inputs: AbcInput[] = rows.map((r) => ({
       id: r.id,
       name: r.name,
-      unitCost: r.unit_cost,
-      preferredSupplierCost: r.preferred_supplier_cost,
+      // Stored in micro-units (issue #286); major units for the pure classifier.
+      unitCost: fromStoredMoney(r.unit_cost),
+      preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
       consumedUnits: r.consumed,
     }));
     return classifyAbc(inputs);
@@ -1159,8 +1179,9 @@ export class ReportRepository extends BaseRepository {
       id: r.id,
       name: r.name,
       currentQty: r.quantity,
-      unitCost: r.unit_cost,
-      preferredSupplierCost: r.preferred_supplier_cost,
+      // Stored in micro-units (issue #286); major units for the pure turnover seam.
+      unitCost: fromStoredMoney(r.unit_cost),
+      preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
       consumedUnits: r.consumed,
       netQtyDelta: r.net_delta,
     }));
@@ -1197,8 +1218,9 @@ export class ReportRepository extends BaseRepository {
       id: r.id,
       name: r.name,
       quantity: r.quantity,
-      unitCost: r.unit_cost,
-      preferredSupplierCost: r.preferred_supplier_cost,
+      // Stored in micro-units (issue #286); major units for the pure aging seam.
+      unitCost: fromStoredMoney(r.unit_cost),
+      preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
       lastInboundAt: r.last_inbound_at,
       acquiredAtMs: parseAcquiredAt(r.acquired_at),
       createdAt: r.created_at,
@@ -1243,7 +1265,8 @@ export class ReportRepository extends BaseRepository {
          FROM items i
         WHERE i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
     );
-    const currentValue = anchor?.total ?? 0;
+    // The anchor is an exact integer micro-unit SUM; the whole trend runs in major units (issue #286).
+    const currentValue = fromStoredMoney(anchor?.total ?? 0);
 
     // Value-tagged ledger events inside the window (half-open at the start; inclusive of now).
     const eventRows = await this.driver.query<{
@@ -1268,10 +1291,15 @@ export class ReportRepository extends BaseRepository {
       valueDelta:
         r.quantity_delta *
         // Same precedence as the anchor: a manual current value wins over the replacement cost,
-        // so reversing the ledger lands on a past total measured the same way as today's.
+        // so reversing the ledger lands on a past total measured the same way as today's. The stored
+        // micro-unit costs are converted to major units first so the whole trend is in major units
+        // (issue #286).
         effectiveUnitValue(
-          r.current_value,
-          effectiveUnitCost({ unitCost: r.unit_cost, preferredSupplierCost: r.preferred_supplier_cost }),
+          fromStoredMoney(r.current_value),
+          effectiveUnitCost({
+            unitCost: fromStoredMoney(r.unit_cost),
+            preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
+          }),
         ),
     }));
 
@@ -1389,7 +1417,8 @@ export class ReportRepository extends BaseRepository {
     for (const r of poRows) {
       events.push({
         instant: Number(r.instant),
-        amount: Number(r.amount),
+        // `received_qty × unit_cost` in exact integer micro-units → major units (issue #286).
+        amount: fromStoredMoney(Number(r.amount)),
         source: 'PURCHASE_ORDER',
         supplierId: r.supplier_id,
         supplier: r.supplier,
@@ -1408,7 +1437,8 @@ export class ReportRepository extends BaseRepository {
     for (const r of expenseRows) {
       events.push({
         instant: Number(r.instant),
-        amount: Number(r.amount),
+        // `project_expenses.amount` in micro-units → major units (issue #286).
+        amount: fromStoredMoney(Number(r.amount)),
         source: 'PROJECT_EXPENSE',
         supplierId: null,
         supplier: null,
@@ -1442,7 +1472,8 @@ export class ReportRepository extends BaseRepository {
       if (instant === null) continue;
       events.push({
         instant,
-        amount: Number(r.amount),
+        // `items.purchase_price` in micro-units → major units (issue #286).
+        amount: fromStoredMoney(Number(r.amount)),
         source: 'ACQUISITION',
         supplierId: null,
         supplier: null,

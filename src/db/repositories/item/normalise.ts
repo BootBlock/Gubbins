@@ -3,6 +3,7 @@
  * Blank free-text collapses to NULL; numeric fields are range-checked here so the
  * repository contract rejects bad input the same way regardless of the entry point.
  */
+import { toStoredMoney } from '@/lib/money';
 import { DbError } from '../../errors';
 
 /** Trim a free-text field, collapsing blank/whitespace-only input to NULL. */
@@ -12,13 +13,17 @@ export function normaliseText(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-/** Validate an optional unit cost: null clears it; otherwise it must be ≥ 0. */
+/**
+ * Validate an optional unit cost: null clears it; otherwise it must be ≥ 0. The returned value is
+ * in integer **micro-units** — the on-disk money scale (issue #286) — so both the create and
+ * update write paths persist the same representation.
+ */
 export function normaliseUnitCost(value: number | null | undefined): number | null {
   if (value == null) return null;
   if (!Number.isFinite(value) || value < 0) {
     throw new DbError('SQLITE_CONSTRAINT', 'Unit cost must be a non-negative number.');
   }
-  return value;
+  return toStoredMoney(value);
 }
 
 /**
@@ -75,14 +80,15 @@ export function normaliseIsoDate(value: string | null | undefined): string | nul
 
 /**
  * Validate an optional purchase price (Phase 66 asset lifecycle, v24): null clears
- * it; otherwise it must be a finite, non-negative number.
+ * it; otherwise it must be a finite, non-negative number. Returned in integer micro-units
+ * (issue #286).
  */
 export function normalisePurchasePrice(value: number | null | undefined): number | null {
   if (value == null) return null;
   if (!Number.isFinite(value) || value < 0) {
     throw new DbError('SQLITE_CONSTRAINT', 'Purchase price must be a non-negative number.');
   }
-  return value;
+  return toStoredMoney(value);
 }
 
 /**
@@ -129,12 +135,13 @@ export function normaliseDimension(
 /**
  * Validate an optional manual current / market value (feature-gap G9, v4): null clears it
  * (valuation reverts to the depreciated replacement cost); otherwise it must be a finite,
- * non-negative number. Mirrors {@link normalisePurchasePrice} + the DB CHECK.
+ * non-negative number. Mirrors {@link normalisePurchasePrice} + the DB CHECK. Returned in
+ * integer micro-units (issue #286).
  */
 export function normaliseCurrentValue(value: number | null | undefined): number | null {
   if (value == null) return null;
   if (!Number.isFinite(value) || value < 0) {
     throw new DbError('SQLITE_CONSTRAINT', 'Current value must be a non-negative number.');
   }
-  return value;
+  return toStoredMoney(value);
 }

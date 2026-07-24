@@ -146,3 +146,65 @@ export function sumMoney(values: Iterable<number>, decimals: number = MONEY_DECI
   }
   return roundMoney(total, decimals);
 }
+
+/**
+ * The fixed storage scale for monetary columns (issue #286): every money value is persisted as an
+ * INTEGER number of **micro-units** — millionths of a major currency unit — rather than a binary
+ * `REAL`. Six is the count of decimal places that scale preserves.
+ *
+ * **Why a fixed scale and not each currency's own minor unit (pence, cents, fils).** The base
+ * currency is a mutable preference and a stored amount is a currency-agnostic *magnitude*,
+ * reinterpreted under whatever currency is active — so literal minor units would corrupt every
+ * value the instant the base currency changed (£1.50 persisted as `150` pence would read back as
+ * ¥150). A single fixed scale sidesteps that entirely, sits above every real currency's minor unit
+ * (the Bahraini dinar's three places included), and exactly holds the deliberate six-place
+ * sub-penny precision that BOM part costs already use (`BOM_LINE_COST_DECIMALS`).
+ *
+ * **Why integer at all.** A `REAL` column cannot represent most decimal amounts exactly, so a
+ * column summed £0.07 across 5,000 rows to `349.9999999999724`, not `350`, and the same six
+ * amounts added in two orders were not `===`-equal. Integer micro-units are exact, and their SQL
+ * `SUM` is exact and order-independent. Storage and arithmetic stay well inside the `2^53`
+ * safe-integer range — a ceiling of ~9 billion major units, far beyond anything a home inventory
+ * holds.
+ *
+ * The rest of the app works in major units on both sides of the repository boundary; only the
+ * on-disk column and the SQL that aggregates it are in micro-units, converted here.
+ */
+export const MONEY_STORAGE_DECIMALS = 6;
+
+/** The integer factor between a major unit and its stored micro-units (`1_000_000`). */
+export const MONEY_STORAGE_SCALE = 10 ** MONEY_STORAGE_DECIMALS;
+
+export function toStoredMoney(value: number): number;
+export function toStoredMoney(value: number | null | undefined): number | null;
+/**
+ * Convert a major-unit amount — what the app works in everywhere above the repository boundary —
+ * into the integer micro-units persisted to a money column. `null` / `undefined` / non-finite map
+ * to `null` so an absent price stays absent and a stray `NaN` never becomes a spurious `0`.
+ *
+ * Rounding to the nearest micro-unit uses the same 15-significant-digit correction and
+ * away-from-zero tie-break as {@link roundMoney}, so an amount a user typed lands on the integer
+ * they meant rather than one-below at the mercy of binary drift.
+ */
+export function toStoredMoney(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  const scaled = Number((value * MONEY_STORAGE_SCALE).toPrecision(15));
+  // Away-from-zero, matching roundMoney: a negative amount (a refund, a budget over-run) rounds
+  // symmetrically rather than toward +Infinity.
+  return Math.sign(scaled) * Math.round(Math.abs(scaled));
+}
+
+export function fromStoredMoney(stored: number): number;
+export function fromStoredMoney(stored: number | null | undefined): number | null;
+/**
+ * Convert the integer micro-units read from a money column back into the major-unit amount the
+ * rest of the app expects — the exact inverse of {@link toStoredMoney} at the repository read
+ * boundary. `null` / `undefined` / non-finite pass through as `null`.
+ *
+ * The single-argument `number` overload is for `NOT NULL` columns, whose stored integer is always
+ * present, so a caller mapping into a non-nullable DTO field does not have to launder the type.
+ */
+export function fromStoredMoney(stored: number | null | undefined): number | null {
+  if (stored == null || !Number.isFinite(stored)) return null;
+  return stored / MONEY_STORAGE_SCALE;
+}

@@ -16,6 +16,7 @@
  * grows storage and is therefore Hard-Stop gated; deletes (which free space) are not and
  * record a tombstone in the same transaction so the deletion syncs (§7.2).
  */
+import { toStoredMoney } from '@/lib/money';
 import { DbError } from '../errors';
 import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import { rowToSupplierPart, rowToSupplierPartPriceHistory } from './mappers';
@@ -70,13 +71,17 @@ function cleanText(value: string | null | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-/** Validate a nullable non-negative cost (the CHECK also enforces ≥ 0). */
+/**
+ * Validate a nullable non-negative cost (the CHECK also enforces ≥ 0) and return it in integer
+ * micro-units — the on-disk money scale (issue #286) — so `supplier_parts.unit_cost` and the
+ * `supplier_part_price_history` point it seeds share one representation.
+ */
 function cleanCost(value: number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   if (!Number.isFinite(value) || value < 0) {
     throw new DbError('SQLITE_CONSTRAINT', 'A unit cost must be a non-negative number.');
   }
-  return value;
+  return toStoredMoney(value);
 }
 
 /** Validate a nullable positive integer count (pack size / MOQ). */
@@ -231,7 +236,10 @@ export class SupplierPartRepository extends BaseRepository {
     let priceHistory: SqlStatement | null = null;
     if (input.unitCost !== undefined) {
       const newCost = cleanCost(input.unitCost);
-      if (newCost !== null && newCost !== existing.unitCost) {
+      // Both sides compared in stored micro-units: `existing.unitCost` is the mapped DTO (major
+      // units), so it is scaled up to match `newCost` — and integer comparison sidesteps the
+      // float-equality noise a "did the cost change?" test would otherwise carry.
+      if (newCost !== null && newCost !== toStoredMoney(existing.unitCost)) {
         const currency = input.currency !== undefined ? cleanText(input.currency) : existing.currency;
         priceHistory = priceHistoryStatement(id, newCost, currency, input.source ?? 'MANUAL');
       }
