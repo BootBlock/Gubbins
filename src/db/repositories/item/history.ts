@@ -17,6 +17,14 @@ export interface HistoryFields {
   readonly netValueDelta?: number | null;
   readonly note?: string | null;
   readonly metadata?: Record<string, unknown> | null;
+  /**
+   * The row's id. Defaults to a fresh `crypto.randomUUID()` — correct for an ordinary event,
+   * which is genuinely new. Pass a **deterministic** id only for the ledger entry of a one-shot
+   * terminal operation two devices can each run offline (assembly finalisation, issue #195): the
+   * ledger reconciles by union-of-id, so a random id would leave one duplicate entry per device,
+   * whereas the same derived id collapses them to one. See `derived-uuid.ts`.
+   */
+  readonly id?: string;
 }
 
 /**
@@ -39,7 +47,7 @@ export function historyStatement(
     sql: `INSERT INTO item_history (id, item_id, action, quantity_delta, net_value_delta, note, metadata, actor_user_id)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
     params: [
-      crypto.randomUUID(),
+      fields.id ?? crypto.randomUUID(),
       itemId,
       action,
       fields.quantityDelta ?? null,

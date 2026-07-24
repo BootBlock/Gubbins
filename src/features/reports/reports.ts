@@ -98,6 +98,14 @@ export interface LocationStatsReport {
   readonly distinctItemCount: number;
   /** How many of those distinct items carry no usable value (so are excluded from `totalValue`). */
   readonly unpricedItemCount: number;
+  /**
+   * Σ (item bounding-box volume × units held) over the items in scope that have all three
+   * dimensions, in canonical **mm³** (issue #457/#458). An item missing any dimension adds
+   * nothing — the same convention the location tree's volume-utilisation bar uses.
+   */
+  readonly usedVolume: number;
+  /** Distinct items in scope with all three dimensions set (so contributing to `usedVolume`). */
+  readonly measuredItemCount: number;
   /** Value of the held stock broken down by category, largest first; ungrouped last. */
   readonly byCategory: readonly ValueGroup[];
 }

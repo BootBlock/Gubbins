@@ -8,11 +8,14 @@
  * the resulting DTO with `useFormatters`.
  *
  * The report is a read-only projection over data already stored — there is no schema
- * change in this phase. Valuation reuses the single internal "effective unit cost" seam
- * ({@link effectiveUnitCost}) so the "manual cost wins, else preferred supplier cost,
- * else unpriced → 0" rule lives in exactly one place across the app.
+ * change in this phase. Valuation reuses the same shared seams as the "Inventory value"
+ * headline — a manual `current_value` wins ({@link effectiveUnitValue}), else the
+ * "effective unit cost" precedence ({@link effectiveUnitCost}: manual cost, else preferred
+ * supplier cost, else unpriced → 0) — so the two figures value the same stock identically
+ * (issue #397).
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
+import { effectiveUnitValue } from '@/features/inventory/valuation';
 
 import { effectiveUnitCost, type ValuedUnit } from './reports';
 
@@ -24,9 +27,9 @@ const EN_DASH = '–';
 
 /**
  * A minimal item shape for stock aging — extends the {@link ValuedUnit} valuation seam
- * with the on-hand quantity and the three candidate reference instants. Kept structural
- * (not the full `Item`) so the repository selects a narrow projection and these helpers
- * stay trivially testable.
+ * with the on-hand quantity, a manual current value, and the three candidate reference
+ * instants. Kept structural (not the full `Item`) so the repository selects a narrow
+ * projection and these helpers stay trivially testable.
  */
 export interface AgingInput extends ValuedUnit {
   /** Stable item id. */
@@ -35,6 +38,12 @@ export interface AgingInput extends ValuedUnit {
   readonly name: string;
   /** On-hand quantity; only items with `quantity > 0` are aged. */
   readonly quantity: number;
+  /**
+   * The item's manual current value per unit (`items.current_value`); null/absent when unset.
+   * Wins over the effective cost when valuing a line, exactly as the "Inventory value" headline
+   * does ({@link effectiveUnitValue}) — a revalued collectible is worth its mark, not its cost.
+   */
+  readonly currentValuePerUnit?: number | null;
   /**
    * UNIX-ms of the most recent inbound (positive-quantity) movement, or null when the item
    * has had no inbound movement. The highest-precedence reference instant for age.
@@ -61,7 +70,7 @@ export interface AgingBucket {
   readonly itemCount: number;
   /** Total on-hand units in this bucket. */
   readonly quantity: number;
-  /** Total value of stock in this bucket (`quantity * effectiveUnitCost`). */
+  /** Total value of stock in this bucket (`quantity * effectiveUnitValue`). */
   readonly value: number;
 }
 
@@ -125,7 +134,9 @@ function makeBuckets(bounds: readonly number[]): {
  * acquisition date, else creation), and its age is
  * `Math.max(0, Math.floor((now − reference) / MS_PER_DAY))` so a future reference clamps to
  * age 0. Only items with `quantity > 0` are counted (nothing on hand = nothing to age);
- * each contributes `Math.max(0, quantity) * effectiveUnitCost(item)` to its bucket's value.
+ * each contributes `Math.max(0, quantity) * effectiveUnitValue(currentValuePerUnit, effectiveUnitCost(item))`
+ * to its bucket's value — a manual current value wins over the cost, exactly as the "Inventory
+ * value" headline values the same stock, so the two figures never disagree (issue #397).
  *
  * Buckets derive from `bounds` (inclusive upper bounds, default `[30, 90, 180]` → ranges
  * `0–30`, `31–90`, `91–180`, `180+`); N bounds yield N+1 buckets. An item lands in the first
@@ -155,7 +166,7 @@ export function bucketStockAging(
       (buckets[buckets.length - 1] as (typeof buckets)[number]);
 
     const qty = item.quantity;
-    const value = Math.max(0, qty) * effectiveUnitCost(item);
+    const value = Math.max(0, qty) * effectiveUnitValue(item.currentValuePerUnit, effectiveUnitCost(item));
     bucket.itemCount += 1;
     bucket.quantity += qty;
     bucket.value += value;

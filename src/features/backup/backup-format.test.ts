@@ -74,6 +74,10 @@ function makeSnapshot(): SyncSnapshot {
       { id: 'h1', item_id: 'A' } as unknown as SqlRow,
       { id: 'h2', item_id: 'B' } as unknown as SqlRow,
     ],
+    stockDeltas: [
+      { id: 's1', item_id: 'A' } as unknown as SqlRow,
+      { id: 's2', item_id: 'B' } as unknown as SqlRow,
+    ],
   };
 }
 
@@ -102,6 +106,9 @@ describe('filterSnapshot', () => {
     expect((out.tables.item_relations ?? []).map((r) => r.id)).toEqual(['A|D|works_with']);
 
     expect((out.itemHistory ?? []).map((r) => r.id)).toEqual(['h1']);
+    // The stock-delta ledger is FK-repaired against removed items exactly like item_history:
+    // s2 (B, removed) is dropped, s1 (A) survives (issue #188).
+    expect((out.stockDeltas ?? []).map((r) => r.id)).toEqual(['s1']);
     expect(out.itemTags).toEqual([{ itemId: 'A', tagId: 't1' }]);
     expect(out.itemRegions).toEqual([{ itemId: 'A', regionId: 'r1' }]);
     expect(out.gaugeHistory.map((d) => d.id)).toEqual(['g1']);
@@ -371,7 +378,7 @@ describe('manifest cross-check (issue #201)', () => {
   it('rejects a snapshot that lost a whole section the manifest recorded', () => {
     const entries = builtEntries();
     const snapshot = JSON.parse(strFromU8(entries[SNAPSHOT_ENTRY]!)) as SyncSnapshot;
-    const gutted = JSON.stringify({ ...snapshot, itemHistory: [], gaugeHistory: [] });
+    const gutted = JSON.stringify({ ...snapshot, itemHistory: [], gaugeHistory: [], stockDeltas: [] });
     const damaged = withManifest({ ...entries, [SNAPSHOT_ENTRY]: strToU8(gutted) }, (m) => ({
       ...m,
       checksums: {

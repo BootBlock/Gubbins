@@ -15,6 +15,7 @@ import {
   ITEM_REGIONS_TABLE,
   ITEM_TAGS_TABLE,
   LOCATION_TAGS_TABLE,
+  STOCK_DELTAS_TABLE,
   SYNC_EXCLUDED_COLUMNS,
   SYNC_TABLES,
   clearItemRegionTombstoneStatement,
@@ -35,8 +36,10 @@ import { historyStatement } from '@/db/repositories/item/history';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
+import { dedupeDefaultLocations, defaultLocationWinner } from './location-default-flag';
 import { buildSchemaDictionary } from './schema-dictionary';
 import { ALWAYS_PRESENT_ROW_IDS, repairSnapshotIntegrity } from './snapshot-integrity';
+import { dedupeSupplierPartFlags, supplierPartFlagClears } from './supplier-part-flags';
 import type {
   GaugeHistoryDelta,
   ItemRegionEdge,
@@ -60,8 +63,12 @@ const PAGE = 100;
  *
  * A bare condition, without the `WHERE` — as in {@link WIPE_FILTER} — because the paged read
  * has to AND it with its keyset cursor.
+ *
+ * @internal Exported for the `partial-map-guards` schema test, which executes each filter against
+ * the built schema so a renamed column can never leave the fragment silently referencing a column
+ * that no longer exists.
  */
-const TABLE_FILTER: Partial<Record<SyncTable, string>> = {
+export const TABLE_FILTER: Partial<Record<SyncTable, string>> = {
   locations: 'is_system = 0',
   // The built-in System and Admin users are seeded by the baseline with the *same* constant
   // ids on every device and protected by `trg_users_protect_builtin_*`, exactly like the
@@ -280,6 +287,7 @@ export async function buildLocalSnapshot(
   const locationTags = await attempt(LOCATION_TAGS_TABLE, () => readLocationTags(driver), []);
   const itemRegions = await attempt(ITEM_REGIONS_TABLE, () => readItemRegions(driver), []);
   const itemHistory = await attempt(ITEM_HISTORY_TABLE, () => readItemHistory(driver), []);
+  const stockDeltas = await attempt(STOCK_DELTAS_TABLE, () => readStockDeltas(driver), []);
 
   // Issue #405: the reads above are not one point-in-time view — each is its own unisolated
   // query, so a concurrent write can land a child row whose parent was read a moment too early.
@@ -297,6 +305,7 @@ export async function buildLocalSnapshot(
       locationTags,
       itemRegions,
       itemHistory,
+      stockDeltas,
     },
     { unreadableTables },
   );
@@ -368,6 +377,17 @@ async function readItemRegions(driver: IDatabaseDriver): Promise<ItemRegionEdge[
  */
 function readItemHistory(driver: IDatabaseDriver): Promise<SqlRow[]> {
   return keysetPage(driver, ITEM_HISTORY_TABLE, ['created_at', 'id']);
+}
+
+/**
+ * Read the full append-only `stock_deltas` convergence ledger (issue #188; union-by-id).
+ *
+ * Keyset-paged on the same `(created_at, id)` key it orders by, for the reason given on
+ * {@link readItemHistory} — the ledger is append-only, but a concurrent write can still add a
+ * row mid-read, and under `OFFSET` that would silently drop an unrelated entry.
+ */
+function readStockDeltas(driver: IDatabaseDriver): Promise<SqlRow[]> {
+  return keysetPage(driver, STOCK_DELTAS_TABLE, ['created_at', 'id']);
 }
 
 /** The net-value deltas from the Activity Ledger that the Delta-CRDT replays (§7.3). */
@@ -542,6 +562,40 @@ export function historyInsertStatement(row: SqlRow, columns: readonly string[] |
 }
 
 /**
+ * Build the INSERT OR IGNORE for an append-only `stock_deltas` row (union-by-id, issue #188).
+ *
+ * The discrete-stock twin of {@link historyInsertStatement}: `columns` must come from the live
+ * schema — see {@link requireColumns} for why there is no fallback to the row's own keys.
+ */
+export function stockDeltaInsertStatement(row: SqlRow, columns: readonly string[] | undefined): SqlStatement {
+  if (!columns) {
+    throw new Error(`No schema dictionary entry for table: ${JSON.stringify(STOCK_DELTAS_TABLE)}`);
+  }
+  const cols = columns.filter((c) => c in row);
+  const placeholders = cols.map(() => '?').join(', ');
+  return {
+    sql: `INSERT OR IGNORE INTO ${STOCK_DELTAS_TABLE} (${cols.join(', ')}) VALUES (${placeholders});`,
+    params: cols.map((c) => row[c] as SqlValue),
+  };
+}
+
+/**
+ * Bracket a batch of statements so the `stock_batches` capture triggers stay dormant while they
+ * run (issue #188). Sync/backup apply writes stock rows whose deltas already travel in the unioned
+ * `stock_deltas` section, so re-capturing a local delta for each would double-count. The switch is
+ * flipped inside the same atomic transaction, so a rollback restores it too. Only wraps a
+ * non-empty batch — an empty transaction needs no guard.
+ */
+export function withCaptureDisabled(statements: readonly SqlStatement[]): SqlStatement[] {
+  if (statements.length === 0) return [...statements];
+  return [
+    { sql: 'UPDATE stock_delta_capture SET enabled = 0 WHERE id = 1;' },
+    ...statements,
+    { sql: 'UPDATE stock_delta_capture SET enabled = 1 WHERE id = 1;' },
+  ];
+}
+
+/**
  * A RE_PARENTED Activity-Ledger entry for a §7.5.2 sync re-parent.
  *
  * Attributed to the System user explicitly (issue #79, plan §2.4): no person asked for this
@@ -606,6 +660,29 @@ export async function applyPlan(
     });
   }
 
+  // Issues #157 / #192: reduce each one-of-N `supplier_parts` flag to a single winner per item,
+  // ahead of the upserts. `reconcile` already zeroed the flag on any *losing upsert row*; this
+  // clears it on the *stored* rows the merge is leaving in place, so the winner's write below
+  // does not momentarily leave two rows flagged — which the partial unique index would reject,
+  // aborting the whole atomic merge. The UPDATE does not set `updated_at`, so the §7.1 trigger
+  // re-stamps each demoted row and the de-selection propagates on the next push.
+  for (const { table, column, itemId, winnerId } of plan.flagRepairs) {
+    statements.push({
+      sql: `UPDATE ${table} SET ${column} = 0 WHERE item_id = ? AND ${column} = 1 AND id <> ?;`,
+      params: [itemId, winnerId],
+    });
+  }
+
+  // Issue #191: the same repair for the *global* `locations.is_default` — demote every default but
+  // the winner ahead of the upserts, for the identical reason (the winner's write would otherwise
+  // momentarily leave two rows flagged and trip the partial unique index, aborting the merge).
+  if (plan.defaultLocationWinnerId !== null) {
+    statements.push({
+      sql: `UPDATE locations SET is_default = 0 WHERE is_default = 1 AND id <> ?;`,
+      params: [plan.defaultLocationWinnerId],
+    });
+  }
+
   // UPSERTs, parents before children.
   const upserts = [...plan.localUpserts].sort((a, b) => tableIndex(a.table) - tableIndex(b.table));
   for (const { table, row } of upserts) {
@@ -629,6 +706,14 @@ export async function applyPlan(
   // Runs after the LWW upserts so the parent items exist (FK-safe).
   for (const row of plan.historyInserts) {
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
+  }
+
+  // Issue #188: append-only stock-delta ledger union-by-id (INSERT OR IGNORE, same as the
+  // history ledger above). Runs after the LWW upserts so the parent items exist (FK-safe). The
+  // whole transaction is bracketed with capture disabled below, so these — and the LWW
+  // `stock_batches` upserts — do not re-fire the capture triggers and double-count.
+  for (const row of plan.stockDeltaInserts) {
+    statements.push(stockDeltaInsertStatement(row, dictionary[STOCK_DELTAS_TABLE]));
   }
 
   // Phase 11: item_tags membership additions (after tags + items exist, FK-safe). Clear
@@ -751,12 +836,25 @@ export async function applyPlan(
     });
   }
 
+  // Issue #188 Delta-CRDT discrete-stock corrections. Applied after the LWW upserts (so they
+  // override the last-write-wins quantity) and inside the capture-disabled batch (so the
+  // correction is not itself recorded as a fresh delta). The recompute triggers re-derive
+  // `item_stock` and `items.quantity` from the corrected batch quantity.
+  for (const { itemId, locationId, batchKey, quantity } of plan.stockResolutions) {
+    statements.push({
+      sql: 'UPDATE stock_batches SET quantity = ? WHERE item_id = ? AND location_id = ? AND batch_key = ?;',
+      params: [quantity, itemId, locationId, batchKey],
+    });
+  }
+
   // §7.5.2 conflict logs.
   for (const { itemId } of plan.reparented) {
     statements.push(reparentHistoryStatement(itemId));
   }
 
-  if (statements.length > 0) await driver.transaction(statements);
+  // Issue #188: the whole merge is a sync apply, so its `stock_batches` writes must not re-capture
+  // deltas (they already travel in the unioned ledger). Disable capture around the batch.
+  if (statements.length > 0) await driver.transaction(withCaptureDisabled(statements));
 }
 
 /**
@@ -769,6 +867,13 @@ export async function applyPlan(
  * to reclaim OPFS space. Filtering the cloned `itemHistory` by the local watermark keeps
  * that space reclaimed — matching the delta-sync guard in {@link reconcile}. Defaults to
  * 0 (no filtering).
+ *
+ * Returns a **plain** statement list — capture-guarding is the caller's job (issue #188). The
+ * clone re-inserts `stock_batches` rows whose deltas already travel in the ledger this list also
+ * re-unions, so the caller must run the whole batch under {@link withCaptureDisabled}. The TTL
+ * clone-with-salvage path (`cloneWithSalvage`) appends its own salvage statements first, so
+ * wrapping here would leave that salvage capture-enabled — the guard therefore lives at the
+ * transaction boundary, not inside this builder.
  */
 export function buildCloneStatements(
   remote: SyncSnapshot,
@@ -779,6 +884,7 @@ export function buildCloneStatements(
   // Clear the non-LWW sections first (they would otherwise cascade away when items are
   // deleted, but doing it explicitly keeps the wipe order-independent — Phase 11).
   statements.push({ sql: `DELETE FROM ${ITEM_HISTORY_TABLE};` });
+  statements.push({ sql: `DELETE FROM ${STOCK_DELTAS_TABLE};` });
   statements.push({ sql: `DELETE FROM ${ITEM_TAGS_TABLE};` });
   statements.push({ sql: `DELETE FROM ${LOCATION_TAGS_TABLE};` });
   statements.push({ sql: `DELETE FROM ${ITEM_REGIONS_TABLE};` });
@@ -789,7 +895,18 @@ export function buildCloneStatements(
   statements.push({ sql: 'DELETE FROM tombstones;' });
 
   for (const table of SYNC_TABLES) {
-    for (const snapshotRow of remote.tables[table] ?? []) {
+    // A foreign snapshot can carry two rows that share a partial-unique flag: two supplier parts
+    // pinned for one item (issues #157 / #192), or two locations both marked `is_default` (#191).
+    // `INSERT OR REPLACE` would resolve the index by *deleting* the conflicting row wholesale
+    // (losing a supplier link + price, or a whole location), so reduce the flag to a single winner
+    // before writing. The table was wiped just above, so no local row can conflict.
+    const rows =
+      table === 'supplier_parts'
+        ? dedupeSupplierPartFlags(remote.tables[table] ?? [])
+        : table === 'locations'
+          ? dedupeDefaultLocations(remote.tables[table] ?? [])
+          : (remote.tables[table] ?? []);
+    for (const snapshotRow of rows) {
       const row = decodeRowForTable(table, snapshotRow);
       const cols = requireColumns(dictionary, table).filter((c) => c in row);
       statements.push({
@@ -804,6 +921,10 @@ export function buildCloneStatements(
   for (const row of remote.itemHistory ?? []) {
     if (Number(row.created_at) < historyPrunedBefore) continue;
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
+  }
+  // Issue #188: the stock-delta convergence ledger, union-by-id like the history ledger above.
+  for (const row of remote.stockDeltas ?? []) {
+    statements.push(stockDeltaInsertStatement(row, dictionary[STOCK_DELTAS_TABLE]));
   }
   for (const { itemId, tagId } of remote.itemTags ?? []) {
     statements.push({
@@ -829,6 +950,9 @@ export function buildCloneStatements(
       params: [t.tableName, t.id, t.deletedAt],
     });
   }
+  // Issue #188: a clone re-inserts `stock_batches` wholesale; its deltas travel in the ledger
+  // above. The caller runs the whole transaction under `withCaptureDisabled` (see the doc note),
+  // so no delta is re-captured — wrapping here would strand the salvage half capture-enabled.
   return statements;
 }
 
@@ -853,7 +977,11 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   // destructive "replace" restore deliberately does not: it wipes before it clones, and is one
   // of the routes out of a full device.
   await ensureStorageWritable();
-  const dictionary = await buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+  const dictionary = await buildSchemaDictionary(driver, [
+    ...SYNC_TABLES,
+    ITEM_HISTORY_TABLE,
+    STOCK_DELTAS_TABLE,
+  ]);
   const localTombstones = await driver.query<{ table_name: string; id: string }>(
     'SELECT table_name, id FROM tombstones;',
   );
@@ -861,7 +989,35 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   const statements: SqlStatement[] = [];
 
   for (const table of SYNC_TABLES) {
-    for (const snapshotRow of snapshot.tables[table] ?? []) {
+    // Reduce a foreign backup's rows to one winner per partial-unique flag — a pinned supplier part
+    // per item (issues #157 / #192) or a single default location (#191) — then, because this
+    // restore is a non-destructive UPSERT rather than a wipe, clear that flag on any *other* local
+    // row first, so the winner's `ON CONFLICT(id)` write does not leave two rows sharing the flag
+    // (e.g. the backup's default plus a different local one it never touches) and abort the whole
+    // restore on the index.
+    const rows =
+      table === 'supplier_parts'
+        ? dedupeSupplierPartFlags(snapshot.tables[table] ?? [])
+        : table === 'locations'
+          ? dedupeDefaultLocations(snapshot.tables[table] ?? [])
+          : (snapshot.tables[table] ?? []);
+    if (table === 'supplier_parts') {
+      for (const { column, itemId } of supplierPartFlagClears(rows)) {
+        statements.push({
+          sql: `UPDATE supplier_parts SET ${column} = 0 WHERE item_id = ? AND ${column} = 1;`,
+          params: [itemId],
+        });
+      }
+    } else if (table === 'locations') {
+      const winnerId = defaultLocationWinner(rows);
+      if (winnerId !== null) {
+        statements.push({
+          sql: `UPDATE locations SET is_default = 0 WHERE is_default = 1 AND id <> ?;`,
+          params: [winnerId],
+        });
+      }
+    }
+    for (const snapshotRow of rows) {
       const row = decodeRowForTable(table, snapshotRow);
       const cols = requireColumns(dictionary, table).filter((c) => c in row);
       const updates = cols
@@ -881,6 +1037,10 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   // tombstones below remove any that were unlinked).
   for (const row of snapshot.itemHistory ?? []) {
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
+  }
+  // Issue #188: the stock-delta convergence ledger, union-by-id like the history ledger above.
+  for (const row of snapshot.stockDeltas ?? []) {
+    statements.push(stockDeltaInsertStatement(row, dictionary[STOCK_DELTAS_TABLE]));
   }
   for (const { itemId, tagId } of snapshot.itemTags ?? []) {
     statements.push({
@@ -936,7 +1096,9 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
     statements.push(conditionalTombstoneStatement(t.tableName, t.id, t.deletedAt));
   }
 
-  await driver.transaction(statements);
+  // Issue #188: a restore re-inserts `stock_batches` rows whose deltas travel in the ledger
+  // section above, so capture stays disabled around the batch to avoid double-counting.
+  await driver.transaction(withCaptureDisabled(statements));
 }
 
 export { buildSchemaDictionary, SYNC_TABLES, UNASSIGNED_LOCATION_ID };

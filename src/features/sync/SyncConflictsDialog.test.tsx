@@ -23,16 +23,15 @@ const onClose = vi.fn();
 const onRestored = vi.fn();
 
 function seedUpdate() {
-  useSyncConflictsStore
-    .getState()
-    .add([
-      buildConflict(
-        'contacts',
-        { id: 'c1', name: 'Ada', updated_at: 150 },
-        { id: 'c1', name: 'Grace', updated_at: 200 },
-        999,
-      ),
-    ]);
+  useSyncConflictsStore.getState().add([
+    buildConflict(
+      'contacts',
+      { id: 'c1', name: 'Ada', updated_at: 150 },
+      { id: 'c1', name: 'Grace', updated_at: 200 },
+      // Freshly detected: the store ages stale conflicts out relative to the wall clock (#373).
+      Date.now(),
+    ),
+  ]);
 }
 
 beforeEach(() => {

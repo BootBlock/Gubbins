@@ -825,7 +825,7 @@ describe('needsFullResync (§7.2 TTL)', () => {
   });
 });
 
-describe('`sync-lww-tie` lab flag reproduces the LWW-tie re-upsert churn', () => {
+describe('`sync-lww-tie` lab flag forces a tie, now resolved churn-free (issue #161)', () => {
   let a: Awaited<ReturnType<typeof makeDevice>>;
   let b: Awaited<ReturnType<typeof makeDevice>>;
   let provider: MemoryCloudProvider;
@@ -863,7 +863,7 @@ describe('`sync-lww-tie` lab flag reproduces the LWW-tie re-upsert churn', () =>
     expect(await itemUpdatedAt(b.driver, item.id)).toBe(future);
   });
 
-  it('forces a tie while on, re-upserting identical content and bumping updated_at (the churn bug)', async () => {
+  it('forces a tie while on, but the byte-identical re-upsert is now suppressed (issue #161)', async () => {
     const item = await sharedItem('Widget');
     const future = Date.now() + AHEAD_WITHIN_RATCHET_MS;
     await b.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [future, item.id]);
@@ -871,12 +871,12 @@ describe('`sync-lww-tie` lab flag reproduces the LWW-tie re-upsert churn', () =>
     useLabStore.getState().setFlag('sync-lww-tie', true);
     await runSync(b.driver, provider, NO_QUOTA);
 
-    // The incoming remote row was made to carry B's own `future` stamp, so `resolveLww` sees a
-    // tie and sends it to the remote — re-upserting unchanged content. Because the applied
-    // `updated_at` then equals what B already held, the auto-stamp trigger's
-    // `WHEN NEW.updated_at = OLD.updated_at` fires and bumps it one further (§7.3), exactly the
-    // redundant churn devices see ping-ponging an unchanged row.
-    expect(await itemUpdatedAt(b.driver, item.id)).toBe(future + 1);
+    // The incoming remote row is made to carry B's own `future` stamp, so `resolveLww` sees a tie
+    // and sends it to the remote. Its content is byte-identical to B's row, so reconcile skips the
+    // no-op upsert (issue #161) rather than re-applying it — the auto-stamp trigger never fires, so
+    // `updated_at` is left exactly as it was and the row is not made spuriously "newer". Before the
+    // fix this bumped to `future + 1` and ping-ponged between devices indefinitely.
+    expect(await itemUpdatedAt(b.driver, item.id)).toBe(future);
     expect((await b.items.getById(item.id))?.name).toBe('Widget');
   });
 

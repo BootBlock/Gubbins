@@ -94,12 +94,40 @@ export interface SyncSnapshot {
   readonly itemRegions: readonly ItemRegionEdge[];
   /** Full append-only `item_history` ledger rows (Phase 11; resolved by union-by-id). */
   readonly itemHistory: readonly SqlRow[];
+  /**
+   * Full append-only `stock_deltas` ledger rows (issue #188; resolved by union-by-id). Every
+   * signed change to a `(item, location, batch)` placement's quantity, replayed to converge
+   * `stock_batches.quantity` instead of resolving it by Last-Write-Wins.
+   */
+  readonly stockDeltas: readonly SqlRow[];
 }
 
 /** A merged gauge value to write onto an item (overrides any LWW field value). */
 export interface GaugeResolution {
   readonly itemId: string;
   readonly netValue: number;
+}
+
+/**
+ * A signed stock movement extracted from `stock_deltas` (issue #188 Delta-CRDT). Identified by
+ * the delta row's own id so the same movement seen on two devices is de-duplicated rather than
+ * double-counted, exactly like {@link GaugeHistoryDelta}.
+ */
+export interface StockQuantityDelta {
+  readonly id: string;
+  readonly quantityDelta: number;
+}
+
+/**
+ * A merged `(item, location, batch)` placement quantity to write onto `stock_batches` (issue #188
+ * Delta-CRDT). Overrides the Last-Write-Wins value the merge upserted; the recompute triggers then
+ * roll it up to `item_stock` and `items.quantity`.
+ */
+export interface StockResolution {
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly batchKey: string;
+  readonly quantity: number;
 }
 
 /**
@@ -200,6 +228,26 @@ export interface CollisionResolution {
   readonly hoistOnly?: boolean;
 }
 
+/**
+ * Issues #157 / #192: a "one flag per parent" invariant the merge had to repair. `supplier_parts`
+ * carries two independent one-of-N flags per item — `is_preferred` (drives valuation) and
+ * `is_price_source` (drives which supplier a price refresh fetches) — each maintained by an
+ * app-level demote-then-set. Per-row LWW cannot see across rows, so two devices that each pinned a
+ * *different* supplier offline converge to two flagged rows. `reconcile` picks one deterministic
+ * winner per (item, flag) and emits this so `applyPlan` clears the flag from every other row for
+ * that item *before* the upserts run — otherwise the winner's write would trip the partial unique
+ * index the same backstop adds at the schema level.
+ */
+export interface FlagRepair {
+  readonly table: SyncTable;
+  /** The item whose flag is being reduced to a single winner. */
+  readonly itemId: string;
+  /** The boolean column to clear on every row but the winner. A fixed code literal, never row data. */
+  readonly column: string;
+  /** The single row that keeps `column = 1`. */
+  readonly winnerId: string;
+}
+
 export interface ReconciliationPlan {
   /** Rows to UPSERT locally (remote won LWW, or are new), already sanitised + re-parented. */
   readonly localUpserts: readonly TableRow[];
@@ -207,6 +255,12 @@ export interface ReconciliationPlan {
   readonly localDeletes: readonly Tombstone[];
   /** Merged gauge values to set (§7.3 Delta-CRDT), applied after upserts. */
   readonly gaugeResolutions: readonly GaugeResolution[];
+  /**
+   * Issue #188: merged `stock_batches` placement quantities to set (discrete-stock Delta-CRDT),
+   * applied after the LWW upserts to override them. The recompute triggers then re-derive
+   * `item_stock` and `items.quantity`.
+   */
+  readonly stockResolutions: readonly StockResolution[];
   /** §7.5.2 automatic re-parents to Unassigned, to log in each item's Activity Ledger. */
   readonly reparented: readonly ReparentLog[];
   /** §7.5.3 location moves discarded because they would create a nesting cycle. */
@@ -215,8 +269,23 @@ export interface ReconciliationPlan {
   readonly serialisedLoansClosed: readonly SerialisedLoanClosure[];
   /** Issue #187: ids retired to a peer's row under a shared natural key (see {@link CollisionResolution}). */
   readonly collisions: readonly CollisionResolution[];
+  /** Issues #157 / #192: "one flag per item" reductions to apply before the upserts (see {@link FlagRepair}). */
+  readonly flagRepairs: readonly FlagRepair[];
+  /**
+   * Issue #191: the single location that keeps `is_default = 1` after the merge, or `null` when no
+   * cross-row repair is needed (0/1 default among survivors, or every offending row is a losing
+   * upsert already zeroed in place). When set, `applyPlan` runs a demoting UPDATE clearing the flag
+   * on every *other* row *before* the upserts — otherwise the winner's write would trip the partial
+   * unique index the same backstop adds at the schema level. Per-row LWW cannot see across rows, so
+   * two devices that each nominated a *different* default converge to two flagged rows; `reconcile`
+   * picks one deterministic winner (newest `updated_at`, ties broken by the smaller id so both
+   * devices agree) and clears the flag everywhere else.
+   */
+  readonly defaultLocationWinnerId: string | null;
   /** Phase 11: remote `item_history` rows missing locally (union-by-id), to INSERT. */
   readonly historyInserts: readonly SqlRow[];
+  /** Issue #188: remote `stock_deltas` rows missing locally (union-by-id), to INSERT. */
+  readonly stockDeltaInserts: readonly SqlRow[];
   /** Phase 11: `item_tags` edges to add locally (membership union). */
   readonly itemTagUpserts: readonly ItemTagEdge[];
   /** Phase 11: `item_tags` edges to remove locally + tombstone (membership deletions). */

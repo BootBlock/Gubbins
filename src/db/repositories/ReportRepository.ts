@@ -423,12 +423,20 @@ export class ReportRepository extends BaseRepository {
       value: number;
       distinct_items: number;
       priced_items: number;
+      used_volume: number;
+      measured_items: number;
     }>(
+      // `unit_volume` is the item's bounding-box volume (mm³), NULL when any dimension is unset —
+      // so an unmeasured item adds nothing to `used_volume` and isn't counted as measured, exactly
+      // the convention the location tree's volume bar uses (issue #457).
       `SELECT COALESCE(SUM(qty), 0) AS quantity,
               COALESCE(SUM(qty * unit_value), 0) AS value,
               COUNT(*) AS distinct_items,
-              COUNT(CASE WHEN unit_value > 0 THEN 1 END) AS priced_items
-         FROM (SELECT MAX(SUM(s.quantity), 0) AS qty, ${unitValue} AS unit_value
+              COUNT(CASE WHEN unit_value > 0 THEN 1 END) AS priced_items,
+              COALESCE(SUM(CASE WHEN unit_volume IS NOT NULL THEN qty * unit_volume ELSE 0 END), 0) AS used_volume,
+              COUNT(CASE WHEN unit_volume IS NOT NULL THEN 1 END) AS measured_items
+         FROM (SELECT MAX(SUM(s.quantity), 0) AS qty, ${unitValue} AS unit_value,
+                      (i.width * i.height * i.depth) AS unit_volume
                  FROM item_stock s
                  JOIN items i ON i.id = s.item_id
                 WHERE i.is_active = 1 AND s.quantity > 0 AND ${notUnlimited('i.is_unlimited')}
@@ -460,6 +468,8 @@ export class ReportRepository extends BaseRepository {
       totalQuantity: headline?.quantity ?? 0,
       distinctItemCount,
       unpricedItemCount: distinctItemCount - (headline?.priced_items ?? 0),
+      usedVolume: headline?.used_volume ?? 0,
+      measuredItemCount: headline?.measured_items ?? 0,
       byCategory: sortValueGroups(categoryRows.map(toValueGroupTotals)),
     };
   }
@@ -1193,6 +1203,12 @@ export class ReportRepository extends BaseRepository {
    * inbound** — the most recent `item_history` positive-quantity movement, else the parsed
    * `items.acquired_at`, else `created_at` (resolved in the pure {@link bucketStockAging}). Only
    * active, non-parent items holding stock are aged. `now` defaults to the wall clock.
+   *
+   * Each line is valued through the **same** rule as the {@link inventoryValue} headline beside it
+   * — a manual `current_value` wins over the effective cost (`effectiveUnitValue`) — and unlimited
+   * sources are excluded outright (`notUnlimited`), because a bottomless source holds no finite
+   * value and has no meaningful age. Without both, this report and the headline could label the
+   * same stock with two different totals (issue #397).
    */
   async stockAging(now: number = nowMs()): Promise<StockAgingReport> {
     const base = this.baseCurrency();
@@ -1201,18 +1217,21 @@ export class ReportRepository extends BaseRepository {
       name: string;
       quantity: number;
       unit_cost: number | null;
+      current_value: number | null;
       preferred_supplier_cost: number | null;
       acquired_at: string | null;
       created_at: number;
       last_inbound_at: number | null;
     }>(
       `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
+              i.current_value AS current_value,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               i.acquired_at AS acquired_at, i.created_at AS created_at,
               ( SELECT MAX(h.created_at) FROM item_history h
                  WHERE h.item_id = i.id AND h.quantity_delta > 0 ) AS last_inbound_at
          FROM items i
-        WHERE i.is_active = 1 AND i.quantity > 0 AND ${notAVariantParent('i.id')};`,
+        WHERE i.is_active = 1 AND i.quantity > 0
+          AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
     );
     const inputs: AgingInput[] = rows.map((r) => ({
       id: r.id,
@@ -1220,6 +1239,7 @@ export class ReportRepository extends BaseRepository {
       quantity: r.quantity,
       // Stored in micro-units (issue #286); major units for the pure aging seam.
       unitCost: fromStoredMoney(r.unit_cost),
+      currentValuePerUnit: fromStoredMoney(r.current_value),
       preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
       lastInboundAt: r.last_inbound_at,
       acquiredAtMs: parseAcquiredAt(r.acquired_at),

@@ -349,6 +349,9 @@ describe('ReportRepository', () => {
       expect(stats.totalQuantity).toBe(115);
       expect(stats.distinctItemCount).toBe(3);
       expect(stats.unpricedItemCount).toBe(1);
+      // None of these items carry dimensions, so nothing counts towards used volume.
+      expect(stats.usedVolume).toBe(0);
+      expect(stats.measuredItemCount).toBe(0);
       // Value descending, with the ungrouped bucket forced last regardless of its size.
       expect(stats.byCategory.map((g) => [g.name, g.value])).toEqual([
         ['Capacitors', 20],
@@ -386,12 +389,51 @@ describe('ReportRepository', () => {
       expect(subtree.totalValue).toBe(40); // 20*1 + 4*5
     });
 
+    it('sums used volume from item dimensions, counting only measured items, over the scope', async () => {
+      const garage = await locations.create({ name: 'Garage' });
+      const shelf = await locations.create({ name: 'Shelf', parentId: garage.id });
+
+      // Three 100 mm cubes in the garage — 100×100×100 = 1,000,000 mm³ each.
+      await items.create({
+        name: 'Boxed',
+        locationId: garage.id,
+        quantity: 3,
+        unitCost: 2,
+        width: 100,
+        height: 100,
+        depth: 100,
+      });
+      // An unmeasured item in the garage — counts towards items/units but not volume.
+      await items.create({ name: 'Loose', locationId: garage.id, quantity: 5, unitCost: 1 });
+      // A measured item on the shelf beneath — 200×100×50 = 1,000,000 mm³, two of them.
+      await items.create({
+        name: 'Shelved',
+        locationId: shelf.id,
+        quantity: 2,
+        unitCost: 3,
+        width: 200,
+        height: 100,
+        depth: 50,
+      });
+
+      const garageOnly = await reports.locationStats(garage.id);
+      expect(garageOnly.usedVolume).toBe(3_000_000); // 3 × 100³; the unmeasured item adds nothing
+      expect(garageOnly.measuredItemCount).toBe(1);
+      expect(garageOnly.distinctItemCount).toBe(2);
+
+      const subtree = await reports.locationStats(garage.id, { includeSubtree: true });
+      expect(subtree.usedVolume).toBe(5_000_000); // + 2 × 1,000,000 from the shelf beneath
+      expect(subtree.measuredItemCount).toBe(2);
+    });
+
     it('is empty for a location holding no stock', async () => {
       const empty = await locations.create({ name: 'Empty' });
       const stats = await reports.locationStats(empty.id);
       expect(stats.distinctItemCount).toBe(0);
       expect(stats.totalValue).toBe(0);
       expect(stats.totalQuantity).toBe(0);
+      expect(stats.usedVolume).toBe(0);
+      expect(stats.measuredItemCount).toBe(0);
       expect(stats.byCategory).toEqual([]);
     });
   });
@@ -1087,6 +1129,21 @@ describe('ReportRepository', () => {
       expect(byLabel['91–180 days']).toBe(1); // Old
       expect(report.totalQuantity).toBe(15);
       expect(report.totalValue).toBe(15);
+    });
+
+    it('values on-hand stock the same way as the valuation headline (issue #397)', async () => {
+      const now = Date.now();
+      // A revalued collectible: the manual current value wins over its cost, on both figures.
+      await items.create({ name: 'Collectible', quantity: 1, unitCost: 40, currentValue: 900 });
+      // An unlimited source holds no finite value and no meaningful age, so neither figure
+      // counts it — nor does it inflate the aging report's quantity or item counts.
+      await items.create({ name: 'Mains water', quantity: 500, unitCost: 2, isUnlimited: true });
+
+      const headline = (await reports.inventoryValue()).totalValue;
+      const report = await reports.stockAging(now);
+      expect(headline).toBe(900);
+      expect(report.totalValue).toBe(headline);
+      expect(report.totalQuantity).toBe(1); // the unlimited 500 is excluded, not aged
     });
   });
 

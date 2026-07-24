@@ -129,6 +129,57 @@ export const ITEM_REGIONS_TABLE = 'item_regions';
 export const ITEM_HISTORY_TABLE = 'item_history';
 
 /**
+ * The append-only `stock_deltas` convergence ledger (immutable, no `updated_at`). Like
+ * {@link ITEM_HISTORY_TABLE} it is NOT in {@link SYNC_TABLES} — it reconciles by
+ * **union-by-id** (issue #188): every signed change to a `(item, location, batch)`
+ * placement's quantity is one delta row, and the merge replays the id-unioned deltas to
+ * converge `stock_batches.quantity` rather than resolving it by Last-Write-Wins. Absent
+ * from {@link TOMBSTONE_TABLES} for the same reason as the ledger above: it is append-only,
+ * so nothing ever tombstones a row in it.
+ */
+export const STOCK_DELTAS_TABLE = 'stock_deltas';
+
+/**
+ * The schema tables deliberately **excluded** from every synchronisation path — neither an
+ * LWW entry in {@link SYNC_TABLES} nor one of the bespoke sections ({@link ITEM_TAGS_TABLE} /
+ * {@link LOCATION_TAGS_TABLE} / {@link ITEM_REGIONS_TABLE} / {@link ITEM_HISTORY_TABLE} /
+ * {@link STOCK_DELTAS_TABLE}). Each is device-local or derived, so a peer's copy would be
+ * meaningless or actively wrong:
+ *
+ *  - `app_meta` — per-device application/schema bookkeeping (the `user_version` mirror, feature
+ *    seeds); never data the user authored, so it never travels.
+ *  - `sync_meta` — the sync engine's own local cursors and watermarks (last-sync times, the
+ *    §7.6.3-A `history_pruned_before` mark). These describe *this* device's sync state; a peer's
+ *    values would corrupt it.
+ *  - `tombstones` — the deletion ledger. It *is* propagated, but as its own snapshot section
+ *    (the `tombstones` array reconciled by {@link tombstoneDeleteStatement}), never upserted
+ *    row-for-row like a data table; listing it here keeps it from being mistaken for LWW data.
+ *  - `location_item_counts` — pure derived cache, re-computed by triggers from `items`
+ *    (see the migration note at its `CREATE TABLE`). A peer's count is meaningless; a restore
+ *    re-derives it from whatever rows land in `items`.
+ *  - `stock_delta_capture` — the local capture switch the {@link STOCK_DELTAS_TABLE} triggers
+ *    consult (issue #188). Pure device-local session state (one boolean row); a peer's value
+ *    would be meaningless and syncing it could wrongly suppress or double a capture.
+ *
+ * This list is the explicit half of the classification the drift test enforces
+ * (`sync-table-classification.test.ts`): every real table in the built schema must appear in
+ * exactly one bucket, so adding a table forces a conscious *synced* / *not-synced* decision
+ * rather than defaulting silently to unsynced (issue #245 — the trap that lost `kit_components`,
+ * issue #151). The FTS5 virtual table `items_fts` and its shadow tables are not listed: they are
+ * an engine-managed index rebuilt from `items`, so the test skips virtual tables and their
+ * shadow tables wholesale rather than classifying each.
+ */
+export const NOT_SYNCED = [
+  'app_meta',
+  'sync_meta',
+  'tombstones',
+  'location_item_counts',
+  'stock_delta_capture',
+] as const;
+
+export type NotSyncedTable = (typeof NOT_SYNCED)[number];
+
+/**
  * Every table a tombstone may legitimately name: the {@link SYNC_TABLES} LWW set plus the
  * three membership joins, whose unlinks are also recorded as tombstones (keyed by their
  * composite edge ids). The append-only {@link ITEM_HISTORY_TABLE} is deliberately absent —

@@ -26,6 +26,7 @@ import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import {
   SYNC_TABLES,
   ITEM_HISTORY_TABLE,
+  STOCK_DELTAS_TABLE,
   ITEM_TAGS_TABLE,
   ITEM_REGIONS_TABLE,
   LOCATION_TAGS_TABLE,
@@ -38,15 +39,19 @@ import {
 import type { SqlRow } from '@/db/rpc/driver';
 import { applyOffset } from './clock';
 import { buildConflict, nonLwwColumns } from './conflict-detect';
-import { reconcileGauge } from './delta-crdt';
+import { reconcileGauge, reconcileStockQuantity } from './delta-crdt';
 import { FK_REFS } from './fk-refs';
 import { resolveLww } from './lww';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
 import { sanitiseRow } from './schema-dictionary';
+import { SUPPLIER_PART_FLAG_COLUMNS, flagWinner, type FlagRanked } from './supplier-part-flags';
 import { resolveUniqueKeyCollisions } from './unique-keys';
 import type {
+  FlagRepair,
   GaugeHistoryDelta,
   GaugeResolution,
+  StockQuantityDelta,
+  StockResolution,
   ItemTagEdge,
   ItemTagEdgeDelete,
   ItemRegionEdge,
@@ -91,11 +96,15 @@ const EMPTY_PLAN: ReconciliationPlan = {
   localUpserts: [],
   localDeletes: [],
   gaugeResolutions: [],
+  stockResolutions: [],
   reparented: [],
   rejectedCycles: [],
   serialisedLoansClosed: [],
   collisions: [],
+  flagRepairs: [],
+  defaultLocationWinnerId: null,
   historyInserts: [],
+  stockDeltaInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
   locationTagUpserts: [],
@@ -125,6 +134,42 @@ function rowsDiffer(a: SqlRow, b: SqlRow, table: SyncTable): boolean {
     if (String(a[key] ?? '') !== String(b[key] ?? '')) return true;
   }
   return false;
+}
+
+/**
+ * Would upserting `winner` over the existing local row `l` write nothing but a re-stamp?
+ * (issue #161). Unlike {@link rowsDiffer} — which asks "is this a lost edit" and so ignores
+ * bookkeeping/non-LWW columns — this asks "is applying this upsert a genuine no-op", so it
+ * compares `updated_at` and every other column too.
+ *
+ * Why it matters: a §7.3 timestamp tie resolves `REMOTE_WINS` (see {@link resolveLww}), so the
+ * engine emits an upsert even when the winning row is byte-identical to the one already stored.
+ * Applying it sets `updated_at` to the value the row already holds, which the auto-stamp trigger
+ * (`WHEN NEW.updated_at = OLD.updated_at`, see `updatedAtTrigger` in `v1-initial.ts`) cannot tell
+ * from the caller leaving the column untouched: it fires and bumps the row, so this device now
+ * looks strictly newer and pushes the unchanged row back. The peer re-pulls, re-bumps, and the two
+ * ping-pong an unedited row forever, inflating every delta. Suppressing the no-op upsert makes a
+ * tie genuinely idempotent, exactly as `resolveLww` documents.
+ *
+ * The comparison ranges over `winner`'s keys — the exact columns the apply's UPSERT will write
+ * (`applyPlan` builds `SET col = excluded.col` only for the columns present in the sanitised
+ * `winner`). A column on `l` that `winner` does not carry — a per-device sync-excluded column such
+ * as `item_images.full_res_downgraded_at`, or a column an older peer's schema lacks — is never
+ * written by the upsert, so it cannot make the apply anything other than a no-op and must not
+ * defeat the skip. (In practice `buildLocalSnapshot` already strips the excluded columns from `l`
+ * too, so this is also robust against a future reader that stops doing so.)
+ *
+ * Comparing `updated_at` keeps the check frame-safe: it is a no-op **only** when applying would
+ * change nothing at all. A strictly-newer remote (or a tie observed across a non-zero clock offset,
+ * where the applied server-frame stamp differs from the stored local-frame one) differs in
+ * `updated_at`, fails this test, and still applies — adopting that timestamp is a real write and
+ * cannot churn, because `NEW.updated_at ≠ OLD.updated_at` leaves the trigger dormant.
+ */
+function upsertWouldNoOp(l: SqlRow, winner: SqlRow): boolean {
+  for (const key of Object.keys(winner)) {
+    if (String(l[key] ?? '') !== String(winner[key] ?? '')) return false;
+  }
+  return true;
 }
 
 function num(value: unknown): number {
@@ -192,8 +237,23 @@ export function reconcile(
   );
   enforceForeignKeys(localUpserts, removedParents);
 
+  // --- Issues #157 / #192: "one flag per item" cross-row repair ------------------
+  // Runs after the FK guard so it sees the final upsert set, and mutates the losing upserts in
+  // place. Per-row LWW cannot enforce a one-of-N flag, so two devices pinning different supplier
+  // parts converge to two flagged rows; this reduces each (item, flag) to one deterministic winner.
+  const flagRepairs = repairSupplierPartFlags(local, localUpserts, localDeletes, offset);
+
+  // --- Issue #191: "at most one default location" cross-row repair ---------------
+  // The same shape as the supplier-part repair above, but for the *global* `locations.is_default`:
+  // per-row LWW cannot enforce a single default, so two devices each nominating a different one
+  // converge to two flagged rows; this keeps one deterministic winner across the whole table.
+  const defaultLocationWinnerId = repairDefaultLocation(local, localUpserts, localDeletes, offset);
+
   // --- §7.3 Delta-CRDT gauge reconciliation -------------------------------------
   const gaugeResolutions = reconcileGauges(local, remote, finalItems);
+
+  // --- Issue #188 Delta-CRDT discrete-stock reconciliation ----------------------
+  const stockResolutions = reconcileStock(local, remote, finalItemIds);
 
   // --- Phase 11: non-LWW sections (append-only ledger + M:N membership) ----------
   // Both reference parents (items/tags), so they are filtered to the rows that will
@@ -222,6 +282,13 @@ export function reconcile(
     finalItemIds,
     finalUserIds,
     userRekeys,
+  );
+  // Issue #188: the discrete-stock convergence ledger, unioned by id like the history ledger.
+  const stockDeltaInserts = reconcileStockDeltas(
+    local,
+    remote,
+    options.dictionary[STOCK_DELTAS_TABLE],
+    finalItemIds,
   );
   const { itemTagUpserts, itemTagDeletes } = reconcileItemTags(
     local,
@@ -255,11 +322,15 @@ export function reconcile(
     localUpserts,
     localDeletes,
     gaugeResolutions,
+    stockResolutions,
     reparented,
     rejectedCycles,
     serialisedLoansClosed,
     collisions,
+    flagRepairs,
+    defaultLocationWinnerId,
     historyInserts,
+    stockDeltaInserts,
     itemTagUpserts,
     itemTagDeletes,
     locationTagUpserts,
@@ -327,6 +398,11 @@ function resolveTableMerges(
       if (l && r) {
         if (resolveLww(lUpd!, rUpd!) === 'REMOTE_WINS') {
           const winner = sanitiseRow(r, allowed);
+          // Issue #161: a tie resolves REMOTE_WINS, but if the winning row is byte-identical to
+          // what is already stored the upsert would change nothing except re-fire the auto-stamp
+          // trigger — making this device look "newer" and pushing the unchanged row back into an
+          // indefinite cross-device loop. Skip the no-op upsert so a tie is genuinely idempotent.
+          if (upsertWouldNoOp(l, winner)) continue;
           localUpserts.push({ table, row: winner });
           // A concurrent remote edit won over our newer-than-last-sync local edit (#72). Only
           // when the winning content actually differs — an identical value is not a lost edit.
@@ -632,6 +708,217 @@ function enforceForeignKeys(
   }
 }
 
+/** A row that will carry a flag after the merge — either a surviving local row or a pending upsert. */
+interface FlagCandidate extends FlagRanked {
+  /** Index into `localUpserts` when this candidate is a pending upsert rather than a stored row. */
+  readonly upsertIndex?: number;
+}
+
+/**
+ * Reduce every `supplier_parts` one-of-N flag to a single winner per item (issues #157, #192).
+ *
+ * Per-row LWW converges two devices that each pinned a *different* supplier part to two rows with
+ * the same flag set — a state the app's demote-then-set never produces locally, and which the
+ * schema's partial unique index now forbids. Left alone the merge would either draft a
+ * double-order (#157) or refresh the wrong supplier's cost (#192), and the apply would trip the
+ * index. This picks one deterministic winner per (item, flag) — {@link flagWinner}: newest
+ * `updated_at`, ties broken by the smaller id so **both** devices reach the same verdict without
+ * reference to which side is "local" — and clears the flag everywhere else:
+ *
+ *  - a losing *upsert* row has its flag zeroed in place, so its own write no longer re-sets it;
+ *  - losing *stored* rows are cleared by the {@link FlagRepair} the caller hands `applyPlan`, which
+ *    runs a demoting UPDATE ahead of the upserts (freeing the index before the winner's write).
+ *
+ * The winner keeps `updated_at`; the demotions re-stamp via the §7.1 trigger, so a genuine
+ * de-selection propagates by LWW and the repair reaches a fixpoint once a single row is flagged.
+ */
+function repairSupplierPartFlags(
+  local: SyncSnapshot,
+  localUpserts: TableRow[],
+  localDeletes: readonly Tombstone[],
+  offset: number,
+): FlagRepair[] {
+  const table: SyncTable = 'supplier_parts';
+  const deletedParts = new Set<string>();
+  const deletedItems = new Set<string>();
+  for (const d of localDeletes) {
+    if (d.tableName === table) deletedParts.add(d.id);
+    else if (d.tableName === 'items') deletedItems.add(d.id);
+  }
+
+  // The rows that will exist after the merge: stored rows overlaid by upserts, minus deletes.
+  // A stored row's timestamp is offset-adjusted (the frame the upserts already sit in); an
+  // upsert's is taken as-is. This is the same footing `resolveUniqueKeyCollisions` compares on.
+  interface FinalRow {
+    readonly itemId: string;
+    readonly updatedAt: number;
+    readonly row: SqlRow;
+    readonly upsertIndex?: number;
+  }
+  const finalById = new Map<string, FinalRow>();
+  for (const row of local.tables[table] ?? []) {
+    const id = String(row.id);
+    if (deletedParts.has(id)) continue;
+    finalById.set(id, {
+      itemId: String(row.item_id),
+      updatedAt: applyOffset(num(row.updated_at), offset),
+      row,
+    });
+  }
+  localUpserts.forEach((u, i) => {
+    if (u.table !== table) return;
+    const id = String(u.row.id);
+    if (deletedParts.has(id)) return;
+    finalById.set(id, {
+      itemId: String(u.row.item_id),
+      updatedAt: num(u.row.updated_at),
+      row: u.row,
+      upsertIndex: i,
+    });
+  });
+
+  const repairs: FlagRepair[] = [];
+  for (const column of SUPPLIER_PART_FLAG_COLUMNS) {
+    // Stored rows that physically hold the flag right now. A DELETE the merge is applying is
+    // ordered AFTER the upserts, so a to-be-deleted flagged row still occupies the index the
+    // instant the winner's write runs — it must be demoted exactly like a surviving loser.
+    const storedFlaggedByItem = new Map<string, string[]>();
+    for (const row of local.tables[table] ?? []) {
+      if (num(row[column]) !== 1) continue;
+      const item = String(row.item_id);
+      const ids = storedFlaggedByItem.get(item);
+      if (ids) ids.push(String(row.id));
+      else storedFlaggedByItem.set(item, [String(row.id)]);
+    }
+
+    // Surviving rows that will carry the flag after the merge — the winner is chosen among these,
+    // never a row the merge is deleting.
+    const flaggedByItem = new Map<string, FlagCandidate[]>();
+    for (const [id, entry] of finalById) {
+      if (deletedItems.has(entry.itemId)) continue; // the item is going, its parts cascade away
+      if (num(entry.row[column]) !== 1) continue;
+      const list = flaggedByItem.get(entry.itemId);
+      const candidate: FlagCandidate = { id, updatedAt: entry.updatedAt, upsertIndex: entry.upsertIndex };
+      if (list) list.push(candidate);
+      else flaggedByItem.set(entry.itemId, [candidate]);
+    }
+
+    for (const [itemId, flagged] of flaggedByItem) {
+      let winner = flagged[0]!;
+      for (const c of flagged) winner = flagWinner(winner, c);
+      // Zero every losing *upsert* in place so its own write no longer competes for the key.
+      for (const c of flagged) {
+        if (c.id === winner.id || c.upsertIndex === undefined) continue;
+        const u = localUpserts[c.upsertIndex]!;
+        localUpserts[c.upsertIndex] = { table, row: { ...u.row, [column]: 0 } };
+      }
+      // A demoting UPDATE is needed only when a *stored* DB row other than the winner still holds
+      // the flag: a surviving stored loser, or one being deleted this merge (see above). A losing
+      // upsert of a brand-new row needs none — it simply inserts already zeroed.
+      const stored = storedFlaggedByItem.get(itemId);
+      if (stored?.some((id) => id !== winner.id)) {
+        repairs.push({ table, itemId, column, winnerId: winner.id });
+      }
+    }
+  }
+  return repairs;
+}
+
+/**
+ * Reduce the `locations` table to a single default after the merge (issue #191).
+ *
+ * The structural twin of {@link repairSupplierPartFlags}, but for the *global* `locations.is_default`:
+ * it marks the one place "Add item" pre-selects, maintained locally by a demote-then-set so the
+ * schema's partial unique index never trips on a single device. Per-row LWW cannot see that
+ * demotion across a merge, though: two devices that each nominated a *different* default converge to
+ * two flagged rows — a state the index now forbids. This picks one deterministic winner across the
+ * whole table ({@link flagWinner}: newest `updated_at`, ties broken by the smaller id so **both**
+ * devices reach the same verdict without reference to which side is "local") and clears the flag
+ * everywhere else:
+ *
+ *  - a losing *upsert* row has its flag zeroed in place, so its own write no longer re-sets it;
+ *  - losing *stored* rows are cleared by the returned winner id, which `applyPlan` uses to run a
+ *    demoting UPDATE ahead of the upserts (freeing the index before the winner's write).
+ *
+ * Returns the winner id only when a *stored* DB row other than the winner still holds the flag —
+ * a surviving loser, or one being deleted this merge (its DELETE is ordered after the upserts, so
+ * it still occupies the index when the winner's write runs). Otherwise `null`: nothing carries the
+ * flag among survivors, or the only offenders were losing upserts (already zeroed above).
+ *
+ * The winner keeps `updated_at`; the demotion re-stamps via the §7.1 trigger, so a genuine
+ * de-selection propagates by LWW and the repair reaches a fixpoint once a single row is flagged.
+ */
+function repairDefaultLocation(
+  local: SyncSnapshot,
+  localUpserts: TableRow[],
+  localDeletes: readonly Tombstone[],
+  offset: number,
+): string | null {
+  const table: SyncTable = 'locations';
+  const deleted = new Set<string>();
+  for (const d of localDeletes) if (d.tableName === table) deleted.add(d.id);
+
+  // Stored rows that physically hold the flag right now. A DELETE the merge is applying is ordered
+  // AFTER the upserts, so a to-be-deleted flagged row still occupies the index the instant the
+  // winner's write runs — it must be demoted exactly like a surviving loser.
+  const storedFlagged: string[] = [];
+  for (const row of local.tables[table] ?? []) {
+    if (num(row.is_default) === 1) storedFlagged.push(String(row.id));
+  }
+
+  // The rows that will exist after the merge: stored rows overlaid by upserts, minus deletes. A
+  // stored row's timestamp is offset-adjusted (the frame the upserts already sit in); an upsert's
+  // is taken as-is — the same footing `resolveUniqueKeyCollisions` compares on.
+  interface FinalRow {
+    readonly updatedAt: number;
+    readonly isDefault: boolean;
+    readonly upsertIndex?: number;
+  }
+  const finalById = new Map<string, FinalRow>();
+  for (const row of local.tables[table] ?? []) {
+    const id = String(row.id);
+    if (deleted.has(id)) continue;
+    finalById.set(id, {
+      updatedAt: applyOffset(num(row.updated_at), offset),
+      isDefault: num(row.is_default) === 1,
+    });
+  }
+  localUpserts.forEach((u, i) => {
+    if (u.table !== table) return;
+    const id = String(u.row.id);
+    if (deleted.has(id)) return;
+    finalById.set(id, {
+      updatedAt: num(u.row.updated_at),
+      isDefault: num(u.row.is_default) === 1,
+      upsertIndex: i,
+    });
+  });
+
+  // Surviving rows that will carry the flag after the merge — the winner is chosen among these,
+  // never a row the merge is deleting.
+  const flagged: FlagCandidate[] = [];
+  for (const [id, entry] of finalById) {
+    if (!entry.isDefault) continue;
+    flagged.push({ id, updatedAt: entry.updatedAt, upsertIndex: entry.upsertIndex });
+  }
+  if (flagged.length === 0) return null;
+
+  let winner = flagged[0]!;
+  for (const c of flagged) winner = flagWinner(winner, c);
+
+  // Zero every losing *upsert* in place so its own write no longer competes for the key.
+  for (const c of flagged) {
+    if (c.id === winner.id || c.upsertIndex === undefined) continue;
+    const u = localUpserts[c.upsertIndex]!;
+    localUpserts[c.upsertIndex] = { table, row: { ...u.row, is_default: 0 } };
+  }
+
+  // A demoting UPDATE is needed only when a *stored* DB row other than the winner still holds the
+  // flag: a surviving stored loser, or one being deleted this merge (see above). A losing upsert of
+  // a brand-new row needs none — it simply inserts already zeroed.
+  return storedFlagged.some((id) => id !== winner.id) ? winner.id : null;
+}
+
 /** Ids of a (LWW) table that survive the merge: local rows − deletes + upserts. */
 function survivingIds(
   table: SyncTable,
@@ -671,6 +958,32 @@ function reconcileHistory(
     if (!finalItemIds.has(String(r.item_id))) continue;
     const row = allowedCols ? sanitiseRow(r, allowedCols) : r;
     inserts.push(resolveActor(row, finalUserIds, userRekeys));
+  }
+  return inserts;
+}
+
+/**
+ * The remote `stock_deltas` rows this device is missing (issue #188; union-by-id), to INSERT.
+ *
+ * A leaner sibling of {@link reconcileHistory}: the convergence ledger has no `actor_user_id`, so
+ * there is no actor re-key to apply, and (in this first cut) no prune watermark. A delta is
+ * imported when its id is new here and its `item_id` will survive the merge — a delta for an item
+ * that will not exist locally would replay the CRDT against nothing, and its `item_id` is
+ * ON DELETE CASCADE, so it could never be inserted anyway. `location_id` / `batch_key` are plain
+ * columns, not synced FKs, so they need no survival guard.
+ */
+function reconcileStockDeltas(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  allowedCols: readonly string[] | undefined,
+  finalItemIds: ReadonlySet<string>,
+): SqlRow[] {
+  const localIds = new Set((local.stockDeltas ?? []).map((r) => String(r.id)));
+  const inserts: SqlRow[] = [];
+  for (const r of remote.stockDeltas ?? []) {
+    if (localIds.has(String(r.id))) continue;
+    if (!finalItemIds.has(String(r.item_id))) continue;
+    inserts.push(allowedCols ? sanitiseRow(r, allowedCols) : r);
   }
   return inserts;
 }
@@ -972,6 +1285,82 @@ function reconcileGauges(
     resolutions.push({ itemId: id, netValue });
   }
   return resolutions;
+}
+
+/**
+ * Issue #188 Delta-CRDT: replay the merged `stock_deltas` for every `(item, location, batch)`
+ * placement **contested on both sides**, converging `stock_batches.quantity` to
+ * `clamp₀(Σ id-unioned deltas)`.
+ *
+ * Deliberately conservative, mirroring {@link reconcileGauges}: a placement with deltas on only
+ * one side is left to keep its Last-Write-Wins value (the merge upsert already carried the newer
+ * side's quantity, and its ledger equals that quantity by the S0 capture invariant). Only a
+ * placement both devices moved needs the commutative sum — and restricting to the contested set is
+ * also what makes the pass safe, since it can never set a quantity from an empty delta sum and so
+ * can never zero out a placement whose ledger this device happens not to carry.
+ */
+function reconcileStock(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  finalItemIds: ReadonlySet<string>,
+): StockResolution[] {
+  const localByPlacement = byPlacement(local.stockDeltas ?? []);
+  const remoteByPlacement = byPlacement(remote.stockDeltas ?? []);
+  const resolutions: StockResolution[] = [];
+  for (const [placementId, localEntry] of localByPlacement) {
+    const remoteEntry = remoteByPlacement.get(placementId);
+    // Only a placement both devices moved can have diverged; a one-sided one keeps its LWW value.
+    if (!remoteEntry) continue;
+    if (!finalItemIds.has(localEntry.key.itemId)) continue;
+    // Skip when the remote carries no movement this device lacks: the placements have not actually
+    // diverged, so the local quantity already equals the merged one. Emitting a resolution anyway
+    // would `UPDATE stock_batches SET quantity = <same value>`, bumping `updated_at` and re-pushing
+    // the row every sync — a fresh source of the `[[sync-redundant-resync-churn]]` ping-pong.
+    const localIds = new Set(localEntry.deltas.map((d) => d.id));
+    if (remoteEntry.deltas.every((d) => localIds.has(d.id))) continue;
+    const quantity = reconcileStockQuantity(localEntry.deltas, remoteEntry.deltas);
+    resolutions.push({
+      itemId: localEntry.key.itemId,
+      locationId: localEntry.key.locationId,
+      batchKey: localEntry.key.batchKey,
+      quantity,
+    });
+  }
+  return resolutions;
+}
+
+/** A `(item, location, batch)` placement key. */
+interface PlacementKey {
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly batchKey: string;
+}
+
+/**
+ * Group raw `stock_deltas` rows by their placement, keyed by a stable string id so the same
+ * placement matches across two independently-built snapshots. Each entry projects its rows to the
+ * `{ id, quantityDelta }` the pure {@link reconcileStockQuantity} replays.
+ */
+function byPlacement(
+  deltas: readonly SqlRow[],
+): Map<string, { key: PlacementKey; deltas: StockQuantityDelta[] }> {
+  const map = new Map<string, { key: PlacementKey; deltas: StockQuantityDelta[] }>();
+  for (const d of deltas) {
+    const key: PlacementKey = {
+      itemId: String(d.item_id),
+      locationId: String(d.location_id),
+      batchKey: String(d.batch_key),
+    };
+    // `\0` cannot occur in a UUID or a batch key, so this composite id never collides.
+    const placementId = `${key.itemId}\0${key.locationId}\0${key.batchKey}`;
+    let entry = map.get(placementId);
+    if (!entry) {
+      entry = { key, deltas: [] };
+      map.set(placementId, entry);
+    }
+    entry.deltas.push({ id: String(d.id), quantityDelta: num(d.quantity_delta) });
+  }
+  return map;
 }
 
 function byItem(deltas: readonly GaugeHistoryDelta[]): Map<string, GaugeHistoryDelta[]> {

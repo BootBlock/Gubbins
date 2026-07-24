@@ -220,18 +220,22 @@ you can see a location's worth and contents at a glance without opening the full
   here always matches its row on that report's *value by location* breakdown.
 - **Items** — how many distinct items have stock here.
 - **Units** — the total on-hand quantity across those items.
+- **Space used** — the physical volume the contents occupy, worked out from each item's
+  dimensions (width × height × depth) times the number held. If the location has an internal size
+  of its own (see [[Capacity & fullness|#capacity--fullness]] and its *Dimensions* / *Usable
+  volume* fields), it also shows how full that is — e.g. *20% of 60 L*.
 - **Value by category** — where that value sits, broken down by category, largest first.
 
-![The Statistics tab of a location's Edit dialog: Total value, Items and Units tiles above a value-by-category breakdown](images/location-statistics.png)
+![The Statistics tab of a location's Edit dialog: Total value, Items, Units and Space used tiles above a value-by-category breakdown](images/location-statistics.png)
 
 If the location has sub-locations, a **This location / With sub-locations** switch lets you roll
-the figures up its whole subtree — so *Garage* can show the value of everything on every shelf and
-in every drawer beneath it, not just what sits loose in the garage itself.
+the figures up its whole subtree — so *Garage* can show the value and volume of everything on every
+shelf and in every drawer beneath it, not just what sits loose in the garage itself.
 
 > **ℹ️ Note**
-> An item with no value set is still counted under **Items** and **Units**, but adds nothing to
-> **Total value** — a line beneath the tiles tells you how many items that affects, so a total is
-> never quietly short without saying so.
+> Items with no value or no size set are still counted under **Items** and **Units**, but add
+> nothing to **Total value** or **Space used** — a line beneath the tiles tells you how many items
+> that affects, so neither total is ever quietly short without saying so.
 
 ## Watching a location for dead stock
 
