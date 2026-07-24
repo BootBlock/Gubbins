@@ -43,11 +43,13 @@ export function normaliseMode(value: string): Mode {
 }
 
 /**
- * Selectable accent colours — 14 hues spanning the full spectrum in ~26° steps, listed in
- * rainbow (hue) order so the swatch row reads as a spectrum. Each id maps to a
+ * Selectable accent colours — 16 hues spanning the full spectrum in even 22.5° steps (360° ÷ 16),
+ * listed in rainbow (hue) order so the swatch row reads as a smooth spectrum. Each id maps to a
  * `[data-accent='<id>']` block in `styles/index.css` (light + dark variants). `violet` is the
  * app's signature default (anchored at hue 277°) and mirrors the base `--primary` so the shipped
- * look is unchanged when it is selected; the other 13 are evenly distributed around it.
+ * look is unchanged when it is selected; the wheel is rotated so one swatch lands exactly on 277°
+ * and the other 15 are equidistant around it. Every step is tuned in OKLCH (a perceptual model) so
+ * no two adjacent swatches read as the same colour, and every text/surface pair clears AA.
  */
 export const ACCENTS = [
   { id: 'rose', label: 'Rose' },
@@ -59,7 +61,9 @@ export const ACCENTS = [
   { id: 'emerald', label: 'Emerald' },
   { id: 'teal', label: 'Teal' },
   { id: 'cyan', label: 'Cyan' },
+  { id: 'sky', label: 'Sky' },
   { id: 'blue', label: 'Blue' },
+  { id: 'indigo', label: 'Indigo' },
   { id: 'violet', label: 'Violet' },
   { id: 'purple', label: 'Purple' },
   { id: 'fuchsia', label: 'Fuchsia' },
