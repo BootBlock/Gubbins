@@ -7,6 +7,7 @@
  */
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getWebhookRepository, type CreateWebhookInput, type UpdateWebhookInput } from '@/db/repositories';
+import { useReportWriteFailure } from '@/features/errors';
 import { webhookKeys } from './queries';
 
 function invalidateWebhookConsumers(client: QueryClient): void {
@@ -32,8 +33,11 @@ export function useUpdateWebhook() {
 
 export function useDeleteWebhook() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('webhooks.writeError.heading.delete', 'common.writeFailed');
   return useMutation({
     mutationFn: (id: string) => getWebhookRepository().delete(id),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: () => invalidateWebhookConsumers(client),
   });
 }

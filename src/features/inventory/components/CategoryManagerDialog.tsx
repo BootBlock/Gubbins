@@ -47,7 +47,7 @@ import {
   TRACKING_MODE_LABELS,
 } from './inventory-ui';
 import { TypedFieldControl } from './TypedFieldControl';
-import { useErrorMessage } from '@/features/errors';
+import { useErrorMessage, useReportWriteFailure } from '@/features/errors';
 
 /**
  * Category & schema manager (spec §4). Create categories, define their dynamic
@@ -133,6 +133,12 @@ function CategoryManagerBody() {
   const { data: categories } = useCategories();
   const createCategory = useCreateCategory();
   const deleteCategory = useDeleteCategory();
+  // `useCreateCategory` has no hook-level reporter (the preset importer surfaces its own errors),
+  // so this fire-and-forget create reports its own failure (#389).
+  const reportCreateFailure = useReportWriteFailure(
+    'inventory.writeError.heading.categoryCreate',
+    'common.writeFailed',
+  );
   const [newName, setNewName] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -142,7 +148,10 @@ function CategoryManagerBody() {
   const addCategory = () => {
     const name = newName.trim();
     if (!name) return;
-    createCategory.mutate({ name }, { onSuccess: (cat) => setSelectedId(cat.id) });
+    createCategory.mutate(
+      { name },
+      { onSuccess: (cat) => setSelectedId(cat.id), onError: reportCreateFailure },
+    );
     setNewName('');
   };
 

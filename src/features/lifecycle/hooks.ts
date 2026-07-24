@@ -19,6 +19,7 @@ import {
   type ReconciliationAdjustment,
   type SerialisedReconciliation,
 } from '@/db/repositories';
+import { useReportWriteFailure } from '@/features/errors';
 import { inventoryKeys } from '@/features/inventory/queries';
 import { nowMs } from '@/lib/clock';
 import { invalidateItems } from '@/features/inventory/invalidate';
@@ -98,9 +99,15 @@ export function useAddKitComponent() {
 
 export function useUpdateKitComponentQty() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'lifecycle.writeError.heading.kitComponentQty',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, quantity }: { id: string; kitId: string; quantity: number }) =>
       getItemRepository().updateKitComponentQty(id, quantity),
+    // Surface a rejected component-quantity change rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { kitId }) =>
       void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) }),
   });
@@ -108,8 +115,14 @@ export function useUpdateKitComponentQty() {
 
 export function useRemoveKitComponent() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'lifecycle.writeError.heading.kitComponentRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id }: { id: string; kitId: string }) => getItemRepository().removeKitComponent(id),
+    // Surface a rejected component removal rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { kitId }) =>
       void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) }),
   });
@@ -283,12 +296,18 @@ export function useTransferStock() {
  */
 export function useAuthoriseCount() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'lifecycle.writeError.heading.authoriseCount',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (input: {
       locationId: string;
       quantityAdjustments: readonly ReconciliationAdjustment[];
       serialisedAdjustments: readonly SerialisedReconciliation[];
     }) => getItemRepository().authoriseCount(input),
+    // Surface a rejected count authorisation rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: (result) => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
@@ -339,26 +358,44 @@ export function useCreateMaintenance() {
 
 export function useLogMaintenance() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'lifecycle.writeError.heading.maintenanceLog',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, note }: { id: string; itemId: string; note: string }) =>
       getMaintenanceRepository().logPerformed(id, Date.now(), note),
+    // Surface a rejected maintenance log rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { itemId }) => invalidateMaintenance(client, itemId),
   });
 }
 
 export function useAddMaintenanceUsage() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'lifecycle.writeError.heading.maintenanceUsage',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, amount }: { id: string; itemId: string; amount: number }) =>
       getMaintenanceRepository().addUsage(id, amount),
+    // Surface a rejected usage update rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { itemId }) => invalidateMaintenance(client, itemId),
   });
 }
 
 export function useRemoveMaintenance() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'lifecycle.writeError.heading.maintenanceRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id }: { id: string; itemId: string }) => getMaintenanceRepository().remove(id),
+    // Surface a rejected maintenance removal rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { itemId }) => invalidateMaintenance(client, itemId),
   });
 }

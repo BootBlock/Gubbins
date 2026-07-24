@@ -12,16 +12,15 @@
  * Location mutations reshape a tree whose optimistic mutation is error-prone and
  * low-frequency, so they use straightforward invalidation rather than optimistic
  * patching — a deliberate, scoped simplification.
+ *
+ * The invalidation-based hooks here (supplier parts, relations, test records, locations,
+ * …) patch nothing, so a failure has nothing to roll back — but it must still be told, or
+ * the write just appears to do nothing. They therefore carry the same {@link useReportWriteFailure}
+ * `onError`, with the generic "could not be saved" fallback rather than the optimistic
+ * "…has been undone" line (issue #389).
  */
-import { useCallback, useRef } from 'react';
 import { useMutation, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
-// Imported from the subpath, not the `@/components/foundry` barrel: the barrel re-exports
-// components that import back into `@/features/inventory` and `@/features/command-palette`
-// (which imports this very module), so the barrel would close a module cycle here — and it
-// would drag Modal/Menu/Markdown/RegionCanvas into every chunk that writes an item.
-import { useOptionalToast } from '@/components/foundry/toast';
-import { useT, type MessageKey } from '@/features/i18n';
-import { useErrorMessage } from '@/features/errors';
+import { useReportWriteFailure } from '@/features/errors';
 import {
   getCategoryRepository,
   getItemRepository,
@@ -132,65 +131,6 @@ function restoreItem(client: QueryClient, snapshot: ItemSnapshot | undefined): v
   if (snapshot.detail.data !== undefined) client.setQueryData(snapshot.detail.key, snapshot.detail.data);
 }
 
-/**
- * The heading each optimistic write shows when its rollback fires (issue #307). Derived from the
- * catalog rather than hand-listed, so a new heading is one `en.json`/`de.json` key, not three edits.
- */
-type WriteFailureKey = Extract<MessageKey, `inventory.writeError.heading.${string}`>;
-
-/**
- * How long an identical failure is swallowed before it is reported again (rapid-tap coalescing).
- * Roughly a toast's own dwell time, so a burst reads as one message rather than a stack.
- */
-const WRITE_FAILURE_REPEAT_MS = 3_000;
-
-/**
- * Report a rolled-back optimistic write to the user (issue #307).
- *
- * An optimistic patch that silently reverts reads as a UI glitch — the item vanishes and
- * reappears, the star un-stars itself, the gauge snaps back — so the rational response is to
- * try again, against a write that is failing for a reason (a constraint violation, the storage
- * hard stop, `SQLITE_BUSY`) that would have been actionable had it been shown. The report
- * therefore lives **here**, beside the rollback it explains, rather than at each of the ~20
- * call sites: a `.mutate()` with no `onError` of its own still tells the user.
- *
- * The toast body comes from {@link useErrorMessage} (issue #311). This originally took a
- * `DbError`'s own message as user-facing copy, but a `DbError` carries the **unmodified** SQLite
- * text, so the storage hard stop and a constraint violation both reached the toast as jargon —
- * `UNIQUE constraint failed: tags.name` where a real sentence was derivable from the code. The
- * resolver humanises what it can, keeps a repository's authored sentence where there is one, and
- * degrades to the generic "undone" line otherwise. A call site that wants a more specific message
- * can still add its own `onError` — but it no longer has to.
- */
-function useReportWriteFailure(key: WriteFailureKey): (error: unknown) => void {
-  // Optional: these hooks are exercised by harnesses that render without a ToastProvider, and a
-  // failed write must not become a crash on top of a failed write.
-  const toast = useOptionalToast();
-  const t = useT();
-  const describeError = useErrorMessage();
-  // The last failure this hook instance reported, so a burst coalesces (see below).
-  const lastReport = useRef<{ signature: string; at: number } | null>(null);
-  return useCallback(
-    (error: unknown) => {
-      const detail = describeError(error, t('inventory.writeError.reverted'));
-      const signature = `${key} ${detail}`;
-      const now = Date.now();
-
-      // Quantity and gauge adjusts are explicitly rapid-tap (see the de-bounce in their
-      // `onSettled`), so a persistent failure would otherwise stack one identical toast per tap
-      // and announce it once per tap to assistive tech. Report the first, then swallow identical
-      // repeats for a short window. The window is deliberately not extended on a swallowed
-      // repeat, so an ongoing problem re-surfaces rather than going quiet after one message.
-      const last = lastReport.current;
-      if (last && last.signature === signature && now - last.at < WRITE_FAILURE_REPEAT_MS) return;
-      lastReport.current = { signature, at: now };
-
-      toast?.show({ tone: 'danger', heading: t(key), message: detail });
-    },
-    [toast, t, key, describeError],
-  );
-}
-
 /** Recompute a gauge item's derived (non-persisted) fields after a net-value change. */
 function withGaugeNet(item: Item, nextNet: number): Item {
   if (!item.gauge) return item;
@@ -264,9 +204,12 @@ export function useUpdateItem() {
  */
 export function useApplyScrape() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.scrape', 'common.writeFailed');
   return useMutation({
     mutationFn: ({ id, write }: { id: string; write: ScrapeApplyInput }) =>
       getItemRepository().applyScrape(id, write),
+    // The apply is fired without an error surface, so a rejected merge would otherwise vanish (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { id }) => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
@@ -284,9 +227,15 @@ export function useApplyScrape() {
  */
 export function useRecordRevaluation() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.revaluation',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: RecordRevaluationInput }) =>
       getItemRepository().recordRevaluation(id, input),
+    // Fired from the revaluation editor without an error surface — surface a rejected write (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { id }) => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
@@ -320,9 +269,15 @@ export function useAddRelation() {
  */
 export function useRemoveRelation() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.relationRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ relationId }: { relationId: string; fromItemId: string; toItemId: string }) =>
       getItemRepository().removeRelation(relationId),
+    // Fired straight from the ✕ on a linked-item row with no error surface (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { fromItemId, toItemId }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemRelations(fromItemId) });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemRelations(toItemId) });
@@ -338,9 +293,15 @@ export function useRemoveRelation() {
  */
 export function useRecordTestResult() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.testRecord',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: RecordTestResultInput }) =>
       getItemRepository().recordTestResult(id, input),
+    // The test-records editor announces only success, so a rejected write would go unheard (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { id }) => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemTestRecords(id) });
@@ -355,9 +316,15 @@ export function useRecordTestResult() {
  */
 export function useRemoveTestRecord() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.testRecordRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ recordId }: { recordId: string; itemId: string }) =>
       getItemRepository().removeTestRecord(recordId),
+    // Fired from the ✕ on a test-record row with no error surface (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { itemId }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemTestRecords(itemId) });
     },
@@ -465,9 +432,16 @@ export function useAdjustGauge() {
  */
 export function useReconfigureGauge() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.gaugeConfig',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, change }: { id: string; change: GaugeConfigChange }) =>
       getItemRepository().reconfigureGauge(id, change),
+    // The editor just flips its button back to "Saved", so a rejected reconfigure would be
+    // invisible — surface the reason (a capacity/tare the repository refuses, the hard stop) (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { id }) => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
@@ -498,8 +472,11 @@ export function useSoftDeleteItem() {
 
 export function useRestoreItem() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.restore', 'common.writeFailed');
   return useMutation({
     mutationFn: (id: string) => getItemRepository().restore(id),
+    // Fired from the item's actions menu with no error surface — surface a rejected restore (#389).
+    onError: reportFailure,
     onSettled: () => {
       invalidateItems(client);
       // Restoring puts the item back into its location's count, exactly as soft-deleting took
@@ -641,26 +618,42 @@ function invalidateSupplierParts(client: QueryClient, itemId: string): void {
 
 export function useCreateSupplierPart() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.supplierPartAdd',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ itemId, input }: { itemId: string; input: CreateSupplierPartInput }) =>
       getSupplierPartRepository().create(itemId, input),
+    // The supplier-parts table fires its edits without an error surface (#389).
+    onError: reportFailure,
     onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
   });
 }
 
 export function useUpdateSupplierPart() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.supplierPartUpdate',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, input }: { id: string; itemId: string; input: UpdateSupplierPartInput }) =>
       getSupplierPartRepository().update(id, input),
+    onError: reportFailure,
     onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
   });
 }
 
 export function useSetPreferredSupplierPart() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.supplierPreferred',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id }: { id: string; itemId: string }) => getSupplierPartRepository().setPreferred(id),
+    onError: reportFailure,
     onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
   });
 }
@@ -672,19 +665,29 @@ export function useSetPreferredSupplierPart() {
  */
 export function useSetSupplierPriceSource() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.priceSource',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, itemId, on }: { id: string; itemId: string; on: boolean }) =>
       on
         ? getSupplierPartRepository().setPriceSource(id)
         : getSupplierPartRepository().clearPriceSource(itemId),
+    onError: reportFailure,
     onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
   });
 }
 
 export function useDeleteSupplierPart() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.supplierPartRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id }: { id: string; itemId: string }) => getSupplierPartRepository().delete(id),
+    onError: reportFailure,
     onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
   });
 }
@@ -702,8 +705,15 @@ export function useDeleteSupplierPart() {
  */
 export function useCreateLocationPath() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.locationCreate',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (input: CreateLocationInput) => getLocationRepository().createPath(input),
+    // The create dialog fires with only an `onSuccess`, so a rejected create would close the
+    // flow saying nothing — surface the reason (#389).
+    onError: reportFailure,
     onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.locations() }),
   });
 }
@@ -726,15 +736,25 @@ export function useUpdateLocation() {
 /** Soft-archive a location (hide it) or restore it — a light wrapper over the repo. */
 export function useArchiveLocation() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.locationArchive',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
       getLocationRepository().setArchived(id, archived),
+    // Fired from the location's menu with no error surface (#389).
+    onError: reportFailure,
     onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.locations() }),
   });
 }
 
 export function useDeleteLocation() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.locationDelete',
+    'common.writeFailed',
+  );
   return useMutation({
     // The delete itself returns every tool still out to this location first (restoring
     // stock/history as a normal check-in would) so it never silently strands stock marked
@@ -743,6 +763,9 @@ export function useDeleteLocation() {
     // removes the returned checkout rows. (This is the loan *target*; the delete's own SQL
     // still nulls the distinct source_location_id.)
     mutationFn: (id: string) => getLocationRepository().delete(id),
+    // The sidebar fires the delete with only an `onSuccess`, so a rejected delete would be
+    // silent — surface the reason (#389).
+    onError: reportFailure,
     onSettled: () => {
       // A delete re-parents items to Unassigned, so refresh items too.
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });

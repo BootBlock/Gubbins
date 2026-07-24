@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
+import { useReportWriteFailure } from '@/features/errors';
 import { useDeleteLocation, useUpdateLocation } from './mutations';
 import { resolveTreeKey, type TreeRow } from './tree-keyboard';
 import { defaultParentForNewLocation, flattenVisibleTree } from './location-tree';
@@ -74,6 +75,12 @@ export function useLocationSidebar({
   } | null>(null);
   const deleteLocation = useDeleteLocation();
   const updateLocation = useUpdateLocation();
+  // `useUpdateLocation` has no hook-level reporter (the Edit dialog surfaces its own errors), so
+  // the inline rename fired here has to report its own failure or the rename silently reverts (#389).
+  const reportLocationUpdate = useReportWriteFailure(
+    'inventory.writeError.heading.locationUpdate',
+    'common.writeFailed',
+  );
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   // A row a keyboard jump asked for that wasn't rendered yet (virtualised tree), plus the timer
   // that disarms it if the row never turns up. See `focusRow`.
@@ -141,7 +148,7 @@ export function useLocationSidebar({
 
   const commitRename = (id: string, name: string) => {
     endRename(id);
-    updateLocation.mutate({ id, input: { name } });
+    updateLocation.mutate({ id, input: { name } }, { onError: reportLocationUpdate });
   };
 
   // Focus retreats to "All items" before a deleted row leaves the tree.

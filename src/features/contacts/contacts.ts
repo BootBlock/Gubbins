@@ -20,6 +20,7 @@ import {
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
 import { invalidateItems } from '@/features/inventory/invalidate';
+import { useReportWriteFailure } from '@/features/errors';
 
 export const contactKeys = {
   all: ['contacts'] as const,
@@ -90,8 +91,12 @@ export function useContactCheckouts(contactId: string | undefined) {
 
 export function useCreateContact() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('contacts.writeError.heading.create', 'common.writeFailed');
   return useMutation({
     mutationFn: (input: CreateContactInput) => getContactRepository().create(input),
+    // The add-contact form fires fire-and-forget and clears its inputs on success, so a rejected
+    // create would otherwise vanish silently with the typed values (#389).
+    onError: reportFailure,
     onSettled: () => void client.invalidateQueries({ queryKey: contactKeys.list() }),
   });
 }
@@ -107,11 +112,14 @@ export function useUpdateContact() {
 
 export function useDeleteContact() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('contacts.writeError.heading.delete', 'common.writeFailed');
   return useMutation({
     // The delete itself returns every active loan first (restoring stock/history as a normal
     // check-in would) so deleting a contact never silently strands stock still marked "out" —
     // in the *same* transaction, so the returns can't survive a failed delete (issue #301).
     mutationFn: (id: string) => getContactRepository().delete(id),
+    // Deletion is fired straight from the row with no error surface at the call site (#389).
+    onError: reportFailure,
     onSettled: () => {
       void client.invalidateQueries({ queryKey: contactKeys.all });
       void client.invalidateQueries({ queryKey: checkoutKeys.all });
