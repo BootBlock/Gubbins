@@ -677,7 +677,7 @@
       "type": "table",
       "name": "maintenance_schedules",
       "tbl_name": "maintenance_schedules",
-      "sql": "CREATE TABLE maintenance_schedules (\n          id                  TEXT    PRIMARY KEY NOT NULL,\n          item_id             TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          name                TEXT    NOT NULL,\n          basis               TEXT    NOT NULL,\n          interval_days       INTEGER,\n          interval_usage      REAL,\n          usage_unit          TEXT,\n          usage_since_service REAL    NOT NULL DEFAULT 0,\n          last_performed_at   INTEGER,\n          note                TEXT,\n          created_at          INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at          INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), accrue_checkout_hours INTEGER NOT NULL DEFAULT 0, location_id TEXT REFERENCES locations(id),\n          CHECK (basis IN ('TIME', 'USAGE')),\n          CHECK (usage_since_service >= 0),\n          -- A TIME schedule needs a positive day interval; a USAGE schedule a\n          -- positive usage interval. (DOM-drift-style: never a silent NULL.)\n          CHECK (basis <> 'TIME'  OR (interval_days  IS NOT NULL AND interval_days  > 0)),\n          CHECK (basis <> 'USAGE' OR (interval_usage IS NOT NULL AND interval_usage > 0))\n        ) STRICT"
+      "sql": "CREATE TABLE maintenance_schedules (\n          id                  TEXT    PRIMARY KEY NOT NULL,\n          item_id             TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          name                TEXT    NOT NULL,\n          basis               TEXT    NOT NULL,\n          interval_days       INTEGER,\n          interval_usage      REAL,\n          usage_unit          TEXT,\n          usage_since_service REAL    NOT NULL DEFAULT 0,\n          last_performed_at   INTEGER,\n          -- Derived due instant for a TIME schedule (issue #325): the app writes\n          -- addCalendarDays(COALESCE(last_performed_at, created_at), interval_days) on every\n          -- create/service, so a day is a DST-safe calendar day rather than a fixed 86,400,000 ms.\n          -- NULL for a USAGE schedule (no calendar due date) and for any row predating this column,\n          -- where reads fall back to the fixed-ms expression (see MaintenanceRepository).\n          time_due_at         INTEGER,\n          note                TEXT,\n          created_at          INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at          INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), accrue_checkout_hours INTEGER NOT NULL DEFAULT 0, location_id TEXT REFERENCES locations(id),\n          CHECK (basis IN ('TIME', 'USAGE')),\n          CHECK (usage_since_service >= 0),\n          -- A TIME schedule needs a positive day interval; a USAGE schedule a\n          -- positive usage interval. (DOM-drift-style: never a silent NULL.)\n          CHECK (basis <> 'TIME'  OR (interval_days  IS NOT NULL AND interval_days  > 0)),\n          CHECK (basis <> 'USAGE' OR (interval_usage IS NOT NULL AND interval_usage > 0))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -4419,6 +4419,14 @@
         },
         {
           "cid": 9,
+          "name": "time_due_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
           "name": "note",
           "type": "TEXT",
           "notnull": 0,
@@ -4426,7 +4434,7 @@
           "pk": 0
         },
         {
-          "cid": 10,
+          "cid": 11,
           "name": "created_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -4434,7 +4442,7 @@
           "pk": 0
         },
         {
-          "cid": 11,
+          "cid": 12,
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -4442,7 +4450,7 @@
           "pk": 0
         },
         {
-          "cid": 12,
+          "cid": 13,
           "name": "accrue_checkout_hours",
           "type": "INTEGER",
           "notnull": 1,
@@ -4450,7 +4458,7 @@
           "pk": 0
         },
         {
-          "cid": 13,
+          "cid": 14,
           "name": "location_id",
           "type": "TEXT",
           "notnull": 0,

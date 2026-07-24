@@ -1045,6 +1045,12 @@ const baselineStatements: SqlStatement[] = [
           usage_unit          TEXT,
           usage_since_service REAL    NOT NULL DEFAULT 0,
           last_performed_at   INTEGER,
+          -- Derived due instant for a TIME schedule (issue #325): the app writes
+          -- addCalendarDays(COALESCE(last_performed_at, created_at), interval_days) on every
+          -- create/service, so a day is a DST-safe calendar day rather than a fixed 86,400,000 ms.
+          -- NULL for a USAGE schedule (no calendar due date) and for any row predating this column,
+          -- where reads fall back to the fixed-ms expression (see MaintenanceRepository).
+          time_due_at         INTEGER,
           note                TEXT,
           created_at          INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at          INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),

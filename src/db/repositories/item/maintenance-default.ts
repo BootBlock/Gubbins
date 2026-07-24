@@ -16,6 +16,7 @@
  * `MaintenanceRepository.create` writes for a plain schedule (no usage unit, no checkout-hour
  * accrual, item-level scope), so every downstream read/edit treats it identically.
  */
+import { addCalendarDays } from '@/lib/calendar-days';
 import type { SqlStatement } from '../../rpc/driver';
 import type { MaintenanceBasis } from '../constants';
 
@@ -59,11 +60,17 @@ function maintenanceInsert(
   intervalDays: number | null,
   intervalUsage: number | null,
 ): SqlStatement {
+  // Mirror `MaintenanceRepository.create`: set `created_at` explicitly so the derived `time_due_at`
+  // can be computed from the same anchor with calendar-day arithmetic (issue #325). Persisted
+  // timestamp → real clock (`Date.now()`). A USAGE default has no calendar due date (NULL).
+  const createdAt = Date.now();
+  const timeDueAt =
+    basis === 'TIME' && intervalDays != null ? addCalendarDays(createdAt, intervalDays) : null;
   return {
     sql: `INSERT INTO maintenance_schedules
             (id, item_id, name, basis, interval_days, interval_usage,
-             usage_unit, accrue_checkout_hours, location_id, note)
-          VALUES (?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL);`,
+             usage_unit, accrue_checkout_hours, location_id, note, created_at, time_due_at)
+          VALUES (?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, ?, ?);`,
     params: [
       crypto.randomUUID(),
       itemId,
@@ -71,6 +78,8 @@ function maintenanceInsert(
       basis,
       intervalDays,
       intervalUsage,
+      createdAt,
+      timeDueAt,
     ],
   };
 }

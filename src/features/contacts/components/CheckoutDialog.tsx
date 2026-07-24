@@ -10,8 +10,8 @@ import { itemDisplayName } from '@/features/inventory/item-display';
 import { useProjects } from '@/features/projects/projects';
 import { useFeature } from '@/features/modules/useFeature';
 import { useContacts, useCheckoutItem } from '../contacts';
-import { MS_PER_DAY } from '@/features/scanner/due-date';
 import { fromDueDateInputValue, todayDateInputValue } from '@/lib/date-input';
+import { addCalendarDays } from '@/lib/calendar-days';
 import { useErrorMessage } from '@/features/errors';
 
 /** Sentinel for "lend whatever FEFO picks" — distinct from the untracked default key (''). */
@@ -176,9 +176,10 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
   );
 
   const setPreset = (days: number) => {
-    // The preset's day is the user's local calendar day N days out, matching how the picked
-    // due date is stored (local, via `fromDueDateInputValue`) rather than a UTC slice.
-    setDueDate(todayDateInputValue(Date.now() + days * MS_PER_DAY));
+    // Whole calendar days from today (issue #325), so "1 month" lands on the same date regardless of
+    // a DST change in between; converted through the local-date seam (matching how the picked due
+    // date is stored) rather than a UTC slice.
+    setDueDate(todayDateInputValue(addCalendarDays(Date.now(), days)));
   };
 
   const submit = async () => {

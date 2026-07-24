@@ -5,6 +5,7 @@ import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { ItemRepository } from './ItemRepository';
 import { MaintenanceRepository } from './MaintenanceRepository';
+import { addCalendarDays } from '@/lib/calendar-days';
 
 const DAY = 86_400_000;
 
@@ -57,9 +58,13 @@ describe('MaintenanceRepository — Phase 9 (§4.3 Tool Maintenance)', () => {
       basis: 'TIME',
       intervalDays: 90,
     });
-    // Backdate creation so it is already overdue.
-    await driver.execute('UPDATE maintenance_schedules SET created_at = ? WHERE id = ?;', [
-      Date.now() - 100 * DAY,
+    // Backdate creation so it is already overdue. The derived `time_due_at` is what reads consult
+    // (issue #325), so move it in step with the anchor — exactly as a schedule genuinely created
+    // 100 days ago would have stored it (90 calendar days on from that anchor).
+    const anchor = Date.now() - 100 * DAY;
+    await driver.execute('UPDATE maintenance_schedules SET created_at = ?, time_due_at = ? WHERE id = ?;', [
+      anchor,
+      addCalendarDays(anchor, 90),
       sched.id,
     ]);
     const now = Date.now();

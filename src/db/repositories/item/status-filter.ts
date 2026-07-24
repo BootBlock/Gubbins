@@ -19,9 +19,9 @@ import {
   EXPIRY_SOON_WINDOW_DAYS,
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
-  MS_PER_DAY,
   WARRANTY_SOON_WINDOW_DAYS,
 } from '../constants';
+import { addCalendarDays } from '@/lib/calendar-days';
 import type { LowStockThresholds } from '../types';
 import { onLoanCheckoutExistsSql, overdueCheckoutExistsSql } from '../CheckoutRepository';
 import { maintenanceDueExistsSql } from '../MaintenanceRepository';
@@ -137,11 +137,11 @@ function predicateFor(status: ItemStatusFilter, ctx: StatusFilterContext): [sql:
       return [`(${onOrderQtyForItemSql('items.id')} > 0)`, []];
     case 'expiring': {
       const windowDays = ctx.expirySoonWindowDays ?? EXPIRY_SOON_WINDOW_DAYS;
-      return [expiringPredicateSql(), [ctx.now + windowDays * MS_PER_DAY]];
+      return [expiringPredicateSql(), [addCalendarDays(ctx.now, windowDays)]];
     }
     case 'warranty': {
       // `warranty_expires_at` is a TEXT YYYY-MM-DD date, so bind an ISO date-string cutoff.
-      const cutoff = new Date(ctx.now + WARRANTY_SOON_WINDOW_DAYS * MS_PER_DAY).toISOString().slice(0, 10);
+      const cutoff = new Date(addCalendarDays(ctx.now, WARRANTY_SOON_WINDOW_DAYS)).toISOString().slice(0, 10);
       return [warrantyExpiringPredicateSql(), [cutoff]];
     }
     case 'on-loan':

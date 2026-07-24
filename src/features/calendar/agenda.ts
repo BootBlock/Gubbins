@@ -15,10 +15,14 @@
  * maintenance schedule that is currently due (no calendar date) carry `hasDate: false` and are
  * anchored at `now`, so they sort and bucket into "Today" rather than being hidden.
  */
-import { MS_PER_DAY } from '@/db/repositories/constants';
+import { addCalendarDays, startOfLocalDay } from '@/lib/calendar-days';
 import { plural } from '@/lib/plural';
 import { daysOverdue, overdueLabel } from '@/features/contacts/overdue';
 import { maintenanceDueAtMs } from '@/features/alerts/alerts';
+
+// Re-exported so callers and this seam's tests keep importing `startOfLocalDay` from here while
+// the definition lives in one shared place (issue #325).
+export { startOfLocalDay };
 
 // ---------------------------------------------------------------------------
 // Types
@@ -290,7 +294,7 @@ function buildBookingEvents(
 ): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   for (const s of sources) {
-    const endExclusive = startOfLocalDay(s.endDate) + MS_PER_DAY;
+    const endExclusive = addCalendarDays(startOfLocalDay(s.endDate), 1);
     const active = s.startDate <= now && now < endExclusive;
     const forWhom = s.contactName ? ` for ${s.contactName}` : '';
     events.push({
@@ -360,18 +364,6 @@ export const AGENDA_BUCKET_LABEL: Record<AgendaBucket, string> = {
 };
 
 /**
- * Start of the local calendar day containing `now` (local midnight, UNIX-ms). Bucket
- * boundaries hang off this so "Today"/"This week"/"This month" align to calendar days rather
- * than rolling 24-hour windows. Pure given `now` and the host time zone; unit tests derive
- * their event instants from this same anchor so they hold in any time zone.
- */
-export function startOfLocalDay(now: number): number {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-/**
  * Classify a single event into its chronological bucket relative to `now`:
  * - **overdue** — before the start of today's local calendar day.
  * - **today**   — anywhere within the current calendar day (including earlier today).
@@ -385,13 +377,17 @@ export function startOfLocalDay(now: number): number {
  * already earlier than `now` from the start of the working day onward — testing `dueAt < now`
  * (rather than `dueAt < startOfLocalDay(now)`) would sweep every one of them into "Overdue" and
  * leave "Today" reachable only by the date-less reorder/usage entries (issue #322).
+ *
+ * The forward edges step with {@link addCalendarDays} rather than a fixed 24-hour span, so the
+ * "next 7 days" boundary stays at local midnight even across a DST change, not an hour adrift
+ * (issue #325).
  */
 export function bucketForDueAt(dueAt: number, now: number): AgendaBucket {
   const startOfDay = startOfLocalDay(now);
   if (dueAt < startOfDay) return 'overdue';
-  if (dueAt < startOfDay + MS_PER_DAY) return 'today';
-  if (dueAt < startOfDay + 7 * MS_PER_DAY) return 'week';
-  if (dueAt < startOfDay + 30 * MS_PER_DAY) return 'month';
+  if (dueAt < addCalendarDays(startOfDay, 1)) return 'today';
+  if (dueAt < addCalendarDays(startOfDay, 7)) return 'week';
+  if (dueAt < addCalendarDays(startOfDay, 30)) return 'month';
   return 'later';
 }
 

@@ -6,6 +6,7 @@
  * the repository (classifying schedules on read), the dashboard widget and toasts.
  */
 import { MS_PER_DAY, MS_PER_HOUR, type MaintenanceBasis } from '@/db/repositories/constants';
+import { addCalendarDays } from '@/lib/calendar-days';
 
 export interface MaintenanceScheduleState {
   readonly basis: MaintenanceBasis;
@@ -60,7 +61,10 @@ export interface MaintenanceStatus {
 export function maintenanceStatus(state: MaintenanceScheduleState, now: number): MaintenanceStatus {
   if (state.basis === 'TIME') {
     const anchor = state.lastPerformedAt ?? state.createdAt;
-    const dueAt = anchor + (state.intervalDays ?? 0) * MS_PER_DAY;
+    // Calendar-day arithmetic so a 30-day interval lands at the same wall-clock time 30 calendar
+    // days on, rather than drifting an hour across a DST change (issue #325). Must match the stored
+    // `time_due_at` the repository writes and the pure `maintenanceDueAtMs` twin in `alerts.ts`.
+    const dueAt = addCalendarDays(anchor, state.intervalDays ?? 0);
     return {
       due: now >= dueAt,
       dueAt,

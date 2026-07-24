@@ -5,6 +5,7 @@
  * are UNIX epoch milliseconds, matching `items.expiry_date`.
  */
 import { EXPIRY_SOON_WINDOW_DAYS, MS_PER_DAY } from '@/db/repositories/constants';
+import { addCalendarDays } from '@/lib/calendar-days';
 
 /**
  * Expiry classification of a perishable item:
@@ -22,7 +23,10 @@ export function expiryStatus(
 ): ExpiryStatus {
   if (expiryDate == null) return 'NONE';
   if (expiryDate <= now) return 'EXPIRED';
-  if (expiryDate - now <= windowDays * MS_PER_DAY) return 'EXPIRING_SOON';
+  // Calendar-day window (issue #325): "expires within N days" measures whole calendar days from
+  // now, matching the `expiringPredicateSql` cutoff the repository binds, so the pure classifier
+  // and the SQL pre-filter agree even across a DST change.
+  if (expiryDate <= addCalendarDays(now, windowDays)) return 'EXPIRING_SOON';
   return 'FRESH';
 }
 

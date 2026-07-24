@@ -24,7 +24,7 @@ import {
   type AssetLifecycleItem,
 } from '@/features/inventory/asset-lifecycle';
 import { expiryStatus } from '@/features/lifecycle/expiry';
-import { MS_PER_DAY } from '@/db/repositories/constants';
+import { addCalendarDays } from '@/lib/calendar-days';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -301,5 +301,7 @@ export function maintenanceDueAtMs(
 ): number | null {
   if (basis !== 'TIME' || intervalDays == null) return null;
   const anchor = lastPerformedAt ?? createdAt;
-  return anchor + intervalDays * MS_PER_DAY;
+  // Calendar-day arithmetic (issue #325) — the pure twin of `maintenanceStatus` and the stored
+  // `time_due_at` the repository writes; all three must agree on the due instant.
+  return addCalendarDays(anchor, intervalDays);
 }

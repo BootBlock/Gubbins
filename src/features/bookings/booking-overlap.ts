@@ -16,29 +16,15 @@
  * date range. The two never share maths.
  *
  * **Whole-day, inclusive, local.** Both ends snap to local midnight via
- * {@link startOfLocalDay} (mirroring the same-named helper in `agenda.ts`, defined here
- * independently so this seam stays self-contained), so partial-day clock times never cause
- * a same-day booking to be judged free. Adjacent days do **not** overlap: a booking ending
- * on day 3 and another starting on day 4 leave no shared day, so the asset is free.
+ * {@link startOfLocalDay} (the shared `@/lib/calendar-days` helper), so partial-day clock times
+ * never cause a same-day booking to be judged free. Adjacent days do **not** overlap: a booking
+ * ending on day 3 and another starting on day 4 leave no shared day, so the asset is free.
  */
+import { startOfLocalDay } from '@/lib/calendar-days';
 
-// ---------------------------------------------------------------------------
-// Day snapping
-// ---------------------------------------------------------------------------
-
-/**
- * Local midnight (00:00:00.000) of the day containing `ms`, as a UNIX-ms instant.
- *
- * Mirrors the same-named helper in `agenda.ts`; defined independently here so this seam
- * carries no cross-feature import. Snapping to the *local* day (not UTC) means a booking is
- * judged against the user's calendar, so a clock time anywhere within a day collapses to the
- * one canonical day-start instant.
- */
-export function startOfLocalDay(ms: number): number {
-  const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
+// Re-exported so existing importers (the repository layer, this seam's tests) keep their local
+// name while the definition lives in one place (issue #325).
+export { startOfLocalDay };
 
 // ---------------------------------------------------------------------------
 // Day ranges

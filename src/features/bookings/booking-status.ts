@@ -14,7 +14,7 @@
  * (`text-destructive`, `bg-primary/10`, …) — never raw colour literals — so the calendar stays
  * themable and dark-mode-correct (see CLAUDE.md "Design tokens are mandatory").
  */
-import { MS_PER_DAY } from '@/db/repositories/constants';
+import { addCalendarDays, startOfLocalDay } from '@/lib/calendar-days';
 
 // ---------------------------------------------------------------------------
 // Status type & input
@@ -48,24 +48,14 @@ export interface BookingStatusInput {
 // ---------------------------------------------------------------------------
 
 /**
- * Start of the local calendar day containing `ms` (local midnight, UNIX-ms). Self-contained so
- * the seam has no cross-file dependency; pure given `ms` and the host time zone. Unit tests
- * derive their instants from this same anchor so they hold in any time zone.
- */
-function startOfLocalDay(ms: number): number {
-  const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-/**
  * Derive a booking's lifecycle status. Resolution order (first match wins):
  *
  * 1. `cancelledAt != null` → **cancelled** (a terminal stored state; beats everything).
  * 2. `convertedCheckoutId != null` → **converted** (realised into a checkout; beats dates).
  * 3. Otherwise date-based, comparing `now` to the booked whole-day window. The window runs
  *    from `startDate` (inclusive) to the END of the day containing `endDate`, i.e.
- *    `endExclusive = startOfLocalDay(endDate) + MS_PER_DAY`:
+ *    `endExclusive = addCalendarDays(startOfLocalDay(endDate), 1)` — the next local midnight, so a
+ *    DST change on the final day never trips the window an hour early (issue #325):
  *    - `now >= endExclusive` → **overdue** (the window fully passed, never converted/cancelled).
  *    - `now >= startDate` (and `now < endExclusive`) → **active** (in use today).
  *    - else (`now < startDate`) → **upcoming**.
@@ -73,7 +63,7 @@ function startOfLocalDay(ms: number): number {
 export function deriveBookingStatus(b: BookingStatusInput, now: number): BookingStatus {
   if (b.cancelledAt != null) return 'cancelled';
   if (b.convertedCheckoutId != null) return 'converted';
-  const endExclusive = startOfLocalDay(b.endDate) + MS_PER_DAY;
+  const endExclusive = addCalendarDays(startOfLocalDay(b.endDate), 1);
   if (now >= endExclusive) return 'overdue';
   if (now >= b.startDate) return 'active';
   return 'upcoming';
