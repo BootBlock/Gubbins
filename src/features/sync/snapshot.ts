@@ -606,6 +606,19 @@ export async function applyPlan(
     });
   }
 
+  // Issues #157 / #192: reduce each one-of-N `supplier_parts` flag to a single winner per item,
+  // ahead of the upserts. `reconcile` already zeroed the flag on any *losing upsert row*; this
+  // clears it on the *stored* rows the merge is leaving in place, so the winner's write below
+  // does not momentarily leave two rows flagged — which the partial unique index would reject,
+  // aborting the whole atomic merge. The UPDATE does not set `updated_at`, so the §7.1 trigger
+  // re-stamps each demoted row and the de-selection propagates on the next push.
+  for (const { table, column, itemId, winnerId } of plan.flagRepairs) {
+    statements.push({
+      sql: `UPDATE ${table} SET ${column} = 0 WHERE item_id = ? AND ${column} = 1 AND id <> ?;`,
+      params: [itemId, winnerId],
+    });
+  }
+
   // UPSERTs, parents before children.
   const upserts = [...plan.localUpserts].sort((a, b) => tableIndex(a.table) - tableIndex(b.table));
   for (const { table, row } of upserts) {

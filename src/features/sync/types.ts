@@ -184,6 +184,26 @@ export interface CollisionResolution {
   readonly hoistOnly?: boolean;
 }
 
+/**
+ * Issues #157 / #192: a "one flag per parent" invariant the merge had to repair. `supplier_parts`
+ * carries two independent one-of-N flags per item — `is_preferred` (drives valuation) and
+ * `is_price_source` (drives which supplier a price refresh fetches) — each maintained by an
+ * app-level demote-then-set. Per-row LWW cannot see across rows, so two devices that each pinned a
+ * *different* supplier offline converge to two flagged rows. `reconcile` picks one deterministic
+ * winner per (item, flag) and emits this so `applyPlan` clears the flag from every other row for
+ * that item *before* the upserts run — otherwise the winner's write would trip the partial unique
+ * index the same backstop adds at the schema level.
+ */
+export interface FlagRepair {
+  readonly table: SyncTable;
+  /** The item whose flag is being reduced to a single winner. */
+  readonly itemId: string;
+  /** The boolean column to clear on every row but the winner. A fixed code literal, never row data. */
+  readonly column: string;
+  /** The single row that keeps `column = 1`. */
+  readonly winnerId: string;
+}
+
 export interface ReconciliationPlan {
   /** Rows to UPSERT locally (remote won LWW, or are new), already sanitised + re-parented. */
   readonly localUpserts: readonly TableRow[];
@@ -197,6 +217,8 @@ export interface ReconciliationPlan {
   readonly rejectedCycles: readonly string[];
   /** Issue #187: ids retired to a peer's row under a shared natural key (see {@link CollisionResolution}). */
   readonly collisions: readonly CollisionResolution[];
+  /** Issues #157 / #192: "one flag per item" reductions to apply before the upserts (see {@link FlagRepair}). */
+  readonly flagRepairs: readonly FlagRepair[];
   /** Phase 11: remote `item_history` rows missing locally (union-by-id), to INSERT. */
   readonly historyInserts: readonly SqlRow[];
   /** Phase 11: `item_tags` edges to add locally (membership union). */

@@ -29,6 +29,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   reparented: [],
   rejectedCycles: [],
   collisions: [],
+  flagRepairs: [],
   historyInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
