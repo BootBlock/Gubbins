@@ -36,6 +36,11 @@ list. The BOM adds a grouped **EDA BOM (CSV)** for electronics tools like KiCad.
 formats load on demand the first time you use them, so they never slow the app down; once you've
 [[installed Gubbins|Installing-Gubbins]], they're cached for offline use too.
 
+> **ℹ️ Note** In a **CSV** or **TSV** export, a cell that begins with `=`, `+`, `-` or `@` gets a
+> single leading quote (so `=A1` becomes `'=A1`). That stops a spreadsheet from treating a stored
+> value as a live formula when it opens the file; the quote is hidden by the spreadsheet and the
+> text reads normally. Numbers are unaffected. The Excel (`.xlsx`) export needs no such marker.
+
 ## Importing
 
 Bringing data *in* is just as flexible. Paste text or pick a file, and Gubbins detects the format

