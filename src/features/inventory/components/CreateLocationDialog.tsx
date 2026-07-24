@@ -1,6 +1,7 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { Button, FormField, Input, InfoHint, Modal, Textarea } from '@/components/foundry';
 import type { Location, LocationWithCount } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
 import { volumeFromDimensions, volumeSystemForDimensionUnit } from '@/lib/volume';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -15,15 +16,6 @@ import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { LocationAdvancedVolumeFields } from './LocationAdvancedVolumeFields';
 import { LocationDimensionsFields } from './LocationDimensionsFields';
 import { LocationKindPicker } from './LocationKindPicker';
-import {
-  HINT_CAPACITY,
-  HINT_COLOUR,
-  HINT_DEFAULT,
-  HINT_DESCRIPTION,
-  HINT_KIND,
-  HINT_NAME_CREATE,
-  HINT_PARENT,
-} from './location-field-help';
 
 /** Create a (optionally nested) location (spec §4). */
 export function CreateLocationDialog({
@@ -45,6 +37,7 @@ export function CreateLocationDialog({
 }) {
   const create = useCreateLocationPath();
   const fmt = useFormatters();
+  const t = useT();
   const dimensionUnit = usePreferencesStore((s) => s.dimensionUnit);
   const defaultPackingFactor = usePreferencesStore((s) => s.defaultPackingFactor);
   const volumeEntryUnit = volumeSystemForDimensionUnit(dimensionUnit) === 'imperial' ? 'ft3' : 'l';
@@ -144,27 +137,30 @@ export function CreateLocationDialog({
     <Modal
       open={open}
       onClose={onClose}
-      title="Add location"
-      description="Locations can be nested to any depth."
+      title={t('inventory.location.add.title')}
+      description={t('inventory.location.add.description')}
       initialFocusRef={nameRef}
     >
       <div className="space-y-4">
         {/* The live preview sits *outside* FormField's `<label>`: FormField uses implicit label
             association, so any text inside it would fold into the Name control's accessible name. */}
         <div>
-          <FormField label="Name" hint={HINT_NAME_CREATE}>
+          <FormField
+            label={t('inventory.location.field.name')}
+            hint={t('inventory.location.hint.nameCreate')}
+          >
             <Input
               ref={nameRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && submit()}
-              placeholder="e.g. Workshop/Cabinet A/Drawer 3, or Garage/Box 1, Box 2, Box 3"
+              placeholder={t('inventory.location.field.namePlaceholderCreate')}
               className={locationColorTextClass(color)}
             />
           </FormField>
           {showPreview ? (
             <p className="mt-field-gap-compact text-xs text-muted-foreground">
-              Creates{' '}
+              {t('inventory.location.preview.creates')}{' '}
               {ancestors.map((level, i) => (
                 <span key={`ancestor-${i}`}>
                   {i > 0 ? <span aria-hidden="true"> › </span> : null}
@@ -178,17 +174,18 @@ export function CreateLocationDialog({
                   <span className="font-medium text-foreground">{leaf}</span>
                 </span>
               ))}
-              {leaves.length > 1 ? ' as siblings' : null}. Existing levels are reused, not duplicated.
+              {leaves.length > 1 ? <> {t('inventory.location.preview.siblings')}</> : null}.{' '}
+              {t('inventory.location.preview.reused')}
             </p>
           ) : null}
         </div>
 
         <div className="relative">
           <span id={parentLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
-            Parent (optional)
+            {t('inventory.location.field.parentOptional')}
           </span>
           <span className="absolute right-0 top-0.5">
-            <InfoHint content={HINT_PARENT} />
+            <InfoHint content={t('inventory.location.hint.parent')} />
           </span>
           <LocationSelect
             labelledBy={parentLabelId}
@@ -198,35 +195,41 @@ export function CreateLocationDialog({
           />
         </div>
 
-        <FormField label="Description (optional)" hint={HINT_DESCRIPTION}>
+        <FormField
+          label={t('inventory.location.field.description')}
+          hint={t('inventory.location.hint.description')}
+        >
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="A note about what lives here, for your reference."
+            placeholder={t('inventory.location.field.descriptionPlaceholder')}
           />
         </FormField>
 
         <div className="relative">
           <span id={kindLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
-            Type (optional)
+            {t('inventory.location.field.type')}
           </span>
           <span className="absolute right-0 top-0.5">
-            <InfoHint content={HINT_KIND} />
+            <InfoHint content={t('inventory.location.hint.kind')} />
           </span>
           <LocationKindPicker labelledBy={kindLabelId} value={kind} onChange={setKind} />
         </div>
 
         <div className="relative">
           <span id={colorLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
-            Colour (optional)
+            {t('inventory.location.field.colour')}
           </span>
           <span className="absolute right-0 top-0.5">
-            <InfoHint content={HINT_COLOUR} />
+            <InfoHint content={t('inventory.location.hint.colour')} />
           </span>
           <ColorSwatchPicker labelledBy={colorLabelId} value={color} onChange={setColor} />
         </div>
 
-        <FormField label="Capacity (optional)" hint={HINT_CAPACITY}>
+        <FormField
+          label={t('inventory.location.field.capacity')}
+          hint={t('inventory.location.hint.capacity')}
+        >
           <Input
             type="number"
             min={0}
@@ -234,7 +237,7 @@ export function CreateLocationDialog({
             inputMode="numeric"
             value={capacity}
             onChange={(e) => setCapacity(e.target.value)}
-            placeholder="No limit"
+            placeholder={t('inventory.location.field.capacityPlaceholder')}
           />
         </FormField>
 
@@ -276,23 +279,22 @@ export function CreateLocationDialog({
               onChange={(e) => setIsDefault(e.target.checked)}
               className="size-4 accent-primary"
             />
-            Use as the default location for new items
-            <InfoHint content={HINT_DEFAULT} />
+            {t('inventory.location.field.default')}
+            <InfoHint content={t('inventory.location.hint.default')} />
           </label>
           {multipleLeaves ? (
             <p className="mt-field-gap-compact text-xs text-muted-foreground">
-              Only a single location can be the default, so this is unavailable while you're adding several at
-              once.
+              {t('inventory.location.field.defaultUnavailable')}
             </p>
           ) : null}
         </div>
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t('inventory.location.cancel')}
           </Button>
           <Button onClick={submit} disabled={create.isPending || leaves.length === 0 || !dimensionsValid}>
-            Create
+            {t('inventory.location.create')}
           </Button>
         </div>
       </div>
