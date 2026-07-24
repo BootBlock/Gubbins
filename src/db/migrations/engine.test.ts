@@ -79,6 +79,41 @@ describe('migration engine', () => {
     expect(row?.updated_at).toBe(5000);
   });
 
+  it('ratchets updated_at past a stamp that only just leads now (coarse-clock guarantee)', async () => {
+    // A syncable table's auto-stamp trigger (updatedAtTrigger) must keep an edit provably newer
+    // than the row it derived from even when the clock is too coarse to show it. A stamp a minute
+    // ahead of now is within the honest-cause window (issue #393), so the +1 future-ratchet holds:
+    // now < OLD, so MAX(now, OLD + 1) resolves to OLD + 1, not now.
+    await runMigrations(driver, migrations);
+    const old = Date.now() + 60_000; // 1 minute ahead — inside FUTURE_STAMP_REBASE_MS
+    await driver.execute("INSERT INTO categories (id, name, updated_at) VALUES ('c', 'C', ?);", [old]);
+    await driver.execute("UPDATE categories SET name = 'C2' WHERE id = 'c';");
+    const row = await driver.queryOne<{ updated_at: number }>(
+      "SELECT updated_at FROM categories WHERE id = 'c';",
+    );
+    expect(row?.updated_at).toBe(old + 1);
+  });
+
+  it('re-bases updated_at onto now when the stored stamp is implausibly far ahead (issue #393)', async () => {
+    // A device whose clock was fast leaves rows stamped far in the future; once the clock is
+    // corrected the one-directional +1 ratchet would keep them there forever, winning LWW against
+    // every peer's genuinely-newer edit. Past FUTURE_STAMP_REBASE_MS the trigger re-bases the stamp
+    // straight onto real time instead of inflating it by another millisecond.
+    await runMigrations(driver, migrations);
+    const inflated = Date.now() + 10 * 60_000; // 10 minutes ahead — beyond the threshold
+    await driver.execute("INSERT INTO categories (id, name, updated_at) VALUES ('c', 'C', ?);", [inflated]);
+    const before = Date.now();
+    await driver.execute("UPDATE categories SET name = 'C2' WHERE id = 'c';");
+    const after = Date.now();
+    const row = await driver.queryOne<{ updated_at: number }>(
+      "SELECT updated_at FROM categories WHERE id = 'c';",
+    );
+    // Brought back to the real clock, not left inflated (nor merely nudged by +1).
+    expect(row?.updated_at).toBeLessThan(inflated - 5 * 60_000);
+    expect(row?.updated_at).toBeGreaterThanOrEqual(before - 1_000);
+    expect(row?.updated_at).toBeLessThanOrEqual(after + 1_000);
+  });
+
   it('rejects a non-contiguous migration version sequence', async () => {
     const broken: Migration[] = [v1Initial, { version: 3, name: 'gap', statements: [{ sql: 'SELECT 1;' }] }];
     await expect(runMigrations(driver, broken)).rejects.toBeInstanceOf(DbError);
