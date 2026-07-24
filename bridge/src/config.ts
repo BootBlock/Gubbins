@@ -300,14 +300,7 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   );
   // How many consecutive failed reloads before `/health` admits the data is stale. `0` opts out
   // of the verdict entirely — the counters are still reported, `ok` just never flips for it.
-  const staleAfterFailures = Math.floor(
-    parsePositive(
-      env.GUBBINS_BRIDGE_STALE_AFTER_FAILURES,
-      DEFAULT_STALE_AFTER_FAILURES,
-      'GUBBINS_BRIDGE_STALE_AFTER_FAILURES',
-      { allowZero: true },
-    ),
-  );
+  const staleAfterFailures = loadStaleAfterFailures(env);
   const webhooksFile = (env.GUBBINS_BRIDGE_WEBHOOKS_FILE ?? '').trim() || undefined;
   const webhooksInline = (env.GUBBINS_BRIDGE_WEBHOOKS_TARGETS ?? '').trim() || undefined;
   const webhooksSecretsInline = (env.GUBBINS_BRIDGE_WEBHOOKS_SECRETS ?? '').trim() || undefined;
@@ -424,6 +417,23 @@ export function loadSnapshotPath(env: Env = process.env): string {
  */
 export function loadAllowWrites(env: Env = process.env): boolean {
   return parseBool(env.GUBBINS_BRIDGE_ALLOW_WRITES, false, 'GUBBINS_BRIDGE_ALLOW_WRITES');
+}
+
+/**
+ * Resolve the `GUBBINS_BRIDGE_STALE_AFTER_FAILURES` threshold on its own, using the *same* parsing
+ * as {@link loadConfig}. Shared with the MCP stdio server (issue #394), so the staleness verdict an
+ * assistant sees caveated on its tool results trips at exactly the same point `/health` flips `ok`.
+ * `0` opts out of the verdict entirely, matching the HTTP surface.
+ */
+export function loadStaleAfterFailures(env: Env = process.env): number {
+  return Math.floor(
+    parsePositive(
+      env.GUBBINS_BRIDGE_STALE_AFTER_FAILURES,
+      DEFAULT_STALE_AFTER_FAILURES,
+      'GUBBINS_BRIDGE_STALE_AFTER_FAILURES',
+      { allowZero: true },
+    ),
+  );
 }
 
 /** Whether `host` exposes the bridge beyond loopback (a deliberate, documented choice). */

@@ -12,6 +12,7 @@ import type { MqttClient, MqttClientOptions } from './client.ts';
 import type { BridgeEvent } from '../events/model.ts';
 import { createLookupObserver, LOOKUP_RESOLVED_TYPE, type LookupObserver } from '../events/lookup.ts';
 import type { WhereIsResult } from '../query.ts';
+import { HEALTHY_RELOAD, summarizeSnapshotHealth } from '../snapshot-health.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-mqtt-snapshot.json', import.meta.url);
 const GENERATED_AT = '2025-06-27T07:33:20.000Z';
@@ -278,6 +279,44 @@ function lookupEvent(): BridgeEvent {
     },
   };
 }
+
+describe('publishSnapshotHealth (issue #394)', () => {
+  it('publishes the retained staleness verdict to the dedicated snapshot topic', () => {
+    const { publisher, fake } = makePublisher();
+    publisher.publishSnapshotHealth(
+      summarizeSnapshotHealth({
+        ...HEALTHY_RELOAD,
+        consecutiveFailures: 4,
+        lastError: 'boom',
+        lastErrorAt: '2025-06-27T07:40:00.000Z',
+        lastSuccessAt: GENERATED_AT,
+      }),
+    );
+    const health = byTopic(fake.published, 'gubbins/snapshot/state')!;
+    expect(health.retain).toBe(true);
+    expect(JSON.parse(health.payload)).toMatchObject({ stale: true, reloadFailures: 4 });
+  });
+
+  it('re-announces the last staleness verdict on reconnect', async () => {
+    const { publisher, fake } = makePublisher();
+    await publisher.publishState(hydrated.driver, GENERATED_AT);
+    publisher.publishSnapshotHealth(
+      summarizeSnapshotHealth({ ...HEALTHY_RELOAD, consecutiveFailures: 5, lastSuccessAt: GENERATED_AT }),
+    );
+    fake.published.length = 0; // clear
+    fake.triggerConnect();
+    // A broker that dropped retained topics re-learns the current staleness verdict, not just state.
+    const health = byTopic(fake.published, 'gubbins/snapshot/state')!;
+    expect(health.retain).toBe(true);
+    expect(JSON.parse(health.payload).stale).toBe(true);
+  });
+
+  it('does not publish a snapshot health topic before any verdict is known', () => {
+    const { fake } = makePublisher();
+    fake.triggerConnect();
+    expect(byTopic(fake.published, 'gubbins/snapshot/state')).toBeUndefined();
+  });
+});
 
 describe('availability lifecycle', () => {
   it('announces online + re-publishes last state on (re)connect', async () => {

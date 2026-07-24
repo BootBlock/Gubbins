@@ -20,6 +20,7 @@ import type { IDatabaseDriver } from '@/db/rpc/driver';
 import type { BridgeEvent } from '../events/model.ts';
 import { isLookupEvent } from '../events/lookup.ts';
 import type { EventSink } from '../events/pipeline.ts';
+import type { SnapshotHealthReport } from '../snapshot-health.ts';
 import {
   createMqttClient,
   type MqttClient,
@@ -36,6 +37,7 @@ import {
   eventPayload,
   locatePayload,
   locationPayload,
+  snapshotHealthPayload,
   summaryPayload,
   topicsFor,
 } from './topics.ts';
@@ -66,6 +68,13 @@ export interface MqttPublisher extends EventSink {
   start(): void;
   /** Project the driver and publish the retained state (+ discovery when the layout changed). */
   publishState(driver: IDatabaseDriver, generatedAt: string | null): Promise<void>;
+  /**
+   * Publish the retained snapshot-staleness verdict (issue #394) to the `snapshot/state` topic.
+   * Called from **both** reload paths — success (fresh) and failure (stale-or-not) — because the
+   * summary/location topics ride the success hook alone and freeze exactly when staleness begins,
+   * so a broker/HA would otherwise never learn the data went stale. Availability is untouched.
+   */
+  publishSnapshotHealth(report: SnapshotHealthReport): void;
   /** Publish `offline` and disconnect gracefully. */
   stop(): void;
 }
@@ -76,6 +85,9 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   const createClient = options.createClient ?? createMqttClient;
 
   let lastState: InventoryState | null = null;
+  // The last staleness verdict published, re-announced on reconnect so a broker that dropped
+  // retained state re-learns whether the served data is currently stale (issue #394).
+  let lastHealth: SnapshotHealthReport | null = null;
   // Signature of the location set last published as discovery configs -- so we only re-emit the
   // discovery layout when a location is added/removed/renamed, not on every state refresh.
   let discoverySignature: string | null = null;
@@ -104,6 +116,9 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
       discoverySignature = null;
       publishSnapshot(lastState);
     }
+    // Re-announce staleness after the state: a broker that lost retained topics needs the current
+    // verdict back even when no reload has happened since the disconnect (issue #394).
+    if (lastHealth !== null) client.publish(topics.snapshotState, snapshotHealthPayload(lastHealth), true);
   }
 
   /** Publish the retained state topics for a projected state, plus discovery when the layout changed. */
@@ -164,6 +179,11 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
       const state = await projectInventoryState(driver, { generatedAt });
       lastState = state;
       publishSnapshot(state);
+    },
+
+    publishSnapshotHealth(report: SnapshotHealthReport): void {
+      lastHealth = report;
+      client.publish(topics.snapshotState, snapshotHealthPayload(report), true);
     },
 
     deliver(events: readonly BridgeEvent[]): void {

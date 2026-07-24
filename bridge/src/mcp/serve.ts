@@ -22,8 +22,9 @@
  * IMPORTANT: stdout carries the JSON-RPC protocol; **all logging goes to stderr** so it never
  * corrupts the message stream.
  */
-import { loadAllowWrites, loadSnapshotPath, type Env } from '../config.ts';
+import { loadAllowWrites, loadSnapshotPath, loadStaleAfterFailures, type Env } from '../config.ts';
 import { createSnapshotWatcher, type SnapshotWatcher } from '../watcher.ts';
+import { summarizeSnapshotHealth } from '../snapshot-health.ts';
 import { detectSource, writesEnabledForSource } from '../sqlite-source.ts';
 import { createWriteExecutor } from '../write.ts';
 import { SYSTEM_USER_ID } from '@/db/repositories/constants';
@@ -45,6 +46,7 @@ function log(message: string): void {
 export async function startMcpServer(env: Env = process.env): Promise<RunningMcpServer> {
   const snapshotPath = loadSnapshotPath(env);
   const allowWrites = loadAllowWrites(env);
+  const staleAfterFailures = loadStaleAfterFailures(env);
 
   const watcher = createSnapshotWatcher({
     snapshotPath,
@@ -66,7 +68,13 @@ export async function startMcpServer(env: Env = process.env): Promise<RunningMcp
     ? [...ALL_TOOLS, ...createWriteTools((op) => writeExecutor(op, SYSTEM_USER_ID))]
     : ALL_TOOLS;
 
-  const server = runStdioServer({ getState: () => watcher.getState(), tools });
+  const server = runStdioServer({
+    getState: () => watcher.getState(),
+    // The MCP analogue of `/health`'s honesty (issue #394): a failed re-hydrate keeps the last good
+    // snapshot live, so this lets a stale tool result be caveated rather than presented as current.
+    getSnapshotHealth: () => summarizeSnapshotHealth(watcher.getReloadHealth(), staleAfterFailures),
+    tools,
+  });
   log(`Gubbins MCP server ready on stdio (${writesEnabled ? 'reads + limited writes' : 'read-only'}).`);
   if (writesEnabled) {
     log(

@@ -34,9 +34,9 @@ function byTopic(configs: ReturnType<typeof buildDiscoveryConfigs>, topic: strin
 describe('buildDiscoveryConfigs', () => {
   const configs = buildDiscoveryConfigs(STATE, OPTIONS);
 
-  it('emits the four summary sensors + a low-stock binary sensor + one per location', () => {
-    // 4 summary sensors + 1 binary sensor + 2 locations = 7.
-    expect(configs).toHaveLength(7);
+  it('emits the four summary sensors + low-stock and snapshot-stale binary sensors + one per location', () => {
+    // 4 summary sensors + 2 binary sensors (low_stock, snapshot_stale) + 2 locations = 8.
+    expect(configs).toHaveLength(8);
     expect(configs.every((c) => c.topic.startsWith('homeassistant/'))).toBe(true);
     expect(configs.every((c) => c.topic.endsWith('/config'))).toBe(true);
   });
@@ -60,6 +60,23 @@ describe('buildDiscoveryConfigs', () => {
     expect(bin.payload_off).toBe('OFF');
     expect(bin.device_class).toBe('problem');
     expect(String(bin.value_template)).toContain('lowStockItems');
+  });
+
+  it('drives the snapshot-stale binary sensor from the dedicated snapshot topic (issue #394)', () => {
+    const bin = byTopic(configs, 'homeassistant/binary_sensor/gubbins/snapshot_stale/config');
+    // It reads snapshot/state, NOT summary/state — that is the only topic published from the reload
+    // failure path, so it still updates when the summary/location topics have frozen.
+    expect(bin.state_topic).toBe('gubbins/snapshot/state');
+    expect(bin.device_class).toBe('problem');
+    expect(bin.payload_on).toBe('ON');
+    expect(bin.payload_off).toBe('OFF');
+    expect(String(bin.value_template)).toContain('value_json.stale');
+    // Availability still rides the shared status topic, so "bridge down" (unavailable) and "data
+    // stale" (on) stay distinct conditions.
+    expect(bin.availability_topic).toBe('gubbins/status');
+    // The reload counters ride along as attributes off the same topic.
+    expect(bin.json_attributes_topic).toBe('gubbins/snapshot/state');
+    expect(String(bin.json_attributes_template)).toContain('reloadFailures');
   });
 
   it('creates a per-location sensor pointed at that location state topic', () => {

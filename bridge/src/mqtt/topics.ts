@@ -6,6 +6,7 @@
  *
  *   gubbins/status                 → "online" / "offline"  (retained; also the LWT topic)
  *   gubbins/summary/state          → { itemsTotal, lowStockItems, … }  (retained JSON)
+ *   gubbins/snapshot/state         → { stale, reloadFailures, … }      (retained JSON)
  *   gubbins/location/<id>/state    → { id, name, itemCount, attributes }(retained JSON, one per location)
  *   gubbins/event/<type>           → the EI-1 BridgeEvent JSON          (not retained — transient)
  *   gubbins/locate                 → the resolved "where is X?" answer  (not retained — transient)
@@ -14,9 +15,17 @@
  * last-known value immediately; events are transient (a late subscriber shouldn't replay history).
  * The locate topic is emphatically in the second group: it answers a question somebody asked *now*,
  * so re-delivering it to a late subscriber would light a bin over yesterday's lookup.
+ *
+ * The `snapshot/state` topic (issue #394) is deliberately **separate from availability**: the
+ * status topic tracks connection *liveness* (is the bridge process there?), which stays `online`
+ * while a bridge that can no longer reload the snapshot keeps serving its last good data. Staleness
+ * is a *data* verdict, published on its own retained topic — and, crucially, from the reload
+ * *failure* path too, not only the success path the summary/location state ride — so Home Assistant
+ * can surface "the data is stale" as a first-class binary sensor without the entities vanishing.
  */
 import type { BridgeEvent } from '../events/model.ts';
 import type { LookupEvent } from '../events/lookup.ts';
+import type { SnapshotHealthReport } from '../snapshot-health.ts';
 import type { InventoryState, LocationState } from './state.ts';
 
 /** The default topic prefix; every bridge topic hangs under it. */
@@ -46,6 +55,7 @@ export function topicsFor(prefix: string) {
     base,
     status: `${base}/status`,
     summaryState: `${base}/summary/state`,
+    snapshotState: `${base}/snapshot/state`,
     locationState: (id: string): string => `${base}/location/${sanitizeTopicLevel(id)}/state`,
     event: (type: string): string => `${base}/event/${sanitizeTopicLevel(type)}`,
     locate: `${base}/locate`,
@@ -60,6 +70,23 @@ export function summaryPayload(state: InventoryState): string {
     outOfStockItems: state.outOfStockItems,
     locationsTotal: state.locations.length,
     generatedAt: state.generatedAt,
+  });
+}
+
+/**
+ * The retained JSON body for the `snapshot/state` topic (issue #394): the same staleness verdict
+ * `/health` serves, projected for Home Assistant's `binary_sensor`. `stale` is the boolean the
+ * discovery entity keys off; the counters ride alongside as entity attributes so an operator can
+ * see *how* stale (failure count, last good read, last error) without a second topic. The error is
+ * already redacted by `summarizeSnapshotHealth`, so it is safe to publish.
+ */
+export function snapshotHealthPayload(report: SnapshotHealthReport): string {
+  return JSON.stringify({
+    stale: report.snapshotStale,
+    reloadFailures: report.reloadFailures,
+    lastReloadAt: report.lastReloadAt,
+    lastReloadError: report.lastReloadError,
+    lastReloadErrorAt: report.lastReloadErrorAt,
   });
 }
 

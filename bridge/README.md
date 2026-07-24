@@ -253,6 +253,18 @@ Consumers that poll `/health` — a Home Assistant availability template, a dash
 — should key off `ok` so they degrade to *unavailable* rather than displaying confidently stale
 stock levels.
 
+The same verdict rides every **authenticated** response as an `X-Gubbins-Snapshot-Stale: true|false`
+header, so a consumer of `/search`, `/where`, `/metrics` or any `/api/v1` read learns the data is
+stale at the point it reads it — no separate `/health` poll needed. The header carries the boolean
+only; the counters above stay on `/health`. It is stamped only *after* the auth/permission gates (so
+it is never disclosed to an unauthenticated caller) and is named in `Access-Control-Expose-Headers`,
+so a cross-origin browser (the PWA is almost always a different origin) is allowed to read it back.
+
+The same staleness is also surfaced over [MQTT](#mqtt-publishing) (a dedicated
+`snapshot/state` topic and a Home Assistant *Snapshot stale* binary sensor) and to the
+[MCP tools](#mcp-model-context-protocol), so an assistant caveats a stale count rather than
+presenting it as current.
+
 ---
 
 ## Versioned REST API (`/api/v1`)
@@ -815,6 +827,18 @@ The list tools clamp `limit` to `[1, 100]` (default 50); `gubbins_search`/`gubbi
 cap results at 25 (default 5) for safety. Tool ids/keys (e.g. `item-esp32`, `voltage`) in
 examples are from the synthetic test fixture.
 
+#### Stale-snapshot caveat
+
+Like the HTTP surface, the MCP server keeps serving its **last good** snapshot when a reload
+fails (the file is briefly absent, half-written or unreadable) rather than going dark. So that an
+assistant doesn't present out-of-date figures as authoritative, a tool result run against a
+[knowingly stale](#snapshot-freshness-and-health) snapshot is **prefixed with a short caveat**
+(its own `text` content block, ahead of the data) noting the data may be out of date, how many
+reloads have failed and when it was last read successfully. The `structuredContent` is left
+untouched — the staleness is metadata about the answer, not part of it — and a healthy call is
+never annotated. The threshold is the shared `GUBBINS_BRIDGE_STALE_AFTER_FAILURES` (default `3`;
+`0` disables the caveat), so MCP trips at the same point `/health` flips `ok`.
+
 ### Write tools (opt-in)
 
 Set **`GUBBINS_BRIDGE_ALLOW_WRITES=on`** and two more tools join the six above, letting an
@@ -1297,8 +1321,9 @@ Everything hangs under the prefix (default `gubbins`, override with `GUBBINS_BRI
 
 | Topic | Retained? | Payload |
 | --- | --- | --- |
-| `gubbins/status` | yes | `online` / `offline` — the availability topic (also the MQTT Last-Will, so an ungraceful death flips it to `offline` automatically). |
+| `gubbins/status` | yes | `online` / `offline` — the availability topic (also the MQTT Last-Will, so an ungraceful death flips it to `offline` automatically). Tracks **connection liveness** only: it stays `online` while the bridge keeps serving its last good data. |
 | `gubbins/summary/state` | yes | `{ itemsTotal, lowStockItems, outOfStockItems, locationsTotal, generatedAt }` — refreshed on every snapshot change. |
+| `gubbins/snapshot/state` | yes | `{ stale, reloadFailures, lastReloadAt, lastReloadError, lastReloadErrorAt }` — the [snapshot-freshness](#snapshot-freshness-and-health) verdict, the MQTT sibling of `/health`. Unlike the topics above it is **also published from the reload *failure* path**, so it still updates when the summary/location topics have frozen at their last good values. |
 | `gubbins/location/<id>/state` | yes | `{ id, name, itemCount, attributes }` — one per **user** location (the built-in `Unassigned` / `In Transit` buckets are omitted). See [location attributes](#location-attributes-your-custom-fields) below. |
 | `gubbins/event/<type>` | no | The EI-1 change event (the [same shape](#the-event-shape) the webhooks/SSE emit), e.g. `gubbins/event/item.low_stock`. Transient — a late subscriber doesn't replay history. |
 | `gubbins/locate` | **no** | The resolved answer to a "where is X?" lookup. Needs `GUBBINS_BRIDGE_LOOKUP_EVENTS=on` — see [the locate topic](#the-locate-topic-where-is-x-for-automations) below. Transient, deliberately. |
@@ -1308,6 +1333,15 @@ last-known values immediately. The low-stock / out-of-stock counts use the exact
 `item.low_stock` / `item.out_of_stock` events, so they never drift. Every published payload is
 synthetic-safe: it carries only inventory facts — your inventory's own data, including the custom
 fields described next — and never the token or the broker credentials.
+
+Staleness is deliberately kept **off the availability topic**. Availability tracks whether the
+bridge process is *there*; a bridge that can no longer reload the snapshot is still there and still
+serving its last good data, so overloading `status` with `offline` would make every entity vanish
+from a dashboard (and leave history gaps) the moment a sync folder blips. Instead the freshness
+verdict rides its own `snapshot/state` topic and, with discovery on, a *Snapshot stale* binary
+sensor — so the data going stale is a signal you can alert or automate on, while the entities stay
+present. If you *want* entities to disappear on staleness, template an HA `availability` off that
+binary sensor yourself.
 
 ### Location attributes (your custom fields)
 
@@ -1403,8 +1437,10 @@ Home Assistant then **auto-creates** the entities with **no `custom_components/g
 this is an *alternative* to the [custom component](../homeassistant/README.md); pick one. It creates,
 under a single "Gubbins" device: `sensor.gubbins_items_total`, `sensor.gubbins_low_stock_items`,
 `sensor.gubbins_out_of_stock_items`, `sensor.gubbins_locations_total`, a
-`binary_sensor.gubbins_low_stock` (problem class, `on` when anything is low), and one
-`sensor.gubbins_location_<id>` per user location — each carrying that location's
+`binary_sensor.gubbins_low_stock` (problem class, `on` when anything is low), a
+`binary_sensor.gubbins_snapshot_stale` (problem class, `on` when the bridge is knowingly serving
+[out-of-date data](#snapshot-freshness-and-health), with the reload counters as entity attributes),
+and one `sensor.gubbins_location_<id>` per user location — each carrying that location's
 [custom fields as entity attributes](#location-attributes-your-custom-fields). The discovery layout is re-published whenever a
 location is added/removed/renamed and on every reconnect (so a broker that restarted without
 persistence re-learns it). Entity names are **device-relative** — Home Assistant prefixes the

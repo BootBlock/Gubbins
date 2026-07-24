@@ -51,6 +51,20 @@ topic, so a Node-RED flow or an MQTT trigger can act on the answer without the H
 custom integration. That one is sent **live only** — it is never replayed to something that
 connects later, so an old question can't set an automation off.
 
+With discovery on you also get a **Snapshot stale** sensor. If the bridge can no longer re-read
+your data it keeps serving the last copy it had — the right call, so an integration doesn't go
+dead — but the numbers are then out of date. This sensor turns *on* exactly then, so you can put a
+warning on a dashboard or fire an automation. It's kept separate from the entities' availability on
+purpose: the other sensors stay present (no gaps in their history) rather than vanishing the moment
+a sync folder blips. If you'd actually rather they disappeared while the data is stale, point their
+availability at this sensor in your own Home Assistant config.
+
+> **ℹ️ Note**
+> "Snapshot stale" is about the *data* being current, not about the bridge being reachable. A bridge
+> that has stopped entirely shows its entities as *unavailable* the usual way; this sensor covers the
+> subtler case where the bridge is up and answering, but from a copy of your data it can no longer
+> refresh.
+
 > **⚠️ Heads-up — if you already had MQTT publishing switched on**
 > Locations' [[custom fields|Custom-Fields-and-Capabilities]] were added to what MQTT publishes,
 > and they don't have a switch of their own — turning on MQTT publishing is what enables them. So

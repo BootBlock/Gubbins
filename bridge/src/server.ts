@@ -346,6 +346,22 @@ export async function handleRequest(
       return;
     }
 
+    // Snapshot-staleness marker on every authenticated read/write response (issue #394). `/health`
+    // already carries the full reload tally, but a consumer of `/search`, `/where`, `/metrics` or
+    // any `/api/v1` read otherwise learns nothing about staleness without separately polling
+    // `/health` — so the same verdict is stamped once here, covering every read at a single point.
+    // It is the boolean form of `/health`'s `snapshotStale`; a client wanting the counters still
+    // reads `/health`. Set only *after* the auth + permission gates (so it never discloses to an
+    // unauthenticated caller) and only when a reload-health accessor is wired, so its presence is
+    // itself the signal that the bridge reports this at all. Because the value is a custom header,
+    // it is also named in `Access-Control-Expose-Headers` — without that a cross-origin browser
+    // (the PWA is almost always a different origin) is not allowed to read it back off the response.
+    const staleHeaderHealth = options.getSnapshotHealth?.();
+    if (staleHeaderHealth !== undefined) {
+      res.setHeader('X-Gubbins-Snapshot-Stale', staleHeaderHealth.snapshotStale ? 'true' : 'false');
+      res.setHeader('Access-Control-Expose-Headers', 'X-Gubbins-Snapshot-Stale');
+    }
+
     if (req.method === 'POST') {
       // Writes/ingest live only under /api/v1; a POST to a legacy path is method-not-allowed.
       if (!v1) {

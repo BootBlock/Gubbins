@@ -78,8 +78,9 @@ function originBlock(version: string): Record<string, unknown> {
 
 /**
  * Build every discovery config for the current state: the four aggregate count sensors, a
- * low-stock binary sensor, and one item-count sensor per location. A caller republishes these
- * (retained) on every (re)connect and whenever the location set changes.
+ * low-stock binary sensor, a snapshot-stale binary sensor (issue #394), and one item-count sensor
+ * per location. A caller republishes these (retained) on every (re)connect and whenever the
+ * location set changes.
  *
  * Entity `name`s are **device-relative**: an MQTT entity with a `device` gets
  * `has_entity_name = True`, so HA already prefixes the device name ("Gubbins"). Repeating it here
@@ -147,6 +148,34 @@ export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryO
         payload_on: 'ON',
         payload_off: 'OFF',
         icon: 'mdi:alert',
+        ...availability,
+        device,
+        origin,
+      }),
+    },
+    {
+      // Snapshot-staleness sensor (issue #394): ON when the bridge is knowingly serving out-of-date
+      // data. It reads the dedicated `snapshot/state` topic rather than `summary/state`, because
+      // that topic is the only one published from the reload *failure* path — the summary/location
+      // topics ride the success hook and freeze at their last good values exactly when staleness
+      // begins. Availability stays the shared `status` topic, so this entity reports `unavailable`
+      // (bridge down) and `on` (bridge up, data stale) as the two distinct conditions they are. The
+      // reload counters travel as attributes so an operator can see how stale without a second topic.
+      topic: configTopic('binary_sensor', 'snapshot_stale'),
+      payload: JSON.stringify({
+        name: 'Snapshot stale',
+        unique_id: 'gubbins_snapshot_stale',
+        object_id: 'gubbins_snapshot_stale',
+        device_class: 'problem',
+        state_topic: topics.snapshotState,
+        value_template: "{{ 'ON' if value_json.stale else 'OFF' }}",
+        payload_on: 'ON',
+        payload_off: 'OFF',
+        json_attributes_topic: topics.snapshotState,
+        json_attributes_template:
+          '{{ {"reloadFailures": value_json.reloadFailures, "lastReloadAt": value_json.lastReloadAt, ' +
+          '"lastReloadError": value_json.lastReloadError, "lastReloadErrorAt": value_json.lastReloadErrorAt} | tojson }}',
+        icon: 'mdi:database-clock',
         ...availability,
         device,
         origin,

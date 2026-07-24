@@ -130,6 +130,34 @@ export function healthBody(
 }
 
 /**
+ * A one-line, caller-facing caveat when the served snapshot is stale, or `null` when the data is
+ * current.
+ *
+ * The sibling surfaces to `/health` — the MCP tools and the HTTP read responses — carry the same
+ * staleness verdict `/health` reports (issue #394), but each needs it as prose a *consumer* reads
+ * rather than a JSON block a monitor polls: an assistant answering "how many do I have?" must be
+ * able to caveat the number, not present a stale count as authoritative. Single-sourced here so
+ * every surface says the same thing, and phrased so it reads sensibly wherever it lands (prepended
+ * to an MCP tool result, logged, shown to a user). The error is already redacted by
+ * {@link summarizeSnapshotHealth}, so it is safe to echo.
+ */
+export function stalenessCaveat(report: SnapshotHealthReport): string | null {
+  if (!report.snapshotStale) return null;
+  const parts = [
+    `Note: the Gubbins bridge is serving inventory data it knows is out of date — its last ` +
+      `${report.reloadFailures} attempts to reload the snapshot failed.`,
+  ];
+  if (report.lastReloadAt !== null) {
+    parts.push(`The data was last read successfully at ${report.lastReloadAt}.`);
+  }
+  if (report.lastReloadError !== null) {
+    parts.push(`Most recent error: ${report.lastReloadError}`);
+  }
+  parts.push('Treat any counts, quantities or availability below as possibly out of date.');
+  return parts.join(' ');
+}
+
+/**
  * Strip filesystem paths out of a reload-error message and cap its length.
  *
  * `/health` is authenticated, but the server's standing rule is that a *response* never carries

@@ -3,7 +3,14 @@
  * values (never a real token or path).
  */
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_HOST, DEFAULT_MAX_PUSH_BYTES, DEFAULT_PORT, isLanExposed, loadConfig } from './config.ts';
+import {
+  DEFAULT_HOST,
+  DEFAULT_MAX_PUSH_BYTES,
+  DEFAULT_PORT,
+  isLanExposed,
+  loadConfig,
+  loadStaleAfterFailures,
+} from './config.ts';
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC } from './rate-limit.ts';
 import { DEFAULT_LOOKUP_DEBOUNCE_MS, MAX_LOOKUP_DEBOUNCE_MS } from './events/lookup.ts';
 import { DEFAULT_STALE_AFTER_FAILURES } from './snapshot-health.ts';
@@ -195,6 +202,17 @@ describe('loadConfig (HA-3)', () => {
     expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_STALE_AFTER_FAILURES: '10' }).staleAfterFailures).toBe(10);
     expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_STALE_AFTER_FAILURES: '0' }).staleAfterFailures).toBe(0);
     expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_STALE_AFTER_FAILURES: 'lots' })).toThrow(
+      /GUBBINS_BRIDGE_STALE_AFTER_FAILURES/,
+    );
+  });
+
+  it('resolves the stale threshold standalone for the MCP server (same parsing as loadConfig)', () => {
+    // The MCP stdio server has no HTTP config to resolve, so it reads this one value on its own —
+    // and it must trip staleness at the same point `/health` does (issue #394).
+    expect(loadStaleAfterFailures({})).toBe(DEFAULT_STALE_AFTER_FAILURES);
+    expect(loadStaleAfterFailures({ GUBBINS_BRIDGE_STALE_AFTER_FAILURES: '7' })).toBe(7);
+    expect(loadStaleAfterFailures({ GUBBINS_BRIDGE_STALE_AFTER_FAILURES: '0' })).toBe(0);
+    expect(() => loadStaleAfterFailures({ GUBBINS_BRIDGE_STALE_AFTER_FAILURES: 'nope' })).toThrow(
       /GUBBINS_BRIDGE_STALE_AFTER_FAILURES/,
     );
   });
