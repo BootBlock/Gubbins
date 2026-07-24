@@ -1172,6 +1172,12 @@ export class ReportRepository extends BaseRepository {
    * inbound** — the most recent `item_history` positive-quantity movement, else the parsed
    * `items.acquired_at`, else `created_at` (resolved in the pure {@link bucketStockAging}). Only
    * active, non-parent items holding stock are aged. `now` defaults to the wall clock.
+   *
+   * Each line is valued through the **same** rule as the {@link inventoryValue} headline beside it
+   * — a manual `current_value` wins over the effective cost (`effectiveUnitValue`) — and unlimited
+   * sources are excluded outright (`notUnlimited`), because a bottomless source holds no finite
+   * value and has no meaningful age. Without both, this report and the headline could label the
+   * same stock with two different totals (issue #397).
    */
   async stockAging(now: number = nowMs()): Promise<StockAgingReport> {
     const base = this.baseCurrency();
@@ -1180,24 +1186,28 @@ export class ReportRepository extends BaseRepository {
       name: string;
       quantity: number;
       unit_cost: number | null;
+      current_value: number | null;
       preferred_supplier_cost: number | null;
       acquired_at: string | null;
       created_at: number;
       last_inbound_at: number | null;
     }>(
       `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
+              i.current_value AS current_value,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               i.acquired_at AS acquired_at, i.created_at AS created_at,
               ( SELECT MAX(h.created_at) FROM item_history h
                  WHERE h.item_id = i.id AND h.quantity_delta > 0 ) AS last_inbound_at
          FROM items i
-        WHERE i.is_active = 1 AND i.quantity > 0 AND ${notAVariantParent('i.id')};`,
+        WHERE i.is_active = 1 AND i.quantity > 0
+          AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
     );
     const inputs: AgingInput[] = rows.map((r) => ({
       id: r.id,
       name: r.name,
       quantity: r.quantity,
       unitCost: r.unit_cost,
+      currentValuePerUnit: r.current_value,
       preferredSupplierCost: r.preferred_supplier_cost,
       lastInboundAt: r.last_inbound_at,
       acquiredAtMs: parseAcquiredAt(r.acquired_at),

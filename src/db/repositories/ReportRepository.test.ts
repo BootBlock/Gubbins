@@ -1087,6 +1087,21 @@ describe('ReportRepository', () => {
       expect(report.totalQuantity).toBe(15);
       expect(report.totalValue).toBe(15);
     });
+
+    it('values on-hand stock the same way as the valuation headline (issue #397)', async () => {
+      const now = Date.now();
+      // A revalued collectible: the manual current value wins over its cost, on both figures.
+      await items.create({ name: 'Collectible', quantity: 1, unitCost: 40, currentValue: 900 });
+      // An unlimited source holds no finite value and no meaningful age, so neither figure
+      // counts it — nor does it inflate the aging report's quantity or item counts.
+      await items.create({ name: 'Mains water', quantity: 500, unitCost: 2, isUnlimited: true });
+
+      const headline = (await reports.inventoryValue()).totalValue;
+      const report = await reports.stockAging(now);
+      expect(headline).toBe(900);
+      expect(report.totalValue).toBe(headline);
+      expect(report.totalQuantity).toBe(1); // the unlimited 500 is excluded, not aged
+    });
   });
 
   describe('valuationTrend (Phase 74)', () => {
