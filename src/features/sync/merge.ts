@@ -50,7 +50,9 @@ import {
   historyInsertStatement,
   requireColumns,
   shiftSnapshotTimestamps,
+  stockDeltaInsertStatement,
   tombstoneDeleteStatement,
+  withCaptureDisabled,
 } from './snapshot';
 import type { SchemaDictionary, SyncConflict, SyncSnapshot, SyncTable, Tombstone } from './types';
 
@@ -302,6 +304,13 @@ async function cloneWithSalvage(
   for (const row of salvage.itemHistory) {
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
   }
+  // Issue #188: re-union the offline-only stock-delta rows the wholesale clone did not carry,
+  // the direct sibling of the item_history re-union above. With capture disabled around the whole
+  // batch (below), the salvage `stock_batches` upserts record no fresh deltas, so these preserved
+  // rows — with their original ids — are the sole record of the offline movements.
+  for (const row of salvage.stockDeltas) {
+    statements.push(stockDeltaInsertStatement(row, dictionary[STOCK_DELTAS_TABLE]));
+  }
   for (const { itemId, tagId } of salvage.itemTags) {
     if (removedItemEdges.has(itemTagEdgeId(itemId, tagId))) continue;
     statements.push({
@@ -335,7 +344,11 @@ async function cloneWithSalvage(
     statements.push(tombstone(t));
   }
 
-  await driver.transaction(statements);
+  // Issue #188: the clone AND the salvage both re-insert `stock_batches` rows whose deltas travel
+  // in the (re-unioned) ledger, so the whole batch runs capture-disabled — otherwise the salvage
+  // upserts would re-capture and double-count. `buildCloneStatements` is a plain builder now, so
+  // the guard wraps everything here at the transaction boundary.
+  await driver.transaction(withCaptureDisabled(statements));
 }
 
 // --- statement builders ----------------------------------------------------------

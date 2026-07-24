@@ -5,7 +5,13 @@ import { migrations } from '@/db/migrations';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
 import { LocationRepository } from '@/db/repositories/LocationRepository';
 import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE, SYNC_TABLES } from '@/db/repositories/tombstone';
-import { applyPlan, buildLocalSnapshot, buildCloneStatements, buildSchemaDictionary } from './snapshot';
+import {
+  applyPlan,
+  buildLocalSnapshot,
+  buildCloneStatements,
+  buildSchemaDictionary,
+  withCaptureDisabled,
+} from './snapshot';
 import { reconcile } from './reconcile';
 import { reconcileStockQuantity } from './delta-crdt';
 import type { StockQuantityDelta } from './types';
@@ -141,7 +147,7 @@ describe('stock_deltas — capture invariant (issue #188, S0)', () => {
         ITEM_HISTORY_TABLE,
         STOCK_DELTAS_TABLE,
       ]);
-      await deviceB.transaction(buildCloneStatements(snapshot, dictionary));
+      await deviceB.transaction(withCaptureDisabled(buildCloneStatements(snapshot, dictionary)));
 
       // B's ledger is exactly A's (union-by-id), not doubled by the clone's own writes.
       const bDeltas = await deviceB.query<{ id: string }>('SELECT id FROM stock_deltas ORDER BY id;');
@@ -217,7 +223,7 @@ describe('discrete-stock convergence — the #188 scenario end-to-end (S1)', () 
 
       await runMigrations(b, migrations);
       const start = await buildLocalSnapshot(a);
-      await b.transaction(buildCloneStatements(start, await dictOf(b)));
+      await b.transaction(withCaptureDisabled(buildCloneStatements(start, await dictOf(b))));
       const itemsB = new ItemRepository(b);
 
       // Concurrent, offline: A checks out 3 units (10 → 7), B checks out 4 (10 → 6). Under plain
@@ -256,6 +262,15 @@ describe('discrete-stock convergence — the #188 scenario end-to-end (S1)', () 
         expect(Number(row?.q)).toBe(3);
         expect(Number(row?.s)).toBe(3);
       }
+
+      // Idempotence / no churn: now that both sides hold the same deltas, a further reconcile must
+      // produce NO stock resolution — otherwise a redundant `UPDATE … SET quantity = 3` would bump
+      // updated_at and re-push the row on every sync forever (the re-sync ping-pong bug).
+      const plan = reconcile(await buildLocalSnapshot(a), await buildLocalSnapshot(b), {
+        offset: 0,
+        dictionary: dictA,
+      });
+      expect(plan.stockResolutions).toEqual([]);
     } finally {
       await a.close();
       await b.close();

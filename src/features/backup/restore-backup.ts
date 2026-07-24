@@ -24,6 +24,7 @@ import {
   buildCloneStatements,
   buildSchemaDictionary,
   restoreSnapshot,
+  withCaptureDisabled,
   SYNC_TABLES,
 } from '@/features/sync/snapshot';
 import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE } from '@/db/repositories';
@@ -158,7 +159,9 @@ async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
     ITEM_HISTORY_TABLE,
     STOCK_DELTAS_TABLE,
   ]);
-  await driver.transaction(buildCloneStatements(parsed.snapshot, dictionary));
+  // Issue #188: the clone re-inserts stock rows whose deltas travel in the unioned ledger, so the
+  // whole batch runs capture-disabled (buildCloneStatements is now a plain, unguarded builder).
+  await driver.transaction(withCaptureDisabled(buildCloneStatements(parsed.snapshot, dictionary)));
   if (parsed.images.length > 0) await writeImageFiles(parsed.images);
   return false;
 }

@@ -944,6 +944,12 @@ function reconcileStock(
     // Only a placement both devices moved can have diverged; a one-sided one keeps its LWW value.
     if (!remoteEntry) continue;
     if (!finalItemIds.has(localEntry.key.itemId)) continue;
+    // Skip when the remote carries no movement this device lacks: the placements have not actually
+    // diverged, so the local quantity already equals the merged one. Emitting a resolution anyway
+    // would `UPDATE stock_batches SET quantity = <same value>`, bumping `updated_at` and re-pushing
+    // the row every sync — a fresh source of the `[[sync-redundant-resync-churn]]` ping-pong.
+    const localIds = new Set(localEntry.deltas.map((d) => d.id));
+    if (remoteEntry.deltas.every((d) => localIds.has(d.id))) continue;
     const quantity = reconcileStockQuantity(localEntry.deltas, remoteEntry.deltas);
     resolutions.push({
       itemId: localEntry.key.itemId,

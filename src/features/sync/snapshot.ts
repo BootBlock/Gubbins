@@ -838,6 +838,13 @@ export async function applyPlan(
  * to reclaim OPFS space. Filtering the cloned `itemHistory` by the local watermark keeps
  * that space reclaimed — matching the delta-sync guard in {@link reconcile}. Defaults to
  * 0 (no filtering).
+ *
+ * Returns a **plain** statement list — capture-guarding is the caller's job (issue #188). The
+ * clone re-inserts `stock_batches` rows whose deltas already travel in the ledger this list also
+ * re-unions, so the caller must run the whole batch under {@link withCaptureDisabled}. The TTL
+ * clone-with-salvage path (`cloneWithSalvage`) appends its own salvage statements first, so
+ * wrapping here would leave that salvage capture-enabled — the guard therefore lives at the
+ * transaction boundary, not inside this builder.
  */
 export function buildCloneStatements(
   remote: SyncSnapshot,
@@ -904,8 +911,9 @@ export function buildCloneStatements(
     });
   }
   // Issue #188: a clone re-inserts `stock_batches` wholesale; its deltas travel in the ledger
-  // above, so capture stays disabled around the batch to avoid double-counting.
-  return withCaptureDisabled(statements);
+  // above. The caller runs the whole transaction under `withCaptureDisabled` (see the doc note),
+  // so no delta is re-captured — wrapping here would strand the salvage half capture-enabled.
+  return statements;
 }
 
 /**

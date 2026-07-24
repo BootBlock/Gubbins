@@ -278,7 +278,30 @@ kicked off with "implement S2".
 - **Redundant re-sync churn** (`[[sync-redundant-resync-churn]]`, the open LWW-tie ping-pong bug)
   is *adjacent* but separate: it concerns `updated_at`-trigger churn on tie re-upserts. A quantity
   that is now CRDT-merged rather than LWW-upserted may reduce that churn, but this plan does not
-  claim to fix it — track it separately.
+  claim to fix it — track it separately. **S1 guards against *adding* to it:** `reconcileStock`
+  emits a resolution only when the remote carries a delta this device lacks, so a placement that has
+  not actually diverged is never re-`UPDATE`d (which would bump `updated_at` every sync).
+
+### Known limitations (shipped S0/S1)
+
+- **History-excluded backup can converge stock to a wrong value across a whole group.** The
+  Backup & Restore "include history" toggle drops `stockDeltas` alongside `item_history`/gauge
+  deltas (`filterSnapshot`), leaving a restored placement "baseline-less" (`quantity = N`,
+  `Σ deltas = 0`). A single device self-heals on the next sync (a peer's seed delta re-unions in),
+  but if the baseline is lost across the *entire* sync group, two concurrent decrements union to a
+  negative sum and **floor to 0**, losing more than plain LWW would. This is the **same limitation
+  the gauge CRDT already has** with a history-excluded backup (its deltas drop too; it re-clamps to
+  `gross`), so it is consistent with shipped precedent rather than a new class of loss — but a
+  future refinement could keep the (small, correctness-critical) stock ledger out of that toggle,
+  or synthesise a deterministic-id baseline delta per placement when history is excluded.
+- **A location deleted concurrently with a decrement in it can lose that decrement.** The
+  location-delete re-home moves a placement's stock to Unassigned as a `+currentQuantity` capture on
+  the deleting device and a hard `DELETE` of the source rows (no compensating `−` delta — a DELETE
+  fires no capture trigger), so a concurrent decrement made on another device at that source
+  placement is stranded on the now-dead placement and the re-homed figure reflects only the
+  deleting device's view. This is inherent to a per-placement delta CRDT (a cross-placement *move*
+  racing a same-source *edit*) and matches the design's re-home model; it needs the narrow
+  "delete a location while another device is drawing stock down inside it" sequence.
 - **Out of scope:** gauge items (already have their CRDT), SERIALISED presence (audited by
   is_active, not a counter), and reservations/procurement rows that touch only `project_bom_lines`
   (no stock move). `UNTRACKED` items hold no ledger. None of these need a stock delta.
