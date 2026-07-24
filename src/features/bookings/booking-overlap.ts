@@ -15,24 +15,24 @@
  * (`reserveStock`/`planReceipt`), which commit a number of units rather than blocking a
  * date range. The two never share maths.
  *
- * **Whole-day, inclusive, local.** Both ends snap to local midnight via
- * {@link startOfLocalDay} (the shared `@/lib/calendar-days` helper), so partial-day clock times
- * never cause a same-day booking to be judged free. Adjacent days do **not** overlap: a booking
- * ending on day 3 and another starting on day 4 leave no shared day, so the asset is free.
+ * **Whole-day, inclusive, midnight UTC.** Both ends snap to midnight UTC via the shared
+ * {@link startOfUtcDay} helper (`@/lib/calendar-days`), so partial-day clock times never cause a
+ * same-day booking to be judged free, and — critically — a booking encodes the *same* calendar day
+ * everywhere, matching every other day-grained column in the schema (`expiry_date`, `due_date`, …).
+ * Snapping to the local day instead (as this seam once did) baked the author's time zone into the
+ * stored instant, so a booking made in one zone silently shifted a day when re-read in another
+ * (issue #320). Adjacent days do **not** overlap: a booking ending on day 3 and another starting on
+ * day 4 leave no shared day, so the asset is free.
  */
-import { startOfLocalDay } from '@/lib/calendar-days';
-
-// Re-exported so existing importers (the repository layer, this seam's tests) keep their local
-// name while the definition lives in one place (issue #325).
-export { startOfLocalDay };
+import { startOfUtcDay } from '@/lib/calendar-days';
 
 // ---------------------------------------------------------------------------
 // Day ranges
 // ---------------------------------------------------------------------------
 
 /**
- * A whole-day reservation span. Both `start` and `end` are local day-start UNIX-ms
- * instants (as produced by {@link startOfLocalDay}) and the range is **inclusive of both
+ * A whole-day reservation span. Both `start` and `end` are midnight-UTC day-start UNIX-ms
+ * instants (as produced by {@link startOfUtcDay}) and the range is **inclusive of both
  * days** — `start === end` is a legal single-day booking. Invariant: `end >= start`.
  */
 export interface DayRange {
@@ -42,7 +42,7 @@ export interface DayRange {
 
 /**
  * Snap an arbitrary start/end pair to a canonical {@link DayRange}: both ends are pushed to
- * their local day-start via {@link startOfLocalDay}, and if the snapped end falls before the
+ * their midnight-UTC day-start via {@link startOfUtcDay}, and if the snapped end falls before the
  * snapped start the two are swapped so the result always satisfies `end >= start`. This lets
  * a caller pass the two dates in either order.
  *
@@ -52,8 +52,8 @@ export function normaliseDayRange(startMs: number, endMs: number): DayRange {
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
     throw new RangeError('A booking needs valid start and end dates.');
   }
-  const a = startOfLocalDay(startMs);
-  const b = startOfLocalDay(endMs);
+  const a = startOfUtcDay(startMs);
+  const b = startOfUtcDay(endMs);
   return b < a ? { start: b, end: a } : { start: a, end: b };
 }
 

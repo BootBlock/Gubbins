@@ -29,6 +29,7 @@ import {
 import { BookingIcon, CheckoutIcon, InfoIcon, SuccessIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { nowMs } from '@/lib/clock';
+import { fromDateInputValue } from '@/lib/date-input';
 import { useContacts } from '@/features/contacts/contacts';
 import type { AssetBookingWithNames } from '@/db/repositories';
 import { useErrorMessage } from '@/features/errors';
@@ -47,13 +48,6 @@ import {
   useCreateBooking,
   useDeleteBooking,
 } from './bookings';
-
-/** Parse a yyyy-mm-dd input into a midday UNIX-ms instant (the repo snaps to the day start). */
-function dayInputToMs(value: string): number | null {
-  if (!value) return null;
-  const ms = new Date(`${value}T12:00:00`).getTime();
-  return Number.isFinite(ms) ? ms : null;
-}
 
 /**
  * Turn a bookings-load failure into a concrete reason plus actionable guidance.
@@ -120,8 +114,8 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
 
   const submit = () => {
     setError(null);
-    const startMs = dayInputToMs(start);
-    const endMs = dayInputToMs(end);
+    const startMs = fromDateInputValue(start);
+    const endMs = fromDateInputValue(end);
     if (!itemId) {
       setError('Choose an asset to book.');
       return;
@@ -313,7 +307,7 @@ function BookingCard({
         </span>
       </div>
       <p className="text-xs text-muted-foreground">
-        {f.date(booking.startDate)} – {f.date(booking.endDate)}
+        {f.calendarDate(booking.startDate)} – {f.calendarDate(booking.endDate)}
         {booking.contactName ? ` · for ${booking.contactName}` : ''}
       </p>
       {booking.note ? <p className="text-xs text-muted-foreground">{booking.note}</p> : null}

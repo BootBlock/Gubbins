@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { repoPath } from '../test/repo-path';
-import { addCalendarDays, startOfLocalDay } from './calendar-days';
+import { addCalendarDays, startOfLocalDay, startOfUtcDay } from './calendar-days';
 
 // ---------------------------------------------------------------------------
 // Structural cases — true in any time zone (the worker runs in UTC).
@@ -30,6 +30,30 @@ describe('startOfLocalDay', () => {
     expect(new Date(midnight).getMinutes()).toBe(0);
     expect(new Date(midnight).getSeconds()).toBe(0);
     expect(startOfLocalDay(midnight)).toBe(midnight);
+  });
+});
+
+describe('startOfUtcDay', () => {
+  const noonUtc = Date.UTC(2026, 0, 15, 12, 30, 45, 123);
+  const midnightUtc = Date.UTC(2026, 0, 15);
+
+  it('snaps any instant within a UTC day to midnight UTC, regardless of host zone', () => {
+    expect(startOfUtcDay(noonUtc)).toBe(midnightUtc);
+    expect(startOfUtcDay(Date.UTC(2026, 0, 15, 23, 59, 59, 999))).toBe(midnightUtc);
+  });
+
+  it('is idempotent on a value already at midnight UTC', () => {
+    expect(startOfUtcDay(midnightUtc)).toBe(midnightUtc);
+    expect(startOfUtcDay(startOfUtcDay(noonUtc))).toBe(midnightUtc);
+  });
+
+  it('a UTC day is exactly MS_PER_DAY, so the next UTC midnight needs no calendar step', () => {
+    // The reason day-grained UTC values (bookings, #320) can add MS_PER_DAY directly: UTC has no DST.
+    expect(startOfUtcDay(midnightUtc) + 86_400_000).toBe(Date.UTC(2026, 0, 16));
+  });
+
+  it('keeps different UTC days distinct', () => {
+    expect(startOfUtcDay(Date.UTC(2026, 0, 15, 3))).not.toBe(startOfUtcDay(Date.UTC(2026, 0, 16, 3)));
   });
 });
 

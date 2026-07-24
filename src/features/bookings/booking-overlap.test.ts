@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
 import { MS_PER_DAY } from '@/db/repositories/constants';
+import { startOfUtcDay } from '@/lib/calendar-days';
 import {
-  startOfLocalDay,
   normaliseDayRange,
   rangesOverlap,
   findFirstOverlap,
@@ -13,9 +13,10 @@ import {
 } from './booking-overlap';
 
 // A fixed, timezone-robust day-start anchor. We never hard-code raw day-boundary ms
-// literals — every instant is derived from this base plus whole-day offsets, so the
-// suite passes regardless of the machine's local timezone.
-const DAY0 = startOfLocalDay(Date.UTC(2026, 0, 15, 12));
+// literals — every instant is derived from this midnight-UTC base plus whole-day offsets, so the
+// suite passes regardless of the machine's local timezone (the seam snaps to midnight UTC — #320;
+// `startOfUtcDay` itself is covered in `calendar-days.test.ts`).
+const DAY0 = startOfUtcDay(Date.UTC(2026, 0, 15, 12));
 
 /** Day-start instant `n` whole days after the anchor (negative ⇒ before). */
 const day = (n: number): number => DAY0 + n * MS_PER_DAY;
@@ -23,32 +24,8 @@ const day = (n: number): number => DAY0 + n * MS_PER_DAY;
 /** A whole-day instant offset from `day(n)` by `frac` of a day (for "mid-day" times). */
 const within = (n: number, frac: number): number => day(n) + Math.round(frac * MS_PER_DAY);
 
-describe('startOfLocalDay', () => {
-  it('is idempotent — snapping an already-snapped instant is a no-op', () => {
-    expect(startOfLocalDay(DAY0)).toBe(DAY0);
-    expect(startOfLocalDay(startOfLocalDay(DAY0))).toBe(DAY0);
-  });
-
-  it('snaps any instant within a local day to that day-start', () => {
-    expect(startOfLocalDay(within(0, 0.5))).toBe(DAY0);
-    expect(startOfLocalDay(within(0, 0.999))).toBe(DAY0);
-  });
-
-  it('maps two distinct instants on the same local day to the same day-start', () => {
-    const morning = within(3, 0.1);
-    const evening = within(3, 0.9);
-    expect(morning).not.toBe(evening);
-    expect(startOfLocalDay(morning)).toBe(startOfLocalDay(evening));
-    expect(startOfLocalDay(morning)).toBe(day(3));
-  });
-
-  it('keeps different days distinct', () => {
-    expect(startOfLocalDay(day(3))).not.toBe(startOfLocalDay(day(4)));
-  });
-});
-
 describe('normaliseDayRange', () => {
-  it('snaps both ends to their local day-start', () => {
+  it('snaps both ends to their midnight-UTC day-start', () => {
     const range = normaliseDayRange(within(2, 0.3), within(5, 0.8));
     expect(range).toEqual<DayRange>({ start: day(2), end: day(5) });
   });

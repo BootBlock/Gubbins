@@ -15,7 +15,8 @@
  * maintenance schedule that is currently due (no calendar date) carry `hasDate: false` and are
  * anchored at `now`, so they sort and bucket into "Today" rather than being hidden.
  */
-import { addCalendarDays, startOfLocalDay } from '@/lib/calendar-days';
+import { MS_PER_DAY } from '@/db/repositories/constants';
+import { addCalendarDays, startOfLocalDay, startOfUtcDay } from '@/lib/calendar-days';
 import { plural } from '@/lib/plural';
 import { daysOverdue, overdueLabel } from '@/features/contacts/overdue';
 import { maintenanceDueAtMs } from '@/features/alerts/alerts';
@@ -294,7 +295,10 @@ function buildBookingEvents(
 ): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   for (const s of sources) {
-    const endExclusive = addCalendarDays(startOfLocalDay(s.endDate), 1);
+    // Booking `endDate` is a midnight-UTC day-start (issue #320); a UTC day is exactly MS_PER_DAY,
+    // so the next UTC midnight is `+ MS_PER_DAY` (no DST wrinkle) — close the window there so
+    // "active" (window contains `now`) is not off by a day west of UTC.
+    const endExclusive = startOfUtcDay(s.endDate) + MS_PER_DAY;
     const active = s.startDate <= now && now < endExclusive;
     const forWhom = s.contactName ? ` for ${s.contactName}` : '';
     events.push({

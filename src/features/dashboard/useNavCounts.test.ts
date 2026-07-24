@@ -176,8 +176,9 @@ describe('useNavCounts — configurable metrics', () => {
 
   it('counts bookings starting this week and names them with the phrase plural', () => {
     setMetric('/bookings', 'thisWeek');
+    // Bookings store midnight UTC (issue #320), so the "start of today" cut-off is taken in UTC.
     const start = new Date();
-    start.setHours(0, 0, 0, 0);
+    start.setUTCHours(0, 0, 0, 0);
     const inWeek = start.getTime() + 3 * DAY;
     const nextWeek = start.getTime() + 10 * DAY;
     bookingsMock.mockReturnValue({
@@ -288,8 +289,9 @@ describe('nav-count selectors (pure)', () => {
   });
 
   it('countBookings: keeps a booking whose last day is today (endDate snapped to that day start)', () => {
+    // endDate is a midnight-UTC day-start (issue #320), matching the UTC "start of today" cut-off.
     const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    todayStart.setUTCHours(0, 0, 0, 0);
     const rows = [
       {
         startDate: todayStart.getTime(),
