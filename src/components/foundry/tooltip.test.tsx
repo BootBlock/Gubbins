@@ -4,9 +4,14 @@ import { Tooltip, LONG_PRESS_MS } from './tooltip';
 
 afterEach(cleanup);
 
-/** A mouse hover enter — the only pointer type that opens the tooltip on dwell. */
+/**
+ * A genuine mouse hover — the only gesture that opens the tooltip on dwell. Enter *and* a
+ * move: hover-open is deferred to the first real `pointermove` so a synthetic enter under a
+ * stationary cursor (a closing dialog — #474) never pops the bubble.
+ */
 function mouseEnter(el: Element) {
-  fireEvent.pointerEnter(el, { pointerType: 'mouse' });
+  fireEvent.pointerEnter(el, { pointerType: 'mouse', clientX: 0, clientY: 0 });
+  fireEvent.pointerMove(el, { pointerType: 'mouse', clientX: 6, clientY: 6 });
 }
 function mouseLeave(el: Element) {
   fireEvent.pointerLeave(el, { pointerType: 'mouse' });
@@ -89,6 +94,37 @@ describe('Tooltip', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
+  it('does not open when focus is restored to the trigger after a pointer interaction (a closing dialog — #474)', async () => {
+    render(
+      <Tooltip content="Should not pop when a dialog opened by a tap closes.">
+        <button type="button">Add</button>
+      </Tooltip>,
+    );
+    const trigger = screen.getByText('Add').parentElement!;
+    // A tap/click opened a dialog; dismissing it (also by pointer) restores focus to the
+    // trigger. That focus follows a *pointer* interaction — modelled here by a document-level
+    // pointerdown — so it must not open the bubble even though the press was not on the trigger
+    // and any short suppression window has long elapsed.
+    fireEvent.pointerDown(document.body, { pointerType: 'touch' });
+    fireEvent.focus(trigger);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('still opens on keyboard focus that follows a keypress (the modality resets)', async () => {
+    render(
+      <Tooltip content="Keyboard focus is honoured.">
+        <button type="button">Add</button>
+      </Tooltip>,
+    );
+    const trigger = screen.getByText('Add').parentElement!;
+    // A prior pointer interaction marks pointer modality…
+    fireEvent.pointerDown(document.body, { pointerType: 'mouse' });
+    // …but a keypress (e.g. Tab / Escape) flips it back, so a genuine keyboard focus still opens.
+    fireEvent.keyDown(document, { key: 'Tab' });
+    fireEvent.focus(trigger);
+    expect(await screen.findByRole('tooltip')).toBeInTheDocument();
+  });
+
   it('shows on keyboard focus and links the trigger via aria-describedby', async () => {
     render(
       <Tooltip content="Helpful text.">
@@ -160,6 +196,40 @@ describe('Tooltip', () => {
     await screen.findByRole('tooltip', {}, { timeout: 2000 });
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+  });
+
+  it('does not open on a mouse enter with no pointer movement (a stationary cursor revealed by a closing dialog — #474)', async () => {
+    render(
+      <Tooltip content="Should never appear over an untouched control.">
+        <span>info</span>
+      </Tooltip>,
+    );
+    const trigger = screen.getByText('info');
+    // The OS parks the cursor on the control a touch tap pressed; when the dialog that tap
+    // opened is dismissed, the trigger reappears under the stationary cursor and the browser
+    // synthesises a mouse pointerenter — with no move, or at most a zero-distance one at the
+    // same point. Neither must schedule the hover open, even after the dwell elapses.
+    fireEvent.pointerEnter(trigger, { pointerType: 'mouse', clientX: 12, clientY: 20 });
+    fireEvent.pointerMove(trigger, { pointerType: 'mouse', clientX: 12, clientY: 20 });
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('still opens once the user genuinely moves the mouse over a previously-parked control (#474 must not break real hover)', async () => {
+    render(
+      <Tooltip content="Appears on a genuine hover.">
+        <span>info</span>
+      </Tooltip>,
+    );
+    const trigger = screen.getByText('info');
+    // Cursor parked by a closing dialog: enter + zero-distance move keeps it shut…
+    fireEvent.pointerEnter(trigger, { pointerType: 'mouse', clientX: 12, clientY: 20 });
+    fireEvent.pointerMove(trigger, { pointerType: 'mouse', clientX: 12, clientY: 20 });
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    // …then the user actually moves the real mouse over the same control — the tooltip must
+    // open on that genuine movement, so the suppression never breaks normal hover.
+    fireEvent.pointerMove(trigger, { pointerType: 'mouse', clientX: 18, clientY: 26 });
+    expect(await screen.findByRole('tooltip', {}, { timeout: 2000 })).toBeInTheDocument();
   });
 
   it('does not open on a synthesised touch pointer-enter (no sticky-hover bubble)', async () => {
