@@ -1216,6 +1216,95 @@ const baselineStatements: SqlStatement[] = [
         END;
       `,
   },
+  {
+    // The discrete-stock convergence ledger (issue #188). The discrete twin of the gauge's
+    // `item_history.net_value_delta`: an append-only, immutable, union-by-id record of every
+    // signed change to a `(item, location, batch)` placement's quantity, so reconciliation can
+    // replay the id-unioned deltas to converge `stock_batches.quantity` instead of resolving it
+    // by last-write-wins (which silently discards one device's concurrent decrement). Rows are
+    // written automatically by the capture triggers below, never by hand.
+    //
+    // `location_id` / `batch_key` are plain columns, not foreign keys: they are the historical
+    // coordinates of a movement, and a batch row may legitimately be gone (fully consumed, or its
+    // location removed) while its deltas remain — an FK here would either abort a delete or,
+    // RESTRICT-style, block one. `item_id` keeps its cascade so an item's deltas retire with it,
+    // exactly like `item_history`.
+    sql: `
+        CREATE TABLE stock_deltas (
+          id             TEXT    PRIMARY KEY NOT NULL,
+          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          location_id    TEXT    NOT NULL,
+          batch_key      TEXT    NOT NULL,
+          quantity_delta INTEGER NOT NULL,
+          created_at     INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+  },
+  { sql: `CREATE INDEX idx_stock_deltas_item_id ON stock_deltas(item_id, created_at);` },
+  {
+    sql: `CREATE INDEX idx_stock_deltas_placement ON stock_deltas(item_id, location_id, batch_key);`,
+  },
+  {
+    // Immutable, append-only — the ledger's facts never change. Scoped to every column (there is
+    // no FK-action column to exempt, unlike `item_history`'s `actor_user_id`); a cascade DELETE is
+    // still permitted, as SQLite applies FK actions without firing triggers.
+    sql: `
+        CREATE TRIGGER trg_stock_deltas_immutable
+        BEFORE UPDATE OF id, item_id, location_id, batch_key, quantity_delta, created_at
+        ON stock_deltas
+        FOR EACH ROW
+        BEGIN
+          SELECT RAISE(ABORT, 'stock_deltas is an immutable, append-only ledger.');
+        END;
+      `,
+  },
+  {
+    // Local-only capture switch (issue #188). The capture triggers below record a delta for every
+    // `stock_batches` quantity change EXCEPT while this switch is off — which the sync/backup apply
+    // turns off around its writes, because the rows it applies already carry their deltas via the
+    // unioned `stock_deltas` section (recording a second, local delta would double-count). It is
+    // device-local session state: never synced, backed up, cloned, restored or tombstoned, and —
+    // like `location_item_counts` — carries no foreign key so a restore's table ordering can never
+    // abort on it.
+    sql: `
+        CREATE TABLE stock_delta_capture (
+          id      INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))
+        ) STRICT;
+      `,
+  },
+  { sql: `INSERT INTO stock_delta_capture (id, enabled) VALUES (1, 1);` },
+  {
+    // Capture a delta for every batch placement that gains stock. `NEW.quantity - 0` on insert;
+    // the recompute triggers write `item_stock`/`items`, not `stock_batches`, so this never
+    // recurses (recursive_triggers is off). A zero-quantity seed row records nothing.
+    sql: `
+        CREATE TRIGGER trg_stock_batches_capture_ins
+        AFTER INSERT ON stock_batches
+        FOR EACH ROW
+        WHEN NEW.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
+        BEGIN
+          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta)
+          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity);
+        END;
+      `,
+  },
+  {
+    // Capture the actually-applied, CHECK-clamped change on every quantity move. `NEW - OLD` is
+    // reality (the `CHECK (quantity >= 0)` has already vetoed any write that would go negative), so
+    // `stock_batches.quantity == Σ(stock_deltas)` holds by construction for every write path.
+    sql: `
+        CREATE TRIGGER trg_stock_batches_capture_upd
+        AFTER UPDATE OF quantity ON stock_batches
+        FOR EACH ROW
+        WHEN NEW.quantity <> OLD.quantity AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
+        BEGIN
+          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta)
+          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key,
+                  NEW.quantity - OLD.quantity);
+        END;
+      `,
+  },
   { sql: `ALTER TABLE checkouts ADD COLUMN source_batch_key TEXT;` },
   // A return keeps its own note, distinct from the checkout `note`, so a return remark
   // never overwrites the loan's own note (both ends retain their text). NULL while open.

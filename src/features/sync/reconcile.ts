@@ -26,6 +26,7 @@ import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import {
   SYNC_TABLES,
   ITEM_HISTORY_TABLE,
+  STOCK_DELTAS_TABLE,
   ITEM_TAGS_TABLE,
   ITEM_REGIONS_TABLE,
   LOCATION_TAGS_TABLE,
@@ -94,6 +95,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   rejectedCycles: [],
   collisions: [],
   historyInserts: [],
+  stockDeltaInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
   locationTagUpserts: [],
@@ -216,6 +218,13 @@ export function reconcile(
     finalUserIds,
     userRekeys,
   );
+  // Issue #188: the discrete-stock convergence ledger, unioned by id like the history ledger.
+  const stockDeltaInserts = reconcileStockDeltas(
+    local,
+    remote,
+    options.dictionary[STOCK_DELTAS_TABLE],
+    finalItemIds,
+  );
   const { itemTagUpserts, itemTagDeletes } = reconcileItemTags(
     local,
     remote,
@@ -252,6 +261,7 @@ export function reconcile(
     rejectedCycles,
     collisions,
     historyInserts,
+    stockDeltaInserts,
     itemTagUpserts,
     itemTagDeletes,
     locationTagUpserts,
@@ -573,6 +583,32 @@ function reconcileHistory(
     if (!finalItemIds.has(String(r.item_id))) continue;
     const row = allowedCols ? sanitiseRow(r, allowedCols) : r;
     inserts.push(resolveActor(row, finalUserIds, userRekeys));
+  }
+  return inserts;
+}
+
+/**
+ * The remote `stock_deltas` rows this device is missing (issue #188; union-by-id), to INSERT.
+ *
+ * A leaner sibling of {@link reconcileHistory}: the convergence ledger has no `actor_user_id`, so
+ * there is no actor re-key to apply, and (in this first cut) no prune watermark. A delta is
+ * imported when its id is new here and its `item_id` will survive the merge — a delta for an item
+ * that will not exist locally would replay the CRDT against nothing, and its `item_id` is
+ * ON DELETE CASCADE, so it could never be inserted anyway. `location_id` / `batch_key` are plain
+ * columns, not synced FKs, so they need no survival guard.
+ */
+function reconcileStockDeltas(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  allowedCols: readonly string[] | undefined,
+  finalItemIds: ReadonlySet<string>,
+): SqlRow[] {
+  const localIds = new Set((local.stockDeltas ?? []).map((r) => String(r.id)));
+  const inserts: SqlRow[] = [];
+  for (const r of remote.stockDeltas ?? []) {
+    if (localIds.has(String(r.id))) continue;
+    if (!finalItemIds.has(String(r.item_id))) continue;
+    inserts.push(allowedCols ? sanitiseRow(r, allowedCols) : r);
   }
   return inserts;
 }

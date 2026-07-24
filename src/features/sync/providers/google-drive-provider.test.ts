@@ -16,6 +16,7 @@ const snapshot: SyncSnapshot = {
   locationTags: [],
   itemRegions: [],
   itemHistory: [],
+  stockDeltas: [],
 };
 
 /**

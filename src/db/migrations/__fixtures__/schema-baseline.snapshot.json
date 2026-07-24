@@ -387,6 +387,18 @@
     },
     {
       "type": "index",
+      "name": "idx_stock_deltas_item_id",
+      "tbl_name": "stock_deltas",
+      "sql": "CREATE INDEX idx_stock_deltas_item_id ON stock_deltas(item_id, created_at)"
+    },
+    {
+      "type": "index",
+      "name": "idx_stock_deltas_placement",
+      "tbl_name": "stock_deltas",
+      "sql": "CREATE INDEX idx_stock_deltas_placement ON stock_deltas(item_id, location_id, batch_key)"
+    },
+    {
+      "type": "index",
       "name": "idx_supplier_part_price_history_part",
       "tbl_name": "supplier_part_price_history",
       "sql": "CREATE INDEX idx_supplier_part_price_history_part\n              ON supplier_part_price_history(supplier_part_id, recorded_at)"
@@ -690,6 +702,18 @@
       "name": "stock_batches",
       "tbl_name": "stock_batches",
       "sql": "CREATE TABLE stock_batches (\n          id           TEXT    PRIMARY KEY NOT NULL,\n          item_id      TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          location_id  TEXT    NOT NULL REFERENCES locations(id),\n          batch_key    TEXT    NOT NULL,\n          batch_number TEXT,\n          lot_number   TEXT,\n          expiry_date  INTEGER,\n          quantity     INTEGER NOT NULL DEFAULT 0,\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (quantity >= 0),\n          UNIQUE (item_id, location_id, batch_key)\n        ) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "stock_delta_capture",
+      "tbl_name": "stock_delta_capture",
+      "sql": "CREATE TABLE stock_delta_capture (\n          id      INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),\n          enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))\n        ) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "stock_deltas",
+      "tbl_name": "stock_deltas",
+      "sql": "CREATE TABLE stock_deltas (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          location_id    TEXT    NOT NULL,\n          batch_key      TEXT    NOT NULL,\n          quantity_delta INTEGER NOT NULL,\n          created_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -1023,6 +1047,18 @@
     },
     {
       "type": "trigger",
+      "name": "trg_stock_batches_capture_ins",
+      "tbl_name": "stock_batches",
+      "sql": "CREATE TRIGGER trg_stock_batches_capture_ins\n        AFTER INSERT ON stock_batches\n        FOR EACH ROW\n        WHEN NEW.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta)\n          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity);\n        END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_stock_batches_capture_upd",
+      "tbl_name": "stock_batches",
+      "sql": "CREATE TRIGGER trg_stock_batches_capture_upd\n        AFTER UPDATE OF quantity ON stock_batches\n        FOR EACH ROW\n        WHEN NEW.quantity <> OLD.quantity AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta)\n          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key,\n                  NEW.quantity - OLD.quantity);\n        END"
+    },
+    {
+      "type": "trigger",
       "name": "trg_stock_batches_recompute_del",
       "tbl_name": "stock_batches",
       "sql": "CREATE TRIGGER trg_stock_batches_recompute_del\n        AFTER DELETE ON stock_batches\n        FOR EACH ROW\n        BEGIN\n          UPDATE item_stock\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                           WHERE item_id = OLD.item_id AND location_id = OLD.location_id)\n          WHERE id = OLD.item_id || '|' || OLD.location_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                              WHERE item_id = OLD.item_id AND location_id = OLD.location_id);\n        END"
@@ -1044,6 +1080,12 @@
       "name": "trg_stock_batches_updated_at",
       "tbl_name": "stock_batches",
       "sql": "CREATE TRIGGER trg_stock_batches_updated_at\n    AFTER UPDATE ON stock_batches\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE stock_batches SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_stock_deltas_immutable",
+      "tbl_name": "stock_deltas",
+      "sql": "CREATE TRIGGER trg_stock_deltas_immutable\n        BEFORE UPDATE OF id, item_id, location_id, batch_key, quantity_delta, created_at\n        ON stock_deltas\n        FOR EACH ROW\n        BEGIN\n          SELECT RAISE(ABORT, 'stock_deltas is an immutable, append-only ledger.');\n        END"
     },
     {
       "type": "trigger",
@@ -5422,6 +5464,115 @@
           "name": "sqlite_autoindex_stock_batches_2",
           "unique": 1,
           "origin": "u",
+          "partial": 0
+        }
+      ]
+    },
+    "stock_delta_capture": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "enabled",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "1",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": []
+    },
+    "stock_deltas": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "location_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "batch_key",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "quantity_delta",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "items",
+          "from": "item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 1,
+          "name": "idx_stock_deltas_item_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 0,
+          "name": "idx_stock_deltas_placement",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 2,
+          "name": "sqlite_autoindex_stock_deltas_1",
+          "unique": 1,
+          "origin": "pk",
           "partial": 0
         }
       ]

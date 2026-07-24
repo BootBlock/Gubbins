@@ -26,7 +26,7 @@ import {
   restoreSnapshot,
   SYNC_TABLES,
 } from '@/features/sync/snapshot';
-import { ITEM_HISTORY_TABLE } from '@/db/repositories';
+import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE } from '@/db/repositories';
 import { overwriteOpfsDatabase, StaleJournalError } from '@/app/error/safe-mode-actions';
 import { writeImageFiles } from '@/features/images/opfs-images';
 import { BASELINE_REVISION } from '@/db/migrations';
@@ -153,7 +153,11 @@ async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
   }
 
   const driver = getDatabaseDriver();
-  const dictionary = await buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+  const dictionary = await buildSchemaDictionary(driver, [
+    ...SYNC_TABLES,
+    ITEM_HISTORY_TABLE,
+    STOCK_DELTAS_TABLE,
+  ]);
   await driver.transaction(buildCloneStatements(parsed.snapshot, dictionary));
   if (parsed.images.length > 0) await writeImageFiles(parsed.images);
   return false;

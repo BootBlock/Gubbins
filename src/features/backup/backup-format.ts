@@ -22,7 +22,7 @@ import { FK_REFS, type FkRef } from '../sync/fk-refs';
 import type { SyncSnapshot } from '../sync/types';
 // Imported from the defining module, not the `@/db/repositories` barrel: this codec stays
 // free of the repository layer (screen tests mock that barrel wholesale).
-import { ITEM_HISTORY_TABLE } from '@/db/repositories/tombstone';
+import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE } from '@/db/repositories/tombstone';
 import type { SqlRow, SqlValue } from '@/db/rpc/driver';
 import type { OpfsImageFile } from '@/features/images/opfs-images';
 import { EXPORTABLE_SETTING_KEYS, sanitiseSettingsRecord } from './backup-settings';
@@ -141,13 +141,15 @@ function isRemovedItem(row: SqlRow): boolean {
  * view of the schema (issue #152 — `item_relations` referenced items via
  * `from_item_id`/`to_item_id`, which an `item_id`-only check missed entirely).
  *
- * `item_history` is not a synced table, so its own `item_id` reference is added here.
+ * `item_history` and `stock_deltas` are not synced tables, so their own `item_id` references are
+ * added here.
  */
 const ITEM_REF_COLUMNS: ReadonlyMap<string, readonly FkRef[]> = (() => {
   const byTable = new Map<string, readonly FkRef[]>();
   const sources: Record<string, readonly FkRef[] | undefined> = {
     ...FK_REFS,
     [ITEM_HISTORY_TABLE]: [{ col: 'item_id', parent: 'items', nullable: false }],
+    [STOCK_DELTAS_TABLE]: [{ col: 'item_id', parent: 'items', nullable: false }],
   };
   for (const [table, refs] of Object.entries(sources)) {
     const itemRefs = (refs ?? []).filter((ref) => ref.parent === 'items');
@@ -177,12 +179,17 @@ export function filterSnapshot(
   let tables = snapshot.tables;
   let itemHistory = snapshot.itemHistory;
   let gaugeHistory = snapshot.gaugeHistory;
+  let stockDeltas = snapshot.stockDeltas;
   let itemTags = snapshot.itemTags;
   let itemRegions = snapshot.itemRegions;
 
   if (!options.includeHistory) {
     itemHistory = [];
     gaugeHistory = [];
+    // The stock-delta convergence ledger is history too, so the toggle drops it — but see the
+    // note in {@link assembleBackup}: dropping it means concurrent stock movements in the restored
+    // copy will not converge, only the current LWW quantities travel.
+    stockDeltas = [];
   }
 
   if (!options.includeRemovedItems) {
@@ -197,12 +204,13 @@ export function filterSnapshot(
     }
     tables = next;
     itemHistory = repairRows(itemHistory, ITEM_REF_COLUMNS.get(ITEM_HISTORY_TABLE), excluded);
+    stockDeltas = repairRows(stockDeltas, ITEM_REF_COLUMNS.get(STOCK_DELTAS_TABLE), excluded);
     itemTags = itemTags.filter((edge) => !excluded.has(edge.itemId));
     itemRegions = itemRegions.filter((edge) => !excluded.has(edge.itemId));
     gaugeHistory = gaugeHistory.filter((delta) => !excluded.has(delta.itemId));
   }
 
-  return { ...snapshot, tables, itemHistory, gaugeHistory, itemTags, itemRegions };
+  return { ...snapshot, tables, itemHistory, gaugeHistory, stockDeltas, itemTags, itemRegions };
 }
 
 /**
@@ -336,7 +344,10 @@ export interface BackupArtifacts {
 /** Build the zip-entry maps for a backup. Pure (string/bytes in → string/bytes out). */
 export function assembleBackup(sources: BackupSources): BackupArtifacts {
   const selection: Pick<BackupSelection, 'history' | 'removedItems'> = {
-    history: sources.snapshot.itemHistory.length > 0 || sources.snapshot.gaugeHistory.length > 0,
+    history:
+      sources.snapshot.itemHistory.length > 0 ||
+      sources.snapshot.gaugeHistory.length > 0 ||
+      sources.snapshot.stockDeltas.length > 0,
     removedItems: (sources.snapshot.tables.items ?? []).some(isRemovedItem),
   };
 
@@ -579,7 +590,12 @@ export function verifyBackupIntegrity(input: {
 
   // The content flags are derived from the snapshot when a backup is written, so a section that
   // emptied out between then and now is loss — exactly what an empty-defaulting parse hides.
-  if (manifest.contents.history && snapshot.itemHistory.length === 0 && snapshot.gaugeHistory.length === 0) {
+  if (
+    manifest.contents.history &&
+    snapshot.itemHistory.length === 0 &&
+    snapshot.gaugeHistory.length === 0 &&
+    snapshot.stockDeltas.length === 0
+  ) {
     throw new InvalidBackupError(
       'This backup is damaged: it says it contains your history, but no history could be read from it.',
     );

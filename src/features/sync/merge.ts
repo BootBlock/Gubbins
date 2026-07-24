@@ -30,6 +30,7 @@
 import {
   SYNC_TABLES,
   ITEM_HISTORY_TABLE,
+  STOCK_DELTAS_TABLE,
   ITEM_TAGS_TABLE,
   ITEM_REGIONS_TABLE,
   LOCATION_TAGS_TABLE,
@@ -53,8 +54,8 @@ import {
 } from './snapshot';
 import type { SchemaDictionary, SyncConflict, SyncSnapshot, SyncTable, Tombstone } from './types';
 
-/** Tables read into the schema dictionary: the LWW set plus the unioned ledger. */
-const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE];
+/** Tables read into the schema dictionary: the LWW set plus the two unioned ledgers. */
+const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE];
 
 /**
  * Which of the three §7.3 paths this pass takes. The orchestrator decides — the choice needs

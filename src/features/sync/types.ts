@@ -94,6 +94,12 @@ export interface SyncSnapshot {
   readonly itemRegions: readonly ItemRegionEdge[];
   /** Full append-only `item_history` ledger rows (Phase 11; resolved by union-by-id). */
   readonly itemHistory: readonly SqlRow[];
+  /**
+   * Full append-only `stock_deltas` ledger rows (issue #188; resolved by union-by-id). Every
+   * signed change to a `(item, location, batch)` placement's quantity, replayed to converge
+   * `stock_batches.quantity` instead of resolving it by Last-Write-Wins.
+   */
+  readonly stockDeltas: readonly SqlRow[];
 }
 
 /** A merged gauge value to write onto an item (overrides any LWW field value). */
@@ -199,6 +205,8 @@ export interface ReconciliationPlan {
   readonly collisions: readonly CollisionResolution[];
   /** Phase 11: remote `item_history` rows missing locally (union-by-id), to INSERT. */
   readonly historyInserts: readonly SqlRow[];
+  /** Issue #188: remote `stock_deltas` rows missing locally (union-by-id), to INSERT. */
+  readonly stockDeltaInserts: readonly SqlRow[];
   /** Phase 11: `item_tags` edges to add locally (membership union). */
   readonly itemTagUpserts: readonly ItemTagEdge[];
   /** Phase 11: `item_tags` edges to remove locally + tombstone (membership deletions). */

@@ -129,6 +129,17 @@ export const ITEM_REGIONS_TABLE = 'item_regions';
 export const ITEM_HISTORY_TABLE = 'item_history';
 
 /**
+ * The append-only `stock_deltas` convergence ledger (immutable, no `updated_at`). Like
+ * {@link ITEM_HISTORY_TABLE} it is NOT in {@link SYNC_TABLES} — it reconciles by
+ * **union-by-id** (issue #188): every signed change to a `(item, location, batch)`
+ * placement's quantity is one delta row, and the merge replays the id-unioned deltas to
+ * converge `stock_batches.quantity` rather than resolving it by Last-Write-Wins. Absent
+ * from {@link TOMBSTONE_TABLES} for the same reason as the ledger above: it is append-only,
+ * so nothing ever tombstones a row in it.
+ */
+export const STOCK_DELTAS_TABLE = 'stock_deltas';
+
+/**
  * Every table a tombstone may legitimately name: the {@link SYNC_TABLES} LWW set plus the
  * three membership joins, whose unlinks are also recorded as tombstones (keyed by their
  * composite edge ids). The append-only {@link ITEM_HISTORY_TABLE} is deliberately absent —

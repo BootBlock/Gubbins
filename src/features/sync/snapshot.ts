@@ -15,6 +15,7 @@ import {
   ITEM_REGIONS_TABLE,
   ITEM_TAGS_TABLE,
   LOCATION_TAGS_TABLE,
+  STOCK_DELTAS_TABLE,
   SYNC_EXCLUDED_COLUMNS,
   SYNC_TABLES,
   clearItemRegionTombstoneStatement,
@@ -280,6 +281,7 @@ export async function buildLocalSnapshot(
   const locationTags = await attempt(LOCATION_TAGS_TABLE, () => readLocationTags(driver), []);
   const itemRegions = await attempt(ITEM_REGIONS_TABLE, () => readItemRegions(driver), []);
   const itemHistory = await attempt(ITEM_HISTORY_TABLE, () => readItemHistory(driver), []);
+  const stockDeltas = await attempt(STOCK_DELTAS_TABLE, () => readStockDeltas(driver), []);
 
   // Issue #405: the reads above are not one point-in-time view — each is its own unisolated
   // query, so a concurrent write can land a child row whose parent was read a moment too early.
@@ -297,6 +299,7 @@ export async function buildLocalSnapshot(
       locationTags,
       itemRegions,
       itemHistory,
+      stockDeltas,
     },
     { unreadableTables },
   );
@@ -368,6 +371,17 @@ async function readItemRegions(driver: IDatabaseDriver): Promise<ItemRegionEdge[
  */
 function readItemHistory(driver: IDatabaseDriver): Promise<SqlRow[]> {
   return keysetPage(driver, ITEM_HISTORY_TABLE, ['created_at', 'id']);
+}
+
+/**
+ * Read the full append-only `stock_deltas` convergence ledger (issue #188; union-by-id).
+ *
+ * Keyset-paged on the same `(created_at, id)` key it orders by, for the reason given on
+ * {@link readItemHistory} — the ledger is append-only, but a concurrent write can still add a
+ * row mid-read, and under `OFFSET` that would silently drop an unrelated entry.
+ */
+function readStockDeltas(driver: IDatabaseDriver): Promise<SqlRow[]> {
+  return keysetPage(driver, STOCK_DELTAS_TABLE, ['created_at', 'id']);
 }
 
 /** The net-value deltas from the Activity Ledger that the Delta-CRDT replays (§7.3). */
@@ -542,6 +556,40 @@ export function historyInsertStatement(row: SqlRow, columns: readonly string[] |
 }
 
 /**
+ * Build the INSERT OR IGNORE for an append-only `stock_deltas` row (union-by-id, issue #188).
+ *
+ * The discrete-stock twin of {@link historyInsertStatement}: `columns` must come from the live
+ * schema — see {@link requireColumns} for why there is no fallback to the row's own keys.
+ */
+export function stockDeltaInsertStatement(row: SqlRow, columns: readonly string[] | undefined): SqlStatement {
+  if (!columns) {
+    throw new Error(`No schema dictionary entry for table: ${JSON.stringify(STOCK_DELTAS_TABLE)}`);
+  }
+  const cols = columns.filter((c) => c in row);
+  const placeholders = cols.map(() => '?').join(', ');
+  return {
+    sql: `INSERT OR IGNORE INTO ${STOCK_DELTAS_TABLE} (${cols.join(', ')}) VALUES (${placeholders});`,
+    params: cols.map((c) => row[c] as SqlValue),
+  };
+}
+
+/**
+ * Bracket a batch of statements so the `stock_batches` capture triggers stay dormant while they
+ * run (issue #188). Sync/backup apply writes stock rows whose deltas already travel in the unioned
+ * `stock_deltas` section, so re-capturing a local delta for each would double-count. The switch is
+ * flipped inside the same atomic transaction, so a rollback restores it too. Only wraps a
+ * non-empty batch — an empty transaction needs no guard.
+ */
+export function withCaptureDisabled(statements: readonly SqlStatement[]): SqlStatement[] {
+  if (statements.length === 0) return [...statements];
+  return [
+    { sql: 'UPDATE stock_delta_capture SET enabled = 0 WHERE id = 1;' },
+    ...statements,
+    { sql: 'UPDATE stock_delta_capture SET enabled = 1 WHERE id = 1;' },
+  ];
+}
+
+/**
  * A RE_PARENTED Activity-Ledger entry for a §7.5.2 sync re-parent.
  *
  * Attributed to the System user explicitly (issue #79, plan §2.4): no person asked for this
@@ -629,6 +677,14 @@ export async function applyPlan(
   // Runs after the LWW upserts so the parent items exist (FK-safe).
   for (const row of plan.historyInserts) {
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
+  }
+
+  // Issue #188: append-only stock-delta ledger union-by-id (INSERT OR IGNORE, same as the
+  // history ledger above). Runs after the LWW upserts so the parent items exist (FK-safe). The
+  // whole transaction is bracketed with capture disabled below, so these — and the LWW
+  // `stock_batches` upserts — do not re-fire the capture triggers and double-count.
+  for (const row of plan.stockDeltaInserts) {
+    statements.push(stockDeltaInsertStatement(row, dictionary[STOCK_DELTAS_TABLE]));
   }
 
   // Phase 11: item_tags membership additions (after tags + items exist, FK-safe). Clear
@@ -756,7 +812,9 @@ export async function applyPlan(
     statements.push(reparentHistoryStatement(itemId));
   }
 
-  if (statements.length > 0) await driver.transaction(statements);
+  // Issue #188: the whole merge is a sync apply, so its `stock_batches` writes must not re-capture
+  // deltas (they already travel in the unioned ledger). Disable capture around the batch.
+  if (statements.length > 0) await driver.transaction(withCaptureDisabled(statements));
 }
 
 /**
@@ -779,6 +837,7 @@ export function buildCloneStatements(
   // Clear the non-LWW sections first (they would otherwise cascade away when items are
   // deleted, but doing it explicitly keeps the wipe order-independent — Phase 11).
   statements.push({ sql: `DELETE FROM ${ITEM_HISTORY_TABLE};` });
+  statements.push({ sql: `DELETE FROM ${STOCK_DELTAS_TABLE};` });
   statements.push({ sql: `DELETE FROM ${ITEM_TAGS_TABLE};` });
   statements.push({ sql: `DELETE FROM ${LOCATION_TAGS_TABLE};` });
   statements.push({ sql: `DELETE FROM ${ITEM_REGIONS_TABLE};` });
@@ -805,6 +864,10 @@ export function buildCloneStatements(
     if (Number(row.created_at) < historyPrunedBefore) continue;
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
   }
+  // Issue #188: the stock-delta convergence ledger, union-by-id like the history ledger above.
+  for (const row of remote.stockDeltas ?? []) {
+    statements.push(stockDeltaInsertStatement(row, dictionary[STOCK_DELTAS_TABLE]));
+  }
   for (const { itemId, tagId } of remote.itemTags ?? []) {
     statements.push({
       sql: `INSERT OR IGNORE INTO ${ITEM_TAGS_TABLE} (item_id, tag_id) VALUES (?, ?);`,
@@ -829,7 +892,9 @@ export function buildCloneStatements(
       params: [t.tableName, t.id, t.deletedAt],
     });
   }
-  return statements;
+  // Issue #188: a clone re-inserts `stock_batches` wholesale; its deltas travel in the ledger
+  // above, so capture stays disabled around the batch to avoid double-counting.
+  return withCaptureDisabled(statements);
 }
 
 /**
@@ -853,7 +918,11 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   // destructive "replace" restore deliberately does not: it wipes before it clones, and is one
   // of the routes out of a full device.
   await ensureStorageWritable();
-  const dictionary = await buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+  const dictionary = await buildSchemaDictionary(driver, [
+    ...SYNC_TABLES,
+    ITEM_HISTORY_TABLE,
+    STOCK_DELTAS_TABLE,
+  ]);
   const localTombstones = await driver.query<{ table_name: string; id: string }>(
     'SELECT table_name, id FROM tombstones;',
   );
@@ -881,6 +950,10 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   // tombstones below remove any that were unlinked).
   for (const row of snapshot.itemHistory ?? []) {
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
+  }
+  // Issue #188: the stock-delta convergence ledger, union-by-id like the history ledger above.
+  for (const row of snapshot.stockDeltas ?? []) {
+    statements.push(stockDeltaInsertStatement(row, dictionary[STOCK_DELTAS_TABLE]));
   }
   for (const { itemId, tagId } of snapshot.itemTags ?? []) {
     statements.push({
@@ -936,7 +1009,9 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
     statements.push(conditionalTombstoneStatement(t.tableName, t.id, t.deletedAt));
   }
 
-  await driver.transaction(statements);
+  // Issue #188: a restore re-inserts `stock_batches` rows whose deltas travel in the ledger
+  // section above, so capture stays disabled around the batch to avoid double-counting.
+  await driver.transaction(withCaptureDisabled(statements));
 }
 
 export { buildSchemaDictionary, SYNC_TABLES, UNASSIGNED_LOCATION_ID };
