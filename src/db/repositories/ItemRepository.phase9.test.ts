@@ -110,6 +110,22 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
     expect((await items.getById(a.id))!.parentId).toBeNull();
   });
 
+  it('terminates the ancestor walk even if the data already holds a parent cycle (issue #190)', async () => {
+    // A sync merge can converge to a persisted A→B→A variant cycle. Force one directly,
+    // bypassing the write-time guard, then confirm the recursive ancestor CTE still
+    // terminates (UNION, not UNION ALL) rather than looping forever and hanging the
+    // database worker on the next attach/detach touching that chain.
+    const a = await items.create({ name: 'A' });
+    const b = await items.createVariant(a.id, { name: 'B' }); // B → A
+    await driver.execute('UPDATE items SET parent_id = ? WHERE id = ?;', [b.id, a.id]); // A → B: cycle
+    const z = await items.create({ name: 'Z' });
+
+    // Attaching Z under A walks A's now-cyclic ancestor chain; the call must return (Z is not
+    // in the chain, so it succeeds) rather than hang.
+    const attached = await items.setParent(z.id, a.id);
+    expect(attached.parentId).toBe(a.id);
+  });
+
   it('attaches and detaches an existing item as a variant', async () => {
     const parent = await items.create({ name: 'LED' });
     const child = await items.create({ name: 'Red' });

@@ -54,7 +54,7 @@ export function describeSyncOutcome(result: SyncResult): string {
     );
   }
   if (result.rejectedCycles > 0) {
-    sentences.push(`${count(result.rejectedCycles, 'location move')} skipped to avoid a loop.`);
+    sentences.push(`${count(result.rejectedCycles, 'nesting change')} skipped to avoid a loop.`);
   }
   // Issue #193: a serialised item was lent out on two devices at once; the merge kept the first loan.
   if (result.serialisedLoansClosed > 0) {

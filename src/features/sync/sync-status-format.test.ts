@@ -54,7 +54,7 @@ describe('describeSyncOutcome', () => {
     const withExtras = describeSyncOutcome(makeResult({ pulled: 1, reparented: 2, rejectedCycles: 1 }));
     expect(withExtras).toContain('brought in 1 update');
     expect(withExtras).toContain('2 items moved to Unassigned');
-    expect(withExtras).toContain('1 location move skipped to avoid a loop');
+    expect(withExtras).toContain('1 nesting change skipped to avoid a loop');
   });
 
   it('flags a serialised item closed because it was already on loan elsewhere (#193)', () => {

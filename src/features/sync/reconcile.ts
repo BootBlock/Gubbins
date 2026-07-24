@@ -232,7 +232,13 @@ export function reconcile(
   const { reparented, finalItems, activeLocationIds } = reparentOrphans(local, localUpserts, localDeletes);
 
   // --- §7.5.3 cyclical-nesting rejection ----------------------------------------
-  const rejectedCycles = rejectLocationCycles(local, localUpserts);
+  // Both self-referencing parent hierarchies — locations (§7.5.3) and item variant parents
+  // (issue #190) — can be closed into a cycle by concurrent LWW writes that are each
+  // locally valid. Reject whichever merge edge closes the loop, on both tables.
+  const rejectedCycles = [
+    ...rejectParentCycles(local, localUpserts, 'locations'),
+    ...rejectParentCycles(local, localUpserts, 'items'),
+  ];
 
   // --- §7.5 relational integrity: don't resurrect a child of a deleted parent ----
   const finalItemIds = new Set(finalItems.keys());
@@ -1326,32 +1332,40 @@ function computeActiveLocations(
 }
 
 /**
- * Discard any location upsert whose new `parent_id` would close a nesting cycle
- * against the merged tree (§7.5.3), returning the rejected location ids. Mutates
+ * Discard any upsert to a self-referencing `parent_id` hierarchy whose new parent would
+ * close a nesting cycle against the merged tree, returning the rejected row ids. Mutates
  * `localUpserts` in place to drop the offending move (the local hierarchy stands).
+ *
+ * Two tables carry such a hierarchy: `locations` (§7.5.3) and `items` (variant parents,
+ * issue #190). Per-row LWW cannot enforce acyclicity — two devices each make a locally
+ * valid move (A: X→Y, B: Y→X) that only forms a loop once merged — so the merge must
+ * reject whichever edge closes it. For items this is doubly important: the write-time
+ * ancestor walk that guards variant links is recursive, so a persisted cycle would make
+ * the next attach/detach on that chain hang the database worker.
  */
-function rejectLocationCycles(local: SyncSnapshot, localUpserts: TableRow[]): string[] {
+function rejectParentCycles(local: SyncSnapshot, localUpserts: TableRow[], table: SyncTable): string[] {
   const rejected: string[] = [];
+  const localRows = local.tables[table] ?? [];
   // Build the merged parent map: local rows overlaid with the winning upserts.
   const parentOf = new Map<string, string | null>();
-  for (const row of local.tables.locations ?? []) {
+  for (const row of localRows) {
     parentOf.set(String(row.id), row.parent_id === null ? null : String(row.parent_id));
   }
   for (const u of localUpserts) {
-    if (u.table === 'locations') {
+    if (u.table === table) {
       parentOf.set(String(u.row.id), u.row.parent_id === null ? null : String(u.row.parent_id));
     }
   }
 
   for (let i = localUpserts.length - 1; i >= 0; i -= 1) {
     const u = localUpserts[i]!;
-    if (u.table !== 'locations') continue;
+    if (u.table !== table) continue;
     const id = String(u.row.id);
     const newParent = u.row.parent_id === null ? null : String(u.row.parent_id);
     if (wouldCreateCycle(id, newParent, parentOf)) {
       rejected.push(id);
       // Restore the local parent edge and drop the upsert.
-      const localRow = (local.tables.locations ?? []).find((r) => String(r.id) === id);
+      const localRow = localRows.find((r) => String(r.id) === id);
       parentOf.set(id, localRow && localRow.parent_id !== null ? String(localRow.parent_id) : null);
       localUpserts.splice(i, 1);
     }

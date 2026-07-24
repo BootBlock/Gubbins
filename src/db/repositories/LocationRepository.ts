@@ -600,10 +600,12 @@ export class LocationRepository extends BaseRepository {
     }
     await this.requireExists(newParentId);
 
+    // UNION (not UNION ALL) terminates even if the data somehow already held a cycle
+    // (issue #190) — otherwise this walk runs forever and hangs the database worker.
     const cycle = await this.driver.queryOne<{ id: string }>(
       `WITH RECURSIVE ancestors(id) AS (
          SELECT ?
-         UNION ALL
+         UNION
          SELECT l.parent_id FROM locations l
          JOIN ancestors a ON l.id = a.id
          WHERE l.parent_id IS NOT NULL
