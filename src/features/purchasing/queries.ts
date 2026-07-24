@@ -15,6 +15,7 @@ import {
   type LowStockThresholds,
   type UpdatePurchaseOrderLineInput,
 } from '@/db/repositories';
+import { useReportWriteFailure } from '@/features/errors';
 import type { BatchIdentity } from '@/features/inventory/batches';
 import { invalidateItems } from '@/features/inventory/invalidate';
 import { reportKeys } from '@/features/reports/keys';
@@ -85,8 +86,14 @@ export function usePurchaseOrder(id: string | undefined) {
 
 export function useCreatePurchaseOrder() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.orderCreate',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (input: CreatePurchaseOrderInput) => getPurchaseOrderRepository().create(input),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
     },
@@ -95,9 +102,15 @@ export function useCreatePurchaseOrder() {
 
 export function useSetPurchaseOrderStatus() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.orderStatus',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, status }: { id: string; status: 'DRAFT' | 'ORDERED' | 'CANCELLED' }) =>
       getPurchaseOrderRepository().setStatus(id, status),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: (_data, { id }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(id) });
@@ -109,8 +122,14 @@ export function useSetPurchaseOrderStatus() {
 
 export function useDeletePurchaseOrder() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.orderDelete',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (id: string) => getPurchaseOrderRepository().delete(id),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
       // A deleted PO removes its outstanding lines from the on-order totals.
@@ -121,9 +140,15 @@ export function useDeletePurchaseOrder() {
 
 export function useAddPurchaseOrderLine() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.orderLineAdd',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ poId, input }: { poId: string; input: CreatePurchaseOrderLineInput }) =>
       getPurchaseOrderRepository().addLine(poId, input),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: (_data, { poId }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
@@ -150,9 +175,15 @@ export function useUpdatePurchaseOrderLine() {
 
 export function useRemovePurchaseOrderLine() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.orderLineRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ lineId }: { poId: string; lineId: string }) =>
       getPurchaseOrderRepository().removeLine(lineId),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: (_data, { poId }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
@@ -172,9 +203,15 @@ export interface ReceiveLineVars {
 
 export function useReceivePurchaseOrderLine() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.orderLineReceive',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ lineId, locationId, quantity, batch }: ReceiveLineVars) =>
       getPurchaseOrderRepository().receiveLine(lineId, { locationId, quantity, batch }),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: (_data, { poId }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
@@ -202,9 +239,15 @@ export interface ReturnLineVars {
  */
 export function useReturnPurchaseOrderLine() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.orderLineReturn',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ lineId, locationId, quantity }: ReturnLineVars) =>
       getPurchaseOrderRepository().returnLine(lineId, { locationId, quantity }),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: (_data, { poId }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });

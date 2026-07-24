@@ -7,6 +7,7 @@
 import { useMemo } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getTagRepository } from '@/db/repositories';
+import { useReportWriteFailure, type WriteFailureHeadingKey } from '@/features/errors';
 import type { Tag } from '@/db/repositories/types/tags';
 import { bucketIds, mergeBucketMaps } from './id-buckets';
 import { inventoryKeys } from './queries';
@@ -121,6 +122,7 @@ export function useTagSuggestions(prefix: string) {
 function useSetTagsFor({
   scopeId,
   tagsKey,
+  headingKey,
   write,
   invalidateExtra,
 }: {
@@ -128,11 +130,16 @@ function useSetTagsFor({
   readonly scopeId: string;
   /** The query holding this owner's assigned tags — the one patched and refetched. */
   readonly tagsKey: readonly unknown[];
+  /** The toast heading shown if the optimistic write is rolled back (#389). */
+  readonly headingKey: WriteFailureHeadingKey;
   readonly write: (names: string[]) => Promise<void>;
   /** Anything else the owner's tags feed into (a location's tags reach the locations list). */
   readonly invalidateExtra?: (client: QueryClient) => void;
 }) {
   const client = useQueryClient();
+  // Default fallback copy ("…has been undone"): this write patches optimistically and reverts on
+  // error exactly like the item hooks (#307), so the rollback is what the user needs explaining.
+  const reportFailure = useReportWriteFailure(headingKey);
   const mutationKey = [scopeId] as const;
   return useMutation({
     mutationKey,
@@ -145,11 +152,13 @@ function useSetTagsFor({
       client.setQueryData<Tag[]>(tagsKey, projectTagSet(previous, names));
       return { previous };
     },
-    onError: (_error, _names, context) => {
+    onError: (error, _names, context) => {
       // Only roll back to a snapshot we actually took. With no snapshot (the query had not
       // loaded when the write started) there is nothing to restore, and `onSettled`'s refetch
       // is what clears the patch.
       if (context?.previous) client.setQueryData(tagsKey, context.previous);
+      // The revert used to be the whole story, so a rejected tag edit read as a UI glitch (#389).
+      reportFailure(error);
     },
     onSettled: () => {
       // `isMutating` still counts this one, so >1 means another write is queued behind it —
@@ -166,6 +175,7 @@ export function useSetItemTags(itemId: string) {
   return useSetTagsFor({
     scopeId: `item-tags:${itemId}`,
     tagsKey: inventoryKeys.itemTags(itemId),
+    headingKey: 'inventory.writeError.heading.tagsItem',
     write: (names) => getTagRepository().setForItem(itemId, names),
   });
 }
@@ -223,6 +233,7 @@ export function useSetLocationTags(locationId: string) {
   return useSetTagsFor({
     scopeId: `location-tags:${locationId}`,
     tagsKey: inventoryKeys.locationTags(locationId),
+    headingKey: 'inventory.writeError.heading.tagsLocation',
     write: (names) => getTagRepository().setForLocation(locationId, names),
     invalidateExtra: (client) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
@@ -236,6 +247,10 @@ export function useSetLocationTags(locationId: string) {
  */
 export function useTagManagement() {
   const client = useQueryClient();
+  // `create`/`rename` already surface their errors at the call site; `remove`/`merge` were fired
+  // with only an `onSuccess`, so their failures were swallowed (#389).
+  const reportRemove = useReportWriteFailure('inventory.writeError.heading.tagDelete', 'common.writeFailed');
+  const reportMerge = useReportWriteFailure('inventory.writeError.heading.tagMerge', 'common.writeFailed');
   const invalidateAll = () => {
     void client.invalidateQueries({ queryKey: inventoryKeys.tags() });
     invalidateItems(client);
@@ -251,11 +266,13 @@ export function useTagManagement() {
   });
   const remove = useMutation({
     mutationFn: (id: string) => getTagRepository().remove(id),
+    onError: reportRemove,
     onSettled: invalidateAll,
   });
   const merge = useMutation({
     mutationFn: ({ sourceId, targetId }: { sourceId: string; targetId: string }) =>
       getTagRepository().merge(sourceId, targetId),
+    onError: reportMerge,
     onSettled: invalidateAll,
   });
   return { create, rename, remove, merge };

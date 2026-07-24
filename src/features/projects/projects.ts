@@ -26,6 +26,7 @@ import {
   type UpdateExpenseInput,
   type UpdateProjectInput,
 } from '@/db/repositories';
+import { useReportWriteFailure } from '@/features/errors';
 import { inventoryKeys } from '@/features/inventory/queries';
 import type { ParsedBomLine } from './bom-import';
 import { invalidateItems } from '@/features/inventory/invalidate';
@@ -164,8 +165,14 @@ function invalidateProject(client: ReturnType<typeof useQueryClient>, projectId:
 
 export function useCreateProject() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.projectCreate',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (input: CreateProjectInput) => getProjectRepository().create(input),
+    // Surface a rejected create rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: () => void client.invalidateQueries({ queryKey: projectKeys.list() }),
   });
 }
@@ -181,9 +188,15 @@ export function useUpdateProject() {
 
 export function useSetCostingMode() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.costingMode',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, mode }: { id: string; mode: CostingMode }) =>
       getProjectRepository().setCostingMode(id, mode),
+    // Surface a rejected costing-mode change rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: (_data, _err, vars) => invalidateProject(client, vars.id),
   });
 }
@@ -236,17 +249,29 @@ export function useUpdateExpense(projectId: string) {
 
 export function useRemoveExpense(projectId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.expenseRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (expenseId: string) => getProjectRepository().removeExpense(expenseId),
+    // Surface a rejected expense removal rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: () => invalidateProject(client, projectId),
   });
 }
 
 export function useAddBudgetCategory(projectId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.budgetCategoryAdd',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (input: CreateBudgetCategoryInput) =>
       getProjectRepository().addBudgetCategory(projectId, input),
+    // Surface a rejected budget-category add rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: () => invalidateProject(client, projectId),
   });
 }
@@ -262,8 +287,14 @@ export function useUpdateBudgetCategory(projectId: string) {
 
 export function useRemoveBudgetCategory(projectId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.budgetCategoryRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (categoryId: string) => getProjectRepository().removeBudgetCategory(categoryId),
+    // Surface a rejected budget-category removal rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: () => invalidateProject(client, projectId),
   });
 }
@@ -272,8 +303,11 @@ export function useRemoveBudgetCategory(projectId: string) {
 
 export function useAddBomLine(projectId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('projects.writeError.heading.bomLineAdd', 'common.writeFailed');
   return useMutation({
     mutationFn: (input: CreateBomLineInput) => getProjectRepository().addLine(projectId, input),
+    // Surface a rejected BOM-line add rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: () => invalidateProject(client, projectId),
   });
 }
@@ -304,8 +338,14 @@ export function useUpdateBomLine(projectId: string) {
 
 export function useRemoveBomLine(projectId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.bomLineRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (lineId: string) => getProjectRepository().removeLine(lineId),
+    // Surface a rejected BOM-line removal rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: () => invalidateProject(client, projectId),
   });
 }
@@ -320,9 +360,12 @@ export function useRemoveBomLine(projectId: string) {
  */
 export function useSetPicked(projectId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('projects.writeError.heading.picked', 'common.writeFailed');
   return useMutation({
     mutationFn: ({ lineId, picked }: { lineId: string; picked: boolean }) =>
       getProjectRepository().setPicked(lineId, picked),
+    // Surface a rejected pick toggle rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: () => {
       void client.invalidateQueries({ queryKey: projectKeys.pickList(projectId) });
       void client.invalidateQueries({ queryKey: projectKeys.lines(projectId) });
@@ -334,9 +377,15 @@ export function useSetPicked(projectId: string) {
 
 export function useSetReservation(projectId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.reservation',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ lineId, status, qty }: { lineId: string; status: ReservationStatus; qty?: number }) =>
       getProjectRepository().setReservation(lineId, status, qty),
+    // Surface a rejected reservation change rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: (_data, _err, vars) => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(vars.lineId) });
@@ -348,9 +397,15 @@ export function useSetReservation(projectId: string) {
 
 export function useSetProcurement(projectId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.procurement',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ lineId, status }: { lineId: string; status: ProcurementStatus }) =>
       getProjectRepository().setProcurement(lineId, status),
+    // Surface a rejected procurement change rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: () => {
       invalidateItems(client);
       // Refresh the dashboard "arriving" feed and per-item incoming totals (Phase 20).
@@ -363,6 +418,10 @@ export function useSetProcurement(projectId: string) {
 
 export function useReceiveLine(projectId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.receiveLine',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({
       lineId,
@@ -375,6 +434,8 @@ export function useReceiveLine(projectId: string) {
       quantity?: number;
       batch?: { batchNumber: string | null; lotNumber: string | null; expiryDate: number | null };
     }) => getProjectRepository().receiveLine(lineId, { locationId, quantity, batch }),
+    // Surface a rejected receive rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: () => {
       invalidateItems(client);
       // Received stock leaves the "arriving" feed and the item's incoming total (Phase 20).
@@ -479,8 +540,14 @@ export function useCreateProjectFromBom() {
 
 export function useFinaliseAssembly(projectId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.finaliseAssembly',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (input: FinaliseAssemblyInput) => getProjectRepository().finaliseAssembly(projectId, input),
+    // Surface a rejected assembly finalisation rather than letting it fail silently (#389).
+    onError: reportFailure,
     onSettled: () => {
       // Assembly creates/moves/consumes items and may create a location.
       invalidateItems(client);

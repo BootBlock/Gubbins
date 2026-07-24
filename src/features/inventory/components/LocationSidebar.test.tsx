@@ -225,10 +225,11 @@ describe('LocationSidebar — accessible APG tree', () => {
     const input = screen.getByRole('textbox', { name: 'Rename Workshop' });
     fireEvent.change(input, { target: { value: 'Main Workshop' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(spies.update).toHaveBeenCalledWith({
-      id: 'workshop',
-      input: { name: 'Main Workshop' },
-    });
+    // The rename also passes an `onError` reporter so a failed inline rename isn't silent (#389).
+    expect(spies.update).toHaveBeenCalledWith(
+      { id: 'workshop', input: { name: 'Main Workshop' } },
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
   });
 
   it('Escape abandons an inline rename without committing', () => {

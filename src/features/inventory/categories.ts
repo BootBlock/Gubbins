@@ -23,6 +23,7 @@ import {
   type UpdateCategoryFieldInput,
   type UpdateCategoryInput,
 } from '@/db/repositories';
+import { useReportWriteFailure } from '@/features/errors';
 import { bucketIds, mergeBucketMaps } from './id-buckets';
 import { inventoryKeys } from './queries';
 import { invalidateItems } from './invalidate';
@@ -106,6 +107,10 @@ export function useItemFieldValues(itemIds: readonly string[], enabled = true) {
 
 export function useCreateCategory() {
   const client = useQueryClient();
+  // No hook-level `onError` reporter: the preset importer (`CategoryPresetPicker`) already catches
+  // this write's failure and shows its own inline alert, so a hook toast would double-report there.
+  // The two fire-and-forget call sites (`CategoryManagerDialog`, `CreateCategoryDialog`) report at
+  // the call site instead (#389) — mirroring `useUpdateLocation`.
   return useMutation({
     mutationFn: (input: CreateCategoryInput) => getCategoryRepository().create(input),
     onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.categories() }),
@@ -114,17 +119,29 @@ export function useCreateCategory() {
 
 export function useUpdateCategory() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.categoryUpdate',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateCategoryInput }) =>
       getCategoryRepository().update(id, input),
+    // The manager auto-saves edits with no error surface (#389).
+    onError: reportFailure,
     onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.categories() }),
   });
 }
 
 export function useDeleteCategory() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.categoryDelete',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (id: string) => getCategoryRepository().delete(id),
+    // Fired from the manager with no error surface (#389).
+    onError: reportFailure,
     onSettled: () => {
       // Deleting a category nulls its items' category_id, so refresh items too.
       void client.invalidateQueries({ queryKey: inventoryKeys.categories() });
@@ -153,8 +170,14 @@ export function useUpdateCategoryField() {
 
 export function useDeleteCategoryField() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.categoryFieldDelete',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (fieldId: string) => getCategoryRepository().deleteField(fieldId),
+    // Fired from the manager with no error surface (#389).
+    onError: reportFailure,
     onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.categories() }),
   });
 }
@@ -162,9 +185,15 @@ export function useDeleteCategoryField() {
 /** Upsert/clear an item's custom-field values, then refresh its resolved fields. */
 export function useSetItemFieldValues(itemId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.fields', 'common.writeFailed');
   return useMutation({
     mutationFn: (values: Record<string, string | null>) =>
       getCategoryRepository().setItemFieldValues(itemId, values),
+    // The editor validates before it saves, but the write can still be rejected by the
+    // repository (a value it re-checks, the storage hard stop) after the "Save" click — which
+    // `CustomFieldsEditor` fires fire-and-forget — so surface that reason rather than swallow it
+    // and leave the button reading "Saved" (#389).
+    onError: reportFailure,
     onSettled: () => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemFields(itemId) });
       // Refresh the on-card custom-field values (E1) — their key is `[...items(),
@@ -204,8 +233,14 @@ export function useUnusedFieldDefs() {
  */
 export function useDeleteUnusedFieldDef() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.fieldDefDelete',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (defId: string) => getCategoryRepository().deleteUnusedFieldDef(defId),
+    // Fired from the dictionary cleanup with no error surface (#389).
+    onError: reportFailure,
     onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.categories() }),
   });
 }
@@ -231,9 +266,15 @@ export function useLocationFieldValues(locationId: string | undefined) {
  */
 export function useSetLocationFieldValue(locationId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.locationFieldSet',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (input: SetLocationFieldValueInput) =>
       getCategoryRepository().setLocationFieldValue(locationId, input),
+    // The location-fields editor saves without an error surface (#389).
+    onError: reportFailure,
     onSettled: () => invalidateInheritance(client, locationId),
   });
 }
@@ -241,8 +282,14 @@ export function useSetLocationFieldValue(locationId: string) {
 /** Drop a location's value for a definition, then refresh anything that inherited it. */
 export function useRemoveLocationFieldValue(locationId: string) {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'inventory.writeError.heading.locationFieldRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (defId: string) => getCategoryRepository().removeLocationFieldValue(locationId, defId),
+    // Fired from the ✕ on a location-field row with no error surface (#389).
+    onError: reportFailure,
     onSettled: () => invalidateInheritance(client, locationId),
   });
 }

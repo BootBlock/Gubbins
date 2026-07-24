@@ -23,6 +23,7 @@ import { AddIcon, DeleteIcon, PackageIcon, SearchIcon, TagIcon } from '@/compone
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useFeature } from '@/features/modules/useFeature';
 import { useT } from '@/features/i18n';
+import { useReportWriteFailure } from '@/features/errors';
 import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
 import {
@@ -87,6 +88,12 @@ export function LocationSidebar({
   const archive = useArchiveLocation();
   const moveItem = useMoveItem();
   const updateLocation = useUpdateLocation();
+  // `useUpdateLocation` has no hook-level reporter (the Edit dialog surfaces its own errors), so
+  // the drag-to-nest re-parent fired here reports its own failure (#389).
+  const reportLocationUpdate = useReportWriteFailure(
+    'inventory.writeError.heading.locationUpdate',
+    'common.writeFailed',
+  );
   const toast = useToast();
   // Announce a drag-and-drop move (WCAG 4.1.3) — the pointer-only drop has no other feedback
   // for assistive tech, and the moved item/location may leave the current view.
@@ -253,6 +260,11 @@ export function LocationSidebar({
         onSuccess: () => {
           toggle(targetId, true);
           setMoveAnnouncement(`${dragged.name} moved into ${target.name}.`);
+        },
+        onError: (error) => {
+          // Clear the "Moving…" cue so AT isn't left mid-sentence, and surface why (#389).
+          setMoveAnnouncement('');
+          reportLocationUpdate(error);
         },
       },
     );

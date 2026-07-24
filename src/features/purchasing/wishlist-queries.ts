@@ -7,6 +7,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getWishlistRepository, type CreateWishlistInput, type UpdateWishlistInput } from '@/db/repositories';
+import { useReportWriteFailure } from '@/features/errors';
 
 export const wishlistKeys = {
   all: ['wishlist'] as const,
@@ -23,8 +24,14 @@ export function useWishlist() {
 
 export function useCreateWishlistEntry() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.wishlistAdd',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (input: CreateWishlistInput) => getWishlistRepository().create(input),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: wishlistKeys.list() });
     },
@@ -33,9 +40,15 @@ export function useCreateWishlistEntry() {
 
 export function useUpdateWishlistEntry() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.wishlistUpdate',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateWishlistInput }) =>
       getWishlistRepository().update(id, input),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: wishlistKeys.list() });
     },
@@ -44,8 +57,14 @@ export function useUpdateWishlistEntry() {
 
 export function useDeleteWishlistEntry() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.wishlistRemove',
+    'common.writeFailed',
+  );
   return useMutation({
     mutationFn: (id: string) => getWishlistRepository().delete(id),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: wishlistKeys.list() });
     },

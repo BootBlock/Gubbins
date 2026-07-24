@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Button, FormField, Modal, Input } from '@/components/foundry';
 import type { Category } from '@/db/repositories';
+import { useReportWriteFailure } from '@/features/errors';
 import { useCreateCategory } from '../categories';
 
 /**
@@ -21,6 +22,12 @@ export function CreateCategoryDialog({
   onCreated?: (category: Category) => void;
 }) {
   const create = useCreateCategory();
+  // `useCreateCategory` has no hook-level reporter (the preset importer surfaces its own errors),
+  // so this fire-and-forget create reports its own failure (#389).
+  const reportCreateFailure = useReportWriteFailure(
+    'inventory.writeError.heading.categoryCreate',
+    'common.writeFailed',
+  );
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState('');
 
@@ -35,6 +42,7 @@ export function CreateCategoryDialog({
           onCreated?.(category);
           onClose();
         },
+        onError: reportCreateFailure,
       },
     );
   };
