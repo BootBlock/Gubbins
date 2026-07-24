@@ -21,7 +21,13 @@ import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { TrackingMode } from '@/db/repositories/constants';
-import type { CategoryField, CreateItemInput, UpdateItemInput, Item } from '@/db/repositories/types';
+import type {
+  CategoryField,
+  CreateItemInput,
+  GaugeInput,
+  UpdateItemInput,
+  Item,
+} from '@/db/repositories/types';
 
 // Re-export so callers import from one place.
 export { parseCsv };
@@ -45,6 +51,12 @@ export type CatalogField =
   | 'locationId'
   | 'categoryId'
   | 'trackingMode'
+  // Consumable-Gauge configuration (issue #341): required to create a CONSUMABLE_GAUGE row,
+  // meaningless on any other tracking mode.
+  | 'unitOfMeasure'
+  | 'grossCapacity'
+  | 'tareWeight'
+  | 'currentNetValue'
   | 'mpn'
   | 'manufacturer'
   | 'unitCost'
@@ -69,6 +81,10 @@ export const CATALOG_FIELDS: readonly CatalogField[] = [
   'locationId',
   'categoryId',
   'trackingMode',
+  'unitOfMeasure',
+  'grossCapacity',
+  'tareWeight',
+  'currentNetValue',
   'mpn',
   'manufacturer',
   'unitCost',
@@ -94,6 +110,10 @@ export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
   locationId: 'Location ID',
   categoryId: 'Category ID',
   trackingMode: 'Tracking mode',
+  unitOfMeasure: 'Unit of measure',
+  grossCapacity: 'Gross capacity',
+  tareWeight: 'Tare weight',
+  currentNetValue: 'Net remaining',
   mpn: 'Manufacturer part number',
   manufacturer: 'Manufacturer',
   unitCost: 'Unit cost',
@@ -174,6 +194,16 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
   ['trackingmode', 'trackingMode'],
   ['tracking', 'trackingMode'],
   ['type', 'trackingMode'],
+  // Consumable-Gauge configuration (issue #341): the exact export headers and UI labels only,
+  // for the same reason `weight` is exact. These columns are meaningful *only* on a gauge row,
+  // so a loose synonym would auto-map an unrelated column ("UOM" in an ERP dump, "Capacity" for
+  // a battery or a drive) and cost a row its import — as well as shadowing a same-named custom
+  // field. A file that spells them differently is mapped by hand in the import wizard.
+  ['unitofmeasure', 'unitOfMeasure'],
+  ['grosscapacity', 'grossCapacity'],
+  ['tareweight', 'tareWeight'],
+  ['currentnetvalue', 'currentNetValue'],
+  ['netremaining', 'currentNetValue'],
   ['manufacturer', 'manufacturer'],
   ['mfr', 'manufacturer'],
   ['unitcost', 'unitCost'],
@@ -198,12 +228,26 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
 ];
 
 /**
+ * The gauge-configuration fields (issue #341). They are only meaningful on a Consumable-Gauge
+ * row and ignored on every other, so — unlike every other core field — a category custom field
+ * of the same name wins the header in {@link inferColumnMapping}: shadowing "Unit of measure"
+ * would silently discard that column's value on a catalogue of ordinary items.
+ */
+const GAUGE_FIELDS: ReadonlySet<CatalogField> = new Set<CatalogField>([
+  'unitOfMeasure',
+  'grossCapacity',
+  'tareWeight',
+  'currentNetValue',
+]);
+
+/**
  * Infer a {@link ColumnMapping} from a CSV header row. Core catalog synonyms win
  * first; a header that matches no core synonym is then matched against the supplied
  * category **custom-field** definitions by normalised name (or exact field id), so a
  * column like `Resistance` targets that category field (Phase 72). Unrecognised
  * columns map to `null`. Each core field and each custom field is assigned at most
- * once (first header wins).
+ * once (first header wins). The one exception to "core wins" is a {@link GAUGE_FIELDS}
+ * column, which yields to a same-named custom field.
  */
 export function inferColumnMapping(
   headers: readonly string[],
@@ -222,16 +266,20 @@ export function inferColumnMapping(
 
   return headers.map((h) => {
     const key = headerKey(h);
-    for (const [synonym, field] of HEADER_SYNONYMS) {
-      if (synonym === key && !assigned.has(field)) {
-        assigned.add(field);
-        return field;
-      }
-    }
-    // No core match — try a custom field. Match on the normalised header key or the
-    // raw (un-normalised) header, the latter so a UUID field id used as a header
-    // resolves even though normalisation would strip its hyphens.
+    // The custom field this header would target, resolved up-front so a gauge column can yield
+    // to it. Matched on the normalised header key or the raw (un-normalised) header, the latter
+    // so a UUID field id used as a header resolves even though normalisation would strip its
+    // hyphens.
     const fieldId = fieldByKey.get(key) ?? fieldByKey.get(h.trim());
+    const customFieldFree = fieldId !== undefined && !assignedFieldIds.has(fieldId);
+    for (const [synonym, field] of HEADER_SYNONYMS) {
+      if (synonym !== key || assigned.has(field)) continue;
+      // A gauge column defers to a custom field of the same name (see GAUGE_FIELDS).
+      if (GAUGE_FIELDS.has(field) && customFieldFree) break;
+      assigned.add(field);
+      return field;
+    }
+    // No core match (or a gauge column that yielded) — target the custom field.
     if (fieldId !== undefined && !assignedFieldIds.has(fieldId)) {
       assignedFieldIds.add(fieldId);
       return { fieldId };
@@ -260,6 +308,14 @@ const catalogRowSchema = z.object({
   locationId: z.string().trim().optional(),
   categoryId: z.string().trim().optional().nullable(),
   trackingMode: trackingModeSchema,
+  // Consumable-Gauge configuration (issue #341). Optional here because a row of any other
+  // tracking mode carries none of it; the per-mode rules (a gauge row needs a unit and a
+  // capacity above zero; a non-gauge row must carry neither) are enforced in the plan builder,
+  // where the row's resolved tracking mode is known.
+  unitOfMeasure: z.string().trim().optional().nullable(),
+  grossCapacity: z.number().min(0, 'Gross capacity cannot be negative.').optional().nullable(),
+  tareWeight: z.number().min(0, 'Tare weight cannot be negative.').optional().nullable(),
+  currentNetValue: z.number().min(0, 'Net remaining cannot be negative.').optional().nullable(),
   mpn: z.string().trim().optional().nullable(),
   manufacturer: z.string().trim().optional().nullable(),
   unitCost: z.number().min(0, 'Unit cost cannot be negative.').optional().nullable(),
@@ -399,7 +455,17 @@ function extractRow(row: readonly string[], mapping: ColumnMapping): ExtractedRo
 /** The catalog fields whose cells hold a number (the only ones {@link coerceRow} parses). */
 type NumericCatalogField = Extract<
   CatalogField,
-  'quantity' | 'unitCost' | 'weight' | 'width' | 'height' | 'depth' | 'reorderPoint' | 'reorderQty'
+  | 'quantity'
+  | 'unitCost'
+  | 'weight'
+  | 'width'
+  | 'height'
+  | 'depth'
+  | 'reorderPoint'
+  | 'reorderQty'
+  | 'grossCapacity'
+  | 'tareWeight'
+  | 'currentNetValue'
 >;
 
 /**
@@ -427,9 +493,15 @@ interface CoercedRow {
  * Numeric fields are converted from strings here so Zod receives the right types —
  * including non-integer values such as `1.5`, which are passed through as-is so the
  * schema's whole-number rule reports them rather than the parser silently truncating.
+ *
+ * The gauge cells are read only on a row whose *resolved* tracking mode is Consumable-Gauge
+ * (issue #341); every other row ignores them, and reporting a value the row discards anyway
+ * would cost it its import — a shipping sheet's "Tare weight: 12 kg" is not this importer's
+ * business unless the row is a gauge.
  */
 function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRow {
   const unreadable: string[] = [];
+  const isGauge = raw.trackingMode === 'CONSUMABLE_GAUGE';
 
   /**
    * Read one numeric cell. An absent cell yields `undefined` ("not supplied"); an
@@ -447,6 +519,9 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRo
     return value;
   };
 
+  /** Read one gauge cell — only on a gauge row (an ignored cell is never reported). */
+  const gaugeNum = (field: NumericCatalogField): number | undefined => (isGauge ? num(field) : undefined);
+
   return {
     unreadable,
     data: {
@@ -460,6 +535,10 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRo
       locationId: raw.locationId ?? undefined,
       categoryId: raw.categoryId,
       trackingMode: (raw.trackingMode ?? undefined) as CatalogRowData['trackingMode'],
+      unitOfMeasure: isGauge ? raw.unitOfMeasure : undefined,
+      grossCapacity: gaugeNum('grossCapacity'),
+      tareWeight: gaugeNum('tareWeight'),
+      currentNetValue: gaugeNum('currentNetValue'),
       mpn: raw.mpn,
       manufacturer: raw.manufacturer,
       unitCost: num('unitCost'),
@@ -525,6 +604,28 @@ export interface CatalogImportPlan {
 // Convert validated row → CreateItemInput / UpdateItemInput
 // ---------------------------------------------------------------------------
 
+/**
+ * The Consumable-Gauge sub-object for a create, or `undefined` for any other tracking mode.
+ *
+ * Only ever called for a row that {@link gaugeCreateError} has already passed, so the unit and
+ * capacity are known present and sane — the non-null assertions mirror the `name!` above. The
+ * optional halves are spread rather than defaulted so `tareWeight: 0` / a zero net value survive
+ * as supplied, and an absent column keeps the repository's own default (tare 0, a full item).
+ */
+function toGaugeInput(data: CatalogRowData): { gauge: GaugeInput } | undefined {
+  if ((data.trackingMode ?? 'DISCRETE') !== 'CONSUMABLE_GAUGE') return undefined;
+  return {
+    gauge: {
+      unitOfMeasure: data.unitOfMeasure!.trim(),
+      grossCapacity: data.grossCapacity!,
+      ...(data.tareWeight === undefined || data.tareWeight === null ? {} : { tareWeight: data.tareWeight }),
+      ...(data.currentNetValue === undefined || data.currentNetValue === null
+        ? {}
+        : { currentNetValue: data.currentNetValue }),
+    },
+  };
+}
+
 function toCreateInput(data: CatalogRowData): CreateItemInput {
   const mpn = data.sku ?? data.mpn ?? null;
   return {
@@ -534,6 +635,7 @@ function toCreateInput(data: CatalogRowData): CreateItemInput {
     locationId: data.locationId ?? UNASSIGNED_LOCATION_ID,
     categoryId: data.categoryId ?? null,
     trackingMode: data.trackingMode ?? 'DISCRETE',
+    ...toGaugeInput(data),
     quantity: data.quantity ?? 0,
     mpn,
     manufacturer: data.manufacturer ?? null,
@@ -577,12 +679,46 @@ function serialisedQuantityError(data: CatalogRowData, mode: TrackingMode): stri
 }
 
 /**
+ * Mirror the gauge DB CHECK at dry-run time (issue #341): a `CONSUMABLE_GAUGE` item's unit of
+ * measure and gross capacity are mandatory, the capacity must be above zero, and — the one part
+ * the CHECK itself misses — the net remaining cannot exceed the capacity, an invariant every
+ * other gauge write path holds to via `clampNetValue`.
+ *
+ * Without this the row looked valid in the preview and only failed at apply time — inside the
+ * one atomic bulk create — so a single "Consumable" row in a long spreadsheet cost the whole
+ * batch. The check has to live here rather than in the schema because it depends on the row's
+ * *resolved* tracking mode, which the batch default can supply.
+ *
+ * Gauge cells on a row of any *other* tracking mode are ignored rather than reported. Unlike the
+ * unlimited-supply flag — a boolean that means exactly one thing — these are ordinary spreadsheet
+ * headers ("Unit of measure" is in every ERP export), so erroring would cost whole files their
+ * import for a column that was harmlessly ignored before the importer knew the name.
+ *
+ * Returns a row-error message, or `null` when the row is fine.
+ */
+function gaugeCreateError(data: CatalogRowData, mode: TrackingMode): string | null {
+  if (mode !== 'CONSUMABLE_GAUGE') return null;
+  const unit = data.unitOfMeasure?.trim() ?? '';
+  const capacity = data.grossCapacity ?? null;
+  if (unit.length === 0 || capacity === null || capacity <= 0) {
+    return `A Consumable-Gauge item needs a ${CATALOG_FIELD_LABELS.unitOfMeasure.toLowerCase()} and a ${CATALOG_FIELD_LABELS.grossCapacity.toLowerCase()} above zero — add those columns, or import this row as Bulk.`;
+  }
+  const net = data.currentNetValue ?? null;
+  if (net !== null && net > capacity) {
+    return `${CATALOG_FIELD_LABELS.currentNetValue} (${net}) cannot be more than the ${CATALOG_FIELD_LABELS.grossCapacity.toLowerCase()} (${capacity}) — a gauge cannot hold more than a full one.`;
+  }
+  return null;
+}
+
+/**
  * Every tracking-mode invariant a *create* row must satisfy, checked against the mode the row
  * will be created with. Returns the first violation's message, or `null` when the row is fine.
  */
 function createRowModeError(data: CatalogRowData): string | null {
   const mode = data.trackingMode ?? 'DISCRETE';
-  return unlimitedModeError(data, mode) ?? serialisedQuantityError(data, mode);
+  return (
+    unlimitedModeError(data, mode) ?? serialisedQuantityError(data, mode) ?? gaugeCreateError(data, mode)
+  );
 }
 
 function toUpdateInput(data: CatalogRowData): UpdateItemInput {
@@ -605,6 +741,11 @@ function toUpdateInput(data: CatalogRowData): UpdateItemInput {
   if (data.reorderQty !== undefined) Object.assign(result, { reorderQty: data.reorderQty ?? null });
   if (data.categoryId !== undefined) Object.assign(result, { categoryId: data.categoryId ?? null });
   if (data.isUnlimited !== undefined) Object.assign(result, { isUnlimited: data.isUnlimited });
+  // The gauge columns are deliberately absent (issue #341): an update never rewrites an item's
+  // gauge configuration — that is the gauge editor's job, which re-bases the level rather than
+  // overwriting it — so they are read only when *creating*. Reporting them here instead would
+  // reject an untouched exported catalogue on the way back in, since a re-parsed cell need not
+  // compare equal to the stored value it came from.
   return result;
 }
 

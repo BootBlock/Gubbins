@@ -93,6 +93,13 @@ const CATALOG_CSV_COLUMNS = [
   'locationId',
   'categoryId',
   'trackingMode',
+  // Consumable-Gauge configuration (issue #341); blank on every other tracking mode. Exported
+  // so a gauge item survives the spreadsheet round-trip — the importer needs the unit and the
+  // capacity to re-create one at all.
+  'unitOfMeasure',
+  'grossCapacity',
+  'tareWeight',
+  'currentNetValue',
   'manufacturer',
   'unitCost',
   // Canonical grams (issue #25); round-trips back through the `weight` import synonym.
@@ -111,11 +118,20 @@ const CATALOG_CSV_COLUMNS = [
 
 type CatalogCsvColumn = (typeof CATALOG_CSV_COLUMNS)[number];
 
+/** The gauge sub-object's fields, which sit one level down on the item rather than flat. */
+const GAUGE_CSV_COLUMNS = ['unitOfMeasure', 'grossCapacity', 'tareWeight', 'currentNetValue'] as const;
+
 /** Map a logical catalog-CSV column to the Item field that holds the value. */
 function catalogCsvValue(item: Item, col: CatalogCsvColumn): unknown {
   // `sku` and `mpn` refer to the same field; export as `sku` so the importer
   // auto-maps it without requiring a manual column selection.
   if (col === 'sku') return item.mpn;
+  // Gauge configuration lives in the derived `gauge` sub-object (null for every other tracking
+  // mode, which leaves these cells blank). Only the stored parameters are exported: the derived
+  // `percentageRemaining` / `currentGrossWeight` are computed from them on the way back in.
+  if ((GAUGE_CSV_COLUMNS as readonly string[]).includes(col)) {
+    return item.gauge?.[col as (typeof GAUGE_CSV_COLUMNS)[number]] ?? null;
+  }
   return (item as unknown as Record<string, unknown>)[col];
 }
 

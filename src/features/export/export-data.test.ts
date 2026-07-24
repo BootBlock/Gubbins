@@ -208,6 +208,40 @@ describe('buildCatalogCsv — custom-field columns (Phase 72)', () => {
     expect(plain.split('\r\n')[0]).not.toContain('Resistance');
   });
 
+  it('carries a gauge item’s configuration so it can be imported back (issue #341)', () => {
+    // Without the unit and the capacity the importer cannot re-create a gauge item at all.
+    const gaugeItem = makeItem({
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: {
+        unitOfMeasure: 'g',
+        grossCapacity: 1000,
+        tareWeight: 200,
+        currentNetValue: 750,
+        percentageRemaining: 75,
+        currentGrossWeight: 950,
+      },
+    });
+    const [header, row] = buildCatalogCsv([gaugeItem]).split('\r\n');
+    const columns = header!.split(',');
+    const cells = row!.split(',');
+    const cellFor = (col: string) => cells[columns.indexOf(col)];
+
+    expect(columns).toContain('unitOfMeasure');
+    expect(cellFor('unitOfMeasure')).toBe('g');
+    expect(cellFor('grossCapacity')).toBe('1000');
+    expect(cellFor('tareWeight')).toBe('200');
+    expect(cellFor('currentNetValue')).toBe('750');
+  });
+
+  it('leaves the gauge columns blank for an item that is not gauge-tracked', () => {
+    const [header, row] = buildCatalogCsv([makeItem()]).split('\r\n');
+    const columns = header!.split(',');
+    const cells = row!.split(',');
+    for (const col of ['unitOfMeasure', 'grossCapacity', 'tareWeight', 'currentNetValue']) {
+      expect(cells[columns.indexOf(col)]).toBe('');
+    }
+  });
+
   it('writes a marker for an IMAGE column instead of its base64 value (issue #453)', () => {
     const cols: CatalogCustomFieldColumn[] = [{ fieldId: 'f-cov', header: 'Cover art', fieldType: 'IMAGE' }];
     const values = new Map([['i1', { 'f-cov': 'data:image/webp;base64,UklGRhoAAABX' }]]);

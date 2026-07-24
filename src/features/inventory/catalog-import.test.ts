@@ -445,6 +445,39 @@ describe('applyCatalogImportPlan — :memory: DB', () => {
     expect(result.rows[0]!.error).toMatch(/suspended/i);
   });
 
+  it('creates a gauge-tracked item with its configuration intact (issue #341)', async () => {
+    const csv =
+      'name,Type,unitOfMeasure,grossCapacity,tareWeight,currentNetValue\r\nPLA filament,Consumable,g,1000,200,750\r\n';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    const result = await applyCatalogImportPlan(plan, repo);
+
+    expect(result.created).toBe(1);
+    expect(result.skipped).toBe(0);
+    const page = await repo.list({ limit: 10 });
+    expect(page.rows[0]!.trackingMode).toBe('CONSUMABLE_GAUGE');
+    expect(page.rows[0]!.gauge).toMatchObject({
+      unitOfMeasure: 'g',
+      grossCapacity: 1000,
+      tareWeight: 200,
+      currentNetValue: 750,
+      percentageRemaining: 75,
+    });
+  });
+
+  it('imports the rest of the batch when one gauge row is unusable (issue #341)', async () => {
+    // The unusable row is now caught by the dry-run, so it never reaches the one atomic bulk
+    // create that it used to abort — the other rows land instead of the import writing nothing.
+    const csv =
+      'name,Type\r\nResistor 10k,Bulk\r\nMystery goo,Consumable\r\nCapacitor 100nF,Bulk\r\nLED Red,Bulk\r\n';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    const result = await applyCatalogImportPlan(plan, repo);
+
+    expect(result.created).toBe(3);
+    expect(result.skipped).toBe(0);
+    const page = await repo.list({ limit: 10 });
+    expect(page.rows.map((r) => r.name).sort()).toEqual(['Capacitor 100nF', 'LED Red', 'Resistor 10k']);
+  });
+
   it('applies a mixed creates-and-updates plan', async () => {
     const existing = await repo.create({ name: 'Op-amp LM358', quantity: 30 });
     const csv = 'name,quantity\r\nOp-amp LM358,30\r\nNew Relay,25\r\n';
@@ -777,6 +810,172 @@ describe('buildCatalogImportPlan — serialised quantity (issue #348)', () => {
     const plan = buildCatalogImportPlan(csv, null, []);
     expect(plan.errors).toEqual([]);
     expect(plan.create[0]?.input.quantity).toBe(500);
+  });
+});
+
+describe('buildCatalogImportPlan — Consumable-Gauge configuration (issue #341)', () => {
+  /** A gauge-tracked existing item, for the update-side tests. */
+  function stubGaugeItem(id: string, name: string): Item {
+    return {
+      ...stubItem(id, name),
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: {
+        unitOfMeasure: 'g',
+        grossCapacity: 1000,
+        tareWeight: 200,
+        currentNetValue: 750,
+        percentageRemaining: 75,
+        currentGrossWeight: 950,
+      },
+    };
+  }
+
+  it('creates a gauge item from its unit-of-measure and capacity columns', () => {
+    const csv =
+      'name,trackingMode,unitOfMeasure,grossCapacity,tareWeight,currentNetValue\r\nPLA filament,Consumable,g,1000,200,750';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create).toHaveLength(1);
+    expect(plan.create[0]!.input.trackingMode).toBe('CONSUMABLE_GAUGE');
+    expect(plan.create[0]!.input.gauge).toEqual({
+      unitOfMeasure: 'g',
+      grossCapacity: 1000,
+      tareWeight: 200,
+      currentNetValue: 750,
+    });
+  });
+
+  it('leaves tare and net remaining to the repository defaults when their columns are absent', () => {
+    const csv = 'name,tracking,unitOfMeasure,grossCapacity\r\nResin,gauge,ml,500';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.input.gauge).toEqual({ unitOfMeasure: 'ml', grossCapacity: 500 });
+  });
+
+  it('reports a gauge row with no unit or capacity instead of letting it fail at apply time', () => {
+    // The dry-run used to pass this row on as valid; `resolveCreate` then threw while the bulk
+    // create was still building its statements, taking the whole batch with it.
+    const csv = 'name,Type\r\nMystery goo,Consumable';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toEqual([]);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/unit of measure and a gross capacity/i);
+  });
+
+  it('rejects a gross capacity of zero (the DB requires one above zero)', () => {
+    const csv = 'name,tracking,unitOfMeasure,grossCapacity\r\nEmpty tin,consumable,g,0';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toEqual([]);
+    expect(plan.errors[0]!.message).toMatch(/above zero/i);
+  });
+
+  it('rejects a net remaining above the gross capacity (a gauge cannot be more than full)', () => {
+    // Not covered by the DB CHECK, but every other gauge write path clamps to the capacity —
+    // importing 9000 g into a 500 g spool would render as 1800% remaining.
+    const csv = 'name,tracking,unitOfMeasure,grossCapacity,currentNetValue\r\nOverfull,gauge,g,500,9000';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toEqual([]);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/cannot be more than the gross capacity/i);
+  });
+
+  it('imports a row that is not a consumable even when a gauge column is mapped', () => {
+    // "Unit of measure" is an everyday ERP column. Erroring on it would cost a whole file its
+    // import for a column that was harmlessly ignored before the importer knew the name.
+    const csv = 'name,trackingMode,unitOfMeasure,grossCapacity\r\nM3 bolt,DISCRETE,EA,1000';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create).toHaveLength(1);
+    expect(plan.create[0]!.input.gauge).toBeUndefined();
+  });
+
+  it('does not report an unreadable gauge cell on a row that ignores it', () => {
+    // A shipping sheet's "Tare weight: 12 kg" is not a number, but a bulk row never reads it —
+    // reporting it would cost the row its import over a cell the importer discards.
+    const csv = 'name,tareWeight,quantity\r\nM3 bolt,12 kg,40';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.input.quantity).toBe(40);
+  });
+
+  it('still reports an unreadable gauge cell on a consumable row', () => {
+    const csv = 'name,tracking,unitOfMeasure,grossCapacity\r\nResin,gauge,ml,half a litre';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toEqual([]);
+    expect(plan.errors[0]!.message).toMatch(/Gross capacity: "half a litre" is not a number/i);
+  });
+
+  it('lets a custom field of the same name keep its column', () => {
+    // Unlike every other core field, a gauge column yields: it is ignored on a non-gauge row,
+    // so shadowing the custom field would silently discard the value.
+    const field = stubField('f-uom', 'Unit of measure');
+    expect(inferColumnMapping(['name', 'Unit of measure'], [field])).toEqual(['name', { fieldId: 'f-uom' }]);
+
+    const csv = 'name,Unit of measure\r\nM3 bolt,EA';
+    const plan = buildCatalogImportPlan(csv, null, [], { customFields: [field] });
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.fieldValues).toEqual({ 'f-uom': 'EA' });
+  });
+
+  it('costs only its own row, leaving the rest of the batch importable', () => {
+    const csv =
+      'name,Type\r\nResistor 10k,Bulk\r\nMystery goo,Consumable\r\nCapacitor 100nF,Bulk\r\nLED Red,Bulk';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.sourceRow).toBe(2);
+    expect(plan.create.map((c) => c.input.name)).toEqual(['Resistor 10k', 'Capacitor 100nF', 'LED Red']);
+  });
+
+  it('reports rows one by one when the batch default tracking mode is Consumable-Gauge', () => {
+    const csv = 'name\r\nGoo A\r\nGoo B';
+    const plan = buildCatalogImportPlan(csv, null, [], { defaultTrackingMode: 'CONSUMABLE_GAUGE' });
+    expect(plan.create).toEqual([]);
+    expect(plan.errors.map((e) => e.sourceRow)).toEqual([1, 2]);
+  });
+
+  it('round-trips the gauge headers the catalogue export writes, and the wizard’s own labels', () => {
+    expect(inferColumnMapping(['unitOfMeasure', 'grossCapacity', 'tareWeight', 'currentNetValue'])).toEqual([
+      'unitOfMeasure',
+      'grossCapacity',
+      'tareWeight',
+      'currentNetValue',
+    ]);
+    expect(inferColumnMapping(['Unit of measure', 'Gross capacity', 'Tare weight', 'Net remaining'])).toEqual(
+      ['unitOfMeasure', 'grossCapacity', 'tareWeight', 'currentNetValue'],
+    );
+  });
+
+  it('leaves a loosely-named column unmapped rather than guessing it is gauge configuration', () => {
+    // "UOM" in an ERP dump, a battery's "Capacity", an invoice's "Net value" mean other things;
+    // only the exported headers and the wizard's own labels auto-map (the rest by hand).
+    expect(inferColumnMapping(['uom', 'capacity', 'tare', 'net value'])).toEqual([null, null, null, null]);
+  });
+
+  it('updates an existing gauge item without touching its gauge configuration', () => {
+    // The gauge is re-based from the item itself, never overwritten by an import — so an
+    // exported catalogue still re-imports cleanly however its cells were re-parsed.
+    const existing = stubGaugeItem('i1', 'PLA filament');
+    const csv =
+      'name,unitOfMeasure,grossCapacity,tareWeight,currentNetValue,unitCost\r\nPLA filament,g,1000,200,120,18.50';
+    const plan = buildCatalogImportPlan(csv, null, [existing]);
+    expect(plan.errors).toEqual([]);
+    expect(plan.update).toHaveLength(1);
+    expect(plan.update[0]!.input.unitCost).toBe(18.5);
+    expect(plan.update[0]!.input).not.toHaveProperty('gauge');
+  });
+
+  it('updates a non-gauge item whose file happens to carry a unit-of-measure column', () => {
+    const csv = 'name,unitOfMeasure,quantity\r\nM3 bolt,EA,40';
+    const plan = buildCatalogImportPlan(csv, null, [stubItem('i1', 'M3 bolt')]);
+    expect(plan.errors).toEqual([]);
+    expect(plan.update).toHaveLength(1);
+  });
+
+  it('rejects a negative tare or net remaining', () => {
+    const csv = 'name,tracking,unitOfMeasure,grossCapacity,tareWeight\r\nResin,gauge,ml,500,-1';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toEqual([]);
+    expect(plan.errors[0]!.message).toMatch(/tare weight cannot be negative/i);
   });
 });
 
