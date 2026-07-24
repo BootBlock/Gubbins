@@ -3,6 +3,13 @@ name: Deploy to GitHub Pages
 # Manual-only: this never runs on push. Publish a new version by opening the
 # repo's "Actions" tab, selecting this workflow, and clicking "Run workflow".
 # It builds the chosen branch (default: main) and deploys it to GitHub Pages.
+#
+# The chosen ref is gated on CI first: the `ci` job below runs the full Tests suite
+# (secret-scan, lint/format/type-check, app + bridge unit tests, bridge boot-smoke)
+# against exactly the ref being deployed, and `build` needs it. Because
+# `workflow_dispatch` lets the operator pick any ref — including an unmerged branch CI
+# has never seen — running those checks here, not just on push/PR, is the only thing
+# that stops a broken commit reaching every user's device in one click (issue #275).
 on:
   workflow_dispatch:
 
@@ -21,7 +28,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # CI gate. Reuse the Tests workflow wholesale rather than re-listing its jobs here, so the
+  # deploy path and the push/PR path can never drift — one definition, one source of truth.
+  # It runs against the ref this deploy was dispatched on, so an unmerged branch is verified
+  # before it can be published. A called workflow can't request more permission than its
+  # caller, and Tests only reads the checkout, so no extra grant is needed.
+  ci:
+    uses: ./.github/workflows/tests.yml
+
   build:
+    needs: ci
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release.outputs.tag }}
