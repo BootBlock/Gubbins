@@ -118,6 +118,14 @@ export function setClockOffsetMs(ms: number): void {
  * time-of-day so only the calendar date moves. Returns 0 for an unparseable date, so a malformed
  * stored value degrades to the real clock instead of throwing on every render.
  *
+ * The calendar date is shifted in **UTC** (`setUTCFullYear`), not local time. This is the frame
+ * the lab clock exists to probe: the date-driven judgements it lets you test — warranty expiry,
+ * best-before, acquisition age — compare {@link nowMs} against **UTC-midnight** values (date-only
+ * TEXT columns are read back as UTC, per `src/lib/date-input.ts`). Shifting with local
+ * `setFullYear` moved the *local* calendar day instead, so east of UTC "pretend today is 24
+ * December" landed the app's UTC day on the 23rd — leaving the one tool built to test these
+ * boundaries wrong at exactly the boundaries (#327).
+ *
  * `from` defaults to the **skew-corrected** clock, not the raw system one, because the result is
  * added on top of the skew correction inside {@link nowMs}. Measuring from the raw clock would
  * double-count the device's error: on a machine running three days fast, picking 24 December
@@ -129,7 +137,7 @@ export function offsetForDate(isoDate: string, from: Date = new Date(Date.now() 
   if (!match) return 0;
   const [, y, m, d] = match;
   const target = new Date(from);
-  target.setFullYear(Number(y), Number(m) - 1, Number(d));
+  target.setUTCFullYear(Number(y), Number(m) - 1, Number(d));
   const ms = target.getTime() - from.getTime();
   return Number.isFinite(ms) ? ms : 0;
 }

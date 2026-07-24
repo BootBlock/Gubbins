@@ -73,17 +73,31 @@ describe('clock', () => {
   });
 
   describe('offsetForDate', () => {
-    it('moves the calendar date while preserving the time of day', () => {
-      const from = new Date(2026, 6, 18, 14, 30, 15, 250); // 18 Jul 2026, 14:30:15.250
+    it('moves the UTC calendar date while preserving the time of day', () => {
+      const from = new Date(Date.UTC(2026, 6, 18, 14, 30, 15, 250)); // 18 Jul 2026, 14:30:15.250 UTC
       const shifted = new Date(from.getTime() + offsetForDate('2026-12-24', from));
-      expect([shifted.getFullYear(), shifted.getMonth() + 1, shifted.getDate()]).toEqual([2026, 12, 24]);
-      expect([shifted.getHours(), shifted.getMinutes(), shifted.getSeconds()]).toEqual([14, 30, 15]);
+      expect([shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate()]).toEqual([
+        2026, 12, 24,
+      ]);
+      expect([shifted.getUTCHours(), shifted.getUTCMinutes(), shifted.getUTCSeconds()]).toEqual([14, 30, 15]);
+    });
+
+    it('shifts the UTC day, not the local day, so it matches UTC-midnight boundaries (#327)', () => {
+      // Late-evening local time east of UTC is already tomorrow in UTC. The lab clock exists to
+      // test judgements that compare against UTC-midnight expiry/warranty values, so picking a
+      // date must land the *UTC* day on that date — a local-day shift left the tool a day off at
+      // exactly the boundaries it was built to probe.
+      const from = new Date(Date.UTC(2026, 6, 18, 23, 30, 0)); // 18 Jul 23:30 UTC
+      const shifted = new Date(from.getTime() + offsetForDate('2026-12-24', from));
+      expect(shifted.toISOString().slice(0, 10)).toBe('2026-12-24');
     });
 
     it('handles a backwards shift', () => {
-      const from = new Date(2026, 6, 18, 9, 0, 0);
+      const from = new Date(Date.UTC(2026, 6, 18, 9, 0, 0));
       const shifted = new Date(from.getTime() + offsetForDate('2020-01-01', from));
-      expect([shifted.getFullYear(), shifted.getMonth() + 1, shifted.getDate()]).toEqual([2020, 1, 1]);
+      expect([shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate()]).toEqual([
+        2020, 1, 1,
+      ]);
     });
 
     it('lands on the chosen date even when a skew correction is active (#326)', () => {
@@ -93,16 +107,18 @@ describe('clock', () => {
       setClockSkewMs(-3 * 86_400_000);
       setClockOffsetMs(offsetForDate('2026-12-24'));
       const believed = nowDate();
-      expect([believed.getFullYear(), believed.getMonth() + 1, believed.getDate()]).toEqual([2026, 12, 24]);
+      expect([believed.getUTCFullYear(), believed.getUTCMonth() + 1, believed.getUTCDate()]).toEqual([
+        2026, 12, 24,
+      ]);
     });
 
     it('is zero for the current date', () => {
-      const from = new Date(2026, 6, 18, 9, 0, 0);
+      const from = new Date(Date.UTC(2026, 6, 18, 9, 0, 0));
       expect(offsetForDate('2026-07-18', from)).toBe(0);
     });
 
     it('degrades to the real clock for an unparseable date rather than throwing', () => {
-      const from = new Date(2026, 6, 18);
+      const from = new Date(Date.UTC(2026, 6, 18));
       for (const bad of ['', 'tomorrow', '2026-13', '18/07/2026', 'yyyy-mm-dd']) {
         expect(offsetForDate(bad, from)).toBe(0);
       }
