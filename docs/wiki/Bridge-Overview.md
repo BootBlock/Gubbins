@@ -28,7 +28,9 @@ expose:
 The bridge is built to be cautious:
 
 - **Loopback by default** — it listens only on your own machine (`127.0.0.1`) unless you
-  deliberately expose it.
+  deliberately expose it. It speaks plain HTTP, so if you *do* bind it to the network, put it behind
+  HTTPS on anything you don't fully trust — see
+  [[exposing it beyond your own machine|Running-the-Bridge]].
 - **Per-user tokens** — requests need an [[API token|Bridge-API-Tokens]] you mint in the app
   against a particular account, and they can only do what that account can do.
 - **Read-only by default** — it can't change your data unless you explicitly turn writes on.

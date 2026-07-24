@@ -130,6 +130,27 @@ last-write-wins merge the rest of Gubbins uses.
 > The safe default is loopback-only, with each integration on its own narrow account. See
 > [[Privacy & security|Privacy-and-Security]].
 
+## If you expose it beyond your own machine
+
+By default the bridge listens on **loopback only** (`127.0.0.1`), so its traffic never leaves the
+computer it runs on. You can bind it to your whole network instead (`GUBBINS_BRIDGE_HOST=0.0.0.0`)
+to reach it from other devices — but it's worth knowing what that changes before you do.
+
+The bridge speaks **plain HTTP — it has no HTTPS of its own**. On the loopback default that doesn't
+matter, because nothing is on the wire. Once it's bound to the network, though, every request
+travels **unencrypted**, and that includes your [[API token|Bridge-API-Tokens]] — both the one in
+the request header and the `token=` some subscribe-by-URL feeds carry in the address itself. Anyone
+able to watch that network could read it and reuse it for whatever the token's account is allowed to
+do. The same is true of the token the bridge sends *to* [[Home Assistant|Home-Assistant-Integration]]
+if you point it at an `http://` address.
+
+> **⚠️ Heads-up**
+> A wider bind is fine on a network you trust and control. To reach the bridge across one you
+> **don't** — the wider internet, a shared or public network — put it behind something that adds
+> **HTTPS** (a reverse proxy such as nginx or Caddy, or a secure tunnel) and keep the bridge itself
+> on loopback behind it, and use an `https://` address for Home Assistant. Otherwise leave the
+> default loopback bind in place. See [[Privacy & security|Privacy-and-Security]].
+
 ## Reaching it from a web browser
 
 Some things talk to the bridge straight from a **web page** — most notably the app's *push to
