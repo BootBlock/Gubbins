@@ -127,6 +127,35 @@ function rowsDiffer(a: SqlRow, b: SqlRow, table: SyncTable): boolean {
   return false;
 }
 
+/**
+ * Would upserting `winner` over the existing local row `l` write nothing but a re-stamp?
+ * (issue #161). Unlike {@link rowsDiffer}, this compares **every** column — including
+ * `updated_at` and the non-LWW / bookkeeping columns — because the question here is not "is
+ * this a lost edit" but "is applying this upsert a genuine no-op".
+ *
+ * Why it matters: a §7.3 timestamp tie resolves `REMOTE_WINS` (see {@link resolveLww}), so the
+ * engine emits an upsert even when the winning row is byte-identical to the one already stored.
+ * Applying it sets `updated_at` to the value the row already holds, which the auto-stamp trigger
+ * (`WHEN NEW.updated_at = OLD.updated_at`, see `updatedAtTrigger` in `v1-initial.ts`) cannot tell
+ * from the caller leaving the column untouched: it fires and bumps the row, so this device now
+ * looks strictly newer and pushes the unchanged row back. The peer re-pulls, re-bumps, and the two
+ * ping-pong an unedited row forever, inflating every delta. Suppressing the no-op upsert makes a
+ * tie genuinely idempotent, exactly as `resolveLww` documents.
+ *
+ * Comparing `updated_at` keeps the check frame-safe: it is a no-op **only** when applying would
+ * change nothing at all. A strictly-newer remote (or a tie observed across a non-zero clock offset,
+ * where the applied server-frame stamp differs from the stored local-frame one) differs in
+ * `updated_at`, fails this test, and still applies — adopting that timestamp is a real write and
+ * cannot churn, because `NEW.updated_at ≠ OLD.updated_at` leaves the trigger dormant.
+ */
+function upsertWouldNoOp(l: SqlRow, winner: SqlRow): boolean {
+  const keys = new Set([...Object.keys(l), ...Object.keys(winner)]);
+  for (const key of keys) {
+    if (String(l[key] ?? '') !== String(winner[key] ?? '')) return false;
+  }
+  return true;
+}
+
 function num(value: unknown): number {
   return typeof value === 'bigint' ? Number(value) : (value as number);
 }
@@ -327,6 +356,11 @@ function resolveTableMerges(
       if (l && r) {
         if (resolveLww(lUpd!, rUpd!) === 'REMOTE_WINS') {
           const winner = sanitiseRow(r, allowed);
+          // Issue #161: a tie resolves REMOTE_WINS, but if the winning row is byte-identical to
+          // what is already stored the upsert would change nothing except re-fire the auto-stamp
+          // trigger — making this device look "newer" and pushing the unchanged row back into an
+          // indefinite cross-device loop. Skip the no-op upsert so a tie is genuinely idempotent.
+          if (upsertWouldNoOp(l, winner)) continue;
           localUpserts.push({ table, row: winner });
           // A concurrent remote edit won over our newer-than-last-sync local edit (#72). Only
           // when the winning content actually differs — an identical value is not a lost edit.

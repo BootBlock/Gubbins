@@ -75,6 +75,47 @@ describe('reconcile (§7.3 / §7.5)', () => {
     expect(reconcile(local, remoteOlder, opts).localUpserts).toHaveLength(0);
   });
 
+  it('issue #161: skips the no-op upsert when a tie is byte-identical to the local row', () => {
+    // A tie (equal updated_at) resolves REMOTE_WINS, but the row is identical on both sides, so
+    // applying would only re-fire the auto-stamp trigger and drive cross-device churn. Skip it.
+    const row = { id: 'c1', name: 'Same', updated_at: 10 };
+    const local = snapshot({ tables: { contacts: [{ ...row }] } });
+    const remote = snapshot({ tables: { contacts: [{ ...row }] } });
+    expect(reconcile(local, remote, opts).localUpserts).toHaveLength(0);
+  });
+
+  it('issue #161: still applies a tie whose content differs (a real concurrent edit)', () => {
+    // Same updated_at, different content — REMOTE_WINS must actually write, so the two sides
+    // converge on the remote's value rather than staying divergent.
+    const local = snapshot({ tables: { contacts: [{ id: 'c1', name: 'Local', updated_at: 10 }] } });
+    const remote = snapshot({ tables: { contacts: [{ id: 'c1', name: 'Remote', updated_at: 10 }] } });
+    const plan = reconcile(local, remote, opts);
+    expect(plan.localUpserts).toEqual([
+      { table: 'contacts', row: { id: 'c1', name: 'Remote', updated_at: 10 } },
+    ]);
+  });
+
+  it('issue #161: still applies a strictly-newer remote even when its content matches', () => {
+    // Identical content but a newer stamp differs in updated_at, so this is not a no-op: adopting
+    // the newer timestamp is a real write (NEW.updated_at ≠ OLD.updated_at, so no trigger churn).
+    const local = snapshot({ tables: { contacts: [{ id: 'c1', name: 'Same', updated_at: 10 }] } });
+    const remote = snapshot({ tables: { contacts: [{ id: 'c1', name: 'Same', updated_at: 20 }] } });
+    expect(reconcile(local, remote, opts).localUpserts).toEqual([
+      { table: 'contacts', row: { id: 'c1', name: 'Same', updated_at: 20 } },
+    ]);
+  });
+
+  it('issue #161: an offset-induced tie of identical content still applies (frame shift is a real write)', () => {
+    // Local 10, remote 20, +10 offset → the compared stamps tie (REMOTE_WINS), but the stored
+    // local-frame value (10) differs from the server-frame value applied (20), so writing it is
+    // not a no-op and must proceed — the shift itself is the change, and it cannot churn.
+    const local = snapshot({ tables: { contacts: [{ id: 'c1', name: 'Same', updated_at: 10 }] } });
+    const remote = snapshot({ tables: { contacts: [{ id: 'c1', name: 'Same', updated_at: 20 }] } });
+    expect(reconcile(local, remote, { ...opts, offset: 10 }).localUpserts).toEqual([
+      { table: 'contacts', row: { id: 'c1', name: 'Same', updated_at: 20 } },
+    ]);
+  });
+
   it('applies the clock offset to local timestamps before diffing', () => {
     // Local says 10, remote says 15. With +10 offset, local becomes 20 → local wins.
     const local = snapshot({ tables: { contacts: [{ id: 'c1', name: 'Local', updated_at: 10 }] } });
