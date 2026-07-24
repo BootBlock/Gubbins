@@ -12,7 +12,7 @@ const DICTIONARY = {
   item_aliases: ['id', 'item_id', 'alias', 'updated_at'],
   capabilities: ['id', 'item_id', 'key', 'updated_at'],
   contacts: ['id', 'name', 'updated_at'],
-  checkouts: ['id', 'item_id', 'contact_id', 'updated_at'],
+  checkouts: ['id', 'item_id', 'contact_id', 'checked_out_at', 'returned_at', 'updated_at'],
   field_defs: ['id', 'name', 'field_type', 'updated_at'],
   category_fields: ['id', 'category_id', 'def_id', 'updated_at'],
   location_field_values: ['id', 'location_id', 'def_id', 'value', 'is_inheritable', 'updated_at'],
@@ -134,6 +134,99 @@ describe('reconcile (§7.3 / §7.5)', () => {
     const itemUpsert = plan.localUpserts.find((u) => u.table === 'items');
     expect(itemUpsert?.row.location_id).toBe(UNASSIGNED_LOCATION_ID);
     expect(plan.reparented).toEqual([{ itemId: 'i1', fromLocationId: 'ghost' }]);
+  });
+
+  describe('issue #193 — serialised-loan cardinality', () => {
+    const serialisedItem = {
+      id: 'i1',
+      name: 'Cordless drill',
+      location_id: 'loc1',
+      tracking_mode: 'SERIALISED',
+      updated_at: 1,
+    };
+    const openLoan = (id: string, checkedOutAt: number, contactId: string) => ({
+      id,
+      item_id: 'i1',
+      contact_id: contactId,
+      checked_out_at: checkedOutAt,
+      returned_at: null,
+      updated_at: checkedOutAt,
+    });
+
+    it('closes the later of two open loans a merge downloaded onto one serialised item', () => {
+      // Local kept the first loan; the peer's concurrent second loan arrives as new-on-remote.
+      const local = snapshot({
+        tables: { items: [serialisedItem], checkouts: [openLoan('ckA', 100, 'c1')] },
+      });
+      const remote = snapshot({ tables: { checkouts: [openLoan('ckB', 200, 'c2')] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.serialisedLoansClosed).toEqual([
+        { itemId: 'i1', closedCheckoutId: 'ckB', keptCheckoutId: 'ckA' },
+      ]);
+      const ckB = plan.localUpserts.find((u) => u.table === 'checkouts' && u.row.id === 'ckB');
+      expect(ckB?.row.returned_at).toBe(200); // its own checked_out_at → a zero-duration loan
+      expect(ckB?.row.updated_at).toBe(201); // deterministic +1 bump
+      // The survivor is left untouched (open), carried by the push half rather than an upsert.
+      expect(plan.localUpserts.some((u) => u.table === 'checkouts' && u.row.id === 'ckA')).toBe(false);
+    });
+
+    it('closes a purely-local surplus loan when the peer holds the earlier one', () => {
+      // The mirror side: this device made the *later* loan; the peer's earlier loan wins.
+      const local = snapshot({
+        tables: { items: [serialisedItem], checkouts: [openLoan('ckB', 200, 'c2')] },
+      });
+      const remote = snapshot({ tables: { checkouts: [openLoan('ckA', 100, 'c1')] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.serialisedLoansClosed).toEqual([
+        { itemId: 'i1', closedCheckoutId: 'ckB', keptCheckoutId: 'ckA' },
+      ]);
+      // ckB was local-only, so a fresh upsert is emitted to close it.
+      const ckB = plan.localUpserts.find((u) => u.table === 'checkouts' && u.row.id === 'ckB');
+      expect(ckB?.row.returned_at).toBe(200);
+      // The downloaded survivor stays open.
+      const ckA = plan.localUpserts.find((u) => u.table === 'checkouts' && u.row.id === 'ckA');
+      expect(ckA?.row.returned_at ?? null).toBeNull();
+    });
+
+    it('breaks a checked_out_at tie by the smaller id, so both devices agree', () => {
+      const local = snapshot({
+        tables: { items: [serialisedItem], checkouts: [openLoan('ckA', 100, 'c1')] },
+      });
+      const remote = snapshot({ tables: { checkouts: [openLoan('ckB', 100, 'c2')] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.serialisedLoansClosed).toEqual([
+        { itemId: 'i1', closedCheckoutId: 'ckB', keptCheckoutId: 'ckA' },
+      ]);
+    });
+
+    it('leaves multiple open loans on a DISCRETE item alone (legitimately out to several)', () => {
+      const local = snapshot({
+        tables: {
+          items: [{ ...serialisedItem, tracking_mode: 'DISCRETE' }],
+          checkouts: [openLoan('ckA', 100, 'c1')],
+        },
+      });
+      const remote = snapshot({ tables: { checkouts: [openLoan('ckB', 200, 'c2')] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.serialisedLoansClosed).toEqual([]);
+      const ckB = plan.localUpserts.find((u) => u.table === 'checkouts' && u.row.id === 'ckB');
+      expect(ckB?.row.returned_at ?? null).toBeNull(); // downloaded unchanged, still open
+    });
+
+    it('does not touch a serialised item with only one open loan', () => {
+      const returnedLoan = { ...openLoan('ckOld', 50, 'c0'), returned_at: 60 };
+      const local = snapshot({
+        tables: { items: [serialisedItem], checkouts: [openLoan('ckA', 100, 'c1')] },
+      });
+      const remote = snapshot({ tables: { checkouts: [returnedLoan] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.serialisedLoansClosed).toEqual([]);
+    });
   });
 
   it('§7.5.3 rejects a location move that would create a cycle', () => {

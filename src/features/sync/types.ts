@@ -150,6 +150,22 @@ export interface ReparentLog {
 }
 
 /**
+ * Issue #193 repair log: a serialised item's surplus open loan was closed by the merge.
+ *
+ * A serialised item is one physical instance, so it can be on loan to at most one borrower. Two
+ * offline devices can each pass the local pre-flight guard and open a checkout, and the id-keyed
+ * LWW union keeps both — so the merge closes all but the earliest, recording each here.
+ */
+export interface SerialisedLoanClosure {
+  /** The serialised item that was on loan more than once. */
+  readonly itemId: string;
+  /** The surplus checkout that was closed (its `returned_at` stamped). */
+  readonly closedCheckoutId: string;
+  /** The checkout kept open — the one checked out first. */
+  readonly keptCheckoutId: string;
+}
+
+/**
  * The outcome of reconciling a local snapshot against a remote one (§7.3). Describes
  * the **local** mutations to apply atomically; the engine re-reads and pushes the
  * merged state, so the push half needs no separate diff here.
@@ -195,6 +211,8 @@ export interface ReconciliationPlan {
   readonly reparented: readonly ReparentLog[];
   /** §7.5.3 location moves discarded because they would create a nesting cycle. */
   readonly rejectedCycles: readonly string[];
+  /** Issue #193: serialised items whose surplus open loans were closed (see {@link SerialisedLoanClosure}). */
+  readonly serialisedLoansClosed: readonly SerialisedLoanClosure[];
   /** Issue #187: ids retired to a peer's row under a shared natural key (see {@link CollisionResolution}). */
   readonly collisions: readonly CollisionResolution[];
   /** Phase 11: remote `item_history` rows missing locally (union-by-id), to INSERT. */
