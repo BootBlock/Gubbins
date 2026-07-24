@@ -50,6 +50,18 @@ export const HINT_CAPACITY =
   '**fullness gauge** and warns you when you add an item to a full location. Leave blank for no ' +
   'limit.';
 
+/**
+ * Shared help for the internal-dimension fields (issue #457). One string covers all three
+ * (width / height / depth) since they mean the same thing on each axis — the dialogs splice the
+ * axis name in. Explains the mm-stored / display-unit-at-the-edges model the item editor uses.
+ */
+export const HINT_DIMENSIONS =
+  "The location's **internal** width, height and depth — the usable space inside, in your chosen " +
+  'dimension unit (change the unit in **Settings**). Enter all three and Gubbins works out the ' +
+  '**volume** shown just below.\n\nSizes are stored independently of the unit, so switching units ' +
+  'just re-displays the same measurements — nothing is converted or lost. Leave them blank if you ' +
+  "don't measure this location.";
+
 export const HINT_DEAD_STOCK_MODE =
   'Whether items stored here are flagged on the **Dead stock** report once they go unused ' +
   '— a handy way to watch a whole cupboard without setting each item individually.\n\n' +

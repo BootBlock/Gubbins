@@ -1690,6 +1690,32 @@ const baselineStatements: SqlStatement[] = [
   {
     sql: `ALTER TABLE locations ADD COLUMN dead_stock_days INTEGER CHECK (dead_stock_days IS NULL OR dead_stock_days > 0);`,
   },
+  // --- Volumetric locations (issue #457) ---------------------------------------
+  // A location's internal size: width, height and depth, each stored canonically in
+  // MILLIMETRES (a REAL column apiece) exactly as an item's bounding box is (issue #30),
+  // so a container's dimensions are directly comparable with the items placed in it — the
+  // display/entry unit is the `dimensionUnit` preference, applied only at the edges. Each is
+  // nullable (not measured) and non-negative, mirroring the item dimension CHECKs. From these
+  // a usable internal volume is derived; `usable_volume` is an optional explicit override for a
+  // container that isn't a perfect box (a bag, a bin with sloped walls), stored canonically in
+  // cubic MILLIMETRES (mm³), and `packing_factor` is an optional per-location packing-efficiency
+  // fraction (0 < f ≤ 1). Both default NULL (derive from W×H×D / defer to the global preference).
+  // Phase 1 ships the W×H×D entry UI only; the two override columns sit NULL until Phase 2.
+  {
+    sql: `ALTER TABLE locations ADD COLUMN width REAL CHECK (width IS NULL OR width >= 0);`,
+  },
+  {
+    sql: `ALTER TABLE locations ADD COLUMN height REAL CHECK (height IS NULL OR height >= 0);`,
+  },
+  {
+    sql: `ALTER TABLE locations ADD COLUMN depth REAL CHECK (depth IS NULL OR depth >= 0);`,
+  },
+  {
+    sql: `ALTER TABLE locations ADD COLUMN usable_volume REAL CHECK (usable_volume IS NULL OR usable_volume >= 0);`,
+  },
+  {
+    sql: `ALTER TABLE locations ADD COLUMN packing_factor REAL CHECK (packing_factor IS NULL OR (packing_factor > 0 AND packing_factor <= 1));`,
+  },
   // The report filters to opted-in items, so the mode is a selective predicate on a
   // table that grows to 100k+ rows. A partial index keeps it off the full scan while
   // costing nothing for the overwhelmingly common 'inherit' default.

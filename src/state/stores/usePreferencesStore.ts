@@ -77,6 +77,8 @@ import { DEFAULT_WEIGHT_UNIT, normaliseWeightUnit, type WeightUnit } from '@/lib
 export type { WeightUnit };
 import { DEFAULT_DIMENSION_UNIT, normaliseDimensionUnit, type DimensionUnit } from '@/lib/dimensions';
 export type { DimensionUnit };
+import { DEFAULT_VOLUME_UNIT, normaliseVolumeUnit, type VolumeUnitPreference } from '@/lib/volume';
+export type { VolumeUnitPreference };
 
 /**
  * Appearance preferences (spec §2.1). Two orthogonal axes plus two composable switches, derived
@@ -135,6 +137,14 @@ interface PreferencesStore {
    * never rewrites the stored number, exactly like {@link weightUnit}. Defaults to millimetres.
    */
   readonly dimensionUnit: DimensionUnit;
+  /**
+   * The unit a location's derived internal **volume** is read in (issue #457). Volume is stored
+   * canonically in **cubic millimetres**; this is presentation only, exactly like
+   * {@link dimensionUnit}. Defaults to `'auto'`, which derives a readable unit per value from
+   * {@link dimensionUnit} (metric → cm³/litres/m³, imperial → in³/ft³) — so nothing renders as
+   * `0.0000027 m³`. A user who prefers a fixed unit can pin one.
+   */
+  readonly volumeUnit: VolumeUnitPreference;
   /** Light / dark / system — the base neutral palette (spec §2.1). */
   readonly mode: Mode;
   /** Brand accent colour, applied in either mode (accent-only recolour). */
@@ -524,6 +534,8 @@ interface PreferencesStore {
   setWeightUnit: (unit: WeightUnit) => void;
   /** Choose the unit dimensions are shown/entered in (stored dimensions stay in millimetres). */
   setDimensionUnit: (unit: DimensionUnit) => void;
+  /** Choose the unit volumes are shown in, or `'auto'` to derive one (stored volumes stay mm³). */
+  setVolumeUnit: (unit: VolumeUnitPreference) => void;
   setMode: (mode: Mode) => void;
   setAccent: (accent: Accent) => void;
   setOledDark: (enabled: boolean) => void;
@@ -653,6 +665,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       locale: 'en-GB',
       weightUnit: DEFAULT_WEIGHT_UNIT,
       dimensionUnit: DEFAULT_DIMENSION_UNIT,
+      volumeUnit: DEFAULT_VOLUME_UNIT,
       mode: 'dark',
       accent: 'violet',
       oledDark: false,
@@ -730,6 +743,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setWeightUnit: (unit) => set({ weightUnit: normaliseWeightUnit(unit) }),
       // Normalise so a stale/unknown persisted value can never reach the formatter/conversions.
       setDimensionUnit: (unit) => set({ dimensionUnit: normaliseDimensionUnit(unit) }),
+      // Normalise so a stale/unknown persisted value can never reach the formatter (preserves 'auto').
+      setVolumeUnit: (unit) => set({ volumeUnit: normaliseVolumeUnit(unit) }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam.
       setMode: (mode) => set({ mode: normaliseMode(mode) }),
       setAccent: (accent) => set({ accent: normaliseAccent(accent) }),

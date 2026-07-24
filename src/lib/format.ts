@@ -10,6 +10,7 @@
 import { moneyDecimals } from './money';
 import { formatWeight, type WeightUnit } from './weight';
 import { formatDimension, type DimensionUnit } from './dimensions';
+import { DEFAULT_VOLUME_UNIT, formatVolume, resolveVolumeUnit, type VolumeUnitPreference } from './volume';
 import { nowMs } from './clock';
 
 /** The locked default locale (§1.2.1) — also the fallback for non-reactive callers. */
@@ -129,6 +130,14 @@ export interface Formatters {
    * `lib/dimensions.ts`.
    */
   dimension(mm: number): string;
+  /**
+   * A canonical **cubic-millimetre** volume rendered in the user's chosen `volumeUnit` (e.g.
+   * `12.5 L`); `—` for a non-finite value. When the preference is `'auto'` a readable unit is
+   * picked *per value* from the `dimensionUnit` this bundle was built with (metric →
+   * cm³/litres/m³, imperial → in³/ft³), so a drawer never renders as `0.0000027 m³`. The stored
+   * mm³ are unchanged, only the presentation. See `lib/volume.ts`.
+   */
+  volume(mm3: number): string;
   /** A UNIX-ms instant as a short date (e.g. `28 Jun 2026`). */
   date(ms: number): string;
   /** A UNIX-ms instant as a date *and* time (e.g. `28 Jun 2026, 14:30`). */
@@ -169,6 +178,7 @@ export function makeFormatters(
   currency: string = DEFAULT_CURRENCY,
   weightUnit: WeightUnit = 'g',
   dimensionUnit: DimensionUnit = 'mm',
+  volumeUnit: VolumeUnitPreference = DEFAULT_VOLUME_UNIT,
 ): Formatters {
   const number = new Intl.NumberFormat(locale);
   const currencyFormat = new Intl.NumberFormat(locale, { style: 'currency', currency });
@@ -278,6 +288,11 @@ export function makeFormatters(
     dimension(mm) {
       return formatDimension(mm, dimensionUnit, locale);
     },
+    volume(mm3) {
+      // `'auto'` resolves per value (a drawer → litres/in³, a bay → m³/ft³); a fixed
+      // preference is used as-is. A non-finite value falls through to `formatVolume`'s `—`.
+      return formatVolume(mm3, resolveVolumeUnit(volumeUnit, mm3, dimensionUnit), locale);
+    },
     date(ms) {
       return dateFormat.format(new Date(ms));
     },
@@ -300,7 +315,7 @@ export function makeFormatters(
 }
 
 /**
- * Process-wide cache of {@link Formatters} bundles keyed by `locale|currency|weightUnit|dimensionUnit`. Every
+ * Process-wide cache of {@link Formatters} bundles keyed by `locale|currency|weightUnit|dimensionUnit|volumeUnit`. Every
  * component formats through {@link useFormatters}, which memoises per component; this
  * shared cache goes one further and lets *all* of them reuse a single bundle (and its
  * heavyweight `Intl.*Format` objects) per preference pair, instead of one bundle per
@@ -319,11 +334,12 @@ export function getFormatters(
   currency: string = DEFAULT_CURRENCY,
   weightUnit: WeightUnit = 'g',
   dimensionUnit: DimensionUnit = 'mm',
+  volumeUnit: VolumeUnitPreference = DEFAULT_VOLUME_UNIT,
 ): Formatters {
-  const key = `${locale}|${currency}|${weightUnit}|${dimensionUnit}`;
+  const key = `${locale}|${currency}|${weightUnit}|${dimensionUnit}|${volumeUnit}`;
   const cached = formattersCache.get(key);
   if (cached) return cached;
-  const bundle = makeFormatters(locale, currency, weightUnit, dimensionUnit);
+  const bundle = makeFormatters(locale, currency, weightUnit, dimensionUnit, volumeUnit);
   formattersCache.set(key, bundle);
   return bundle;
 }

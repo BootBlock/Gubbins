@@ -116,6 +116,13 @@ export function rowToLocation(row: LocationRow): Location {
     lastCountedAt: row.last_counted_at,
     deadStockMode: row.dead_stock_mode,
     deadStockDays: row.dead_stock_days,
+    // Canonical mm / mm³ REAL columns are already `number | null` off the driver — pass through
+    // uncoerced, exactly as the item mapper does for width/height/depth (issue #457).
+    width: row.width,
+    height: row.height,
+    depth: row.depth,
+    usableVolume: row.usable_volume,
+    packingFactor: row.packing_factor,
     updatedAt: row.updated_at,
   };
 }

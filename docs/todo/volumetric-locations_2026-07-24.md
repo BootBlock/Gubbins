@@ -1,7 +1,9 @@
 # Volumetric locations — implementation plan (issue #457)
 
-> **Status:** 🟢 ACTIVE — new feature; not yet started. Phase 1 (data + entry) is the first
-> shippable slice; phases 2–5 build on it. Grounding analysis for the "why" lives on
+> **Status:** 🟢 ACTIVE — phase 1 (data + entry) shipped; phases 2–5 build on it. Phase 1
+> landed all five schema columns, the `lib/volume.ts` seam, the `volumeUnit` preference +
+> formatter, the shared `measure-input.ts` helper, and the location dialogs' W×H×D entry with a
+> derived-volume preview. Grounding analysis for the "why" lives on
 > [issue #457](https://github.com/BootBlock/Gubbins/issues/457).
 
 ## Summary

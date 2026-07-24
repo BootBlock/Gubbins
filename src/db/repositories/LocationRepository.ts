@@ -48,7 +48,9 @@ interface LocationCountRow extends LocationRow {
 const SELECT_WITH_COUNT = `
   SELECT l.id, l.name, l.parent_id, l.is_system, l.description, l.color,
          l.kind, l.capacity, l.is_default, l.archived_at, l.last_counted_at,
-         l.dead_stock_mode, l.dead_stock_days, l.updated_at,
+         l.dead_stock_mode, l.dead_stock_days,
+         l.width, l.height, l.depth, l.usable_volume, l.packing_factor,
+         l.updated_at,
          COALESCE(c.item_count, 0) AS item_count
   FROM locations l
   LEFT JOIN location_item_counts c ON c.location_id = l.id
@@ -152,8 +154,9 @@ export class LocationRepository extends BaseRepository {
     }
     statements.push({
       sql: `INSERT INTO locations (id, name, parent_id, description, color, kind, capacity, is_default,
-                                   dead_stock_mode, dead_stock_days)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+                                   dead_stock_mode, dead_stock_days,
+                                   width, height, depth, usable_volume, packing_factor)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         name,
@@ -167,6 +170,16 @@ export class LocationRepository extends BaseRepository {
         // reporting stays opt-in until the user says otherwise (issue #92).
         input.deadStockMode ?? 'inherit',
         normaliseDeadStockDays(input.deadStockDays),
+        // Internal size (issue #457): canonical mm dimensions and the optional mm³ / packing
+        // overrides, each coerced to a non-negative REAL (or null) so a bad value never trips
+        // the CHECKs. `createPath` spreads the same input onto each leaf, so leaves inherit
+        // these for free; the bare ancestors created above never carry them (they pass no
+        // dimensions), which is correct — ancestors are structural.
+        normaliseDimension(input.width),
+        normaliseDimension(input.height),
+        normaliseDimension(input.depth),
+        normaliseDimension(input.usableVolume),
+        normalisePackingFactor(input.packingFactor),
       ],
     });
     await this.driver.transaction(statements);
@@ -282,6 +295,29 @@ export class LocationRepository extends BaseRepository {
       // preference. Clamped so a mistyped value can't disable the report or flag everything.
       sets.push('dead_stock_days = ?');
       params.push(normaliseDeadStockDays(input.deadStockDays));
+    }
+    // Internal size (issue #457): each is cleared-or-set independently, so an untouched field
+    // (undefined) never rewrites the stored value. `null` clears; a number is coerced to a
+    // safe non-negative REAL (dimensions/volume) or clamped to (0,1] (packing factor).
+    if (input.width !== undefined) {
+      sets.push('width = ?');
+      params.push(normaliseDimension(input.width));
+    }
+    if (input.height !== undefined) {
+      sets.push('height = ?');
+      params.push(normaliseDimension(input.height));
+    }
+    if (input.depth !== undefined) {
+      sets.push('depth = ?');
+      params.push(normaliseDimension(input.depth));
+    }
+    if (input.usableVolume !== undefined) {
+      sets.push('usable_volume = ?');
+      params.push(normaliseDimension(input.usableVolume));
+    }
+    if (input.packingFactor !== undefined) {
+      sets.push('packing_factor = ?');
+      params.push(normalisePackingFactor(input.packingFactor));
     }
 
     // Only guard when nesting under a real parent — a move to the root (null) can never cycle.
@@ -549,6 +585,28 @@ function normaliseText(value: string | null | undefined): string | null {
 function normaliseCapacity(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value) || value < 0) return null;
   return Math.floor(value);
+}
+
+/**
+ * Coerce a location dimension / usable-volume to a non-negative finite REAL, or NULL for "not
+ * measured" (issue #457). Unlike {@link normaliseCapacity} these are REAL columns (canonical mm
+ * / mm³, a 30.5 mm drawer is real), so the value is kept whole — **no `Math.floor`**. A blank,
+ * NaN, negative or non-finite value collapses to NULL so a cleared field means "not measured".
+ */
+function normaliseDimension(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value) || value < 0) return null;
+  return value;
+}
+
+/**
+ * Coerce a per-location packing factor to the `(0, 1]` fraction the DB CHECK allows, or NULL to
+ * defer to the global `defaultPackingFactor` preference (issue #457). Zero, negative, > 1, NaN
+ * or non-finite all collapse to NULL — a factor of exactly 0 would model an unfillable
+ * container, which is meaningless, so it reads as "no override" rather than tripping the CHECK.
+ */
+function normalisePackingFactor(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value) || value <= 0 || value > 1) return null;
+  return value;
 }
 
 /**
