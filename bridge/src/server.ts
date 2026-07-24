@@ -77,7 +77,8 @@ export const API_V1_SNAPSHOT_PATH = `${API_V1_BASE}/snapshot`;
  * The opt-in **snapshot ingest** capability, present only when `GUBBINS_BRIDGE_ALLOW_PUSH=on`
  * (and the source is a JSON snapshot). Its presence is the runtime gate: when absent, a POST to
  * `/api/v1/snapshot` is a `404` (the feature is invisible). `ingest` streams the body to disk,
- * validates it, and atomically replaces the snapshot the watcher serves — see `push.ts`.
+ * validates it, and merges it into the snapshot the watcher serves — writing the result
+ * atomically (placed verbatim only when there is nothing to merge into) — see `push.ts`.
  */
 export interface PushCapability {
   readonly ingest: (body: AsyncIterable<Uint8Array>) => Promise<PushSummary>;
@@ -549,7 +550,8 @@ async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<Par
 
 /**
  * `POST /api/v1/snapshot` — the opt-in PWA "push to bridge". Streams the body to disk and
- * atomically replaces the served snapshot (see `push.ts`); the watcher re-hydrates it. A `404`
+ * merges it into the served snapshot (see `push.ts`), writing the result atomically; the watcher
+ * re-hydrates it. A `404`
  * when push is not opted in (the feature is invisible). A {@link PushError} maps to its status +
  * v1 error code; anything unexpected propagates to the caller's generic 500.
  */
