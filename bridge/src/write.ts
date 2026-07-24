@@ -28,14 +28,14 @@
  * directly over a hydrated fixture, while {@link executeWrite} is the thin file-IO orchestrator
  * with injectable IO for tests.
  */
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { DbError } from '@/db/errors';
 import type { Item } from '@/db/repositories/types';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { buildLocalSnapshot } from '@/features/sync/snapshot';
 import { snapshotToBackupJson } from '@/features/sync/backup';
+import { createSnapshotMutex, writeSnapshotAtomic, type SnapshotMutex } from './snapshot-io.ts';
 import { hydrateFromJson } from './hydrate.ts';
 import { loadItemDetail } from './item-detail.ts';
 import type { ItemDetailDto } from './api/dto.ts';
@@ -204,47 +204,19 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<ItemDe
 }
 
 /**
- * Build a single-flight write executor bound to one snapshot path. Writes are **serialised** (a
- * promise chain): each waits for the previous to settle before it reads the file, so two
- * concurrent writes can't both read the pre-write state and clobber each other (a lost update).
- * Across the bridge process this makes writes apply sequentially and converge.
+ * Build a single-flight write executor bound to one snapshot path. Writes are **serialised**
+ * through a shared {@link SnapshotMutex}: each waits for the previous mutation to settle before it
+ * reads the file, so two concurrent writes can't both read the pre-write state and clobber each
+ * other (a lost update). The mutex is shared with the push-ingest surface at the composition root,
+ * so a write and a snapshot push likewise apply one-at-a-time rather than racing on the same file;
+ * left to its own default each executor still serialises its own writes.
  */
 export function createWriteExecutor(
   snapshotPath: string,
   io?: Partial<WriteIo>,
+  mutex: SnapshotMutex = createSnapshotMutex(),
 ): (op: WriteOperation, actorUserId: string) => Promise<ItemDetailDto> {
-  let tail: Promise<unknown> = Promise.resolve();
-  return (op, actorUserId) => {
-    const result = tail.then(
-      () => executeWrite({ snapshotPath, op, actorUserId, io }),
-      () => executeWrite({ snapshotPath, op, actorUserId, io }),
-    );
-    // Keep the chain progressing whatever the outcome, without leaking an unhandled rejection.
-    tail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
-  };
-}
-
-/**
- * Write `text` to `snapshotPath` atomically: write a sibling temp file, then `rename` it over the
- * target (an atomic replace on the same filesystem). A reader — the PWA's `fetchSnapshot`, or the
- * bridge's own directory watcher — therefore never observes a half-written file. The temp file's
- * basename differs from the target's, so the watcher (which filters on the target basename)
- * ignores it and reacts only to the final rename.
- */
-async function writeSnapshotAtomic(snapshotPath: string, text: string): Promise<void> {
-  const dir = path.dirname(snapshotPath);
-  const tmp = path.join(dir, `.${path.basename(snapshotPath)}.bridge-${process.pid}-${Date.now()}.tmp`);
-  await writeFile(tmp, text, 'utf8');
-  try {
-    await rename(tmp, snapshotPath);
-  } catch (err) {
-    await rm(tmp, { force: true }).catch(() => {});
-    throw err;
-  }
+  return (op, actorUserId) => mutex.runExclusive(() => executeWrite({ snapshotPath, op, actorUserId, io }));
 }
 
 async function safeClose(driver: IDatabaseDriver): Promise<void> {

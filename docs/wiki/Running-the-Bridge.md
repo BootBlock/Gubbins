@@ -118,6 +118,12 @@ capabilities exist at all; the caller's account then decides how much of that th
 turning writes on doesn't hand write access to everyone holding a token — a read-only account
 stays read-only.
 
+If you also let the app **push** its data straight to the bridge (a separate opt-in, useful when
+you don't use folder or Drive sync), a push is **merged** into the copy the bridge already holds
+rather than replacing it wholesale. So a stock change an assistant made a moment earlier isn't
+wiped out by a slightly-older push from a device that hadn't seen it — both survive, by the same
+last-write-wins merge the rest of Gubbins uses.
+
 > **⚠️ Heads-up**
 > Keep an [[API token|Bridge-API-Tokens]] secret and out of any file you commit or share — this is
 > a **public** project, and a leaked token plus an exposed bind would let others read your data.
