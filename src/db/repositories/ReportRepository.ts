@@ -1322,7 +1322,10 @@ export class ReportRepository extends BaseRepository {
    * its earlier movements priced at the new figure. That is the deliberate trade: it is what makes
    * the right-hand endpoint land exactly on the headline, and the alternative (replaying the
    * revaluation log per event) would draw a line that no longer ends where the headline says the
-   * inventory is worth. Active, non-parent items only. `now` defaults to the wall clock.
+   * inventory is worth. Issue #399 settled this as a decision rather than an accident: the trend
+   * promises "how the value you hold today has moved" (a shape indicator anchored to the headline),
+   * **not** "what the headline read on each past day" — and the sparkline caption says so at the
+   * call site. Active, non-parent items only. `now` defaults to the wall clock.
    */
   async valuationTrend(
     windowDays: number,

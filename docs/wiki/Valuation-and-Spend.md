@@ -23,6 +23,13 @@ on exactly the headline total above it and reconstructs the earlier points by wo
 through your stock movements, valuing each one by the same rules — so the two figures always agree.
 [[Unlimited sources|Tracking-Modes]], which hold no finite value, are left out of both.
 
+> **ℹ️ Note**
+> The trend is a picture of *shape*, not an audit. Earlier points value the stock you hold **today**
+> at **today's** prices, so the line shows how the value you currently hold has moved — not the total
+> the headline actually read on each past day. If you [[revalue an item|Current-Value-and-Revaluation]]
+> partway through the window, that jump isn't drawn as a step; the earlier movements are simply priced
+> at the new value.
+
 ## Spend
 
 The **spend** report tracks your outgoings — what you've spent acquiring and restocking — over

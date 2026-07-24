@@ -12,6 +12,13 @@ const PAD = 2;
  * §2.4.3) — a single polyline over the `primary` token, with the start/end values and the net
  * change (tinted by sign with the `success`/`destructive` tokens) read in text beside it. The
  * line is decorative (`aria-hidden`); the textual figures carry the accessible summary.
+ *
+ * The caption states plainly what the line promises (issue #399). The trend is anchored to the
+ * "Inventory value" headline and reconstructed backward by re-pricing each past movement at the
+ * item's value **as it stands today** — so it shows how *today's* holdings have moved in shape,
+ * not the figure the headline actually read on each past day. A mid-window revaluation therefore
+ * does not appear as a step; the caption keeps that honest rather than letting the line imply an
+ * audited history it does not carry.
  */
 export function ValuationSparkline({
   report,
@@ -67,6 +74,11 @@ export function ValuationSparkline({
           <Money value={Math.abs(report.changeValue)} formatters={formatters} />
         </span>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Shows how the value of today&rsquo;s stock has moved. Earlier points value your current items at their
+        current prices, so this reflects the trend&rsquo;s shape rather than the total the headline showed on
+        each past day.
+      </p>
     </div>
   );
 }
