@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import type { Item } from '@/db/repositories';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ItemDetailsEditor } from './ItemDetailsEditor';
 
 const spies = vi.hoisted(() => ({ update: vi.fn() }));
@@ -33,6 +34,10 @@ vi.mock('@/features/scanner/components/BarcodeScanDialog', () => ({
 afterEach(() => {
   cleanup();
   spies.update.mockReset();
+  // The preferences store is a persisted singleton; restore the default units so a test that
+  // switches them (issue #158) doesn't leak grams→ounces into the grams/mm-asserting tests.
+  usePreferencesStore.getState().setWeightUnit('g');
+  usePreferencesStore.getState().setDimensionUnit('mm');
 });
 
 const item: Item = {
@@ -207,6 +212,43 @@ describe('ItemDetailsEditor', () => {
     fireEvent.click(screen.getByTestId('item-details-save'));
     expect(spies.update.mock.calls[0][0].input).toEqual(
       expect.objectContaining({ barcode: '4006381333931' }),
+    );
+  });
+
+  it('keeps unsaved text edits when a unit preference changes (issue #158)', () => {
+    render(<ItemDetailsEditor item={item} />);
+    // Type unsaved edits across several text fields, then flip the unit preferences — as the
+    // Settings rail modal (stacked over this dialog, not unmounting it) does.
+    fireEvent.change(screen.getByLabelText('Notes (optional)'), {
+      target: { value: 'Two paragraphs of hard-won notes' },
+    });
+    fireEvent.change(screen.getByLabelText('Description (optional)'), {
+      target: { value: 'Reworded description' },
+    });
+    fireEvent.change(screen.getByTestId('item-details-barcode'), { target: { value: '5012345678900' } });
+
+    act(() => usePreferencesStore.getState().setWeightUnit('oz'));
+    act(() => usePreferencesStore.getState().setDimensionUnit('in'));
+
+    // None of the text drafts may snap back to their persisted values.
+    expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toBe(
+      'Two paragraphs of hard-won notes',
+    );
+    expect((screen.getByLabelText('Description (optional)') as HTMLTextAreaElement).value).toBe(
+      'Reworded description',
+    );
+    expect((screen.getByTestId('item-details-barcode') as HTMLInputElement).value).toBe('5012345678900');
+  });
+
+  it('re-expresses a stored weight when the weight unit changes (issue #158)', () => {
+    // 454 g ≈ 16.01 oz — the field must follow the unit preference for an untouched measurement.
+    render(<ItemDetailsEditor item={{ ...item, weight: 454 }} />);
+    expect((screen.getByTestId('item-details-weight') as HTMLInputElement).value).toBe('454');
+
+    act(() => usePreferencesStore.getState().setWeightUnit('oz'));
+    expect(Number((screen.getByTestId('item-details-weight') as HTMLInputElement).value)).toBeCloseTo(
+      16.01,
+      1,
     );
   });
 
