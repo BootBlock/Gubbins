@@ -203,6 +203,43 @@ describe('validateFieldValue — SELECT', () => {
   });
 });
 
+describe('validateFieldValue — FILE', () => {
+  it('accepts any non-blank pointer string verbatim', () => {
+    const d = def({ fieldType: 'FILE' });
+    for (const raw of [String.raw`\\nas\media\movie.mkv`, 'file:///C:/movies/a.mp4', 'https://x.test/a']) {
+      expect(validateFieldValue(d, raw)).toEqual({ ok: true, value: raw });
+    }
+  });
+
+  it('trims surrounding whitespace and clears on blank', () => {
+    const d = def({ fieldType: 'FILE' });
+    expect(validateFieldValue(d, '  /srv/a.mp4  ')).toEqual({ ok: true, value: '/srv/a.mp4' });
+    expect(validateFieldValue(d, '   ')).toEqual({ ok: true, value: null });
+  });
+});
+
+describe('validateFieldValue — IMAGE', () => {
+  const tinyImage = 'data:image/webp;base64,UklGRhoAAABXRUJQ';
+
+  it('accepts a bounded image data URL', () => {
+    const d = def({ fieldType: 'IMAGE' });
+    expect(validateFieldValue(d, tinyImage)).toEqual({ ok: true, value: tinyImage });
+  });
+
+  it('rejects a value that is not an image data URL, naming the field', () => {
+    const d = def({ fieldType: 'IMAGE', name: 'Cover art' });
+    for (const bad of ['https://x.test/a.png', 'data:text/plain;base64,YQ==', 'just text']) {
+      expect(validateFieldValue(d, bad)).toEqual({ ok: false, error: 'Cover art must be an image.' });
+    }
+  });
+
+  it('rejects an oversized image, naming the field', () => {
+    const d = def({ fieldType: 'IMAGE', name: 'Cover art' });
+    const huge = `data:image/webp;base64,${'A'.repeat(1_000_000)}`;
+    expect(validateFieldValue(d, huge)).toEqual({ ok: false, error: 'Cover art image is too large.' });
+  });
+});
+
 describe('fieldsForCategory', () => {
   it('filters to the named category only (flat — no ancestor resolution)', () => {
     const a = def({ id: 'a', categoryId: 'c1', name: 'A' });

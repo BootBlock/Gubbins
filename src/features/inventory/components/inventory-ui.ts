@@ -102,6 +102,8 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   ON_OFF: 'On / Off',
   DATE: 'Date',
   SELECT: 'Choice',
+  FILE: 'File link',
+  IMAGE: 'Image',
 };
 
 /** Labels for the datasheet-linking configuration (spec §4 Attachments). */

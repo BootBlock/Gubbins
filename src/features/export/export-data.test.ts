@@ -199,6 +199,21 @@ describe('buildCatalogCsv — custom-field columns (Phase 72)', () => {
     const plain = buildCatalogCsv([makeItem()]);
     expect(plain.split('\r\n')[0]).not.toContain('Resistance');
   });
+
+  it('writes a marker for an IMAGE column instead of its base64 value (issue #453)', () => {
+    const cols: CatalogCustomFieldColumn[] = [{ fieldId: 'f-cov', header: 'Cover art', fieldType: 'IMAGE' }];
+    const values = new Map([['i1', { 'f-cov': 'data:image/webp;base64,UklGRhoAAABX' }]]);
+    const csv = buildCatalogCsv([makeItem()], cols, values);
+    const [, row] = csv.split('\r\n');
+    expect(row).toContain('[image]');
+    expect(row).not.toContain('base64');
+  });
+
+  it('leaves an IMAGE cell blank when the item has no cover', () => {
+    const cols: CatalogCustomFieldColumn[] = [{ fieldId: 'f-cov', header: 'Cover art', fieldType: 'IMAGE' }];
+    const csv = buildCatalogCsv([makeItem()], cols, new Map());
+    expect(csv.split('\r\n')[1]!.endsWith(',')).toBe(true);
+  });
 });
 
 describe('buildVault — §4.5 asset extraction (Phase 14)', () => {

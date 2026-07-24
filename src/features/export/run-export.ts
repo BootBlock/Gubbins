@@ -186,7 +186,7 @@ async function collectCustomFieldColumns(items: readonly Item[]): Promise<{
     for (const field of resolved) {
       if (!seen.has(field.id)) {
         seen.add(field.id);
-        columns.push({ fieldId: field.id, header: field.name });
+        columns.push({ fieldId: field.id, header: field.name, fieldType: field.fieldType });
       }
       if (field.hasStoredValue) values[field.id] = field.value;
     }

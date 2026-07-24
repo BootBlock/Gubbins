@@ -290,7 +290,9 @@ function translateCustomField(name: string, condition: FilterCondition): Fragmen
   // field is identified by its dictionary-definition name (case-insensitive).
   const base =
     'SELECT 1 FROM item_field_effective_values ifv JOIN field_defs fd ON fd.id = ifv.def_id ' +
-    'WHERE ifv.item_id = items.id AND fd.name = ? COLLATE NOCASE';
+    // Never match against an IMAGE field's value: it holds a base64 `data:` URL, not
+    // searchable text, so a text/number predicate over it is meaningless (issue #453).
+    "WHERE ifv.item_id = items.id AND fd.name = ? COLLATE NOCASE AND fd.field_type <> 'IMAGE'";
 
   switch (operator) {
     case 'HAS_CAPABILITY':

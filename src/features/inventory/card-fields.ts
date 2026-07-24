@@ -208,6 +208,7 @@ export type CardFieldValue =
   | { readonly kind: 'money'; readonly amount: number }
   | { readonly kind: 'condition'; readonly condition: Condition }
   | { readonly kind: 'tags'; readonly tags: readonly string[] }
+  | { readonly kind: 'image'; readonly src: string }
   | { readonly kind: 'empty' };
 
 export interface ResolvedCardField {
@@ -329,5 +330,7 @@ function customFieldValue(type: FieldType, raw: string | null): CardFieldValue {
   if (raw === null || raw.trim() === '') return EMPTY;
   if (type === 'BOOLEAN') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'Yes' : 'No' };
   if (type === 'ON_OFF') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'On' : 'Off' };
+  // An IMAGE value is a `data:` URL — render it as a thumbnail, not its base64 text.
+  if (type === 'IMAGE') return raw.startsWith('data:') ? { kind: 'image', src: raw } : EMPTY;
   return { kind: 'text', text: raw };
 }

@@ -43,6 +43,31 @@ Three consequences worth knowing:
 Whether a field is **required**, its **default value** and its **position** stay per-category —
 so `Manufacturer` can be required for Power tools and optional for Spares.
 
+### Field types
+
+Each custom field has a **type** that decides how you enter and how Gubbins shows its value:
+
+- **Text** / **Long text** — a single line, or a multi-line note.
+- **Number** — any number; **Rating (1–5)** — a whole-number star rating.
+- **Yes / No** and **On / Off** — a simple two-state toggle.
+- **Date** — a calendar date.
+- **Choice** — a value picked from a list of options you define.
+- **URL / Link** — a web address.
+- **File link** — a pointer to a file that lives *outside* Gubbins: a path on your
+  computer, a network share (`\\server\share\movie.mkv`) or a `file://` link. Gubbins stores
+  the **link**, not the file — so the file is never copied, never synced, and never included
+  in a backup. The link travels between your devices, but it only opens on a device that can
+  actually reach that path.
+- **Image** — a picture stored **inside** Gubbins, ideal for a cover or a label photo. The
+  image is shrunk to a compact size when you add it, then kept in your data — so unlike a
+  *File link* it **does** travel with [[sync|Cloud-Sync]] and is included in every
+  [[backup|Backup-and-Restore]]. It shows as a thumbnail on the item's card. (Because the
+  picture isn't text, an Image field is skipped when you [[export or import a spreadsheet|Export-and-Import]] — the cell shows a small `[image]` marker instead.)
+
+> **💡 Tip**
+> Use **Image** for a cover you want to keep with the item everywhere; use **File link** to
+> point at a large file (a disc rip, a hi-res scan) that's better left where it already lives.
+
 ### Inheriting a value from a location
 
 Instead of typing the same value onto every item in a drawer, you can set it **once on the
@@ -126,7 +151,7 @@ creates a ready-made category with a curated set of custom fields already attach
 maker and hobbyist staples like `Battery`, `Cable`, `Electronic component`, `Fastener`,
 `3D Filament`, `Fabric`, `Paint`, `Adhesive` and `Model kit`, plus a large library of collector
 staples spanning cards and coins (`Trading card`, `Baseball cards`, `Magic: The Gathering cards`,
-`Coin`, `Banknote`), media (`Book`, `Vinyl record`, `DVDs`, `Blu-rays`, `Video games (physical)`,
+`Coin`, `Banknote`), media (`Movie`, `Book`, `Vinyl record`, `DVDs`, `Blu-rays`, `Video games (physical)`,
 `Vintage movie posters`), timepieces and jewellery (`Luxury watches`, `Mechanical wrist watches`,
 `Handbags`, `Gold & silver bullion`), toys and figures (`Action figures`, `Funko Pop figures`,
 `LEGO sets`, `Die-cast model cars`, `Warhammer & tabletop gaming miniatures`), and antiques and

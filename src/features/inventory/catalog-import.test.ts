@@ -676,6 +676,16 @@ describe('buildCatalogImportPlan — custom-field columns', () => {
     const plan = buildCatalogImportPlan(csv, null, []);
     expect(plan.create[0]!.fieldValues).toBeUndefined();
   });
+
+  it('silently skips an IMAGE column instead of erroring the row (issue #453)', () => {
+    const fields = [stubField('f-cov', 'Cover art', { fieldType: 'IMAGE' })];
+    // A round-tripped export carries the "[image]" marker, not a real image.
+    const csv = 'name,Cover art\r\nFilm,[image]\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { customFields: fields });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create).toHaveLength(1);
+    expect(plan.create[0]!.fieldValues).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

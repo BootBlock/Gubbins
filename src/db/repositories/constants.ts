@@ -279,6 +279,14 @@ export const MS_PER_HOUR = 3_600_000;
  * - `SELECT` constrains values to a defined option list (`category_fields.options`).
  * - `BOOLEAN` and `ON_OFF` are functionally identical (both store `'true'`/`'false'`)
  *   — `ON_OFF` exists purely as an alternate wording for a toggle-style field.
+ * - `FILE` stores a **link** to a file that lives outside the app — a local path, a
+ *   UNC share (`\\server\share\…`), or a `file://` / `http(s)` URI. Only the string
+ *   travels (it syncs and backs up like any other value); the file itself is never
+ *   copied, so the pointer stays valid only on a device that can reach that path.
+ * - `IMAGE` stores a small cover image **in the database**, as a bounded WebP encoded
+ *   into a `data:` URL (compressed on the way in — see `encodeFieldImage`). Because it
+ *   lives in `item_field_values.value` it syncs and backs up with everything else; the
+ *   size cap keeps the synced database from ballooning.
  */
 export const FIELD_TYPES = [
   'TEXT',
@@ -290,6 +298,8 @@ export const FIELD_TYPES = [
   'ON_OFF',
   'DATE',
   'SELECT',
+  'FILE',
+  'IMAGE',
 ] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
