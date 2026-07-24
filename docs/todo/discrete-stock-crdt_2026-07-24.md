@@ -284,16 +284,17 @@ kicked off with "implement S2".
 
 ### Known limitations (shipped S0/S1)
 
-- **History-excluded backup can converge stock to a wrong value across a whole group.** The
-  Backup & Restore "include history" toggle drops `stockDeltas` alongside `item_history`/gauge
-  deltas (`filterSnapshot`), leaving a restored placement "baseline-less" (`quantity = N`,
-  `Σ deltas = 0`). A single device self-heals on the next sync (a peer's seed delta re-unions in),
-  but if the baseline is lost across the *entire* sync group, two concurrent decrements union to a
-  negative sum and **floor to 0**, losing more than plain LWW would. This is the **same limitation
-  the gauge CRDT already has** with a history-excluded backup (its deltas drop too; it re-clamps to
-  `gross`), so it is consistent with shipped precedent rather than a new class of loss — but a
-  future refinement could keep the (small, correctness-critical) stock ledger out of that toggle,
-  or synthesise a deterministic-id baseline delta per placement when history is excluded.
+- **Baseline-less placements fall back to LWW, never to a wrong CRDT value.** A snapshot whose
+  stock ledger was dropped (a history-excluded backup) or never captured (a pre-#188 export) leaves
+  a placement "baseline-less" (`quantity = N`, `Σ deltas ≠ N`). `reconcileStock` detects this — it
+  resolves a placement only when `Σ deltas == stock_batches.quantity` on **both** sides — and
+  otherwise leaves the quantity to Last-Write-Wins. So a baseline-less placement is never converged
+  to a base-losing figure (in particular never floored to 0); it degrades to exactly the pre-#188
+  LWW behaviour until a peer that holds the full ledger re-unions the missing deltas in. (The gauge
+  CRDT has no equivalent guard, but it is anchored to the structural `gross_capacity` column rather
+  than a base-of-zero, so its history-excluded behaviour differs.) A future refinement could keep
+  the small, correctness-critical stock ledger out of the history toggle entirely, or synthesise a
+  deterministic-id baseline delta per placement when it is excluded, to converge these too.
 - **A location deleted concurrently with a decrement in it can lose that decrement.** The
   location-delete re-home moves a placement's stock to Unassigned as a `+currentQuantity` capture on
   the deleting device and a hard `DELETE` of the source rows (no compensating `−` delta — a DELETE
