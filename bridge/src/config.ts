@@ -19,6 +19,11 @@
  *   GUBBINS_BRIDGE_PORT           (optional) — TCP port; defaults to 8787.
  *   GUBBINS_BRIDGE_RATE_CAPACITY  (optional) — per-IP burst; defaults to 60. 0 disables.
  *   GUBBINS_BRIDGE_RATE_REFILL    (optional) — per-IP sustained req/sec; defaults to 1.
+ *   GUBBINS_BRIDGE_ALLOWED_ORIGINS (optional) — comma-separated browser origins allowed to read a
+ *                                  response cross-origin (CORS). Defaults to the hosted app origin;
+ *                                  loopback (a dev server) is always allowed on top. Set to your
+ *                                  own app's origin to use "push to bridge" from a self-hosted PWA,
+ *                                  or to `*` to restore the old permissive wildcard.
  *   GUBBINS_BRIDGE_MDNS           (optional) — advertise over mDNS for HA auto-discovery;
  *                                  off by default, and auto-skipped on a loopback bind.
  *   GUBBINS_BRIDGE_MDNS_NAME      (optional) — service instance name in the advertisement.
@@ -72,6 +77,7 @@
  *                                 _HA_URL always wins. Supplies an address only — never a token.
  */
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC, type RateLimiterOptions } from './rate-limit.ts';
+import { parseAllowedOrigins, type AllowedOrigins } from './cors.ts';
 import { DEFAULT_LOOKUP_DEBOUNCE_MS, MAX_LOOKUP_DEBOUNCE_MS } from './events/lookup.ts';
 import { DEFAULT_STALE_AFTER_FAILURES } from './snapshot-health.ts';
 
@@ -105,6 +111,14 @@ export interface BridgeConfig {
    * (`GUBBINS_BRIDGE_RATE_CAPACITY=0`) to defer entirely to the LAN/firewall.
    */
   readonly rateLimit: RateLimiterOptions | null;
+  /**
+   * Which browser origins may read a bridge response cross-origin (`GUBBINS_BRIDGE_ALLOWED_ORIGINS`,
+   * issue #182). Defaults to the hosted app origin (loopback is always allowed on top); an operator
+   * can list their own PWA origin(s) or `*` to restore the old permissive wildcard. Only browsers
+   * are affected — a non-browser client (Home Assistant, a scrape, `curl`) sends no `Origin` and is
+   * unaffected. See `cors.ts`.
+   */
+  readonly allowedOrigins: AllowedOrigins;
   /**
    * Whether the operator opted into mDNS / zeroconf advertising (`GUBBINS_BRIDGE_MDNS=on`).
    * Off by default. Even when on, advertising is auto-skipped on a loopback bind (it would
@@ -277,6 +291,7 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   const host = (env.GUBBINS_BRIDGE_HOST ?? '').trim() || DEFAULT_HOST;
   const port = parsePort(env.GUBBINS_BRIDGE_PORT);
   const rateLimit = parseRateLimit(env);
+  const allowedOrigins = parseAllowedOrigins(env.GUBBINS_BRIDGE_ALLOWED_ORIGINS);
   const mdns = parseBool(env.GUBBINS_BRIDGE_MDNS, false, 'GUBBINS_BRIDGE_MDNS');
   const mdnsInstanceName = (env.GUBBINS_BRIDGE_MDNS_NAME ?? '').trim() || undefined;
   const allowWrites = parseBool(env.GUBBINS_BRIDGE_ALLOW_WRITES, false, 'GUBBINS_BRIDGE_ALLOW_WRITES');
@@ -365,6 +380,7 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
     port,
     snapshotPath,
     rateLimit,
+    allowedOrigins,
     mdns,
     mdnsInstanceName,
     allowWrites,
