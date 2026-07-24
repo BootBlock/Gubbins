@@ -61,8 +61,12 @@ const PAGE = 100;
  *
  * A bare condition, without the `WHERE` — as in {@link WIPE_FILTER} — because the paged read
  * has to AND it with its keyset cursor.
+ *
+ * @internal Exported for the `partial-map-guards` schema test, which executes each filter against
+ * the built schema so a renamed column can never leave the fragment silently referencing a column
+ * that no longer exists.
  */
-const TABLE_FILTER: Partial<Record<SyncTable, string>> = {
+export const TABLE_FILTER: Partial<Record<SyncTable, string>> = {
   locations: 'is_system = 0',
   // The built-in System and Admin users are seeded by the baseline with the *same* constant
   // ids on every device and protected by `trg_users_protect_builtin_*`, exactly like the
