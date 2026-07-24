@@ -214,9 +214,11 @@ class GubbinsConfigFlow(ConfigFlow, domain=DOMAIN):
             # changes it and only a **different** entry already sitting there is a clash.
             # Hence the explicit scan rather than `_abort_if_unique_id_configured`, which
             # would abort a token-only reconfigure against this entry's own address.
+            # Ignored entries count: an mDNS discovery the user dismissed still holds the
+            # address's unique id, and Home Assistant's own index would see the collision.
             if any(
                 other.entry_id != entry.entry_id and other.unique_id == unique_id
-                for other in self._async_current_entries(include_ignore=False)
+                for other in self._async_current_entries(include_ignore=True)
             ):
                 return self.async_abort(reason="already_configured")
 
