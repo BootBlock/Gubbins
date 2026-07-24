@@ -31,9 +31,10 @@ import {
 import {
   cellAt,
   cellAsAmount,
-  cellAsCount,
   mapColumns,
+  readCountCell,
   type ColumnSynonyms,
+  type ImportRowProblem,
 } from '@/features/import/columns';
 import type { WishlistEntryDraft } from './wishlist';
 
@@ -57,7 +58,12 @@ export interface ParsedPurchaseListLine {
    * stays a pure text-to-structure function.
    */
   readonly supplierName: string | null;
-  /** How many to buy. Always a positive whole number; defaults to 1 when absent or unusable. */
+  /**
+   * How many to buy. Always a positive whole number — it becomes an order line's
+   * `ordered_qty`, which the database requires to be greater than zero. It defaults to 1 only
+   * when the source supplied no quantity at all; a row stating a quantity that cannot be
+   * ordered is left out and reported instead (issue #350).
+   */
   readonly quantity: number;
   /**
    * Price for **one** unit, or `null` when the source gave no usable price. Derived from a
@@ -70,6 +76,13 @@ export interface ParsedPurchaseListLine {
   readonly note: string | null;
   /** A raw priority hint, normalised by the wishlist seam when landed there. */
   readonly priority: string | null;
+}
+
+/** The outcome of parsing a purchase list: the lines to land, plus the rows that could not become one. */
+export interface PurchaseListParseResult {
+  readonly lines: readonly ParsedPurchaseListLine[];
+  /** Rows the file described whose quantity could not be ordered — listed in the preview. */
+  readonly problems: readonly ImportRowProblem[];
 }
 
 /** Raised when a purchase list is empty or carries nothing that could name a thing to buy. */
@@ -157,6 +170,10 @@ function stripBullet(line: string): string {
 /**
  * Parse one free-form line into a name + quantity. A leading count wins over a trailing one,
  * because `"2x Widget x4"` almost certainly means two of a product whose name ends in "x4".
+ *
+ * A count of `0` is returned as `0` rather than being passed over: `"0 tea towels"` states a
+ * quantity as plainly as a spreadsheet column does, and the caller leaves that line out and
+ * says so instead of buying one (issue #350).
  */
 function parseFreeFormLine(raw: string): { name: string; quantity: number } | null {
   const text = stripBullet(raw);
@@ -166,14 +183,14 @@ function parseFreeFormLine(raw: string): { name: string; quantity: number } | nu
   if (leading) {
     const quantity = Number.parseInt(leading[1]!, 10);
     const name = leading[2]!.trim();
-    if (quantity > 0 && name.length > 0) return { name, quantity };
+    if (name.length > 0) return { name, quantity };
   }
 
   const trailing = TRAILING_QTY_RE.exec(text);
   if (trailing) {
     const quantity = Number.parseInt(trailing[2]!, 10);
     const name = trailing[1]!.trim();
-    if (quantity > 0 && name.length > 0) return { name, quantity };
+    if (name.length > 0) return { name, quantity };
   }
 
   return { name: text, quantity: 1 };
@@ -202,9 +219,14 @@ export interface ParsePurchaseListOptions {
  * data-row matrix by the shared engine and mapped through the header synonyms above; free-form
  * input becomes one line per row, honouring a leading/trailing quantity (`"3x M3 bolts"`).
  *
- * Quantities default to 1 when missing or unusable. When a row carries a line **total** but no
- * unit price, the unit price is derived by dividing by the quantity — supplier basket exports
- * commonly give only the extended price.
+ * A quantity is only defaulted to 1 where the file supplied none (no column, or a blank cell).
+ * A quantity the file *did* state but that cannot be ordered — a `0` marking a de-selected
+ * basket row, a negative, a fraction, or text that is not a number — leaves its row out and is
+ * reported in {@link PurchaseListParseResult.problems}, rather than being quietly promoted to
+ * one unit the user never asked to buy (issue #350).
+ *
+ * When a row carries a line **total** but no unit price, the unit price is derived by dividing
+ * by the quantity — supplier basket exports commonly give only the extended price.
  *
  * Throws {@link PurchaseListImportError} when the input is empty, carries no column a line
  * could be built from, or yields no usable rows.
@@ -212,7 +234,7 @@ export interface ParsePurchaseListOptions {
 export function parsePurchaseList(
   text: string,
   options: ParsePurchaseListOptions = {},
-): ParsedPurchaseListLine[] {
+): PurchaseListParseResult {
   if (text.trim().length === 0) {
     throw new PurchaseListImportError('The purchase list is empty.');
   }
@@ -245,13 +267,28 @@ export function parsePurchaseList(
   }
 
   const lines: ParsedPurchaseListLine[] = [];
-  for (const row of extraction.dataRows) {
+  const problems: ImportRowProblem[] = [];
+  for (const [index, row] of extraction.dataRows.entries()) {
     const name = cellAt(row, columns.name);
     const mpn = cellAt(row, columns.mpn);
     const supplierSku = cellAt(row, columns.supplierSku);
     if (!name && !mpn && !supplierSku) continue; // blank row — nothing to buy
 
-    const quantity = cellAsCount(row, columns.quantity, 1);
+    // `zeroAllowed: false`: an order line for zero units cannot exist, and a basket export
+    // writes 0 for a row the user de-selected — so the row is left out and named, never
+    // rounded up to one.
+    const quantity = readCountCell(row, columns.quantity, { fallback: 1, zeroAllowed: false });
+    if (!quantity.ok) {
+      problems.push({
+        sourceRow: index + 1,
+        // One of these is non-null: a row with none of them was skipped as blank above.
+        label: name ?? mpn ?? supplierSku ?? '',
+        reason: quantity.reason,
+        value: quantity.value,
+      });
+      continue;
+    }
+
     const unitPrice = cellAsAmount(row, columns.unitPrice);
     const totalPrice = cellAsAmount(row, columns.totalPrice);
 
@@ -260,28 +297,36 @@ export function parsePurchaseList(
       mpn,
       supplierSku,
       supplierName: cellAt(row, columns.supplierName),
-      quantity,
+      quantity: quantity.value,
       // Only a *supplied* total is divided down; a missing total leaves the price unknown
       // rather than inventing a zero.
-      unitPrice: unitPrice ?? (totalPrice !== null ? totalPrice / quantity : null),
+      unitPrice: unitPrice ?? (totalPrice !== null ? totalPrice / quantity.value : null),
       url: cellAt(row, columns.url),
       note: cellAt(row, columns.note),
       priority: cellAt(row, columns.priority),
     });
   }
 
-  if (lines.length === 0) {
+  // Every row being *left out* is not the same as every row being blank: the caller shows the
+  // problems, so failing the whole parse here would replace that explanation with a wrong one.
+  if (lines.length === 0 && problems.length === 0) {
     throw new PurchaseListImportError(NO_ROWS_MESSAGE);
   }
-  return lines;
+  return { lines, problems };
 }
 
 /** Parse a free-form list (one thing per line) into purchase lines. */
-function parseFreeFormList(text: string): ParsedPurchaseListLine[] {
+function parseFreeFormList(text: string): PurchaseListParseResult {
   const lines: ParsedPurchaseListLine[] = [];
-  for (const raw of text.split(/\r\n|\r|\n/)) {
+  const problems: ImportRowProblem[] = [];
+  for (const [index, raw] of text.split(/\r\n|\r|\n/).entries()) {
     const parsed = parseFreeFormLine(raw);
     if (!parsed) continue;
+    if (parsed.quantity === 0) {
+      // The row numbering is the line number as pasted, which is what the user can look at.
+      problems.push({ sourceRow: index + 1, label: parsed.name, reason: 'zero', value: '0' });
+      continue;
+    }
     lines.push({
       name: parsed.name,
       mpn: null,
@@ -294,10 +339,10 @@ function parseFreeFormList(text: string): ParsedPurchaseListLine[] {
       priority: null,
     });
   }
-  if (lines.length === 0) {
+  if (lines.length === 0 && problems.length === 0) {
     throw new PurchaseListImportError(NO_ROWS_MESSAGE);
   }
-  return lines;
+  return { lines, problems };
 }
 
 /**

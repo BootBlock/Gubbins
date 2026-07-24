@@ -9,8 +9,9 @@ import {
   isTabularFormat,
   type ImportFormat,
 } from '@/features/import/tabular';
+import { ImportProblemsBanner } from '@/features/import/components/ImportProblemsBanner';
 import { useCreateProjectFromBom, useImportBom } from '../projects';
-import { parseBom, BomImportError, type ParsedBomLine } from '../bom-import';
+import { parseBom, BomImportError, type BomParseResult } from '../bom-import';
 import { useErrorMessage } from '@/features/errors';
 
 /** The file types the BOM importer accepts (mirrors the recognised tabular formats). */
@@ -59,7 +60,7 @@ export function ImportBomDialog({
   const [text, setText] = useState('');
   // 'auto' → detect the source shape from the content; a format id forces that parser.
   const [formatOverride, setFormatOverride] = useState<ImportFormat | 'auto'>('auto');
-  const [parsed, setParsed] = useState<ParsedBomLine[] | null>(null);
+  const [parsed, setParsed] = useState<BomParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
   const [summary, setSummary] = useState<string | null>(null);
@@ -116,7 +117,7 @@ export function ImportBomDialog({
     formatOverride === 'auto' && text.trim().length > 0 ? detectImportFormat(text) : null;
 
   const handleImport = () => {
-    if (!parsed || parsed.length === 0) return;
+    if (!parsed || parsed.lines.length === 0) return;
 
     if (isNewProject) {
       const trimmed = name.trim();
@@ -126,7 +127,7 @@ export function ImportBomDialog({
       }
       setError(null);
       createFromBom.mutate(
-        { project: { name: trimmed }, lines: parsed },
+        { project: { name: trimmed }, lines: parsed.lines },
         {
           onSuccess: (result) => {
             onCreated?.(result.projectId);
@@ -141,7 +142,7 @@ export function ImportBomDialog({
     }
 
     setError(null);
-    importBom.mutate(parsed, {
+    importBom.mutate(parsed.lines, {
       onSuccess: (result) => {
         setSummary(
           `Imported ${result.added} ${plural(result.added, 'line')} — ${result.matched} auto-matched to inventory.`,
@@ -250,8 +251,11 @@ export function ImportBomDialog({
 
         {error ? <Banner tone="danger">{error}</Banner> : null}
         {summary ? <Banner tone="success">{summary}</Banner> : null}
+        {parsed ? (
+          <ImportProblemsBanner problems={parsed.problems} data-testid="bom-import-problems" />
+        ) : null}
 
-        {parsed && parsed.length > 0 ? (
+        {parsed && parsed.lines.length > 0 ? (
           <div className="max-h-48 overflow-auto rounded-lg border border-border">
             <table className="w-full text-left text-xs">
               <thead className="sticky top-0 bg-secondary/60 text-muted-foreground">
@@ -263,7 +267,7 @@ export function ImportBomDialog({
                 </tr>
               </thead>
               <tbody>
-                {parsed.map((line, i) => (
+                {parsed.lines.map((line, i) => (
                   <tr key={i} className="border-t border-border/60">
                     <td className="px-2 py-1.5">{line.requiredQty}</td>
                     <td className="px-2 py-1.5">{line.designator ?? '—'}</td>
@@ -278,7 +282,7 @@ export function ImportBomDialog({
 
         <div className="flex items-center justify-between pt-1">
           <p className="text-xs text-muted-foreground">
-            {parsed ? `${parsed.length} ${plural(parsed.length, 'line')} ready` : ' '}
+            {parsed ? `${parsed.lines.length} ${plural(parsed.lines.length, 'line')} ready` : ' '}
           </p>
           <div className="flex gap-2">
             <Button type="button" variant="ghost" onClick={close}>
@@ -287,9 +291,11 @@ export function ImportBomDialog({
             <Button
               type="button"
               onClick={handleImport}
-              disabled={!parsed || parsed.length === 0 || nameMissing || pending}
+              disabled={!parsed || parsed.lines.length === 0 || nameMissing || pending}
             >
-              {isNewProject ? `Create project (${parsed?.length ?? 0})` : `Import ${parsed?.length ?? 0}`}
+              {isNewProject
+                ? `Create project (${parsed?.lines.length ?? 0})`
+                : `Import ${parsed?.lines.length ?? 0}`}
             </Button>
           </div>
         </div>

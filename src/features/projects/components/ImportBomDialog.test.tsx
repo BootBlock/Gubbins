@@ -71,6 +71,44 @@ describe('ImportBomDialog — existing-project mode (projectId given)', () => {
   });
 });
 
+describe('ImportBomDialog — quantities the file stated (issue #350)', () => {
+  const ZERO_AND_BAD_BOM = ['Reference,MPN,Quantity', 'R1,RC0805FR-0710KL,0', 'R2,NE555P,notanumber'].join(
+    '\n',
+  );
+
+  it('previews a zero quantity as zero and lists the row it could not read', async () => {
+    render(<ImportBomDialog open onClose={vi.fn()} projectId="p1" />);
+    fireEvent.change(screen.getByLabelText('BOM text'), { target: { value: ZERO_AND_BAD_BOM } });
+
+    // The "not needed this build" line is previewed as written, not promoted to one unit.
+    expect(await screen.findByText('RC0805FR-0710KL')).toBeInTheDocument();
+    expect(screen.getByText('1 line ready')).toBeInTheDocument();
+
+    const problems = screen.getByTestId('bom-import-problems');
+    expect(problems).toHaveTextContent('1 row wasn’t imported');
+    expect(problems).toHaveTextContent(/Row 2 \(R2\).*notanumber.*isn’t a quantity/);
+  });
+
+  it('imports only the rows it could read', async () => {
+    const user = userEvent.setup();
+    render(<ImportBomDialog open onClose={vi.fn()} projectId="p1" />);
+    fireEvent.change(screen.getByLabelText('BOM text'), { target: { value: ZERO_AND_BAD_BOM } });
+
+    await user.click(screen.getByRole('button', { name: /Import/ }));
+
+    await waitFor(() => expect(importMutate).toHaveBeenCalledTimes(1));
+    expect(importMutate.mock.calls[0]![0]).toEqual([
+      { designator: 'R1', mpn: 'RC0805FR-0710KL', manufacturer: null, description: null, requiredQty: 0 },
+    ]);
+  });
+
+  it('shows no notice when every row was usable', () => {
+    render(<ImportBomDialog open onClose={vi.fn()} projectId="p1" />);
+    fireEvent.change(screen.getByLabelText('BOM text'), { target: { value: BOM } });
+    expect(screen.queryByTestId('bom-import-problems')).toBeNull();
+  });
+});
+
 describe('ImportBomDialog — flexible source formats', () => {
   it('parses and previews a pasted HTML-table BOM', async () => {
     render(<ImportBomDialog open onClose={vi.fn()} projectId="p1" />);

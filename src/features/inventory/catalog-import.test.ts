@@ -875,7 +875,7 @@ describe('parseNumericCountCell (whole-count fields — issue #391)', () => {
   });
 
   it('passes a fraction through unrounded so the schema still reports it (issue #339 intact)', () => {
-    // Unlike parseCountCell, this must NOT round 1.5 to 2 — the whole-number rule reports it.
+    // This must NOT round 1.5 to 2 — the whole-number rule reports it instead.
     expect(parseNumericCountCell('1.5')).toBe(1.5);
     expect(parseNumericCountCell('2.0')).toBe(2);
   });

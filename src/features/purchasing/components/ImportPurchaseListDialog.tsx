@@ -11,11 +11,12 @@ import {
   IMPORT_FORMAT_LABELS,
   type ImportFormat,
 } from '@/features/import/tabular';
+import { ImportProblemsBanner } from '@/features/import/components/ImportProblemsBanner';
 import {
   parsePurchaseList,
   purchaseLineLabel,
   PurchaseListImportError,
-  type ParsedPurchaseListLine,
+  type PurchaseListParseResult,
 } from '../purchase-list-import';
 import {
   useCreateOrderFromPurchaseList,
@@ -90,7 +91,7 @@ export function ImportPurchaseListDialog({
   const [text, setText] = useState('');
   // 'auto' → detect the source shape from the content; a format id forces that parser.
   const [formatOverride, setFormatOverride] = useState<ImportFormat | 'auto'>('auto');
-  const [parsed, setParsed] = useState<ParsedPurchaseListLine[] | null>(null);
+  const [parsed, setParsed] = useState<PurchaseListParseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
   const [summary, setSummary] = useState<string | null>(null);
@@ -157,11 +158,11 @@ export function ImportPurchaseListDialog({
   };
 
   const handleImport = () => {
-    if (!parsed || parsed.length === 0) return;
+    if (!parsed || parsed.lines.length === 0) return;
     setError(null);
 
     if (destination === 'wishlist') {
-      importIntoWishlist.mutate(parsed, {
+      importIntoWishlist.mutate(parsed.lines, {
         onSuccess: announce,
         onError: (err) => failWith(err, 'purchasing.import.error.wishlist'),
       });
@@ -178,7 +179,7 @@ export function ImportPurchaseListDialog({
         return;
       }
       createOrder.mutate(
-        { supplierName: trimmed, lines: parsed },
+        { supplierName: trimmed, lines: parsed.lines },
         {
           onSuccess: (result) => {
             onCreated?.(result.poId);
@@ -190,7 +191,7 @@ export function ImportPurchaseListDialog({
       return;
     }
 
-    importIntoOrder.mutate(parsed, {
+    importIntoOrder.mutate(parsed.lines, {
       onSuccess: announce,
       onError: (err) => failWith(err, 'purchasing.import.error.order'),
     });
@@ -303,8 +304,11 @@ export function ImportPurchaseListDialog({
 
         {error ? <Banner tone="danger">{error}</Banner> : null}
         {summary ? <Banner tone="success">{summary}</Banner> : null}
+        {parsed ? (
+          <ImportProblemsBanner problems={parsed.problems} data-testid="purchase-import-problems" />
+        ) : null}
 
-        {parsed && parsed.length > 0 ? (
+        {parsed && parsed.lines.length > 0 ? (
           <div className="max-h-48 overflow-auto rounded-lg border border-border">
             <table className="w-full text-left text-xs">
               <thead className="sticky top-0 bg-secondary/60 text-muted-foreground">
@@ -316,7 +320,7 @@ export function ImportPurchaseListDialog({
                 </tr>
               </thead>
               <tbody>
-                {parsed.map((line, i) => (
+                {parsed.lines.map((line, i) => (
                   <tr key={i} className="border-t border-border/60" data-testid="purchase-import-preview-row">
                     <td className="px-2 py-1.5">{f.quantity(line.quantity)}</td>
                     <td className="px-2 py-1.5">{purchaseLineLabel(line)}</td>
@@ -333,7 +337,7 @@ export function ImportPurchaseListDialog({
 
         <div className="flex items-center justify-between pt-1">
           <p className="text-xs text-muted-foreground">
-            {parsed ? t('purchasing.import.ready', { vars: { count: parsed.length } }) : ' '}
+            {parsed ? t('purchasing.import.ready', { vars: { count: parsed.lines.length } }) : ' '}
           </p>
           <div className="flex gap-2">
             <Button type="button" variant="ghost" onClick={close}>
@@ -342,10 +346,10 @@ export function ImportPurchaseListDialog({
             <Button
               type="button"
               onClick={handleImport}
-              disabled={!parsed || parsed.length === 0 || supplierMissing || pending}
+              disabled={!parsed || parsed.lines.length === 0 || supplierMissing || pending}
               data-testid="purchase-import-submit"
             >
-              {t('purchasing.import.submit', { vars: { count: parsed?.length ?? 0 } })}
+              {t('purchasing.import.submit', { vars: { count: parsed?.lines.length ?? 0 } })}
             </Button>
           </div>
         </div>

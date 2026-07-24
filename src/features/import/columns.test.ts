@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   cellAsAmount,
-  cellAsCount,
   cellAt,
   headerKey,
   mapColumns,
   parseAmountCell,
-  parseCountCell,
+  readCountCell,
   leadingIntegerCount,
 } from './columns';
 
@@ -94,18 +93,6 @@ describe('parseAmountCell (the shared numeric rule — issue #340)', () => {
   });
 });
 
-describe('parseCountCell (the shared numeric rule — issue #340)', () => {
-  it('rounds an amount, so a spreadsheet-formatted integer survives', () => {
-    expect(parseCountCell('2.0')).toBe(2);
-    expect(parseCountCell('1,000')).toBe(1000);
-  });
-
-  it('keeps the leading integer of a unit-suffixed quantity, unlike an amount', () => {
-    expect(parseCountCell('3 pcs')).toBe(3);
-    expect(parseAmountCell('3 pcs')).toBeNull();
-  });
-});
-
 describe('leadingIntegerCount (shared suffix rule — issue #391)', () => {
   it('reads the leading integer of a space-separated unit suffix', () => {
     expect(leadingIntegerCount('3 pcs')).toBe(3);
@@ -119,31 +106,59 @@ describe('leadingIntegerCount (shared suffix rule — issue #391)', () => {
   });
 });
 
-describe('cellAsCount', () => {
+describe('readCountCell (issue #350)', () => {
+  const counted = { fallback: 1, zeroAllowed: false } as const;
+
   it('reads a plain whole number', () => {
-    expect(cellAsCount(['5'], 0, 1)).toBe(5);
+    expect(readCountCell(['5'], 0, counted)).toEqual({ ok: true, value: 5 });
   });
 
-  it('reads a grouped figure as written by a spreadsheet', () => {
-    expect(cellAsCount(['1,000'], 0, 1)).toBe(1000);
-  });
-
-  it('rounds a decimal quantity to the nearest whole', () => {
-    expect(cellAsCount(['2.0'], 0, 1)).toBe(2);
-    expect(cellAsCount(['2.6'], 0, 1)).toBe(3);
+  it('reads a grouped or spreadsheet-formatted integer as that integer', () => {
+    expect(readCountCell(['1,000'], 0, counted)).toEqual({ ok: true, value: 1000 });
+    expect(readCountCell(['2.0'], 0, counted)).toEqual({ ok: true, value: 2 });
   });
 
   it('keeps the leading integer of a quantity written with a unit', () => {
-    expect(cellAsCount(['3 pcs'], 0, 1)).toBe(3);
-    expect(cellAsCount(['10 units'], 0, 1)).toBe(10);
+    expect(readCountCell(['3 pcs'], 0, counted)).toEqual({ ok: true, value: 3 });
+    expect(readCountCell(['10 units'], 0, counted)).toEqual({ ok: true, value: 10 });
   });
 
-  it('falls back for an absent, blank, unparseable, zero or negative count', () => {
-    expect(cellAsCount([], undefined, 7)).toBe(7);
-    expect(cellAsCount([''], 0, 7)).toBe(7);
-    expect(cellAsCount(['lots'], 0, 7)).toBe(7);
-    expect(cellAsCount(['0'], 0, 7)).toBe(7);
-    expect(cellAsCount(['-3'], 0, 7)).toBe(7);
+  it('takes the fallback only where the file supplied nothing', () => {
+    expect(readCountCell([], undefined, { fallback: 7, zeroAllowed: false })).toEqual({
+      ok: true,
+      value: 7,
+    });
+    expect(readCountCell([''], 0, { fallback: 7, zeroAllowed: false })).toEqual({ ok: true, value: 7 });
+    expect(readCountCell(['   '], 0, { fallback: 7, zeroAllowed: false })).toEqual({ ok: true, value: 7 });
+  });
+
+  it('reports a stated quantity it cannot use rather than substituting the fallback', () => {
+    expect(readCountCell(['lots'], 0, counted)).toEqual({
+      ok: false,
+      reason: 'unreadable',
+      value: 'lots',
+    });
+    expect(readCountCell(['-3'], 0, counted)).toEqual({ ok: false, reason: 'negative', value: '-3' });
+    expect(readCountCell(['2.5'], 0, counted)).toEqual({ ok: false, reason: 'fractional', value: '2.5' });
+  });
+
+  it('never rounds a fractional count, which would import a figure the file never stated', () => {
+    expect(readCountCell(['2.6'], 0, counted)).toEqual({ ok: false, reason: 'fractional', value: '2.6' });
+  });
+
+  it('reports an out-of-range figure as unreadable rather than as a fraction', () => {
+    expect(readCountCell(['1e999'], 0, counted)).toEqual({
+      ok: false,
+      reason: 'unreadable',
+      value: '1e999',
+    });
+  });
+
+  it('treats a deliberate zero per the importer, never as a missing cell', () => {
+    // An order line for zero units cannot exist, so the row is reported…
+    expect(readCountCell(['0'], 0, counted)).toEqual({ ok: false, reason: 'zero', value: '0' });
+    // …whereas a BOM line may legitimately require none of a part, so zero is a real count.
+    expect(readCountCell(['0'], 0, { fallback: 1, zeroAllowed: true })).toEqual({ ok: true, value: 0 });
   });
 });
 

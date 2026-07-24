@@ -21,7 +21,13 @@ import {
   parseDelimited,
   type ImportFormat,
 } from '@/features/import/tabular';
-import { cellAt, cellAsCount, mapColumns, type ColumnSynonyms } from '@/features/import/columns';
+import {
+  cellAt,
+  mapColumns,
+  readCountCell,
+  type ColumnSynonyms,
+  type ImportRowProblem,
+} from '@/features/import/columns';
 
 // Re-export the shared codec from here so existing importers keep their import site
 // (the RFC-4180 reader moved to features/import/tabular; these are thin pass-throughs).
@@ -33,7 +39,19 @@ export interface ParsedBomLine {
   readonly mpn: string | null;
   readonly manufacturer: string | null;
   readonly description: string | null;
+  /**
+   * How many of the part this build needs. **Zero is a real value** — a BOM line marked "not
+   * needed this build" is stored as it was written rather than promoted to one unit
+   * (`project_bom_lines.required_qty >= 0`, issue #350).
+   */
   readonly requiredQty: number;
+}
+
+/** The outcome of parsing a BOM: the lines to import, plus the rows that could not become one. */
+export interface BomParseResult {
+  readonly lines: readonly ParsedBomLine[];
+  /** Rows the file described whose quantity could not be honoured — listed in the preview. */
+  readonly problems: readonly ImportRowProblem[];
 }
 
 /** Raised when a BOM file is empty or has no recognisable columns. */
@@ -88,12 +106,20 @@ export interface ParseBomOptions {
  * Parse a bill of materials into structured lines. The source format is auto-detected
  * (CSV/SSV/TSV, JSON, a Markdown table, or an HTML table) — or forced via
  * `options.format` — and reduced to a header + data-row matrix by the shared
- * {@link extractTableRows} engine; the first row is the header. Quantities default to 1
- * when missing or unparseable; the description falls back to the Value column. Throws
- * {@link BomImportError} when the file is empty, is not a recognisable table, or carries
+ * {@link extractTableRows} engine; the first row is the header. The description falls back to
+ * the Value column.
+ *
+ * A quantity is only defaulted to 1 where the file supplied none (no column, or a blank cell).
+ * A quantity the file *did* state but that a required count cannot express — a negative, a
+ * fraction, or text that is not a number — leaves its row out and is reported in
+ * {@link BomParseResult.problems} rather than being replaced by a default the user would have
+ * no way of spotting (issue #350). A quantity of `0` is not a problem here: a BOM line may
+ * legitimately require none of a part, so it imports as zero.
+ *
+ * Throws {@link BomImportError} when the file is empty, is not a recognisable table, or carries
  * no columns a BOM line can be built from.
  */
-export function parseBom(text: string, options: ParseBomOptions = {}): ParsedBomLine[] {
+export function parseBom(text: string, options: ParseBomOptions = {}): BomParseResult {
   if (text.trim().length === 0) {
     throw new BomImportError('The BOM file is empty.');
   }
@@ -129,21 +155,30 @@ export function parseBom(text: string, options: ParseBomOptions = {}): ParsedBom
   }
 
   const lines: ParsedBomLine[] = [];
-  for (const row of extraction.dataRows) {
+  const problems: ImportRowProblem[] = [];
+  for (const [index, row] of extraction.dataRows.entries()) {
     const designator = cellAt(row, columns.designator);
     const mpn = cellAt(row, columns.mpn);
     const manufacturer = cellAt(row, columns.manufacturer);
     const description = cellAt(row, columns.description);
     if (!designator && !mpn && !manufacturer && !description) continue; // blank row
 
-    lines.push({
-      designator,
-      mpn,
-      manufacturer,
-      description,
-      requiredQty: cellAsCount(row, columns.quantity, 1),
-    });
+    // `zeroAllowed`: a BOM line requiring none of a part is a normal way to mark it "not needed
+    // this build", and the column stores it, so it is imported as written rather than reported.
+    const quantity = readCountCell(row, columns.quantity, { fallback: 1, zeroAllowed: true });
+    if (!quantity.ok) {
+      problems.push({
+        sourceRow: index + 1,
+        // One of these is non-null: a row with none of them was skipped as blank above.
+        label: designator ?? mpn ?? description ?? manufacturer ?? '',
+        reason: quantity.reason,
+        value: quantity.value,
+      });
+      continue;
+    }
+
+    lines.push({ designator, mpn, manufacturer, description, requiredQty: quantity.value });
   }
 
-  return lines;
+  return { lines, problems };
 }

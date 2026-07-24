@@ -37,7 +37,7 @@ describe('parseBom — KiCad / generic column mapping', () => {
       'U1,NE555,SOIC-8,1,NE555P,Texas Instruments',
     ].join('\n');
 
-    const lines = parseBom(csv);
+    const { lines } = parseBom(csv);
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatchObject({
       designator: 'R1, R2',
@@ -51,7 +51,7 @@ describe('parseBom — KiCad / generic column mapping', () => {
 
   it('recognises generic synonyms (Qty, Mfr Part Number, Mfr)', () => {
     const csv = ['Qty,Mfr Part Number,Mfr,Description', '5,GRM188R71H104KA93D,Murata,0.1uF cap'].join('\n');
-    const lines = parseBom(csv);
+    const { lines } = parseBom(csv);
     expect(lines[0]).toMatchObject({
       requiredQty: 5,
       mpn: 'GRM188R71H104KA93D',
@@ -62,24 +62,24 @@ describe('parseBom — KiCad / generic column mapping', () => {
 
   it('falls back to the Value column for the description when no Description exists', () => {
     const csv = ['Reference,Value,Quantity', 'C1,100nF,1'].join('\n');
-    expect(parseBom(csv)[0].description).toBe('100nF');
+    expect(parseBom(csv).lines[0].description).toBe('100nF');
   });
 
-  it('defaults quantity to 1 when missing or unparseable', () => {
-    const csv = ['Reference,MPN,Quantity', 'R1,ABC,', 'R2,DEF,notanumber'].join('\n');
-    const lines = parseBom(csv);
-    expect(lines[0].requiredQty).toBe(1);
-    expect(lines[1].requiredQty).toBe(1);
+  it('defaults quantity to 1 only when the file supplied none', () => {
+    const csv = ['Reference,MPN,Quantity', 'R1,ABC,', 'R2,DEF'].join('\n');
+    const { lines, problems } = parseBom(csv);
+    expect(lines.map((l) => l.requiredQty)).toEqual([1, 1]);
+    expect(problems).toEqual([]);
   });
 
   it('skips fully blank rows', () => {
     const csv = ['Reference,MPN,Quantity', 'R1,ABC,1', '', '  ,  ,  ', 'R2,DEF,2'].join('\n');
-    expect(parseBom(csv)).toHaveLength(2);
+    expect(parseBom(csv).lines).toHaveLength(2);
   });
 
   it('is case- and whitespace-insensitive about headers', () => {
     const csv = ['  QUANTITY , mpn ', '3, XYZ'].join('\n');
-    const lines = parseBom(csv);
+    const { lines } = parseBom(csv);
     expect(lines[0]).toMatchObject({ requiredQty: 3, mpn: 'XYZ' });
   });
 
@@ -97,10 +97,44 @@ describe('parseBom — KiCad / generic column mapping', () => {
   });
 });
 
+describe('parseBom — quantities the file actually stated (issue #350)', () => {
+  it('imports a zero quantity as zero, not as one unit', () => {
+    // "Not needed this build" is a real BOM marking, and the column stores it.
+    const csv = ['Reference,MPN,Quantity', 'R1,ABC,0', 'R2,DEF,2'].join('\n');
+    const { lines, problems } = parseBom(csv);
+    expect(lines.map((l) => l.requiredQty)).toEqual([0, 2]);
+    expect(problems).toEqual([]);
+  });
+
+  it('reports an unreadable quantity rather than importing one of the part', () => {
+    const { lines, problems } = parseBom(['Reference,MPN,Quantity', 'R1,ABC,notanumber'].join('\n'));
+    expect(lines).toEqual([]);
+    expect(problems).toEqual([{ sourceRow: 1, label: 'R1', reason: 'unreadable', value: 'notanumber' }]);
+  });
+
+  it('reports a fractional quantity rather than rounding it up', () => {
+    const { lines, problems } = parseBom(['Reference,MPN,Quantity', 'R1,ABC,2.50'].join('\n'));
+    expect(lines).toEqual([]);
+    expect(problems).toEqual([{ sourceRow: 1, label: 'R1', reason: 'fractional', value: '2.50' }]);
+  });
+
+  it('keeps the usable rows and numbers a reported row by its place in the file', () => {
+    const csv = ['Reference,MPN,Quantity', 'R1,ABC,1', 'R2,DEF,-1', 'R3,GHI,3'].join('\n');
+    const { lines, problems } = parseBom(csv);
+    expect(lines.map((l) => l.designator)).toEqual(['R1', 'R3']);
+    expect(problems).toEqual([{ sourceRow: 2, label: 'R2', reason: 'negative', value: '-1' }]);
+  });
+
+  it('names a reported row by whatever identified it', () => {
+    const { problems } = parseBom(['MPN,Description,Qty', ',0.1uF cap,lots'].join('\n'));
+    expect(problems[0]!.label).toBe('0.1uF cap');
+  });
+});
+
 describe('parseBom — flexible source formats (shared engine)', () => {
   it('parses a tab-separated BOM (spreadsheet paste)', () => {
     const tsv = ['Reference\tValue\tQuantity\tMPN', 'R1\t10k\t2\tRC0805FR-0710KL'].join('\n');
-    const lines = parseBom(tsv);
+    const { lines } = parseBom(tsv);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({ designator: 'R1', mpn: 'RC0805FR-0710KL', requiredQty: 2 });
   });
@@ -111,13 +145,13 @@ describe('parseBom — flexible source formats (shared engine)', () => {
       '| --- | --- | --- | --- |',
       '| U1 | NE555 | 1 | NE555P |',
     ].join('\n');
-    const lines = parseBom(md);
+    const { lines } = parseBom(md);
     expect(lines[0]).toMatchObject({ designator: 'U1', mpn: 'NE555P', description: 'NE555', requiredQty: 1 });
   });
 
   it('parses a JSON-array BOM', () => {
     const json = JSON.stringify([{ Reference: 'C1', MPN: 'GRM188', Quantity: 5, Manufacturer: 'Murata' }]);
-    const lines = parseBom(json);
+    const { lines } = parseBom(json);
     expect(lines[0]).toMatchObject({
       designator: 'C1',
       mpn: 'GRM188',
@@ -130,14 +164,14 @@ describe('parseBom — flexible source formats (shared engine)', () => {
     const html =
       '<table><tr><th>Reference</th><th>MPN</th><th>Quantity</th></tr>' +
       '<tr><td>R1</td><td>RC0805FR-0710KL</td><td>3</td></tr></table>';
-    const lines = parseBom(html);
+    const { lines } = parseBom(html);
     expect(lines[0]).toMatchObject({ designator: 'R1', mpn: 'RC0805FR-0710KL', requiredQty: 3 });
   });
 
   it('honours a forced format override', () => {
     // Semicolon-separated data would otherwise not auto-detect as a single CSV column.
     const ssv = ['Reference;MPN;Quantity', 'R1;ABC;4'].join('\n');
-    const lines = parseBom(ssv, { format: 'ssv' });
+    const { lines } = parseBom(ssv, { format: 'ssv' });
     expect(lines[0]).toMatchObject({ designator: 'R1', mpn: 'ABC', requiredQty: 4 });
   });
 
