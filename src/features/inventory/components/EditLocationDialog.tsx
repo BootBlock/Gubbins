@@ -512,7 +512,7 @@ export function EditLocationDialog({
       icon: <ReportIcon />,
       // The rail mounts only the active panel, so the aggregate queries never run until the
       // user opens this tab — a rename of a shelf pays nothing for it.
-      content: <LocationStats locationId={location.id} hasChildren={childCount > 0} />,
+      content: <LocationStats location={location} hasChildren={childCount > 0} />,
     },
     ...(enabledFeatures.has('location-photos')
       ? [
