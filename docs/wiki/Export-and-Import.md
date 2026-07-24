@@ -68,14 +68,14 @@ going through the item importer first.
 > marked *Consumable* needs two more columns: a **Unit of measure** (`g`, `ml`, `m`) and a
 > **Gross capacity** — how much a full one holds. **Tare weight** and **Net remaining** are
 > optional: leave them out and the item starts full with no container weight. A consumable row
-> missing its unit or capacity is flagged in the review — with the rest of the file still
-> importable — rather than costing you the whole import; and those columns on a row that *isn't*
-> a consumable are flagged too, instead of being quietly dropped.
+> that's missing its unit or capacity — or whose net remaining is more than a full one holds — is
+> flagged in the review, with the rest of the file still importable, rather than costing you the
+> whole import.
 >
 > The **Catalogue CSV** export carries all four, so consumables survive a spreadsheet round-trip.
-> Coming back in, they can only *create* a consumable: changing an existing item's gauge is done
-> on the item itself (see [[low stock & gauges|Low-Stock-and-Gauges]]), so a row asking to change
-> one is flagged rather than silently ignored.
+> Coming back in they only apply when a row *creates* a consumable: an existing item's gauge is
+> re-based from the item itself (see [[low stock & gauges|Low-Stock-and-Gauges]]), so those
+> columns are ignored on a row that updates one, and on any row that isn't a consumable at all.
 
 > **ℹ️ Note**
 > Numbers copied straight out of a spreadsheet are read as they appear, so a quantity written

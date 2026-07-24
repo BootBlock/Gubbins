@@ -650,77 +650,36 @@ function serialisedQuantityError(data: CatalogRowData, mode: TrackingMode): stri
   return null;
 }
 
-/** The gauge-configuration cells this row actually supplied (a blank cell counts as absent). */
-function suppliedGaugeCells(
-  data: CatalogRowData,
-): readonly { readonly field: CatalogField; readonly value: string | number }[] {
-  const cells: { field: CatalogField; value: string | number }[] = [];
-  const unit = data.unitOfMeasure?.trim() ?? '';
-  if (unit.length > 0) cells.push({ field: 'unitOfMeasure', value: unit });
-  for (const field of ['grossCapacity', 'tareWeight', 'currentNetValue'] as const) {
-    const value = data[field];
-    if (value !== undefined && value !== null) cells.push({ field, value });
-  }
-  return cells;
-}
-
-/** `"Gross capacity"`, `"Gross capacity and Tare weight"`, `"A, B and C"` — for an error message. */
-function listFieldLabels(fields: readonly CatalogField[]): string {
-  const labels = fields.map((f) => CATALOG_FIELD_LABELS[f]);
-  if (labels.length <= 1) return labels.join('');
-  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
-}
-
 /**
  * Mirror the gauge DB CHECK at dry-run time (issue #341): a `CONSUMABLE_GAUGE` item's unit of
- * measure and gross capacity are mandatory (and the capacity must be above zero), and the gauge
- * columns mean nothing on any other tracking mode.
+ * measure and gross capacity are mandatory, the capacity must be above zero, and — the one part
+ * the CHECK itself misses — the net remaining cannot exceed the capacity, an invariant every
+ * other gauge write path holds to via `clampNetValue`.
  *
  * Without this the row looked valid in the preview and only failed at apply time — inside the
  * one atomic bulk create — so a single "Consumable" row in a long spreadsheet cost the whole
  * batch. The check has to live here rather than in the schema because it depends on the row's
  * *resolved* tracking mode, which the batch default can supply.
  *
+ * Gauge cells on a row of any *other* tracking mode are ignored rather than reported. Unlike the
+ * unlimited-supply flag — a boolean that means exactly one thing — these are ordinary spreadsheet
+ * headers ("Unit of measure" is in every ERP export), so erroring would cost whole files their
+ * import for a column that was harmlessly ignored before the importer knew the name.
+ *
  * Returns a row-error message, or `null` when the row is fine.
  */
 function gaugeCreateError(data: CatalogRowData, mode: TrackingMode): string | null {
-  const supplied = suppliedGaugeCells(data);
-  if (mode !== 'CONSUMABLE_GAUGE') {
-    if (supplied.length === 0) return null;
-    return `${listFieldLabels(supplied.map((c) => c.field))} only appl${supplied.length === 1 ? 'ies' : 'y'} to a Consumable-Gauge item (this row is ${mode}).`;
-  }
+  if (mode !== 'CONSUMABLE_GAUGE') return null;
   const unit = data.unitOfMeasure?.trim() ?? '';
   const capacity = data.grossCapacity ?? null;
   if (unit.length === 0 || capacity === null || capacity <= 0) {
     return `A Consumable-Gauge item needs a ${CATALOG_FIELD_LABELS.unitOfMeasure.toLowerCase()} and a ${CATALOG_FIELD_LABELS.grossCapacity.toLowerCase()} above zero — add those columns, or import this row as Bulk.`;
   }
+  const net = data.currentNetValue ?? null;
+  if (net !== null && net > capacity) {
+    return `${CATALOG_FIELD_LABELS.currentNetValue} (${net}) cannot be more than the ${CATALOG_FIELD_LABELS.grossCapacity.toLowerCase()} (${capacity}) — a gauge cannot hold more than a full one.`;
+  }
   return null;
-}
-
-/**
- * Mirror the gauge invariant on the *update* side (issue #341). An update never rewrites an
- * item's gauge configuration — that is the gauge editor's job — so a row asking for a
- * *different* configuration than the item already has is reported rather than silently ignored.
- *
- * Values that match what the item already holds pass silently, so an exported catalogue
- * re-imports as a clean set of updates rather than erroring on every gauge row.
- */
-function gaugeUpdateError(data: CatalogRowData, existing: Item): string | null {
-  const gauge = existing.gauge;
-  const changed = suppliedGaugeCells(data).filter((cell) => {
-    switch (cell.field) {
-      case 'unitOfMeasure':
-        return cell.value !== gauge?.unitOfMeasure;
-      case 'grossCapacity':
-        return cell.value !== gauge?.grossCapacity;
-      case 'tareWeight':
-        return cell.value !== gauge?.tareWeight;
-      default:
-        return cell.value !== gauge?.currentNetValue;
-    }
-  });
-  if (changed.length === 0) return null;
-  return `${listFieldLabels(changed.map((c) => c.field))} cannot be changed by an import — adjust the item's gauge in Gubbins instead.`;
 }
 
 /**
@@ -754,6 +713,11 @@ function toUpdateInput(data: CatalogRowData): UpdateItemInput {
   if (data.reorderQty !== undefined) Object.assign(result, { reorderQty: data.reorderQty ?? null });
   if (data.categoryId !== undefined) Object.assign(result, { categoryId: data.categoryId ?? null });
   if (data.isUnlimited !== undefined) Object.assign(result, { isUnlimited: data.isUnlimited });
+  // The gauge columns are deliberately absent (issue #341): an update never rewrites an item's
+  // gauge configuration — that is the gauge editor's job, which re-bases the level rather than
+  // overwriting it — so they are read only when *creating*. Reporting them here instead would
+  // reject an untouched exported catalogue on the way back in, since a re-parsed cell need not
+  // compare equal to the stored value it came from.
   return result;
 }
 
@@ -1083,10 +1047,9 @@ export function buildImportPlanFromRows(
     if (existingItem) {
       // Matched → update. Mirror the DB CHECK against the *existing* item's mode (an update
       // never changes tracking_mode), so unlimited can't be set on a non-DISCRETE item.
-      const updateError =
-        unlimitedModeError(data, existingItem.trackingMode) ?? gaugeUpdateError(data, existingItem);
-      if (updateError) {
-        errors.push({ sourceRow, message: updateError });
+      const unlimitedError = unlimitedModeError(data, existingItem.trackingMode);
+      if (unlimitedError) {
+        errors.push({ sourceRow, message: unlimitedError });
         continue;
       }
       updates.push({

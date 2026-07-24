@@ -27,9 +27,10 @@ Weighing one in needs Gubbins to know the **tare** — what the empty spool or b
 — so it can tell the container apart from what's in it. You can pick that from the
 [[container weights|Container-Weights]] library instead of typing it each time.
 
-Bringing a shelf full of consumables in from a spreadsheet works too: give the file a **Unit of
-measure** and a **Gross capacity** column (optionally **Tare weight** and **Net remaining**) and
-[[import|Export-and-Import]] it like any other list.
+Bringing a shelf full of consumables in from a spreadsheet works too. Mark the rows as
+*Consumable* — with a tracking column, or by setting **Tracking for new items** in the import
+wizard — and give the file a **Unit of measure** and a **Gross capacity** column (optionally
+**Tare weight** and **Net remaining**); then [[import|Export-and-Import]] it like any other list.
 
 ## Attrition — when using some costs more than you use
 
