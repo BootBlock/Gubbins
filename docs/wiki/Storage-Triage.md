@@ -25,6 +25,11 @@ Two safe cleanups, each keeping a copy of anything it removes:
 > Downgrading images usually frees the most space fastest — thumbnails still show on cards and in
 > lists, so day-to-day the app looks the same.
 
+> **ℹ️ Note**
+> Gubbins also tidies up after itself in the background: when a record is deleted, the
+> full-resolution image files it no longer needs are cleared automatically, so they can't quietly
+> pile up and eat into your space. You don't have to do anything for this to happen.
+
 ## When storage is critically full
 
 Gubbins warns you as space runs out, and takes two steps of its own so a full device can't quietly
