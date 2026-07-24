@@ -68,9 +68,9 @@ describe('DashboardScreen — quick-nav grid (spec §2.4.2)', () => {
     expect(screen.getByTestId('app-nav')).toBeInTheDocument();
   });
 
-  it('renders Inventory as the primary call-to-action ("Open inventory")', () => {
+  it('renders Inventory as the primary call-to-action', () => {
     render(<DashboardScreen />);
-    const cta = screen.getByRole('link', { name: /Open inventory/ });
+    const cta = screen.getByRole('link', { name: 'Inventory' });
     expect(cta.getAttribute('href')).toBe('/inventory');
   });
 
