@@ -98,6 +98,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   const enabledFeatures = useEnabledFeatures();
   const hints = useHotkeyHints();
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [active, setActive] = useState(0);
@@ -167,6 +168,18 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     setActive((i) => (entries.length === 0 ? 0 : Math.min(i, entries.length - 1)));
   }, [entries.length]);
 
+  // Scroll the highlighted row into view as the selection moves. The list is a fixed-height
+  // scroller, so an arrow-key step past the visible window — most visibly a wrap from the top
+  // to the bottom (or vice versa) — would otherwise leave the highlighted row off-screen where
+  // the user can't see what they've selected (issue #450). `block: 'nearest'` scrolls only when
+  // the row isn't already fully visible, so ordinary in-view moves don't jump the list.
+  const activeEntry = entries[active];
+  useEffect(() => {
+    if (acting || !activeEntry) return;
+    const row = listRef.current?.querySelector<HTMLElement>(`#${CSS.escape(optionId(activeEntry))}`);
+    row?.scrollIntoView({ block: 'nearest' });
+  }, [active, activeEntry, acting]);
+
   // Jump to an item's full record: seed the Inventory screen's search + go there, then close
   // the palette. The shared "open details" path — Enter's default and the panel's primary.
   const openItem = (name: string) => {
@@ -223,7 +236,6 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   };
 
   const listId = 'command-palette-results';
-  const activeEntry = entries[active];
   // While the quick-actions panel is open, a dismiss (Escape / backdrop / the Close button)
   // first backs out to the results — the Modal owns the document-level Escape listener, so
   // routing "go back" through it is more robust than intercepting the key inside the panel.
@@ -276,6 +288,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
       ) : (
         <>
           <ul
+            ref={listRef}
             id={listId}
             role="listbox"
             aria-label={isScreenMode ? 'Screen results' : 'Item results'}
