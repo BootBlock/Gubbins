@@ -86,7 +86,7 @@ const unassigned = loc({
 
 function renderDialog(
   overrides: Partial<LocationWithCount> = {},
-  props: { onClose?: () => void; onDelete?: () => void } = {},
+  props: { onClose?: () => void; onDelete?: () => void; onToggleArchive?: () => void } = {},
 ) {
   const location = loc(overrides);
   const locations: LocationWithCount[] = [workshop, location, drawer, unassigned];
@@ -98,6 +98,7 @@ function renderDialog(
       location={location}
       locations={locations}
       {...(props.onDelete ? { onDelete: props.onDelete } : {})}
+      {...(props.onToggleArchive ? { onToggleArchive: props.onToggleArchive } : {})}
     />,
   );
   return { onClose, location };
@@ -462,6 +463,38 @@ describe('EditLocationDialog — closing and deleting', () => {
     updateState.isPending = true;
     renderDialog({}, { onDelete: vi.fn() });
     expect(screen.getByTestId('edit-location-delete')).toBeDisabled();
+  });
+
+  it('hides the archive action unless the caller supplies one', () => {
+    renderDialog();
+    expect(screen.queryByTestId('edit-location-archive')).not.toBeInTheDocument();
+  });
+
+  it('offers "Archive location" for a live location and hands the toggle back to the caller', () => {
+    const onToggleArchive = vi.fn();
+    const { onClose } = renderDialog({ archivedAt: null }, { onToggleArchive });
+    const archive = screen.getByTestId('edit-location-archive');
+    expect(archive).toHaveTextContent('Archive location');
+    fireEvent.click(archive);
+    expect(onToggleArchive).toHaveBeenCalledTimes(1);
+    // The caller owns the state flip; the dialog itself neither closes nor saves.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(spies.update).not.toHaveBeenCalled();
+  });
+
+  it('offers "Restore location" instead when the location is already archived', () => {
+    const onToggleArchive = vi.fn();
+    renderDialog({ archivedAt: 1_700_000_000_000 }, { onToggleArchive });
+    const archive = screen.getByTestId('edit-location-archive');
+    expect(archive).toHaveTextContent('Restore location');
+    fireEvent.click(archive);
+    expect(onToggleArchive).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables the archive action while a save is in flight', () => {
+    updateState.isPending = true;
+    renderDialog({}, { onToggleArchive: vi.fn() });
+    expect(screen.getByTestId('edit-location-archive')).toBeDisabled();
   });
 
   it('renders nothing when closed', () => {

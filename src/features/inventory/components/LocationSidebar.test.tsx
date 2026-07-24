@@ -59,6 +59,7 @@ afterEach(cleanup);
 beforeEach(() => {
   spies.update.mockClear();
   spies.del.mockClear();
+  spies.archive.mockClear();
   // Default: the move mutation resolves synchronously as a success, so `onSuccess` (toast +
   // announcement) fires. A test that needs a pending move sets `moveState.isPending` instead.
   spies.move.mockReset();
@@ -307,6 +308,21 @@ describe('LocationSidebar — accessible APG tree', () => {
     fireEvent.keyDown(workshop, { key: 'Delete' });
     expect(spies.del).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog', { name: 'Delete location?' })).toBeTruthy();
+  });
+
+  it('no longer offers an archive control on the location row itself', () => {
+    renderSidebar();
+    // Archiving moved into the Edit dialog — the hover row only carries Edit (and Print label).
+    expect(screen.queryByRole('button', { name: 'Archive Workshop' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Restore Workshop' })).toBeNull();
+  });
+
+  it('archives a live location from the Edit dialog and closes it', () => {
+    renderSidebar();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
+    fireEvent.click(screen.getByTestId('edit-location-archive'));
+    expect(spies.archive).toHaveBeenCalledWith({ id: 'workshop', archived: true });
+    expect(screen.queryByRole('dialog', { name: 'Edit location' })).toBeNull();
   });
 
   it('tints a coloured location name with its swatch class', () => {
