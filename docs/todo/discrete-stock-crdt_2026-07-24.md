@@ -1,6 +1,8 @@
 # Discrete-stock convergence — a Delta-CRDT for the per-location/per-batch ledger (design + plan)
 
-> **Status:** 🟢 ACTIVE — design under review; no phase implemented yet. Origin: issue #188.
+> **Status:** 🟢 ACTIVE — S0 (per-placement delta ledger + capture) and S1 (the convergence
+> CRDT that fixes #188) shipped; S3 (wiki) done alongside them. S2 (the durable base checkpoint
+> that removes the pruning fragility) is the remaining, independent hardening step. Origin: issue #188.
 
 Every discrete stock movement (adjustment, checkout, check-in, sale, write-off, PO receipt,
 project pick, kit build, transfer, cycle-count reconcile) currently converges across devices by
@@ -159,6 +161,20 @@ precedent, and C1 improves on it.
 
 ### Fork D — Which write paths must record a delta
 
+> **Shipped refinement (S0): trigger-based capture, superseding the builder-threading below.**
+> Rather than thread a paired `stock_deltas` insert through each shared builder, S0 captures the
+> delta with **triggers on `stock_batches`** (`trg_stock_batches_capture_ins/upd`) computing
+> `NEW.quantity − OLD.quantity` — the actually-applied, `CHECK`-clamped change. This makes the
+> invariant `quantity == Σ(deltas)` hold **by construction for every write path**, present and
+> future, including the two hard cases the table below flags (`MOVED` transfers and the
+> absolute-set paths `consolidateStockStatements` / per-batch `RECONCILED` / seeds) — a trigger
+> sees only the net effect, so it needs no per-path arithmetic and no path can be missed. The one
+> thing a trigger cannot distinguish is a *sync/backup apply* (whose `stock_batches` writes carry
+> deltas that already travel in the unioned ledger) from a genuine local movement; a local-only
+> `stock_delta_capture` switch, flipped off around `applyPlan` / `buildCloneStatements` /
+> `restoreSnapshot`, closes that gap so an apply never double-counts. The per-path inventory below
+> is retained as the record of *why* builder-threading was rejected.
+
 Every path that mutates `stock_batches` must emit a `stock_deltas` row whose `quantity_delta`
 equals the exact physical change, computed **in SQL from the live row** where the write is
 absolute (mirroring `gaugeDeltaHistoryStatement`'s `(SELECT … - current_net_value …)` trick, so
@@ -198,7 +214,14 @@ quantity, suppress the false collision.)
 Each phase is independently reviewable and leaves the tree green. Stable IDs so a session can be
 kicked off with "implement S2".
 
-- **S0 — Schema + delta capture (no sync behaviour change yet).** Add `stock_deltas`
+> **Progress:** **S0 ✅ shipped**, **S1 ✅ shipped** (these two fix #188), **S3 ✅ shipped**
+> alongside them. **S2 is the remaining step** — the only reason this doc stays `🟢 ACTIVE`.
+> S0 landed the capture via triggers rather than builder-threading (see the Fork D refinement
+> box); S1 landed the contested-placement full-replay (`reconcileStockQuantity`) and the
+> `NON_LWW_COLUMNS` suppression exactly as Fork E predicted (the `item_stock` conflict-detection
+> question there resolved to "just add both quantity columns").
+
+- **S0 — Schema + delta capture (no sync behaviour change yet). ✅ Shipped.** Add `stock_deltas`
   (Fork A1) to the v1 baseline (single squashed baseline — fold the table + immutable trigger +
   index into `v1-initial.ts` and regen the schema snapshot; see `[[migration-baseline-squashed]]`).
   Thread delta emission through the shared `stock-batches.ts` / `stock.ts` builders (Fork D),
@@ -206,8 +229,8 @@ kicked off with "implement S2".
   in tests: after any movement, `stock_batches.quantity == Σ(stock_deltas for that key)` (pre-clamp).
   **No reconcile change** — this phase only starts *recording* the ledger, so it is safe to ship
   alone and lets the delta trail accrue before any device relies on it.
-- **S1 — Snapshot + reconcile + apply (the CRDT itself).** Add the `stockHistory:
-  StockQuantityDelta[]` snapshot section (`readStockDeltas`, `WHERE …` over `stock_deltas`),
+- **S1 — Snapshot + reconcile + apply (the CRDT itself). ✅ Shipped.** Add the `stockDeltas`
+  union-by-id snapshot section (`readStockDeltas` over `stock_deltas`, carried like `itemHistory`),
   `reconcileStock` (batch-grained, Fork B1 replay) producing `stockResolutions:
   StockResolution[]` on the plan, and the apply loop `UPDATE stock_batches SET quantity = ? WHERE
   item_id = ? AND location_id = ? AND batch_key = ?` after the LWW upserts (letting triggers roll
@@ -216,11 +239,10 @@ kicked off with "implement S2".
 - **S2 — Durable base checkpoint (Fork C1).** `base_quantity`/`base_epoch`, fold-on-prune, and the
   replay change to `base + Σ(deltas after base_epoch)`. Removes the long-lived-batch pruning
   fragility. Schedulable independently once S1 is stable.
-- **S3 — Wiki + conflict-review copy.** Update the sync/backup wiki page(s) to describe that
-  concurrent stock movements now *merge* rather than one side winning, and adjust any
-  conflict-review copy that implied stock changes could be "lost". (S0–S2 are internal; only the
-  observable convergence behaviour and any user-facing conflict copy touch the wiki — the wiki
-  rule triggers on user-visible change.)
+- **S3 — Wiki + conflict-review copy. ✅ Shipped (with S1).** Updated the sync/backup wiki page to
+  describe that concurrent stock movements now *merge* rather than one side winning. (S0–S2 are
+  internal; only the observable convergence behaviour touches the wiki — the wiki rule triggers on
+  user-visible change.)
 
 ---
 
