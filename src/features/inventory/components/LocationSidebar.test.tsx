@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { ToastProvider } from '@/components/foundry';
 import { ItemDragProvider, useItemDragSource } from '../item-drag';
@@ -492,6 +492,100 @@ describe('LocationSidebar — large trees (issue #129)', () => {
     renderSidebar();
     // 1 "All items" + Workshop + Cabinet + Unassigned (Drawer's parent is collapsed).
     expect(screen.getAllByRole('treeitem').length).toBe(4);
+  });
+});
+
+describe('LocationSidebar — volumetric fullness indicator (issue #457)', () => {
+  // A canonical mm³ aggregate for a location holding a single measured item.
+  const totals = (usedVolume: number) => ({
+    usedVolume,
+    measuredUnits: 1,
+    totalUnits: 1,
+    measuredItems: 1,
+    totalItems: 1,
+  });
+
+  // Three location kinds:
+  //  • Overflow bin — measured (10cm cube ⇒ 1,000,000 mm³) and volume-over-full (5× the space),
+  //    plus a *count* capacity it is well within (3 of 10) so the count text has its own reading.
+  //  • Roomy shelf — measured and a quarter full by volume (not over).
+  //  • Count-only crate — a count capacity but no internal size, so no honest volume reading.
+  const volumeTree: LocationTreeNode[] = [
+    node('over', 'Overflow bin', [], {
+      itemCount: 3,
+      capacity: 10,
+      width: 100,
+      height: 100,
+      depth: 100,
+      volumeTotals: totals(5_000_000),
+    }),
+    node('roomy', 'Roomy shelf', [], {
+      itemCount: 1,
+      width: 100,
+      height: 100,
+      depth: 100,
+      volumeTotals: totals(250_000),
+    }),
+    node('countonly', 'Count-only crate', [], { itemCount: 4, capacity: 10 }),
+  ];
+  const volumeFlat: LocationWithCount[] = volumeTree.map((n) => ({
+    id: n.id,
+    name: n.name,
+    parentId: null,
+    isSystem: false,
+    description: null,
+    color: null,
+    updatedAt: 0,
+    itemCount: n.itemCount,
+  }));
+
+  function renderVolumeSidebar() {
+    render(
+      <ToastProvider>
+        <LocationSidebar
+          tree={volumeTree}
+          flat={volumeFlat}
+          selectedId={null}
+          onSelect={vi.fn()}
+          totalCount={8}
+        />
+      </ToastProvider>,
+    );
+  }
+
+  it('shows a labelled volume bar on a measured, over-full location — without tinting its count', () => {
+    renderVolumeSidebar();
+    const row = screen.getByRole('treeitem', { name: 'Overflow bin' });
+
+    // The volume reading rides a distinct, accessibly-labelled indicator (role="img")…
+    const indicator = within(row).getByRole('img', { name: 'Volume over capacity (100% full)' });
+    expect(indicator).toBeTruthy();
+    // …whose fill uses the destructive token when over capacity (never a raw colour).
+    expect(indicator.querySelector('.bg-destructive')).toBeTruthy();
+
+    // The count text stays count-based (3 of 10 ⇒ not full): the volume overflow must NOT bleed
+    // into the number's tint (guards the reverted "count shown in red for a volume overflow" bug).
+    const count = within(row).getByText('3/10');
+    expect(count.className).toContain('text-muted-foreground');
+    expect(count.className).not.toContain('text-glyph-danger');
+    expect(count.className).not.toContain('text-warning');
+  });
+
+  it('shows a primary-tinted bar for a measured location that is within its volume', () => {
+    renderVolumeSidebar();
+    const row = screen.getByRole('treeitem', { name: 'Roomy shelf' });
+    const indicator = within(row).getByRole('img', { name: 'Volume 25% full' });
+    expect(indicator.querySelector('.bg-primary')).toBeTruthy();
+    expect(indicator.querySelector('.bg-destructive')).toBeNull();
+  });
+
+  it('shows no volume indicator for a count-only location with no measured size', () => {
+    renderVolumeSidebar();
+    const row = screen.getByRole('treeitem', { name: 'Count-only crate' });
+    expect(within(row).queryByRole('img')).toBeNull();
+    // …and the "All items" synthetic row (no location) never carries one either.
+    const allItems = screen.getByRole('treeitem', { name: 'All items' });
+    expect(within(allItems).queryByRole('img')).toBeNull();
   });
 });
 

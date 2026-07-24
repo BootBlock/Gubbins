@@ -3,7 +3,8 @@
  *
  * Gathers data through the repository layer (never raw SQL), hands it to the pure
  * builders in {@link export-data}, and triggers the browser download. Phase 14 adds the
- * §4.5 granularity (whole inventory / a single item / a Project-BOM scope) and pulls
+ * §4.5 granularity (whole inventory / a single item / a Project-BOM scope / a Location and
+ * its items) and pulls
  * full-resolution image bytes out of OPFS into the vault's `/assets` (the cross-device
  * full-res transport — JSON sync keeps blobs out per §4 strict isolation). The Markdown
  * vault is zipped off-thread in {@link export-vault.worker}. Reads are paginated (≤100)
@@ -69,7 +70,7 @@ export interface ExportOptions {
   readonly includeInactive: boolean;
   /** §4.5 granularity. Defaults to the whole inventory. */
   readonly scope?: ExportScope;
-  /** The chosen item id (scope `ITEM`) or project id (scope `PROJECT`). */
+  /** The chosen item/project/location id (scope `ITEM`/`PROJECT`/`LOCATION`). */
   readonly targetId?: string | null;
   /** Which §3 aggregate report to serialise for the `REPORTS` format (Phase 61). */
   readonly reportKind?: ReportExportKind;
@@ -196,6 +197,18 @@ async function collectCustomFieldColumns(items: readonly Item[]): Promise<{
   return { columns, valuesByItem };
 }
 
+/** Page through a repository list to gather every item whose primary location matches (§4.5). */
+async function collectLocationItems(locationId: string, includeInactive: boolean): Promise<Item[]> {
+  const repo = getItemRepository();
+  const all: Item[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const page = await repo.list({ locationId, includeInactive, limit: PAGE, offset });
+    all.push(...page.rows);
+    if (!page.hasMore) break;
+  }
+  return all;
+}
+
 /** The item ids referenced by a project's BOM lines (matched items only). */
 async function collectProjectItems(projectId: string): Promise<Item[]> {
   const projects = getProjectRepository();
@@ -227,6 +240,9 @@ async function collectItems(options: ExportOptions): Promise<Item[]> {
   }
   if (scope === 'PROJECT') {
     return options.targetId ? collectProjectItems(options.targetId) : [];
+  }
+  if (scope === 'LOCATION') {
+    return options.targetId ? collectLocationItems(options.targetId, options.includeInactive) : [];
   }
   return collectAllItems(options.includeInactive);
 }
@@ -265,6 +281,7 @@ function stamp(): string {
 function scopeSuffix(scope: ExportScope, items: readonly Item[]): string {
   if (scope === 'ITEM') return items[0] ? `-${items[0].name.replace(/[^\w-]+/g, '_').slice(0, 24)}` : '';
   if (scope === 'PROJECT') return '-project';
+  if (scope === 'LOCATION') return '-location';
   return '';
 }
 

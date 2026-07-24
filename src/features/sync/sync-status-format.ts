@@ -56,6 +56,12 @@ export function describeSyncOutcome(result: SyncResult): string {
   if (result.rejectedCycles > 0) {
     sentences.push(`${count(result.rejectedCycles, 'location move')} skipped to avoid a loop.`);
   }
+  // Issue #193: a serialised item was lent out on two devices at once; the merge kept the first loan.
+  if (result.serialisedLoansClosed > 0) {
+    sentences.push(
+      `${count(result.serialisedLoansClosed, 'duplicate loan')} closed (an item was already checked out elsewhere).`,
+    );
+  }
   // Issue #72: a concurrent edit of yours was overwritten — flag it plainly so it can be reviewed.
   if (result.conflicts.length > 0) {
     sentences.push(

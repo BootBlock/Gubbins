@@ -49,6 +49,16 @@ item on two devices — the more recent entry is kept, by the same last-write-wi
 > Matching ignores capitalisation, so *Bolts* and *bolts* are treated as one name — exactly as they
 > are when you type a duplicate on a single device.
 
+### When one item is lent out on two devices
+
+A [[serialised item|Items]] is a single physical unit, so it can be on loan to only one borrower at
+a time. Gubbins stops you lending one that's already out — but two devices offline can't see each
+other, so each *can* record a loan of the same unit. When they sync, Gubbins keeps the **first**
+loan (the one checked out earliest) and quietly closes the other, since the unit was only ever in
+one place. The item then correctly reads as out to that one borrower, and the closed loan stays in
+its [[history|Loans-Check-Out-and-In]] as a record. The Sync screen notes it in the summary when it
+happens.
+
 ### Reviewing overwritten edits
 
 Last-write-wins means one side's change to that same field is set aside. So you never lose that

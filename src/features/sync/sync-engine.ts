@@ -48,6 +48,8 @@ export interface SyncResult {
   readonly reparented: number;
   /** §7.5.3 location moves discarded to avoid a cycle. */
   readonly rejectedCycles: number;
+  /** Issue #193: serialised items whose surplus open loan the merge closed (double-booked offline). */
+  readonly serialisedLoansClosed: number;
   /** Expired tombstones pruned (§7.2 TTL). */
   readonly prunedTombstones: number;
   /** The clock offset applied (ms, server − local). */
@@ -246,6 +248,7 @@ export async function runSync(
     deleted: outcome.deleted,
     reparented: outcome.reparented,
     rejectedCycles: outcome.rejectedCycles,
+    serialisedLoansClosed: outcome.serialisedLoansClosed,
     prunedTombstones: pruned,
     clockOffset: offset,
     historyInserted: outcome.historyInserted,
@@ -273,6 +276,7 @@ function result(status: SyncResult['status'], partial: Partial<SyncResult>): Syn
     deleted: partial.deleted ?? 0,
     reparented: partial.reparented ?? 0,
     rejectedCycles: partial.rejectedCycles ?? 0,
+    serialisedLoansClosed: partial.serialisedLoansClosed ?? 0,
     prunedTombstones: partial.prunedTombstones ?? 0,
     clockOffset: partial.clockOffset ?? 0,
     historyInserted: partial.historyInserted ?? 0,

@@ -108,6 +108,41 @@ describe('bucketStockAging — default bucketing', () => {
     expect(report.totalValue).toBe(54);
   });
 
+  it('values a line through its manual current value when set, not its cost (issue #397)', () => {
+    // A revalued collectible: current value (900) wins over the unit cost (40), matching the
+    // "Inventory value" headline. Falls back to the cost when no current value is set.
+    const report = bucketStockAging(
+      [
+        makeItem({
+          id: 'a',
+          lastInboundAt: daysAgo(10),
+          quantity: 1,
+          unitCost: 40,
+          currentValuePerUnit: 900,
+        }),
+        makeItem({
+          id: 'b',
+          lastInboundAt: daysAgo(10),
+          quantity: 2,
+          unitCost: 5,
+          currentValuePerUnit: null,
+        }),
+      ],
+      NOW,
+    );
+    // 0–30 bucket: 1×900 (revalued) + 2×5 (cost fallback) = 910.
+    expect(report.buckets[0]?.value).toBe(910);
+    expect(report.totalValue).toBe(910);
+  });
+
+  it('honours a current value of 0 as a deliberate "worth nothing" mark (issue #397)', () => {
+    const report = bucketStockAging(
+      [makeItem({ lastInboundAt: daysAgo(10), quantity: 3, unitCost: 40, currentValuePerUnit: 0 })],
+      NOW,
+    );
+    expect(report.totalValue).toBe(0);
+  });
+
   it('treats the bucket upper bounds as inclusive', () => {
     const exactly = (days: number) =>
       bucketStockAging([makeItem({ lastInboundAt: daysAgo(days) })], NOW).buckets;

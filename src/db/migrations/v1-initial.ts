@@ -773,7 +773,7 @@ const baselineStatements: SqlStatement[] = [
   { sql: updatedAtTrigger('item_attachments') },
   { sql: `ALTER TABLE items ADD COLUMN mpn TEXT;` },
   { sql: `ALTER TABLE items ADD COLUMN manufacturer TEXT;` },
-  { sql: `ALTER TABLE items ADD COLUMN unit_cost REAL;` },
+  { sql: `ALTER TABLE items ADD COLUMN unit_cost REAL CHECK (unit_cost IS NULL OR unit_cost >= 0);` },
   { sql: `CREATE INDEX idx_items_mpn ON items(mpn COLLATE NOCASE);` },
   // Retail barcode (GTIN — EAN/UPC): an item's own scannable article code, distinct
   // from the MPN and stored verbatim as printed. Indexed for the scanner's exact

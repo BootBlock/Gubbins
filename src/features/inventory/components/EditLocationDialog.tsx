@@ -54,18 +54,6 @@ import { useLocationFullness } from '../use-location-fullness';
 import { LocationFullnessBar } from './LocationFullnessBar';
 import { LocationFullnessCaption } from './LocationFullnessCaption';
 import { useErrorMessage } from '@/features/errors';
-import {
-  HINT_CAPACITY,
-  HINT_COLOUR,
-  HINT_DEAD_STOCK_DAYS,
-  HINT_DEAD_STOCK_MODE,
-  HINT_DEFAULT,
-  HINT_DESCRIPTION,
-  HINT_KIND,
-  HINT_NAME,
-  HINT_PARENT,
-  HINT_WALK_ORDER,
-} from './location-field-help';
 
 /**
  * Edit an existing location (spec §4): rename it, move it under a different parent, change
@@ -261,30 +249,30 @@ export function EditLocationDialog({
       },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setError(describeError(e, 'Could not save changes to this location.')),
+        onError: (e) => setError(describeError(e, t('inventory.location.saveError'))),
       },
     );
   };
 
   const details = (
     <div className="space-y-4">
-      <FormField label="Name" hint={HINT_NAME}>
+      <FormField label={t('inventory.location.field.name')} hint={t('inventory.location.hint.name')}>
         <Input
           ref={nameRef}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
-          placeholder="e.g. Workshop, Cabinet A, Drawer 3"
+          placeholder={t('inventory.location.field.namePlaceholderEdit')}
           className={locationColorTextClass(color)}
         />
       </FormField>
 
       <div className="relative">
         <span id={parentLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
-          Parent
+          {t('inventory.location.field.parent')}
         </span>
         <span className="absolute right-0 top-0.5">
-          <InfoHint content={HINT_PARENT} />
+          <InfoHint content={t('inventory.location.hint.parent')} />
         </span>
         <LocationSelect
           labelledBy={parentLabelId}
@@ -294,16 +282,19 @@ export function EditLocationDialog({
         />
       </div>
 
-      <FormField label="Description (optional)" hint={HINT_DESCRIPTION}>
+      <FormField
+        label={t('inventory.location.field.description')}
+        hint={t('inventory.location.hint.description')}
+      >
         <Textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="A note about what lives here, for your reference."
+          placeholder={t('inventory.location.field.descriptionPlaceholder')}
         />
       </FormField>
 
       <div>
-        <span className="mb-field-gap block text-sm font-medium">Tags (optional)</span>
+        <span className="mb-field-gap block text-sm font-medium">{t('inventory.location.field.tags')}</span>
         <LocationTagEditor locationId={location.id} />
       </div>
 
@@ -315,28 +306,28 @@ export function EditLocationDialog({
 
       <div className="relative">
         <span id={kindLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
-          Type (optional)
+          {t('inventory.location.field.type')}
         </span>
         <span className="absolute right-0 top-0.5">
-          <InfoHint content={HINT_KIND} />
+          <InfoHint content={t('inventory.location.hint.kind')} />
         </span>
         <LocationKindPicker labelledBy={kindLabelId} value={kind} onChange={setKind} />
       </div>
 
       <div className="relative">
         <span id={colorLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
-          Colour (optional)
+          {t('inventory.location.field.colour')}
         </span>
         <span className="absolute right-0 top-0.5">
-          <InfoHint content={HINT_COLOUR} />
+          <InfoHint content={t('inventory.location.hint.colour')} />
         </span>
         <ColorSwatchPicker labelledBy={colorLabelId} value={color} onChange={setColor} />
       </div>
 
       <FormField
-        label="Capacity (optional)"
-        hint={HINT_CAPACITY}
-        error={capacityValid ? undefined : 'Capacity must be a whole number of 0 or more.'}
+        label={t('inventory.location.field.capacity')}
+        hint={t('inventory.location.hint.capacity')}
+        error={capacityValid ? undefined : t('inventory.location.capacity.error')}
       >
         <Input
           type="number"
@@ -345,7 +336,7 @@ export function EditLocationDialog({
           inputMode="numeric"
           value={capacity}
           onChange={(e) => setCapacity(e.target.value)}
-          placeholder="No limit"
+          placeholder={t('inventory.location.field.capacityPlaceholder')}
         />
       </FormField>
 
@@ -373,9 +364,9 @@ export function EditLocationDialog({
       />
 
       <FormField
-        label="Walk order (optional)"
-        hint={HINT_WALK_ORDER}
-        error={walkOrderValid ? undefined : 'Walk order must be a whole number of 0 or more.'}
+        label={t('inventory.location.walkOrder.field')}
+        hint={t('inventory.location.hint.walkOrder')}
+        error={walkOrderValid ? undefined : t('inventory.location.walkOrder.error')}
       >
         <Input
           type="number"
@@ -384,7 +375,7 @@ export function EditLocationDialog({
           inputMode="numeric"
           value={walkOrder}
           onChange={(e) => setWalkOrder(e.target.value)}
-          placeholder="Not on the picking route"
+          placeholder={t('inventory.location.walkOrder.placeholder')}
           data-testid="location-walk-order"
         />
       </FormField>
@@ -396,8 +387,8 @@ export function EditLocationDialog({
           onChange={(e) => setIsDefault(e.target.checked)}
           className="size-4 accent-primary"
         />
-        Use as the default location for new items
-        <InfoHint content={HINT_DEFAULT} />
+        {t('inventory.location.field.default')}
+        <InfoHint content={t('inventory.location.hint.default')} />
       </label>
 
       {/* Dead-stock reporting for everything stored here (issue #92). The mode and the
@@ -406,10 +397,10 @@ export function EditLocationDialog({
       <div className="space-y-3 rounded-lg border border-border p-3">
         <div className="relative">
           <span id={deadStockLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
-            Dead-stock reporting
+            {t('inventory.location.deadStock.legend')}
           </span>
           <span className="absolute right-0 top-0.5">
-            <InfoHint content={HINT_DEAD_STOCK_MODE} />
+            <InfoHint content={t('inventory.location.hint.deadStockMode')} />
           </span>
           <SegmentedRadioGroup
             options={DEAD_STOCK_MODE_OPTIONS}
@@ -421,12 +412,16 @@ export function EditLocationDialog({
         </div>
 
         <FormField
-          label="Idle threshold (optional)"
-          hint={HINT_DEAD_STOCK_DAYS}
+          label={t('inventory.location.idleThreshold.label')}
+          hint={t('inventory.location.hint.deadStockDays')}
           error={
             deadStockDaysValid
               ? undefined
-              : `Idle threshold must be between ${DEAD_STOCK_DAYS_BOUNDS.min} and ${DEAD_STOCK_DAYS_BOUNDS.max} days.`
+              : t('inventory.location.idleThreshold.error', {
+                  // Pass as strings so the bound renders verbatim (e.g. 3650, not the
+                  // locale-grouped "3,650" a numeric var would produce).
+                  vars: { min: String(DEAD_STOCK_DAYS_BOUNDS.min), max: String(DEAD_STOCK_DAYS_BOUNDS.max) },
+                })
           }
         >
           <Input
@@ -437,7 +432,7 @@ export function EditLocationDialog({
             inputMode="numeric"
             value={deadStockDays}
             onChange={(e) => setDeadStockDays(e.target.value)}
-            placeholder="Use the default"
+            placeholder={t('inventory.location.idleThreshold.placeholder')}
             data-testid="location-dead-stock-days"
           />
         </FormField>
@@ -447,7 +442,7 @@ export function EditLocationDialog({
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-secondary/40 p-3 text-sm">
         <InfoRow
           icon={<PackageIcon />}
-          label="Items stored"
+          label={t('inventory.location.meta.itemsStored')}
           // The count/limit form depends on a *count* capacity, not on whether a fullness bar
           // shows — a location can now be full by volume without a count limit set (issue #457).
           value={
@@ -456,10 +451,16 @@ export function EditLocationDialog({
               : fmt.quantity(location.itemCount)
           }
         />
-        <InfoRow icon={<MoveIcon />} label="Sub-locations" value={fmt.quantity(childCount)} />
+        <InfoRow
+          icon={<MoveIcon />}
+          label={t('inventory.location.meta.subLocations')}
+          value={fmt.quantity(childCount)}
+        />
         {fullness ? (
           <div className="col-span-2">
-            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Fullness</dt>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+              {t('inventory.location.meta.fullness')}
+            </dt>
             <dd className="mt-1 space-y-1">
               <LocationFullnessBar fullness={fullness} />
               <LocationFullnessCaption fullness={fullness} />
@@ -468,7 +469,9 @@ export function EditLocationDialog({
         ) : null}
         {kindLabel ? (
           <div className="col-span-2">
-            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Type</dt>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+              {t('inventory.location.meta.type')}
+            </dt>
             <dd className="mt-0.5 flex items-center gap-1.5 font-medium [&_svg]:size-4">
               <LocationKindIcon kind={location.kind} />
               {kindLabel}
@@ -476,13 +479,17 @@ export function EditLocationDialog({
           </div>
         ) : null}
         <div className="col-span-2">
-          <dt className="text-xs uppercase tracking-wide text-muted-foreground">Path</dt>
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+            {t('inventory.location.meta.path')}
+          </dt>
           <dd className="mt-0.5 truncate font-medium" title={path}>
             {path}
           </dd>
         </div>
         <div className="col-span-2">
-          <dt className="text-xs uppercase tracking-wide text-muted-foreground">Last changed</dt>
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+            {t('inventory.location.meta.lastChanged')}
+          </dt>
           <dd className="mt-0.5 font-medium tabular-nums">{fmt.dateTime(location.updatedAt)}</dd>
         </div>
       </dl>
@@ -523,8 +530,8 @@ export function EditLocationDialog({
     <RailModal
       open={open}
       onClose={onClose}
-      title="Edit location"
-      description="Rename this location, move it, or change how it looks and behaves."
+      title={t('inventory.location.edit.title')}
+      description={t('inventory.location.edit.description')}
       className="max-w-3xl"
       railAriaLabel={t('inventory.location.railLabel')}
       idPrefix="edit-location"
@@ -551,7 +558,7 @@ export function EditLocationDialog({
                     data-testid="edit-location-delete"
                   >
                     <DeleteIcon />
-                    Delete location
+                    {t('inventory.location.delete')}
                   </Button>
                 ) : null}
                 {onToggleArchive ? (
@@ -566,7 +573,7 @@ export function EditLocationDialog({
                     data-testid="edit-location-archive"
                   >
                     {archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
-                    {archived ? 'Restore location' : 'Archive location'}
+                    {archived ? t('inventory.location.restore') : t('inventory.location.archive')}
                   </Button>
                 ) : null}
               </div>
@@ -591,7 +598,7 @@ export function EditLocationDialog({
                   !dimensionsValid
                 }
               >
-                Save changes
+                {t('inventory.location.save')}
               </Button>
             </div>
           </div>

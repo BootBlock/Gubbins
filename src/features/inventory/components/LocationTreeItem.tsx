@@ -2,7 +2,8 @@ import { type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { Spinner, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { ChevronDownIcon, ChevronRightIcon, PreferredIcon } from '@/components/icons';
-import { locationFullness } from '../location-fullness';
+import { useT } from '@/features/i18n';
+import { locationFullness, type VolumetricFullness } from '../location-fullness';
 import { useLocationDragSource, useLocationRowDrop } from '../item-drag';
 import { LocationInlineRename } from './LocationInlineRename';
 import { LocationRowActions } from './LocationRowActions';
@@ -29,6 +30,14 @@ export interface TreeItemProps {
   readonly count: number;
   /** Optional item-capacity limit; when set the count shows as `count / capacity`. */
   readonly capacity?: number | null;
+  /**
+   * Resolved **volumetric** fullness for this location (issue #457), or null/undefined when the
+   * location has no measured internal size (so no honest volume reading exists). Surfaced as a
+   * slim fill bar *distinct* from the count text — the count text's own tint stays count-based, so
+   * nothing ever tints a number by a fullness it doesn't describe. Resolved in the sidebar and
+   * passed in (rather than re-read here) to keep this row presentational under virtualisation.
+   */
+  readonly volumeFullness?: VolumetricFullness | null;
   /** True ⇒ this is the default location for new items (shows a star). */
   readonly isDefault?: boolean;
   /** True ⇒ this location is archived (row dimmed). Archiving/restoring lives in the Edit dialog. */
@@ -109,6 +118,7 @@ export function LocationTreeItem({
   description,
   count,
   capacity,
+  volumeFullness,
   isDefault,
   archived,
   expanded,
@@ -130,6 +140,7 @@ export function LocationTreeItem({
   receivingItem,
   ref,
 }: TreeItemProps) {
+  const t = useT();
   // The compact tree row shows a *count* (`count / capacity`), so its tint stays count-based —
   // a volumetric over/full state would tint a number it doesn't describe (issue #457 review).
   // Volume utilisation is surfaced (with a bar + caption) on the info card and edit dialog.
@@ -244,18 +255,47 @@ export function LocationTreeItem({
           // window so the drop reads as "something's happening" before the count refreshes.
           <Spinner className="size-3.5 shrink-0" label={`Moving item into ${label}`} />
         ) : (
-          <span
-            className={cn(
-              'shrink-0 pl-1 text-xs tabular-nums',
-              fullness?.over
-                ? 'text-glyph-danger'
-                : fullness?.full
-                  ? 'text-warning'
-                  : 'text-muted-foreground',
-            )}
-          >
-            {capacity != null ? `${count}/${capacity}` : count}
-          </span>
+          <>
+            {/* Volume utilisation as a distinct, quiet fill bar (issue #457) — deliberately
+                separate from the count text so it never re-tints a number it doesn't describe.
+                Only shown when the location has a measured internal size (an honest volume
+                reading exists); count-only / unmeasured rows show no bar. The visual track and
+                fill are decorative (`aria-hidden`); the labelled `role="img"` wrapper carries the
+                volume reading for assistive tech, so a screen-reader user gets it too. */}
+            {volumeFullness ? (
+              <span
+                role="img"
+                aria-label={t(
+                  volumeFullness.over
+                    ? 'inventory.locations.tree.volumeFullnessOver'
+                    : 'inventory.locations.tree.volumeFullness',
+                  { vars: { percent: volumeFullness.percent } },
+                )}
+                className="h-1.5 w-8 shrink-0 overflow-hidden rounded-full bg-secondary"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'block h-full rounded-full',
+                    volumeFullness.over ? 'bg-destructive' : 'bg-primary',
+                  )}
+                  style={{ width: `${volumeFullness.percent}%` }}
+                />
+              </span>
+            ) : null}
+            <span
+              className={cn(
+                'shrink-0 pl-1 text-xs tabular-nums',
+                fullness?.over
+                  ? 'text-glyph-danger'
+                  : fullness?.full
+                    ? 'text-warning'
+                    : 'text-muted-foreground',
+              )}
+            >
+              {capacity != null ? `${count}/${capacity}` : count}
+            </span>
+          </>
         )
       ) : null}
     </div>
