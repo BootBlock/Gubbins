@@ -31,12 +31,19 @@ import type { ProductLookupResultPayload } from '../protocol';
 export function ProductLookupPanel({
   barcode,
   onResult,
+  onEnterManually,
   className,
 }: {
   /** The GTIN to look up — typically the item form's barcode field (may be blank). */
   barcode: string;
   /** Called with the validated product when a lookup succeeds. */
   onResult: (payload: ProductLookupResultPayload) => void;
+  /**
+   * The "enter the details yourself" escape hatch offered when a lookup fails or misses. Wire it
+   * to whatever manual entry means in this context (focus the name field, open the add form, …);
+   * when omitted the failure toast simply carries no action rather than a dead one (issue #439).
+   */
+  onEnterManually?: () => void;
   className?: string;
 }) {
   const bridge = useScrapeBridge();
@@ -67,12 +74,12 @@ export function ProductLookupPanel({
         icon: <WarningIcon />,
         heading: 'Product lookup failed',
         message: describeScrapeError(lookup.error),
-        action: { label: 'Enter manually', onClick: () => {} },
+        action: onEnterManually ? { label: 'Enter manually', onClick: onEnterManually } : undefined,
       });
       bridge.clearLookup(lookup.id);
       setRequestId(null);
     }
-  }, [lookup, onResult, show, bridge]);
+  }, [lookup, onResult, show, bridge, onEnterManually]);
 
   // Feature-detect: module off, or nothing to look up → no control at all.
   if (!scrapingEnabled || trimmed.length === 0) return null;
@@ -93,7 +100,7 @@ export function ProductLookupPanel({
         icon: <WarningIcon />,
         heading: 'Product lookup failed',
         message: parsed.reason,
-        action: { label: 'Enter manually', onClick: () => {} },
+        action: onEnterManually ? { label: 'Enter manually', onClick: onEnterManually } : undefined,
       });
     }
   };

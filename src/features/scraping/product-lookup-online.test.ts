@@ -37,6 +37,18 @@ describe('lookupProductOnline (issue #59)', () => {
     if (!result.ok) expect(result.reason).toMatch(/reach the product database/i);
   });
 
+  it('treats a 404 as a clean not-found, not a raw error (issue #439)', async () => {
+    // Open Food Facts answers a barcode it doesn't carry with HTTP 404 + a { status: 0 } body.
+    const body = JSON.stringify({ code: '8595723300565', status: 0, status_verbose: 'product not found' });
+    const result = await lookupProductOnline('8595723300565', fakeFetch(body, { ok: false, status: 404 }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/no product found/i);
+      // The scary raw status code must not leak into the message.
+      expect(result.reason).not.toMatch(/404/);
+    }
+  });
+
   it('fails soft on a non-OK HTTP status', async () => {
     const result = await lookupProductOnline('4006381333931', fakeFetch('', { ok: false, status: 503 }));
     expect(result.ok).toBe(false);
