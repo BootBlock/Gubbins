@@ -847,6 +847,36 @@ export async function applyPlan(
     });
   }
 
+  // Issue #189: re-derive `items.quantity` for every upserted item from the post-merge
+  // `item_stock` ledger it is defined as a SUM of. `quantity` is trigger-derived (Phase 25) and
+  // non-authoritative on the `items` row — the sibling of `current_net_value` corrected above —
+  // but its recompute triggers only fire on an `item_stock` write. When an `items` row wins LWW
+  // and is upserted while its per-location stock is unchanged (the peer's `item_stock`/`stock_batches`
+  // lost LWW *and* the placement is not contested, so issue #188's stock CRDT emits no resolution
+  // either), the upsert writes the peer's stale `quantity` and no trigger corrects it, leaving the
+  // headline count out of step with its own breakdown — and that wrong figure is then pushed back
+  // as authoritative. This is the final safety net for the `items`-row LWW path that #188's
+  // batch-grained CRDT does not reach. It runs after every `item_stock` mutation above — the LWW
+  // upserts, the location-removal re-home, *and* #188's `stock_batches` corrections rolling up
+  // through the triggers — so the subquery reads the fully-settled ledger. The `quantity <> …`
+  // guard (matching the recompute triggers') makes it a pure no-op wherever a trigger already
+  // reconciled the value, so an already-consistent item is left untouched — no churn — while a
+  // genuine desync is corrected and re-stamped, exactly as any local stock change is, so the fix
+  // propagates on the next push.
+  const upsertedItemIds = new Set<string>();
+  for (const { table, row } of plan.localUpserts) {
+    if (table === 'items') upsertedItemIds.add(String(row.id));
+  }
+  for (const itemId of upsertedItemIds) {
+    statements.push({
+      sql: `UPDATE items
+              SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = ?)
+              WHERE id = ?
+                AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = ?);`,
+      params: [itemId, itemId, itemId],
+    });
+  }
+
   // §7.5.2 conflict logs.
   for (const { itemId } of plan.reparented) {
     statements.push(reparentHistoryStatement(itemId));
