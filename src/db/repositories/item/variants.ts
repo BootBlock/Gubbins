@@ -88,11 +88,14 @@ export function withVariants<TBase extends Constructor<ItemCoreRepository>>(Base
       }
 
       // The proposed parent's ancestor chain (parent, grandparent, …) — a cycle exists
-      // if the child being attached appears anywhere in it.
+      // if the child being attached appears anywhere in it. UNION (not UNION ALL)
+      // terminates even if the data somehow already held a cycle (issue #190): a
+      // sync-created X→Y→X loop would otherwise make this recursive walk run forever
+      // and hang the database worker. Mirrors the kit validator's deliberate choice.
       const ancestorRows = await this.driver.query<{ id: string }>(
         `WITH RECURSIVE ancestors(id) AS (
            SELECT ?
-           UNION ALL
+           UNION
            SELECT i.parent_id FROM items i
            JOIN ancestors a ON i.id = a.id
            WHERE i.parent_id IS NOT NULL

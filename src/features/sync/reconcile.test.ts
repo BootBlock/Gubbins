@@ -8,7 +8,16 @@ import type { GaugeHistoryDelta, ItemTagEdge, LocationTagEdge, SyncSnapshot, Tom
 const DICTIONARY = {
   locations: ['id', 'name', 'parent_id', 'updated_at'],
   categories: ['id', 'name', 'updated_at'],
-  items: ['id', 'name', 'location_id', 'tracking_mode', 'gross_capacity', 'current_net_value', 'updated_at'],
+  items: [
+    'id',
+    'name',
+    'parent_id',
+    'location_id',
+    'tracking_mode',
+    'gross_capacity',
+    'current_net_value',
+    'updated_at',
+  ],
   item_aliases: ['id', 'item_id', 'alias', 'updated_at'],
   capabilities: ['id', 'item_id', 'key', 'updated_at'],
   contacts: ['id', 'name', 'updated_at'],
@@ -404,6 +413,36 @@ describe('reconcile (§7.3 / §7.5)', () => {
     const plan = reconcile(local, remote, opts);
     expect(plan.rejectedCycles).toContain('locX');
     expect(plan.localUpserts.some((u) => u.table === 'locations' && u.row.id === 'locX')).toBe(false);
+  });
+
+  it('§7.5.3 rejects an item variant-parent move that would create a cycle (issue #190)', () => {
+    // Local: item Y is a variant of X. Remote wants to make X a variant of Y → cycle.
+    // Left unguarded the merge would converge to X→Y→X, and the recursive ancestor walk
+    // that guards the next variant attach/detach would then never terminate.
+    const local = snapshot({
+      tables: {
+        items: [
+          { id: 'itemX', name: 'X', parent_id: null, location_id: UNASSIGNED_LOCATION_ID, updated_at: 1 },
+          {
+            id: 'itemY',
+            name: 'Y',
+            parent_id: 'itemX',
+            location_id: UNASSIGNED_LOCATION_ID,
+            updated_at: 1,
+          },
+        ],
+      },
+    });
+    const remote = snapshot({
+      tables: {
+        items: [
+          { id: 'itemX', name: 'X', parent_id: 'itemY', location_id: UNASSIGNED_LOCATION_ID, updated_at: 99 },
+        ],
+      },
+    });
+    const plan = reconcile(local, remote, opts);
+    expect(plan.rejectedCycles).toContain('itemX');
+    expect(plan.localUpserts.some((u) => u.table === 'items' && u.row.id === 'itemX')).toBe(false);
   });
 
   it('§7.3 Delta-CRDT replays concurrent gauge usage instead of LWW', () => {
