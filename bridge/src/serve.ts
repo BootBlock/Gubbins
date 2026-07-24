@@ -239,6 +239,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     // instead of trusting stale stock levels (issue #312).
     getSnapshotHealth: () => summarizeSnapshotHealth(watcher.getReloadHealth(), config.staleAfterFailures),
     rateLimiter,
+    allowedOrigins: config.allowedOrigins,
     write,
     push,
     // Present only when events are enabled → `GET /api/v1/events` streams; otherwise a 404.
@@ -274,6 +275,12 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     config.rateLimit
       ? `Rate limit: ${config.rateLimit.capacity} burst, ${config.rateLimit.refillPerSec}/s sustained per client.`
       : 'Rate limit: disabled (deferring to the LAN/firewall).',
+  );
+  console.log(
+    config.allowedOrigins.wildcard
+      ? 'CORS: any origin (GUBBINS_BRIDGE_ALLOWED_ORIGINS=*) — a permissive choice; a listed allow-list is safer.'
+      : `CORS: allowed browser origins: ${[...config.allowedOrigins.origins].join(', ')} (plus loopback). ` +
+          'Set GUBBINS_BRIDGE_ALLOWED_ORIGINS to add your app’s origin.',
   );
   console.log(`Data source: ${source === 'sqlite' ? 'raw .sqlite export' : 'JSON sync snapshot'}.`);
   if (writesEnabled) {

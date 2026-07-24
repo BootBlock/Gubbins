@@ -1673,6 +1673,7 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_PORT` | no | `8787` | TCP port. |
 | `GUBBINS_BRIDGE_RATE_CAPACITY` | no | `60` | Per-client burst (requests back-to-back). `0` disables the rate limiter entirely. |
 | `GUBBINS_BRIDGE_RATE_REFILL` | no | `1` | Per-client sustained rate (requests/second) once the burst is spent. |
+| `GUBBINS_BRIDGE_ALLOWED_ORIGINS` | no | *(hosted app)* | Comma-separated list of **browser origins** allowed to read a bridge response cross-origin (CORS). Defaults to the hosted app origin `https://bootblock.github.io`; **loopback origins (a dev server) are always allowed on top**. Add your own PWA origin here if you self-host the app on another domain and use "push to bridge" from the browser. Set to `*` to restore the old permissive wildcard. Only browsers are affected — a non-browser client (Home Assistant, `curl`, a scrape) sends no `Origin` and is unaffected. See [Cross-origin (CORS) policy](#cross-origin-cors-policy). |
 | `GUBBINS_BRIDGE_MDNS` | no | `off` | Advertise over mDNS so Home Assistant can auto-discover the bridge. `on` to enable. Carries **no secret**; only meaningful when LAN-exposed (auto-skipped on the loopback default). See [mDNS / zeroconf discovery](#mdns--zeroconf-discovery). |
 | `GUBBINS_BRIDGE_MDNS_NAME` | no | `Gubbins Bridge` | Service instance name shown in a discovery browser. |
 | `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this is `on`.** HTTP writes additionally need the caller to hold `bridge:write` + `stock:write`; the MCP tools are gated by process launch alone (stdio carries no credential). |
@@ -1911,6 +1912,31 @@ requests (default 60), then is held to `GUBBINS_BRIDGE_RATE_REFILL` requests/sec
 `X-Forwarded-For` is deliberately **not** trusted, so the limit can't be forged away. Set
 `GUBBINS_BRIDGE_RATE_CAPACITY=0` to disable it and rely solely on the LAN/firewall. This is
 a backstop, not the security boundary — the identity check and the loopback default are.
+
+### Cross-origin (CORS) policy
+
+The bridge authenticates with a bearer token in the `Authorization` header (never a cookie), so
+the token — not the browser's same-origin policy — is the security boundary. But the bridge sits
+on the LAN, and a blanket `Access-Control-Allow-Origin: *` would let **any web page the user
+happened to be viewing** script requests at it from inside the network — a free scanning /
+token-guessing position a remote attacker could not otherwise reach. So the bridge instead grants
+CORS only to an **allow-list** of browser origins:
+
+- **By default**, the hosted app origin (`https://bootblock.github.io`), plus **any loopback
+  origin** (`localhost` / `127.0.0.1` / `::1`, any port — a page served from your own machine can
+  only be you). An allow-listed origin is reflected on **every** response, including errors, so the
+  app can read a meaningful error body.
+- Any **other** browser origin gets **no CORS header at all** — the browser then blocks the page
+  from reading the response, so a hostile page can't tell a valid token from an invalid one (both
+  read as an opaque failure). A refused origin is logged **once** with a hint, so a legitimately
+  self-hosted app that simply isn't listed is easy to diagnose.
+- **Non-browser clients are unaffected.** Home Assistant, a Prometheus scrape, `curl` and the MCP
+  server send no `Origin` header, so CORS never applies to them.
+
+If you serve the Gubbins PWA from your own domain **and** use "push to bridge" from the browser,
+add that origin to `GUBBINS_BRIDGE_ALLOWED_ORIGINS` (comma-separated, e.g.
+`https://gubbins.example.com`). To deliberately restore the old permissive behaviour, set it to
+`*`. The active policy is printed at startup.
 
 ## Layout
 

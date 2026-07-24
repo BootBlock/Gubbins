@@ -124,6 +124,23 @@ stays read-only.
 > The safe default is loopback-only, with each integration on its own narrow account. See
 > [[Privacy & security|Privacy-and-Security]].
 
+## Reaching it from a web browser
+
+Some things talk to the bridge straight from a **web page** — most notably the app's *push to
+bridge* button, which uploads your latest data to a running bridge. To keep a random web page you
+happen to have open from quietly poking at a bridge on your network, the bridge only lets a browser
+read its replies when the page comes from an address it recognises: the **official Gubbins app**
+(`https://bootblock.github.io`) and anything on **your own machine** (a local dev copy). Everything
+else a browser sends is turned away.
+
+This is automatic and needs no setup for almost everyone. The one exception is if you **host the
+Gubbins app yourself on your own web address** *and* use *push to bridge* — then tell the bridge to
+trust that address by listing it in `GUBBINS_BRIDGE_ALLOWED_ORIGINS` (see the bridge's `README`).
+The bridge prints which addresses it currently trusts when it starts up, and logs a one-line hint
+if it turns a browser away, so a missing entry is easy to spot. None of this affects
+[[Home Assistant|Home-Assistant-Integration]], an [[AI assistant|AI-Assistant-Query-MCP]], scripts
+or other non-browser tools — that guard is a browser thing only.
+
 ## Related pages
 
 - **[[Bridge overview|Bridge-Overview]]** — what the bridge is and its safety model.

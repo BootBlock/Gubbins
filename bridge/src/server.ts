@@ -35,6 +35,7 @@ import { sendError, sendJson, sendMetrics } from './api/respond.ts';
 import { readQueryParam, readResultLimit } from './api/params.ts';
 import { API_V1_BASE, handleApiV1, isApiV1Path, pathAllowsUrlToken } from './api/v1.ts';
 import { isPermitted, resolveIdentity } from './identity.ts';
+import { corsAllowOrigin, WILDCARD_ORIGINS, type AllowedOrigins } from './cors.ts';
 import { projectMetrics } from './feeds/metrics.ts';
 import { formatMetrics } from './feeds/metrics-format.ts';
 import type { WriteOperation } from './write.ts';
@@ -208,6 +209,20 @@ export interface BridgeServerOptions {
    * `POST /api/v1/webhooks/test`. Omit to keep that path a `404`.
    */
   readonly webhookTest?: WebhookTestCapability;
+  /**
+   * The CORS origin allow-list (issue #182): which browser origins may read a response.
+   * Omit to keep the permissive wildcard (`Access-Control-Allow-Origin: *`) — the default for the
+   * in-process test harness and any caller that has not opted into the allow-list. The real server
+   * passes the resolved `GUBBINS_BRIDGE_ALLOWED_ORIGINS` policy, whose secure default is the hosted
+   * app origin plus loopback (see `cors.ts`).
+   */
+  readonly allowedOrigins?: AllowedOrigins;
+  /**
+   * Internal hook, wired by {@link createBridgeServer}: invoked with a browser `Origin` the
+   * allow-list refuses, so the operator gets a one-line hint to add it. Deduped and capped by the
+   * factory; omit (the default in direct-`handleRequest` tests) to log nothing.
+   */
+  readonly onRefusedOrigin?: (origin: string) => void;
 }
 
 /**
@@ -244,13 +259,36 @@ export function requestBase(hostHeader: string | undefined): string {
  * guards.
  */
 export function createBridgeServer(options: BridgeServerOptions): Server {
+  // One-line, once-per-origin hint when the CORS allow-list refuses a browser request, so an
+  // operator whose app is served from an origin they have not listed can tell *why* their "push to
+  // bridge" fails silently rather than staring at an opaque browser error. Deduped by origin and
+  // hard-capped so a hostile client spraying forged `Origin` headers cannot grow the set or the log.
+  const warnedOrigins = new Set<string>();
+  const onRefusedOrigin =
+    options.onRefusedOrigin ??
+    ((origin: string): void => {
+      // Dedupe on the raw value (so a hostile spray of variants still can't exceed the cap), but log
+      // a sanitised form: the `Origin` is attacker-controlled, so strip anything non-printable and
+      // truncate to keep control characters / newlines out of the logs (no log forging).
+      if (warnedOrigins.has(origin) || warnedOrigins.size >= MAX_WARNED_ORIGINS) return;
+      warnedOrigins.add(origin);
+      const safe = origin.replace(/[^\x21-\x7e]/g, '?').slice(0, 128);
+      console.warn(
+        `Bridge refused a cross-origin browser request from ${safe}. If this is your Gubbins ` +
+          'app, add its origin to GUBBINS_BRIDGE_ALLOWED_ORIGINS (comma-separated) and restart.',
+      );
+    });
+  const resolved: BridgeServerOptions = { ...options, onRefusedOrigin };
   const server = createHttpServer((req, res) => {
-    void handleRequest(req, res, options);
+    void handleRequest(req, res, resolved);
   });
   server.requestTimeout = REQUEST_TIMEOUT_MS;
   server.headersTimeout = HEADERS_TIMEOUT_MS;
   return server;
 }
+
+/** Cap on distinct refused origins we log, so a spray of forged `Origin` headers can't grow it. */
+const MAX_WARNED_ORIGINS = 100;
 
 /**
  * Route and answer a single request. Exported for in-process testing; the outer
@@ -270,13 +308,27 @@ export async function handleRequest(
   const allow = options.write || options.push || options.webhookTest ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
 
   // CORS: the bridge authenticates with a bearer token (never a cookie), so the token itself
-  // — not the browser's same-origin policy — is the security boundary; a permissive origin is
-  // safe here and is what lets the PWA (almost always a *different* origin: a dev server, the
-  // GitHub-Pages build, etc.) call the bridge straight from the browser — in particular the
-  // "push to bridge" feature, whose POST triggers a CORS preflight. Applied to every response,
-  // including errors, so a browser can always read the body rather than swallowing it as an
-  // opaque network failure.
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // — not the browser's same-origin policy — is the security boundary, and letting the PWA (almost
+  // always a *different* origin: a dev server, the GitHub-Pages build, etc.) call the bridge from
+  // the browser — in particular the "push to bridge" POST, whose preflight this answers — is a
+  // feature. But a blanket `*` also handed any web page the victim was viewing a scripting position
+  // against a LAN bridge it could not otherwise route to (issue #182), so instead of `*` the bridge
+  // reflects an allow-list: the hosted app origin plus loopback by default, extendable via
+  // `GUBBINS_BRIDGE_ALLOWED_ORIGINS`. A granted origin is reflected on *every* response (including
+  // errors) so the app can read error bodies; an ungranted browser origin gets no header at all —
+  // every response reads as an opaque failure, so a hostile page can't tell a good token from a bad
+  // one. A non-browser client sends no `Origin` and is unaffected. `Vary: Origin` because the
+  // response now depends on the request's `Origin` (belt-and-braces beside the blanket `no-store`).
+  const allowedOrigins = options.allowedOrigins ?? WILDCARD_ORIGINS;
+  const corsOrigin = corsAllowOrigin(req.headers.origin, allowedOrigins);
+  if (corsOrigin !== null) {
+    res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+    if (corsOrigin !== '*') res.setHeader('Vary', 'Origin');
+  } else if (req.headers.origin !== undefined) {
+    // A browser cross-origin request the allow-list won't grant — nudge the operator (once) so a
+    // legitimately-served app that just isn't listed yet is easy to diagnose.
+    options.onRefusedOrigin?.(req.headers.origin);
+  }
 
   // A CORS preflight is a plain capability check the browser makes before the real request; it
   // carries no Authorization header (browsers deliberately omit it on preflights), so it must be

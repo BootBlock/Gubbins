@@ -14,6 +14,7 @@ import { hydrateFromJson, type HydrateResult } from './hydrate.ts';
 import { mintTestToken } from './fixtures/test-identity.ts';
 import { createBridgeServer, requestBase, type BridgeServerState } from './server.ts';
 import { createRateLimiter } from './rate-limit.ts';
+import { parseAllowedOrigins, WILDCARD_ORIGINS } from './cors.ts';
 import { HEALTHY_RELOAD, summarizeSnapshotHealth } from './snapshot-health.ts';
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
@@ -243,6 +244,89 @@ describe('rate limiting', () => {
     } finally {
       await new Promise<void>((resolve) => limited.close(() => resolve()));
     }
+  });
+});
+
+describe('CORS origin allow-list (issue #182)', () => {
+  const state = (): BridgeServerState => ({
+    driver: hydrated.driver,
+    snapshotGeneratedAt: new Date(hydrated.snapshot.generatedAt).toISOString(),
+  });
+
+  // Spins up a server with a given origin policy, runs `body` against it, and always closes it.
+  async function withServer(
+    options: Parameters<typeof createBridgeServer>[0],
+    body: (port: number) => Promise<void>,
+  ): Promise<void> {
+    const s = createBridgeServer(options);
+    await new Promise<void>((resolve) => s.listen(0, '127.0.0.1', resolve));
+    try {
+      await body((s.address() as AddressInfo).port);
+    } finally {
+      await new Promise<void>((resolve) => s.close(() => resolve()));
+    }
+  }
+
+  it('reflects an allow-listed origin (and adds Vary) but refuses an unlisted one', async () => {
+    const refused: string[] = [];
+    await withServer(
+      {
+        getState: state,
+        allowedOrigins: parseAllowedOrigins('https://app.example.com'),
+        onRefusedOrigin: (o) => refused.push(o),
+      },
+      async (port) => {
+        const call = (origin: string): Promise<Response> =>
+          fetch(`http://127.0.0.1:${port}/health`, {
+            headers: { authorization: `Bearer ${TOKEN}`, origin },
+          });
+
+        const allowed = await call('https://app.example.com');
+        expect(allowed.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+        expect(allowed.headers.get('vary')).toBe('Origin');
+
+        // Loopback is always allowed (it can only be the user's own machine).
+        const loopback = await call('http://localhost:5173');
+        expect(loopback.headers.get('access-control-allow-origin')).toBe('http://localhost:5173');
+
+        // An unlisted origin gets no CORS header at all — the browser then blocks the page from
+        // reading the response, so it cannot tell a good token from a bad one.
+        const evil = await call('https://evil.example');
+        expect(evil.headers.get('access-control-allow-origin')).toBeNull();
+        // …and the operator gets a one-line diagnostic for a legit-but-unlisted app.
+        expect(refused).toContain('https://evil.example');
+      },
+    );
+  });
+
+  it('does not grant CORS on the preflight for an unlisted origin', async () => {
+    await withServer(
+      { getState: state, allowedOrigins: parseAllowedOrigins('https://app.example.com') },
+      async (port) => {
+        const preflight = (origin: string): Promise<Response> =>
+          fetch(`http://127.0.0.1:${port}/api/v1/snapshot`, {
+            method: 'OPTIONS',
+            headers: { origin, 'access-control-request-method': 'POST' },
+          });
+
+        expect((await preflight('https://app.example.com')).headers.get('access-control-allow-origin')).toBe(
+          'https://app.example.com',
+        );
+        expect(
+          (await preflight('https://evil.example')).headers.get('access-control-allow-origin'),
+        ).toBeNull();
+      },
+    );
+  });
+
+  it('keeps the permissive wildcard when explicitly configured', async () => {
+    await withServer({ getState: state, allowedOrigins: WILDCARD_ORIGINS }, async (port) => {
+      const res = await fetch(`http://127.0.0.1:${port}/health`, {
+        headers: { authorization: `Bearer ${TOKEN}`, origin: 'https://anything.example' },
+      });
+      expect(res.headers.get('access-control-allow-origin')).toBe('*');
+      expect(res.headers.get('vary')).toBeNull();
+    });
   });
 });
 
