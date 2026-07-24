@@ -28,6 +28,8 @@
  */
 import { MONEY_DECIMALS, roundMoney } from '@/lib/money';
 
+import { inTimeWindow } from './window-membership';
+
 /** The three spend sources, each composed from data already stored. */
 export type SpendSource = 'PURCHASE_ORDER' | 'PROJECT_EXPENSE' | 'ACQUISITION';
 
@@ -129,8 +131,8 @@ const UNCATEGORISED = 'Uncategorised';
  * Fold spend events into a windowed report: a chronological bucket series plus by-source,
  * by-supplier and by-category breakdowns.
  *
- * **Window membership (half-open, mirrors {@link bucketMovement}).** Only events with
- * `windowStart <= instant < windowEnd` are counted; an event exactly on `windowEnd` is excluded.
+ * **Window membership.** Only events inside the shared forward window {@link inTimeWindow}
+ * (`windowStart <= instant < windowEnd`) are counted; an event exactly on `windowEnd` is excluded.
  * Events with a non-finite or non-positive `amount` are ignored (a refund/zero is not "spend").
  *
  * **Bucketing.** `bucketCount` equal half-open spans across the window (clamped to `>= 1`); the
@@ -179,7 +181,7 @@ export function buildSpendReport(
   let total = 0;
   let eventCount = 0;
   for (const event of events) {
-    if (event.instant < windowStart || event.instant >= windowEnd) continue;
+    if (!inTimeWindow(event.instant, windowStart, windowEnd)) continue;
     if (!Number.isFinite(event.amount) || event.amount <= 0) continue;
 
     const amount = event.amount;

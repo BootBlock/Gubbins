@@ -14,6 +14,8 @@
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { effectiveUnitCost as resolveCostPrecedence } from '@/features/inventory/supplier-cost';
 
+import { inTimeWindow } from './window-membership';
+
 // --- Effective unit cost (the single swap-point for cost precedence) -----------
 
 /**
@@ -185,7 +187,7 @@ export function summariseConsumption(
   const windowDays = Math.max(1, Math.round((windowEnd - windowStart) / MS_PER_DAY));
   let totalConsumed = 0;
   for (const event of events) {
-    if (event.createdAt < windowStart || event.createdAt >= windowEnd) continue;
+    if (!inTimeWindow(event.createdAt, windowStart, windowEnd)) continue;
     if (event.consumed > 0) totalConsumed += event.consumed;
   }
   return {
@@ -252,7 +254,7 @@ export function bucketMovement(
   let totalIn = 0;
   let totalOut = 0;
   for (const event of events) {
-    if (event.createdAt < windowStart || event.createdAt >= windowEnd) continue;
+    if (!inTimeWindow(event.createdAt, windowStart, windowEnd)) continue;
     const ratio = (event.createdAt - windowStart) / span;
     const index = Math.min(count - 1, Math.max(0, Math.floor(ratio * count)));
     const bucket = buckets[index];
