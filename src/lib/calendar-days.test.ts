@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { repoPath } from '../test/repo-path';
-import { addCalendarDays, startOfLocalDay, startOfUtcDay } from './calendar-days';
+import { addCalendarDays, startOfLocalDay, startOfUtcDay, utcDayToLocalDay } from './calendar-days';
 
 // ---------------------------------------------------------------------------
 // Structural cases — true in any time zone (the worker runs in UTC).
@@ -54,6 +54,30 @@ describe('startOfUtcDay', () => {
 
   it('keeps different UTC days distinct', () => {
     expect(startOfUtcDay(Date.UTC(2026, 0, 15, 3))).not.toBe(startOfUtcDay(Date.UTC(2026, 0, 16, 3)));
+  });
+});
+
+describe('utcDayToLocalDay (structural)', () => {
+  // These hold in any host zone (the worker's zone is not guaranteed to be UTC): the result is
+  // always a *local* midnight whose local calendar day equals the input's *UTC* calendar day. The
+  // instant it lands on relative to the UTC parse is zone-dependent — that is the whole point, and
+  // is asserted under pinned zones below.
+  it('re-emits a midnight-UTC day at local midnight of the same calendar day', () => {
+    const result = utcDayToLocalDay(Date.UTC(2026, 6, 20));
+    expect(result).toBe(new Date(2026, 6, 20).getTime());
+    const d = new Date(result);
+    expect([d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()]).toEqual([0, 0, 0, 0]);
+  });
+
+  it('reads the calendar day in UTC even when fed a non-midnight instant', () => {
+    // A late-in-the-UTC-day instant still re-anchors to local midnight of that same UTC day.
+    const result = utcDayToLocalDay(Date.UTC(2026, 6, 20, 23, 59));
+    const d = new Date(result);
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(6);
+    expect(d.getDate()).toBe(20);
+    expect(d.getHours()).toBe(0);
+    expect(d.getMinutes()).toBe(0);
   });
 });
 
@@ -157,5 +181,78 @@ describe('addCalendarDays across DST (America/New_York)', () => {
     // local — 25 hours on in absolute ms, where a fixed-day add would read 13:00.
     expect(probe.intervalHour).toBe(14);
     expect(probe.intervalDeltaH).toBe(25);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// utcDayToLocalDay across time zones — the issue #323 reproduction, run in a
+// child process pinned to a zone east and west of UTC (the worker is UTC, where
+// the whole point — local ≠ UTC midnight — cannot be observed).
+// ---------------------------------------------------------------------------
+
+/**
+ * Probe {@link utcDayToLocalDay} in a child Node process pinned to `tz`, using the issue's worked
+ * example: an item acquired on **2026-07-20** (a bare date, so stored/parsed as midnight UTC) viewed
+ * against a `now` of 2026-07-19T21:00Z — which in Auckland (UTC+12) is 09:00 on the 20th, i.e. the
+ * *same local day* the item was acquired. The raw UTC-midnight parse sits three hours ahead of that
+ * `now` and is wrongly dropped by a `< now` window; the local re-anchoring must pull it back before
+ * `now`. TZ is set as the child's first statement (before any `Date` seats V8's zone).
+ */
+function tzDayProbe(tz: string): {
+  rawAfterNow: boolean;
+  localBeforeNow: boolean;
+  localDate: number;
+  localHour: number;
+  offsetFromUtcMidnightH: number;
+} {
+  const moduleUrl = pathToFileURL(repoPath(import.meta.dirname, 'src', 'lib', 'calendar-days.ts')).href;
+  const script = `
+    process.env.TZ = ${JSON.stringify(tz)};
+    const { utcDayToLocalDay } = await import(${JSON.stringify(moduleUrl)});
+    const H = 3_600_000;
+    const utcMidnight = Date.UTC(2026, 6, 20);      // the parsed \`acquired_at\` = 2026-07-20 (UTC)
+    const now = Date.UTC(2026, 6, 19, 21);          // 2026-07-19T21:00Z (= 09:00 on the 20th in +12)
+    const local = utcDayToLocalDay(utcMidnight);
+    const d = new Date(local);
+    process.stdout.write(JSON.stringify({
+      rawAfterNow: utcMidnight > now,               // the bug: raw parse is in the future
+      localBeforeNow: local < now,                  // the fix: re-anchored day precedes now
+      localDate: d.getDate(),
+      localHour: d.getHours(),
+      offsetFromUtcMidnightH: (utcMidnight - local) / H,
+    }));
+  `;
+  const out = execFileSync(
+    process.execPath,
+    ['--experimental-strip-types', '--input-type=module', '-e', script],
+    { encoding: 'utf8' },
+  );
+  return JSON.parse(out);
+}
+
+describe('utcDayToLocalDay east of UTC (Pacific/Auckland, issue #323)', () => {
+  const probe = tzDayProbe('Pacific/Auckland');
+
+  it('pulls a "today" acquisition back before `now` that the raw UTC parse leaves in the future', () => {
+    expect(probe.rawAfterNow).toBe(true); // midnight-UTC of the 20th is ahead of 21:00Z on the 19th
+    expect(probe.localBeforeNow).toBe(true); // local midnight of the 20th (UTC+12) is 12:00Z on the 19th
+  });
+
+  it('names the same calendar day at local midnight', () => {
+    expect(probe.localDate).toBe(20);
+    expect(probe.localHour).toBe(0);
+    // Local midnight of the 20th precedes midnight-UTC of the 20th by the +12 offset.
+    expect(probe.offsetFromUtcMidnightH).toBe(12);
+  });
+});
+
+describe('utcDayToLocalDay west of UTC (America/New_York)', () => {
+  const probe = tzDayProbe('America/New_York');
+
+  it('re-anchors the same day at local midnight, an offset later than midnight UTC', () => {
+    expect(probe.localDate).toBe(20);
+    expect(probe.localHour).toBe(0);
+    // July → EDT (UTC−4): local midnight of the 20th is 04:00Z on the 20th, *after* midnight UTC.
+    expect(probe.offsetFromUtcMidnightH).toBe(-4);
   });
 });

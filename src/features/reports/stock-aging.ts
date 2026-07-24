@@ -3,9 +3,9 @@
  * Phase 74). Like its sibling {@link file://./reports.ts}, this is kept free of React,
  * repositories, SQL and the DOM so every calculation is unit-tested in isolation
  * (Protocol Beta); `ReportRepository` pulls the minimal raw rows from SQLite — resolving
- * each item's most-recent inbound instant and parsing `items.acquired_at` via
- * {@link parseAcquiredAt} — and hands them to {@link bucketStockAging}, and the UI formats
- * the resulting DTO with `useFormatters`.
+ * each item's most-recent inbound instant and reading `items.acquired_at` as a report instant
+ * via {@link acquiredAtReportInstant} — and hands them to {@link bucketStockAging}, and the UI
+ * formats the resulting DTO with `useFormatters`.
  *
  * The report is a read-only projection over data already stored — there is no schema
  * change in this phase. Valuation reuses the same shared seams as the "Inventory value"
@@ -16,6 +16,7 @@
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { effectiveUnitValue } from '@/features/inventory/valuation';
+import { utcDayToLocalDay } from '@/lib/calendar-days';
 
 import { effectiveUnitCost, type ValuedUnit } from './reports';
 
@@ -50,8 +51,10 @@ export interface AgingInput extends ValuedUnit {
    */
   readonly lastInboundAt: number | null;
   /**
-   * The parsed `items.acquired_at` (an ISO date/datetime TEXT column), or null when unset or
-   * unparseable — produced by {@link parseAcquiredAt}. Used when there is no inbound movement.
+   * `items.acquired_at` (an ISO date/datetime TEXT column) as a report instant, or null when unset
+   * or unparseable — produced by {@link acquiredAtReportInstant}, which re-anchors a date-only day to
+   * the user's local midnight so its age is measured on the same wall-clock timeline as `now` (issue
+   * #323). Used when there is no inbound movement.
    */
   readonly acquiredAtMs: number | null;
   /** UNIX-ms creation instant — the final fallback reference when nothing else is known. */
@@ -99,6 +102,28 @@ export function parseAcquiredAt(text: string | null | undefined): number | null 
   if (trimmed === '') return null;
   const ms = Date.parse(trimmed);
   return Number.isNaN(ms) ? null : ms;
+}
+
+/** A bare ISO calendar date (`YYYY-MM-DD`), the form `items.acquired_at` is stored in. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The instant an `items.acquired_at` value should occupy on a **report** timeline anchored to the
+ * user's wall clock — a stock age, or a spend window (issue #323).
+ *
+ * A bare `YYYY-MM-DD` names a calendar *day*, not an instant: {@link parseAcquiredAt} pins it to
+ * midnight UTC (the storage convention, issue #320), which sits hours ahead of a local `now` east of
+ * UTC — so a value dated "today" would be aged as negative (clamped to 0) or dropped from a `< now`
+ * spend window until the local clock catches up. Re-anchoring a date-only value to local midnight of
+ * the same day ({@link utcDayToLocalDay}) puts it on the same timeline the window and `now` use. A
+ * value that already carries a time component is a genuine instant and is returned unchanged. Null,
+ * empty or unparseable input yields null, exactly like {@link parseAcquiredAt}.
+ */
+export function acquiredAtReportInstant(text: string | null | undefined): number | null {
+  const ms = parseAcquiredAt(text);
+  if (ms === null) return null;
+  // `ms !== null` guarantees `text` was a non-empty, parseable string.
+  return DATE_ONLY.test((text as string).trim()) ? utcDayToLocalDay(ms) : ms;
 }
 
 /**

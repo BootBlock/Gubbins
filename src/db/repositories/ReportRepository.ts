@@ -53,8 +53,8 @@ import {
 import { classifyAbc, type AbcInput, type AbcReport } from '@/features/reports/abc-analysis';
 import { summariseTurnover, type TurnoverInput, type TurnoverReport } from '@/features/reports/turnover';
 import {
+  acquiredAtReportInstant,
   bucketStockAging,
-  parseAcquiredAt,
   type AgingInput,
   type StockAgingReport,
 } from '@/features/reports/stock-aging';
@@ -1263,9 +1263,10 @@ export class ReportRepository extends BaseRepository {
 
   /**
    * Stock aging (§3 advanced analytics): on-hand stock bucketed by the age of its **newest
-   * inbound** — the most recent `item_history` positive-quantity movement, else the parsed
-   * `items.acquired_at`, else `created_at` (resolved in the pure {@link bucketStockAging}). Only
-   * active, non-parent items holding stock are aged. `now` defaults to the wall clock.
+   * inbound** — the most recent `item_history` positive-quantity movement, else the local-day
+   * re-anchored `items.acquired_at` ({@link acquiredAtReportInstant}, issue #323), else `created_at`
+   * (resolved in the pure {@link bucketStockAging}). Only active, non-parent items holding stock are
+   * aged. `now` defaults to the wall clock.
    *
    * Each line is valued through the **same** rule as the {@link inventoryValue} headline beside it
    * — a manual `current_value` wins over the effective cost (`effectiveUnitValue`) — and unlimited
@@ -1303,7 +1304,9 @@ export class ReportRepository extends BaseRepository {
       currentValuePerUnit: fromStoredMoney(r.current_value),
       preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
       lastInboundAt: r.last_inbound_at,
-      acquiredAtMs: parseAcquiredAt(r.acquired_at),
+      // A date-only `acquired_at` is re-anchored to the user's local calendar day so its age is
+      // measured on the same wall-clock timeline as `now` (issue #323).
+      acquiredAtMs: acquiredAtReportInstant(r.acquired_at),
       createdAt: r.created_at,
     }));
     return bucketStockAging(inputs, now);
@@ -1446,8 +1449,9 @@ export class ReportRepository extends BaseRepository {
    * down by source, supplier and category (§3). Composed from three sources already stored, each
    * **tagged** so the by-source view exposes any overlap (an item bought via a PO may also carry an
    * acquisition price): received purchase-order lines (`received_qty × unit_cost`, dated by the PO's
-   * `ordered_at`/`created_at`), manual `project_expenses`, and item `purchase_price` at the parsed
-   * `acquired_at`. The pure {@link buildSpendReport} owns all window/bucket/grouping maths; the
+   * `ordered_at`/`created_at`), manual `project_expenses`, and item `purchase_price` dated by
+   * `acquired_at` re-anchored to the user's local calendar day (issue #323). The pure
+   * {@link buildSpendReport} owns all window/bucket/grouping maths; the
    * repository only fetches the raw events. No schema change. Distinct from the Phase-74
    * valuation-trend (that tracks inventory *value*; this tracks *money out*). `now` defaults to the
    * wall clock.
@@ -1530,11 +1534,15 @@ export class ReportRepository extends BaseRepository {
       });
     }
 
-    // 3. Item acquisition prices. `acquired_at` is ISO TEXT (no numeric instant), so the precise
-    // half-open window filter is applied in JS after `parseAcquiredAt`. A coarse lexical lower-bound
-    // pre-filter (`acquired_at >= <windowStart − 1 day, as YYYY-MM-DD>`) bounds the scan to roughly
-    // the window without dropping any valid row (ISO-8601 dates sort lexically; the one-day margin
-    // covers the timezone-less date → UTC-midnight parse). The pure seam re-applies the exact filter.
+    // 3. Item acquisition prices. `acquired_at` is a date-only ISO TEXT day (no numeric instant), so
+    // the precise half-open window filter is applied in JS after `acquiredAtReportInstant` — which
+    // re-anchors the day to the user's *local* midnight so it sits on the same wall-clock timeline as
+    // the window, rather than the storage midnight-UTC that would drop a "today" acquisition east of
+    // UTC (issue #323). A coarse lexical lower-bound pre-filter
+    // (`acquired_at >= <windowStart − 1 day, as YYYY-MM-DD>`) bounds the scan to roughly the window
+    // without dropping any valid row (ISO-8601 dates sort lexically; the one-day margin absorbs both
+    // the timezone-less parse and the local re-anchoring, since `windowStart` is itself local). The
+    // pure seam re-applies the exact filter.
     const acquiredLowerBound = new Date(addCalendarDays(windowStart, -1)).toISOString().slice(0, 10);
     const acquisitionRows = await this.driver.query<{
       amount: number;
@@ -1551,7 +1559,7 @@ export class ReportRepository extends BaseRepository {
       [acquiredLowerBound],
     );
     for (const r of acquisitionRows) {
-      const instant = parseAcquiredAt(r.acquired_at);
+      const instant = acquiredAtReportInstant(r.acquired_at);
       if (instant === null) continue;
       events.push({
         instant,
