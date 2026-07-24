@@ -26,6 +26,13 @@ export {
 } from './evaluate-expression';
 export { Select, SelectField, type SelectProps, type SelectFieldProps, type SelectOption } from './select';
 export {
+  CurrencySelect,
+  CurrencyField,
+  DEFAULT_CURRENCY_NONE_LABEL,
+  type CurrencySelectProps,
+  type CurrencyFieldProps,
+} from './currency-select';
+export {
   Autocomplete,
   AutocompleteField,
   type AutocompleteProps,

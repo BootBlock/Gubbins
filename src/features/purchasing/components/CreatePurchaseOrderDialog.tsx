@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { Button, FormField, Input, Modal } from '@/components/foundry';
+import { Button, CurrencyField, FormField, Input, Modal } from '@/components/foundry';
 import type { CreatePurchaseOrderInput } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { EMPTY_SUPPLIER_VALUE, SupplierPicker, supplierRefFrom } from '@/features/suppliers';
@@ -85,17 +85,13 @@ export function CreatePurchaseOrderDialog({
               data-testid="po-reference"
             />
           </FormField>
-          <FormField
+          <CurrencyField
             label="Currency"
-            hint="ISO code (e.g. **USD**). Blank uses your base currency; stored for fidelity only, never converted."
-          >
-            <Input
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-              maxLength={3}
-              placeholder="—"
-            />
-          </FormField>
+            hint="Leave it on **Use base currency** to fall back to your base currency; a chosen currency is stored for fidelity only, never converted."
+            value={currency}
+            onChange={setCurrency}
+            allowNone
+          />
         </div>
 
         <div className="flex justify-end gap-2 pt-1">

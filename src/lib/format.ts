@@ -18,6 +18,41 @@ export const DEFAULT_LOCALE = 'en-GB';
 export const DEFAULT_CURRENCY = 'GBP';
 
 /**
+ * Popular currencies offered by the app-wide currency picker (§1.2.1 GBP default, §3).
+ * A pragmatic subset of widely-used ISO-4217 codes — broad enough to cover most users
+ * without turning the picker into an exhaustive registry. Each entry carries a short
+ * English name so the longer list stays scannable. `GBP` stays first as the locked
+ * default. Every code here must be representable by {@link Intl.NumberFormat}.
+ *
+ * This is the single source of truth for the offered currencies: the {@link CurrencySelect}
+ * / {@link CurrencyField} Foundry primitives render it, and `guessBaseCurrency` maps a
+ * browser region onto one of these codes.
+ */
+export const CURRENCY_OPTIONS = [
+  { value: 'GBP', label: 'British Pound' },
+  { value: 'USD', label: 'US Dollar' },
+  { value: 'EUR', label: 'Euro' },
+  { value: 'AUD', label: 'Australian Dollar' },
+  { value: 'CAD', label: 'Canadian Dollar' },
+  { value: 'JPY', label: 'Japanese Yen' },
+  { value: 'CHF', label: 'Swiss Franc' },
+  { value: 'CNY', label: 'Chinese Yuan' },
+  { value: 'INR', label: 'Indian Rupee' },
+  { value: 'NZD', label: 'New Zealand Dollar' },
+  { value: 'SEK', label: 'Swedish Krona' },
+  { value: 'NOK', label: 'Norwegian Krone' },
+  { value: 'DKK', label: 'Danish Krone' },
+  { value: 'PLN', label: 'Polish Zloty' },
+  { value: 'SGD', label: 'Singapore Dollar' },
+  { value: 'HKD', label: 'Hong Kong Dollar' },
+  { value: 'ZAR', label: 'South African Rand' },
+  { value: 'MXN', label: 'Mexican Peso' },
+  { value: 'BRL', label: 'Brazilian Real' },
+  { value: 'AED', label: 'UAE Dirham' },
+  { value: 'KRW', label: 'South Korean Won' },
+] as const satisfies readonly { value: string; label: string }[];
+
+/**
  * The character a locale uses as its **decimal separator** — `.` for en-GB / en-US,
  * `,` for de-DE / fr-FR and most of the eurozone. Derived from a live `Intl.NumberFormat`
  * (so it needs no hand-maintained table and stays correct as the platform's CLDR data

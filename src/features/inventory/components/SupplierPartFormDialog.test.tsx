@@ -5,9 +5,11 @@ import type { CreateSupplierPartInput } from '@/db/repositories';
 /**
  * Behaviour tests for the {@link SupplierPartFormDialog} glue (spec §4 supplier facet, Phase 60).
  * Every numeric field is optional, so the dialog stores strings and coerces on submit — its
- * unexported `parseBreaks` / `optionalCost` / `optionalCount` / `codeFromCurrencyChoice` helpers
- * and the `INVALID`-sentinel error gates ARE the risk surface, and this dialog is their only test
- * surface. `onSubmit` is a prop (not a mutation hook), so the sole hook to mock is the supplier
+ * unexported `parseBreaks` / `optionalCost` / `optionalCount` helpers and the `INVALID`-sentinel
+ * error gates ARE the risk surface, and this dialog is their only test surface. Currency is picked
+ * from the shared Foundry currency combobox (issue #415), so the test opens it and clicks a code
+ * rather than typing one. `onSubmit` is a prop (not a mutation hook), so the sole hook to mock is
+ * the supplier
  * list the picker reads; this pins the exact {@link CreateSupplierPartInput} the form assembles for
  * the minimal and fully-populated happy paths, the `qty:cost` price-break parsing, and each
  * validation gate that must block submit with a `role="alert"` rather than coerce nonsense to null.
@@ -62,13 +64,14 @@ describe('SupplierPartFormDialog — the minimal happy path', () => {
 });
 
 describe('SupplierPartFormDialog — a fully populated part', () => {
-  it('coerces the numbers, trims the text, upper-cases the ISO currency, and parses breaks', () => {
+  it('coerces the numbers, trims the text, picks the ISO currency, and parses breaks', () => {
     renderDialog();
     fireEvent.change(nameInput(), { target: { value: 'DigiKey' } });
     fireEvent.change(screen.getByTestId('supplier-part-order-code'), { target: { value: '  ABC-123 ' } });
     fireEvent.change(screen.getByTestId('supplier-part-unit-cost'), { target: { value: '1.50' } });
-    // Currency is typed lower-case; codeFromCurrencyChoice upper-cases it to the ISO code.
-    fireEvent.change(screen.getByTestId('supplier-part-currency'), { target: { value: 'eur' } });
+    // Currency is chosen from the shared combobox: open it, then click the EUR row.
+    fireEvent.click(screen.getByTestId('supplier-part-currency'));
+    fireEvent.click(screen.getByRole('option', { name: 'EUR — Euro' }));
     fireEvent.change(screen.getByLabelText('Pack qty'), { target: { value: '1000' } });
     fireEvent.change(screen.getByLabelText('Min order qty'), { target: { value: '5' } });
     fireEvent.change(screen.getByTestId('supplier-part-breaks'), {
