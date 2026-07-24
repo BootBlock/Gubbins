@@ -1344,6 +1344,17 @@
   animation: gubbins-swap-in 0.2s var(--ease-emphasized) both;
 }
 
+/*
+ * A gentler swap-in used when items appear as you view a location in the inventory —
+ * selecting a location or expanding a grouped section. Duration eased 50% from 0.2s →
+ * 0.3s (issue #475) so the item cards/rows arrive a touch more deliberately; the same
+ * `gubbins-swap-in` keyframe, just held longer. Reduced-motion is neutralised by the
+ * global catch-all like every other entrance.
+ */
+@utility animate-swap-in-slow {
+  animation: gubbins-swap-in 0.3s var(--ease-emphasized) both;
+}
+
 @utility animate-slide-in-right {
   animation: gubbins-slide-in-right 1s var(--ease-emphasized) both;
 }

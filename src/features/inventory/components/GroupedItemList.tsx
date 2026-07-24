@@ -108,7 +108,7 @@ export function GroupedItemList({
     >
       {/* Each top-level location section rises in on the shared `animate-rise` entrance the
           first time it scrolls into this box (staggered by position). Only the top-level
-          sections are wrapped — nested subsections already play `animate-swap-in` on expand,
+          sections are wrapped — nested subsections already play `animate-swap-in-slow` on expand,
           and the virtualised flat ItemList must never entrance-animate (its rows recycle on
           scroll). The observer clips against this `overflow-auto` box's viewport slice, so a
           below-the-fold section reveals as it's scrolled up; reduced-motion / no-observer
@@ -186,8 +186,9 @@ function LocationSection({
         <div
           id={panelId}
           // A section mounts its content lazily on expand, so the entrance plays once as it
-          // opens (fade-through-up); the reduced-motion catch-all neutralises it.
-          className="animate-swap-in"
+          // opens (fade-through-up, eased 50% longer per issue #475 so the items arrive a touch
+          // more deliberately); the reduced-motion catch-all neutralises it.
+          className="animate-swap-in-slow"
           style={{ paddingLeft: `${(depth - 1) * 1.25 + 0.5}rem` }}
         >
           <SectionItems locationId={node.id} isLeaf={!hasChildren} scrollRef={scrollRef} {...shared} />
