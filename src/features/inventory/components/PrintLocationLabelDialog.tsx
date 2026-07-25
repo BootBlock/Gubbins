@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Banner, Button, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
+import { Banner, Button, Checkbox, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
@@ -213,11 +213,10 @@ export function PrintLocationLabelDialog({
           {location.path && location.path.trim().length > 0 ? (
             <div className="flex items-center gap-1 self-end">
               <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={showPath}
                   onChange={(e) => setShowPath(e.target.checked)}
-                  className="size-3.5 accent-primary"
+                  className="size-3.5"
                 />
                 Show full path
               </label>
