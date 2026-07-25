@@ -45,7 +45,7 @@ import {
   type LogicalOperator,
   type SearchAST,
 } from '@/db/search/ast';
-import { SearchAstError, parseASTtoSQL, parseBooleanValue } from '@/db/search/parseASTtoSQL';
+import { SearchAstError, parseASTtoSQL, parseBooleanValue, parseEnumValue } from '@/db/search/parseASTtoSQL';
 import { toCapabilityField, toCustomField } from './fields';
 
 export type ParseTextQueryResult = { ok: true; ast: SearchAST } | { ok: false; error: string };
@@ -426,7 +426,10 @@ function parseEnumTerm(field: string, sep: string, rawValue: string): TermResult
   }
   const value = unquote(rawValue);
   if (value.length === 0) return { error: `Search term "${field}${sep}" is missing a value.` };
-  return { condition: { field, operator: 'EQUALS', value } };
+  // Canonicalise to the stored spelling through the SQL layer's own vocabulary, so the tree this
+  // loads into the Visual Builder already matches that field's picker. An unrecognised value
+  // passes through untouched for the final gate to reject, naming the whole vocabulary.
+  return { condition: { field, operator: 'EQUALS', value: parseEnumValue(field, value) ?? value } };
 }
 
 function parseNumericTerm(field: string, sep: string, rawValue: string): TermResult {

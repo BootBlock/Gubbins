@@ -116,7 +116,15 @@ const ITEM_FIELDS: Readonly<Record<string, ItemFieldMeta>> = {
   // --- Lifecycle, valuation & stock policy (issue #140) -------------------------
   // Columns that already drive whole features but were unreachable from search: the status
   // chips could only ask fixed yes/no questions ("expiring soon"), never a comparison
-  // ("expiring before March"). Each is indexed, so these are cheap predicates.
+  // ("expiring before March").
+  //
+  // Only some of these carry an index, and the three that do are **partial**: `expiry_date`
+  // and `warranty_expires_at` (both `WHERE … IS NOT NULL`) and `dead_stock_mode`
+  // (`WHERE dead_stock_mode <> 'inherit'`) — so `deadstock:inherit` sits outside its own index
+  // — plus `is_active`. The condition, tracking-mode, money and reorder-point columns have no
+  // index at all, so those predicates are a scan of the items table. That is the same cost the
+  // list already pays for an unindexed filter and is fine at inventory scale, but it is worth
+  // knowing before adding one of these to a hot path.
   //
   // Operational condition (§4 "Condition Tracking") — a validated enum; NULL means untracked.
   condition: { column: 'items.condition', kind: 'enum', values: CONDITIONS },
@@ -513,6 +521,23 @@ function normaliseEnumToken(value: string): string {
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, '_');
+}
+
+/**
+ * Canonicalise a value to one of an `enum` field's stored spellings, or `null` when the field
+ * isn't an enum or the value isn't in its vocabulary.
+ *
+ * Exported for the same reason {@link parseBooleanValue} is: the text-query parser canonicalises
+ * through the **same** vocabulary the SQL layer coerces with, so the two can't drift — and so the
+ * tree it loads into the Visual Builder already carries the spelling that field's picker offers.
+ * Without it `condition:mint` would still run correctly but leave the picker blank, because a
+ * `Select` whose value matches no option renders its placeholder instead.
+ */
+export function parseEnumValue(field: string, value: string | number | boolean): string | null {
+  const allowed = itemFieldEnumValues(field);
+  if (allowed === null) return null;
+  const wanted = normaliseEnumToken(String(value));
+  return allowed.find((candidate) => normaliseEnumToken(candidate) === wanted) ?? null;
 }
 
 /** Coerce an AST value to the integer micro-units a money column stores (issue #286). */

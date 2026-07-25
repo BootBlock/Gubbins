@@ -207,16 +207,30 @@ describe('parseTextQuery — lifecycle, valuation & policy fields (issue #140)',
     }
   });
 
-  it('reads an enum term through either separator, canonicalising in the SQL layer', () => {
+  it('reads an enum term through either separator, canonicalised to the stored spelling', () => {
+    // The value is folded to the column's own spelling here, not just at translation time, so
+    // the tree loaded into the Visual Builder matches that field's picker (a Select whose value
+    // matches no option renders blank).
     expect(singleCondition('condition=needs-repair')).toEqual({
       field: 'condition',
       operator: 'EQUALS',
-      value: 'needs-repair',
+      value: 'NEEDS_REPAIR',
     });
-    expect(singleCondition('tracking:serialised')).toMatchObject({ field: 'tracking' });
-    expect(singleCondition('deadstock:always')).toMatchObject({ field: 'deadstock' });
+    expect(singleCondition('condition:mint')).toMatchObject({ value: 'MINT' });
+    expect(singleCondition('tracking:serialised')).toMatchObject({
+      field: 'tracking',
+      value: 'SERIALISED',
+    });
+    // The dead-stock vocabulary is lower-case; canonicalising must not upper-case it.
+    expect(singleCondition('deadstock:ALWAYS')).toMatchObject({ field: 'deadstock', value: 'always' });
     // A multi-word spelling needs quoting only because the lexer splits on whitespace.
-    expect(singleCondition('condition:"needs repair"')).toMatchObject({ value: 'needs repair' });
+    expect(singleCondition('condition:"needs repair"')).toMatchObject({ value: 'NEEDS_REPAIR' });
+  });
+
+  it('leaves an unrecognised enum value alone, so the final gate names the vocabulary', () => {
+    const result = parseTextQuery('condition:shabby');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/MINT, GOOD/);
   });
 
   it('rejects an ordering comparison and an unknown member on an enum field', () => {
