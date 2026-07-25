@@ -12,7 +12,9 @@
  *
  *   - `field:value`     → text CONTAINS  (`name:esp32`)
  *   - `field=value`     → EQUALS         (`mpn=ABC-123`, `quantity=3`)
- *   - `field>n` / `<n`  → numeric compare (`quantity>10`)
+ *   - `field>n` / `<n`  → numeric compare (`quantity>10`, `cost>10` in major currency units)
+ *   - `field:yyyy-mm-dd` → a calendar day; `>`/`<` are after/before it (`expiry<2026-03-01`)
+ *   - `field:member`    → one of a fixed vocabulary (`condition=needs-repair`)
  *   - `cap:<key>`       → HAS_CAPABILITY (presence)
  *   - `cap:<key>>n`…    → capability compare / EQUALS (numeric or text)
  *   - `field:<name>`    → custom-field CONTAINS (`field:Datasheet:rev2`)
@@ -59,7 +61,14 @@ class TextQueryError extends Error {
   }
 }
 
-type FieldKind = 'text' | 'numeric' | 'boolean';
+/**
+ * How a term's value is read before it becomes a condition. `text`, `numeric` and `boolean`
+ * are the original Phase-47 forms; `date`, `money` and `enum` (issue #140) differ only in
+ * which operators they accept and how a bad value is reported here — the *canonical* value
+ * and every validation that matters still belong to `parseASTtoSQL`, which this file's final
+ * gate re-runs, so the two layers can't disagree about what a field accepts.
+ */
+type FieldKind = 'text' | 'numeric' | 'boolean' | 'date' | 'money' | 'enum';
 
 /**
  * Alias → canonical scalar field. The canonical names mirror the §5.1 `ITEM_FIELDS`
@@ -95,6 +104,34 @@ const FIELD_ALIASES: Readonly<Record<string, { field: string; kind: FieldKind }>
   favourite: { field: 'favourite', kind: 'boolean' },
   favorite: { field: 'favourite', kind: 'boolean' },
   fav: { field: 'favourite', kind: 'boolean' },
+  // --- Lifecycle, valuation & stock policy (issue #140) -------------------------
+  // Fixed-vocabulary enums, e.g. `condition=needs-repair`, `tracking=serialised`.
+  condition: { field: 'condition', kind: 'enum' },
+  cond: { field: 'condition', kind: 'enum' },
+  tracking: { field: 'tracking', kind: 'enum' },
+  trackingmode: { field: 'tracking', kind: 'enum' },
+  deadstock: { field: 'deadstock', kind: 'enum' },
+  // Calendar days as `YYYY-MM-DD`, e.g. `expiry<2026-03-01` for "expiring before March".
+  expiry: { field: 'expiry', kind: 'date' },
+  expires: { field: 'expiry', kind: 'date' },
+  expirydate: { field: 'expiry', kind: 'date' },
+  warranty: { field: 'warranty', kind: 'date' },
+  warrantyexpires: { field: 'warranty', kind: 'date' },
+  // Money, typed in the base currency's major units (`cost>10` is ten, not ten micro-units).
+  cost: { field: 'cost', kind: 'money' },
+  unitcost: { field: 'cost', kind: 'money' },
+  price: { field: 'price', kind: 'money' },
+  purchaseprice: { field: 'price', kind: 'money' },
+  paid: { field: 'price', kind: 'money' },
+  value: { field: 'value', kind: 'money' },
+  currentvalue: { field: 'value', kind: 'money' },
+  worth: { field: 'value', kind: 'money' },
+  // The item's own low-stock floor, e.g. `reorder>0` for items carrying one at all.
+  reorder: { field: 'reorder', kind: 'numeric' },
+  reorderpoint: { field: 'reorder', kind: 'numeric' },
+  // Soft-deletion flag — `active:no` finds decommissioned items, which the search path's
+  // usual "active inventory only" scope steps aside for.
+  active: { field: 'active', kind: 'boolean' },
 };
 
 const CAPABILITY_ALIASES = new Set(['cap', 'capability']);
@@ -301,7 +338,11 @@ function parseTerm(token: string): TermResult {
     return parseCustomFieldTerm(rest);
   }
 
-  const meta = FIELD_ALIASES[fieldKey];
+  // `Object.hasOwn`, never a bare index: a plain object also answers to its prototype's keys, so
+  // `FIELD_ALIASES['constructor']` would yield a *function* — a truthy non-alias with no `kind`,
+  // which falls out of the switch below with nothing returned. Typing `constructor:foo` in the
+  // search box is a name search, not a crash.
+  const meta = Object.hasOwn(FIELD_ALIASES, fieldKey) ? FIELD_ALIASES[fieldKey] : undefined;
   // An unknown prefix isn't an error — treat the whole token as a name search, so a
   // pasted URL or a stray colon never blocks the query.
   if (!meta) {
@@ -311,10 +352,21 @@ function parseTerm(token: string): TermResult {
       : { condition: { field: 'name', operator: 'CONTAINS', value } };
   }
 
-  if (meta.kind === 'boolean') return parseBooleanTerm(meta.field, sep, rest);
-  return meta.kind === 'numeric'
-    ? parseNumericTerm(meta.field, sep, rest)
-    : parseTextTerm(meta.field, sep, rest);
+  switch (meta.kind) {
+    case 'boolean':
+      return parseBooleanTerm(meta.field, sep, rest);
+    case 'numeric':
+    case 'money':
+      // Both read a plain number; `money` is in major units, scaled to the stored micro-units
+      // by the SQL translator (issue #286) rather than here.
+      return parseNumericTerm(meta.field, sep, rest);
+    case 'date':
+      return parseDateTerm(meta.field, sep, rest);
+    case 'enum':
+      return parseEnumTerm(meta.field, sep, rest);
+    case 'text':
+      return parseTextTerm(meta.field, sep, rest);
+  }
 }
 
 function parseBooleanTerm(field: string, sep: string, rawValue: string): TermResult {
@@ -343,6 +395,38 @@ function parseTextTerm(field: string, sep: string, rawValue: string): TermResult
   if (value.length === 0) return { error: `Search term "${field}${sep}" is missing a value.` };
   const operator: FilterOperator = sep === '=' ? 'EQUALS' : 'CONTAINS';
   return { condition: { field, operator, value } };
+}
+
+/**
+ * Parse a calendar-day term (issue #140), e.g. `expiry<2026-03-01`. `:` reads as "on that day"
+ * (EQUALS) — the same "obvious" reading `mfr:acme` has — while `>`/`<` are after/before it.
+ * The day itself is validated by the SQL translator, the single owner of the date form.
+ */
+function parseDateTerm(field: string, sep: string, rawValue: string): TermResult {
+  const value = unquote(rawValue);
+  if (value.length === 0) {
+    return { error: `Search term "${field}${sep}" is missing a date (try ${field}:2026-03-01).` };
+  }
+  const operator: FilterOperator = sep === '>' ? 'GREATER_THAN' : sep === '<' ? 'LESS_THAN' : 'EQUALS';
+  return { condition: { field, operator, value } };
+}
+
+/**
+ * Parse a fixed-vocabulary term (issue #140), e.g. `condition=needs-repair`. Both `:` and `=`
+ * mean EQUALS — an enum has nothing to substring-match — and ordering comparisons are rejected
+ * here, where the field name is still to hand for the message. The accepted spellings are the
+ * SQL translator's business, so an unrecognised value falls through to its error, which names
+ * the whole vocabulary.
+ */
+function parseEnumTerm(field: string, sep: string, rawValue: string): TermResult {
+  if (sep === '>' || sep === '<') {
+    return {
+      error: `The "${field}" field is a fixed set of values, so it can't be compared with ${sep}; use ${field}: to match one.`,
+    };
+  }
+  const value = unquote(rawValue);
+  if (value.length === 0) return { error: `Search term "${field}${sep}" is missing a value.` };
+  return { condition: { field, operator: 'EQUALS', value } };
 }
 
 function parseNumericTerm(field: string, sep: string, rawValue: string): TermResult {

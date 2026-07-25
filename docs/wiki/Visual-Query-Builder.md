@@ -21,9 +21,15 @@ all build the same query:
 
 - **Match all / any.** The **AND** / **OR** toggle at the top of a group decides whether items
   must match *all* of its conditions or *any* of them.
-- **Add condition.** Select **Add condition** to add a rule — pick a field (name, quantity,
-  category, a [[capability|Custom-Fields-and-Capabilities]], a custom field…), an operator, and a
-  value.
+- **Add condition.** Select **Add condition** to add a rule — pick a field, an operator, and a
+  value. Alongside the text and number fields you'll find dates ([[expiry|Batches-and-Lots]],
+  [[warranty|Warranty-and-Depreciation]]), money ([[unit cost, purchase price and current
+  value|Valuation-and-Spend]]), and fixed choices ([[condition|Condition-Grading]],
+  [[tracking mode|Tracking-Modes]], dead-stock reporting) — plus
+  [[capabilities|Custom-Fields-and-Capabilities]] and your own custom fields.
+- **The value box matches the field.** A date field gives you a date picker, a choice field a
+  drop-down of exactly the values it accepts, and a yes/no field a Yes/No toggle — so there is
+  nothing to spell correctly.
 - **Add group.** Select **Add group** to nest a sub-group with its own AND/OR — this is how you
   express things like *"(low quantity **OR** on order) **AND** in the garage"*.
 - **Clear.** Remove everything and start over with **Clear**.

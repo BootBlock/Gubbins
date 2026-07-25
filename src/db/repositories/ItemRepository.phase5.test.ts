@@ -181,6 +181,21 @@ describe('ItemRepository.searchByAst (spec §5.1)', () => {
     expect(await items.countByAst(and())).toBe(1);
     expect(await items.countByAst(and(), { includeInactive: true })).toBe(2);
   });
+
+  it('lets an explicit active filter decide, rather than AND-ing it away (issue #140)', async () => {
+    const all = await items.list({ limit: 100 });
+    await items.softDelete(all.rows.find((r) => r.name === 'ESP32')!.id);
+
+    // Without this, `active:no` would meet the implicit `is_active = 1` and match nothing.
+    const inactive = await items.searchByAst(and(leaf('active', 'EQUALS', false)));
+    expect(inactive.rows.map((r) => r.name)).toEqual(['ESP32']);
+    expect(await items.countByAst(and(leaf('active', 'EQUALS', false)))).toBe(1);
+
+    // Asking for active items still gets only those, and the default scope is untouched.
+    const active = await items.searchByAst(and(leaf('active', 'EQUALS', true)));
+    expect(active.rows.map((r) => r.name)).toEqual(['LM7805 Regulator']);
+    expect(await items.countByAst(and(leaf('quantity', 'GREATER_THAN', -1)))).toBe(1);
+  });
 });
 
 describe('ItemRepository.searchByAst — weighted "best match" ranking (spec §4, §5.1)', () => {
