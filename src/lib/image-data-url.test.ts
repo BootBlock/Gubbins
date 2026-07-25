@@ -8,11 +8,18 @@ import { isImageDataUrl } from './image-data-url';
  * fetches — not incidental detail.
  */
 describe('isImageDataUrl', () => {
-  it('accepts the canvas encoders’ output shape', () => {
-    // What `encodeFieldImage` and `logoToDataUrl` actually produce (canvas → WebP, or the
-    // PNG a browser without WebP encoding falls back to).
+  it('accepts what the canvas encoders produce', () => {
+    // WebP is what both encoders ask the canvas for. `logoToDataUrl` uses `toDataURL`, which
+    // per the HTML spec silently falls back to PNG where WebP encoding is unsupported, so that
+    // shape has to pass too. (`encodeFieldImage` cannot land there — it rejects a non-WebP blob
+    // outright, see `features/images/compression.ts`.)
     expect(isImageDataUrl('data:image/webp;base64,UklGRhoAAABXRUJQ')).toBe(true);
     expect(isImageDataUrl('data:image/png;base64,iVBORw0KGgo=')).toBe(true);
+  });
+
+  it('accepts any base64 image media type, not just the two the app writes', () => {
+    // The predicate is a shape rule, not an allow-list of encoders — a value restored from a
+    // backup written by another build must not fail merely for being JPEG.
     expect(isImageDataUrl('data:image/jpeg;base64,/9j/4AAQSkZJRg==')).toBe(true);
     expect(isImageDataUrl('data:image/svg+xml;base64,PHN2Zy8+')).toBe(true);
   });
@@ -50,6 +57,8 @@ describe('isImageDataUrl', () => {
     expect(isImageDataUrl(' data:image/png;base64,AAAA')).toBe(false);
     expect(isImageDataUrl('data:image/png;base64,AAAA ')).toBe(false);
     expect(isImageDataUrl('data:image/png;base64,AAAA\njavascript:alert(1)')).toBe(false);
+    // The distinction the comment above turns on: a *trailing* newline is rejected too.
+    expect(isImageDataUrl('data:image/png;base64,AAAA\n')).toBe(false);
     expect(isImageDataUrl('x data:image/png;base64,AAAA')).toBe(false);
     expect(isImageDataUrl('data:image/png;base64,AA"onerror="alert(1)')).toBe(false);
   });
