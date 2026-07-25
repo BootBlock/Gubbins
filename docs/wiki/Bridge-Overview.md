@@ -42,6 +42,13 @@ Because you run it yourself, the bridge only updates when you update it — and 
 the **Sync** screen when the one you're connected to has fallen behind the app. See
 [[Keeping it up to date|Running-the-Bridge]].
 
+> **ℹ️ Note**
+> **Gubbins may ask you to reload after you enter a bridge address.** Part of keeping the app safe
+> is that it only contacts addresses it was told about when it started, so the first time you point
+> it at a bridge — or move it to a different one — a **Reload to connect to this bridge** notice
+> appears. One reload and it can reach it. Nothing is wrong with the bridge, and the reload costs
+> you nothing: your data lives on the device, not in the page.
+
 > **⚠️ Heads-up**
 > The bridge reads a *copy* of your data and can serve it over the network if you configure it to.
 > Treat an [[API token|Bridge-API-Tokens]] like a password, keep the default loopback bind unless

@@ -29,30 +29,50 @@ import { OCR_ASSET_CACHE } from './features/inventory/ocr/ocr-asset-cache';
 
 type InstallHandler = (event: { waitUntil: (p: Promise<unknown>) => void }) => void;
 type FetchHandler = (event: { request: Request; respondWith: (r: Promise<Response>) => void }) => void;
+type MessageHandler = (event: {
+  data: unknown;
+  ports?: readonly { postMessage: (value: unknown) => void }[];
+  waitUntil: (p: Promise<unknown>) => void;
+}) => void;
 
 let installHandler: InstallHandler | undefined;
 let activateHandler: InstallHandler | undefined;
 let fetchHandler: FetchHandler | undefined;
+let messageHandler: MessageHandler | undefined;
 let cacheMatch: ReturnType<typeof vi.fn>;
+let bridgeOriginMatch: ReturnType<typeof vi.fn>;
 let skipWaitingSpy: ReturnType<typeof vi.fn>;
 let cacheAddAll: ReturnType<typeof vi.fn>;
 let cachePut: ReturnType<typeof vi.fn>;
+let cacheDelete: ReturnType<typeof vi.fn>;
 let cachesOpen: ReturnType<typeof vi.fn>;
 let addEventListenerSpy: ReturnType<typeof vi.spyOn>;
+
+/** The bridge-origin cache's name, kept in step with sw.ts (issue #385). */
+const BRIDGE_ORIGIN_CACHE = 'gubbins-bridge-origin-v1';
 
 /** Stub the worker-global surface sw.ts touches at import time and during `install`. */
 function stubServiceWorkerGlobals(activeWorker: unknown) {
   cacheAddAll = vi.fn().mockResolvedValue(undefined);
   cacheMatch = vi.fn().mockResolvedValue(undefined);
+  bridgeOriginMatch = vi.fn().mockResolvedValue(undefined);
   cachePut = vi.fn().mockResolvedValue(undefined);
+  cacheDelete = vi.fn().mockResolvedValue(true);
   const fakeCache = {
     addAll: cacheAddAll,
     keys: vi.fn().mockResolvedValue([]),
     match: cacheMatch,
     put: cachePut,
-    delete: vi.fn().mockResolvedValue(true),
+    delete: cacheDelete,
   };
-  cachesOpen = vi.fn().mockResolvedValue(fakeCache);
+  // The bridge-origin lookup every response makes (issue #385) gets its **own** `match`, exactly
+  // as it gets its own cache in the worker. Sharing one mock would let a single stubbed Response
+  // answer both lookups — and the first reader consumes its body, so the second would be served
+  // an already-used one and the test would pass for the wrong reason.
+  const bridgeOriginCache = { ...fakeCache, match: bridgeOriginMatch };
+  cachesOpen = vi.fn((name: string) =>
+    Promise.resolve(name === BRIDGE_ORIGIN_CACHE ? bridgeOriginCache : fakeCache),
+  );
   vi.stubGlobal('caches', {
     open: cachesOpen,
     keys: vi.fn().mockResolvedValue([]),
@@ -70,6 +90,7 @@ function stubServiceWorkerGlobals(activeWorker: unknown) {
   installHandler = undefined;
   fetchHandler = undefined;
   activateHandler = undefined;
+  messageHandler = undefined;
   addEventListenerSpy = vi.spyOn(globalThis, 'addEventListener').mockImplementation(((
     type: string,
     handler,
@@ -77,6 +98,7 @@ function stubServiceWorkerGlobals(activeWorker: unknown) {
     if (type === 'install') installHandler = handler as InstallHandler;
     if (type === 'fetch') fetchHandler = handler as FetchHandler;
     if (type === 'activate') activateHandler = handler as InstallHandler;
+    if (type === 'message') messageHandler = handler as MessageHandler;
   }) as typeof globalThis.addEventListener);
 }
 
@@ -229,9 +251,11 @@ describe('src/sw.ts — OCR assets are cached at runtime, in their own cache', (
     );
 
     expect(response.status).toBe(200);
-    // Exactly one cache is opened, and it is the OCR one — the precache must stay holding
-    // precisely the manifest set its `activate` prune assumes.
-    expect(cachesOpen).toHaveBeenCalledExactlyOnceWith(OCR_ASSET_CACHE);
+    // The asset is written to the OCR cache and the **precache is never even opened** — it must
+    // stay holding precisely the manifest set its `activate` prune assumes. (The read-only
+    // bridge-origin lookup every response makes is the only other cache in play here.)
+    expect(cachesOpen).toHaveBeenCalledWith(OCR_ASSET_CACHE);
+    expect(cachesOpen).not.toHaveBeenCalledWith('gubbins-precache-v1');
     expect(cachePut).toHaveBeenCalledTimes(1);
   });
 
@@ -286,5 +310,149 @@ describe('src/sw.ts — OCR assets are cached at runtime, in their own cache', (
     // A superseded generation (an older Tesseract) IS swept, so stale assets never linger against
     // the storage quota — and a mismatched worker is never served to the newly-bundled library.
     expect(deleted).toContain('gubbins-ocr-assets-0.0.0-old');
+  });
+});
+
+/**
+ * The user's own bridge origin in `connect-src` (issue #385).
+ *
+ * Push-to-bridge and the scale reading fetch an address only the user knows, which the committed
+ * policy cannot name — so in a production build the browser blocked them before they left the
+ * page, and the app reported a running bridge as an unreachable one. This worker is the only
+ * thing that can widen the policy, and it must widen **both** delivered forms: a browser enforces
+ * their intersection, so a permissive header the shell's `<meta>` does not also permit changes
+ * nothing. These tests pin down that pairing, and that a stored value which is not a bare origin
+ * can never edit the policy rather than extend it.
+ */
+describe('src/sw.ts — the registered bridge origin reaches both delivered CSP forms', () => {
+  const BRIDGE = 'http://gubbins-bridge.test:8787';
+  const SHELL_META = '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'">';
+
+  function fakeRequest(url: string, mode: RequestMode): Request {
+    return { method: 'GET', mode, url } as Request;
+  }
+
+  /** Serve a navigation with `stored` sitting in the bridge-origin cache. */
+  async function navigate(stored: string | null): Promise<Response> {
+    stubServiceWorkerGlobals({ state: 'activated' });
+    if (stored !== null) bridgeOriginMatch.mockResolvedValue(new Response(stored));
+    cacheMatch.mockResolvedValue(
+      new Response(`<!doctype html><html><head>${SHELL_META}</head><body></body></html>`, {
+        headers: { 'Content-Type': 'text/html' },
+      }),
+    );
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    await import('./sw');
+
+    let response: Promise<Response> | undefined;
+    fetchHandler!({
+      request: fakeRequest('https://app.example.test/Gubbins/items', 'navigate'),
+      respondWith: (r) => {
+        response = r;
+      },
+    });
+    return await response!;
+  }
+
+  it('adds the origin to the response header AND rewrites the shell meta to match', async () => {
+    const response = await navigate(BRIDGE);
+    const html = await response.text();
+
+    expect(response.headers.get('Content-Security-Policy')).toContain(`connect-src 'self' `);
+    expect(response.headers.get('Content-Security-Policy')).toContain(BRIDGE);
+    // The meta the browser actually parses carries it too — without this the header is inert.
+    expect(html).toContain(`content="`);
+    expect(html).toContain(BRIDGE);
+    expect(html).not.toContain(SHELL_META);
+    // A `<meta>` cannot express frame-ancestors; the header still must.
+    expect(html).not.toContain('frame-ancestors');
+    expect(response.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
+  });
+
+  it('serves the committed policy untouched when no origin has been registered', async () => {
+    const response = await navigate(null);
+    const html = await response.text();
+
+    expect(response.headers.get('Content-Security-Policy')).toContain(
+      "connect-src 'self' https://www.googleapis.com https://world.openfoodfacts.org;",
+    );
+    // Nothing to add, so the shell is passed through as precached rather than re-serialised.
+    expect(html).toContain(SHELL_META);
+  });
+
+  it('ignores a stored value that is not a bare origin, so it can never edit the policy', async () => {
+    const response = await navigate("http://evil.test; script-src 'unsafe-inline' *");
+
+    const header = response.headers.get('Content-Security-Policy') ?? '';
+    expect(header).toContain("script-src 'self' 'wasm-unsafe-eval'");
+    expect(header).not.toContain('evil.test');
+    expect(await response.text()).toContain(SHELL_META);
+  });
+
+  it('stores the origin the page registers and acknowledges it on the reply port', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' });
+    await import('./sw');
+    expect(messageHandler).toBeTypeOf('function');
+
+    const acks: unknown[] = [];
+    let waited: Promise<unknown> | undefined;
+    messageHandler!({
+      data: { type: 'SET_BRIDGE_ORIGIN', origin: `${BRIDGE}/api/v1/snapshot` },
+      ports: [{ postMessage: (value) => acks.push(value) }],
+      waitUntil: (p) => {
+        waited = p;
+      },
+    });
+    await waited;
+
+    expect(cachePut).toHaveBeenCalledTimes(1);
+    await expect((cachePut.mock.calls[0]![1] as Response).text()).resolves.toBe(BRIDGE);
+    // The page reloads the moment this resolves, so an unacknowledged store would cost it a
+    // second reload to pick up the policy.
+    expect(acks).toEqual([{ ok: true }]);
+  });
+
+  it('forgets the origin when the page clears the bridge URL', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' });
+    await import('./sw');
+
+    let waited: Promise<unknown> | undefined;
+    messageHandler!({
+      data: { type: 'SET_BRIDGE_ORIGIN', origin: '' },
+      waitUntil: (p) => {
+        waited = p;
+      },
+    });
+    await waited;
+
+    expect(cachePut).not.toHaveBeenCalled();
+    expect(cacheDelete).toHaveBeenCalledWith('bridge-origin');
+  });
+
+  it('keeps the bridge-origin cache when a new version activates', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' });
+    const deleted: string[] = [];
+    vi.stubGlobal('caches', {
+      open: cachesOpen,
+      keys: vi.fn().mockResolvedValue(['gubbins-precache-v1', BRIDGE_ORIGIN_CACHE, 'stale']),
+      delete: vi.fn((key: string) => {
+        deleted.push(key);
+        return Promise.resolve(true);
+      }),
+    });
+    await import('./sw');
+
+    let waited: Promise<unknown> | undefined;
+    activateHandler!({
+      waitUntil: (p) => {
+        waited = p;
+      },
+    });
+    await waited;
+
+    // Sweeping it would silently re-block the bridge on every deploy — and the app would report
+    // it as an outage rather than as something a reload fixes.
+    expect(deleted).not.toContain(BRIDGE_ORIGIN_CACHE);
+    expect(deleted).toContain('stale');
   });
 });

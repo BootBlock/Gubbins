@@ -12,7 +12,8 @@
  * injectManifest is vite-plugin-pwa's supported mechanism for the custom fetch
  * logic header-injection requires (generateSW cannot express it).
  */
-import { buildContentSecurityPolicy } from './csp';
+import { buildContentSecurityPolicy, withCspMeta, toCspOrigin } from './csp';
+import { BRIDGE_ORIGIN_MESSAGE } from './lib/bridge-connect-policy';
 import {
   stashShare,
   parseShareForm,
@@ -58,14 +59,65 @@ const CACHE = 'gubbins-precache-v1';
 const INDEX_URL = 'index.html';
 
 /**
+ * Where the user's bridge origin is kept so it survives this worker being terminated between
+ * events. Its own cache, not the precache: {@link pruneStalePrecache} deletes anything the
+ * build manifest doesn't name, which is every entry here.
+ */
+const BRIDGE_ORIGIN_CACHE = 'gubbins-bridge-origin-v1';
+/** Relative, so it resolves against this worker's scope like every other cached request. */
+const BRIDGE_ORIGIN_KEY = 'bridge-origin';
+
+/**
+ * The registered bridge origin, memoised for this worker's lifetime — `undefined` until first
+ * read, then the validated origin or `null`. Every response consults it, so the alternative is
+ * a CacheStorage round-trip per subresource.
+ */
+let bridgeOrigin: string | null | undefined;
+
+/**
+ * The user's bridge origin, if they have registered one (issue #385).
+ *
+ * Re-validated on the way out as well as in: the stored value has been through CacheStorage,
+ * and {@link buildContentSecurityPolicy} splicing an unvalidated string into a policy is the
+ * one way this mechanism could weaken rather than extend it.
+ */
+async function readBridgeOrigin(): Promise<string | null> {
+  if (bridgeOrigin !== undefined) return bridgeOrigin;
+  try {
+    const cache = await caches.open(BRIDGE_ORIGIN_CACHE);
+    const stored = await cache.match(BRIDGE_ORIGIN_KEY);
+    bridgeOrigin = stored ? toCspOrigin(await stored.text()) : null;
+  } catch {
+    bridgeOrigin = null;
+  }
+  return bridgeOrigin;
+}
+
+/** Store (or, for anything that isn't a usable origin, forget) the origin the page registered. */
+async function storeBridgeOrigin(value: unknown): Promise<void> {
+  const origin = typeof value === 'string' ? toCspOrigin(value) : null;
+  bridgeOrigin = origin;
+  const cache = await caches.open(BRIDGE_ORIGIN_CACHE);
+  if (origin === null) await cache.delete(BRIDGE_ORIGIN_KEY);
+  else await cache.put(BRIDGE_ORIGIN_KEY, new Response(origin));
+}
+
+/**
  * Defence-in-depth Content-Security-Policy injected on responses in production (this
  * worker is disabled in dev, so Vite's HMR — which needs inline/eval/ws — is untouched).
- * The policy is the single source of truth in {@link buildContentSecurityPolicy}; a
- * build-only `<meta>` form mirrors it on the very first navigation before this worker is
- * in control. `script-src` carries **no `'unsafe-inline'`** — the app ships no inline
- * scripts — only `'self'` + `'wasm-unsafe-eval'` for the SQLite WASM module.
+ * The policy is the single source of truth in {@link buildContentSecurityPolicy};
+ * `script-src` carries **no `'unsafe-inline'`** — the app ships no inline scripts — only
+ * `'self'` + `'wasm-unsafe-eval'` for the SQLite WASM module.
+ *
+ * `connect-src` additionally carries the user's own bridge origin when they have registered
+ * one (issue #385). Because a browser enforces the **intersection** of every delivered
+ * policy, adding it here is not enough on its own — the app shell's build-time `<meta>` would
+ * veto it — so {@link respond} rewrites that meta with the matching policy on the way out.
+ * Both forms come from the same call, so they cannot drift.
  */
-const CONTENT_SECURITY_POLICY = buildContentSecurityPolicy();
+function contentSecurityPolicy(origin: string | null, forMeta = false): string {
+  return buildContentSecurityPolicy({ forMeta, bridgeOrigin: origin });
+}
 
 sw.addEventListener('install', (event) => {
   // `registration.active` is only set once some worker has previously controlled this
@@ -88,9 +140,26 @@ sw.addEventListener('install', (event) => {
 // now" action) posts `{ type: 'SKIP_WAITING' }` to hand control to this waiting worker.
 // `activate` then `clients.claim()`s, which fires `controllerchange` and reloads the
 // page onto the new version. This is vite-plugin-pwa's supported `prompt` handshake.
+//
+// The page also registers the user's bridge origin here (issue #385) so `connect-src` can
+// name it. That one is **acknowledged** on the reply port before resolving: the page reloads
+// straight afterwards to pick up the new policy, and reloading before the origin was stored
+// would serve the old one and need a second reload.
 sw.addEventListener('message', (event) => {
-  if ((event.data as { type?: string } | null)?.type === 'SKIP_WAITING') {
+  const data = event.data as { type?: string; origin?: unknown } | null;
+  if (data?.type === 'SKIP_WAITING') {
     void sw.skipWaiting();
+    return;
+  }
+  if (data?.type === BRIDGE_ORIGIN_MESSAGE) {
+    const reply = (event as unknown as { ports?: readonly MessagePort[] }).ports?.[0];
+    (event as unknown as ExtendableEvent).waitUntil(
+      storeBridgeOrigin(data.origin)
+        // A CacheStorage failure is still worth acknowledging: the page's only use for the
+        // reply is to time its reload, and leaving it to time out helps nobody.
+        .catch(() => undefined)
+        .then(() => reply?.postMessage({ ok: true })),
+    );
   }
 });
 
@@ -155,9 +224,11 @@ sw.addEventListener('activate', (event) => {
       // has not yet consumed, so an update that activates between the share POST and the draft
       // opening must not discard it. The OCR cache is what keeps the opt-in, precache-excluded
       // OCR assets available offline (#159); its name carries the Tesseract generation, so an
-      // upgrade is swept here as a *superseded* cache rather than served stale.
+      // upgrade is swept here as a *superseded* cache rather than served stale. The bridge-origin
+      // cache holds the one user-supplied value the CSP needs (issue #385) — sweeping it would
+      // silently re-block the bridge on every deploy.
       const keys = await caches.keys();
-      const keep = new Set([CACHE, SHARE_INBOX_CACHE, OCR_ASSET_CACHE]);
+      const keep = new Set([CACHE, SHARE_INBOX_CACHE, OCR_ASSET_CACHE, BRIDGE_ORIGIN_CACHE]);
       await Promise.all(keys.filter((key) => !keep.has(key)).map((key) => caches.delete(key)));
       await pruneStalePrecache();
       // Reclaim any share that was stashed but never consumed (its landing tab was dismissed),
@@ -228,19 +299,25 @@ async function respond(request: Request): Promise<Response> {
   // been used, and re-downloads megabytes on every use (#159).
   if (isOcrAssetUrl(new URL(request.url), sw.location.href)) return respondOcrAsset(request);
 
+  const origin = await readBridgeOrigin();
+  const policy = contentSecurityPolicy(origin);
   const cache = await caches.open(CACHE);
 
   // SPA navigations resolve to the precached app shell (offline-first).
   if (request.mode === 'navigate') {
     const index = await cache.match(INDEX_URL, { ignoreSearch: true });
-    if (index) return withIsolationHeaders(index);
+    if (index) return withIsolationHeaders(await withBridgeOriginMeta(index, origin), policy);
   }
 
   const cached = await cache.match(request, { ignoreSearch: true });
-  if (cached) return withIsolationHeaders(cached);
+  if (cached) return withIsolationHeaders(cached, policy);
 
   try {
-    return withIsolationHeaders(await fetch(request));
+    const network = await fetch(request);
+    return withIsolationHeaders(
+      request.mode === 'navigate' ? await withBridgeOriginMeta(network, origin) : network,
+      policy,
+    );
   } catch {
     // Offline, and nothing cached. This is only ever a *subresource* — a navigation has already
     // been answered from the precached shell above, and if that shell were missing this same
@@ -267,14 +344,15 @@ async function respond(request: Request): Promise<Response> {
  * `event` here to hold open with `waitUntil`, so awaiting is what keeps the worker alive.
  */
 async function respondOcrAsset(request: Request): Promise<Response> {
+  const policy = contentSecurityPolicy(await readBridgeOrigin());
   const cache = await caches.open(OCR_ASSET_CACHE);
   const cached = await cache.match(request);
-  if (cached) return withIsolationHeaders(cached);
+  if (cached) return withIsolationHeaders(cached, policy);
 
   try {
     const response = await fetch(request);
     if (response.status === 200) await cache.put(request, response.clone());
-    return withIsolationHeaders(response);
+    return withIsolationHeaders(response, policy);
   } catch {
     // Offline with nothing cached: the engine has never run here. Fail cleanly so the OCR
     // dialog surfaces its own "assets unavailable" path rather than a mis-typed app shell.
@@ -282,14 +360,41 @@ async function respondOcrAsset(request: Request): Promise<Response> {
   }
 }
 
-/** Clone a response with the cross-origin isolation headers added (spec §2.2.6). */
-function withIsolationHeaders(response: Response): Response {
+/**
+ * Rewrite the app shell's CSP `<meta>` so it names the user's bridge origin too (issue #385).
+ *
+ * Without this the header form below would be pointless: a browser enforces the intersection of
+ * every delivered policy, so the build-time meta — which cannot know an address the user typed
+ * after the build — would veto the origin however permissive the header is.
+ *
+ * Only ever applied to the HTML shell: anything else is returned untouched rather than buffered
+ * into a string. A document already in flight keeps the policy it loaded with, so a *newly*
+ * registered origin takes effect on the next navigation — which is what the app's "reload to
+ * connect" notice is for.
+ */
+async function withBridgeOriginMeta(response: Response, origin: string | null): Promise<Response> {
+  if (origin === null || response.status === 0) return response;
+  if (!(response.headers.get('content-type') ?? '').toLowerCase().includes('text/html')) {
+    return response;
+  }
+  const html = withCspMeta(await response.text(), contentSecurityPolicy(origin, true));
+  // The rewritten shell is a different length from the one that was cached, so the original
+  // `Content-Length` (and any `Content-Encoding`) would describe a body that no longer exists —
+  // a truncated or rejected document. Drop both and let the new body speak for itself.
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  headers.delete('content-encoding');
+  return new Response(html, { status: response.status, statusText: response.statusText, headers });
+}
+
+/** Clone a response with the cross-origin isolation headers and the policy added (spec §2.2.6). */
+function withIsolationHeaders(response: Response, policy: string): Response {
   if (response.status === 0) return response; // opaque/error — leave untouched
   const headers = new Headers(response.headers);
   headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
   headers.set('Cross-Origin-Opener-Policy', 'same-origin');
   headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
-  headers.set('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+  headers.set('Content-Security-Policy', policy);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
