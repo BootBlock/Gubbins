@@ -11,23 +11,14 @@
  * to invalidating `items()` on its own.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { repoPath } from '@/test/repo-path';
+import { repoPath, sourceFiles } from '@/test/repo-path';
 import { QueryClient } from '@tanstack/react-query';
 import { inventoryKeys } from './queries';
 import { invalidateItems } from './invalidate';
+import { agendaKeys } from '@/features/calendar/keys';
 import { reportKeys } from '@/features/reports/keys';
-
-/** Recursively collect every source file under `src/`, excluding tests. */
-function sourceFiles(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) sourceFiles(path, out);
-    else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) out.push(path);
-  }
-  return out;
-}
 
 // Resolved from this file's own location, not the cwd: a cwd-relative guard run from another
 // checkout would sweep *its* sources and pass without ever seeing the change under test.
@@ -47,11 +38,13 @@ describe('invalidateItems', () => {
     // `item-attention` joined the sweep with the #166 status-count split. It is a sibling of
     // `items()` rather than a child, so the broad helper has to name it explicitly — which is
     // exactly the drift risk this test exists to catch. The narrow `invalidateItemStock`, which
-    // omits it on purpose, is pinned in `invalidate.test.ts`.
+    // omits it on purpose, is pinned in `invalidate.test.ts`. The agenda prefix joined for the
+    // same reason the reports one did, and is owned by `calendar/agenda-invalidation.test.tsx`.
     expect(invalidated).toEqual([
       [...inventoryKeys.items()],
       [...inventoryKeys.itemAttention()],
       [...reportKeys.all],
+      [...agendaKeys.all],
     ]);
   });
 });

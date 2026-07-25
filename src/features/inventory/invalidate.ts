@@ -7,11 +7,12 @@
  * mutation those tests happen to drive, so the write side keeps its own small, unmocked home.
  */
 import type { QueryClient } from '@tanstack/react-query';
+import { agendaKeys } from '@/features/calendar/keys';
 import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
 
 /**
- * Invalidate the item caches after a write, **and the reports that read them**.
+ * Invalidate the item caches after a write, **and the reports and agenda that read them**.
  *
  * Every §3 report — inventory value, stock movement, consumption, ABC, turnover, dead stock,
  * spend, sales — is an aggregation over the same item and ledger rows the `items()` prefix
@@ -20,14 +21,20 @@ import { inventoryKeys } from './queries';
  * reports prefix from four, so a quantity or gauge adjustment left every report showing
  * pre-adjustment figures until the screen was remounted (issue #375).
  *
- * Reports are only refetched while something is observing them (TanStack marks the rest
- * stale), so carrying the extra prefix on a write that happens not to move a reported figure
- * costs nothing away from the Reports screen — and is always correct on it.
+ * The "Upcoming" agenda joined for exactly the same reason (issue #374): four of its six lanes —
+ * warranty expiry, perishable expiry, checkout due-back and reorder-now — are reads over those
+ * same item rows, and the prefix was previously swept by booking writes alone, so editing an
+ * expiry date or crossing a reorder point left the screen showing pre-write dates.
+ *
+ * Neither prefix is refetched unless something is observing it (TanStack marks the rest stale),
+ * so carrying them on a write that happens not to move a reported figure or a dated event costs
+ * nothing away from those screens — and is always correct on them.
  */
 export function invalidateItems(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });
   void client.invalidateQueries({ queryKey: inventoryKeys.itemAttention() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
+  void client.invalidateQueries({ queryKey: agendaKeys.all });
 }
 
 /**
@@ -45,8 +52,13 @@ export function invalidateItems(client: QueryClient): void {
  * the right choice for anything that touches a row's other fields, its active flag, or the
  * purchase-order / checkout / maintenance tables — over-invalidating merely costs a refetch,
  * whereas under-invalidating leaves a visibly stale chip count until the next broad write.
+ *
+ * The agenda prefix stays in the sweep: its reorder-now lane is `quantity` against the item's
+ * reorder point, which is precisely what a stock write moves (issue #374). The lanes it *can't*
+ * move are dated feeds that go stale only in date terms, so refreshing them here is harmless.
  */
 export function invalidateItemStock(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
+  void client.invalidateQueries({ queryKey: agendaKeys.all });
 }

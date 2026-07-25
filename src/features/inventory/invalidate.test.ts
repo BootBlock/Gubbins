@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { QueryClient } from '@tanstack/react-query';
+import { agendaKeys } from '@/features/calendar/keys';
 import { reportKeys } from '@/features/reports/keys';
 import { invalidateItemStock } from './invalidate';
 import { inventoryKeys } from './queries';
@@ -28,10 +29,12 @@ function stubClient() {
 describe('invalidateItemStock — the narrow sweep (#166)', () => {
   // The broad `invalidateItems` is pinned in `report-invalidation.test.ts`, which owns the
   // items ⇄ reports invariant (#375); only the narrow helper is tested here.
-  it('invalidates items and reports', () => {
+  it('invalidates items, reports and the agenda', () => {
+    // The agenda rides along because the reorder-now lane is on-hand quantity against the reorder
+    // point — the one thing a stock-only write is guaranteed to move (issue #374).
     const { client, keys } = stubClient();
     invalidateItemStock(client);
-    expect(keys()).toEqual([inventoryKeys.items(), reportKeys.all]);
+    expect(keys()).toEqual([inventoryKeys.items(), reportKeys.all, agendaKeys.all]);
   });
 
   it('leaves the item-attention prefix cached', () => {

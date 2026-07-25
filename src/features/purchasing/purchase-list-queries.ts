@@ -13,7 +13,7 @@
  */
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getItemRepository, getPurchaseOrderRepository, getWishlistRepository } from '@/db/repositories';
-import { onOrderKeys, purchaseOrderKeys } from './queries';
+import { invalidateOnOrder, purchaseOrderKeys } from './queries';
 import { wishlistKeys } from './wishlist-queries';
 import {
   purchaseLineLabel,
@@ -80,7 +80,9 @@ async function importLinesInto(
 function invalidateOrders(client: QueryClient, poId?: string): void {
   void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
   if (poId) void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
-  void client.invalidateQueries({ queryKey: onOrderKeys.all });
+  // Imported lines add to what is outstanding, which the agenda's reorder lane nets off its
+  // shortfall — so the two prefixes move together, through the one helper (issue #374).
+  invalidateOnOrder(client);
 }
 
 /** Import parsed lines into an existing purchase order. */

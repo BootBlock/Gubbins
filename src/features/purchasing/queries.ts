@@ -6,7 +6,7 @@
  * (never raw SQL in a component). Mutations invalidate the PO caches; a receive also
  * invalidates the item caches so on-hand stock and history refresh.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   getPurchaseOrderRepository,
   getReportRepository,
@@ -16,6 +16,7 @@ import {
   type LowStockThresholds,
   type UpdatePurchaseOrderLineInput,
 } from '@/db/repositories';
+import { agendaKeys } from '@/features/calendar/keys';
 import { useReportWriteFailure } from '@/features/errors';
 import type { BatchIdentity } from '@/features/inventory/batches';
 import { invalidateItems } from '@/features/inventory/invalidate';
@@ -45,6 +46,24 @@ export const onOrderKeys = {
   item: (itemId: string) => [...onOrderKeys.all, 'item', itemId] as const,
   items: (itemIds: readonly string[]) => [...onOrderKeys.all, 'items', itemIds] as const,
 };
+
+/**
+ * Sweep the outstanding-quantity caches after a write that moves them, **and the agenda**.
+ *
+ * The "Upcoming" reorder lane nets stock already on order off the shortfall it reports
+ * (`listReorderShortfall`), so raising, cancelling, deleting or re-lining a purchase order
+ * restates how far below the reorder point an item is — "5 units below the reorder point" becomes
+ * "at or below the reorder point" once the incoming stock covers it — without any item row moving.
+ * (Lane *membership* is on-hand quantity against the reorder point, so a PO never adds or removes
+ * a row; it is the figure on the row that goes stale.) Binding the two prefixes into one helper is
+ * what stops them drifting apart again (issue #374), so every write goes through here rather than
+ * naming `onOrderKeys.all` itself; a guard test in `calendar/agenda-invalidation.test.tsx` holds
+ * that line.
+ */
+export function invalidateOnOrder(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: onOrderKeys.all });
+  void client.invalidateQueries({ queryKey: agendaKeys.all });
+}
 
 /**
  * The still-**on-order** quantity for one item (open ORDERED/PARTIAL POs) — surfaced beside
@@ -152,7 +171,7 @@ export function useSetPurchaseOrderStatus() {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(id) });
       // ORDERED ⇄ DRAFT/CANCELLED flips whether this PO's lines count as on order.
-      void client.invalidateQueries({ queryKey: onOrderKeys.all });
+      invalidateOnOrder(client);
     },
   });
 }
@@ -170,7 +189,7 @@ export function useDeletePurchaseOrder() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
       // A deleted PO removes its outstanding lines from the on-order totals.
-      void client.invalidateQueries({ queryKey: onOrderKeys.all });
+      invalidateOnOrder(client);
     },
   });
 }
@@ -189,7 +208,7 @@ export function useAddPurchaseOrderLine() {
     onSuccess: (_data, { poId }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
-      void client.invalidateQueries({ queryKey: onOrderKeys.all });
+      invalidateOnOrder(client);
     },
   });
 }
@@ -202,7 +221,7 @@ export function useUpdatePurchaseOrderLine() {
     onSuccess: (_data, { poId }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
       // Editing an ordered/received quantity shifts the item's outstanding total.
-      void client.invalidateQueries({ queryKey: onOrderKeys.all });
+      invalidateOnOrder(client);
       // The spend report totals `received_qty * unit_cost`, so correcting either on an
       // already-received line re-prices history even though no item row moves.
       void client.invalidateQueries({ queryKey: reportKeys.all });
@@ -224,7 +243,7 @@ export function useRemovePurchaseOrderLine() {
     onSuccess: (_data, { poId }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
-      void client.invalidateQueries({ queryKey: onOrderKeys.all });
+      invalidateOnOrder(client);
     },
   });
 }
@@ -257,7 +276,7 @@ export function useReceivePurchaseOrderLine() {
       // (they all hang off it), so a per-item key is unnecessary.
       invalidateItems(client);
       // Receiving reduces the outstanding quantity (and may fully clear it).
-      void client.invalidateQueries({ queryKey: onOrderKeys.all });
+      invalidateOnOrder(client);
     },
   });
 }

@@ -19,6 +19,7 @@ import {
   type ReconciliationAdjustment,
   type SerialisedReconciliation,
 } from '@/db/repositories';
+import { agendaKeys } from '@/features/calendar/keys';
 import { useReportWriteFailure } from '@/features/errors';
 import { inventoryKeys } from '@/features/inventory/queries';
 import { nowMs } from '@/lib/clock';
@@ -346,6 +347,11 @@ function invalidateMaintenance(client: ReturnType<typeof useQueryClient>, itemId
   void client.invalidateQueries({ queryKey: inventoryKeys.itemMaintenance(itemId) });
   void client.invalidateQueries({ queryKey: inventoryKeys.maintenance() });
   void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(itemId) });
+  // The "Upcoming" agenda's maintenance lane is its own feed (`listUpcoming`) under the
+  // `agenda` prefix rather than a slice of `maintenance()`, so it needs naming explicitly —
+  // creating, logging, accruing usage against or removing a schedule all move a due date on
+  // screen, and without this the lane kept showing the pre-write one (issue #374).
+  void client.invalidateQueries({ queryKey: agendaKeys.all });
 }
 
 export function useCreateMaintenance() {
