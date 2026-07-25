@@ -39,7 +39,16 @@ export const LABEL_SYMBOLOGY_OPTIONS = [
 ] as const satisfies readonly { value: LabelSymbology; label: string }[];
 
 /** Inclusive bounds for the columns-per-sheet control. */
-export const LABEL_COLUMNS_BOUNDS = { min: 1, max: 4 } as const;
+export const LABEL_COLUMNS_BOUNDS = { min: 1, max: 8 } as const;
+
+/** Inclusive bounds for the rows-per-sheet control. */
+export const LABEL_ROWS_BOUNDS = { min: 1, max: 20 } as const;
+
+/** Inclusive bounds (mm) for an A4 sheet's page margin. */
+export const SHEET_MARGIN_BOUNDS = { min: 0, max: 30 } as const;
+
+/** Inclusive bounds (mm) for the gutter between labels on an A4 sheet. */
+export const SHEET_GAP_BOUNDS = { min: 0, max: 25 } as const;
 
 /**
  * How a printed label is sized:
@@ -134,8 +143,9 @@ export const LABEL_SIZE_PRESETS = [
 /** Rich-Markdown help for the label-size control (an {@link LABEL_SIZE_PRESETS} rundown). */
 export const LABEL_SIZE_HINT = [
   'Choose a **physical label size** for a thermal / die-cut printer (e.g. Niimbot) —',
-  'one label prints per page at the exact millimetre size — or **A4 sheet** to tile',
-  'many labels across ordinary paper.',
+  'one label prints per page at the exact millimetre size — or **A4 sheet** to tile many',
+  'labels across a page, either on plain paper or onto a sheet of sticker stock (choose',
+  'which under **Sheet layout**).',
   '',
   'Common die-cut sizes and what they suit:',
   '',
@@ -144,12 +154,273 @@ export const LABEL_SIZE_HINT = [
   'Pick **Custom…** to type an exact width × height in millimetres.',
 ].join('\n');
 
+/*
+ * A4 page geometry, in mm. {@link sheetCellSizeMm} tiles this page, and the sheet print
+ * stylesheet in `label-sheet.ts` is built from the numbers it returns — so what the
+ * controls report a label measures and what the printer lays down cannot drift apart.
+ */
+/** The short edge of an A4 page. */
+export const A4_WIDTH_MM = 210;
+/** The long edge of an A4 page. */
+export const A4_HEIGHT_MM = 297;
+
+/**
+ * Floor (mm) on a derived sheet cell. A deliberately absurd custom layout (twenty rows
+ * with a 25 mm gutter, say) asks for more page than A4 has; rather than emit a grid with
+ * a negative row height, the cell bottoms out here and the controls' "each label
+ * measures…" readout shows the user what they actually asked for.
+ */
+export const MIN_SHEET_CELL_MM = 5;
+
+/**
+ * How labels tile an A4 page — the geometry of a sheet of label stock.
+ *
+ * The label's own size is **derived** from this, never stored alongside it
+ * ({@link sheetCellSizeMm}): a sheet whose labels, margins and gutters were recorded
+ * separately could describe a tiling that does not fit the page, and nothing would say
+ * which of the two numbers was wrong. Margins are symmetric (a sheet of stock is), and
+ * the two gutters are independent because real stock routinely has one and not the other
+ * — most sticker sheets butt their rows together and leave a gap between columns.
+ */
+export interface SheetLayout {
+  /** Labels across the page (clamped to {@link LABEL_COLUMNS_BOUNDS}). */
+  readonly columns: number;
+  /** Labels down the page (clamped to {@link LABEL_ROWS_BOUNDS}). */
+  readonly rows: number;
+  /** Unprinted margin (mm) at the top and bottom of the page. */
+  readonly marginTopMm: number;
+  /** Unprinted margin (mm) at the left and right of the page. */
+  readonly marginSideMm: number;
+  /** Gutter (mm) between adjacent columns. */
+  readonly columnGapMm: number;
+  /** Gutter (mm) between adjacent rows. */
+  readonly rowGapMm: number;
+  /**
+   * Draw a faint outline round each label. A cutting guide on plain paper; on pre-cut
+   * stock it would print a grey rectangle inside every sticker, so named stock turns it
+   * off.
+   */
+  readonly outline: boolean;
+}
+
+/**
+ * The default A4 tiling: plain paper, generous margins and gutters, and a cut outline —
+ * the layout to reach for when you are printing onto a blank sheet and cutting the
+ * labels out yourself. Its numbers are chosen to divide the page exactly, so each label
+ * comes out a round 60 × 42 mm.
+ */
+export const PLAIN_PAPER_SHEET_LAYOUT: SheetLayout = {
+  columns: 3,
+  rows: 6,
+  marginTopMm: 10,
+  marginSideMm: 10,
+  columnGapMm: 5,
+  rowGapMm: 5,
+  outline: true,
+};
+
+/**
+ * A named sheet of label stock: how it tiles A4, and what it is sold as.
+ *
+ * It carries no display copy. What each stock *suits* is prose a reader should get in
+ * their own language, so it lives in the message catalog under
+ * `inventory.labels.sheetStockUse.<id>` rather than beside the geometry here; the size and
+ * count the picker shows are derived from the layout rather than written down.
+ */
+export interface SheetStockPreset {
+  readonly id: string;
+  /**
+   * What a box of this stock is labelled with — the part codes a user matches against.
+   * Blank for the plain-paper layout, which is not a product.
+   */
+  readonly code: string;
+  readonly layout: SheetLayout;
+}
+
+/**
+ * Common A4 sticker-sheet stock, largest label first, plus the plain-paper layout.
+ *
+ * The geometry is the published die-cut layout of each stock, so
+ * {@link sheetCellSizeMm} derives exactly the label size printed on the box (a unit test
+ * pins every one of them). Codes are given for matching a packet in a drawer — these are
+ * the common trade designations, and equivalent stock from any manufacturer shares the
+ * layout.
+ */
+export const SHEET_STOCK_PRESETS = [
+  {
+    id: 'plain',
+    code: '',
+    layout: PLAIN_PAPER_SHEET_LAYOUT,
+  },
+  {
+    id: 'a4-2up',
+    code: 'L7168 / J8168',
+    layout: {
+      columns: 1,
+      rows: 2,
+      marginTopMm: 5,
+      marginSideMm: 5.2,
+      columnGapMm: 0,
+      rowGapMm: 0,
+      outline: false,
+    },
+  },
+  {
+    id: 'a4-4up',
+    code: 'L7169 / J8169',
+    layout: {
+      columns: 2,
+      rows: 2,
+      marginTopMm: 9.5,
+      marginSideMm: 4.65,
+      columnGapMm: 2.5,
+      rowGapMm: 0,
+      outline: false,
+    },
+  },
+  {
+    id: 'a4-8up',
+    code: 'L7165 / J8165',
+    layout: {
+      columns: 2,
+      rows: 4,
+      marginTopMm: 13.1,
+      marginSideMm: 4.65,
+      columnGapMm: 2.5,
+      rowGapMm: 0,
+      outline: false,
+    },
+  },
+  {
+    id: 'a4-14up',
+    code: 'L7163 / J8163',
+    layout: {
+      columns: 2,
+      rows: 7,
+      marginTopMm: 15.15,
+      marginSideMm: 4.65,
+      columnGapMm: 2.5,
+      rowGapMm: 0,
+      outline: false,
+    },
+  },
+  {
+    id: 'a4-18up',
+    code: 'L7161 / J8161',
+    layout: {
+      columns: 3,
+      rows: 6,
+      marginTopMm: 8.7,
+      marginSideMm: 7.25,
+      columnGapMm: 2.5,
+      rowGapMm: 0,
+      outline: false,
+    },
+  },
+  {
+    id: 'a4-21up',
+    code: 'L7160 / J8160',
+    layout: {
+      columns: 3,
+      rows: 7,
+      marginTopMm: 15.15,
+      marginSideMm: 7.25,
+      columnGapMm: 2.5,
+      rowGapMm: 0,
+      outline: false,
+    },
+  },
+  {
+    id: 'a4-24up',
+    code: 'L7159 / J8159',
+    layout: {
+      columns: 3,
+      rows: 8,
+      marginTopMm: 12.9,
+      marginSideMm: 7.25,
+      columnGapMm: 2.5,
+      rowGapMm: 0,
+      outline: false,
+    },
+  },
+  {
+    id: 'a4-40up',
+    code: 'L7654',
+    layout: {
+      columns: 4,
+      rows: 10,
+      marginTopMm: 21.5,
+      marginSideMm: 9.85,
+      columnGapMm: 2.5,
+      rowGapMm: 0,
+      outline: false,
+    },
+  },
+  {
+    id: 'a4-65up',
+    code: 'L7651',
+    layout: {
+      columns: 5,
+      rows: 13,
+      marginTopMm: 10.7,
+      marginSideMm: 4.75,
+      columnGapMm: 2.5,
+      rowGapMm: 0,
+      outline: false,
+    },
+  },
+] as const satisfies readonly SheetStockPreset[];
+
+/** The Select id standing for a user-entered custom sheet layout. */
+export const SHEET_LAYOUT_CUSTOM_ID = 'custom';
+
+/** Round a millimetre value to the hundredth — enough for any published stock geometry. */
+function roundMm(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Format a millimetre value for display, without trailing zeroes: `63.5`, not `63.50`.
+ */
+export function formatMm(value: number): string {
+  return String(roundMm(value));
+}
+
+/**
+ * The size of one label under a sheet layout, in mm — what is left of the page once the
+ * margins and gutters are taken out, divided between the columns and rows.
+ *
+ * Rounded **down** to the hundredth, so a whole page of rows can never add up to more
+ * than the page has: the fraction of a millimetre given away keeps the last row of a
+ * full sheet from tipping onto a page of its own. The tolerance absorbs binary
+ * floating-point noise, so a stock that divides the page exactly still reports the round
+ * size it is sold as (7 rows of 38.1 mm, not of 38.09).
+ */
+export function sheetCellSizeMm(layout: SheetLayout): { widthMm: number; heightMm: number } {
+  const l = normaliseSheetLayout(layout);
+  const across = A4_WIDTH_MM - l.marginSideMm * 2 - l.columnGapMm * (l.columns - 1);
+  const down = A4_HEIGHT_MM - l.marginTopMm * 2 - l.rowGapMm * (l.rows - 1);
+  const floorMm = (n: number) => Math.max(MIN_SHEET_CELL_MM, Math.floor(n * 100 + 1e-6) / 100);
+  return { widthMm: floorMm(across / l.columns), heightMm: floorMm(down / l.rows) };
+}
+
+/** `60 × 42 mm` — one label's derived size under `layout`, for a caption or option label. */
+export function formatSheetCellSize(layout: SheetLayout): string {
+  const { widthMm, heightMm } = sheetCellSizeMm(layout);
+  return `${formatMm(widthMm)} × ${formatMm(heightMm)} mm`;
+}
+
+/** How many labels a layout puts on one page — the count the picker leads with. */
+export function sheetLabelCount(layout: SheetLayout): number {
+  return clampColumns(layout.columns) * clampRows(layout.rows);
+}
+
 /**
  * A label layout. The four `show*` field flags govern the text block beneath the
  * code; `showText` governs the human-readable line printed under a Code 128 barcode
- * (the digits/letters the bars encode); `columns` is how many labels fit across an
- * A4 sheet. `sizeMode` (+ `labelWidthMm`/`labelHeightMm`) selects the A4 grid vs a
- * fixed physical die-cut label.
+ * (the digits/letters the bars encode); `sheet` is how labels tile an A4 page.
+ * `sizeMode` (+ `labelWidthMm`/`labelHeightMm`) selects the A4 grid vs a fixed physical
+ * die-cut label.
  */
 export interface LabelTemplate {
   readonly symbology: LabelSymbology;
@@ -159,8 +430,8 @@ export interface LabelTemplate {
   readonly showQuantity: boolean;
   /** Render the human-readable value under a Code 128 barcode. */
   readonly showText: boolean;
-  /** Labels per row on the printed A4 sheet (clamped to {@link LABEL_COLUMNS_BOUNDS}). */
-  readonly columns: number;
+  /** How labels tile the printed A4 sheet (sheet mode only). */
+  readonly sheet: SheetLayout;
   /** Sheet grid vs a fixed physical die-cut label. */
   readonly sizeMode: LabelSizeMode;
   /** Physical label width in mm (die-cut mode; clamped to {@link LABEL_SIZE_BOUNDS}). */
@@ -180,7 +451,7 @@ export const DEFAULT_LABEL_TEMPLATE: LabelTemplate = {
   showLocation: false,
   showQuantity: false,
   showText: true,
-  columns: 3,
+  sheet: PLAIN_PAPER_SHEET_LAYOUT,
   // Defaults to the A4 grid (pre-size-mode behaviour); the die-cut dimensions seed the
   // "Custom…" inputs and the 40×30 preset when a physical printer is first chosen.
   sizeMode: 'sheet',
@@ -197,18 +468,102 @@ const SYMBOLOGIES: readonly LabelSymbology[] = LABEL_SYMBOLOGY_OPTIONS.map((o) =
  */
 export function clampColumns(value: unknown): number {
   const n = Math.round(Number(value));
-  if (!Number.isFinite(n)) return DEFAULT_LABEL_TEMPLATE.columns;
+  if (!Number.isFinite(n)) return PLAIN_PAPER_SHEET_LAYOUT.columns;
   return Math.min(LABEL_COLUMNS_BOUNDS.max, Math.max(LABEL_COLUMNS_BOUNDS.min, n));
 }
 
 /**
- * Clamp/round an arbitrary value to a valid die-cut label edge (mm), falling back to
+ * Clamp/round an arbitrary value to a valid row count.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function clampRows(value: unknown): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return PLAIN_PAPER_SHEET_LAYOUT.rows;
+  return Math.min(LABEL_ROWS_BOUNDS.max, Math.max(LABEL_ROWS_BOUNDS.min, n));
+}
+
+/**
+ * Clamp an arbitrary value to a millimetre measurement within `bounds`, falling back to
+ * `fallback` when it is not a finite number.
+ *
+ * Kept to hundredths of a millimetre rather than whole ones: published label stock is
+ * dimensioned in tenths (63.5 × 38.1 mm) and its margins in hundredths, and an imperial
+ * size converts to a fraction too (4 × 6" is 101.6 × 152.4 mm). Rounding those to the
+ * nearest whole millimetre would lose up to half a millimetre on every edge — enough,
+ * over a column of labels, to walk the print off the stickers (issue #333).
+ *
+ * @internal Exported for unit tests only.
+ */
+export function clampMm(
+  value: unknown,
+  bounds: { readonly min: number; readonly max: number },
+  fallback: number,
+): number {
+  const clamp = (n: number) => Math.min(bounds.max, Math.max(bounds.min, roundMm(n)));
+  const n = Number(value);
+  return clamp(Number.isFinite(n) ? n : fallback);
+}
+
+/**
+ * Clamp an arbitrary value to a valid die-cut label edge (mm), falling back to
  * `fallback` (itself clamped) when the input is not a finite number.
  */
 export function clampLabelDimension(value: unknown, fallback: number = LABEL_SIZE_BOUNDS.min): number {
-  const clamp = (n: number) => Math.min(LABEL_SIZE_BOUNDS.max, Math.max(LABEL_SIZE_BOUNDS.min, n));
-  const n = Math.round(Number(value));
-  return clamp(Number.isFinite(n) ? n : Math.round(fallback));
+  return clampMm(value, LABEL_SIZE_BOUNDS, fallback);
+}
+
+/**
+ * Coerce an arbitrary value to a valid {@link SheetLayout}, falling back field-by-field
+ * to {@link PLAIN_PAPER_SHEET_LAYOUT}. Every consumer — the controls, the derived label
+ * size and the print stylesheet — goes through this, so none can be handed a layout the
+ * others would read differently.
+ */
+export function normaliseSheetLayout(value: unknown): SheetLayout {
+  const v = (value ?? {}) as Partial<Record<keyof SheetLayout, unknown>>;
+  const base = PLAIN_PAPER_SHEET_LAYOUT;
+  return {
+    columns: clampColumns(v.columns),
+    rows: clampRows(v.rows),
+    marginTopMm: clampMm(v.marginTopMm, SHEET_MARGIN_BOUNDS, base.marginTopMm),
+    marginSideMm: clampMm(v.marginSideMm, SHEET_MARGIN_BOUNDS, base.marginSideMm),
+    columnGapMm: clampMm(v.columnGapMm, SHEET_GAP_BOUNDS, base.columnGapMm),
+    rowGapMm: clampMm(v.rowGapMm, SHEET_GAP_BOUNDS, base.rowGapMm),
+    outline: bool(v.outline, base.outline),
+  };
+}
+
+/**
+ * The Select id for a layout: the matching {@link SHEET_STOCK_PRESETS} entry when it is
+ * one of the named stocks, else {@link SHEET_LAYOUT_CUSTOM_ID}. Lets the control drive
+ * off the layout alone, with no separate "which preset" state to keep in sync.
+ */
+export function sheetLayoutSelection(layout: SheetLayout): string {
+  const l = normaliseSheetLayout(layout);
+  const preset = SHEET_STOCK_PRESETS.find((p) => sameSheetLayout(p.layout, l));
+  return preset ? preset.id : SHEET_LAYOUT_CUSTOM_ID;
+}
+
+/**
+ * Do two layouts tile the page identically?
+ *
+ * Deliberately **excludes** `outline`. What is on the sheet is its geometry; the cut
+ * guide is ink drawn on top of it, offered as its own toggle beside the picker. Counting
+ * it as part of the sheet's identity would mean ticking that toggle threw the picker out
+ * of the named stock the user had just chosen and into "Custom…", with the six geometry
+ * fields springing open — for a choice that changed no geometry at all.
+ */
+function sameSheetLayout(a: SheetLayout, b: SheetLayout): boolean {
+  const x = normaliseSheetLayout(a);
+  const y = normaliseSheetLayout(b);
+  return (
+    x.columns === y.columns &&
+    x.rows === y.rows &&
+    x.marginTopMm === y.marginTopMm &&
+    x.marginSideMm === y.marginSideMm &&
+    x.columnGapMm === y.columnGapMm &&
+    x.rowGapMm === y.rowGapMm
+  );
 }
 
 function bool(value: unknown, fallback: boolean): boolean {
@@ -221,10 +576,17 @@ function bool(value: unknown, fallback: boolean): boolean {
  * Keeps a malformed value from ever reaching the renderer.
  */
 export function normaliseLabelTemplate(value: unknown): LabelTemplate {
-  const v = (value ?? {}) as Partial<Record<keyof LabelTemplate, unknown>>;
+  const v = (value ?? {}) as Partial<Record<keyof LabelTemplate, unknown>> & { columns?: unknown };
   const symbology = SYMBOLOGIES.includes(v.symbology as LabelSymbology)
     ? (v.symbology as LabelSymbology)
     : DEFAULT_LABEL_TEMPLATE.symbology;
+  // A template saved before sheet layouts existed carries a bare `columns` and nothing
+  // else about the page. Keep the column count the user chose and take the rest from the
+  // plain-paper layout, which is the tiling that count used to mean.
+  const sheet =
+    v.sheet == null && v.columns != null
+      ? { ...PLAIN_PAPER_SHEET_LAYOUT, columns: clampColumns(v.columns) }
+      : normaliseSheetLayout(v.sheet);
   return {
     symbology,
     showName: bool(v.showName, DEFAULT_LABEL_TEMPLATE.showName),
@@ -232,7 +594,7 @@ export function normaliseLabelTemplate(value: unknown): LabelTemplate {
     showLocation: bool(v.showLocation, DEFAULT_LABEL_TEMPLATE.showLocation),
     showQuantity: bool(v.showQuantity, DEFAULT_LABEL_TEMPLATE.showQuantity),
     showText: bool(v.showText, DEFAULT_LABEL_TEMPLATE.showText),
-    columns: clampColumns(v.columns),
+    sheet,
     sizeMode: v.sizeMode === 'die-cut' ? 'die-cut' : 'sheet',
     labelWidthMm: clampLabelDimension(v.labelWidthMm, DEFAULT_LABEL_TEMPLATE.labelWidthMm),
     labelHeightMm: clampLabelDimension(v.labelHeightMm, DEFAULT_LABEL_TEMPLATE.labelHeightMm),

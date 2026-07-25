@@ -1,21 +1,37 @@
 import { describe, expect, it } from 'vitest';
+import { EN_CATALOG } from '@/features/i18n/messages';
 import {
+  A4_HEIGHT_MM,
+  A4_WIDTH_MM,
   BARCODE_QUIET_ZONE_MODULES,
   DEFAULT_LABEL_TEMPLATE,
   LABEL_COLUMNS_BOUNDS,
+  LABEL_ROWS_BOUNDS,
   LABEL_SIZE_BOUNDS,
   LABEL_SIZE_CUSTOM_ID,
   LABEL_SIZE_PRESETS,
   LABEL_SIZE_SHEET_ID,
   MIN_BARCODE_MODULE_MM,
+  MIN_SHEET_CELL_MM,
+  PLAIN_PAPER_SHEET_LAYOUT,
+  SHEET_GAP_BOUNDS,
+  SHEET_LAYOUT_CUSTOM_ID,
+  SHEET_MARGIN_BOUNDS,
+  SHEET_STOCK_PRESETS,
   barcodeFitsWidth,
   barcodeFitsWidthUncompressed,
   barcodeModuleWidth,
   clampColumns,
   clampLabelDimension,
+  clampRows,
   fitBarcodeValue,
+  formatSheetCellSize,
   labelSizeSelection,
   normaliseLabelTemplate,
+  normaliseSheetLayout,
+  sheetCellSizeMm,
+  sheetLabelCount,
+  sheetLayoutSelection,
   shortId,
   templateHasBarcode,
   templateHasQr,
@@ -35,8 +51,17 @@ describe('clampColumns', () => {
   });
 
   it('falls back to the default for non-finite input', () => {
-    expect(clampColumns('nonsense')).toBe(DEFAULT_LABEL_TEMPLATE.columns);
-    expect(clampColumns(undefined)).toBe(DEFAULT_LABEL_TEMPLATE.columns);
+    expect(clampColumns('nonsense')).toBe(PLAIN_PAPER_SHEET_LAYOUT.columns);
+    expect(clampColumns(undefined)).toBe(PLAIN_PAPER_SHEET_LAYOUT.columns);
+  });
+});
+
+describe('clampRows', () => {
+  it('clamps to the inclusive bounds, rounds, and falls back for garbage', () => {
+    expect(clampRows(0)).toBe(LABEL_ROWS_BOUNDS.min);
+    expect(clampRows(999)).toBe(LABEL_ROWS_BOUNDS.max);
+    expect(clampRows(6.4)).toBe(6);
+    expect(clampRows('nonsense')).toBe(PLAIN_PAPER_SHEET_LAYOUT.rows);
   });
 });
 
@@ -54,15 +79,26 @@ describe('normaliseLabelTemplate', () => {
   });
 
   it('preserves valid fields and fills the rest from the default', () => {
-    const t = normaliseLabelTemplate({ symbology: 'both', showMpn: true, columns: 4 });
+    const t = normaliseLabelTemplate({
+      symbology: 'both',
+      showMpn: true,
+      sheet: { ...PLAIN_PAPER_SHEET_LAYOUT, columns: 4 },
+    });
     expect(t.symbology).toBe('both');
     expect(t.showMpn).toBe(true);
-    expect(t.columns).toBe(4);
+    expect(t.sheet.columns).toBe(4);
     expect(t.showName).toBe(DEFAULT_LABEL_TEMPLATE.showName);
   });
 
   it('clamps an out-of-range column count', () => {
-    expect(normaliseLabelTemplate({ columns: 99 }).columns).toBe(LABEL_COLUMNS_BOUNDS.max);
+    expect(normaliseLabelTemplate({ sheet: { columns: 99 } }).sheet.columns).toBe(LABEL_COLUMNS_BOUNDS.max);
+  });
+
+  it('carries a pre-sheet-layout template forward on its saved column count (issue #333)', () => {
+    // The bare `columns` a template used to carry meant a plain-paper tiling, so the rest of
+    // the layout comes from that — the user's chosen column count is all there is to keep.
+    const t = normaliseLabelTemplate({ symbology: 'barcode', columns: 2 });
+    expect(t.sheet).toEqual({ ...PLAIN_PAPER_SHEET_LAYOUT, columns: 2 });
   });
 
   it('defaults the size mode to the A4 sheet and coerces an unknown mode', () => {
@@ -81,14 +117,107 @@ describe('normaliseLabelTemplate', () => {
 });
 
 describe('clampLabelDimension', () => {
-  it('clamps and rounds to the mm bounds', () => {
+  it('clamps to the mm bounds', () => {
     expect(clampLabelDimension(0)).toBe(LABEL_SIZE_BOUNDS.min);
     expect(clampLabelDimension(9999)).toBe(LABEL_SIZE_BOUNDS.max);
-    expect(clampLabelDimension(40.4)).toBe(40);
   });
+
+  it('keeps fractions of a millimetre, so an imperial size survives (issue #333)', () => {
+    // 4 × 6" is 101.6 × 152.4 mm; rounded to whole millimetres each edge would lose 0.4 mm.
+    expect(clampLabelDimension(101.6)).toBe(101.6);
+    expect(clampLabelDimension(152.4)).toBe(152.4);
+    expect(clampLabelDimension(38.1)).toBe(38.1);
+    // Beyond a hundredth is noise on a printed label, and is rounded away.
+    expect(clampLabelDimension(40.4444)).toBe(40.44);
+  });
+
   it('falls back to the (clamped) fallback for non-finite input', () => {
     expect(clampLabelDimension('nope', 30)).toBe(30);
     expect(clampLabelDimension(undefined, 5)).toBe(LABEL_SIZE_BOUNDS.min);
+  });
+});
+
+describe('sheet layouts (issue #333)', () => {
+  it('derives each shipped stock size from its published tiling', () => {
+    // The size a box of this stock is sold as. Deriving it — rather than storing it beside
+    // the tiling — is what keeps a preset from claiming a label size its own geometry does
+    // not produce.
+    const sizes = Object.fromEntries(SHEET_STOCK_PRESETS.map((p) => [p.id, formatSheetCellSize(p.layout)]));
+    expect(sizes).toEqual({
+      plain: '60 × 42 mm',
+      'a4-2up': '199.6 × 143.5 mm',
+      'a4-4up': '99.1 × 139 mm',
+      'a4-8up': '99.1 × 67.7 mm',
+      'a4-14up': '99.1 × 38.1 mm',
+      'a4-18up': '63.5 × 46.6 mm',
+      'a4-21up': '63.5 × 38.1 mm',
+      'a4-24up': '63.5 × 33.9 mm',
+      'a4-40up': '45.7 × 25.4 mm',
+      'a4-65up': '38.1 × 21.2 mm',
+    });
+  });
+
+  it('never tiles more than the page holds', () => {
+    for (const preset of SHEET_STOCK_PRESETS) {
+      const { widthMm, heightMm } = sheetCellSizeMm(preset.layout);
+      const l = preset.layout;
+      const across = widthMm * l.columns + l.columnGapMm * (l.columns - 1) + l.marginSideMm * 2;
+      const down = heightMm * l.rows + l.rowGapMm * (l.rows - 1) + l.marginTopMm * 2;
+      expect(across, `${preset.id} across`).toBeLessThanOrEqual(A4_WIDTH_MM);
+      expect(down, `${preset.id} down`).toBeLessThanOrEqual(A4_HEIGHT_MM);
+    }
+  });
+
+  it('counts the labels a layout puts on a page', () => {
+    const twentyOne = SHEET_STOCK_PRESETS.find((p) => p.id === 'a4-21up')!;
+    expect(sheetLabelCount(twentyOne.layout)).toBe(21);
+  });
+
+  it('every stock has copy in the catalog saying what it suits', () => {
+    // The picker names a stock by geometry alone; this prose is the only thing telling a
+    // user which sheet is theirs, so a preset added without it would ship a blank bullet.
+    for (const preset of SHEET_STOCK_PRESETS) {
+      const key = `inventory.labels.sheetStockUse.${preset.id}`;
+      expect(EN_CATALOG[key], key).toBeTruthy();
+    }
+  });
+
+  it('bottoms a cell out rather than deriving a negative size from an absurd layout', () => {
+    const size = sheetCellSizeMm({
+      ...PLAIN_PAPER_SHEET_LAYOUT,
+      rows: LABEL_ROWS_BOUNDS.max,
+      rowGapMm: SHEET_GAP_BOUNDS.max,
+      marginTopMm: SHEET_MARGIN_BOUNDS.max,
+    });
+    expect(size.heightMm).toBe(MIN_SHEET_CELL_MM);
+  });
+
+  it('coerces a stale/garbage layout back to a usable one', () => {
+    expect(normaliseSheetLayout(undefined)).toEqual(PLAIN_PAPER_SHEET_LAYOUT);
+    const l = normaliseSheetLayout({ columns: 'x', rows: 99, marginTopMm: -5, columnGapMm: 999 });
+    expect(l.columns).toBe(PLAIN_PAPER_SHEET_LAYOUT.columns);
+    expect(l.rows).toBe(LABEL_ROWS_BOUNDS.max);
+    expect(l.marginTopMm).toBe(SHEET_MARGIN_BOUNDS.min);
+    expect(l.columnGapMm).toBe(SHEET_GAP_BOUNDS.max);
+  });
+
+  it('keeps a published margin to the hundredth of a millimetre', () => {
+    expect(normaliseSheetLayout({ ...PLAIN_PAPER_SHEET_LAYOUT, marginTopMm: 15.15 }).marginTopMm).toBe(15.15);
+  });
+
+  it('resolves a layout to its preset, and an edited one to "custom"', () => {
+    for (const preset of SHEET_STOCK_PRESETS) {
+      expect(sheetLayoutSelection(preset.layout)).toBe(preset.id);
+    }
+    const edited = { ...PLAIN_PAPER_SHEET_LAYOUT, rowGapMm: 7 };
+    expect(sheetLayoutSelection(edited)).toBe(SHEET_LAYOUT_CUSTOM_ID);
+  });
+
+  it('keeps a stock selected when only its cut guide is toggled', () => {
+    // The cut guide is ink on the sheet, not part of how it tiles — turning it on must not
+    // read as "you have hand-built a layout" and throw the picker into Custom.
+    const stock = SHEET_STOCK_PRESETS.find((p) => p.id === 'a4-21up')!;
+    expect(sheetLayoutSelection({ ...stock.layout, outline: !stock.layout.outline })).toBe(stock.id);
   });
 });
 

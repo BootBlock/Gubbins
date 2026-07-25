@@ -41,6 +41,39 @@ off in one go — perfect for labelling a new storage system or a batch of asset
 > *where you are* and instantly filter to what should be there — a huge help during a
 > [[cycle count|Cycle-Counts-and-Audit-Day]].
 
+## Printing onto a sheet of sticker labels
+
+Choose **A4 sheet** under **Label size** and a second setting appears: **Sheet layout**. This is
+where you say what you are printing *onto*.
+
+Every entry says how many labels the sheet carries and how big one label is — **18 per sheet —
+60 × 42 mm**, say — with what the sheet is beside it: the code the stock is usually sold under,
+or *Plain paper* for the first entry.
+
+- **Plain paper** — the default. Labels are laid out generously across a blank sheet with a faint
+  outline round each one to cut along.
+- **A named sticker sheet** — pick the one that matches the packet in your printer. Gubbins then
+  uses that sheet's own columns, rows, margins and gutters, so every label lands squarely on a
+  sticker rather than across the gap between two.
+- **Custom…** — enter the columns, rows, page margins and gutters yourself, for stock that isn't
+  listed.
+
+Whichever you pick, the size one label works out to is shown underneath as **Each label: …**, so
+you can check it against the packet before printing anything.
+
+Beside it sits **Print cut guides**. Leave it on for plain paper, where the outline is the only
+thing telling you where one label ends and the next begins; turn it off for a pre-cut sheet, where
+it would just print a grey box inside every sticker. Choosing a named sheet turns it off for you.
+
+> **💡 Tip**
+> Run one sheet on **ordinary paper** first and hold it against a sheet of the real labels up to
+> the light. It costs one sheet of paper instead of a sheet of stickers.
+
+> **ℹ️ Note**
+> Every label on the sheet is given the same fixed size, so a long name on one label can never
+> push the labels below it down the page. If a name is too long for the label you have chosen, it
+> is the name that gets cut short — the alignment holds.
+
 > **ℹ️ Note**
 > Printed labels are independent of [[live camera scanning|Camera-Scanning]] — they keep working
 > whether or not the camera capability is enabled, and any phone camera app can open the deep
@@ -106,7 +139,7 @@ under **Code** in the print dialog.
 > instead, and the print dialog says so above the preview. That short code needs a label **a little
 > over 32 mm wide**, so on the smallest sizes — the 30 × 15 mm labels, say — only a genuinely short
 > name or part number prints as a barcode at all; anything longer leaves the barcode off entirely.
-> Choose a wider label size, use fewer columns per sheet, or switch to a QR code. Either
+> Choose a wider label size, a sheet layout with wider labels, or switch to a QR code. Either
 > way the barcode prints its own value underneath in plain
 > characters — so if you want the full name or part number on the label as well, turn on the
 > matching field under **Show on label**.
