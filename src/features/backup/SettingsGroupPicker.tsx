@@ -12,7 +12,7 @@
  */
 import type { MessageKey } from '@/features/i18n';
 import { useT } from '@/features/i18n';
-import { Button } from '@/components/foundry';
+import { Button, Checkbox } from '@/components/foundry';
 import { settingsGroup, type SettingsGroupId, type SettingsGroupSelection } from './settings-groups';
 
 export function SettingsGroupPicker({
@@ -76,11 +76,10 @@ export function SettingsGroupPicker({
               key={id}
               className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-secondary/40"
             >
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={value[id]}
                 onChange={() => onChange({ ...value, [id]: !value[id] })}
-                className="mt-0.5 size-4 accent-primary"
+                className="mt-0.5"
                 data-testid={`${testIdPrefix}-${id}`}
               />
               <span className="flex-1">

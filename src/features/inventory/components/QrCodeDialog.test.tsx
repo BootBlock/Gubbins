@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { QrCodeDialog } from './QrCodeDialog';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { DEFAULT_LABEL_TEMPLATE } from '../labels/label-template';
 
 /** A fake `NDEFReader` whose write stays pending so the dialog shows its "writing" state. */
 function installFakeReader() {
@@ -88,5 +90,46 @@ describe('QrCodeDialog — barcode readability (issue #331)', () => {
 
     expect(screen.getByTestId('item-barcode')).toBeTruthy();
     expect(screen.getByTestId('item-barcode-shortened')).toHaveTextContent(/short item code/i);
+  });
+});
+
+/** The printed fallback identifier on the single-item label (issue #338). */
+describe('QrCodeDialog — short code', () => {
+  it('shows the item’s short code, and prints it on the label', () => {
+    const fakeDoc = { write: vi.fn(), close: vi.fn() };
+    const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+
+    render(<QrCodeDialog {...props} />);
+    expect(screen.getByTestId('item-short-code').textContent).toBe('A1B2C3D4');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print label' }));
+    expect(fakeDoc.write.mock.calls[0]![0] as string).toContain('A1B2C3D4');
+    openSpy.mockRestore();
+  });
+
+  it('does not repeat the code when the barcode already prints it beneath the bars', () => {
+    // A too-long MPN falls back to the short id, which this dialog always prints as the
+    // barcode's human-readable text — so the separate line would say nothing new.
+    render(
+      <QrCodeDialog
+        {...props}
+        itemMpn={'RC0805-10K-0402-VERY-LONG-PART-NUMBER-THAT-CANNOT-POSSIBLY-FIT-ON-A-LABEL'}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('qr-symbology'));
+    fireEvent.click(screen.getByRole('option', { name: 'Barcode (Code 128)' }));
+
+    expect(screen.getByTestId('item-barcode-shortened')).toBeTruthy();
+    expect(screen.queryByTestId('item-short-code')).toBeNull();
+  });
+
+  it('omits the code when the label template turns it off', () => {
+    usePreferencesStore.setState({
+      labelTemplate: { ...DEFAULT_LABEL_TEMPLATE, showShortId: false },
+    });
+    render(<QrCodeDialog {...props} />);
+    expect(screen.queryByTestId('item-short-code')).toBeNull();
+    usePreferencesStore.setState({ labelTemplate: DEFAULT_LABEL_TEMPLATE });
   });
 });

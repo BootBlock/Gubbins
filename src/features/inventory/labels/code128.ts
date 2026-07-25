@@ -324,6 +324,36 @@ export interface Code128Options {
   showText?: boolean;
 }
 
+/** Height in px the human-readable line adds beneath the bars, when it is shown. */
+const TEXT_GAP_PX = 14;
+
+/**
+ * The intrinsic pixel size of the SVG {@link code128Svg} renders for the same arguments —
+ * i.e. the symbol's **aspect ratio**, which is what decides how tall it draws once a
+ * stylesheet has given it a width. Throws for a value Code 128 cannot encode, exactly as the
+ * renderer does.
+ *
+ * Exists so a caller laying out a label can ask the renderer how much height its barcode will
+ * claim rather than re-deriving it from the same magic numbers a second time (issue #330).
+ */
+export function code128SvgSize(
+  text: string,
+  options: Code128Options = {},
+): { readonly width: number; readonly height: number } {
+  return svgSize(code128Modules(text).length, options);
+}
+
+/** {@link code128SvgSize} for an already-encoded symbol, so the renderer encodes only once. */
+function svgSize(
+  moduleCount: number,
+  options: Code128Options,
+): { readonly width: number; readonly height: number } {
+  return {
+    width: (moduleCount + (options.margin ?? 10) * 2) * (options.scale ?? 2),
+    height: (options.height ?? 60) + ((options.showText ?? true) ? TEXT_GAP_PX : 0),
+  };
+}
+
 /**
  * Encode `text` and render a crisp, print-ready Code 128 SVG string. Contiguous
  * dark modules merge into a single `<rect>` for compactness, and the left/right
@@ -339,10 +369,8 @@ export function code128Svg(text: string, options: Code128Options = {}): string {
   const showText = options.showText ?? true;
 
   const modules = code128Modules(text);
-  const totalModules = modules.length + margin * 2;
-  const width = totalModules * scale;
-  const textGap = showText ? 14 : 0;
-  const svgHeight = height + textGap;
+  const { width, height: svgHeight } = svgSize(modules.length, options);
+  const textGap = showText ? TEXT_GAP_PX : 0;
 
   // Merge adjacent dark modules into one rect (horizontal run-length encoding).
   let rects = '';

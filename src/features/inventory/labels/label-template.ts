@@ -19,6 +19,7 @@
  * value Code 128 cannot spell is transliterated or given up on, never quietly cut down to
  * the letters that happen to fit the symbology (issue #332).
  */
+import { QR_QUIET_ZONE_MODULES, qrModuleCount } from '@/features/scanner/qr-code';
 import { code128Modules, code128WidestModules } from './code128';
 
 /**
@@ -416,7 +417,7 @@ export function sheetLabelCount(layout: SheetLayout): number {
 }
 
 /**
- * A label layout. The four `show*` field flags govern the text block beneath the
+ * A label layout. The five `show*` field flags govern the text block beneath the
  * code; `showText` governs the human-readable line printed under a Code 128 barcode
  * (the digits/letters the bars encode); `sheet` is how labels tile an A4 page.
  * `sizeMode` (+ `labelWidthMm`/`labelHeightMm`) selects the A4 grid vs a fixed physical
@@ -428,6 +429,11 @@ export interface LabelTemplate {
   readonly showMpn: boolean;
   readonly showLocation: boolean;
   readonly showQuantity: boolean;
+  /**
+   * Print the record's {@link shortId} as a plain text line — the label's fallback
+   * identifier, readable by eye when the code itself is not (issue #338).
+   */
+  readonly showShortId: boolean;
   /** Render the human-readable value under a Code 128 barcode. */
   readonly showText: boolean;
   /** How labels tile the printed A4 sheet (sheet mode only). */
@@ -441,8 +447,16 @@ export interface LabelTemplate {
 }
 
 /**
- * The default template — the pre-Phase-73 behaviour (a QR with the item name) so an
- * untouched preference prints exactly the labels it always did (never a regression).
+ * The default template — the pre-Phase-73 behaviour (a QR with the item name), plus the
+ * short-code fallback line.
+ *
+ * `showShortId` is the one field flag that defaults **on**, and deliberately so: every other
+ * flag adds detail, whereas this one is what makes the label identifiable at all once its code
+ * is damaged. A default label carried a name and nothing else, so a scuffed or torn QR left
+ * a sticker that mapped back to no particular record — two bins of the same screw, or a name
+ * since edited, and there was nothing to tell them apart (issue #338). Because
+ * {@link normaliseLabelTemplate} falls back field-by-field, a template saved before this
+ * existed picks the line up too.
  */
 export const DEFAULT_LABEL_TEMPLATE: LabelTemplate = {
   symbology: 'qr',
@@ -450,6 +464,7 @@ export const DEFAULT_LABEL_TEMPLATE: LabelTemplate = {
   showMpn: false,
   showLocation: false,
   showQuantity: false,
+  showShortId: true,
   showText: true,
   sheet: PLAIN_PAPER_SHEET_LAYOUT,
   // Defaults to the A4 grid (pre-size-mode behaviour); the die-cut dimensions seed the
@@ -593,6 +608,7 @@ export function normaliseLabelTemplate(value: unknown): LabelTemplate {
     showMpn: bool(v.showMpn, DEFAULT_LABEL_TEMPLATE.showMpn),
     showLocation: bool(v.showLocation, DEFAULT_LABEL_TEMPLATE.showLocation),
     showQuantity: bool(v.showQuantity, DEFAULT_LABEL_TEMPLATE.showQuantity),
+    showShortId: bool(v.showShortId, DEFAULT_LABEL_TEMPLATE.showShortId),
     showText: bool(v.showText, DEFAULT_LABEL_TEMPLATE.showText),
     sheet,
     sizeMode: v.sizeMode === 'die-cut' ? 'die-cut' : 'sheet',
@@ -630,9 +646,17 @@ export function templateHasQr(template: LabelTemplate): boolean {
 }
 
 /**
- * The short, human-friendly form of an id used as a Code 128 fallback value — the
- * first hyphen-delimited group of a UUID, upper-cased (e.g. `A1B2C3D4`). Always
- * Code-128-encodable (hex digits only), so it is a safe last resort.
+ * The short, human-friendly form of an id — the first hyphen-delimited group of a UUID,
+ * upper-cased (e.g. `A1B2C3D4`). Always Code-128-encodable (hex digits only), so it is a
+ * safe last resort for a barcode value.
+ *
+ * It is also the label's **printed fallback identifier** (issue #338): the one line that
+ * still identifies the record when the QR is scuffed, the barcode smudged or the name since
+ * edited. Both uses want the same properties — short enough to fit any label, long enough to
+ * be all but unique, and transcribable by eye — so they share this one derivation. The app
+ * resolves a code typed or scanned in this form back to its item
+ * (`isShortItemCode` / `ItemRepository.findByShortCode`), which is what makes it a
+ * fallback rather than an ornament.
  */
 export function shortId(id: string): string {
   const first = id.split('-')[0] ?? id;
@@ -859,4 +883,77 @@ export function fitBarcodeValue(preferred: string, id: string, widthMm: number):
     return { value: short, fit: wanted !== null ? 'shortened' : 'ok' };
   }
   return { value: null, fit: 'unprintable' };
+}
+
+/**
+ * The narrowest a single printed QR module may be and still be read, in millimetres.
+ *
+ * The QR counterpart of {@link MIN_BARCODE_MODULE_MM}, and the number the label geometry was
+ * never checked against (issue #330): a symbol's module count is set by its payload, so
+ * squeezing a deep-link's QR into a small label divides a fixed number of modules into less
+ * and less space until a camera cannot resolve one from the next.
+ *
+ * 0.25 mm (10 mil) is the practical floor for the camera these codes are read with — a phone
+ * held a few centimetres away, autofocusing, with no illumination of its own. Like the barcode
+ * floor it is a hard minimum rather than a quality target: GS1's general specifications ask
+ * 0.375 mm and up for a QR that has to be read reliably by any scanner, so a code that merely
+ * clears this is still better printed larger where there is room.
+ */
+export const MIN_QR_MODULE_MM = 0.25;
+
+/**
+ * How a label's QR fared at the size it will print:
+ * - `ok`      — its modules clear {@link MIN_QR_MODULE_MM}.
+ * - `tooSmall` — they don't; it will print, but a phone is unlikely to read it.
+ *
+ * Deliberately *not* the barcode's `unprintable` — there, a too-small symbol is dropped
+ * because a shorter value or a bare label is a genuine alternative. A QR's payload is a
+ * deep-link that cannot be shortened, it is usually the only code on the label, and the size
+ * it prints at depends on how the text beside it happens to wrap — so dropping it on an
+ * estimate would trade a code that might scan for a sticker that certainly does nothing. It
+ * is printed, and the print dialogs say what will happen.
+ */
+export type QrFit = 'ok' | 'tooSmall';
+
+/**
+ * The printed width of one module, in mm, of the QR encoding `payload` when the whole symbol
+ * — including its mandatory {@link QR_QUIET_ZONE_MODULES} quiet zone, which is part of what is
+ * drawn — is rendered `sizeMm` across.
+ *
+ * `null` means one thing only: **there is no symbol to measure**, because the payload fits no
+ * supported version. A size of zero is not that — it is a label whose text has taken every
+ * millimetre the code had, which is the *worst* case and must measure as one. Folding the two
+ * together made this non-monotonic: shrinking a label past the point where the QR got no room
+ * at all turned the "too small" warning back off, exactly where it mattered most.
+ *
+ * A negative size is meaningless rather than absent, so it measures as zero for the same
+ * reason. A non-finite one is not a measurement at all.
+ */
+export function qrModuleSizeMm(payload: string, sizeMm: number): number | null {
+  const modules = qrModuleCount(payload);
+  if (modules === null || !Number.isFinite(sizeMm)) return null;
+  return Math.max(0, sizeMm) / (modules + QR_QUIET_ZONE_MODULES * 2);
+}
+
+/**
+ * Whether the QR encoding `payload` will print readably at `sizeMm` across — see
+ * {@link QrFit}. An un-encodable payload is reported `ok`: there is no QR on that label at
+ * all, which is a different problem the caller already surfaces ("link too long"), and calling
+ * it too small as well would put two warnings on screen for one cause.
+ */
+export function fitQrToSize(payload: string, sizeMm: number): QrFit {
+  const module = qrModuleSizeMm(payload, sizeMm);
+  if (module === null) return 'ok';
+  return module >= MIN_QR_MODULE_MM ? 'ok' : 'tooSmall';
+}
+
+/**
+ * The smallest square, in mm, that prints the QR encoding `payload` at or above the
+ * {@link MIN_QR_MODULE_MM} floor — what a fixed-size printed QR box has to be sized against,
+ * and what a warning quotes as the size to aim for.
+ */
+export function minQrSizeMm(payload: string): number | null {
+  const modules = qrModuleCount(payload);
+  if (modules === null) return null;
+  return (modules + QR_QUIET_ZONE_MODULES * 2) * MIN_QR_MODULE_MM;
 }

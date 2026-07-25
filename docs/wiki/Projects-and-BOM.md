@@ -14,6 +14,22 @@ project stays reachable however many you have — see the [[pagination control|I
 With it off, the list shows as many projects as it can read at once and tells you how many are
 left over.
 
+## Finding a project
+
+Above the list sit a **search box**, a **status** filter and a **sort** picker, which appear as
+soon as you have a project to look through. Paging is a slow way to find a build you can already
+name, so:
+
+- **Search** narrows the list to projects whose name contains what you type. Press `Escape` (or
+  the **✕**) to clear it.
+- **Status** narrows to one stage — **Planning**, **Active**, **Completed** or **Archived** — or
+  **All statuses** for everything. The everyday use is hiding the builds you've finished.
+- **Sort** offers **Newest first** (the default), **Oldest first**, **Name A–Z** and **Name Z–A**.
+
+All three look at **every** project, not just the page on screen, so a search reaches a build that
+would otherwise sit pages away. Use them together — searching within **Active** only, say. If a
+filter leaves nothing, the list says so and offers **Clear filters** to get back.
+
 ## Choosing a project on a phone
 
 The Projects screen normally shows your list of projects down the left and the selected project's

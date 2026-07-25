@@ -7,6 +7,7 @@ import {
   FormField,
   InfoHint,
   Input,
+  Modal,
   Money,
   PageContainer,
   PageHeader,
@@ -39,12 +40,15 @@ import { useLocations } from '@/features/inventory/queries';
 import { useProjects } from '@/features/projects/projects';
 import { flattenLocationHierarchy } from './insurance-schedule';
 import {
+  CATALOGUE_CONFIRM_PAGES,
   CATALOGUE_FIELDS,
   CATALOGUE_GROUP_BY,
   CATALOGUE_SORT_BY,
   DEFAULT_CATALOGUE_FIELDS,
   DEFAULT_CATALOGUE_GROUP_BY,
   DEFAULT_CATALOGUE_SORT_BY,
+  cataloguePrintLimit,
+  estimateCataloguePages,
   type CatalogueFieldKey,
   type CatalogueGroup,
   type CatalogueGroupBy,
@@ -53,7 +57,7 @@ import {
   type CatalogueSortBy,
   type PartsCatalogue,
 } from './parts-catalogue';
-import { usePartsCatalogue } from './queries';
+import { useCatalogueItemCount, usePartsCatalogue } from './queries';
 import { useCatalogueLaunch } from './useCatalogueLaunch';
 
 /** Render context threaded to {@link renderField} — the formatters plus the per-item QR SVGs. */
@@ -157,6 +161,10 @@ export function CatalogueScreen() {
   const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
   // Surfaced if a picked logo can't be decoded (leaves the existing logo untouched).
   const [logoError, setLogoError] = useState('');
+  // The "this is a long print" confirmation, and the flag that fires the print once it has
+  // actually left the DOM (issue #338).
+  const [confirmingPrint, setConfirmingPrint] = useState(false);
+  const [printArmed, setPrintArmed] = useState(false);
   const t = useT();
 
   // How the catalogue is laid out — session view choices (like the scope + column picks).
@@ -238,7 +246,26 @@ export function CatalogueScreen() {
             ? { kind: 'items', itemIds: selectionIds }
             : null;
 
-  const catalogue = usePartsCatalogue(scope, { includePhotos: fields.has('photo'), groupBy, sortBy });
+  // Count the scope before building it (issue #338). The catalogue reads every item in scope into
+  // one document and encodes one QR per line, so "All items" over a large inventory has to be
+  // headed off *before* the read — not warned about once the tab is already wedged.
+  const scopeCount = useCatalogueItemCount(scope);
+  const printLimit = cataloguePrintLimit(fields);
+  /** The scope's size, once known. `null` while it is still being counted. */
+  const scopeItemCount = scopeCount.data ?? null;
+  const tooLarge = scopeItemCount != null && scopeItemCount > printLimit;
+
+  const catalogue = usePartsCatalogue(scope, {
+    includePhotos: fields.has('photo'),
+    groupBy,
+    sortBy,
+    // Both hooks run in the same render, so "not counted yet" must gate the read as firmly as
+    // "too large" does. Treating an unknown size as small enough would fire the unbounded read
+    // in parallel with the count on the very first render — and React Query does not abort a
+    // request once it is in flight, so the tab would pay for the whole document before the
+    // count that was supposed to prevent it ever arrived.
+    enabled: scopeItemCount != null && !tooLarge,
+  });
   const selectedFields = CATALOGUE_FIELDS.filter((field) => fields.has(field.key));
   // Per-group subtotals and the grand total are only meaningful — and only shown — when the
   // costed "Line value" column is on and at least one item is actually priced.
@@ -256,21 +283,35 @@ export function CatalogueScreen() {
     [labelBaseUrl],
   );
   const qrColumnOn = fields.has('qr');
+  // Roughly how long the printed document will be — shown beside the Print button, and the
+  // threshold the confirmation below turns on (issue #338).
+  const estimatedPages = catalogue.data
+    ? estimateCataloguePages({
+        lineCount: catalogue.data.itemCount,
+        groupCount: catalogue.data.groups.length,
+        photos: fields.has('photo'),
+        qr: qrColumnOn,
+      })
+    : 0;
   const qrByLine = useMemo<ReadonlyMap<string, string> | null>(() => {
-    if (!qrColumnOn || !catalogue.data) return null;
+    // `tooLarge` is checked here as well as at the read: the QR column is not part of the
+    // catalogue's query key, so ticking it neither re-keys nor drops the document already in
+    // cache — it only lowers the ceiling. Without this guard, turning QR on over a large scope
+    // would encode a code for every line of a document the screen is about to decline to show.
+    if (tooLarge || !qrColumnOn || !catalogue.data) return null;
     const map = new Map<string, string>();
     for (const group of catalogue.data.groups) {
       for (const line of group.lines) {
         // Guarded: a deep-link too long to encode (an over-long "Link host") leaves that
         // line without a QR rather than throwing out of this render-time memo.
-        const svg = qrSvgOrNull(buildItemQrUrl(line.id, baseUrl), { scale: 3, margin: 1 });
+        const svg = qrSvgOrNull(buildItemQrUrl(line.id, baseUrl), { scale: 3 });
         if (svg) map.set(line.id, svg);
       }
     }
     return map;
     // Keyed on the boolean (not the whole `fields` Set) so toggling an unrelated column never
     // regenerates every QR.
-  }, [qrColumnOn, catalogue.data, baseUrl]);
+  }, [tooLarge, qrColumnOn, catalogue.data, baseUrl]);
   // The QR column is on and there are lines, but not one encoded — the deep-link is too long for
   // any QR symbol, which only an over-long "Link host" can cause. Surface it rather than
   // rendering a silently blank column.
@@ -295,6 +336,34 @@ export function CatalogueScreen() {
 
   const empty = scope !== null && catalogue.data != null && catalogue.data.itemCount === 0;
   const needsChoice = scope === null;
+  /**
+   * The scope's size is not known yet.
+   *
+   * While it isn't, any document on screen belongs to the *previous* scope (both reads keep the
+   * last result to avoid flicker), and nothing can say whether the new one is even printable —
+   * so neither the size readout nor the Print button may speak for it.
+   */
+  const sizing = !needsChoice && scopeItemCount == null;
+  // The size of the print job, stated before the browser's own dialog can open. Only meaningful
+  // once the document exists — there is nothing to print until then.
+  const showPrintSize = !needsChoice && !sizing && !tooLarge && !empty && catalogue.data != null;
+
+  // A long print asks first (issue #338). `window.print()` blocks synchronously, so it must not
+  // be called from the confirm handler — React would not have committed the dialog's unmount
+  // yet, and the overlay would print across the first page. Arming a flag and printing from the
+  // effect that follows the commit keeps the paper clean.
+  const requestPrint = () => {
+    if (estimatedPages > CATALOGUE_CONFIRM_PAGES) {
+      setConfirmingPrint(true);
+      return;
+    }
+    window.print();
+  };
+  useEffect(() => {
+    if (!printArmed) return;
+    setPrintArmed(false);
+    window.print();
+  }, [printArmed]);
 
   return (
     <PageContainer>
@@ -304,19 +373,75 @@ export function CatalogueScreen() {
           icon={<CatalogueIcon />}
           title="Catalogue"
           actions={
-            // The primary call-to-action on this screen — the standard CTA colour (like
-            // "Add item" on the Inventory screen) so the next action is obvious.
-            <Button
-              onClick={() => window.print()}
-              disabled={needsChoice || empty || catalogue.isLoading}
-              data-testid="print-catalogue"
-            >
-              <PrintIcon />
-              Print / Save as PDF
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* How big the job is, *before* the browser's print dialog opens (issue #338). */}
+              {showPrintSize ? (
+                <span
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground"
+                  data-testid="catalogue-print-size"
+                >
+                  {t('reports.catalogue.scopeSize', { vars: { count: catalogue.data!.itemCount } })} ·{' '}
+                  {t('reports.catalogue.pageEstimate', { vars: { count: estimatedPages } })}
+                  <InfoHint content={t('reports.catalogue.pageEstimateHint')} />
+                </span>
+              ) : null}
+              {/* The primary call-to-action on this screen — the standard CTA colour (like
+                  "Add item" on the Inventory screen) so the next action is obvious. */}
+              <Button
+                onClick={requestPrint}
+                disabled={
+                  needsChoice || sizing || empty || tooLarge || catalogue.isLoading || !catalogue.data
+                }
+                data-testid="print-catalogue"
+              >
+                <PrintIcon />
+                Print / Save as PDF
+              </Button>
+            </div>
           }
         />
+        {tooLarge ? (
+          <p className="mt-2 text-sm text-muted-foreground" data-testid="catalogue-too-large">
+            {t('reports.catalogue.tooLarge', {
+              vars: { count: f.quantity(scopeItemCount ?? 0), limit: f.quantity(printLimit) },
+            })}
+          </p>
+        ) : null}
       </div>
+
+      {/* A catalogue can be long without being over the ceiling, and the browser's own print
+          dialog was the first place that became apparent. Say so while it can still be stopped. */}
+      <Modal
+        open={confirmingPrint}
+        onClose={() => setConfirmingPrint(false)}
+        title={t('reports.catalogue.confirmTitle')}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {t('reports.catalogue.confirmBody', {
+              vars: {
+                pages: f.quantity(estimatedPages),
+                items: f.quantity(catalogue.data?.itemCount ?? 0),
+              },
+            })}
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmingPrint(false)}>
+              {t('reports.catalogue.confirmCancel')}
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmingPrint(false);
+                setPrintArmed(true);
+              }}
+              data-testid="catalogue-print-confirm"
+            >
+              <PrintIcon />
+              {t('reports.catalogue.confirmPrint')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <main
         id={MAIN_CONTENT_ID}
@@ -581,14 +706,24 @@ export function CatalogueScreen() {
                     : 'Add a project to build a parts catalogue for it.'
                   : 'No items are selected.'}
             </p>
-          ) : catalogue.isLoading ? (
-            <div className="grid place-items-center py-16">
-              <Spinner />
-            </div>
+          ) : tooLarge ? (
+            // Checked ahead of the document: the scope's read is disabled at this size, so
+            // whatever `catalogue.data` still holds describes a *different* scope — showing it
+            // would present one selection's document under another's heading.
+            <p className="py-16 text-center text-sm text-muted-foreground">
+              {t('reports.catalogue.tooLargeDocument')}
+            </p>
           ) : catalogue.isError ? (
             <p role="alert" className="py-16 text-center text-sm text-destructive">
               The catalogue could not be loaded.
             </p>
+          ) : !catalogue.data ? (
+            // Covers the read itself *and* the window before it starts, while the scope is still
+            // being counted — the document read is idle then, so there is no `isLoading` to key
+            // off and nothing yet to render.
+            <div className="grid place-items-center py-16">
+              <Spinner />
+            </div>
           ) : empty ? (
             <p className="py-16 text-center text-sm text-muted-foreground">No items match this selection.</p>
           ) : (

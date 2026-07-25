@@ -52,15 +52,23 @@ let countState = 0;
 let allTagsState: TagWithCount[] = [];
 const refetch = vi.fn();
 const requestedPages: { page: number; pageSize: number }[] = [];
+/** Every narrowing the screen has asked the *query* for, newest last (issue #137). */
+const requestedBrowse: { search?: string; sort?: string }[] = [];
+/** Every filter the count query was given — it must track the list's, or the pager lies. */
+const requestedCountFilters: string[] = [];
 
 vi.mock('../inventory/tags', () => ({
   // The export's read-everything walk (issue #132); never invoked here, as the menu is stubbed.
-  readTagDictionaryPage: vi.fn(),
-  useTagDictionary: (page: number, pageSize: number) => {
+  readTagDictionaryPage: vi.fn(() => vi.fn()),
+  useTagDictionary: (page: number, pageSize: number, browse: { search?: string; sort?: string } = {}) => {
     requestedPages.push({ page, pageSize });
+    requestedBrowse.push(browse);
     return { ...dictionaryState, refetch };
   },
-  useTagCount: () => ({ data: countState }),
+  useTagCount: (search = '') => {
+    requestedCountFilters.push(search);
+    return { data: countState };
+  },
   // The merge picker reads the whole dictionary, never the page on screen.
   useTagNames: () => ({ data: { rows: allTagsState } }),
   useTagSuggestions: (q: string) => ({
@@ -87,6 +95,8 @@ const tag = (id: string, name: string, itemCount = 0, locationCount = 0): TagWit
 
 beforeEach(() => {
   requestedPages.length = 0;
+  requestedBrowse.length = 0;
+  requestedCountFilters.length = 0;
   refetch.mockClear();
   countState = 0;
   allTagsState = [];
@@ -206,5 +216,91 @@ describe('TagsScreen — export', () => {
   it('disables it while the dictionary is empty', () => {
     render(<TagsScreen />);
     expect(screen.getByTestId('export-tags')).toBeDisabled();
+  });
+});
+
+describe('TagsScreen — filtering and sorting the dictionary (issue #137)', () => {
+  const two = {
+    isLoading: false,
+    isError: false,
+    data: { rows: [tag('a', 'fragile', 3, 1), tag('b', 'spare')] },
+  };
+
+  it('asks the query to filter, rather than sieving the page it already holds', () => {
+    dictionaryState = two;
+    countState = 2;
+    render(<TagsScreen />);
+
+    fireEvent.change(screen.getByTestId('tags-search'), { target: { value: 'frag' } });
+
+    // The term reaches the list query *and* the count behind the pager — a count left on the
+    // whole dictionary would size the page strip for a set the filter can never fill.
+    expect(requestedBrowse.at(-1)?.search).toBe('frag');
+    expect(requestedCountFilters.at(-1)).toBe('frag');
+  });
+
+  it('returns to the first page when the filter changes', () => {
+    // The filtered set stays five pages long, so page 3 is still a valid page afterwards and
+    // clamping alone would leave the user exactly where they were, part-way down the matches.
+    usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 10 });
+    dictionaryState = two;
+    countState = 42;
+    render(<TagsScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Page 3' }));
+    expect(requestedPages.at(-1)?.page).toBe(3);
+
+    fireEvent.change(screen.getByTestId('tags-search'), { target: { value: 'frag' } });
+    expect(requestedPages.at(-1)?.page).toBe(1);
+  });
+
+  it('re-orders through the query, leaving the count alone', () => {
+    dictionaryState = two;
+    countState = 2;
+    render(<TagsScreen />);
+
+    fireEvent.click(screen.getByTestId('tags-sort'));
+    fireEvent.click(screen.getByRole('option', { name: 'Least used first' }));
+
+    expect(requestedBrowse.at(-1)?.sort).toBe('USAGE_ASC');
+    // Re-ordering the same set does not change how many there are.
+    expect(requestedCountFilters.at(-1)).toBe('');
+  });
+
+  it('says a filter emptied the list rather than claiming there are no tags', () => {
+    dictionaryState = { isLoading: false, isError: false, data: { rows: [] } };
+    countState = 0;
+    render(<TagsScreen />);
+    // Nothing to filter, so the box isn't offered and the genuine empty state stands.
+    expect(screen.queryByTestId('tags-search')).toBeNull();
+    expect(screen.getByTestId('tags-empty').textContent).toContain('No tags yet');
+
+    // With tags present but none matching, the copy names the query instead.
+    cleanup();
+    dictionaryState = two;
+    countState = 2;
+    render(<TagsScreen />);
+    // The filtered read comes back empty, as the repository's would for a term nothing matches.
+    dictionaryState = { isLoading: false, isError: false, data: { rows: [] } };
+    countState = 0;
+    fireEvent.change(screen.getByTestId('tags-search'), { target: { value: 'zzz' } });
+
+    expect(screen.getByTestId('tags-empty').textContent).toContain('zzz');
+    expect(screen.getByTestId('tags-empty').textContent).not.toContain('No tags yet');
+    // The filter stays reachable, or there would be no way back to the dictionary.
+    expect(screen.getByTestId('tags-search')).toBeTruthy();
+  });
+
+  it('announces how many tags match, but stays silent when nothing is filtered', () => {
+    dictionaryState = two;
+    countState = 2;
+    render(<TagsScreen />);
+    const live = screen.getByTestId('tags-count-live');
+    expect(live.getAttribute('role')).toBe('status');
+    expect(live.textContent).toBe('');
+
+    countState = 1;
+    fireEvent.change(screen.getByTestId('tags-search'), { target: { value: 'frag' } });
+    expect(live.textContent).toBe('1 tag matches your filter.');
   });
 });

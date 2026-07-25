@@ -72,6 +72,67 @@ describe('TagRepository', () => {
     expect((await tags.list({ limit: 2 })).rows).toHaveLength(2);
   });
 
+  describe('filter and sort (issue #137)', () => {
+    /** A dictionary with distinct names and deliberately uneven usage. */
+    async function seed() {
+      const item = await items.create({ name: 'Widget' });
+      const shelf = await locations.create({ name: 'Shelf' });
+      await tags.setForItem(item.id, ['fragile', 'project-x', 'spare']);
+      await tags.setForLocation(shelf.id, ['fragile', 'project-x']);
+      // `fragile` and `project-x` are on two things each, `spare` on one, `unused` on nothing.
+      await tags.create('unused');
+    }
+
+    it('narrows to names containing the term, not merely starting with it', async () => {
+      await seed();
+      // The combobox matches by prefix; tidying a dictionary needs the substring, so that
+      // "project-x" is reachable by typing the half of the name you remember.
+      const page = await tags.list({ search: 'x' });
+      expect(page.rows.map((t) => t.name)).toEqual(['project-x']);
+    });
+
+    it('matches a typed wildcard literally rather than as a pattern', async () => {
+      await tags.create('50%');
+      await tags.create('fragile');
+      const page = await tags.list({ search: '50%' });
+      expect(page.rows.map((t) => t.name)).toEqual(['50%']);
+    });
+
+    it('counts what the same filter would list, not the whole dictionary', async () => {
+      await seed();
+      expect(await tags.count()).toBe(4);
+      expect(await tags.count({ search: 'r' })).toBe(3); // fragile, project-x, spare
+      expect(await tags.count({ search: 'nothing-like-this' })).toBe(0);
+    });
+
+    it('orders by name or by total usage, defaulting to name', async () => {
+      await seed();
+      const names = async (sort?: Parameters<typeof tags.list>[0]) =>
+        (await tags.list(sort)).rows.map((t) => t.name);
+
+      expect(await names()).toEqual(['fragile', 'project-x', 'spare', 'unused']);
+      expect(await names({ sort: 'NAME_DESC' })).toEqual(['unused', 'spare', 'project-x', 'fragile']);
+      // Usage counts item *and* location assignments, so a tag on two locations is as used as
+      // one on two items. Ties fall back to name order, which keeps the paging total.
+      expect(await names({ sort: 'USAGE_DESC' })).toEqual(['fragile', 'project-x', 'spare', 'unused']);
+      // The point of this one: the tags worth deleting are the ones on nothing, and name order
+      // scatters them through the whole dictionary.
+      expect(await names({ sort: 'USAGE_ASC' })).toEqual(['unused', 'spare', 'fragile', 'project-x']);
+    });
+
+    it('pages the filtered set rather than filtering one page', async () => {
+      const item = await items.create({ name: 'Widget' });
+      await tags.setForItem(item.id, ['rig-1', 'rig-2', 'rig-3', 'other']);
+
+      const first = await tags.list({ search: 'rig', limit: 2, offset: 0 });
+      const last = await tags.list({ search: 'rig', limit: 2, offset: 2 });
+      expect(first.rows.map((t) => t.name)).toEqual(['rig-1', 'rig-2']);
+      // The third match is reachable, and the non-matching tag never appears on any page.
+      expect(last.rows.map((t) => t.name)).toEqual(['rig-3']);
+      expect(await tags.count({ search: 'rig' })).toBe(3);
+    });
+  });
+
   it('lists tag names without usage counts, ordered case-insensitively', async () => {
     const a = await items.create({ name: 'A' });
     await tags.setForItem(a.id, ['Zeta', 'alpha']);

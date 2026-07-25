@@ -24,8 +24,27 @@
 //
 // By default it never fails the caller: a failed model download prints a warning and exits 0,
 // leaving any already-staged assets in place. With `--require` — for builds that will be
-// published — any missing asset (the worker, a WASM core, or either language model) is a hard
-// error (exit 1) rather than a silently OCR-less deploy.
+// published — any missing asset (the worker, any WASM core variant, or either language model) is
+// a hard error (exit 1) rather than a silently OCR-less deploy.
+//
+// ## Why `tesseract.js-core` looks "ahead of latest" (issue #185)
+//
+// `npm outdated` reports `tesseract.js-core` as Current 7.0.0 / Latest 6.1.2 — the registry's
+// `latest` dist-tag is *lower* than what we install. That is a dist-tag artefact upstream, not a
+// version we drifted onto by accident, and the pin is deliberate:
+//
+//   * `tesseract.js@7` — itself the registry `latest` — declares `tesseract.js-core: ^7.0.0` as a
+//     hard dependency, so core 7 is the only core the wrapper we ship will accept.
+//   * Upstream published core 7.0.0 and then, minutes later, a 6.1.x patch for the Node-14
+//     compatibility line. `npm publish` moves `latest` to whatever it published last regardless of
+//     semver order, so the tag ended up pointing back at 6.x.
+//   * Core 7 is where the relaxed-SIMD builds live (Emscripten 4.0.15); 6.1.2 ships no
+//     `tesseract-core-relaxedsimd*` files at all.
+//
+// So do **not** "correct" the range down to the registry's `latest`: on a relaxed-SIMD-capable
+// browser the worker would request a core variant that no longer exists and OCR would 404 on
+// exactly those devices. `tesseract-core-pairing.test.ts` fails the build if the two majors ever
+// drift apart, and `CORE_VARIANTS` below fails a published build that stages an incomplete set.
 
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +74,26 @@ const require_ = process.argv.includes('--require');
 const MODELS = [
   ['fast', 'https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata'],
   ['best', 'https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata'],
+];
+
+/**
+ * Every WASM core variant Tesseract's worker can select at runtime, by base name. The worker picks
+ * exactly one and `importScripts` it as `<base>.wasm.js` — chosen by the device's relaxed-SIMD /
+ * SIMD support and whether the LSTM-only engine mode is in use — so a staged tree missing any one
+ * of them 404s on precisely the devices that select it, while every other device works fine.
+ * Checking for "at least one core" would therefore pass a deploy that is broken for a whole class
+ * of browsers, which is the failure the `--require` gate exists to prevent.
+ *
+ * `tesseract-core-pairing.test.ts` asserts this list still matches the variants the installed
+ * worker actually references, so an upstream core that adds or drops one fails the build.
+ */
+const CORE_VARIANTS = [
+  'tesseract-core',
+  'tesseract-core-lstm',
+  'tesseract-core-simd',
+  'tesseract-core-simd-lstm',
+  'tesseract-core-relaxedsimd',
+  'tesseract-core-relaxedsimd-lstm',
 ];
 
 /** Resolve a file inside an installed package by its `package.json` location. */
@@ -108,8 +147,9 @@ async function main() {
 
   // 2. The WASM core. We copy every variant Tesseract might auto-select for its SIMD/OEM
   //    combination (a `.js` loader + `.wasm.js` shim + `.wasm` binary each) so the engine
-  //    never fetches a file we didn't stage. It's git-ignored + precache-excluded, so the
-  //    extra megabytes cost the repo and the offline shell nothing.
+  //    never fetches a file we didn't stage — see CORE_VARIANTS for why the whole set matters
+  //    rather than the one this machine happens to pick. It's git-ignored + precache-excluded,
+  //    so the extra megabytes cost the repo and the offline shell nothing.
   const coreDir = pkgDir('tesseract.js-core');
   for (const file of readdirSync(coreDir)) {
     if (/\.(wasm|wasm\.js|js)$/.test(file) && file.startsWith('tesseract-core')) {
@@ -140,7 +180,10 @@ async function main() {
     console.error(
       `[ocr] required OCR assets are absent (${detail}). On-device OCR is a shipped feature ` +
         'with a settings surface, so a build that omits these assets would advertise it and ' +
-        'then fail at runtime. Re-run the deploy once the tessdata repositories are reachable.',
+        'then fail at runtime. A missing language model means the tessdata repositories were ' +
+        'unreachable — re-run the deploy. A missing core variant means the installed ' +
+        '`tesseract.js-core` does not carry one the worker can select, so check that its major ' +
+        'still matches `tesseract.js` (see CORE_VARIANTS above).',
     );
     process.exitCode = 1;
     return;
@@ -159,18 +202,17 @@ function staged(name) {
 
 /**
  * The staged assets Tesseract cannot start without, as human-readable names — empty when the
- * tree is complete. A core is any `tesseract-core*.wasm` variant (the engine picks one by
- * SIMD/OEM support), so presence of at least one is what matters. Emptiness counts as absence:
- * a zero-byte file left by an interrupted earlier run would otherwise pass the `--require`
- * gate and ship exactly the broken feature the gate exists to catch.
+ * tree is complete. **Every** {@link CORE_VARIANTS} entry must be present as the `.wasm.js` file
+ * the worker `importScripts`, not merely one of them: the worker selects a variant from the
+ * device's capabilities, so a partial set is a feature that works on this machine and 404s on
+ * someone else's. Emptiness counts as absence: a zero-byte file left by an interrupted earlier
+ * run would otherwise pass the `--require` gate and ship exactly the broken feature the gate
+ * exists to catch.
  */
 function missingAssets() {
-  const cores = existsSync(OUT_DIR)
-    ? readdirSync(OUT_DIR).filter((f) => f.startsWith('tesseract-core') && f.endsWith('.wasm') && staged(f))
-    : [];
   return [
     staged('worker.min.js') ? null : 'worker.min.js',
-    cores.length > 0 ? null : 'tesseract-core*.wasm',
+    ...CORE_VARIANTS.map((base) => (staged(`${base}.wasm.js`) ? null : `${base}.wasm.js`)),
     ...MODELS.map(([tier]) =>
       staged(`tessdata-${tier}/eng.traineddata`) ? null : `tessdata-${tier}/eng.traineddata`,
     ),

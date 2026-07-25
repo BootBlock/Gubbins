@@ -62,6 +62,22 @@ describe('PrintLocationLabelDialog — barcode readability (issue #331)', () => 
     expect(screen.queryByTestId('loc-label-barcode-shortened')).toBeNull();
     expect(screen.getByTestId('label-cell').querySelector('svg')).toBeNull();
   });
+
+  it('warns when the label is too small for a scannable QR (issue #330)', () => {
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    // The default A4 grid has plenty of room for the deep-link's code.
+    expect(screen.queryByTestId('loc-label-qr-too-small')).toBeNull();
+
+    // 30 × 15 mm with a name line leaves the QR a few millimetres for 45 modules.
+    chooseOption('loc-label-size', /30 .* 15 mm/);
+    expect(screen.getByTestId('loc-label-qr-too-small')).toBeTruthy();
+    // Still drawn: a QR's payload cannot be shortened the way a barcode's value can, and it
+    // is the only code on the label — so the warning is the whole remedy.
+    expect(screen.getByTestId('label-cell').querySelector('svg')).not.toBeNull();
+
+    chooseOption('loc-label-size', /A4 sheet/);
+    expect(screen.queryByTestId('loc-label-qr-too-small')).toBeNull();
+  });
 });
 
 describe('PrintLocationLabelDialog — die-cut print target (issue #337)', () => {
@@ -78,5 +94,28 @@ describe('PrintLocationLabelDialog — die-cut print target (issue #337)', () =>
 
     chooseOption('loc-label-size', /A4 sheet/);
     expect(screen.queryByTestId('loc-label-die-cut-printer')).toBeNull();
+  });
+});
+
+/** The printed fallback identifier — what still names the bin once its code is damaged (#338). */
+describe('PrintLocationLabelDialog — short-code fallback line', () => {
+  it('prints the location’s short code by default, and drops it when the toggle is cleared', () => {
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    expect(screen.getByText('00000000')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('loc-label-show-short-code'));
+
+    expect(screen.queryByText('00000000')).toBeNull();
+    // The name is still on the label — only the fallback line went. (It also appears as the
+    // dialog's own description, hence `getAllByText`.)
+    expect(screen.getAllByText('Bin 3').length).toBeGreaterThan(0);
+  });
+
+  it('seeds the toggle from the saved default template', () => {
+    usePreferencesStore.setState({
+      labelTemplate: { ...DEFAULT_LABEL_TEMPLATE, showShortId: false },
+    });
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    expect(screen.queryByText('00000000')).toBeNull();
   });
 });

@@ -217,9 +217,56 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     });
   });
 
+  it('warns when the label is too small for a scannable QR (issue #330)', () => {
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    // The default A4 grid has plenty of room for the deep-link's code.
+    expect(screen.queryByTestId('labels-qr-too-small')).toBeNull();
+
+    // 30 × 15 mm with a name line leaves the QR a few millimetres for 45 modules.
+    chooseOption('label-size', /30 .* 15 mm/);
+    expect(screen.getByTestId('labels-qr-too-small')).toBeTruthy();
+
+    // The QR is still drawn — it cannot be shortened the way a barcode's value can, and it is
+    // the only code on the label, so the warning is the whole remedy.
+    screen.getAllByTestId('label-cell').forEach((cell) => {
+      expect(cell.querySelector('svg')).not.toBeNull();
+    });
+
+    chooseOption('label-size', /A4 sheet/);
+    expect(screen.queryByTestId('labels-qr-too-small')).toBeNull();
+  });
+
   it('disables printing and shows a notice when nothing is selected', () => {
     render(<PrintLabelsDialog open onClose={() => {}} items={[]} />);
     expect(screen.getByTestId('print-labels-confirm')).toBeDisabled();
     expect(screen.getByText('No items selected.')).toBeTruthy();
+  });
+});
+
+/** The printed fallback identifier — what still names the item once its code is damaged (#338). */
+describe('PrintLabelsDialog — short-code fallback line', () => {
+  it('prints each item’s short code by default, and drops it when the toggle is cleared', () => {
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    expect(screen.getByText('11111111')).toBeTruthy();
+    expect(screen.getByText('22222222')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('label-show-short-code'));
+
+    expect(screen.queryByText('11111111')).toBeNull();
+    expect(screen.queryByText('22222222')).toBeNull();
+    // The names are still there — only the fallback line went.
+    expect(screen.getByText('Resistor 10k')).toBeTruthy();
+  });
+
+  it('carries the line onto the printed sheet, not just the preview', () => {
+    const fakeDoc = { write: vi.fn(), close: vi.fn() };
+    const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    fireEvent.click(screen.getByTestId('print-labels-confirm'));
+
+    expect(fakeDoc.write.mock.calls[0]![0] as string).toContain('11111111');
+    openSpy.mockRestore();
   });
 });

@@ -35,6 +35,12 @@ which includes a built-in, step-by-step setup guide.
 - **See stock as entities.** Via **MQTT discovery**, Gubbins can publish summary figures (like
   low/out-of-stock counts) that appear automatically as Home Assistant entities — ready for
   dashboards and automations.
+- **See what needs attention.** The custom integration adds an entity for each of the inventory
+  statuses you already filter by — *low stock*, *out of stock*, *on order*, *expiring soon*,
+  *warranty expiring*, *on loan*, *overdue loans* and *maintenance due*. Each is simply on
+  whenever something matches, and carries the exact number alongside it, so an automation can
+  react to "anything overdue" or to "more than five things are low" without any templating.
+  They're the same counts the app's own filters show.
 - **Keep the light mapping in Gubbins.** Each location entity also carries that location's own
   [[custom fields|Custom-Fields-and-Capabilities]] as attributes. So you can record which light
   sits above a shelf on the shelf itself, and have an automation read it from there — instead of
@@ -121,6 +127,17 @@ its own entry in Home Assistant, and neither is set in stone.
 If you choose to enable it, Home Assistant can also *adjust* stock through the bridge — a peer
 device that writes back through Gubbins' safe [[merge|Cloud-Sync]] so it can't cause drift.
 Write-back is **off by default**.
+
+Both ways of tracking stock are covered, so it doesn't matter which kind of item you're
+automating:
+
+- **Things you count** — check one in or out by a whole number.
+- **Things you measure** — record an amount used or refilled on a
+  [[gauge-tracked consumable|Low-Stock-and-Gauges]], in its own unit (grams, millilitres), fractions
+  included. This is the natural partner to [[counting by weight|Counting-by-Weight]] above: if a
+  consumable lives on a smart scale, Home Assistant can read the weight and send the difference
+  straight back. Gubbins keeps the result between empty and full, and a request aimed at a
+  counted item is refused rather than quietly doing something else.
 
 > **⚠️ Heads-up**
 > Exposing the bridge to Home Assistant means it's reachable on your LAN. Give it its own

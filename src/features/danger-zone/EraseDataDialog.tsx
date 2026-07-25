@@ -21,6 +21,7 @@ import { Link } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
+  Checkbox,
   Modal,
   Spinner,
   Tooltip,
@@ -332,11 +333,9 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
                       key={target.id}
                       className={cn('flex items-center gap-3 px-3 py-2.5', includedIn && 'opacity-60')}
                     >
-                      <input
+                      <Checkbox
                         id={checkboxId}
-                        type="checkbox"
                         data-testid={`erase-target-${target.id}`}
-                        className="size-4 accent-primary"
                         checked={checked}
                         onChange={() => toggleTarget(target.id)}
                         disabled={busy || includedIn !== undefined}
@@ -447,10 +446,8 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
                 openDelayMs={INFO_OPEN_DELAY_MS}
               >
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     data-testid="erase-sync-toggle"
-                    className="size-4 accent-primary"
                     checked={tombstone}
                     onChange={(e) => setTombstone(e.target.checked)}
                     disabled={busy}

@@ -314,6 +314,25 @@ export function parseTextQuery(input: string): ParseTextQueryResult {
 }
 
 /**
+ * True when a query carries no search *syntax* at all — every token is a bare, unquoted
+ * word with no `field:value` separator — so it means exactly the same thing typed into the
+ * plain quick-search box (issue #136). Recalling such a saved search fills that box rather
+ * than opening the Visual Builder; see `planSavedSearchRecall`.
+ *
+ * Decided by the grammar's own lexer rather than a second hand-rolled scan, so it can never
+ * drift from what {@link parseTextQuery} treats as structure: a boolean keyword, a bracket,
+ * a leading `-`, a quoted phrase or any separator all make it a *builder* query. A blank
+ * query is not plain — there is nothing to put in the box.
+ */
+export function isPlainTextQuery(input: string): boolean {
+  const tokens = lex(input);
+  if (tokens.length === 0) return false;
+  return tokens.every(
+    (token) => token.kind === 'TERM' && !QUOTES.has(token.text[0] ?? '') && findSeparator(token.text) < 0,
+  );
+}
+
+/**
  * Combine parsed children under one logical operator, dropping the empties (so a
  * blank `()` or a dangling `OR` contributes nothing) and **flattening** a sole child
  * so redundant brackets (`((esp32))`) never inflate the tree's depth.

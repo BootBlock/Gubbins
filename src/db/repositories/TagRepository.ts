@@ -21,25 +21,66 @@ import {
   locationTagTombstoneStatement,
   tombstoneStatement,
 } from './tombstone';
-import type { Page, PageParams, Tag, TagRow, TagWithCount } from './types';
+import type { Page, PageParams, Tag, TagFilter, TagListParams, TagRow, TagSort, TagWithCount } from './types';
 
 interface TagCountRow extends TagRow {
   readonly item_count: number;
   readonly location_count: number;
 }
 
+/**
+ * The `WHERE` clause (and its bound parameter) for a {@link TagFilter} — written once so
+ * {@link TagRepository.list} and {@link TagRepository.count} can never disagree about what
+ * matches, which would size the page strip for a different result set than the rows.
+ *
+ * `LIKE` is case-insensitive for ASCII in SQLite, which is what a name filter wants, and the
+ * term is escaped so a typed `%` or `_` matches itself rather than acting as a wildcard.
+ */
+function tagFilter(filter: TagFilter): { where: string; params: string[] } {
+  const term = filter.search?.trim() ?? '';
+  if (term.length === 0) return { where: '', params: [] };
+  return { where: `WHERE t.name LIKE ? ESCAPE '\\'`, params: [`%${escapeLike(term)}%`] };
+}
+
+/**
+ * The `ORDER BY` for each {@link TagSort}, allow-listed rather than composed from the caller's
+ * string — the ordering is the one part of the query a filter can't parameterise, so it is
+ * chosen from a fixed table and never interpolated from input.
+ *
+ * The usage orders sort on the two counts *summed*: "used" means carried by anything, so a tag on
+ * five locations and no items is as used as one on five items. Every entry ends in `t.id ASC`,
+ * which makes the ordering total — without it, OFFSET paging over the many tags that share a
+ * usage count could repeat one row on page 2 while dropping another entirely (issue #149).
+ */
+const TAG_ORDER_BY: Record<TagSort, string> = {
+  NAME_ASC: 't.name COLLATE NOCASE ASC, t.id ASC',
+  NAME_DESC: 't.name COLLATE NOCASE DESC, t.id ASC',
+  USAGE_DESC: '(item_count + location_count) DESC, t.name COLLATE NOCASE ASC, t.id ASC',
+  USAGE_ASC: '(item_count + location_count) ASC, t.name COLLATE NOCASE ASC, t.id ASC',
+};
+
 export class TagRepository extends BaseRepository {
-  /** Paginated tag dictionary with live item + location counts, ordered by name. */
-  async list(params: PageParams = {}): Promise<Page<TagWithCount>> {
+  /**
+   * Paginated tag dictionary with live item + location counts, ordered by name by default.
+   *
+   * `search` and `sort` are resolved **here** rather than by the caller filtering a page it has
+   * already read (issue #137): a filter applied to one page of a paged dictionary can only narrow
+   * that page, leaving every tag past it exactly as unreachable as before — on the one screen
+   * whose job is to manage all of them. Pair with {@link count}, given the same filter.
+   */
+  async list(params: TagListParams = {}): Promise<Page<TagWithCount>> {
     const { limit, offset } = this.resolvePage(params);
+    const { where, params: filterParams } = tagFilter(params);
+    const orderBy = TAG_ORDER_BY[params.sort ?? 'NAME_ASC'] ?? TAG_ORDER_BY.NAME_ASC;
     const rows = await this.driver.query<TagCountRow>(
       `SELECT t.id, t.name, t.updated_at,
               (SELECT COUNT(*) FROM item_tags it WHERE it.tag_id = t.id) AS item_count,
               (SELECT COUNT(*) FROM location_tags lt WHERE lt.tag_id = t.id) AS location_count
        FROM tags t
-       ORDER BY t.name COLLATE NOCASE ASC
+       ${where}
+       ORDER BY ${orderBy}
        LIMIT ? OFFSET ?;`,
-      [limit, offset],
+      [...filterParams, limit, offset],
     );
     return this.toPage(
       rows.map((r) => ({
@@ -53,13 +94,18 @@ export class TagRepository extends BaseRepository {
   }
 
   /**
-   * How many tags exist in total — the denominator behind the Tags screen's pagination
-   * (issue #84). A dictionary can outgrow one page, and that screen is where the whole set is
-   * managed, so it pages server-side rather than slicing a single capped read (which would
-   * silently hide every tag past the first page).
+   * How many tags match the same filter {@link list} would apply — the denominator behind the
+   * Tags screen's pagination (issue #84), and behind "how many did that filter leave" (#137). A
+   * dictionary can outgrow one page, and that screen is where the whole set is managed, so it
+   * pages server-side rather than slicing a single capped read (which would silently hide every
+   * tag past the first page).
    */
-  async count(): Promise<number> {
-    const row = await this.driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM tags;');
+  async count(filter: TagFilter = {}): Promise<number> {
+    const { where, params } = tagFilter(filter);
+    const row = await this.driver.queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM tags t ${where};`,
+      params,
+    );
     return Number(row?.n ?? 0);
   }
 

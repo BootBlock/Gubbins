@@ -71,7 +71,8 @@ export function locationPath(id: string, nodes: readonly LocationPathNode[], sep
 }
 
 /**
- * The text lines a location label shows, in order, per the template's flags.
+ * The location **field** lines a label shows, in order, per the template's flags. The
+ * short-code fallback line is appended later, by the shared `resolveCell`.
  *
  * @internal Exported for unit tests only.
  */

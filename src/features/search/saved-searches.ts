@@ -11,6 +11,8 @@
  * of the store" seam) makes them directly unit-testable. The store is thin glue and
  * persists the result to localStorage (device-local — no DB migration).
  */
+import { isPlainTextQuery, parseTextQuery } from './parse-text-query';
+import type { SearchAST } from '@/db/search/ast';
 
 /** One named, recallable text query. */
 export interface SavedSearch {
@@ -62,4 +64,29 @@ export function addSavedSearch(
 /** Remove a saved search by id (no-op if it isn't there). */
 export function removeSavedSearch(list: readonly SavedSearch[], id: string): readonly SavedSearch[] {
   return list.filter((s) => s.id !== id);
+}
+
+/**
+ * Where a recalled saved search should land (issue #136).
+ *
+ * `text` — the query is bare words, so it means the same thing typed into the quick-search
+ * box; that box runs it. `builder` — it carries syntax the quick box can't express, so the
+ * parsed tree loads into the Visual Builder instead. `error` — it no longer parses (the
+ * grammar's own message), so nothing is loaded and the previous results stand.
+ */
+export type SavedSearchRecall =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'builder'; readonly ast: SearchAST }
+  | { readonly kind: 'error'; readonly error: string };
+
+/**
+ * Decide what recalling a saved query means, so a saved search reached from the quick-search
+ * box behaves the way its text reads: `resistor` fills the box, `cap:voltage>3.3 qty<10` opens
+ * the builder. Pure — the caller applies the outcome to its own state.
+ */
+export function planSavedSearchRecall(rawQuery: string): SavedSearchRecall {
+  const query = rawQuery.trim();
+  if (isPlainTextQuery(query)) return { kind: 'text', text: query };
+  const result = parseTextQuery(query);
+  return result.ok ? { kind: 'builder', ast: result.ast } : { kind: 'error', error: result.error };
 }

@@ -88,11 +88,29 @@ If you collect a lot of tags, the list splits into pages using the same
 [[pagination control|Inventory-Views]] as the rest of the app — turn it on with **Paginate list**
 (or **Settings → Inventory → Lists**), and every tag stays reachable however many you have.
 
+#### Filtering and sorting the list
+
+Above the list sit a **filter box** and a **sort** picker, which appear as soon as you have a tag
+to look through:
+
+- **Filter** narrows the list to tags whose name contains what you type — anywhere in the name,
+  so typing `x` finds `project-x`. Press `Escape` (or the **✕**) to clear it. The filter searches
+  your **whole** dictionary, not just the page on screen, so it reaches a tag however far down the
+  alphabet it sits.
+- **Sort** offers **Name A–Z** (the default), **Name Z–A**, **Most used first** and **Least used
+  first**. "Used" counts items *and* locations together.
+
 > **💡 Tip**
-> **Export** saves the whole dictionary as a spreadsheet or a table, with each tag's item and
-> location counts — a quick way to see which tags are pulling their weight and which are one-offs
-> worth merging away. It covers every tag, not just the page on screen. See
-> [[Export & import|Export-and-Import]].
+> **Least used first** brings the tags on nothing to the top — the quickest way to spot the
+> one-offs and typos worth deleting or merging.
+
+#### Taking the dictionary with you
+
+**Export** saves the tag list as a spreadsheet or a table, with each tag's item and location
+counts — a quick way to review the whole vocabulary somewhere other than the screen. It covers
+every tag, not just the page in view, and follows whatever **filter** and **sort** you have
+applied, so the file is the list you narrowed to, in the order you put it. See
+[[Export & import|Export-and-Import]].
 
 ## Attachments & datasheets
 

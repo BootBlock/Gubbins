@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   AutocompleteField,
   Button,
+  Checkbox,
   FormField,
   InfoHint,
   Input,
@@ -436,12 +437,10 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
         className="flex cursor-pointer items-center gap-2 text-sm data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-60"
         data-disabled={!canBeUnlimited}
       >
-        <input
-          type="checkbox"
+        <Checkbox
           checked={draft.isUnlimited}
           disabled={!canBeUnlimited}
           onChange={(e) => setIsUnlimited(e.target.checked)}
-          className="size-4 accent-primary"
           data-testid="item-details-unlimited"
         />
         Unlimited supply
