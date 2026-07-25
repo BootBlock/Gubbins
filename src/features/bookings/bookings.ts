@@ -14,6 +14,7 @@ import {
   type CreateBookingInput,
 } from '@/db/repositories';
 import { agendaKeys } from '@/features/calendar/keys';
+import { checkoutKeys, contactKeys } from '@/features/contacts/keys';
 import { invalidateItems } from '@/features/inventory/invalidate';
 
 export const bookingKeys = {
@@ -88,8 +89,8 @@ export function useConvertBooking() {
     onSettled: () => {
       invalidateBookings(client);
       // A conversion creates a loan: it decrements on-hand stock and opens a checkout.
-      void client.invalidateQueries({ queryKey: ['checkouts'] });
-      void client.invalidateQueries({ queryKey: ['contacts'] });
+      void client.invalidateQueries({ queryKey: checkoutKeys.all });
+      void client.invalidateQueries({ queryKey: contactKeys.all });
       invalidateItems(client);
     },
   });

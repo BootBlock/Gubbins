@@ -12,8 +12,9 @@ import type { CatalogueScope, CataloguePartsOptions } from './parts-catalogue';
 import { scheduleSlices, type ScheduleGroupSummary, type ScheduleLine } from './insurance-schedule';
 import { MAX_PAGE_SIZE } from '@/db/repositories/constants';
 
-// The `['reports', …]` prefix is the SSOT in ./keys — every key below is built from it so
-// that invalidating the prefix (see `invalidateItems`) provably refreshes all of them.
+// The `['reports', …]` prefix and a named key per report are the SSOT in ./keys — every hook
+// below reads its key from there, so invalidating the prefix (see `invalidateItems`) provably
+// refreshes all of them, and the inputs a report is keyed on are visible side by side.
 export { reportKeys } from './keys';
 
 // The selectable analytics windows live in their own dependency-free module (SSOT) so the
@@ -82,7 +83,7 @@ function useValuationCurrency(): string {
 export function useInventoryValue() {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'inventory-value', currency],
+    queryKey: reportKeys.inventoryValue(currency),
     queryFn: () => getReportRepository().inventoryValue(),
   });
 }
@@ -96,14 +97,14 @@ export function useInventoryValue() {
 export function useLocationStats(locationId: string, includeSubtree: boolean) {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'location-stats', locationId, includeSubtree, currency],
+    queryKey: reportKeys.locationStats(locationId, includeSubtree, currency),
     queryFn: () => getReportRepository().locationStats(locationId, { includeSubtree }),
   });
 }
 
 export function useConsumptionRate(windowDays: number = REPORT_WINDOW_DAYS) {
   return useQuery({
-    queryKey: [...reportKeys.all, 'consumption', windowDays],
+    queryKey: reportKeys.consumption(windowDays),
     queryFn: () => getReportRepository().consumptionRate(windowDays),
   });
 }
@@ -113,7 +114,7 @@ export function useMovement(
   buckets: number = REPORT_MOVEMENT_BUCKETS,
 ) {
   return useQuery({
-    queryKey: [...reportKeys.all, 'movement', windowDays, buckets],
+    queryKey: reportKeys.movement(windowDays, buckets),
     queryFn: () => getReportRepository().movement(windowDays, buckets),
   });
 }
@@ -127,7 +128,7 @@ export function useLowStockCount(options: { enabled?: boolean } = {}) {
   const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
   const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   return useQuery({
-    queryKey: [...reportKeys.all, 'low-stock-count', qtyThreshold, gaugePercent],
+    queryKey: reportKeys.lowStockCount(qtyThreshold, gaugePercent),
     queryFn: () => getReportRepository().lowStockCount({ qtyThreshold, gaugePercent }),
     enabled: options.enabled ?? true,
   });
@@ -141,7 +142,7 @@ export function useLowStockCount(options: { enabled?: boolean } = {}) {
  */
 export function useOutOfStockCount(options: { enabled?: boolean } = {}) {
   return useQuery({
-    queryKey: [...reportKeys.all, 'out-of-stock-count'],
+    queryKey: reportKeys.outOfStockCount(),
     queryFn: () => getReportRepository().outOfStockCount(),
     enabled: options.enabled ?? true,
   });
@@ -160,7 +161,7 @@ export function useDeadStock(sinceDays?: number) {
   const effective = sinceDays ?? preferred;
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'dead-stock', effective, currency],
+    queryKey: reportKeys.deadStock(effective, currency),
     queryFn: () => getReportRepository().deadStock(effective),
   });
 }
@@ -173,7 +174,7 @@ export function useDeadStock(sinceDays?: number) {
 export function useDeadStockPolicy(itemId: string) {
   const defaultDays = usePreferencesStore((s) => s.deadStockDays);
   return useQuery({
-    queryKey: [...reportKeys.all, 'dead-stock-policy', itemId, defaultDays],
+    queryKey: reportKeys.deadStockPolicy(itemId, defaultDays),
     queryFn: () => getReportRepository().deadStockPolicy(itemId, defaultDays),
   });
 }
@@ -181,7 +182,7 @@ export function useDeadStockPolicy(itemId: string) {
 export function useAbcAnalysis() {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'abc', ABC_WINDOW_DAYS, currency],
+    queryKey: reportKeys.abc(ABC_WINDOW_DAYS, currency),
     queryFn: () => getReportRepository().abcAnalysis(ABC_WINDOW_DAYS),
   });
 }
@@ -189,7 +190,7 @@ export function useAbcAnalysis() {
 export function useTurnover(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'turnover', windowDays, currency],
+    queryKey: reportKeys.turnover(windowDays, currency),
     queryFn: () => getReportRepository().turnover(windowDays),
     // The window toggle re-keys this query; hold the previous window's table on screen
     // while the new one loads so toggling never flashes the panel to a spinner and back.
@@ -200,7 +201,7 @@ export function useTurnover(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
 export function useStockAging() {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'stock-aging', currency],
+    queryKey: reportKeys.stockAging(currency),
     queryFn: () => getReportRepository().stockAging(),
   });
 }
@@ -208,7 +209,7 @@ export function useStockAging() {
 export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'valuation-trend', windowDays, VALUATION_TREND_POINTS, currency],
+    queryKey: reportKeys.valuationTrend(windowDays, VALUATION_TREND_POINTS, currency),
     queryFn: () => getReportRepository().valuationTrend(windowDays, VALUATION_TREND_POINTS),
     // Re-keyed by the same analytics window toggle — keep the previous sparkline visible
     // while the new window loads (flicker-free, mirrors useTurnover above).
@@ -219,7 +220,7 @@ export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW)
 export function useDataHygiene(staleDays: number = DATA_HYGIENE_STALE_DAYS) {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'data-hygiene', staleDays, currency],
+    queryKey: reportKeys.dataHygiene(staleDays, currency),
     queryFn: () => getReportRepository().dataHygiene(staleDays),
   });
 }
@@ -236,7 +237,7 @@ export function useSpendAnalytics(
   options?: { enabled?: boolean },
 ) {
   return useQuery({
-    queryKey: [...reportKeys.all, 'spend', windowDays, SPEND_BUCKETS],
+    queryKey: reportKeys.spend(windowDays, SPEND_BUCKETS),
     queryFn: () => getReportRepository().spendAnalytics(windowDays, SPEND_BUCKETS),
     enabled: options?.enabled ?? true,
     // The spend window toggle re-keys this query; hold the previous breakdown on screen
@@ -256,7 +257,7 @@ export function useSalesAnalytics(
   options?: { enabled?: boolean },
 ) {
   return useQuery({
-    queryKey: [...reportKeys.all, 'sales', windowDays, SALES_BUCKETS],
+    queryKey: reportKeys.sales(windowDays, SALES_BUCKETS),
     queryFn: () => getReportRepository().salesAnalytics(windowDays, SALES_BUCKETS),
     enabled: options?.enabled ?? true,
     // The window toggle re-keys this query; hold the previous breakdown on screen while the new
@@ -276,7 +277,7 @@ export function useSalesAnalytics(
 export function useInsuranceScheduleSummary() {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'insurance-schedule', 'summary', currency],
+    queryKey: reportKeys.insuranceScheduleSummary(currency),
     queryFn: () => getReportRepository().insuranceScheduleSummary(),
   });
 }
@@ -297,7 +298,7 @@ export function useInsuranceSchedulePage(
 ) {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'insurance-schedule', 'page', offset, limit, includePhotos, currency],
+    queryKey: reportKeys.insuranceSchedulePage(offset, limit, includePhotos, currency),
     queryFn: async () => {
       const repo = getReportRepository();
       const slices = scheduleSlices(groups ?? [], offset, limit);
@@ -381,7 +382,7 @@ export function usePartsCatalogue(
   const { includePhotos = false, groupBy, sortBy, enabled = true } = options;
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'parts-catalogue', scope, includePhotos, groupBy, sortBy, currency],
+    queryKey: reportKeys.partsCatalogue(scope, includePhotos, groupBy, sortBy, currency),
     queryFn: () => getReportRepository().partsCatalogue(scope!, { includePhotos, groupBy, sortBy }),
     enabled: scope !== null && enabled,
     // Re-keyed as the reader changes scope/grouping/columns; keep the previous document on screen
@@ -402,7 +403,7 @@ export function usePartsCatalogue(
  */
 export function useCatalogueItemCount(scope: CatalogueScope | null) {
   return useQuery({
-    queryKey: [...reportKeys.all, 'parts-catalogue-count', scope],
+    queryKey: reportKeys.partsCatalogueCount(scope),
     queryFn: () => getReportRepository().partsCatalogueCount(scope!),
     enabled: scope !== null,
     // Deliberately **not** `keepPreviousData`, unlike every other read on this screen. This
@@ -420,7 +421,7 @@ export function useCatalogueItemCount(scope: CatalogueScope | null) {
 export function useForeignCurrencyCostCount() {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: [...reportKeys.all, 'foreign-currency-cost-count', currency],
+    queryKey: reportKeys.foreignCurrencyCostCount(currency),
     queryFn: () => getReportRepository().foreignCurrencyCostCount(),
   });
 }

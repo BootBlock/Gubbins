@@ -34,6 +34,7 @@ import {
   type UpdateExpenseInput,
   type UpdateProjectInput,
 } from '@/db/repositories';
+import { checkoutKeys } from '@/features/contacts/keys';
 import { useReportWriteFailure } from '@/features/errors';
 import { inventoryKeys } from '@/features/inventory/queries';
 import { readAllPages } from '@/lib/read-all-pages';
@@ -279,7 +280,7 @@ export function useDeleteProject() {
       void client.invalidateQueries({ queryKey: projectKeys.list() });
       void client.invalidateQueries({ queryKey: projectKeys.budgetAlerts() });
       // A returned loan restores stock and closes checkout rows — refresh those views too.
-      void client.invalidateQueries({ queryKey: ['checkouts'] });
+      void client.invalidateQueries({ queryKey: checkoutKeys.all });
       invalidateItems(client);
     },
   });

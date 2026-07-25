@@ -75,7 +75,7 @@ export function useItemKit(kitId: string | undefined) {
  */
 export function useKitAvailability(kitId: string | undefined) {
   return useQuery({
-    queryKey: [...inventoryKeys.itemKit(kitId ?? ''), 'rollup'],
+    queryKey: inventoryKeys.itemKitRollup(kitId ?? ''),
     queryFn: () => getItemRepository().rollUpAvailability(kitId!),
     enabled: Boolean(kitId),
   });
@@ -186,7 +186,7 @@ export function useExpiringItems(
   options?: { enabled?: boolean },
 ) {
   return useQuery({
-    queryKey: [...inventoryKeys.expiring(), withinDays],
+    queryKey: inventoryKeys.expiringWithin(withinDays),
     queryFn: () => getItemRepository().listExpiringWithin(withinDays, nowMs(), { limit: 100 }),
     enabled: options?.enabled ?? true,
   });
@@ -200,7 +200,7 @@ export function useExpiringItems(
  */
 export function useLowStockItems(thresholds?: LowStockThresholds) {
   return useQuery({
-    queryKey: [...inventoryKeys.lowStock(), thresholds ?? null],
+    queryKey: inventoryKeys.lowStockFor(thresholds ?? null),
     queryFn: () => getItemRepository().listLowStock(thresholds, { limit: 100 }),
   });
 }

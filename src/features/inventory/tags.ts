@@ -118,7 +118,7 @@ export function useItemsTags(itemIds: readonly string[], enabled = true) {
 export function useTagSuggestions(prefix: string) {
   const term = prefix.trim();
   return useQuery({
-    queryKey: [...inventoryKeys.tags(), 'suggest', term] as const,
+    queryKey: inventoryKeys.tagSuggest(term),
     queryFn: () => getTagRepository().suggest(term),
     enabled: term.length > 0,
   });

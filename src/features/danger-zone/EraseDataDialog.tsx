@@ -94,6 +94,17 @@ const SECTION_TABS: Readonly<Record<EraseSection, { icon: ReactNode; tooltip: st
 const EVERYTHING_TOOLTIP =
   'Factory reset: wipe ALL inventory, photos, settings, sign-in and sync links from this device, then restart the app.';
 
+/**
+ * Query keys for the dialog's affected-row counts. The read is keyed by the target set, while
+ * the refetch after an erase names only the prefix so it catches that key whatever set it was
+ * opened with — the two have to agree, which is why they come from one place rather than being
+ * spelled out at each call site (issue #379).
+ */
+const eraseKeys = {
+  all: ['erase-counts'] as const,
+  counts: (targetIds: readonly EraseTargetId[]) => [...eraseKeys.all, targetIds] as const,
+} as const;
+
 export interface EraseDataDialogProps {
   readonly open: boolean;
   readonly onClose: () => void;
@@ -121,7 +132,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
   // Fetch affected-row counts for every target once on open (stable query key per mount).
   const allIds = useMemo(() => ERASE_TARGETS.map((t) => t.id), []);
   const countsQuery = useQuery({
-    queryKey: ['erase-counts', allIds],
+    queryKey: eraseKeys.counts(allIds),
     queryFn: () => countTargets(allIds, ports),
     staleTime: Infinity,
     gcTime: 0,
@@ -206,7 +217,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
       await queryClient.invalidateQueries();
       void useStorageStore.getState().refresh();
       setSelected(new Set());
-      await queryClient.refetchQueries({ queryKey: ['erase-counts'] });
+      await queryClient.refetchQueries({ queryKey: eraseKeys.all });
       const erased = summary.erased.length;
       show({
         tone: 'success',
