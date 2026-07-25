@@ -7,7 +7,9 @@ import {
   normaliseArray,
   normaliseBoolean,
   normaliseInteger,
+  normaliseNullableInteger,
   normaliseOneOf,
+  normaliseString,
 } from './persisted-state';
 
 const COLOURS = ['red', 'green', 'blue'] as const;
@@ -92,6 +94,39 @@ describe('normaliseInteger', () => {
     expect(normaliseInteger(99, 0, { min: 0, max: 10 })).toBe(10);
     expect(normaliseInteger(-99, 0, { min: 0, max: 10 })).toBe(0);
     expect(normaliseInteger(-99, 0, { min: 0 })).toBe(0);
+  });
+});
+
+describe('normaliseString', () => {
+  it('keeps any string, including an empty one', () => {
+    expect(normaliseString('Workshop stores', 'x')).toBe('Workshop stores');
+    expect(normaliseString('', 'x')).toBe('');
+  });
+
+  it.each([[undefined], [null], [42], [true], [{}], [['a']]])('falls back for %p', (value) => {
+    expect(normaliseString(value, 'fallback')).toBe('fallback');
+  });
+
+  it('defaults the fallback to the empty string', () => {
+    expect(normaliseString(undefined)).toBe('');
+  });
+});
+
+describe('normaliseNullableInteger', () => {
+  it('keeps a finite number, truncated', () => {
+    expect(normaliseNullableInteger(1_700_000_000_000)).toBe(1_700_000_000_000);
+    expect(normaliseNullableInteger(5.9)).toBe(5);
+  });
+
+  it.each([[undefined], [null], ['yesterday'], [NaN], [Infinity], [{}]])(
+    'reads %p as "never recorded"',
+    (value) => {
+      expect(normaliseNullableInteger(value)).toBeNull();
+    },
+  );
+
+  it('keeps a legitimate zero rather than collapsing it to null', () => {
+    expect(normaliseNullableInteger(0)).toBe(0);
   });
 });
 

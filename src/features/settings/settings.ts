@@ -14,6 +14,7 @@ import {
   MAX_PAGE_SIZE,
 } from '@/db/repositories/constants';
 import { CURRENCY_OPTIONS, DEFAULT_CURRENCY } from '@/lib/format';
+import { isPlainObject, normaliseOneOf } from '@/lib/persisted-state';
 
 /**
  * Re-exported for callers that reach the offered-currency list through the settings
@@ -123,8 +124,8 @@ export const EXPIRY_WINDOW_BOUNDS = { min: 1, max: 365 } as const;
  * Clamp an expiry-window day count to a safe integer within
  * {@link EXPIRY_WINDOW_BOUNDS}. Non-finite input falls back to the default window.
  */
-export function clampExpiryWindowDays(value: number): number {
-  if (!Number.isFinite(value)) return EXPIRY_SOON_WINDOW_DAYS;
+export function clampExpiryWindowDays(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return EXPIRY_SOON_WINDOW_DAYS;
   return Math.min(EXPIRY_WINDOW_BOUNDS.max, Math.max(EXPIRY_WINDOW_BOUNDS.min, Math.round(value)));
 }
 
@@ -146,8 +147,8 @@ export const LOW_STOCK_GAUGE_BOUNDS = { min: 0, max: 99 } as const;
  * Clamp a low-stock DISCRETE quantity threshold to {@link LOW_STOCK_QTY_BOUNDS}.
  * Non-finite input falls back to the default constant.
  */
-export function clampLowStockQty(value: number): number {
-  if (!Number.isFinite(value)) return LOW_STOCK_QTY_THRESHOLD;
+export function clampLowStockQty(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return LOW_STOCK_QTY_THRESHOLD;
   return Math.min(LOW_STOCK_QTY_BOUNDS.max, Math.max(LOW_STOCK_QTY_BOUNDS.min, Math.round(value)));
 }
 
@@ -155,8 +156,8 @@ export function clampLowStockQty(value: number): number {
  * Clamp a low-stock gauge percentage to {@link LOW_STOCK_GAUGE_BOUNDS}. Non-finite
  * input falls back to the default constant.
  */
-export function clampLowStockGaugePercent(value: number): number {
-  if (!Number.isFinite(value)) return LOW_STOCK_GAUGE_PERCENT;
+export function clampLowStockGaugePercent(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return LOW_STOCK_GAUGE_PERCENT;
   return Math.min(LOW_STOCK_GAUGE_BOUNDS.max, Math.max(LOW_STOCK_GAUGE_BOUNDS.min, Math.round(value)));
 }
 
@@ -180,8 +181,8 @@ export const BUDGET_WARN_BOUNDS = { min: 1, max: 100 } as const;
  * Clamp a project-budget warning percentage to {@link BUDGET_WARN_BOUNDS}. Non-finite
  * input falls back to the default constant.
  */
-export function clampBudgetWarnPercent(value: number): number {
-  if (!Number.isFinite(value)) return BUDGET_WARN_PERCENT;
+export function clampBudgetWarnPercent(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return BUDGET_WARN_PERCENT;
   return Math.min(BUDGET_WARN_BOUNDS.max, Math.max(BUDGET_WARN_BOUNDS.min, Math.round(value)));
 }
 
@@ -227,7 +228,7 @@ export const VISUAL_CARD_METRIC_OPTIONS = [
  * health). Kept total so a stale localStorage value from an older/newer build can never
  * reach the card's render switch.
  */
-export function normaliseVisualCardMetric(value: string): VisualCardMetric {
+export function normaliseVisualCardMetric(value: unknown): VisualCardMetric {
   return (VISUAL_CARD_METRIC_OPTIONS as readonly { value: string }[]).some((o) => o.value === value)
     ? (value as VisualCardMetric)
     : DEFAULT_VISUAL_CARD_METRIC;
@@ -258,7 +259,7 @@ export const VISUAL_CARD_METRIC_FALLBACK_OPTIONS = [
  * `none`). Total, like {@link normaliseVisualCardMetric}, so a stale value can never reach the
  * card's fallback resolution.
  */
-export function normaliseVisualCardMetricFallback(value: string): VisualCardMetricFallback {
+export function normaliseVisualCardMetricFallback(value: unknown): VisualCardMetricFallback {
   return (VISUAL_CARD_METRIC_FALLBACK_OPTIONS as readonly { value: string }[]).some((o) => o.value === value)
     ? (value as VisualCardMetricFallback)
     : DEFAULT_VISUAL_CARD_METRIC_FALLBACK;
@@ -298,7 +299,7 @@ export const CARD_CLICK_ACTION_OPTIONS = [
  * Kept total so a stale localStorage value from an older/newer build can never drive the
  * card's click handler into an unknown dialog.
  */
-export function normaliseCardClickAction(value: string): CardClickAction {
+export function normaliseCardClickAction(value: unknown): CardClickAction {
   return (CARD_CLICK_ACTION_OPTIONS as readonly { value: string }[]).some((o) => o.value === value)
     ? (value as CardClickAction)
     : DEFAULT_CARD_CLICK_ACTION;
@@ -328,8 +329,8 @@ export const DEFAULT_ITEMS_PER_PAGE = 50;
  * non-finite value (e.g. a half-typed or stale persisted entry) falls back to the default, so a
  * bad value can never reach the page maths or a repository read.
  */
-export function clampPageSize(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_ITEMS_PER_PAGE;
+export function clampPageSize(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_ITEMS_PER_PAGE;
   return Math.min(PAGE_SIZE_BOUNDS.max, Math.max(PAGE_SIZE_BOUNDS.min, Math.round(value)));
 }
 
@@ -343,8 +344,8 @@ export const WINDOW_MONTH_OPTIONS = [3, 6, 12] as const;
 export const DEFAULT_WINDOW_MONTHS = 6;
 
 /** Coerce an arbitrary value to one of {@link WINDOW_MONTH_OPTIONS} (default 6). */
-export function normaliseWindowMonths(value: number): number {
-  return (WINDOW_MONTH_OPTIONS as readonly number[]).includes(value) ? value : DEFAULT_WINDOW_MONTHS;
+export function normaliseWindowMonths(value: unknown): number {
+  return normaliseOneOf(value, WINDOW_MONTH_OPTIONS, DEFAULT_WINDOW_MONTHS);
 }
 
 /**
@@ -487,23 +488,25 @@ export const DEFAULT_NAV_COUNT_METRICS = Object.fromEntries(
  * shipped default. Kept total so a stale localStorage value from an older/newer build can
  * never reach the count selector or the picker.
  */
-export function normaliseNavCountMetric(route: NavCountRoute, value: string): string {
+export function normaliseNavCountMetric(route: NavCountRoute, value: unknown): string {
   const cfg = NAV_COUNT_METRIC_CONFIG[route];
-  return cfg.options.some((o) => o.value === value) ? value : cfg.default;
+  return normaliseOneOf(
+    value,
+    cfg.options.map((o) => o.value),
+    cfg.default,
+  );
 }
 
 /**
  * Coerce a whole persisted map (possibly partial or stale — e.g. missing a route added in a
- * later build) into a complete, valid one. Every configurable route gets a valid metric.
- *
- * @internal Exported for unit tests only.
+ * later build, or not an object at all) into a complete, valid one. Every configurable route
+ * gets a valid metric, so the map reaching `useNavCounts` is always total.
  */
-export function normaliseNavCountMetrics(
-  value: Partial<Record<NavCountRoute, string>> | undefined,
-): Record<NavCountRoute, string> {
+export function normaliseNavCountMetrics(value: unknown): Record<NavCountRoute, string> {
+  const source = isPlainObject(value) ? value : {};
   const out = {} as Record<NavCountRoute, string>;
   for (const route of NAV_COUNT_ROUTES) {
-    out[route] = normaliseNavCountMetric(route, value?.[route] ?? '');
+    out[route] = normaliseNavCountMetric(route, source[route]);
   }
   return out;
 }

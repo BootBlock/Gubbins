@@ -18,6 +18,7 @@
  * is denied (e.g. iOS Safari), every branch here degrades to "fire nothing", never a throw.
  */
 
+import { isPlainObject } from '@/lib/persisted-state';
 import type { Alert, AlertKind, AlertTarget } from './alerts';
 
 // ---------------------------------------------------------------------------
@@ -58,10 +59,11 @@ export const REMINDER_KIND_LABELS: Record<AlertKind, string> = {
  * {@link DEFAULT_REMINDER_KINDS}); an unknown key is dropped. Kept total so a stale
  * localStorage value can never leave a lane `undefined` at the decision site.
  */
-export function normaliseReminderKinds(value: Partial<Record<string, unknown>> | undefined): ReminderKinds {
+export function normaliseReminderKinds(value: unknown): ReminderKinds {
+  const source = isPlainObject(value) ? value : {};
   const out = { ...DEFAULT_REMINDER_KINDS };
   for (const kind of REMINDER_KINDS) {
-    const raw = value?.[kind];
+    const raw = source[kind];
     if (typeof raw === 'boolean') out[kind] = raw;
   }
   return out;
