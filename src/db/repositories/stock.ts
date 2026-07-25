@@ -4,10 +4,10 @@
  * `item_stock` records *where* an item's units sit — one row per (item, location), keyed by
  * the deterministic `${itemId}|${locationId}` id. Since Phase 28 it is itself a derived
  * projection: `item_stock.quantity = SUM(stock_batches.quantity)` for that placement,
- * maintained by the `trg_stock_batches_recompute_*` triggers (which then chain into the v13
- * triggers maintaining `items.quantity`). So these builders no longer write `item_stock`
- * directly — they write the placement's **default (untracked) batch** in `stock_batches`, and
- * both projections follow automatically. Batch-aware callers (receiving a specific lot, FEFO
+ * maintained by the `trg_stock_batches_recompute_*` triggers (which then chain into the
+ * `trg_item_stock_recompute_*` triggers maintaining `items.quantity`). So these builders no
+ * longer write `item_stock` directly — they write the placement's **default (untracked) batch**
+ * in `stock_batches`, and both projections follow automatically. Batch-aware callers (receiving a specific lot, FEFO
  * consumption) use the `stock-batches.ts` builders directly.
  *
  * Emptied batches are set to 0, never deleted, so a removal propagates by row-level LWW.

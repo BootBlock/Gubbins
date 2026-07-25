@@ -4,8 +4,8 @@
  * A `LOCAL_POINTER` datasheet path is only valid on the device that linked it. To know,
  * on a *secondary* device, that a synced pointer is foreign — and so render the §4
  * "Unlinked Local File" placeholder rather than a dead path — each device needs a stable
- * identity to compare against the pointer's stored origin (the v18
- * `item_attachments.origin_device_id`). The comparison itself is the pure
+ * identity to compare against the pointer's stored origin — the
+ * `item_attachments.origin_device_id` column. The comparison itself is the pure
  * `resolveAttachmentLink` seam; this module just supplies the current device's id.
  *
  * The id is **device-local** (it must NOT sync — it identifies *this* device), so it lives

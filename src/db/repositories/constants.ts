@@ -1,8 +1,10 @@
 /**
  * Shared domain constants for the Phase 2 inventory model (spec §4, §4.1).
  *
- * Kept dependency-free so the v2 migration, the repositories, the TanStack Query
+ * Kept dependency-free so the schema baseline, the repositories, the TanStack Query
  * hooks and the UI can all share a single source of truth without import cycles.
+ * (`v1-initial.ts` imports the CHECK-list constants from here, so a column's allowed
+ * values and the application's cannot drift apart.)
  */
 
 /**

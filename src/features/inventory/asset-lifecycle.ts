@@ -2,7 +2,7 @@
  * Asset lifecycle pure logic (Phase 66, spec §4 asset facet).
  *
  * Straight-line depreciation and warranty-status derivation from the four nullable
- * `items` columns added in v24: `acquired_at`, `warranty_expires_at`,
+ * `items` asset columns: `acquired_at`, `warranty_expires_at`,
  * `purchase_price`, `depreciation_months`. All functions are **pure** — they take
  * an item-shaped slice and a `now` instant; no DB access, no side effects — so they
  * are exhaustively unit-testable in isolation (same "logic out of glue" seam as
