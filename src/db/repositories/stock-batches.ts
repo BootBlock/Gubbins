@@ -6,8 +6,8 @@
  * `${itemId}|${locationId}|${batchKey}` id so two devices recording the same lot at the
  * same placement generate the same row and merge by LWW. The `trg_stock_batches_recompute_*`
  * triggers keep `item_stock.quantity = SUM(stock_batches.quantity)` per placement, which then
- * chains into the v13 triggers maintaining `items.quantity` — so these builders only ever
- * touch the batch ledger and both projections follow automatically.
+ * chains into the `trg_item_stock_recompute_*` triggers maintaining `items.quantity` — so these
+ * builders only ever touch the batch ledger and both projections follow automatically.
  *
  * Increments target a specific batch (the untracked remainder is just the empty-key default
  * batch); a placement *decrement* spans batches first-expiry-first-out via the pure

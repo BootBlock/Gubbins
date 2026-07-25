@@ -2798,8 +2798,9 @@ try {
 
     await step('opts a tool into automatic checkout-hours telemetry (§4.3, Phase 22)', async () => {
       // Add a USAGE schedule that derives its usage from real checkout-hours instead of
-      // the manual counter — proving the v11 opt-in persists and the editor renders the
-      // derived loan-hours projection through the genuine OPFS worker + repository path.
+      // the manual counter — proving the `accrue_checkout_hours` opt-in persists and the
+      // editor renders the derived loan-hours projection through the genuine OPFS worker
+      // + repository path.
       await itemCardAction(lifecycleCard(perishableName), 'Edit details');
       const detail = page.getByRole('dialog');
       await detail.getByRole('tab', { name: 'Lifecycle' }).click();
@@ -2979,8 +2980,8 @@ try {
       async () => {
         // cycleItemName now sits across two placements (drawer 4 / Unassigned 1), so the
         // maintenance editor offers a per-location scope. Pin a schedule to the drawer and
-        // assert it renders with its "@ <location>" scope badge — proving the v17 location_id
-        // round-trips through the real OPFS worker + repository + join path.
+        // assert it renders with its "@ <location>" scope badge — proving the per-schedule
+        // `location_id` round-trips through the real OPFS worker + repository + join path.
         await page.getByRole('treeitem', { name: drawerName }).first().click();
         await itemCardAction(lifecycleCard(cycleItemName), 'Edit details');
         const detail = page.getByRole('dialog');
