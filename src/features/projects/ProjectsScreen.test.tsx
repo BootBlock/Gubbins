@@ -53,6 +53,7 @@ vi.mock('./components/ProjectDetail', () => ({
 // ─── controlled query stub ────────────────────────────────────────────────────
 
 type ProjectRow = { id: string; name: string; lineCount: number; status: string };
+type Browse = { search?: string; status?: string; sort?: string };
 
 let projectsState: {
   isLoading: boolean;
@@ -65,16 +66,41 @@ let projectsState: {
 /** Overrides the project total when a test needs it to disagree with the rows it supplies. */
 let projectCountState: number | undefined;
 const refetch = vi.fn();
+/** Every narrowing the screen has asked the *query* for, newest last (issue #137). */
+const requestedBrowse: Browse[] = [];
+/** Every page the screen has asked the query for, newest last. */
+const requestedPages: number[] = [];
+
+/**
+ * The filtering and ordering the repository would do, so the stub can prove the screen delegates
+ * both rather than sieving the page it already holds. The fixture order stands in for "newest
+ * first", which is what the real default sort resolves to.
+ */
+function applyBrowse(all: ProjectRow[], browse: Browse): ProjectRow[] {
+  const term = browse.search?.trim().toLowerCase() ?? '';
+  const matched = all.filter(
+    (p) =>
+      (term.length === 0 || p.name.toLowerCase().includes(term)) &&
+      (!browse.status || p.status === browse.status),
+  );
+  if (browse.sort === 'NAME_ASC') return [...matched].sort((a, b) => a.name.localeCompare(b.name));
+  if (browse.sort === 'NAME_DESC') return [...matched].sort((a, b) => b.name.localeCompare(a.name));
+  if (browse.sort === 'OLDEST') return [...matched].reverse();
+  return matched;
+}
 
 vi.mock('./projects', () => ({
   /**
-   * The master list pages **server-side** (issue #149), so the stub serves pages the way the
-   * repository does: `projectsState.data.rows` is every project, and the hook returns only the
-   * requested window of it, capped at the repository's ceiling.
+   * The master list pages **server-side** (issue #149) and narrows server-side (issue #137), so
+   * the stub serves pages the way the repository does: `projectsState.data.rows` is every
+   * project, the filter and sort are applied to all of them, and the hook returns only the
+   * requested window of what matched, capped at the repository's ceiling.
    */
-  useProjects: (page = 1, pageSize = 100) => {
+  useProjects: (page = 1, pageSize = 100, browse: Browse = {}) => {
+    requestedBrowse.push(browse);
+    requestedPages.push(page);
     if (!projectsState.data) return { ...projectsState, refetch };
-    const all = projectsState.data.rows;
+    const all = applyBrowse(projectsState.data.rows, browse);
     const limit = Math.min(pageSize, 100);
     const offset = (page - 1) * limit;
     const rows = all.slice(offset, offset + limit);
@@ -84,8 +110,12 @@ vi.mock('./projects', () => ({
       refetch,
     };
   },
-  // The total across every page. Defaults to the whole fixture, as the real COUNT(*) would.
-  useProjectCount: () => ({ data: projectCountState ?? projectsState.data?.rows.length }),
+  // How many *match*, across every page — as the real filtered COUNT(*) would.
+  useProjectCount: (filter: Browse = {}) => ({
+    data:
+      projectCountState ??
+      (projectsState.data ? applyBrowse(projectsState.data.rows, filter).length : undefined),
+  }),
   // Resolved from the whole set, not the page in view — that is the point of the real hook here.
   useProject: (id: string | undefined) => ({
     data: id ? projectsState.data?.rows.find((p) => p.id === id) : undefined,
@@ -99,8 +129,8 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function makeProject(id: string, name: string): ProjectRow {
-  return { id, name, lineCount: 0, status: 'ACTIVE' };
+function makeProject(id: string, name: string, status = 'ACTIVE'): ProjectRow {
+  return { id, name, lineCount: 0, status };
 }
 
 afterEach(cleanup);
@@ -108,6 +138,8 @@ afterEach(cleanup);
 beforeEach(() => {
   projectsState = { isLoading: true, isError: false };
   projectCountState = undefined;
+  requestedBrowse.length = 0;
+  requestedPages.length = 0;
   refetch.mockClear();
 });
 
@@ -297,6 +329,123 @@ describe('ProjectsScreen — a list longer than one read (issue #149)', () => {
     projectsState = { isLoading: false, data: { rows: [makeProject('p1', 'Alpha')] } };
     render(<ProjectsScreen />);
     expect(screen.queryByTestId('projects-truncated')).toBeNull();
+  });
+});
+
+describe('ProjectsScreen — narrowing the master list (issue #137)', () => {
+  /** Three projects across three statuses, in "newest first" fixture order. */
+  const trio = {
+    isLoading: false,
+    data: {
+      rows: [
+        makeProject('p1', 'Desk lamp', 'COMPLETED'),
+        makeProject('p2', 'Garden rover', 'ACTIVE'),
+        makeProject('p3', 'Bench PSU', 'PLANNING'),
+      ],
+    },
+  };
+
+  /** The names currently listed, in list order. */
+  function listedNames(): string[] {
+    return screen
+      .getAllByRole('button')
+      .map((b) => b.textContent ?? '')
+      .filter((text) => /Desk lamp|Garden rover|Bench PSU/.test(text))
+      .map((text) => text.replace(/\s*\d+ parts?.*$/, '').trim());
+  }
+
+  /** Open a Foundry Select and choose the option with this label. */
+  function chooseOption(testId: string, option: string) {
+    fireEvent.click(screen.getByTestId(testId));
+    fireEvent.click(screen.getByRole('option', { name: option }));
+  }
+
+  it('asks the query to search, rather than sieving the page it already holds', () => {
+    projectsState = trio;
+    render(<ProjectsScreen />);
+
+    fireEvent.change(screen.getByTestId('projects-search'), { target: { value: 'rov' } });
+
+    // The term reaches the query — which is what makes it find projects that sort past this page.
+    expect(requestedBrowse.at(-1)?.search).toBe('rov');
+    expect(listedNames()).toEqual(['Garden rover']);
+  });
+
+  it('narrows by status through the query too', () => {
+    projectsState = trio;
+    render(<ProjectsScreen />);
+
+    chooseOption('projects-status-filter', 'Completed');
+
+    expect(requestedBrowse.at(-1)?.status).toBe('COMPLETED');
+    expect(listedNames()).toEqual(['Desk lamp']);
+  });
+
+  it('re-orders the whole set, not the rows on screen', () => {
+    projectsState = trio;
+    render(<ProjectsScreen />);
+    expect(listedNames()).toEqual(['Desk lamp', 'Garden rover', 'Bench PSU']);
+
+    chooseOption('projects-sort', 'Name A–Z');
+
+    expect(requestedBrowse.at(-1)?.sort).toBe('NAME_ASC');
+    expect(listedNames()).toEqual(['Bench PSU', 'Desk lamp', 'Garden rover']);
+  });
+
+  it('says a filter emptied the list, and offers the way back', () => {
+    projectsState = trio;
+    render(<ProjectsScreen />);
+
+    fireEvent.change(screen.getByTestId('projects-search'), { target: { value: 'zzz' } });
+    // "No projects yet" here would be a lie, and would send the user to create a duplicate.
+    expect(screen.getByTestId('projects-no-matches')).toBeTruthy();
+    expect(screen.queryByText(/No projects yet/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(listedNames()).toEqual(['Desk lamp', 'Garden rover', 'Bench PSU']);
+  });
+
+  it('announces how many projects match rather than the unfiltered total', () => {
+    projectsState = trio;
+    render(<ProjectsScreen />);
+    expect(screen.getByTestId('projects-count-live').textContent).toContain('3 projects');
+
+    fireEvent.change(screen.getByTestId('projects-search'), { target: { value: 'rov' } });
+    expect(screen.getByTestId('projects-count-live').textContent).toBe('1 project matches your filter.');
+
+    fireEvent.change(screen.getByTestId('projects-search'), { target: { value: 'zzz' } });
+    expect(screen.getByTestId('projects-count-live').textContent).toBe('0 projects match your filter.');
+  });
+
+  it('offers no filter controls when there is nothing to filter', () => {
+    projectsState = { isLoading: false, data: { rows: [] } };
+    render(<ProjectsScreen />);
+    expect(screen.queryByTestId('projects-search')).toBeNull();
+    expect(screen.getByText('No projects yet. Create one to plan a build.')).toBeTruthy();
+  });
+
+  it('returns to the first page when the filter changes', () => {
+    usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 10 });
+    projectsState = {
+      isLoading: false,
+      data: {
+        rows: Array.from({ length: 25 }, (_, i) =>
+          makeProject(`p${i}`, `Project ${String(i + 1).padStart(3, '0')}`),
+        ),
+      },
+    };
+    render(<ProjectsScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Page 3' }));
+    expect(requestedPages.at(-1)).toBe(3);
+
+    // Page 3 of the unfiltered list is past the end of the filtered one; staying there would
+    // show an empty page under a filter that actually matched something.
+    fireEvent.change(screen.getByTestId('projects-search'), { target: { value: 'Project 01' } });
+    expect(requestedPages.at(-1)).toBe(1);
+    expect(screen.getByRole('button', { name: /Project 010/ })).toBeInTheDocument();
+
+    usePreferencesStore.setState({ paginateLists: false, defaultPageSize: 50 });
   });
 });
 

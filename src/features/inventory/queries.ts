@@ -29,6 +29,7 @@ import {
   type LowStockThresholds,
   type Page,
   type SuggestionField,
+  type TagListParams,
 } from '@/db/repositories';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -67,6 +68,12 @@ export type ItemQueryFilters = Pick<
   | 'expirySoonWindowDays'
   | 'sort'
 >;
+
+/**
+ * How the Tags screen's dictionary list is narrowed and ordered (issue #137) — the filter plus
+ * the sort, with the page supplied separately.
+ */
+export type TagBrowse = Omit<TagListParams, 'limit' | 'offset'>;
 
 export const inventoryKeys = {
   all: ['inventory'] as const,
@@ -113,10 +120,11 @@ export const inventoryKeys = {
   itemFieldValues: (itemIds: readonly string[]) =>
     [...inventoryKeys.items(), 'fieldValues', itemIds] as const,
   tags: () => [...inventoryKeys.all, 'tags'] as const,
-  /** One server-side page of the counted dictionary (issue #84). */
-  tagList: (offset: number, limit: number) => [...inventoryKeys.tags(), 'list', offset, limit] as const,
-  /** Total tag count, the pagination denominator (issue #84). */
-  tagCount: () => [...inventoryKeys.tags(), 'count'] as const,
+  /** One server-side page of the counted dictionary, for one filter and ordering (#84, #137). */
+  tagList: (offset: number, limit: number, browse: TagBrowse = {}) =>
+    [...inventoryKeys.tags(), 'list', offset, limit, browse] as const,
+  /** How many tags match a filter — the pagination denominator (issues #84, #137). */
+  tagCount: (search = '') => [...inventoryKeys.tags(), 'count', search] as const,
   /** The dictionary without usage counts — the tag-entry combobox (issue #84). */
   tagNames: () => [...inventoryKeys.tags(), 'names'] as const,
   itemTags: (itemId: string) => [...inventoryKeys.item(itemId), 'tags'] as const,

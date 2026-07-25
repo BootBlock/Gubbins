@@ -26,6 +26,8 @@ import {
   type CreateProjectInput,
   type FinaliseAssemblyInput,
   type ProcurementStatus,
+  type ProjectFilter,
+  type ProjectListParams,
   type ReservationStatus,
   type UpdateBomLineInput,
   type UpdateBudgetCategoryInput,
@@ -38,16 +40,25 @@ import { readAllPages } from '@/lib/read-all-pages';
 import type { ParsedBomLine } from './bom-import';
 import { invalidateItems } from '@/features/inventory/invalidate';
 
+/**
+ * How the Projects master list is narrowed and ordered (issue #137) — the filter plus the sort,
+ * with the page supplied separately. Named rather than inlined because it is both a query-key
+ * fragment and the screen's own state shape.
+ */
+export type ProjectBrowse = Omit<ProjectListParams, 'limit' | 'offset'>;
+
 export const projectKeys = {
   all: ['projects'] as const,
   list: () => [...projectKeys.all, 'list'] as const,
   /**
-   * One page of the project list. Nested **under** {@link projectKeys.list} so every existing
-   * `invalidateQueries({ queryKey: projectKeys.list() })` still refreshes every page and the
-   * count without each write having to learn about pagination.
+   * One page of the project list, for one filter and ordering. Nested **under**
+   * {@link projectKeys.list} so every existing `invalidateQueries({ queryKey: projectKeys.list() })`
+   * still refreshes every page, filter and count without each write having to learn about
+   * pagination — or about the master list's search box.
    */
-  page: (offset: number, limit: number) => [...projectKeys.list(), { offset, limit }] as const,
-  count: () => [...projectKeys.list(), 'count'] as const,
+  page: (offset: number, limit: number, browse: ProjectBrowse = {}) =>
+    [...projectKeys.list(), { offset, limit, ...browse }] as const,
+  count: (filter: ProjectFilter = {}) => [...projectKeys.list(), 'count', filter] as const,
   budgetAlerts: () => [...projectKeys.all, 'budget-alerts'] as const,
   detail: (id: string) => [...projectKeys.all, 'detail', id] as const,
   lines: (id: string) => [...projectKeys.detail(id), 'lines'] as const,
@@ -62,29 +73,36 @@ export const projectKeys = {
 // --- reads ---------------------------------------------------------------------
 
 /**
- * One page of the project list (issue #149).
+ * One page of the project list, optionally narrowed and re-ordered (issues #149, #137).
  *
- * Defaults to the first full page, which is exactly what every picker and dashboard caller
- * read before — only the Projects master list passes a page, so nothing else changes shape.
- * Pair with {@link useProjectCount} wherever the whole set has to be reachable.
+ * Defaults to the first full page in the default order, which is exactly what every picker and
+ * dashboard caller read before — only the Projects master list passes a page or a `browse`, so
+ * nothing else changes shape. The filter is resolved by the database rather than applied to the
+ * page in hand, so searching reaches projects that sort past the current page. Pair with
+ * {@link useProjectCount} — given the same filter — wherever the whole set has to be reachable.
  */
-export function useProjects(page = 1, pageSize = MAX_PAGE_SIZE) {
+export function useProjects(page = 1, pageSize = MAX_PAGE_SIZE, browse: ProjectBrowse = {}) {
   const limit = Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(pageSize)));
   const offset = Math.max(0, (Math.max(1, Math.floor(page)) - 1) * limit);
   return useQuery({
-    queryKey: projectKeys.page(offset, limit),
-    queryFn: () => getProjectRepository().list({ limit, offset }),
-    // Hold the previous page on screen while the next one loads, so paging doesn't flash the
-    // empty state (the Tags screen's behaviour).
+    queryKey: projectKeys.page(offset, limit, browse),
+    queryFn: () => getProjectRepository().list({ ...browse, limit, offset }),
+    // Hold the previous page on screen while the next one loads (or the filter changes), so
+    // paging and typing don't flash the empty state (the Tags screen's behaviour).
     placeholderData: (previous) => previous,
   });
 }
 
-/** How many projects exist in total — the denominator for the master list's pager. */
-export function useProjectCount() {
+/**
+ * How many projects match `filter` — the denominator for the master list's pager, and the figure
+ * the screen announces. Held through a filter change by the placeholder so the page strip
+ * doesn't flicker between counts as the search box is typed into.
+ */
+export function useProjectCount(filter: ProjectFilter = {}) {
   return useQuery({
-    queryKey: projectKeys.count(),
-    queryFn: () => getProjectRepository().count(),
+    queryKey: projectKeys.count(filter),
+    queryFn: () => getProjectRepository().count(filter),
+    placeholderData: (previous) => previous,
   });
 }
 
