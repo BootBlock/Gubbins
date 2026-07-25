@@ -83,14 +83,17 @@ export function PurchaseOrdersScreen() {
   // totalled at that currency's minor unit instead.
   const currencyDecimals = f.currencyFractionDigits();
   const t = useT();
-  // App-wide list pagination (issue #20). Unpaginated the list still reads a bounded page —
-  // the ceiling is the repository's, and asking for more than it allows would clamp anyway.
+  // App-wide list pagination (issue #20). Unpaginated the list still reads a bounded page — the
+  // ceiling is the repository's, and asking for more than it allows would clamp anyway. It reads
+  // the *first* page whatever `ordersPage` holds: switching the preference off from the Settings
+  // modal leaves this screen mounted, and reading page 3 under copy that says "the first 100"
+  // would be a lie.
   const paginated = usePreferencesStore((s) => s.paginateLists);
   const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
   const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
   const [ordersPage, setOrdersPage] = useState(1);
   const ordersPageSize = paginated ? defaultPageSize : PAGE_SIZE_BOUNDS.max;
-  const ordersQuery = usePurchaseOrders(ordersPage, ordersPageSize);
+  const ordersQuery = usePurchaseOrders(paginated ? ordersPage : 1, ordersPageSize);
   const ordersTotal = usePurchaseOrderCount();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);

@@ -318,6 +318,24 @@ describe('ContactsScreen — a dictionary longer than one read (issue #149)', ()
     render(<ContactsScreen />);
     expect(screen.queryByTestId('contacts-truncated')).toBeNull();
   });
+
+  it('falls back to the first page when pagination is switched off mid-visit', () => {
+    // Settings is a modal, so turning the preference off leaves this screen mounted with a page
+    // still selected. Reading that page while the notice says "the first 100" would show rows
+    // 101–140 under copy claiming they are the first hundred.
+    usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 100 });
+    contactsState = manyContacts;
+    const view = render(<ContactsScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByText('Contact 140')).toBeInTheDocument();
+
+    usePreferencesStore.setState({ paginateLists: false });
+    view.rerender(<ContactsScreen />);
+
+    expect(screen.getByText('Contact 001')).toBeInTheDocument();
+    expect(screen.queryByText('Contact 140')).toBeNull();
+    expect(screen.getByTestId('contacts-truncated').textContent).toContain('40');
+  });
 });
 
 describe('ContactsScreen — first-run guide (#424)', () => {

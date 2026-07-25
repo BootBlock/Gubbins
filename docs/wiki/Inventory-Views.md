@@ -95,11 +95,14 @@ where you can also set the default **Items per page**. The per-page box on the c
 same shared setting, so whatever you pick sticks everywhere.
 
 > **ℹ️ Note**
-> Pagination is an app-wide preference: it applies to the Inventory list, the
-> [[Activity log|Activity-Log]] feed and your [[Contacts|Contacts]] dictionary alike. It only
-> changes how a list is presented — never your data, and never which items match your current
-> [[search|Search-Overview]] and filters. The page control only appears when there's more than one
-> page to show, and it doesn't apply to the grouped view or the location map / value treemap.
+> Pagination is an app-wide preference — it applies to every list that offers it: the Inventory
+> list, the [[Activity log|Activity-Log]] feed, and your [[Contacts|Contacts]],
+> [[Projects|Projects-and-BOM]], [[Purchase orders|Purchase-Orders]],
+> [[Suppliers|Suppliers]], [[Tags|Tags-Attachments-and-Related-Items]] and
+> [[Wishlist|Wishlist]] screens alike. It only changes how a list is presented — never your data,
+> and never which items match your current [[search|Search-Overview]] and filters. The page control
+> only appears when there's more than one page to show, and it doesn't apply to the grouped view or
+> the location map / value treemap.
 
 ## Fullscreen
 

@@ -41,14 +41,17 @@ import {
 export function ContactsScreen() {
   const t = useT();
   const open = useOpenCheckouts();
-  // App-wide list pagination (issue #20). Read the page the pager is on; unpaginated, read one
-  // bounded page — the ceiling is the repository's, and asking for more would clamp anyway.
+  // App-wide list pagination (issue #20). Read the page the pager is on; unpaginated, read the
+  // *first* bounded page — the ceiling is the repository's, and asking for more would clamp
+  // anyway. Deliberately page 1 whatever `contactsPage` holds: switching the preference off from
+  // the Settings modal leaves this screen mounted, and reading page 3 under copy that says "the
+  // first 100" would be a lie.
   const paginated = usePreferencesStore((s) => s.paginateLists);
   const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
   const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
   const [contactsPage, setContactsPage] = useState(1);
   const contactsPageSize = paginated ? defaultPageSize : PAGE_SIZE_BOUNDS.max;
-  const contacts = useContacts(contactsPage, contactsPageSize);
+  const contacts = useContacts(paginated ? contactsPage : 1, contactsPageSize);
   const contactsTotal = useContactCount();
   const createContact = useCreateContact();
   const deleteContact = useDeleteContact();

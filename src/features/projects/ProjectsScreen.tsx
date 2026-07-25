@@ -41,10 +41,12 @@ export function ProjectsScreen() {
   const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
   const [page, setPage] = useState(1);
   // Unpaginated, the list still reads a bounded page — the ceiling is the repository's, and
-  // asking for more than it allows would silently clamp anyway.
+  // asking for more than it allows would silently clamp anyway. It reads the *first* page
+  // whatever `page` happens to hold: switching the preference off from the Settings modal leaves
+  // this screen mounted, and reading page 3 under copy that says "the first 100" would be a lie.
   const pageSize = paginated ? defaultPageSize : PAGE_SIZE_BOUNDS.max;
 
-  const projects = useProjects(page, pageSize);
+  const projects = useProjects(paginated ? page : 1, pageSize);
   const total = useProjectCount();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedProject = useProject(selectedId ?? undefined);
