@@ -187,9 +187,12 @@ const locationFieldsParam: JsonValue = {
 };
 
 /**
- * OData-style query-option aliases (a convenience subset, NOT a compliant OData service — no
- * $metadata, $batch or $apply). Each is an alias of a plain REST parameter and wins when both
- * are supplied. `$orderby` and `$filter` add genuinely new capability on the items list.
+ * OData-style query-option aliases on the **plain REST** endpoints — a convenience subset for
+ * callers fluent in OData, which keeps the `{ data, pagination }` envelope. Each is an alias of
+ * a plain REST parameter and wins when both are supplied; `$orderby` and `$filter` add genuinely
+ * new capability on the items list. The same options drive the real OData service under
+ * `/api/v1/odata`, which additionally speaks the protocol (service document, JSON envelope,
+ * `OData-Version`) — see the `odata` tag.
  */
 const odataAlias = (name: string, of: string, example: string): JsonValue => ({
   name,
@@ -204,6 +207,9 @@ const selectParam = odataAlias('$select', 'fields', 'name,unitCost');
 const expandParam = odataAlias('$expand', 'include', 'capabilities,notes');
 const topParam = odataAlias('$top', 'limit', '10');
 const skipParam = odataAlias('$skip', 'offset', '0');
+
+const locationSelectParam = odataAlias('$select', 'fields', 'id,name,fieldValues');
+const locationExpandParam = odataAlias('$expand', 'include', 'fields');
 
 const countParam: JsonValue = {
   name: '$count',
@@ -467,6 +473,55 @@ function jsonContent(ref: string, example?: JsonValue): JsonValue {
 
 function response(description: string, ref: string, example?: JsonValue): JsonValue {
   return { description, content: jsonContent(ref, example) };
+}
+
+/**
+ * The `{id}` path parameter of an OData key segment. The template is `…({id})`, so the value
+ * substituted is the key *inside* the parentheses — quoted or bare, both accepted.
+ */
+function odataKeyParam(resource: string): JsonValue {
+  return {
+    name: 'id',
+    in: 'path',
+    required: true,
+    description: `The ${resource} id, e.g. \`'abc'\` (quotes optional).`,
+    schema: { type: 'string' },
+    example: "'abc'",
+  };
+}
+
+/** The OData collection envelope: context, optional inline count, rows, optional paging link. */
+function okODataCollection(itemRef: string): JsonValue {
+  return {
+    description: 'A page of results in the OData JSON envelope.',
+    headers: {
+      'OData-Version': { schema: { type: 'string' }, description: '4.0 (on every response).' },
+    },
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['@odata.context', 'value'],
+          properties: {
+            '@odata.context': { type: 'string' },
+            '@odata.count': {
+              type: 'integer',
+              description: 'The grand total across all pages — present only when $count=true.',
+            },
+            value: { type: 'array', items: { $ref: itemRef } },
+            '@odata.nextLink': {
+              type: 'string',
+              description:
+                'The absolute URL of the next page. Emitted whenever a full page came back, so ' +
+                'on an exact-boundary last page it is present and leads to an empty collection — ' +
+                'follow it until a page carries no link, rather than assuming every linked page ' +
+                'has rows.',
+            },
+          },
+        },
+      },
+    },
+  };
 }
 
 function okList(description: string, itemRef: string): JsonValue {
@@ -892,6 +947,18 @@ export const openapiDocument: JsonValue = {
     { name: 'categories', description: 'Browse categories and their custom-field schema.' },
     { name: 'capabilities', description: 'Browse the queryable capability vocabulary.' },
     {
+      name: 'odata',
+      description:
+        'A conformant (if small) OData v4 read service at /api/v1/odata, for tools that speak ' +
+        'OData natively — Excel/Power Query, Power BI, Simple.OData.Client. It serves a service ' +
+        'document, the CSDL $metadata, and the same items/locations/categories reads in the ' +
+        'OData JSON envelope ({ "@odata.context", "value" }) with the OData-Version header. The ' +
+        'plain /api/v1 endpoints keep their { data, pagination } envelope, so nothing here ' +
+        'changes an existing consumer. Only the items set is filterable, sortable, countable and ' +
+        'searchable; the CSDL says so in Org.OData.Capabilities.V1 terms, and a system query ' +
+        'option a resource does not support is a 400 rather than being ignored.',
+    },
+    {
       name: 'writes',
       description:
         'Opt-in stock and loan mutations (off by default; enabled with ' +
@@ -962,18 +1029,193 @@ export const openapiDocument: JsonValue = {
     },
     '/api/v1/$metadata': {
       get: {
-        tags: ['meta'],
-        summary: 'OData CSDL $metadata (descriptive, not full-OData conformance)',
+        tags: ['odata'],
+        summary: 'Moved — redirects to the OData service’s own $metadata',
         description:
-          'An OData v4 CSDL document describing the read model (the items/locations/categories ' +
-          'entity sets and their complex types), for OData-aware tooling. The service implements ' +
-          'only the constrained OData query subset, not the whole protocol.',
+          'A CSDL is only actionable from the service root whose entity sets it declares, so the ' +
+          'document now lives at /api/v1/odata/$metadata. This path answers 301 with that ' +
+          'location; every OData client follows it.',
+        responses: {
+          301: {
+            description: 'Permanent redirect to /api/v1/odata/$metadata.',
+            headers: {
+              Location: { schema: { type: 'string' }, description: '/api/v1/odata/$metadata' },
+            },
+          },
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata': {
+      get: {
+        tags: ['odata'],
+        summary: 'OData service document — the entity sets on offer',
+        description:
+          'The document an OData client reads first (OData Protocol §11.1.1): a @odata.context ' +
+          'pointing at $metadata and a value array naming the items, locations and categories ' +
+          'entity sets. Answered without a loaded snapshot — it describes the service, not the ' +
+          'inventory.',
+        responses: {
+          200: {
+            description: 'The service document.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['@odata.context', 'value'],
+                  properties: {
+                    '@odata.context': { type: 'string' },
+                    value: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          name: { type: 'string' },
+                          kind: { type: 'string' },
+                          url: { type: 'string' },
+                        },
+                      },
+                    },
+                  },
+                },
+                example: {
+                  '@odata.context': `${SERVER_URL}/api/v1/odata/$metadata`,
+                  value: [{ name: 'items', kind: 'EntitySet', url: 'items' }],
+                },
+              },
+            },
+          },
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/$metadata': {
+      get: {
+        tags: ['odata'],
+        summary: 'OData CSDL $metadata',
+        description:
+          'The OData v4 CSDL describing the read model — the items/locations/categories entity ' +
+          'sets, their complex types, which properties a default (unprojected) request returns, ' +
+          'and the Org.OData.Capabilities.V1 restrictions naming exactly what each set can be ' +
+          'filtered, sorted, counted and searched on. Answered without a loaded snapshot.',
         responses: {
           200: {
             description: 'The CSDL $metadata XML.',
             content: { 'application/xml': { schema: { type: 'string' } } },
           },
           ...(errorResponses(401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/items': {
+      get: {
+        tags: ['odata'],
+        summary: 'The items entity set, in the OData JSON envelope',
+        description:
+          'The same rows as GET /api/v1/items — same paging, same $filter/$orderby/$search/' +
+          '$select/$expand — wrapped as { "@odata.context", "@odata.count"?, "value", ' +
+          '"@odata.nextLink"? }. $count=true reports the grand total as @odata.count. A page ' +
+          'capped by the server carries @odata.nextLink; when $top was given, the link’s $top is ' +
+          'reduced by the rows already delivered, so following the chain returns exactly that ' +
+          'many rows. This is the only entity set that accepts $filter, $orderby, $search or ' +
+          '$count; a system query option a set does not support is a 400, not silently ignored.',
+        parameters: [
+          selectParam,
+          expandParam,
+          topParam,
+          skipParam,
+          orderbyParam,
+          filterParam,
+          countParam,
+          searchParam,
+        ],
+        responses: {
+          200: okODataCollection('#/components/schemas/ItemSummary'),
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/items({id})': {
+      get: {
+        tags: ['odata'],
+        summary: 'One item by key, in the OData JSON envelope',
+        description:
+          'The canonical OData key-in-parentheses form; the unquoted items(abc) and named ' +
+          "items(id='abc') spellings are accepted too. Returns the ItemDetail shape with a " +
+          '@odata.context ending in /$entity, or 404.',
+        parameters: [odataKeyParam('item'), selectParam, expandParam],
+        responses: {
+          200: response('The item, plus @odata.context.', '#/components/schemas/ItemDetail'),
+          ...(errorResponses(400, 401, 404, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/items/$count': {
+      get: {
+        tags: ['odata'],
+        summary: 'The matching item count as a raw value',
+        description:
+          'The OData raw-value count: the grand total of matching items as a bare text/plain ' +
+          'integer, honouring $filter/$search. items is the only countable entity set; the same ' +
+          'path on locations or categories is a 404, as the CSDL’s CountRestrictions say.',
+        parameters: [filterParam, searchParam],
+        responses: {
+          200: {
+            description: 'The count, as a plain-text integer.',
+            content: { 'text/plain': { schema: { type: 'integer' }, example: 4 } },
+          },
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/locations': {
+      get: {
+        tags: ['odata'],
+        summary: 'The locations entity set, in the OData JSON envelope',
+        description:
+          'A plain paged read: $select, $expand, $top and $skip only. This set is not filterable, ' +
+          'sortable, countable or searchable — the CSDL declares that, and asking anyway is a 400.',
+        parameters: [locationSelectParam, locationExpandParam, topParam, skipParam],
+        responses: {
+          200: okODataCollection('#/components/schemas/Location'),
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/locations({id})': {
+      get: {
+        tags: ['odata'],
+        summary: 'One location by key, in the OData JSON envelope',
+        parameters: [odataKeyParam('location'), locationSelectParam, locationExpandParam],
+        responses: {
+          200: response('The location, plus @odata.context.', '#/components/schemas/Location'),
+          ...(errorResponses(400, 401, 404, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/categories': {
+      get: {
+        tags: ['odata'],
+        summary: 'The categories entity set, in the OData JSON envelope',
+        description: 'A plain paged read: $top and $skip only.',
+        parameters: [topParam, skipParam],
+        responses: {
+          200: okODataCollection('#/components/schemas/CategorySummary'),
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/categories({id})': {
+      get: {
+        tags: ['odata'],
+        summary: 'One category by key, in the OData JSON envelope',
+        parameters: [odataKeyParam('category')],
+        responses: {
+          200: response(
+            'The category and its field schema, plus @odata.context.',
+            '#/components/schemas/CategoryDetail',
+          ),
+          ...(errorResponses(400, 401, 404, 429, 503) as Record<string, JsonValue>),
         },
       },
     },

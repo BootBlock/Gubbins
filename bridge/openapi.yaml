@@ -41,6 +41,9 @@ tags:
   name: "capabilities"
   description: "Browse the queryable capability vocabulary."
 -
+  name: "odata"
+  description: "A conformant (if small) OData v4 read service at /api/v1/odata, for tools that speak OData natively — Excel/Power Query, Power BI, Simple.OData.Client. It serves a service document, the CSDL $metadata, and the same items/locations/categories reads in the OData JSON envelope ({ \"@odata.context\", \"value\" }) with the OData-Version header. The plain /api/v1 endpoints keep their { data, pagination } envelope, so nothing here changes an existing consumer. Only the items set is filterable, sortable, countable and searchable; the CSDL says so in Org.OData.Capabilities.V1 terms, and a system query option a resource does not support is a 400 rather than being ignored."
+-
   name: "writes"
   description: "Opt-in stock and loan mutations (off by default; enabled with GUBBINS_BRIDGE_ALLOW_WRITES=on). Each write round-trips through the same sync merge the PWA uses, so it is applied without drift on the next sync. When writes are disabled these paths return 404."
 -
@@ -196,9 +199,172 @@ paths:
   /api/v1/$metadata:
     get:
       tags:
-      - "meta"
-      summary: "OData CSDL $metadata (descriptive, not full-OData conformance)"
-      description: "An OData v4 CSDL document describing the read model (the items/locations/categories entity sets and their complex types), for OData-aware tooling. The service implements only the constrained OData query subset, not the whole protocol."
+      - "odata"
+      summary: "Moved — redirects to the OData service’s own $metadata"
+      description: "A CSDL is only actionable from the service root whose entity sets it declares, so the document now lives at /api/v1/odata/$metadata. This path answers 301 with that location; every OData client follows it."
+      responses:
+        "301":
+          description: "Permanent redirect to /api/v1/odata/$metadata."
+          headers:
+            Location:
+              schema:
+                type: "string"
+              description: "/api/v1/odata/$metadata"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/odata:
+    get:
+      tags:
+      - "odata"
+      summary: "OData service document — the entity sets on offer"
+      description: "The document an OData client reads first (OData Protocol §11.1.1): a @odata.context pointing at $metadata and a value array naming the items, locations and categories entity sets. Answered without a loaded snapshot — it describes the service, not the inventory."
+      responses:
+        "200":
+          description: "The service document."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                - "@odata.context"
+                - "value"
+                properties:
+                  "@odata.context":
+                    type: "string"
+                  value:
+                    type: "array"
+                    items:
+                      type: "object"
+                      properties:
+                        name:
+                          type: "string"
+                        kind:
+                          type: "string"
+                        url:
+                          type: "string"
+              example:
+                "@odata.context": "http://127.0.0.1:8787/api/v1/odata/$metadata"
+                value:
+                -
+                  name: "items"
+                  kind: "EntitySet"
+                  url: "items"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/odata/$metadata:
+    get:
+      tags:
+      - "odata"
+      summary: "OData CSDL $metadata"
+      description: "The OData v4 CSDL describing the read model — the items/locations/categories entity sets, their complex types, which properties a default (unprojected) request returns, and the Org.OData.Capabilities.V1 restrictions naming exactly what each set can be filtered, sorted, counted and searched on. Answered without a loaded snapshot."
       responses:
         "200":
           description: "The CSDL $metadata XML."
@@ -219,6 +385,803 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/odata/items:
+    get:
+      tags:
+      - "odata"
+      summary: "The items entity set, in the OData JSON envelope"
+      description: "The same rows as GET /api/v1/items — same paging, same $filter/$orderby/$search/$select/$expand — wrapped as { \"@odata.context\", \"@odata.count\"?, \"value\", \"@odata.nextLink\"? }. $count=true reports the grand total as @odata.count. A page capped by the server carries @odata.nextLink; when $top was given, the link’s $top is reduced by the rows already delivered, so following the chain returns exactly that many rows. This is the only entity set that accepts $filter, $orderby, $search or $count; a system query option a set does not support is a 400, not silently ignored."
+      parameters:
+      -
+        name: "$select"
+        in: "query"
+        required: false
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "name,unitCost"
+      -
+        name: "$expand"
+        in: "query"
+        required: false
+        description: "OData-style alias of `include` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "capabilities,notes"
+      -
+        name: "$top"
+        in: "query"
+        required: false
+        description: "OData-style alias of `limit` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "10"
+      -
+        name: "$skip"
+        in: "query"
+        required: false
+        description: "OData-style alias of `offset` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "0"
+      -
+        name: "$orderby"
+        in: "query"
+        required: false
+        description: "Sort the result: a comma-separated list of \"<field> [asc|desc]\" terms (default asc). Sortable fields: name, quantity, unitCost, mpn, manufacturer, createdAt, updatedAt, serialNo. NULLs sort last; ties break on id for stable pagination. An unknown field is a 400."
+        schema:
+          type: "string"
+        example: "quantity desc,name"
+      -
+        name: "$filter"
+        in: "query"
+        required: false
+        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/ne/gt/lt, the contains(field, string) function, and/or/not with parentheses, and single-quoted string / numeric / boolean literals. Dates are quoted 'YYYY-MM-DD' and money is in the base currency's major units. `tag` compares against a tag name and matches when ANY of the item's tags does. Field names are case-insensitive. Filterable fields: active, barcode, category, categoryId, condition, cost, currentValue, deadstock, deadStockMode, depth, description, expiry, expiryDate, favourite, height, isActive, isFavourite, location, locationId, manufacturer, mpn, name, notes, price, purchasePrice, quantity, reorder, reorderPoint, serial, serialNumber, tag, tags, tracking, trackingMode, unitCost, value, warranty, warrantyExpiresAt, weight, width. Anything outside the subset (ge/le, startswith/endswith, arithmetic, lambdas, an unknown field) is a 400, as is an operator a field does not accept. When present it is the sole row filter (location/category/$search are ignored)."
+        schema:
+          type: "string"
+        example: "quantity gt 10 and contains(name,'bolt')"
+      -
+        name: "$count"
+        in: "query"
+        required: false
+        description: "When \"true\", include the grand total of matching rows (across all pages) as `pagination.total`. Costs one extra COUNT query."
+        schema:
+          type: "boolean"
+          default: false
+        example: "true"
+      -
+        name: "$search"
+        in: "query"
+        required: false
+        description: "Free-text search across the item name/description/notes/mpn/manufacturer/serial number via the FTS5 index (ignored when $filter is set)."
+        schema:
+          type: "string"
+        example: "esp32"
+      responses:
+        "200":
+          description: "A page of results in the OData JSON envelope."
+          headers:
+            OData-Version:
+              schema:
+                type: "string"
+              description: "4.0 (on every response)."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                - "@odata.context"
+                - "value"
+                properties:
+                  "@odata.context":
+                    type: "string"
+                  "@odata.count":
+                    type: "integer"
+                    description: "The grand total across all pages — present only when $count=true."
+                  value:
+                    type: "array"
+                    items:
+                      $ref: "#/components/schemas/ItemSummary"
+                  "@odata.nextLink":
+                    type: "string"
+                    description: "The absolute URL of the next page. Emitted whenever a full page came back, so on an exact-boundary last page it is present and leads to an empty collection — follow it until a page carries no link, rather than assuming every linked page has rows."
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/api/v1/odata/items({id})":
+    get:
+      tags:
+      - "odata"
+      summary: "One item by key, in the OData JSON envelope"
+      description: "The canonical OData key-in-parentheses form; the unquoted items(abc) and named items(id='abc') spellings are accepted too. Returns the ItemDetail shape with a @odata.context ending in /$entity, or 404."
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The item id, e.g. `'abc'` (quotes optional)."
+        schema:
+          type: "string"
+        example: "'abc'"
+      -
+        name: "$select"
+        in: "query"
+        required: false
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "name,unitCost"
+      -
+        name: "$expand"
+        in: "query"
+        required: false
+        description: "OData-style alias of `include` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "capabilities,notes"
+      responses:
+        "200":
+          description: "The item, plus @odata.context."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemDetail"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/odata/items/$count:
+    get:
+      tags:
+      - "odata"
+      summary: "The matching item count as a raw value"
+      description: "The OData raw-value count: the grand total of matching items as a bare text/plain integer, honouring $filter/$search. items is the only countable entity set; the same path on locations or categories is a 404, as the CSDL’s CountRestrictions say."
+      parameters:
+      -
+        name: "$filter"
+        in: "query"
+        required: false
+        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/ne/gt/lt, the contains(field, string) function, and/or/not with parentheses, and single-quoted string / numeric / boolean literals. Dates are quoted 'YYYY-MM-DD' and money is in the base currency's major units. `tag` compares against a tag name and matches when ANY of the item's tags does. Field names are case-insensitive. Filterable fields: active, barcode, category, categoryId, condition, cost, currentValue, deadstock, deadStockMode, depth, description, expiry, expiryDate, favourite, height, isActive, isFavourite, location, locationId, manufacturer, mpn, name, notes, price, purchasePrice, quantity, reorder, reorderPoint, serial, serialNumber, tag, tags, tracking, trackingMode, unitCost, value, warranty, warrantyExpiresAt, weight, width. Anything outside the subset (ge/le, startswith/endswith, arithmetic, lambdas, an unknown field) is a 400, as is an operator a field does not accept. When present it is the sole row filter (location/category/$search are ignored)."
+        schema:
+          type: "string"
+        example: "quantity gt 10 and contains(name,'bolt')"
+      -
+        name: "$search"
+        in: "query"
+        required: false
+        description: "Free-text search across the item name/description/notes/mpn/manufacturer/serial number via the FTS5 index (ignored when $filter is set)."
+        schema:
+          type: "string"
+        example: "esp32"
+      responses:
+        "200":
+          description: "The count, as a plain-text integer."
+          content:
+            text/plain:
+              schema:
+                type: "integer"
+              example: 4
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/odata/locations:
+    get:
+      tags:
+      - "odata"
+      summary: "The locations entity set, in the OData JSON envelope"
+      description: "A plain paged read: $select, $expand, $top and $skip only. This set is not filterable, sortable, countable or searchable — the CSDL declares that, and asking anyway is a 400."
+      parameters:
+      -
+        name: "$select"
+        in: "query"
+        required: false
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "id,name,fieldValues"
+      -
+        name: "$expand"
+        in: "query"
+        required: false
+        description: "OData-style alias of `include` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "fields"
+      -
+        name: "$top"
+        in: "query"
+        required: false
+        description: "OData-style alias of `limit` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "10"
+      -
+        name: "$skip"
+        in: "query"
+        required: false
+        description: "OData-style alias of `offset` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "0"
+      responses:
+        "200":
+          description: "A page of results in the OData JSON envelope."
+          headers:
+            OData-Version:
+              schema:
+                type: "string"
+              description: "4.0 (on every response)."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                - "@odata.context"
+                - "value"
+                properties:
+                  "@odata.context":
+                    type: "string"
+                  "@odata.count":
+                    type: "integer"
+                    description: "The grand total across all pages — present only when $count=true."
+                  value:
+                    type: "array"
+                    items:
+                      $ref: "#/components/schemas/Location"
+                  "@odata.nextLink":
+                    type: "string"
+                    description: "The absolute URL of the next page. Emitted whenever a full page came back, so on an exact-boundary last page it is present and leads to an empty collection — follow it until a page carries no link, rather than assuming every linked page has rows."
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/api/v1/odata/locations({id})":
+    get:
+      tags:
+      - "odata"
+      summary: "One location by key, in the OData JSON envelope"
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The location id, e.g. `'abc'` (quotes optional)."
+        schema:
+          type: "string"
+        example: "'abc'"
+      -
+        name: "$select"
+        in: "query"
+        required: false
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "id,name,fieldValues"
+      -
+        name: "$expand"
+        in: "query"
+        required: false
+        description: "OData-style alias of `include` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "fields"
+      responses:
+        "200":
+          description: "The location, plus @odata.context."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Location"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/odata/categories:
+    get:
+      tags:
+      - "odata"
+      summary: "The categories entity set, in the OData JSON envelope"
+      description: "A plain paged read: $top and $skip only."
+      parameters:
+      -
+        name: "$top"
+        in: "query"
+        required: false
+        description: "OData-style alias of `limit` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "10"
+      -
+        name: "$skip"
+        in: "query"
+        required: false
+        description: "OData-style alias of `offset` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "0"
+      responses:
+        "200":
+          description: "A page of results in the OData JSON envelope."
+          headers:
+            OData-Version:
+              schema:
+                type: "string"
+              description: "4.0 (on every response)."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                - "@odata.context"
+                - "value"
+                properties:
+                  "@odata.context":
+                    type: "string"
+                  "@odata.count":
+                    type: "integer"
+                    description: "The grand total across all pages — present only when $count=true."
+                  value:
+                    type: "array"
+                    items:
+                      $ref: "#/components/schemas/CategorySummary"
+                  "@odata.nextLink":
+                    type: "string"
+                    description: "The absolute URL of the next page. Emitted whenever a full page came back, so on an exact-boundary last page it is present and leads to an empty collection — follow it until a page carries no link, rather than assuming every linked page has rows."
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/api/v1/odata/categories({id})":
+    get:
+      tags:
+      - "odata"
+      summary: "One category by key, in the OData JSON envelope"
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The category id, e.g. `'abc'` (quotes optional)."
+        schema:
+          type: "string"
+        example: "'abc'"
+      responses:
+        "200":
+          description: "The category and its field schema, plus @odata.context."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryDetail"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
           content:
             application/json:
               schema:

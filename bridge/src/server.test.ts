@@ -112,6 +112,14 @@ describe('GET /health', () => {
       // …and it is exposed for CORS, so a cross-origin browser (the PWA) can actually read it.
       expect(fresh.headers.get('access-control-expose-headers')).toContain('X-Gubbins-Snapshot-Stale');
 
+      // Two custom headers are stamped at different points in the request (OData's version before
+      // the auth gate, this one after), so both must survive into the exposed list — a plain
+      // `setHeader` from the later one would silently drop the earlier.
+      const odata = await probe('/api/v1/odata/items');
+      const exposed = odata.headers.get('access-control-expose-headers') ?? '';
+      expect(exposed).toContain('OData-Version');
+      expect(exposed).toContain('X-Gubbins-Snapshot-Stale');
+
       // Set only after the auth gate: an unauthenticated caller never learns the verdict.
       const unauth = await fetch(`http://127.0.0.1:${port}/search?q=ESP32`);
       expect(unauth.status).toBe(401);

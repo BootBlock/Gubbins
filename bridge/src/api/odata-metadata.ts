@@ -1,24 +1,36 @@
 /**
- * A best-effort **OData v4 CSDL `$metadata` document** describing the bridge's read model
- * (the `items`, `locations`, `categories` entity sets and their complex types). It is served
- * at `GET /api/v1/$metadata` so OData-aware tooling can introspect the shapes.
+ * The **OData v4 CSDL `$metadata` document** describing the bridge's read model (the `items`,
+ * `locations`, `categories` entity sets and their complex types). It is served at
+ * `GET /api/v1/odata/$metadata` — from the OData service's own root, whose entity sets it
+ * declares, so a client that reads it can actually follow it (issue #361; the historical
+ * `/api/v1/$metadata` redirects here).
  *
- * Honesty caveat (see the README): this is a *descriptive* CSDL for the read model, not a
- * declaration of full OData conformance — the service implements only the constrained query
- * subset (`$select`/`$expand`/`$top`/`$skip`/`$orderby`/`$filter`/`$count`/`$search`), not the
- * whole protocol. The document is static (no user input) and built from a small typed model, so
- * it stays in lockstep with the item field registry (guarded by a test).
+ * The document is static (no user input) and built from a small typed model, so it stays in
+ * lockstep with the item field registry (guarded by a test).
  *
- * The entity types describe the **whole projectable shape**, which is wider than the payload a
- * default request returns: `GET /items` emits the summary field set, and everything else is
- * opt-in via `fields`/`include` (or `$select`/`$expand`). A reader can't infer that from the
- * property list alone, so each property outside its entity set's default payload carries an
- * `Org.OData.Core.V1.Description` saying so — otherwise tooling that materialises a table from
- * the CSDL (Excel, Power Query, LINQPad) builds columns that are always empty. The default sets
- * are imported from the field registries rather than restated here, so they can't drift.
+ * **It describes what the service really does, not what OData allows.** Two annotation families
+ * carry that:
+ *
+ *   - The entity types describe the **whole projectable shape**, which is wider than the payload
+ *     a default request returns: a collection read emits the summary field set, and everything
+ *     else is opt-in via `fields`/`include` (or `$select`/`$expand`). A reader can't infer that
+ *     from the property list alone, so each property outside its entity set's default payload
+ *     carries an `Org.OData.Core.V1.Description` saying so — otherwise tooling that materialises
+ *     a table from the CSDL (Excel, Power Query, LINQPad) builds columns that are always empty.
+ *   - Each entity set carries `Org.OData.Capabilities.V1` restrictions naming exactly which
+ *     properties can be filtered and sorted, and whether the set can be counted or searched.
+ *     Only `items` is backed by the search AST; `locations` and `categories` are plain paged
+ *     reads. Without this a client pushes down a filter the service will refuse and the refresh
+ *     dies on a `400`; with it, the client evaluates what the service can't and everything works.
+ *     `odata-service.ts` enforces the same table, so the metadata and the behaviour agree.
+ *
+ * The default field sets, filterable properties and sortable fields are all imported from their
+ * own single sources rather than restated here, so they can't drift.
  */
 import { ITEM_SUMMARY_DEFAULT_FIELDS } from './item-view.ts';
 import { LOCATION_DEFAULT_FIELDS } from './location-view.ts';
+import { FILTERABLE_FIELD_NAMES } from './odata-filter.ts';
+import { ITEM_SORT_FIELDS } from '@/db/repositories/item/sql.ts';
 
 /** One EDM property: its name, EDM type, and whether it is nullable. */
 interface EdmProperty {
@@ -208,17 +220,168 @@ const ITEM_DEFAULTS: ReadonlySet<string> = new Set(ITEM_SUMMARY_DEFAULT_FIELDS);
 const LOCATION_DEFAULTS: ReadonlySet<string> = new Set(LOCATION_DEFAULT_FIELDS);
 
 /**
- * One `<EntitySet>`, annotated with the field set a default (unprojected) request returns so a
- * CSDL reader isn't left to assume it gets the entity type's whole property list.
+ * What one entity set can actually be asked to do. `filterable`/`sortable` list the properties
+ * the service will accept for that option; `false` means the option is not supported at all.
  */
-function entitySet(name: string, type: string, defaults?: readonly string[]): string {
-  const head = `        <EntitySet Name="${xml(name)}" EntityType="${xml(type)}"`;
-  if (!defaults) return `${head}/>`;
+export interface SetCapabilities {
+  readonly filterable: readonly string[] | false;
+  readonly sortable: readonly string[] | false;
+  readonly countable: boolean;
+  readonly searchable: boolean;
+  /** Whether the set can be projected with `$select`. */
+  readonly selectable: boolean;
+  /** Whether the set accepts `$expand` (the bridge's `include` field expansion). */
+  readonly expandable: boolean;
+}
+
+/**
+ * The real capabilities of each entity set — the vocabulary-term twin of `SUPPORTED_OPTIONS` in
+ * `odata-service.ts`. Only `items` reaches the search AST, so it alone is filterable, sortable,
+ * countable and searchable; the other two are plain paged reads that support `$top`/`$skip` and
+ * nothing more.
+ */
+export /**
+ * The item **properties** `$filter` accepts — the filterable vocabulary (issue #143) narrowed to
+ * names the entity type actually declares.
+ *
+ * `FILTERABLE_FIELD_NAMES` deliberately carries both the app's short spellings and the published
+ * camel-cased ones (`serial` *and* `serialNumber`, `category` *and* `categoryId`), so a caller can
+ * filter either way. A CSDL `PropertyPath` may only name a declared property, and the restriction
+ * below is stated as the *complement* of this set — so a short alias left in would silently mark a
+ * real property non-filterable. Intersecting with {@link ITEM_PROPERTIES} keeps the two in step
+ * without a third hand-maintained list to drift.
+ */
+const FILTERABLE_ITEM_PROPERTIES: readonly string[] = ITEM_PROPERTIES.map((prop) => prop.name).filter(
+  (name) => FILTERABLE_FIELD_NAMES.includes(name),
+);
+
+export const ENTITY_SET_CAPABILITIES: Readonly<Record<string, SetCapabilities>> = {
+  items: {
+    filterable: FILTERABLE_ITEM_PROPERTIES,
+    sortable: ITEM_SORT_FIELDS,
+    countable: true,
+    searchable: true,
+    selectable: true,
+    expandable: true,
+  },
+  locations: {
+    filterable: false,
+    sortable: false,
+    countable: false,
+    searchable: false,
+    selectable: true,
+    expandable: true,
+  },
+  // Categories have no extended fields and no projection vocabulary — a paged read and nothing
+  // else, so a client must not be told it can narrow one.
+  categories: {
+    filterable: false,
+    sortable: false,
+    countable: false,
+    searchable: false,
+    selectable: false,
+    expandable: false,
+  },
+};
+
+/**
+ * One `Org.OData.Capabilities.V1.*Restrictions` annotation: a record carrying a boolean
+ * "supported" flag and, when supported, the properties the option may *not* be used on.
+ */
+function restriction(
+  term: string,
+  supportedProperty: string,
+  supported: boolean,
+  excludedProperty?: string,
+  excluded: readonly string[] = [],
+): readonly string[] {
+  const exclusions =
+    supported && excludedProperty !== undefined && excluded.length > 0
+      ? [
+          `              <PropertyValue Property="${excludedProperty}">`,
+          `                <Collection>`,
+          ...excluded.map((name) => `                  <PropertyPath>${xml(name)}</PropertyPath>`),
+          `                </Collection>`,
+          `              </PropertyValue>`,
+        ]
+      : [];
   return [
-    `${head}>`,
-    description(`A request without fields/include (or $select/$expand) returns: ${defaults.join(', ')}.`),
-    `        </EntitySet>`,
-  ].join('\n');
+    `          <Annotation Term="Org.OData.Capabilities.V1.${term}">`,
+    `            <Record>`,
+    `              <PropertyValue Property="${supportedProperty}" Bool="${supported}"/>`,
+    ...exclusions,
+    `            </Record>`,
+    `          </Annotation>`,
+  ];
+}
+
+/**
+ * The capability annotations for one entity set: what may be filtered, sorted, counted and
+ * searched, plus the flat statement that nothing here can be written. The read model is served
+ * from a snapshot the bridge cannot modify, so `Insertable`/`Updatable`/`Deletable` are all
+ * `false` — a client should never offer an edit that would only ever be refused.
+ */
+function capabilityAnnotations(caps: SetCapabilities, properties: readonly string[]): readonly string[] {
+  const exclude = (allowed: readonly string[]): readonly string[] =>
+    properties.filter((name) => !allowed.includes(name));
+
+  return [
+    ...restriction(
+      'FilterRestrictions',
+      'Filterable',
+      caps.filterable !== false,
+      'NonFilterableProperties',
+      caps.filterable === false ? [] : exclude(caps.filterable),
+    ),
+    ...restriction(
+      'SortRestrictions',
+      'Sortable',
+      caps.sortable !== false,
+      'NonSortableProperties',
+      caps.sortable === false ? [] : exclude(caps.sortable),
+    ),
+    ...restriction('CountRestrictions', 'Countable', caps.countable),
+    ...restriction('SearchRestrictions', 'Searchable', caps.searchable),
+    ...restriction('SelectSupport', 'Supported', caps.selectable),
+    ...restriction('ExpandRestrictions', 'Expandable', caps.expandable),
+    ...restriction('InsertRestrictions', 'Insertable', false),
+    ...restriction('UpdateRestrictions', 'Updatable', false),
+    ...restriction('DeleteRestrictions', 'Deletable', false),
+    `          <Annotation Term="Org.OData.Capabilities.V1.TopSupported" Bool="true"/>`,
+    `          <Annotation Term="Org.OData.Capabilities.V1.SkipSupported" Bool="true"/>`,
+  ];
+}
+
+/**
+ * One `<EntitySet>`, annotated with the field set a default (unprojected) request returns — so a
+ * CSDL reader isn't left to assume it gets the entity type's whole property list — and with the
+ * query capabilities the service really offers on it.
+ */
+function entitySet(
+  name: string,
+  type: string,
+  properties: readonly EdmProperty[],
+  defaults?: readonly string[],
+): string {
+  const caps = ENTITY_SET_CAPABILITIES[name];
+  const body: string[] = [
+    ...(defaults
+      ? [
+          description(
+            `A request without fields/include (or $select/$expand) returns: ${defaults.join(', ')}.`,
+          ),
+        ]
+      : []),
+    ...(caps
+      ? capabilityAnnotations(
+          caps,
+          properties.map((prop) => prop.name),
+        )
+      : []),
+  ];
+  const head = `        <EntitySet Name="${xml(name)}" EntityType="${xml(type)}"`;
+  if (body.length === 0) return `${head}/>`;
+  return [`${head}>`, ...body, `        </EntitySet>`].join('\n');
 }
 
 /**
@@ -233,6 +396,10 @@ export function odataMetadataXml(): string {
     '  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.xml">',
     '    <edmx:Include Namespace="Org.OData.Core.V1" Alias="Core"/>',
     '  </edmx:Reference>',
+    // The Capabilities vocabulary the per-entity-set restrictions are drawn from.
+    '  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Capabilities.V1.xml">',
+    '    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>',
+    '  </edmx:Reference>',
     '  <edmx:DataServices>',
     '    <Schema Namespace="Gubbins" xmlns="http://docs.oasis-open.org/odata/ns/edm">',
     entityType('Item', 'id', ITEM_PROPERTIES, ITEM_DEFAULTS),
@@ -246,9 +413,16 @@ export function odataMetadataXml(): string {
     complexType('LocationFieldValue', LOCATION_FIELD_VALUE_PROPERTIES),
     complexType('FieldOrigin', FIELD_ORIGIN_PROPERTIES),
     '      <EntityContainer Name="Container">',
-    entitySet('items', 'Gubbins.Item', ITEM_SUMMARY_DEFAULT_FIELDS),
-    entitySet('locations', 'Gubbins.Location', LOCATION_DEFAULT_FIELDS),
-    entitySet('categories', 'Gubbins.Category'),
+    entitySet('items', 'Gubbins.Item', ITEM_PROPERTIES, ITEM_SUMMARY_DEFAULT_FIELDS),
+    entitySet('locations', 'Gubbins.Location', LOCATION_PROPERTIES, LOCATION_DEFAULT_FIELDS),
+    entitySet('categories', 'Gubbins.Category', CATEGORY_PROPERTIES),
+    // Container-level facts about the protocol itself: there is no `$batch` endpoint and no
+    // asynchronous request support, and `contains` is the only filter function implemented.
+    '        <Annotation Term="Org.OData.Capabilities.V1.BatchSupported" Bool="false"/>',
+    '        <Annotation Term="Org.OData.Capabilities.V1.AsynchronousRequestsSupported" Bool="false"/>',
+    '        <Annotation Term="Org.OData.Capabilities.V1.FilterFunctions">',
+    '          <Collection><String>contains</String></Collection>',
+    '        </Annotation>',
     '      </EntityContainer>',
     '    </Schema>',
     '  </edmx:DataServices>',

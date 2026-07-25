@@ -43,6 +43,7 @@ import { can, resolveAuthority, type Authority } from '@/features/users/permissi
 import type { PermissionKey } from '@/features/users/permission-registry';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { API_V1_BASE } from './api/v1.ts';
+import { entitySetOfSegment, type ODataEntitySet } from './api/odata-service.ts';
 
 /** A caller the bridge has successfully identified. */
 export interface BridgeIdentity {
@@ -143,6 +144,11 @@ export function requiredPermissions(method: string, pathname: string): readonly 
       return ['bridge:read', 'locations:read'];
     case 'categories':
       return ['bridge:read', 'categories:read'];
+    // The OData service is the same three reads under a different envelope, so it must carry the
+    // same permissions — reaching `items` through `/odata/items` cannot be the cheaper door. The
+    // set is named one segment deeper, so the decision is delegated rather than flattened here.
+    case 'odata':
+      return ['bridge:read', ...odataSetPermissions(segments[1])];
     // The calendar feed publishes asset bookings, so it is gated on bookings rather than items.
     case 'calendar.ics':
       return ['bridge:read', 'bookings:read'];
@@ -160,6 +166,31 @@ export function requiredPermissions(method: string, pathname: string): readonly 
     default:
       return ['bridge:read'];
   }
+}
+
+/** The subject permission each OData entity set exposes — the same one its REST twin needs. */
+const ODATA_SET_PERMISSIONS: Readonly<Record<ODataEntitySet, PermissionKey>> = {
+  items: 'items:read',
+  locations: 'locations:read',
+  categories: 'categories:read',
+};
+
+/**
+ * The entity-set permission an OData resource needs, on top of `bridge:read`.
+ *
+ * Which set a segment addresses is decided by {@link entitySetOfSegment} — **the router's own
+ * function**, not a second reading of the path here. That matters: `url.pathname` is left
+ * percent-encoded by the WHATWG `URL` parser, and the router decodes before matching, so a
+ * private `split('(')` here would answer "no set" for `%69tems` while the router happily served
+ * `items` — handing the whole collection to a caller holding only `bridge:read`.
+ *
+ * The service document (no segment) and `$metadata` describe the service rather than any
+ * inventory, so they need nothing further — and neither does a segment naming no set at all,
+ * which the router answers as a `404`.
+ */
+function odataSetPermissions(segment: string | undefined): readonly PermissionKey[] {
+  const set = entitySetOfSegment(segment);
+  return set === null ? [] : [ODATA_SET_PERMISSIONS[set]];
 }
 
 /** The permissions required by the (few) POST routes. */

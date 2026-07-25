@@ -458,18 +458,24 @@ describe('OData-style query options', () => {
     expect(body.data.map((i: any) => i.id)).toEqual(['item-esp32']);
   });
 
-  it('serves the OData $metadata CSDL document (state-independent)', async () => {
-    const res = await get('/api/v1/$metadata');
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('application/xml');
-    const xml = await res.text();
+  it('redirects the historical $metadata path to the OData service root (issue #361)', async () => {
+    // A CSDL is only actionable from the root whose entity sets it declares, so the document
+    // moved with the service. `fetch` follows the redirect, so the body still arrives.
+    const res = await get('/api/v1/$metadata', { redirect: 'manual' });
+    expect(res.status).toBe(301);
+    expect(res.headers.get('location')).toBe('/api/v1/odata/$metadata');
+
+    const followed = await get('/api/v1/$metadata');
+    expect(followed.status).toBe(200);
+    expect(followed.headers.get('content-type')).toContain('application/xml');
+    const xml = await followed.text();
     expect(xml).toContain('<EntityType Name="Item">');
     expect(xml).toContain('<EntitySet Name="items"');
   });
 
-  it('lists $metadata and items/$count in the discovery index', async () => {
+  it('lists the OData service root and items/$count in the discovery index', async () => {
     const index = await json('/api/v1');
-    expect(index.endpoints).toContain('/api/v1/$metadata');
+    expect(index.endpoints).toContain('/api/v1/odata');
     expect(index.endpoints).toContain('/api/v1/items/$count');
   });
 });
