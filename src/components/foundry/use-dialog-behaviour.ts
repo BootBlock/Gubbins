@@ -21,7 +21,7 @@
  *   user never loses their place.
  */
 import { useEffect, useRef, type RefObject } from 'react';
-import { FOCUSABLE_SELECTOR, nextTrapIndex } from './focus-trap';
+import { nextTrapIndex, trapFocusables } from './focus-trap';
 import { isTopModal, openModalCount, popModal, pushModal } from './modal-stack';
 
 /**
@@ -67,7 +67,7 @@ export function useDialogBehaviour(
       if (e.key !== 'Tab') return;
       const node = container.current;
       if (!node) return;
-      const focusables = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+      const focusables = trapFocusables(node);
       const active = document.activeElement as HTMLElement | null;
       const currentIndex = active ? focusables.indexOf(active) : -1;
       const next = nextTrapIndex(focusables.length, currentIndex, e.shiftKey);
