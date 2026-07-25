@@ -4,7 +4,7 @@
  * everything outside the subset.
  */
 import { describe, expect, it } from 'vitest';
-import { parseODataFilter } from './odata-filter.ts';
+import { FIELD_MAP, FILTERABLE_PROPERTIES, parseODataFilter } from './odata-filter.ts';
 import { BadQueryError } from './odata.ts';
 
 describe('parseODataFilter — supported grammar', () => {
@@ -126,5 +126,21 @@ describe('parseODataFilter — rejected input', () => {
   it.each(bad)('rejects %s', (input, message) => {
     expect(() => parseODataFilter(input)).toThrow(BadQueryError);
     expect(() => parseODataFilter(input)).toThrow(message);
+  });
+});
+
+describe('FILTERABLE_PROPERTIES (the metadata document reads this)', () => {
+  // The CSDL states filterability as the *complement* of this list, so an entry that isn't
+  // really filterable tells a client to push down a filter that will 400 mid-refresh, and a
+  // filterable field left out tells it to evaluate client-side what the service could have done.
+  it('names only properties the parser actually accepts', () => {
+    for (const property of FILTERABLE_PROPERTIES) {
+      expect(() => parseODataFilter(`contains(${property},'x')`)).not.toThrow();
+    }
+  });
+
+  it('covers every field the parser can filter on (no filterable field left undeclared)', () => {
+    const declared = new Set(FILTERABLE_PROPERTIES.map((name) => FIELD_MAP[name.toLowerCase()]));
+    expect([...declared].sort()).toEqual([...new Set(Object.values(FIELD_MAP))].sort());
   });
 });

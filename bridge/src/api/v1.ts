@@ -12,10 +12,7 @@
  */
 import type { ServerResponse } from 'node:http';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
-import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
-import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
 import { emptyAst } from '@/db/search/ast.ts';
-import type { LocationTreeNode } from '@/db/repositories/types';
 import { searchItems, searchItemRows, whereIs, type LookupObserver } from '../query.ts';
 import { openapiDocument } from '../openapi.ts';
 import type {
@@ -39,11 +36,11 @@ import {
   sendError,
   sendJson,
   sendText,
-  sendXml,
   sendCsv,
   sendCalendar,
   sendFeed,
   sendNotModified,
+  sendRedirect,
   type ApiErrorCode,
 } from './respond.ts';
 import {
@@ -62,44 +59,60 @@ import {
 import { buildActivityFeed } from '../feeds/feed.ts';
 import { projectItemStatuses } from '../feeds/item-status.ts';
 import { emitRss, emitAtom, emitJsonFeed, type FeedChannel } from '../feeds/emitters.ts';
-import { readPage, readQueryParam, readResultLimit, type PageRequest } from './params.ts';
+import { readPage, readQueryParam, readResultLimit } from './params.ts';
 import {
   MAX_DELIVERY_LOG_PAGE,
   type WebhookDeliveryLog,
   type WebhookDeliveryRecord,
 } from '../events/webhook-log.ts';
 import { MAX_CSV_ROWS, MAX_PAGE_LIMIT } from './limits.ts';
-import { odataMetadataXml } from './odata-metadata.ts';
+import { handleOData } from './odata-service.ts';
 import { buildItemsCsv } from '@/features/export/export-data.ts';
-import { FieldSelectionError, hasSelection, type RawSelection, type SelectedField } from './field-select.ts';
-import {
-  createItemViewContext,
-  parseItemSelection,
-  projectItem,
-  ITEM_DETAIL_DEFAULT_FIELDS,
-  ITEM_SUMMARY_DEFAULT_FIELDS,
-  SEARCH_DEFAULT_FIELDS,
-} from './item-view.ts';
-import { createLocationViewContext, parseLocationSelection, projectLocation } from './location-view.ts';
-import { BadQueryError, parseOrderBy, readOption } from './odata.ts';
-import { parseODataFilter } from './odata-filter.ts';
+import { hasSelection } from './field-select.ts';
+import { createItemViewContext, projectItem, SEARCH_DEFAULT_FIELDS } from './item-view.ts';
 import { SearchAstError } from '@/db/search/parseASTtoSQL.ts';
 import type { SearchAST } from '@/db/search/ast.ts';
 import type { ItemSort } from '@/db/repositories/item/sql.ts';
-import type { Page, Item } from '@/db/repositories/types';
+import type { Item } from '@/db/repositories/types';
 import {
-  toCapabilityKey,
-  toCategoryDetail,
-  toCategorySummary,
-  toItemSummary,
-  toLocation,
-  type ListEnvelope,
-  type PaginationMeta,
-} from './dto.ts';
-import { loadItemDetail } from '../item-detail.ts';
+  buildCategoryEntity,
+  buildCategoryList,
+  buildItemCount,
+  buildItemEntity,
+  buildItemList,
+  buildLocationEntity,
+  buildLocationList,
+  itemPage,
+  parseItemFilterOr400,
+  parseOrderByOr400,
+  parseSelectionOr400,
+  readItemListFilters,
+  readSelection,
+  type EntityResult,
+  type ItemQueryFilters,
+  type ListResult,
+} from './reads.ts';
+import { toCapabilityKey, type ListEnvelope, type PaginationMeta } from './dto.ts';
 
 /** The versioned API base path. */
 export const API_V1_BASE = '/api/v1';
+
+/**
+ * The **OData v4 service root** (issue #361). A separate root, rather than OData semantics bolted
+ * onto `/api/v1/items`: the plain REST endpoints keep their `{ data, pagination }` contract for
+ * every existing consumer, while an OData client gets a service document, the protocol's JSON
+ * envelope and the `OData-Version` header it requires. See `odata-service.ts`.
+ */
+export const API_V1_ODATA_BASE = `${API_V1_BASE}/odata`;
+
+/**
+ * True for the OData service root and everything below it. `server.ts` uses this to stamp
+ * `OData-Version` on **every** response for the sub-tree — including the auth/rate-limit guards
+ * that answer before routing, which must be as conformant as a routed read.
+ */
+export function isODataPath(pathname: string): boolean {
+  return pathname === API_V1_ODATA_BASE || pathname.startsWith(`${API_V1_ODATA_BASE}/`);
+}
 
 /**
  * The read-only iCalendar subscription feed path (`GET /api/v1/calendar.ics`). Exported so
@@ -234,8 +247,23 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
   if (segments.length === 1 && segments[0] === 'openapi.json') {
     return void sendJson(res, 200, openapiDocument);
   }
+  // A CSDL is only actionable from the service root whose entity sets it declares, so the
+  // document now lives under the OData service and this historical path points at it.
   if (segments.length === 1 && segments[0] === '$metadata') {
-    return void sendXml(res, 200, odataMetadataXml());
+    return void sendRedirect(res, 301, `${API_V1_ODATA_BASE}/$metadata`);
+  }
+
+  // The OData service answers the service document and `$metadata` without a snapshot (they
+  // describe the service, not the inventory), so it is routed before the state gate below and
+  // applies its own gate to the data reads.
+  if (segments[0] === 'odata') {
+    return void (await handleOData(
+      res,
+      url,
+      segments.slice(1),
+      `${url.protocol}//${url.host}${API_V1_ODATA_BASE}`,
+      () => ctx.getState()?.driver ?? null,
+    ));
   }
 
   // The scale endpoints read Home Assistant, not the snapshot, so they are routed *before* the
@@ -696,7 +724,9 @@ function apiIndex(writable: boolean, pushable: boolean, streamable: boolean, sca
     scalable,
     endpoints: [
       `${API_V1_BASE}/openapi.json`,
-      `${API_V1_BASE}/$metadata`,
+      // The OData service root — its service document lists the entity sets, and the CSDL sits
+      // below it at `/$metadata`. The historical `/api/v1/$metadata` path redirects there.
+      API_V1_ODATA_BASE,
       `${API_V1_BASE}/health`,
       `${API_V1_BASE}/status`,
       `${API_V1_BASE}/search`,
@@ -786,54 +816,9 @@ async function handleWhere(
 // --- items ------------------------------------------------------------------------
 
 async function handleItems(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
-  const page = readPage(url);
-  const raw = readSelection(url);
-  const selection = hasSelection(raw)
-    ? parseSelectionOr400(res, ITEM_SUMMARY_DEFAULT_FIELDS, raw)
-    : undefined;
-  if (selection === null) return; // a 400 was already sent
-
-  const sort = parseOrderByOr400(res, url);
-  if (sort === null) return;
-
-  const ast = parseItemFilterOr400(res, url);
-  if (ast === null) return; // an invalid $filter already sent a 400
-
-  const items = new ItemRepository(driver);
-  const filters = readItemListFilters(url);
-  const wantCount = url.searchParams.get('$count') === 'true';
-
-  let result: Page<Item>;
-  let total: number | undefined;
-  try {
-    result = await itemPage(items, ast, filters, sort, page.limit, page.offset);
-    if (wantCount) total = await itemCount(items, ast, filters);
-  } catch (err) {
-    // An AST-translation error (SearchAstError — e.g. an operator not valid for the field, or a
-    // too-deep filter) is the caller's fault → 400.
-    if (err instanceof SearchAstError) {
-      return void sendError(res, 400, 'bad_request', err.message, { v1: true });
-    }
-    throw err;
-  }
-
-  // Resolve location names from one bounded read of the (physical, not 100k-row) tree,
-  // rather than an N+1 lookup per row.
-  const locationNames = await locationNameMap(driver);
-  const data: readonly unknown[] =
-    selection === undefined
-      ? result.rows.map((item) => toItemSummary(item, locationNames.get(item.locationId) ?? null))
-      : await Promise.all(
-          result.rows.map((item) =>
-            projectItem(
-              createItemViewContext(driver, item, {
-                locationName: locationNames.get(item.locationId) ?? null,
-              }),
-              selection,
-            ),
-          ),
-        );
-  sendList(res, data, page, result.hasMore, total);
+  const result = await buildItemList(res, driver, url);
+  if (result === null) return; // a 400 was already sent
+  sendList(res, result);
 }
 
 /**
@@ -841,19 +826,9 @@ async function handleItems(res: ServerResponse, driver: Driver, url: URL): Promi
  * a bare `text/plain` integer, honouring the same `$filter`/`$search`/location/category scope.
  */
 async function handleItemCount(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
-  const ast = parseItemFilterOr400(res, url);
-  if (ast === null) return;
-
-  const items = new ItemRepository(driver);
-  const filters = readItemListFilters(url);
-  try {
-    sendText(res, 200, String(await itemCount(items, ast, filters)));
-  } catch (err) {
-    if (err instanceof SearchAstError) {
-      return void sendError(res, 400, 'bad_request', err.message, { v1: true });
-    }
-    throw err;
-  }
+  const total = await buildItemCount(res, driver, url);
+  if (total === null) return; // a 400 was already sent
+  sendText(res, 200, String(total));
 }
 
 /**
@@ -1056,138 +1031,30 @@ function feedChannel(state: BridgeServerState, url: URL): FeedChannel {
   };
 }
 
-/** The active-scope + non-page item list filters (location/category/$search), shared by rows + $count. */
-type ItemQueryFilters = {
-  locationId?: string;
-  categoryId?: string;
-  search?: string;
-  includeInactive: boolean;
-};
-
-function readItemListFilters(url: URL): ItemQueryFilters {
-  return {
-    locationId: url.searchParams.get('location') ?? undefined,
-    categoryId: url.searchParams.get('category') ?? undefined,
-    // OData `$search` maps onto the app's FTS list filter.
-    search: url.searchParams.get('$search') ?? undefined,
-    includeInactive: url.searchParams.get('includeInactive') === 'true',
-  };
-}
-
-/**
- * Fetch one page of items, single-sourcing the `$filter`-vs-`list` split every item query uses:
- * with a `$filter` the compiled `ast` is the **sole** row filter (location/category/$search are
- * ignored); without one, the plain `list` honours those scope filters. May throw
- * `SearchAstError` when the AST is invalid for a field — the caller maps that to a `400`.
- */
-function itemPage(
-  items: ItemRepository,
-  ast: SearchAST | undefined,
-  filters: ItemQueryFilters,
-  sort: readonly ItemSort[] | undefined,
-  limit: number,
-  offset: number,
-): Promise<Page<Item>> {
-  return ast !== undefined
-    ? items.searchByAst(ast, { limit, offset, includeInactive: filters.includeInactive, sort })
-    : items.list({ ...filters, limit, offset, sort });
-}
-
-/** The `$count` twin of {@link itemPage}: the grand total under the same filter, no paging. */
-function itemCount(
-  items: ItemRepository,
-  ast: SearchAST | undefined,
-  filters: ItemQueryFilters,
-): Promise<number> {
-  return ast !== undefined
-    ? items.countByAst(ast, { includeInactive: filters.includeInactive })
-    : items.count(filters);
-}
-
-/**
- * Parse the optional `$filter` into a SearchAST, or send a `400` and return `null`. Returns
- * `undefined` when `$filter` is absent (use the plain `list` path). Only reports *syntax* errors
- * here (BadQueryError); an AST-translation error surfaces when the query runs.
- */
-function parseItemFilterOr400(res: ServerResponse, url: URL): SearchAST | undefined | null {
-  const raw = url.searchParams.get('$filter');
-  if (raw === null) return undefined;
-  try {
-    return parseODataFilter(raw);
-  } catch (err) {
-    if (err instanceof BadQueryError) {
-      sendError(res, 400, 'bad_request', err.message, { v1: true });
-      return null;
-    }
-    throw err;
-  }
-}
-
 async function handleItem(res: ServerResponse, driver: Driver, url: URL, id: string): Promise<void> {
-  const raw = readSelection(url);
-  if (hasSelection(raw)) {
-    const selection = parseSelectionOr400(res, ITEM_DETAIL_DEFAULT_FIELDS, raw);
-    if (selection === null) return;
-    const item = await new ItemRepository(driver).getById(id);
-    if (item === undefined) return notFound(res, 'item');
-    return void sendJson(res, 200, await projectItem(createItemViewContext(driver, item), selection));
-  }
-
-  const detail = await loadItemDetail(driver, id);
-  if (detail === null) return notFound(res, 'item');
-  sendJson(res, 200, detail);
+  sendEntity(res, await buildItemEntity(res, driver, url, id), 'item');
 }
 
 // --- locations --------------------------------------------------------------------
 
 async function handleLocations(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
-  const page = readPage(url);
-  const raw = readSelection(url);
-  const result = await new LocationRepository(driver).list({ limit: page.limit, offset: page.offset });
-
-  // Without a selection the response is the plain `LocationDto` it has always been; with one,
-  // the same rows go through the shared field-selection engine (so `include=fields` adds the
-  // location's custom-field values).
-  if (!hasSelection(raw)) {
-    return void sendList(res, result.rows.map(toLocation), page, result.hasMore);
-  }
-  const selection = parseLocationSelectionOr400(res, raw);
-  if (selection === null) return;
-  const rows = await Promise.all(
-    result.rows.map((location) => projectLocation(createLocationViewContext(driver, location), selection)),
-  );
-  sendList(res, rows, page, result.hasMore);
+  const result = await buildLocationList(res, driver, url);
+  if (result === null) return; // a 400 was already sent
+  sendList(res, result);
 }
 
 async function handleLocation(res: ServerResponse, driver: Driver, url: URL, id: string): Promise<void> {
-  const raw = readSelection(url);
-  const selection = hasSelection(raw) ? parseLocationSelectionOr400(res, raw) : undefined;
-  if (selection === null) return;
-
-  const location = await new LocationRepository(driver).getById(id);
-  if (location === undefined) return notFound(res, 'location');
-  // The live item count is the number of items whose home location is this one.
-  const itemCount = await new ItemRepository(driver).count({ locationId: id });
-  const row = { ...location, itemCount };
-
-  if (selection === undefined) return void sendJson(res, 200, toLocation(row));
-  sendJson(res, 200, await projectLocation(createLocationViewContext(driver, row), selection));
+  sendEntity(res, await buildLocationEntity(res, driver, url, id), 'location');
 }
 
 // --- categories -------------------------------------------------------------------
 
 async function handleCategories(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
-  const page = readPage(url);
-  const result = await new CategoryRepository(driver).list({ limit: page.limit, offset: page.offset });
-  sendList(res, result.rows.map(toCategorySummary), page, result.hasMore);
+  sendList(res, await buildCategoryList(driver, url));
 }
 
 async function handleCategory(res: ServerResponse, driver: Driver, id: string): Promise<void> {
-  const categories = new CategoryRepository(driver);
-  const category = await categories.getById(id);
-  if (category === undefined) return notFound(res, 'category');
-  const fields = await categories.listFields(id);
-  sendJson(res, 200, toCategoryDetail(category, fields));
+  sendEntity(res, await buildCategoryEntity(driver, id), 'category');
 }
 
 // --- capabilities -----------------------------------------------------------------
@@ -1198,79 +1065,12 @@ async function handleCapabilities(res: ServerResponse, driver: Driver, url: URL)
     limit: page.limit,
     offset: page.offset,
   });
-  sendList(res, result.rows.map(toCapabilityKey), page, result.hasMore);
+  sendList(res, { rows: result.rows.map(toCapabilityKey), page, hasMore: result.hasMore });
 }
 
 // --- helpers ----------------------------------------------------------------------
 
 type Driver = BridgeServerState['driver'];
-
-/**
- * Read the optional field-selection parameters off the query string, accepting both the plain
- * REST names (`fields`/`include`) and their OData aliases (`$select`/`$expand`, which win when
- * both are present).
- */
-function readSelection(url: URL): RawSelection {
-  const fields = readOption(url, '$select', 'fields');
-  const include = readOption(url, '$expand', 'include');
-  return {
-    ...(fields !== null ? { fields } : {}),
-    ...(include !== null ? { include } : {}),
-  };
-}
-
-/**
- * Parse the optional `$orderby` into a validated sort spec, or send a `400` and return `null`.
- * Returns `undefined` when `$orderby` is absent (keep the endpoint's default ordering).
- */
-function parseOrderByOr400(res: ServerResponse, url: URL): readonly ItemSort[] | undefined | null {
-  const raw = url.searchParams.get('$orderby');
-  if (raw === null) return undefined;
-  try {
-    return parseOrderBy(raw);
-  } catch (err) {
-    if (err instanceof BadQueryError) {
-      sendError(res, 400, 'bad_request', err.message, { v1: true });
-      return null;
-    }
-    throw err;
-  }
-}
-
-/**
- * Parse a field selection, or send a `400 bad_request` (v1 envelope) and return `null` when it
- * is invalid. The `FieldSelectionError` message is caller-facing and PII-free by construction.
- */
-function parseSelectionOr400(
-  res: ServerResponse,
-  defaults: readonly string[],
-  raw: RawSelection,
-): readonly SelectedField[] | null {
-  return selectionOr400(res, () => parseItemSelection(defaults, raw));
-}
-
-/** The location-vocabulary counterpart of {@link parseSelectionOr400}. */
-function parseLocationSelectionOr400(
-  res: ServerResponse,
-  raw: RawSelection,
-): readonly SelectedField[] | null {
-  return selectionOr400(res, () => parseLocationSelection(raw));
-}
-
-function selectionOr400(
-  res: ServerResponse,
-  parse: () => readonly SelectedField[],
-): readonly SelectedField[] | null {
-  try {
-    return parse();
-  } catch (err) {
-    if (err instanceof FieldSelectionError) {
-      sendError(res, 400, 'bad_request', err.message, { v1: true });
-      return null;
-    }
-    throw err;
-  }
-}
 
 function decode(segment: string): string {
   try {
@@ -1284,34 +1084,26 @@ function notFound(res: ServerResponse, resource: string): void {
   sendError(res, 404, 'not_found', `No such ${resource}`, { v1: true });
 }
 
-function sendList<T>(
-  res: ServerResponse,
-  data: readonly T[],
-  page: PageRequest,
-  hasMore: boolean,
-  total?: number,
-): void {
+/** Write the `{ data, pagination }` list envelope this API has always returned. */
+function sendList(res: ServerResponse, result: ListResult): void {
   const pagination: PaginationMeta = {
-    limit: page.limit,
-    offset: page.offset,
-    count: data.length,
-    hasMore,
-    ...(total !== undefined ? { total } : {}),
+    limit: result.page.limit,
+    offset: result.page.offset,
+    count: result.rows.length,
+    hasMore: result.hasMore,
+    ...(result.total !== undefined ? { total: result.total } : {}),
   };
-  const envelope: ListEnvelope<T> = { data, pagination };
+  const envelope: ListEnvelope<unknown> = { data: result.rows, pagination };
   sendJson(res, 200, envelope);
 }
 
-/** A bounded id→name map of all locations (the physical hierarchy, not the item set). */
-async function locationNameMap(driver: Driver): Promise<Map<string, string>> {
-  const tree = await new LocationRepository(driver).getTree();
-  const map = new Map<string, string>();
-  const walk = (nodes: readonly LocationTreeNode[]): void => {
-    for (const node of nodes) {
-      map.set(node.id, node.name);
-      walk(node.children);
-    }
-  };
-  walk(tree);
-  return map;
+/**
+ * Write a single-resource response: the entity as the bare object this API has always returned,
+ * or the `404` naming the resource kind. A `handled` result means the read already answered
+ * (an invalid field selection).
+ */
+function sendEntity(res: ServerResponse, result: EntityResult, resource: string): void {
+  if (result.kind === 'handled') return;
+  if (result.kind === 'missing') return notFound(res, resource);
+  sendJson(res, 200, result.entity);
 }

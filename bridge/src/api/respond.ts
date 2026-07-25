@@ -73,6 +73,25 @@ export function sendJson(
   res.end(text);
 }
 
+/**
+ * Write an **OData JSON** payload (the `/api/v1/odata` service). Identical to {@link sendJson}
+ * but for the media type, which carries the `odata.metadata=minimal` parameter naming the
+ * annotation level the body actually uses (OData JSON Format §3.1) — a client that content-
+ * negotiates learns it is getting `@odata.context` and nothing heavier.
+ *
+ * The `OData-Version` header every response under that sub-tree must carry (Protocol §8.1.5) is
+ * **not** set here: `server.ts` stamps it for the whole path prefix, so the guard responses
+ * (`401`/`403`/`429`/`503`) that never reach a handler carry it too.
+ */
+export function sendODataJson(res: ServerResponse, status: number, body: unknown): void {
+  const text = JSON.stringify(body);
+  res.writeHead(status, {
+    'content-type': 'application/json; odata.metadata=minimal; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  res.end(text);
+}
+
 /** Write a `text/plain` response — used by the OData `/$count` path (a bare integer). */
 export function sendText(res: ServerResponse, status: number, body: string): void {
   res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
@@ -189,6 +208,18 @@ export function sendMetrics(
  */
 export function sendNotModified(res: ServerResponse, validators: CacheValidators): void {
   res.writeHead(304, cacheHeaders(validators));
+  res.end();
+}
+
+/**
+ * Write a bodyless permanent redirect. Used by the legacy `/api/v1/$metadata` path, which now
+ * points at the OData service's own `$metadata`: a CSDL is only useful from the service root
+ * whose entity sets it declares, so the document moved with the service rather than being
+ * served from a root that cannot satisfy it. `301` (not `308`) because every OData client —
+ * including the older tooling this exists for — follows it on a GET.
+ */
+export function sendRedirect(res: ServerResponse, status: 301, location: string): void {
+  res.writeHead(status, { location, 'cache-control': 'no-store' });
   res.end();
 }
 

@@ -16,6 +16,8 @@ Pointed at a copy of your data (a [[sync snapshot or the SQLite file|Cloud-Sync]
 expose:
 
 - A **read-only query API** — search and read your items over HTTP.
+- A **spreadsheet and dashboard connection** — a refreshable CSV pull, or a proper **OData feed**
+  that Excel, Power Query and Power BI can connect to and browse like any other data source.
 - A **[[calendar feed|Webhooks-MQTT-and-iCal]]** (iCal) of due-backs, bookings, maintenance and
   warranties.
 - **[[Webhooks]]** — calls a URL of your choosing when something changes.

@@ -33,8 +33,12 @@ import {
 import { MAX_FILTER_LENGTH } from './limits.ts';
 import { BadQueryError } from './odata.ts';
 
-/** OData property name (lower-cased) → the AST field it maps to. */
-const FIELD_MAP: Readonly<Record<string, string>> = {
+/**
+ * OData property name (lower-cased) → the AST field it maps to. Exported so the drift guard on
+ * {@link FILTERABLE_PROPERTIES} can check both directions — no property claimed filterable that
+ * isn't, and no filterable AST field left out of the metadata.
+ */
+export const FIELD_MAP: Readonly<Record<string, string>> = {
   name: 'name',
   description: 'description',
   notes: 'notes',
@@ -52,6 +56,32 @@ const FIELD_MAP: Readonly<Record<string, string>> = {
   location: 'location',
   locationid: 'location',
 };
+
+/**
+ * The CSDL property names `$filter` accepts, in their canonical spelling.
+ *
+ * {@link FIELD_MAP} is keyed by the *lower-cased* name (so a caller's `SerialNumber` resolves)
+ * and carries convenience aliases (`serial`, `category`, `location`) that are not properties of
+ * the entity type. The metadata document needs the real property names, and only those, for its
+ * `Org.OData.Capabilities.V1.FilterRestrictions` annotation — a client trusting it must not be
+ * told to push down a filter on a name the entity type never declares. A unit test asserts every
+ * entry here still resolves through `FIELD_MAP`, so the two cannot drift apart.
+ */
+export const FILTERABLE_PROPERTIES: readonly string[] = [
+  'name',
+  'description',
+  'notes',
+  'mpn',
+  'manufacturer',
+  'serialNumber',
+  'quantity',
+  'weight',
+  'width',
+  'height',
+  'depth',
+  'categoryId',
+  'locationId',
+];
 
 /** OData comparison keyword → AST operator (the supported subset only). */
 const COMPARISON_OPS: Readonly<Record<string, FilterOperator>> = {

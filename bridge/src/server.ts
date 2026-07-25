@@ -45,7 +45,8 @@ import {
   type ConditionalHeaders,
 } from './api/conditional.ts';
 import { readQueryParam, readResultLimit } from './api/params.ts';
-import { API_V1_BASE, handleApiV1, isApiV1Path, pathAllowsUrlToken } from './api/v1.ts';
+import { API_V1_BASE, handleApiV1, isApiV1Path, isODataPath, pathAllowsUrlToken } from './api/v1.ts';
+import { ODATA_VERSION } from './api/odata-service.ts';
 import { isPermitted, resolveIdentity } from './identity.ts';
 import { corsAllowOrigin, WILDCARD_ORIGINS, type AllowedOrigins } from './cors.ts';
 import { EVENT_STREAM_CONTENT_TYPE } from './events/sse.ts';
@@ -305,6 +306,22 @@ export function createBridgeServer(options: BridgeServerOptions): Server {
 const MAX_WARNED_ORIGINS = 100;
 
 /**
+ * Add one header name to `Access-Control-Expose-Headers`, keeping whatever is already listed.
+ *
+ * A cross-origin browser can only read the CORS-safelisted response headers unless the server
+ * names the others here — so every custom header the bridge sets has to be added. Appending
+ * (rather than setting) matters because two of them are stamped at different points in the
+ * request: the OData version before the auth gate, the staleness marker after it, and a plain
+ * `setHeader` from the later one would silently drop the earlier.
+ */
+function exposeHeader(res: ServerResponse, name: string): void {
+  const existing = res.getHeader('Access-Control-Expose-Headers');
+  const listed = typeof existing === 'string' && existing.length > 0 ? existing.split(', ') : [];
+  if (listed.includes(name)) return;
+  res.setHeader('Access-Control-Expose-Headers', [...listed, name].join(', '));
+}
+
+/**
  * Route and answer a single request. Exported for in-process testing; the outer
  * try/catch guarantees a generic 500 (never a stack trace or DB internals) on any
  * unexpected failure, so nothing sensitive leaks to the caller or the logs. The rate
@@ -331,6 +348,18 @@ export async function handleRequest(
   const isHead = req.method === 'HEAD';
   if (isHead) suppressResponseBody(res);
   const routedMethod = isHead ? 'GET' : (req.method ?? '');
+
+  // OData Protocol §8.1.5 requires every response from an OData service to carry `OData-Version`,
+  // and a client that doesn't see it treats the endpoint as not being an OData service at all.
+  // Stamped once, for the whole sub-tree, *before* any guard can answer — so the `401`, `403`,
+  // `429` and `503` that never reach a handler are as conformant as a routed read, by
+  // construction rather than by every send site remembering (issue #361). Exposed to CORS for the
+  // same reason the staleness marker below is: a cross-origin browser client cannot read a
+  // response header it was not granted, so to one of those the header may as well not exist.
+  if (isODataPath(url.pathname)) {
+    res.setHeader('OData-Version', ODATA_VERSION);
+    exposeHeader(res, 'OData-Version');
+  }
 
   // CORS: the bridge authenticates with a bearer token (never a cookie), so the token itself
   // — not the browser's same-origin policy — is the security boundary, and letting the PWA (almost
@@ -436,7 +465,7 @@ export async function handleRequest(
     const staleHeaderHealth = options.getSnapshotHealth?.();
     if (staleHeaderHealth !== undefined) {
       res.setHeader('X-Gubbins-Snapshot-Stale', staleHeaderHealth.snapshotStale ? 'true' : 'false');
-      res.setHeader('Access-Control-Expose-Headers', 'X-Gubbins-Snapshot-Stale');
+      exposeHeader(res, 'X-Gubbins-Snapshot-Stale');
     }
 
     if (routedMethod === 'POST') {

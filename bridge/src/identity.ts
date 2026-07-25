@@ -143,6 +143,11 @@ export function requiredPermissions(method: string, pathname: string): readonly 
       return ['bridge:read', 'locations:read'];
     case 'categories':
       return ['bridge:read', 'categories:read'];
+    // The OData service is the same three reads under a different envelope, so it must carry the
+    // same permissions — reaching `items` through `/odata/items` cannot be the cheaper door. The
+    // set is named one segment deeper, so the decision is delegated rather than flattened here.
+    case 'odata':
+      return ['bridge:read', ...odataSetPermissions(segments[1])];
     // The calendar feed publishes asset bookings, so it is gated on bookings rather than items.
     case 'calendar.ics':
       return ['bridge:read', 'bookings:read'];
@@ -159,6 +164,27 @@ export function requiredPermissions(method: string, pathname: string): readonly 
       return ['bridge:read', 'settings:read'];
     default:
       return ['bridge:read'];
+  }
+}
+
+/**
+ * The entity-set permission an OData resource needs, on top of `bridge:read`.
+ *
+ * The segment addresses a set with an optional key (`items`, `items('abc')`, `items/$count`), so
+ * the set name is whatever precedes the parenthesis. The service document (no segment) and
+ * `$metadata` describe the service rather than any inventory, so they need nothing further — and
+ * neither does a segment naming no set at all, which the router answers as a `404`.
+ */
+function odataSetPermissions(segment: string | undefined): readonly PermissionKey[] {
+  switch (segment?.split('(')[0]) {
+    case 'items':
+      return ['items:read'];
+    case 'locations':
+      return ['locations:read'];
+    case 'categories':
+      return ['categories:read'];
+    default:
+      return [];
   }
 }
 

@@ -4,8 +4,10 @@
  * field registry.
  */
 import { describe, expect, it } from 'vitest';
+import { ITEM_SORT_FIELDS } from '@/db/repositories/item/sql.ts';
 import { ITEM_PROPERTIES, odataMetadataXml } from './odata-metadata.ts';
 import { ITEM_FIELD_REGISTRY, ITEM_SUMMARY_DEFAULT_FIELDS } from './item-view.ts';
+import { FILTERABLE_PROPERTIES } from './odata-filter.ts';
 
 /** Quote a literal for embedding in a `RegExp` — property names are identifiers today, but a
  * future one carrying a metacharacter shouldn't silently turn the pattern into a wildcard. */
@@ -63,6 +65,63 @@ describe('odataMetadataXml', () => {
     expect(xml).toContain(
       `String="A request without fields/include (or $select/$expand) returns: ${ITEM_SUMMARY_DEFAULT_FIELDS.join(', ')}."`,
     );
+  });
+
+  /** The body of one `<EntitySet>`, so a claim can be scoped to the set it is made about. */
+  function entitySet(name: string): string {
+    const body = new RegExp(`<EntitySet Name="${name}"[^>]*>([\\s\\S]*?)</EntitySet>`).exec(xml)?.[1];
+    expect(body, `no <EntitySet Name="${name}"> body`).toBeDefined();
+    return body!;
+  }
+
+  it('references the Capabilities vocabulary its restrictions use', () => {
+    expect(xml).toContain('<edmx:Include Namespace="Org.OData.Capabilities.V1"');
+  });
+
+  it('names exactly the item properties that can be filtered and sorted', () => {
+    const items = entitySet('items');
+    const nonFilterable = /Property="NonFilterableProperties">\s*<Collection>([\s\S]*?)<\/Collection>/.exec(
+      items,
+    )?.[1];
+    const nonSortable = /Property="NonSortableProperties">\s*<Collection>([\s\S]*?)<\/Collection>/.exec(
+      items,
+    )?.[1];
+    const paths = (block: string | undefined): string[] =>
+      [...(block ?? '').matchAll(/<PropertyPath>(.*?)<\/PropertyPath>/g)].map((m) => m[1]!);
+
+    // The restriction is stated as the *complement*, so assert against the whole property list:
+    // a new property must land on one side or the other, never silently in neither.
+    const all = ITEM_PROPERTIES.map((p) => p.name);
+    expect(paths(nonFilterable).sort()).toEqual(all.filter((n) => !FILTERABLE_PROPERTIES.includes(n)).sort());
+    expect(paths(nonSortable).sort()).toEqual(
+      all.filter((n) => !(ITEM_SORT_FIELDS as readonly string[]).includes(n)).sort(),
+    );
+  });
+
+  it('declares items countable and searchable, and the other two sets neither', () => {
+    expect(entitySet('items')).toContain('<PropertyValue Property="Countable" Bool="true"/>');
+    expect(entitySet('items')).toContain('<PropertyValue Property="Searchable" Bool="true"/>');
+    for (const set of ['locations', 'categories']) {
+      const body = entitySet(set);
+      expect(body).toContain('<PropertyValue Property="Filterable" Bool="false"/>');
+      expect(body).toContain('<PropertyValue Property="Sortable" Bool="false"/>');
+      expect(body).toContain('<PropertyValue Property="Countable" Bool="false"/>');
+      expect(body).toContain('<PropertyValue Property="Searchable" Bool="false"/>');
+    }
+  });
+
+  it('declares every entity set read-only — the bridge serves a snapshot it cannot write', () => {
+    for (const set of ['items', 'locations', 'categories']) {
+      const body = entitySet(set);
+      for (const flag of ['Insertable', 'Updatable', 'Deletable']) {
+        expect(body).toContain(`<PropertyValue Property="${flag}" Bool="false"/>`);
+      }
+    }
+  });
+
+  it('states the protocol facts a client would otherwise have to discover by failing', () => {
+    expect(xml).toContain('Term="Org.OData.Capabilities.V1.BatchSupported" Bool="false"');
+    expect(xml).toContain('<String>contains</String>'); // the only filter function implemented
   });
 
   it('stays in lockstep with the item field registry (no drift)', () => {

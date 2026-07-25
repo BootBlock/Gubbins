@@ -129,6 +129,21 @@ describe('requiredPermissions', () => {
     ]);
     expect(requiredPermissions('POST', '/api/v1/snapshot')).toEqual(['bridge:write', 'sync:write']);
   });
+
+  it('gates the OData service on the same permissions as its REST twin (issue #361)', () => {
+    // The envelope changed, not the data — so `/odata/items` cannot be the cheaper door to items.
+    expect(requiredPermissions('GET', '/api/v1/odata/items')).toEqual(['bridge:read', 'items:read']);
+    expect(requiredPermissions('GET', "/api/v1/odata/items('abc')")).toEqual(['bridge:read', 'items:read']);
+    expect(requiredPermissions('GET', '/api/v1/odata/items/$count')).toEqual(['bridge:read', 'items:read']);
+    expect(requiredPermissions('GET', '/api/v1/odata/locations')).toEqual(['bridge:read', 'locations:read']);
+    expect(requiredPermissions('GET', '/api/v1/odata/categories')).toEqual([
+      'bridge:read',
+      'categories:read',
+    ]);
+    // The service document and the CSDL describe the service, not any inventory.
+    expect(requiredPermissions('GET', '/api/v1/odata')).toEqual(['bridge:read']);
+    expect(requiredPermissions('GET', '/api/v1/odata/$metadata')).toEqual(['bridge:read']);
+  });
 });
 
 // --- resolution -------------------------------------------------------------------
@@ -151,6 +166,9 @@ describe('resolveIdentity', () => {
     expect(isPermitted(identity!, 'GET', '/api/v1/items')).toBe(true);
     expect(isPermitted(identity!, 'GET', '/api/v1/locations')).toBe(false);
     expect(isPermitted(identity!, 'POST', '/api/v1/items/x/adjust-quantity')).toBe(false);
+    // …and the OData spelling of each read lands on the same side of the line.
+    expect(isPermitted(identity!, 'GET', '/api/v1/odata/items')).toBe(true);
+    expect(isPermitted(identity!, 'GET', '/api/v1/odata/locations')).toBe(false);
   });
 
   it('denies a user with no role and a user who is disabled', async () => {
