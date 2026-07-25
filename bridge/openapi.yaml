@@ -496,7 +496,7 @@ paths:
         name: "$search"
         in: "query"
         required: false
-        description: "Free-text search across the item name/description/notes/mpn/manufacturer/serial number via the FTS5 index (ignored when $filter is set)."
+        description: "Free-text search across name, description, notes, mpn, manufacturer, barcode, serialNumber via the FTS5 index. Matches whole-word prefixes across all of those columns at once, so it is the fast counterpart to $filter's contains(), which is an unindexed substring scan of one named field. Ignored when $filter is set."
         schema:
           type: "string"
         example: "esp32"
@@ -715,7 +715,7 @@ paths:
         name: "$search"
         in: "query"
         required: false
-        description: "Free-text search across the item name/description/notes/mpn/manufacturer/serial number via the FTS5 index (ignored when $filter is set)."
+        description: "Free-text search across name, description, notes, mpn, manufacturer, barcode, serialNumber via the FTS5 index. Matches whole-word prefixes across all of those columns at once, so it is the fast counterpart to $filter's contains(), which is an unindexed substring scan of one named field. Ignored when $filter is set."
         schema:
           type: "string"
         example: "esp32"
@@ -1726,7 +1726,7 @@ paths:
         name: "$search"
         in: "query"
         required: false
-        description: "Free-text search across the item name/description/notes/mpn/manufacturer/serial number via the FTS5 index (ignored when $filter is set)."
+        description: "Free-text search across name, description, notes, mpn, manufacturer, barcode, serialNumber via the FTS5 index. Matches whole-word prefixes across all of those columns at once, so it is the fast counterpart to $filter's contains(), which is an unindexed substring scan of one named field. Ignored when $filter is set."
         schema:
           type: "string"
         example: "esp32"
@@ -1828,7 +1828,7 @@ paths:
         name: "$search"
         in: "query"
         required: false
-        description: "Free-text search across the item name/description/notes/mpn/manufacturer/serial number via the FTS5 index (ignored when $filter is set)."
+        description: "Free-text search across name, description, notes, mpn, manufacturer, barcode, serialNumber via the FTS5 index. Matches whole-word prefixes across all of those columns at once, so it is the fast counterpart to $filter's contains(), which is an unindexed substring scan of one named field. Ignored when $filter is set."
         schema:
           type: "string"
         example: "esp32"
@@ -1921,7 +1921,7 @@ paths:
         name: "$search"
         in: "query"
         required: false
-        description: "Free-text search across the item name/description/notes/mpn/manufacturer/serial number via the FTS5 index (ignored when $filter is set)."
+        description: "Free-text search across name, description, notes, mpn, manufacturer, barcode, serialNumber via the FTS5 index. Matches whole-word prefixes across all of those columns at once, so it is the fast counterpart to $filter's contains(), which is an unindexed substring scan of one named field. Ignored when $filter is set."
         schema:
           type: "string"
         example: "esp32"

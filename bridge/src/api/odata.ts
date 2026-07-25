@@ -10,6 +10,7 @@
  *   - `$expand`  → the `include` field expansion
  *   - `$top`     → `limit`      · `$skip` → `offset`
  *   - `$orderby` → a whitelisted `ORDER BY` (this module)
+ *   - `$search`  → the app's FTS5 free-text match over {@link SEARCHABLE_FIELD_NAMES}
  *   - `$filter`  → a constrained boolean filter compiled to the app's `SearchAST`
  *                  (see `odata-filter.ts`) — **never** bespoke SQL
  *
@@ -21,8 +22,29 @@
  * `{ "@odata.context", "value" }` envelope and the `OData-Version` header. That lives in
  * `odata-service.ts`, mounted at `/api/v1/odata`, and reuses everything below.
  */
+import { FTS_ITEM_COLUMNS } from '@/db/repositories/constants.ts';
 import { ITEM_SORT_FIELDS, type ItemSort, type ItemSortField } from '@/db/repositories/item/sql.ts';
 import { MAX_ORDERBY_TERMS } from './limits.ts';
+
+/**
+ * The item fields `$search` matches, in the **published** casing — read off `FTS_ITEM_COLUMNS`,
+ * the list the migration builds `items_fts` from, rather than restated beside it. (`$search` has
+ * no plain-REST alias; `/search`'s `q` is a different parameter that takes the app's whole query
+ * grammar, not free text alone.)
+ *
+ * A hand-kept copy is precisely how this list went wrong: the OpenAPI description and both of the
+ * bridge README's restatements had quietly lost `barcode`, so a scanner integration was told the
+ * one column it cares about was not searchable — the same silent drift that cost the *filterable*
+ * set its accuracy in issue #143. Generating it means the prose cannot say otherwise, and
+ * `field-vocabulary.test.ts` re-asserts the README's copies against this.
+ *
+ * The stored columns are snake_case; the read model publishes camelCase (`serial_number` is
+ * `serialNumber` in a payload and in `$select`), so a caller is told the spelling they would
+ * actually type. Every other column is a single word and passes through unchanged.
+ */
+export const SEARCHABLE_FIELD_NAMES: readonly string[] = FTS_ITEM_COLUMNS.map((column) =>
+  column.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()),
+);
 
 /**
  * A malformed OData-style option (`$orderby`/`$filter`). The message is caller-facing and

@@ -77,7 +77,15 @@ export interface ItemListFilters extends PageParams {
    * facet, AND with the other filters). Omitted or empty applies no tag filter.
    */
   readonly tagIds?: readonly string[];
-  /** Free-text match across name/description/notes/mpn/manufacturer via FTS5 (spec §5). */
+  /**
+   * Free-text match via FTS5 (spec §5), unscoped — so it searches **every** column `items_fts`
+   * indexes (`FTS_ITEM_COLUMNS` in `repositories/constants`), not a subset.
+   *
+   * Named by reference rather than listed, because the list here had gone stale twice: it was an
+   * accurate copy of a five-column index when written, then `barcode` and `serial_number` were
+   * added to `items_fts` and nothing brought the comment along. Tests have proved both findable
+   * through this very filter ever since, so the prose was the only thing that disagreed.
+   */
   readonly search?: string;
   /** Include soft-deleted items. Defaults to false (active inventory only). */
   readonly includeInactive?: boolean;
