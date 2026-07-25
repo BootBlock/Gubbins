@@ -3,6 +3,7 @@ import { Banner, Button, FormField, Select } from '@/components/foundry';
 import { RefreshIcon, ScaleIcon, WarningIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { BridgeReloadNotice } from '@/features/sync/BridgeReloadNotice';
 import { fetchScaleEntities, fetchScaleReading, type ScaleEntity } from '../scale-reading';
 import {
   forgetCachedScaleEntities,
@@ -161,8 +162,14 @@ export function ScaleReadPanel({
     [bridgeUrl, bridgeToken, scaleEntityId, onReading, t],
   );
 
-  // Nothing usable here — stay out of the way entirely (see the component note).
-  if (!configured || entities === null || entities.length === 0) return null;
+  // Nothing usable here — stay out of the way entirely (see the component note). The one
+  // exception is issue #385: a bridge address this session did not start with cannot be
+  // contacted at all, so the listing above *cannot* have succeeded, and staying silent would
+  // present a working scale as an absent one. The notice renders nothing in every other case,
+  // so a configured-but-empty bridge still collapses to nothing as before.
+  if (!configured || entities === null || entities.length === 0) {
+    return configured ? <BridgeReloadNotice className="mb-4" /> : null;
+  }
 
   // A previously-chosen scale that Home Assistant no longer reports (renamed or removed) must not
   // silently read from the wrong sensor, so treat it as unchosen and make the user pick again.

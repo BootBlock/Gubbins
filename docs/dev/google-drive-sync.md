@@ -107,7 +107,7 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 | Drive REST client (`fetch`-based, no SDK) | `src/features/sync/providers/google-drive-api.ts` |
 | `CloudProvider` adapter + connect/reconnect | `src/features/sync/providers/google-drive-provider.ts` |
 | Redirect completion (runs before the router) | `src/main.tsx` |
-| CSP `connect-src` allowance | `src/sw.ts` |
+| CSP `connect-src` allowance | `src/csp.ts` (delivered by `src/sw.ts` + the build-time `<meta>`) |
 | Handshake UI | `src/features/sync/SyncScreen.tsx` |
 
 The pure logic (URL building, fragment parsing, token validity, the REST request shapes) is

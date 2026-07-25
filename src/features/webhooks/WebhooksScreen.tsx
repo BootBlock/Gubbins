@@ -32,6 +32,7 @@ import {
 import { AddIcon, DeleteIcon, EditIcon, WebhookIcon } from '@/components/icons';
 import { useT, type MessageKey } from '@/features/i18n';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { BridgeReloadNotice } from '@/features/sync/BridgeReloadNotice';
 import type { WebhookSubscription } from '@/db/repositories';
 import { useWebhooks } from './queries';
 import { useCreateWebhook, useDeleteWebhook, useUpdateWebhook } from './mutations';
@@ -176,6 +177,12 @@ export function WebhooksScreen() {
         >
           {bridgeConfigured ? t('webhooks.bridge.configured') : t('webhooks.bridge.required')}
         </Banner>
+
+        {/* Issue #385: the delivery log and test-fire are both app→bridge calls, so a bridge
+            address this session was not started with reads here as an unreachable bridge until
+            the app reloads. Renders nothing once the address is reachable. Delivery itself is
+            unaffected either way — the bridge sends those, not the browser. */}
+        <BridgeReloadNotice />
 
         <Surface className="flex flex-col gap-2 p-4">
           {/* (2) Hydration latency, and (3) the LAN opt-in — both configuration, not errors. */}

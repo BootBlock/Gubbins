@@ -69,6 +69,14 @@ leaving the screen spinning, and **reloading the page** restores it. Nothing is 
 on the device, not in that component. If it says the database merely took too long, try the action
 again first; reload only if it keeps happening.
 
+**Gubbins can't reach my [[bridge|Bridge-Overview]], but the bridge is definitely running.**
+If you have *just* entered the bridge's address, look for a **Reload to connect to this bridge**
+notice on the **Sync** screen and press it. Gubbins only contacts addresses it knew about when it
+started, so a brand-new address needs one reload before it can be used — and until then a perfectly
+healthy bridge looks unreachable. If there's no such notice, the address really isn't answering:
+check the bridge is running, that the address and port match what it printed on startup, and that
+anything in between (a firewall, another machine) allows it.
+
 **Gubbins looks broken since it updated — but my data is fine.**
 Gubbins keeps a copy of itself on your device so it works offline, and occasionally that copy is
 what's wrong: an update that only half applied, or a version with a bug in it. **Settings → Danger

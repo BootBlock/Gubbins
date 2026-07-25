@@ -58,6 +58,7 @@ import { describeSyncOutcome } from './sync-status-format';
 import { httpTimeSource } from './time-source';
 import { useSyncConflictsStore } from './conflict-store';
 import { SyncConflictsDialog } from './SyncConflictsDialog';
+import { BridgeReloadNotice } from './BridgeReloadNotice';
 import { useErrorMessage } from '@/features/errors';
 
 /**
@@ -597,6 +598,11 @@ export function SyncScreen() {
             Follow the step-by-step guide to run the bridge, connect Home Assistant, and generate the access
             token — it walks you through every choice.
           </Banner>
+          {/* Issue #385: a bridge address the app was not started with cannot be contacted until
+            it reloads, and the browser reports that block as an ordinary network failure — so
+            say so here, beside the field it is about, instead of letting "Push now" report a
+            running bridge as unreachable. Renders nothing once the address is reachable. */}
+          <BridgeReloadNotice />
           {/* Issue #282: the bridge never updates itself, so a checkout left behind is invisible
             unless we say so. Shown here, beside the connection it is about, rather than as a
             top-of-page banner. Silent when the bridge is current or unreachable. */}
