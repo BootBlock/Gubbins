@@ -160,9 +160,10 @@ now the same automation can also chase it and mark it returned. A few things wor
   20th has ended where you are.
 
 > **💡 Tip**
-> Gubbins publishes loan due-backs to a [[calendar feed|Webhooks-MQTT-and-iCal]], and a calendar
-> event names the same loan the return does — so an automation can react to "due today" and close
-> that very loan when the item turns up.
+> To chase an overdue loan, trigger on the **overdue** sensor above rather than on Gubbins'
+> [[calendar feed|Webhooks-MQTT-and-iCal]]. Both know something is late, but the sensor is the one
+> Home Assistant can act on directly — and returning an item needs only the item, which an
+> automation that lent it out already knows.
 
 > **⚠️ Heads-up**
 > Exposing the bridge to Home Assistant means it's reachable on your LAN. Give it its own

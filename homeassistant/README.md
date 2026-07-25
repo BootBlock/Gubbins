@@ -265,9 +265,7 @@ data:
 
 The stock returns to the exact place — and lot — it was lent from. Pass `checkout_id` only when the
 item is out on more than one loan at once and you need to say which one came back; `check_out`
-returns the loan (use `response_variable`) if you want to keep its id, and it is the same id the
-[calendar feed](../bridge/README.md#calendar-subscription) embeds in that loan's event `UID`, so an
-automation triggered by a calendar event can close the very loan it was reminded about.
+returns the loan (use `response_variable`) if you want to keep its id.
 
 ```yaml
 # The whole round trip: a button hands the meter to whoever's on shift.
@@ -280,12 +278,23 @@ actions:
     response_variable: loan
   - action: notify.persistent_notification
     data:
-      message: "Multimeter lent out, due {{ loan.checkout.dueDate | timestamp_custom('%d %b') }}."
+      # dueDate is UNIX *milliseconds*, and is null on an open-ended loan.
+      message: >-
+        Multimeter lent out{% if loan.checkout.dueDate %}, due
+        {{ (loan.checkout.dueDate / 1000) | timestamp_custom('%d %b') }}{% endif %}.
 ```
 
 > A due date is a **day**, not a moment: a loan due the 20th only counts as overdue once the 20th
 > has ended where you are. A day that doesn't exist (31 February) is refused rather than quietly
 > shifted.
+
+**Chasing an overdue loan.** Trigger on the **overdue** binary sensor from step 5 rather than on a
+calendar event: Gubbins does publish loan due-backs to a
+[calendar feed](../bridge/README.md#calendar-subscription), but Home Assistant's calendar triggers
+expose only an event's summary, description and times — not the `UID` that carries the loan's id —
+so a calendar event can tell you *that* something is due, not *which* record to close. The sensor
+tells you the same thing without the gap, and `check_in` needs only the `item_id`, which an
+automation that did the lending already has.
 
 ### 8. (Optional) React to a lookup — the `gubbins_item_located` event
 

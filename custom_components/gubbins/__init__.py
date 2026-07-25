@@ -25,7 +25,7 @@ close it, and no way to lend anything out in the first place.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import voluptuous as vol
@@ -185,9 +185,14 @@ def _iso_day(value: date | None) -> str | None:
     """Render a picked due date as the plain calendar day the bridge documents (``yyyy-MM-dd``).
 
     ``cv.date`` hands back a :class:`datetime.date` whichever way the value arrived — a string
-    typed into YAML or the UI's date selector — so one conversion covers both.
+    typed into YAML or the UI's date selector — so one conversion covers both. A ``datetime`` is
+    narrowed to its date first: it *is* a ``date`` as far as the validator is concerned, but its
+    ``isoformat()`` carries a time the bridge would reject, and an unquoted YAML value with a
+    time in it is an easy way to end up holding one.
     """
-    return value.isoformat() if value is not None else None
+    if value is None:
+        return None
+    return (value.date() if isinstance(value, datetime) else value).isoformat()
 
 
 def _first_client(hass: HomeAssistant) -> GubbinsClient | None:

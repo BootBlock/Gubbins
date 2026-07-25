@@ -1,8 +1,8 @@
-"""Thin async client for the Gubbins read-only bridge HTTP API.
+"""Thin async client for the Gubbins bridge HTTP API, read-only by default.
 
 The bridge (a separate Node companion service — see ``bridge/`` in the repo) is the
-**only** data path. The client is read-only by default: it issues GET requests to the four
-documented endpoints. The exceptions are the four **opt-in** writes below, which only work when
+**only** data path. The client reads by default: it issues GET requests to the four documented
+read endpoints. The exceptions are the four **opt-in** writes below, which only work when
 the bridge itself is started with ``GUBBINS_BRIDGE_ALLOW_WRITES=on`` (otherwise the paths 404);
 they round-trip through the app's own sync merge, never a bespoke database write. It uses Home
 Assistant's shared aiohttp session, so the integration adds **no** third-party Python dependency.
@@ -82,7 +82,7 @@ class GubbinsUnsupportedError(GubbinsError):
 
 
 class GubbinsClient:
-    """A minimal, read-only HTTP client for one Gubbins bridge instance."""
+    """A minimal HTTP client for one Gubbins bridge instance; reads, plus the opt-in writes."""
 
     def __init__(
         self,
