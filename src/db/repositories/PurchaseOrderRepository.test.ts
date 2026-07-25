@@ -5,7 +5,11 @@ import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
-import { PurchaseOrderRepository } from './PurchaseOrderRepository';
+import {
+  isReceivedQtyGuardViolation,
+  PO_RECEIPT_RACE_MESSAGE,
+  PurchaseOrderRepository,
+} from './PurchaseOrderRepository';
 import { SupplierPartRepository } from './SupplierPartRepository';
 import { SupplierRepository } from './SupplierRepository';
 
@@ -417,6 +421,135 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
       { supplierId: null, supplierName: 'Unassigned', supplierKey: '~unassigned', lines: [] },
     ]);
     expect(result2).toHaveLength(0);
+  });
+
+  // --- overlapping receipts & atomic status (issue #298) -------------------------
+
+  it('rejects the loser of two overlapping receipts instead of double-counting stock', async () => {
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const shelf = await locations.create({ name: 'Shelf A' });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
+    const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 10 });
+    await pos.setStatus(po.id, 'ORDERED');
+
+    // Both receipts plan against the same received_qty of 0 — the stale read the issue describes.
+    const first = pos.receiveLine(line.id, { locationId: shelf.id, quantity: 10 });
+    const second = pos.receiveLine(line.id, { locationId: shelf.id, quantity: 10 });
+
+    await first;
+    await expect(second).rejects.toMatchObject({
+      name: 'DbError',
+      message: PO_RECEIPT_RACE_MESSAGE,
+    });
+
+    // The line and the ledger agree: 10 received on the order, 10 units on the shelf.
+    expect((await pos.getLine(line.id))?.receivedQty).toBe(10);
+    expect((await items.getById(item.id))?.quantity).toBe(10);
+    const history = await items.getHistory(item.id);
+    expect(history.rows.filter((h) => h.action === 'RECEIVED')).toHaveLength(1);
+  });
+
+  it('rejects a return that overlaps a receipt, leaving nothing half-applied', async () => {
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const shelf = await locations.create({ name: 'Shelf A' });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
+    const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 10 });
+    await pos.setStatus(po.id, 'ORDERED');
+    await pos.receiveLine(line.id, { locationId: shelf.id, quantity: 6 });
+
+    // The remaining receipt and a full return both plan against received_qty = 6; only one lands.
+    const settled = await Promise.allSettled([
+      pos.receiveLine(line.id, { locationId: shelf.id, quantity: 4 }),
+      pos.returnLine(line.id, { locationId: shelf.id, quantity: 6 }),
+    ]);
+
+    // Whichever commits first, the other finds the line moved and aborts whole — asserted without
+    // depending on which of the two the driver happens to run first.
+    const rejections = settled.filter((r) => r.status === 'rejected');
+    expect(rejections).toHaveLength(1);
+    expect(rejections[0]).toMatchObject({ reason: { message: PO_RECEIPT_RACE_MESSAGE } });
+
+    // The invariant the issue is about: the order's received total equals the units on the shelf.
+    const receivedQty = (await pos.getLine(line.id))!.receivedQty;
+    expect([10, 0]).toContain(receivedQty);
+    expect((await items.getById(item.id))?.quantity).toBe(receivedQty);
+  });
+
+  it('rolls the status snapshot back with the receipt that failed', async () => {
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
+    const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 4 });
+    await pos.setStatus(po.id, 'ORDERED');
+
+    const first = pos.receiveLine(line.id, { quantity: 2 });
+    const second = pos.receiveLine(line.id, { quantity: 2 });
+    await first;
+    await expect(second).rejects.toThrow();
+
+    // The winner's own snapshot landed in its transaction; the loser left no trace of its own.
+    const after = await pos.getWithLines(po.id);
+    expect(after?.status).toBe('PARTIAL');
+    expect(after?.lines[0]!.receivedQty).toBe(2);
+  });
+
+  it('leaves a CANCELLED order CANCELLED when a line is received', async () => {
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
+    const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 3 });
+    await pos.setStatus(po.id, 'ORDERED');
+    await pos.setStatus(po.id, 'CANCELLED');
+
+    await pos.receiveLine(line.id);
+
+    // DRAFT / CANCELLED are user-authoritative; only the line's progress moves.
+    const after = await pos.getWithLines(po.id);
+    expect(after?.status).toBe('CANCELLED');
+    expect(after?.effectiveStatus).toBe('CANCELLED');
+    expect(after?.lines[0]!.receivedQty).toBe(3);
+  });
+
+  it('receiving an already-complete line is a no-op, not a race rejection', async () => {
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
+    const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 2 });
+    await pos.setStatus(po.id, 'ORDERED');
+    await pos.receiveLine(line.id);
+
+    const again = await pos.receiveLine(line.id);
+    expect(again.receivedQty).toBe(2);
+    expect((await items.getById(item.id))?.quantity).toBe(2);
+    expect((await pos.getById(po.id))?.status).toBe('RECEIVED');
+  });
+
+  describe('isReceivedQtyGuardViolation', () => {
+    // The three drivers report this identical failure under different codes, so the predicate
+    // keys on the message alone — see its doc comment.
+    it.each(['SQLITE_CONSTRAINT', 'TRANSACTION_FAILED', 'UNKNOWN'] as const)(
+      'recognises the guard CHECK reported under %s',
+      (code) => {
+        expect(
+          isReceivedQtyGuardViolation(new DbError(code, 'CHECK constraint failed: received_qty >= 0')),
+        ).toBe(true);
+      },
+    );
+
+    it('leaves every other failure alone', () => {
+      // The stock ledger's own floor must not be mistaken for the receipt guard.
+      expect(
+        isReceivedQtyGuardViolation(
+          new DbError('SQLITE_CONSTRAINT', 'CHECK constraint failed: quantity >= 0'),
+        ),
+      ).toBe(false);
+      expect(
+        isReceivedQtyGuardViolation(
+          new DbError('SQLITE_CONSTRAINT', 'CHECK constraint failed: ordered_qty > 0'),
+        ),
+      ).toBe(false);
+      expect(isReceivedQtyGuardViolation(new Error('CHECK constraint failed: received_qty >= 0'))).toBe(
+        false,
+      );
+      expect(isReceivedQtyGuardViolation(undefined)).toBe(false);
+    });
   });
 
   it('stamps unit cost on the PO line from the plan', async () => {

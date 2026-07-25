@@ -86,6 +86,12 @@ When a delivery arrives, **receive** it against the PO. Gubbins supports:
 
 Received stock lands in your inventory and the in-transit figure drops accordingly.
 
+> **⚠️ Heads-up**
+> If the *same* line is received (or returned) twice at the same moment — from two devices, or two
+> windows — only the first goes through. The second is turned down with a message asking you to
+> check the received quantity and try again, so the quantity on the order and the stock on your
+> shelf can never drift apart.
+
 > **💡 Tip**
 > The **In transit** dashboard widget and the *In Transit* location view show everything inbound
 > at a glance — handy for knowing what to expect before it turns up. To see it item-by-item
