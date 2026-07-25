@@ -86,6 +86,13 @@ const SNIFF_SAMPLE = 64 * 1024;
  */
 const MAX_CONTROL_SHARE = 0.02;
 
+/**
+ * How many control characters must be present before that share is consulted at all. A share on
+ * its own punishes short files for the very thing it is meant to tolerate: one legacy `0x1A`
+ * end-of-file marker is 5% of a twenty-byte parts list. Binary, by contrast, is dense with them.
+ */
+const MIN_CONTROL_RUN = 4;
+
 /** Control bytes/characters a plain-text export legitimately contains. */
 function isTextControl(code: number): boolean {
   return code === 0x09 || code === 0x0a || code === 0x0d || code === 0x0c;
@@ -119,7 +126,12 @@ function sniffBinaryKind(bytes: Uint8Array): BinaryFileKind | null {
     if (byte === 0x00) return 'unknown';
     if (byte < 0x20 && !isTextControl(byte)) controls += 1;
   }
-  return controls / sample.length > MAX_CONTROL_SHARE ? 'unknown' : null;
+  return isControlDense(controls, sample.length) ? 'unknown' : null;
+}
+
+/** Are `controls` out of `total` characters enough to call the input binary rather than text? */
+function isControlDense(controls: number, total: number): boolean {
+  return controls >= MIN_CONTROL_RUN && controls / total > MAX_CONTROL_SHARE;
 }
 
 /**
@@ -135,7 +147,7 @@ function looksLikeText(text: string): boolean {
     const code = char.codePointAt(0) ?? 0;
     if (code === 0xfffd || (code < 0x20 && !isTextControl(code))) bad += 1;
   }
-  return total === 0 || bad / total <= MAX_CONTROL_SHARE;
+  return !isControlDense(bad, total);
 }
 
 /** The encoding a byte-order mark declares, or `null` when there is none. */
@@ -176,8 +188,13 @@ export function decodeImportFileBytes(
   }
 
   const bom = encodingFromBom(bytes);
+  // A UTF-8 mark is dropped here rather than left to the decoder, because only the *UTF-8* decoder
+  // strips one: a body that carries the mark but turns out not to be UTF-8 falls back below, and
+  // would otherwise arrive with "ï»¿" welded to its first header cell — a column matching nothing.
+  const body = bom === 'utf-8' ? bytes.subarray(3) : bytes;
+
   if (bom !== 'utf-16le' && bom !== 'utf-16be') {
-    const kind = sniffBinaryKind(bytes);
+    const kind = sniffBinaryKind(body);
     if (kind !== null) return { ok: false, rejection: { reason: 'binary', kind } };
   }
 
@@ -187,7 +204,7 @@ export function decodeImportFileBytes(
     bom === 'utf-16le' || bom === 'utf-16be' ? [bom] : ['utf-8', 'windows-1252'];
 
   for (const encoding of attempts) {
-    const text = decodeStrictly(bytes, encoding);
+    const text = decodeStrictly(body, encoding);
     if (text === null) continue;
     if (!looksLikeText(text)) return { ok: false, rejection: { reason: 'binary', kind: 'unknown' } };
     // Whitespace-only input parses to nothing at all; say so rather than opening a blank preview.

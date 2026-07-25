@@ -162,6 +162,9 @@ export function ImportBomDialog({
         );
         setParsed(null);
         setText('');
+        // The staged text is gone, so a notice about the file it came from no longer describes
+        // anything on screen — leaving it would tell the user to check a preview that is now empty.
+        setFileRead(null);
       },
       onError: (err) => {
         setError(describeError(err, 'Could not import this BOM.'));

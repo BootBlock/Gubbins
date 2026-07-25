@@ -158,6 +158,9 @@ export function ImportPurchaseListDialog({
     setSummary(t(key, { vars: { count: result.added, skipped: result.skipped } }));
     setParsed(null);
     setText('');
+    // The staged text is gone, so a notice about the file it came from no longer describes anything
+    // on screen — leaving it would tell the user to check a preview that is now empty.
+    setFileRead(null);
   };
 
   const failWith = (

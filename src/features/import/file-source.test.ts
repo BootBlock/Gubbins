@@ -53,6 +53,29 @@ describe('decodeImportFileBytes', () => {
     expect(textOf(read)).not.toContain('�');
   });
 
+  it('drops a UTF-8 mark even when the body forces the Windows-1252 fallback', () => {
+    // Only the UTF-8 decoder strips a mark, so a marked file whose body is Latin-1 would otherwise
+    // arrive with "ï»¿" welded to its first header cell — a column that then maps to nothing.
+    const marked = new Uint8Array([
+      0xef,
+      0xbb,
+      0xbf,
+      ...bytes(0x4e, 0x61, 0x6d, 0x65, 0x0a, 0x43, 0x61, 0x66, 0xe9, 0x0a), // "Name\nCafé\n"
+    ]);
+    const read = decodeImportFileBytes(marked);
+    expect(read.ok && read.encoding).toBe('windows-1252');
+    expect(textOf(read)).toBe('Name\nCafé\n');
+  });
+
+  it('keeps a short export carrying one legacy end-of-file marker', () => {
+    // 0x1A is 5% of this file, so a bare control-character *share* would refuse it; a stray control
+    // character must not cost the user their import.
+    const dosCsv = new Uint8Array([...utf8('Name,Qty\nWidget,3\n'), 0x1a]);
+    const read = decodeImportFileBytes(dosCsv);
+    expect(read.ok).toBe(true);
+    expect(textOf(read)).toContain('Widget,3');
+  });
+
   it('prefers UTF-8 when the bytes are valid in it', () => {
     // "Café" in UTF-8 is also decodable as Windows-1252 (as "CafÃ©"), so order matters.
     const read = decodeImportFileBytes(utf8('Café'));
@@ -82,6 +105,11 @@ describe('decodeImportFileBytes', () => {
     // No signature, but a NUL byte is proof: no encoding this accepts can produce one.
     const read = decodeImportFileBytes(bytes(0x4a, 0x4b, 0x00, 0x4c, 0x4d));
     expect(!read.ok && read.rejection).toEqual({ reason: 'binary', kind: 'unknown' });
+  });
+
+  it('still refuses a control-dense file that happens to hold no NUL byte', () => {
+    const noisy = new Uint8Array([...utf8('Name'), 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, ...utf8('Qty')]);
+    expect(!decodeImportFileBytes(noisy).ok).toBe(true);
   });
 
   it('refuses UTF-16-marked bytes that decode to control characters, not text', () => {
