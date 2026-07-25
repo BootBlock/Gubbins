@@ -167,8 +167,9 @@ describe('ScannerOverlay — "What can I scan?" explainer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'What can I scan?' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'What can I scan?' });
-    // Both accepted code kinds and the on-device boundary are spelled out.
+    // Every accepted code kind and the on-device boundary are spelled out.
     expect(dialog).toHaveTextContent('Gubbins labels');
+    expect(dialog).toHaveTextContent('Short codes');
     expect(dialog).toHaveTextContent('Product barcodes');
     expect(dialog).toHaveTextContent(/Looking a product up online is optional/i);
 

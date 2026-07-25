@@ -103,11 +103,20 @@ const catalogueState: { isLoading: boolean; isError: boolean; data?: unknown } =
 
 /** How many items the chosen scope covers — the bounded count read (issue #338). */
 const scopeCountState: { data?: number } = { data: 1 };
+/** The options the screen last passed to the document read, so its `enabled` gate is testable. */
+let catalogueOptions: { enabled?: boolean } = {};
 
 vi.mock('./queries', () => ({
-  usePartsCatalogue: () => ({ ...catalogueState }),
+  usePartsCatalogue: (_scope: unknown, options: { enabled?: boolean } = {}) => {
+    catalogueOptions = options;
+    return { ...catalogueState };
+  },
   useCatalogueItemCount: () => ({ ...scopeCountState }),
 }));
+
+// Spied so a test can prove the screen never pays for a QR encode it is going to throw away.
+const qrSvgOrNull = vi.fn(() => '<svg />');
+vi.mock('@/features/scanner/qr-code', () => ({ qrSvgOrNull: (...a: unknown[]) => qrSvgOrNull(...a) }));
 
 import { CatalogueScreen } from './CatalogueScreen';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -132,6 +141,8 @@ afterEach(() => {
   usePreferencesStore.setState(BRANDING_DEFAULTS);
   useCatalogueLaunch.setState({ pendingScope: null });
   scopeCountState.data = 1;
+  catalogueOptions = {};
+  qrSvgOrNull.mockClear();
 });
 
 describe('CatalogueScreen', () => {
@@ -319,6 +330,41 @@ describe('CatalogueScreen', () => {
       // The stale document from the previous (smaller) scope must not stand in for this one.
       expect(screen.queryByRole('table')).toBeNull();
       expect(screen.queryByTestId('catalogue-print-size')).toBeNull();
+    });
+
+    it('holds the document read until the scope has actually been counted', () => {
+      // Both hooks run in the same render, so an unknown count must gate the read as firmly as
+      // an over-ceiling one. Otherwise the unbounded read fires alongside the count on the very
+      // first render — and it cannot be called back once it is in flight.
+      scopeCountState.data = undefined;
+      render(<CatalogueScreen />);
+
+      expect(catalogueOptions.enabled).toBe(false);
+      expect(screen.getByTestId('print-catalogue').hasAttribute('disabled')).toBe(true);
+    });
+
+    it('starts the read once the count comes back within the ceiling', () => {
+      render(<CatalogueScreen />);
+      expect(catalogueOptions.enabled).toBe(true);
+    });
+
+    it('encodes no QR codes for a scope it is going to refuse to print', () => {
+      // The QR column is not part of the catalogue's query key, so ticking it neither re-keys
+      // nor drops the cached document — it only lowers the ceiling. Without a guard the screen
+      // would encode a code per line of a document it is about to decline to show.
+      scopeCountState.data = 5_000;
+      render(<CatalogueScreen />);
+
+      fireEvent.click(screen.getByTestId('catalogue-field-qr'));
+
+      expect(screen.getByTestId('catalogue-too-large')).toBeTruthy();
+      expect(qrSvgOrNull).not.toHaveBeenCalled();
+    });
+
+    it('still encodes QR codes for a scope within the ceiling', () => {
+      render(<CatalogueScreen />);
+      fireEvent.click(screen.getByTestId('catalogue-field-qr'));
+      expect(qrSvgOrNull).toHaveBeenCalled();
     });
 
     it('lowers the ceiling once a media column is on', () => {

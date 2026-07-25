@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { plural } from '@/lib/plural';
-import { Banner, Button, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
+import { Banner, Button, Checkbox, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
@@ -271,13 +271,7 @@ function FieldToggle({
 }) {
   const toggle = (
     <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="size-3.5 accent-primary"
-        data-testid={testId}
-      />
+      <Checkbox checked={checked} onChange={(e) => onChange(e.target.checked)} data-testid={testId} />
       {label}
     </label>
   );

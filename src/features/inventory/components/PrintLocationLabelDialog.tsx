@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Banner, Button, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
+import { Banner, Button, Checkbox, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
@@ -221,12 +221,7 @@ export function PrintLocationLabelDialog({
             {location.path && location.path.trim().length > 0 ? (
               <div className="flex items-center gap-1">
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={showPath}
-                    onChange={(e) => setShowPath(e.target.checked)}
-                    className="size-3.5 accent-primary"
-                  />
+                  <Checkbox checked={showPath} onChange={(e) => setShowPath(e.target.checked)} />
                   Show full path
                 </label>
                 <InfoHint content={SHOW_PATH_HINT} />
@@ -236,11 +231,9 @@ export function PrintLocationLabelDialog({
             {/* The fallback identifier — what still names the bin when the code is damaged (#338). */}
             <div className="flex items-center gap-1">
               <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={showShortCode}
                   onChange={(e) => setShowShortCode(e.target.checked)}
-                  className="size-3.5 accent-primary"
                   data-testid="loc-label-show-short-code"
                 />
                 {t('inventory.labels.showShortCode')}

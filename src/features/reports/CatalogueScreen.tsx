@@ -251,14 +251,20 @@ export function CatalogueScreen() {
   // headed off *before* the read — not warned about once the tab is already wedged.
   const scopeCount = useCatalogueItemCount(scope);
   const printLimit = cataloguePrintLimit(fields);
-  const scopeItemCount = scopeCount.data ?? 0;
-  const tooLarge = scopeCount.data != null && scopeItemCount > printLimit;
+  /** The scope's size, once known. `null` while it is still being counted. */
+  const scopeItemCount = scopeCount.data ?? null;
+  const tooLarge = scopeItemCount != null && scopeItemCount > printLimit;
 
   const catalogue = usePartsCatalogue(scope, {
     includePhotos: fields.has('photo'),
     groupBy,
     sortBy,
-    enabled: !tooLarge,
+    // Both hooks run in the same render, so "not counted yet" must gate the read as firmly as
+    // "too large" does. Treating an unknown size as small enough would fire the unbounded read
+    // in parallel with the count on the very first render — and React Query does not abort a
+    // request once it is in flight, so the tab would pay for the whole document before the
+    // count that was supposed to prevent it ever arrived.
+    enabled: scopeItemCount != null && !tooLarge,
   });
   const selectedFields = CATALOGUE_FIELDS.filter((field) => fields.has(field.key));
   // Per-group subtotals and the grand total are only meaningful — and only shown — when the
@@ -288,7 +294,11 @@ export function CatalogueScreen() {
       })
     : 0;
   const qrByLine = useMemo<ReadonlyMap<string, string> | null>(() => {
-    if (!qrColumnOn || !catalogue.data) return null;
+    // `tooLarge` is checked here as well as at the read: the QR column is not part of the
+    // catalogue's query key, so ticking it neither re-keys nor drops the document already in
+    // cache — it only lowers the ceiling. Without this guard, turning QR on over a large scope
+    // would encode a code for every line of a document the screen is about to decline to show.
+    if (tooLarge || !qrColumnOn || !catalogue.data) return null;
     const map = new Map<string, string>();
     for (const group of catalogue.data.groups) {
       for (const line of group.lines) {
@@ -301,7 +311,7 @@ export function CatalogueScreen() {
     return map;
     // Keyed on the boolean (not the whole `fields` Set) so toggling an unrelated column never
     // regenerates every QR.
-  }, [qrColumnOn, catalogue.data, baseUrl]);
+  }, [tooLarge, qrColumnOn, catalogue.data, baseUrl]);
   // The QR column is on and there are lines, but not one encoded — the deep-link is too long for
   // any QR symbol, which only an over-long "Link host" can cause. Surface it rather than
   // rendering a silently blank column.
@@ -326,9 +336,17 @@ export function CatalogueScreen() {
 
   const empty = scope !== null && catalogue.data != null && catalogue.data.itemCount === 0;
   const needsChoice = scope === null;
+  /**
+   * The scope's size is not known yet.
+   *
+   * While it isn't, any document on screen belongs to the *previous* scope (both reads keep the
+   * last result to avoid flicker), and nothing can say whether the new one is even printable —
+   * so neither the size readout nor the Print button may speak for it.
+   */
+  const sizing = !needsChoice && scopeItemCount == null;
   // The size of the print job, stated before the browser's own dialog can open. Only meaningful
   // once the document exists — there is nothing to print until then.
-  const showPrintSize = !needsChoice && !tooLarge && !empty && catalogue.data != null;
+  const showPrintSize = !needsChoice && !sizing && !tooLarge && !empty && catalogue.data != null;
 
   // A long print asks first (issue #338). `window.print()` blocks synchronously, so it must not
   // be called from the confirm handler — React would not have committed the dialog's unmount
@@ -371,7 +389,9 @@ export function CatalogueScreen() {
                   "Add item" on the Inventory screen) so the next action is obvious. */}
               <Button
                 onClick={requestPrint}
-                disabled={needsChoice || empty || tooLarge || catalogue.isLoading || !catalogue.data}
+                disabled={
+                  needsChoice || sizing || empty || tooLarge || catalogue.isLoading || !catalogue.data
+                }
                 data-testid="print-catalogue"
               >
                 <PrintIcon />
@@ -383,7 +403,7 @@ export function CatalogueScreen() {
         {tooLarge ? (
           <p className="mt-2 text-sm text-muted-foreground" data-testid="catalogue-too-large">
             {t('reports.catalogue.tooLarge', {
-              vars: { count: f.quantity(scopeItemCount), limit: f.quantity(printLimit) },
+              vars: { count: f.quantity(scopeItemCount ?? 0), limit: f.quantity(printLimit) },
             })}
           </p>
         ) : null}
@@ -693,14 +713,17 @@ export function CatalogueScreen() {
             <p className="py-16 text-center text-sm text-muted-foreground">
               {t('reports.catalogue.tooLargeDocument')}
             </p>
-          ) : catalogue.isLoading ? (
-            <div className="grid place-items-center py-16">
-              <Spinner />
-            </div>
           ) : catalogue.isError ? (
             <p role="alert" className="py-16 text-center text-sm text-destructive">
               The catalogue could not be loaded.
             </p>
+          ) : !catalogue.data ? (
+            // Covers the read itself *and* the window before it starts, while the scope is still
+            // being counted — the document read is idle then, so there is no `isLoading` to key
+            // off and nothing yet to render.
+            <div className="grid place-items-center py-16">
+              <Spinner />
+            </div>
           ) : empty ? (
             <p className="py-16 text-center text-sm text-muted-foreground">No items match this selection.</p>
           ) : (

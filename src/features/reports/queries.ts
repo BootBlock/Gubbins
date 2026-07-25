@@ -405,9 +405,10 @@ export function useCatalogueItemCount(scope: CatalogueScope | null) {
     queryKey: [...reportKeys.all, 'parts-catalogue-count', scope],
     queryFn: () => getReportRepository().partsCatalogueCount(scope!),
     enabled: scope !== null,
-    // Re-keyed as the reader changes scope; hold the previous count while the new one loads so
-    // the print button and page estimate don't blink through a "0 items" state.
-    placeholderData: keepPreviousData,
+    // Deliberately **not** `keepPreviousData`, unlike every other read on this screen. This
+    // count is a gate, not a display value: holding the previous scope's answer while a new
+    // one loads would let a ten-item location's count wave through the read for "All items".
+    // An undefined count has to mean "not known yet", so the caller can wait for it.
   });
 }
 

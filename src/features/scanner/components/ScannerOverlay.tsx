@@ -25,6 +25,7 @@ import { shortId } from '@/features/inventory/labels/label-template';
 import { useItem, useLocations } from '@/features/inventory/queries';
 import { useMoveItem } from '@/features/inventory/mutations';
 import { isUnlimited } from '@/features/inventory/unlimited';
+import { useT } from '@/features/i18n';
 import { useFeature } from '@/features/modules/useFeature';
 import { ProductLookupPanel, type ProductLookupResultPayload } from '@/features/scraping';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -97,6 +98,7 @@ function ScannerOverlayInner({
   onCreateFromBarcode?: (gtin: string, product?: ProductLookupResultPayload) => void;
   onViewItem?: (item: Item) => void;
 }) {
+  const t = useT();
   const [state, dispatch] = useReducer(scannerReducer, undefined, () => initialScannerState('DISCRETE'));
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // The framing reticle: the decoder crops each frame to this box so a barcode framed in it is
@@ -187,7 +189,7 @@ function ScannerOverlayInner({
         if (!isShortItemCode(value)) return false;
         const matches = await getItemRepository().findByShortCode(value);
         if (matches.length > 1) {
-          setNotice('More than one item starts with that short code — scan the label’s code instead.');
+          setNotice(t('scanner.shortCode.ambiguous'));
           return true;
         }
         if (matches.length === 1) {
@@ -261,7 +263,7 @@ function ScannerOverlayInner({
       }
       presentItem(item);
     },
-    [state.mode, queue, beepEnabled, hapticsEnabled, locationRows, onLocationScanned],
+    [t, state.mode, queue, beepEnabled, hapticsEnabled, locationRows, onLocationScanned],
   );
 
   const camera = useScanner({
@@ -687,7 +689,7 @@ function ScannerOverlayInner({
             value={manual}
             onChange={(e) => setManual(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && submitManual()}
-            placeholder="Enter or paste a code, or a label's short code"
+            placeholder={t('scanner.manual.placeholder')}
             className="bg-white/10 text-white placeholder:text-white/50"
             data-testid="scanner-manual-input"
           />
@@ -715,9 +717,8 @@ function ScannerOverlayInner({
             <li className="flex gap-3">
               <QrCodeIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
               <span>
-                <span className="font-medium">Short codes</span> — the eight-character code printed on every
-                label, e.g. <code className="font-mono">A1B2C3D4</code>. Type it into the box below when the
-                QR code or barcode is too scuffed or torn to scan.
+                <span className="font-medium">{t('scanner.help.shortCode.title')}</span> —{' '}
+                {t('scanner.help.shortCode.body')}
               </span>
             </li>
             <li className="flex gap-3">
