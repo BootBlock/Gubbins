@@ -600,6 +600,7 @@
   "inventory.fields.unused.title": "Unused custom fields",
   "inventory.fields.unused.hint": "Custom fields are shared across every category and location, so removing one from a category keeps its definition for the others. These definitions are no longer used anywhere — no category, no location and no item — so they only clutter the “Add a field” lists. Removing one here takes nothing with it.",
   "inventory.fields.unused.remove": "Remove unused field {name}",
+  "inventory.fields.image.notAnImage": "The saved value isn't an image, so it can't be shown. Choose an image to replace it.",
   "inventory.location.fields.title": "Inheritable fields",
   "inventory.location.fields.intro": "Values set here can be inherited by the items in this location and by the locations inside it.",
   "inventory.location.fields.empty": "No values set. Add one to let items here inherit it.",

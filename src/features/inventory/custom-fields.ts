@@ -50,8 +50,21 @@ export interface ValidateFieldOptions {
  */
 export const MAX_FIELD_IMAGE_BYTES = 512 * 1024;
 
-/** True when `text` looks like an image `data:` URL (`data:image/…;base64,…`). */
-function isImageDataUrl(text: string): boolean {
+/**
+ * True when `text` is an image `data:` URL (`data:image/…;base64,…`) — the one shape an
+ * `IMAGE` field's value may take.
+ *
+ * This is both the save-time rule ({@link validateFieldValue}) **and** the guard every
+ * renderer of an `IMAGE` field value applies before putting it into an `<img src>` — apply
+ * it to the trimmed value, as validation does. Validating on save is not enough on its own:
+ * a value can reach a renderer without passing through this seam — a field retyped from
+ * `TEXT` to `IMAGE` keeps the free text already stored against it, and a row can arrive from
+ * a sync peer or a restored backup. Anything that isn't an image data URL is treated as
+ * "no image" rather than pointed an `<img>` at, so a stored string can never become a URL
+ * the app fetches. (The catalogue letterhead logo is a separate preference with its own
+ * guard, `normaliseCatalogueLogo` — not an `IMAGE` field value.)
+ */
+export function isImageDataUrl(text: string): boolean {
   return /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/]+={0,2}$/i.test(text);
 }
 

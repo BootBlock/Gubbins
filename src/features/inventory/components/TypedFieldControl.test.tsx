@@ -170,6 +170,56 @@ describe('TypedFieldControl — every declared FieldType has its own control', (
   });
 });
 
+describe('TypedFieldControl — IMAGE', () => {
+  const tinyImage = 'data:image/webp;base64,UklGRhoAAABXRUJQ';
+
+  it('previews a stored image data URL', () => {
+    render(<TypedFieldControl fieldType="IMAGE" value={tinyImage} onChange={vi.fn()} ariaLabel="Cover" />);
+    expect(screen.getByAltText('Cover preview')).toHaveAttribute('src', tinyImage);
+  });
+
+  /**
+   * A value that isn't an image data URL can still reach this control — a field retyped from
+   * TEXT keeps the text already stored against it, and rows arrive from sync peers and restored
+   * backups. It must never become a `src`, or the app would fetch a string a peer chose.
+   */
+  it.each([
+    ['a remote URL', 'https://images.example.com/tracker.png'],
+    ['a protocol-relative URL', '//images.example.com/tracker.png'],
+    ['a javascript: URL', 'javascript:alert(1)'],
+    ['a non-image data URL', 'data:text/html;base64,PHNjcmlwdD4='],
+    ['free text left by a retyped field', 'just some text'],
+  ])('never points an img at %s', (_label, hostile) => {
+    render(<TypedFieldControl fieldType="IMAGE" value={hostile} onChange={vi.fn()} ariaLabel="Cover" />);
+    expect(screen.queryByAltText('Cover preview')).not.toBeInTheDocument();
+    expect(document.querySelector('img')).toBeNull();
+  });
+
+  /** Saving trims before applying the same test, so displaying must too — or a value that
+   *  saves cleanly would refuse to show. */
+  it('shows a value padded with whitespace, matching what saving accepts', () => {
+    render(
+      <TypedFieldControl fieldType="IMAGE" value={`  ${tinyImage}  `} onChange={vi.fn()} ariaLabel="Cover" />,
+    );
+    expect(screen.getByAltText('Cover preview')).toHaveAttribute('src', tinyImage);
+  });
+
+  it('keeps the unshowable value removable rather than stranding it', () => {
+    const onChange = vi.fn();
+    render(
+      <TypedFieldControl fieldType="IMAGE" value="just some text" onChange={onChange} ariaLabel="Cover" />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Remove image' }));
+    expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('offers only the picker when the field is empty', () => {
+    render(<TypedFieldControl fieldType="IMAGE" value="" onChange={vi.fn()} ariaLabel="Cover" />);
+    expect(screen.queryByRole('button', { name: 'Remove image' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cover' })).toBeInTheDocument();
+  });
+});
+
 describe('TypedFieldControl — naming via labelId', () => {
   it('names the control via aria-labelledby when labelId is given instead of ariaLabel', () => {
     render(
