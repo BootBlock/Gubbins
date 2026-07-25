@@ -1,17 +1,19 @@
 # Contributing to Gubbins
 
-Thanks for your interest in Gubbins. Contributions are welcome — but please read the section
-on pull requests below **before** you write any code, so you don't spend effort on something
-that is unlikely to land.
+Thanks for your interest in Gubbins. Bug reports, feature requests and ideas are genuinely
+welcome — but please read the next section **before** you write any code, so you don't spend
+effort on something that is unlikely to land.
 
 ## Please open an issue, not a pull request
 
 **Pull requests are unlikely to be accepted.** This is not a judgement on the quality of your
 work — it is a consequence of how this repository is developed.
 
-Gubbins moves at an extremely high rate of change. `main` advances continuously, often with
-many changes landing in a single day, and much of the codebase is touched by work happening in
-parallel. In practice that means:
+Gubbins moves at an extremely high rate of change. `main` advances continuously — often by
+hundreds of commits in a single day — and much of the codebase is touched by work happening in
+parallel. (Development is heavily AI-assisted; see
+[AI-assisted development](README.md#ai-assisted-development) in the README.) In practice that
+means:
 
 - An external pull request goes stale very quickly — frequently before it can be reviewed.
 - The area you changed has often already been rewritten, refactored, or reworked by in-flight
@@ -32,8 +34,8 @@ These are the contributions that have the most impact here:
 
 | You want to… | Do this |
 | --- | --- |
-| Report a bug | Open a [bug report](https://github.com/BootBlock/Gubbins/issues/new/choose) |
-| Suggest a feature or change | Open a [feature request](https://github.com/BootBlock/Gubbins/issues/new/choose) |
+| Report a bug | Open a [bug report](https://github.com/BootBlock/Gubbins/issues/new?template=bug_report.yml) |
+| Suggest a feature or change | Open a [feature request](https://github.com/BootBlock/Gubbins/issues/new?template=feature_request.yml) |
 | Ask a question or float an idea | Start a [discussion](https://github.com/BootBlock/Gubbins/discussions) |
 | Report a security vulnerability | **Privately** — see [SECURITY.md](SECURITY.md) |
 
@@ -42,6 +44,9 @@ behaviour is described, the faster and more accurately it can be implemented.
 
 ### Writing a good bug report
 
+- **Check the latest build first.** Given the rate of change above, a bug you hit last week may
+  already be fixed — retest on <https://bootblock.github.io/Gubbins/> before reporting. Only the
+  latest `main` and the current deployed build are supported.
 - What you did, what you expected, and what actually happened.
 - The browser and OS, and whether you were using the optional bridge.
 - The version or commit shown in the app, if you have it.
@@ -63,8 +68,9 @@ vulnerability reporting — the full process is in [SECURITY.md](SECURITY.md).
 
 ## Running Gubbins locally
 
-You do not need to run Gubbins locally to file a good issue, but it's easy if you want to poke
-at it. See the **Development** section of the [README](README.md) for the quick start, the
+You do not need to run Gubbins locally to file a good issue — the hosted build at
+<https://bootblock.github.io/Gubbins/> is enough for most reports. If you do want to run it from
+source, see the **Development** section of the [README](README.md) for the quick start, the
 launcher options, and the Node version requirements (the test suites need a newer Node than the
 build does).
 
