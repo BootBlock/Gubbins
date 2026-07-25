@@ -8,7 +8,7 @@
  * {@link applyScrapeMerge} and hands the concrete write to `onApply`.
  */
 import { useMemo, useState } from 'react';
-import { Button, Modal, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, Checkbox, Modal, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { InfoIcon, WarningIcon } from '@/components/icons';
 import { applyScrapeMerge, buildScrapeMergePlan, type ScrapeField, type ScrapeWrite } from '../merge';
 import type { ExistingItemFields } from '../merge';
@@ -108,8 +108,7 @@ export function ScrapeReviewDialog({
                 <li key={p.field} className="rounded-lg border border-border p-2">
                   {/* eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested checkbox is correctly associated; the label's text comes from the dynamic {p.field} content, which the linter cannot resolve to a static string. */}
                   <label className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={overwrites.has(p.field)}
                       onChange={() => toggle(p.field)}
                       className="mt-1"
