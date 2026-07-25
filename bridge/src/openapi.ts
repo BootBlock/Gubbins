@@ -859,13 +859,15 @@ export const openapiDocument: JsonValue = {
     '/api/v1/items/{id}/adjust-quantity': {
       post: {
         tags: ['writes'],
-        summary: 'Adjust a DISCRETE item’s quantity by a signed delta (check-in / check-out)',
+        summary: 'Adjust a DISCRETE item’s quantity by a signed delta',
         description:
           'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Applies ' +
           'a signed delta to the item’s home-location stock and logs it, exactly as the app does, ' +
-          'then writes the merged snapshot back so the PWA reconciles it (LWW) on its next sync.',
+          'then writes the merged snapshot back so the PWA reconciles it (LWW) on its next sync. ' +
+          'This is stock going in or out, not a loan — to lend an item to someone and get it back, ' +
+          'use check-out / check-in, which track who has it.',
         parameters: [idParam('item')],
-        requestBody: adjustRequestBody('Whole-number change; negative to check out.'),
+        requestBody: adjustRequestBody('Whole-number change; negative to take stock out.'),
         responses: {
           200: response('The updated item.', '#/components/schemas/ItemDetail'),
           ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
@@ -896,9 +898,10 @@ export const openapiDocument: JsonValue = {
           'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Opens a ' +
           'loan exactly as the app does — a discrete item’s stock is drawn down from the source ' +
           'placement while the loan is open, a serialised item goes out as a whole and cannot be ' +
-          'lent twice. Supply exactly one borrower. The response carries the loan, whose id names ' +
-          'it at check-in and matches the UID the calendar feed publishes for it. Needs ' +
-          'checkouts:write (not stock:write).',
+          'lent twice. Supply exactly one borrower; naming a contact that does not exist creates ' +
+          'it, as the app does. The response carries the loan, whose id names it at check-in and ' +
+          'is the id the calendar feed embeds in that loan’s UID (loan-<id>@gubbins.invalid). ' +
+          'Needs checkouts:write (not stock:write).',
         parameters: [idParam('item')],
         requestBody: {
           required: true,
@@ -913,6 +916,7 @@ export const openapiDocument: JsonValue = {
                   contactId: { type: 'string', description: 'Lend to this existing contact.' },
                   contactName: {
                     type: 'string',
+                    maxLength: 500,
                     description: 'Lend to a contact by name, creating it when there is no match.',
                   },
                   projectId: { type: 'string', description: 'Lend to this existing project.' },

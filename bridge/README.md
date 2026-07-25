@@ -1012,9 +1012,14 @@ object.
 The **stock** endpoints answer with the updated item — the same `ItemDetail` shape as
 `GET /api/v1/items/{id}`. The **loan** endpoints answer with
 `{ "item": ItemDetail, "checkout": Checkout }`: a caller that has just lent something out needs the
-loan's `id` to check it back in later, and that id is the same one the
-[calendar feed](#calendar-subscription) publishes as a loan event's `UID` — so a calendar-driven
-automation and an API-driven one name a loan the same way.
+loan's `id` to check it back in later. It is the same id the [calendar feed](#calendar-subscription)
+embeds in a loan event's `UID` (`loan-<id>@gubbins.invalid` — strip the prefix and the suffix), so a
+calendar-driven automation can close the very loan it was reminded about.
+
+> **ℹ️ A check-out by name may create a contact.** `contactName` resolves an existing contact or
+> creates one, exactly as the app's own checkout does for a `checkouts:write` holder. It is the one
+> place a write can add a record rather than only changing an existing one; pass `contactId` instead
+> if you would rather a caller could never do that.
 
 Status codes: `200`, `400` (malformed body, or a field of the wrong JSON type), `401`
 (missing/unknown/revoked token), `403` (the owner's role lacks `bridge:write`, or `stock:write` /
@@ -1759,7 +1764,7 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 
 | Flag (`GUBBINS_BRIDGE_…`) | Turns on | Direction | Writes inventory? | Caller must also hold / secrets |
 | --- | --- | --- | --- | --- |
-| `ALLOW_WRITES` | [Limited stock writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge`, plus the matching [MCP write tools](#write-tools-opt-in) (JSON source only). | inbound (HTTP + MCP stdio) | **Yes** — check-in/out & gauge adjust, round-tripped through the sync merge, attributed over HTTP to the token's owner. | `bridge:write` + `stock:write` over HTTP — the flag opens the route, the role decides who may use it. The MCP tools have **no credential and no permission check** (stdio's boundary is the OS process), so enabling this trusts whoever can launch the server. No new operator secret. |
+| `ALLOW_WRITES` | [Limited stock and loan writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` \| `/check-out` \| `/check-in` \| `/transfer-stock`, plus the matching [MCP write tools](#write-tools-opt-in) (JSON source only). | inbound (HTTP + MCP stdio) | **Yes** — quantity/gauge adjust, lend & return, and moving stock between locations, round-tripped through the sync merge, attributed over HTTP to the token's owner. A check-out naming an unknown contact also creates that contact. | `bridge:write` + `stock:write` over HTTP (`checkouts:write` instead, for `check-out` / `check-in`) — the flag opens the route, the role decides who may use it. The MCP tools have **no credential and no permission check** (stdio's boundary is the OS process), so enabling this trusts whoever can launch the server. No new operator secret. |
 | `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | **Yes — wider than `ALLOW_WRITES`.** Merges a caller-supplied snapshot into the **whole** served dataset through the app's §7.3 reconcile (no *bespoke* SQL), so it can reshape **any** row — not just a bounded stock delta. | `bridge:write` + `sync:write`. No new operator secret. |
 | `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | `bridge:read`. No new operator secret. |
 | `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled; with MQTT on, also to the transient [`gubbins/locate`](#the-locate-topic-where-is-x-for-automations) topic. | outbound (push) | No — it is a read; nothing is written. | Nothing beyond the lookup itself — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
@@ -1809,7 +1814,7 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_ALLOWED_ORIGINS` | no | *(hosted app)* | Comma-separated list of **browser origins** allowed to read a bridge response cross-origin (CORS). Defaults to the hosted app origin `https://bootblock.github.io`; **loopback origins (a dev server) are always allowed on top**. Add your own PWA origin here if you self-host the app on another domain and use "push to bridge" from the browser. Set to `*` to restore the old permissive wildcard. Only browsers are affected — a non-browser client (Home Assistant, `curl`, a scrape) sends no `Origin` and is unaffected. See [Cross-origin (CORS) policy](#cross-origin-cors-policy). |
 | `GUBBINS_BRIDGE_MDNS` | no | `off` | Advertise over mDNS so Home Assistant can auto-discover the bridge. `on` to enable. Carries **no secret**; only meaningful when LAN-exposed (auto-skipped on the loopback default). See [mDNS / zeroconf discovery](#mdns--zeroconf-discovery). |
 | `GUBBINS_BRIDGE_MDNS_NAME` | no | `Gubbins Bridge` | Service instance name shown in a discovery browser. |
-| `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this (or `GUBBINS_BRIDGE_ALLOW_PUSH`) is `on`.** HTTP writes additionally need the caller to hold `bridge:write` + `stock:write`; the MCP tools are gated by process launch alone (stdio carries no credential). |
+| `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (quantity/gauge adjust, check out & in, move stock between locations) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this (or `GUBBINS_BRIDGE_ALLOW_PUSH`) is `on`.** HTTP writes additionally need the caller to hold `bridge:write` + `stock:write` (or `checkouts:write` for the two loan endpoints); the MCP tools are gated by process launch alone (stdio carries no credential). |
 | `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**; a **separate** opt-in from writes but a **strictly wider privilege** — a push merges caller-supplied content into the **whole** dataset, not a bounded stock delta, so treat it as at least as sensitive as writes. JSON source only. Same rate limit; the caller needs `bridge:write` + `sync:write`. |
 | `GUBBINS_BRIDGE_MAX_PUSH_BYTES` | no | `67108864` | Hard cap (bytes) on a pushed snapshot; default 64 MiB. An over-large push is rejected with `413`. Lower it on a constrained host. |
 | `GUBBINS_BRIDGE_STALE_AFTER_FAILURES` | no | `3` | Consecutive failed snapshot reloads before [`/health`](#snapshot-freshness-and-health) reports the served data as stale (`ok: false`). `0` keeps the counters but never flips `ok`. |
@@ -2138,7 +2143,7 @@ bridge/
       publisher.ts      # orchestrator: EventSink + per-generation retained state + availability
       packet.test.ts / topics.test.ts / discovery.test.ts / state.test.ts / client.test.ts / publisher.test.ts
     mcp/
-      tools.ts          # the six read-only gubbins_* MCP tools + the two opt-in write tools
+      tools.ts          # the six read-only gubbins_* MCP tools + the five opt-in write tools
       dispatcher.ts     # stdlib JSON-RPC dispatcher (initialize/tools.list/tools.call/ping)
       stdio.ts          # newline-delimited JSON-RPC over stdin/stdout
       serve.ts          # MCP composition root: watcher → stdio server (logs to stderr)

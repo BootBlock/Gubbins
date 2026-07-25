@@ -48,6 +48,15 @@ import type { ApiErrorCode } from './api/respond.ts';
 export const MAX_NOTE_LENGTH = 500;
 
 /**
+ * The same bound applied to a borrower name. `contactName` is the one field that *creates* a row
+ * rather than referencing one, and it also lands verbatim in the checkout's ledger note — so
+ * leaving it unbounded would be the very hole {@link MAX_NOTE_LENGTH} exists to close, reached by
+ * another route. (Over HTTP the body cap would catch the extreme case; the MCP transport has no
+ * such cap.) Deliberately as generous as a note so no plausible real name is ever refused.
+ */
+export const MAX_BORROWER_NAME_LENGTH = MAX_NOTE_LENGTH;
+
+/**
  * The fixed set of mutating operations (YAGNI — each one earns its place by closing a gap the
  * read side already exposes). Every one maps 1:1 to an existing app repository method; nothing
  * else is reachable.
@@ -119,7 +128,7 @@ export type WriteOperation =
 /**
  * What a write produced: the affected item always, plus the loan when the operation was one
  * (`check-out` / `check-in`). The checkout's **id** is the part that matters — it is what a
- * later `check-in` names, and it matches the `UID` the iCalendar feed publishes for that loan.
+ * later `check-in` names, and it is the id the iCalendar feed embeds in that loan's `UID`.
  */
 export interface WriteOutcome {
   readonly item: Item;
@@ -162,6 +171,13 @@ export async function applyOperation(
   const note = 'note' in op ? op.note : undefined;
   if (note !== undefined && note.length > MAX_NOTE_LENGTH) {
     throw new WriteError(422, 'unprocessable', `A note may be at most ${MAX_NOTE_LENGTH} characters.`);
+  }
+  if (op.kind === 'check-out' && (op.contactName?.length ?? 0) > MAX_BORROWER_NAME_LENGTH) {
+    throw new WriteError(
+      422,
+      'unprocessable',
+      `A borrower name may be at most ${MAX_BORROWER_NAME_LENGTH} characters.`,
+    );
   }
 
   // Every ledger row is attributed to the owner of the API token that authorised the request

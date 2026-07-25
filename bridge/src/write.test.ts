@@ -28,7 +28,14 @@ import { snapshotToBackupJson } from '@/features/sync/backup';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { createNodeDriver } from './node-driver.ts';
 import { hydrateFromJson, type HydrateResult } from './hydrate.ts';
-import { applyOperation, createWriteExecutor, executeWrite, MAX_NOTE_LENGTH, WriteError } from './write.ts';
+import {
+  applyOperation,
+  createWriteExecutor,
+  executeWrite,
+  MAX_BORROWER_NAME_LENGTH,
+  MAX_NOTE_LENGTH,
+  WriteError,
+} from './write.ts';
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
 const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE];
@@ -186,6 +193,22 @@ describe('applyOperation', () => {
       "SELECT action FROM item_history WHERE item_id = 'item-m3-bolt' ORDER BY created_at DESC LIMIT 1;",
     );
     expect(history[0]?.action).toBe('CHECKED_OUT');
+  });
+
+  it('rejects an over-long borrower name with a 422', async () => {
+    // `contactName` CREATES a row and lands in the ledger note, so it is bounded for the same
+    // reason a note is — the MCP transport has no body cap to fall back on.
+    await expect(
+      applyOperation(
+        hydrated.driver,
+        {
+          kind: 'check-out',
+          itemId: 'item-m3-bolt',
+          contactName: 'x'.repeat(MAX_BORROWER_NAME_LENGTH + 1),
+        },
+        ACTOR,
+      ),
+    ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
   });
 
   it('anchors a yyyy-MM-dd due date at local end-of-day, as the app does', async () => {

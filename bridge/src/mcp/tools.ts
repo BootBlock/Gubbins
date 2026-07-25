@@ -45,7 +45,13 @@ import {
   SEARCH_DEFAULT_FIELDS,
 } from '../api/item-view.ts';
 import { createLocationViewContext, parseLocationSelection, projectLocation } from '../api/location-view.ts';
-import { MAX_NOTE_LENGTH, WriteError, type WriteOperation, type WriteResult } from '../write.ts';
+import {
+  MAX_BORROWER_NAME_LENGTH,
+  MAX_NOTE_LENGTH,
+  WriteError,
+  type WriteOperation,
+  type WriteResult,
+} from '../write.ts';
 
 /** A minimal JSON-Schema subset — enough to describe each tool's arguments in `tools/list`. */
 export interface JsonSchema {
@@ -388,7 +394,9 @@ export function createWriteTools(execute: WriteExecutor): readonly McpTool[] {
         contactId: { type: 'string', description: 'Lend to this existing contact.' },
         contactName: {
           type: 'string',
-          description: "Lend to a contact by name; one is created if there's no match.",
+          description:
+            "Lend to a contact by name; one is created if there's no match. " +
+            `Max ${MAX_BORROWER_NAME_LENGTH} characters.`,
         },
         projectId: { type: 'string', description: 'Lend to this existing project instead.' },
         locationId: { type: 'string', description: 'Lend to this existing location instead ("in the van").' },

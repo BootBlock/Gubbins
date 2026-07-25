@@ -204,8 +204,9 @@ export interface CategoryDetailDto {
  * One loan (checkout), as the opt-in loan write endpoints return it (issue #142).
  *
  * The **id** is the point of the shape: a caller that has just lent something out needs it to
- * check the same loan back in later, and the iCalendar feed's loan `UID` carries the very same
- * id — so a calendar-driven automation and an API-driven one name a loan the same way.
+ * check the same loan back in later, and it is the id the iCalendar feed embeds in that loan's
+ * `UID` (`loan-<id>@gubbins.invalid`) — so a calendar-driven automation can close the very loan
+ * it was reminded about.
  *
  * `borrowerType` names which of the three targets the loan is to (§4 "Borrowing" B4), and
  * `borrowerId` is that target's id — flattened from the app's tagged union so a consumer can

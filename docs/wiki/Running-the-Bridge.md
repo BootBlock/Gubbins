@@ -113,7 +113,9 @@ The bridge **can't modify your inventory** by default — it's a window onto you
 in. Write-back is a separate, explicit opt-in, and even then it goes through Gubbins' safe merge so
 it can't cause drift. It covers a short, fixed list: adjusting a quantity or a gauge,
 [[checking an item out and back in|Loans-Check-Out-and-In]], and moving stock between
-[[locations|Locations-and-Stock]]. Nothing can be created, renamed or deleted through it.
+[[locations|Locations-and-Stock]]. Nothing can be renamed or deleted through it, and the only thing
+it can create is a [[contact|Contacts]] — checking an item out to a name that doesn't match anyone
+adds that person, exactly as doing it in the app would.
 
 There are two gates, and both have to let a request through. Whoever runs the bridge decides which
 capabilities exist at all; the caller's account then decides how much of that they may use. So

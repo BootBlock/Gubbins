@@ -41,10 +41,12 @@ actually put it out on loan:
 - **Move stock between locations** — shift some of an item from one place to another without
   changing how much of it you have.
 
-Nothing else is exposed: an assistant cannot create, rename or delete anything, and every change is
-recorded in the [[activity log|Activity-Log]] just as if you'd made it yourself — so you can always
-see what happened. The changes flow back through the same [[sync|Cloud-Sync]] as any other, so your
-other devices pick them up normally.
+Nothing else is exposed: an assistant cannot rename or delete anything, and the only thing it can
+create is a [[contact|Contacts]] — lending to a name that doesn't match anyone adds that person,
+exactly as doing it in the app would. Every change is recorded in the
+[[activity log|Activity-Log]] just as if you'd made it yourself, so you can always see what
+happened, and the changes flow back through the same [[sync|Cloud-Sync]] as any other, so your other
+devices pick them up normally.
 
 > **⚠️ Heads-up**
 > This is off by default, and worth a moment's thought before switching on. Unlike the bridge's

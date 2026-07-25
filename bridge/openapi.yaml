@@ -1507,8 +1507,8 @@ paths:
     post:
       tags:
       - "writes"
-      summary: "Adjust a DISCRETE item’s quantity by a signed delta (check-in / check-out)"
-      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Applies a signed delta to the item’s home-location stock and logs it, exactly as the app does, then writes the merged snapshot back so the PWA reconciles it (LWW) on its next sync."
+      summary: "Adjust a DISCRETE item’s quantity by a signed delta"
+      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Applies a signed delta to the item’s home-location stock and logs it, exactly as the app does, then writes the merged snapshot back so the PWA reconciles it (LWW) on its next sync. This is stock going in or out, not a loan — to lend an item to someone and get it back, use check-out / check-in, which track who has it."
       parameters:
       -
         name: "id"
@@ -1528,7 +1528,7 @@ paths:
               properties:
                 delta:
                   type: "number"
-                  description: "Whole-number change; negative to check out."
+                  description: "Whole-number change; negative to take stock out."
                   example: -1
                 note:
                   type: "string"
@@ -1712,7 +1712,7 @@ paths:
       tags:
       - "writes"
       summary: "Lend an item out to a contact, project or location"
-      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Opens a loan exactly as the app does — a discrete item’s stock is drawn down from the source placement while the loan is open, a serialised item goes out as a whole and cannot be lent twice. Supply exactly one borrower. The response carries the loan, whose id names it at check-in and matches the UID the calendar feed publishes for it. Needs checkouts:write (not stock:write)."
+      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Opens a loan exactly as the app does — a discrete item’s stock is drawn down from the source placement while the loan is open, a serialised item goes out as a whole and cannot be lent twice. Supply exactly one borrower; naming a contact that does not exist creates it, as the app does. The response carries the loan, whose id names it at check-in and is the id the calendar feed embeds in that loan’s UID (loan-<id>@gubbins.invalid). Needs checkouts:write (not stock:write)."
       parameters:
       -
         name: "id"
@@ -1734,6 +1734,7 @@ paths:
                   description: "Lend to this existing contact."
                 contactName:
                   type: "string"
+                  maxLength: 500
                   description: "Lend to a contact by name, creating it when there is no match."
                 projectId:
                   type: "string"
