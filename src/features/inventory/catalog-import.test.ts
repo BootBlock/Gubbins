@@ -11,6 +11,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
 import { CategoryRepository } from '@/db/repositories/CategoryRepository';
+import { TagRepository } from '@/db/repositories/TagRepository';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { CategoryField, Item } from '@/db/repositories/types';
 import {
@@ -19,8 +20,10 @@ import {
   buildCatalogImportPlan,
   applyCatalogImportPlan,
   normaliseTrackingMode,
+  parseExpiryCell,
   parseNumericCell,
   parseNumericCountCell,
+  parseTagsCell,
   type CatalogItemRepository,
   type ColumnMapping,
 } from './catalog-import';
@@ -1194,5 +1197,159 @@ describe('buildCatalogImportPlan — one numeric rule for every importer (issue 
     expect(plan.errors).toEqual([]);
     expect(plan.create[0]!.input.weight).toBe(12.5);
     expect(plan.create[0]!.input.width).toBe(3.25);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #141 — barcode, serial number, expiry date and tags
+// ---------------------------------------------------------------------------
+
+describe('parseExpiryCell (issue #141)', () => {
+  it('reads a bare ISO day as the midnight-UTC instant the item row stores', () => {
+    expect(parseExpiryCell('2026-07-25')).toBe(Date.UTC(2026, 6, 25));
+    expect(parseExpiryCell('  2026-07-25  ')).toBe(Date.UTC(2026, 6, 25));
+  });
+
+  it('rejects a day that does not exist rather than rolling it into the next month', () => {
+    // `Date.parse('2026-02-31')` happily answers 3 March — an expiry silently moved by two days.
+    expect(parseExpiryCell('2026-02-31')).toBeNull();
+    expect(parseExpiryCell('2026-13-01')).toBeNull();
+  });
+
+  it('rejects an ambiguous or free-form date instead of guessing which half is the month', () => {
+    for (const cell of ['07/08/2026', '25 July 2026', '2026/07/25', 'next Tuesday', '1784937600000']) {
+      expect(parseExpiryCell(cell)).toBeNull();
+    }
+  });
+});
+
+describe('parseTagsCell (issue #141)', () => {
+  it('splits on the comma the tag editor itself reserves, trimming and dropping blanks', () => {
+    expect(parseTagsCell('fragile, heavy ,,on-loan')).toEqual(['fragile', 'heavy', 'on-loan']);
+    expect(parseTagsCell('   ')).toEqual([]);
+  });
+});
+
+describe('buildCatalogImportPlan — identity columns (issue #141)', () => {
+  it('auto-maps barcode / serial-number / expiry / tag headers and carries them onto a create', () => {
+    const csv =
+      'name,barcode,serialNumber,expiryDate,tags\r\n' +
+      'Milk,5012345678900,SN-4417,2026-08-01,"perishable, fridge"\r\n';
+    const plan = buildCatalogImportPlan(csv, null, []);
+
+    expect(plan.errors).toEqual([]);
+    const [created] = plan.create;
+    expect(created!.input.barcode).toBe('5012345678900');
+    expect(created!.input.serialNumber).toBe('SN-4417');
+    expect(created!.input.expiryDate).toBe(Date.UTC(2026, 7, 1));
+    expect(created!.tags).toEqual(['perishable', 'fridge']);
+  });
+
+  it('auto-maps the common spreadsheet spellings of each column', () => {
+    const mapping = inferColumnMapping(['GTIN', 'Serial No.', 'Best before', 'Tags']);
+    expect(mapping).toEqual(['barcode', 'serialNumber', 'expiryDate', 'tags']);
+  });
+
+  it('leaves a bare "Serial" column to a same-named custom field rather than shadowing it', () => {
+    // A short word like this is far more likely to be somebody's custom field than the core
+    // serial-number column, so only the unambiguous spellings are core synonyms.
+    const field: CategoryField = {
+      id: 'f-serial',
+      categoryId: 'c1',
+      name: 'Serial',
+      fieldType: 'TEXT',
+      required: false,
+      options: null,
+      position: 0,
+      updatedAt: 0,
+    };
+    expect(inferColumnMapping(['Serial'], [field])).toEqual([{ fieldId: 'f-serial' }]);
+  });
+
+  it('reports an unreadable expiry cell rather than importing the row with no expiry date', () => {
+    const csv = 'name,expiryDate\r\nMilk,07/08/2026\r\n';
+    const plan = buildCatalogImportPlan(csv, null, []);
+
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/Expiry date: "07\/08\/2026" is not a date/);
+  });
+
+  it('updates the three item columns on a matched row, and clears one whose cell is blank', () => {
+    const existing = stubItem('i1', 'Milk');
+    const csv = 'name,barcode,serialNumber,expiryDate\r\nMilk,,SN-9,2026-08-01\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [existing]);
+
+    expect(plan.update).toHaveLength(1);
+    expect(plan.update[0]!.input).toMatchObject({
+      barcode: null,
+      serialNumber: 'SN-9',
+      expiryDate: Date.UTC(2026, 7, 1),
+    });
+  });
+
+  it('leaves tags untouched when no tag column is mapped, and clears them when one is blank', () => {
+    const existing = stubItem('i1', 'Milk');
+    const untouched = buildCatalogImportPlan('name\r\nMilk\r\n', null, [existing]);
+    expect(untouched.update[0]!.tags).toBeUndefined();
+
+    const cleared = buildCatalogImportPlan('name,tags\r\nMilk,\r\n', null, [existing]);
+    expect(cleared.update[0]!.tags).toEqual([]);
+  });
+});
+
+describe('applyCatalogImportPlan — tags land through the tag repository (:memory:)', () => {
+  let driver: MemoryDriver;
+  let items: ItemRepository;
+  let tags: TagRepository;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    items = new ItemRepository(driver);
+    tags = new TagRepository(driver);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  it('auto-creates the tags an imported row names and assigns them to the item', async () => {
+    const plan = buildCatalogImportPlan('name,tags\r\nMilk,"perishable, fridge"\r\n', null, []);
+    const result = await applyCatalogImportPlan(plan, items, undefined, tags);
+
+    expect(result.created).toBe(1);
+    expect(result.rows[0]!.error).toBeUndefined();
+
+    const page = await items.list({ limit: 10 });
+    const created = page.rows.find((r) => r.name === 'Milk')!;
+    expect((await tags.getForItem(created.id)).map((t) => t.name)).toEqual(['fridge', 'perishable']);
+  });
+
+  it('reuses an existing tag case-insensitively rather than duplicating the dictionary', async () => {
+    await tags.create('Fragile');
+    const plan = buildCatalogImportPlan('name,tags\r\nVase,fragile\r\n', null, []);
+    await applyCatalogImportPlan(plan, items, undefined, tags);
+
+    const dictionary = await tags.list({ limit: 10 });
+    expect(dictionary.rows.map((t) => t.name)).toEqual(['Fragile']);
+  });
+
+  it('replaces an existing item’s whole tag set, so a blank cell clears it', async () => {
+    const item = await items.create({ name: 'Vase', locationId: UNASSIGNED_LOCATION_ID });
+    await tags.setForItem(item.id, ['fragile', 'heavy']);
+
+    const plan = buildCatalogImportPlan('name,tags\r\nVase,\r\n', null, [item]);
+    const result = await applyCatalogImportPlan(plan, items, undefined, tags);
+
+    expect(result.updated).toBe(1);
+    expect(await tags.getForItem(item.id)).toEqual([]);
+  });
+
+  it('reports the tags as ignored when no tag repository is supplied, without failing the item', async () => {
+    const plan = buildCatalogImportPlan('name,tags\r\nVase,fragile\r\n', null, []);
+    const result = await applyCatalogImportPlan(plan, items);
+
+    expect(result.created).toBe(1);
+    expect(result.rows[0]!.error).toMatch(/tags were ignored/i);
   });
 });

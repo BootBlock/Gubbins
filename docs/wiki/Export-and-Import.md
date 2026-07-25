@@ -105,6 +105,27 @@ going through the item importer first.
 > columns are ignored on a row that updates one, and on any row that isn't a consumable at all.
 
 > **ℹ️ Note**
+> A file can also carry an item's **barcode**, **serial number**, **expiry date** and **tags**,
+> and the **Catalogue CSV** export writes all four — so a whole catalogue can be loaded from a
+> spreadsheet and be [[scannable|Camera-Scanning]] straight away, instead of needing every
+> barcode typed in afterwards.
+>
+> - **Barcode** — the retail barcode (GTIN / EAN / UPC) printed on the article; a column headed
+>   any of those names is picked up automatically. This is what the scanner looks an item up by.
+> - **Serial number** — the maker's per-unit identifier. Headings `Serial number` and `Serial no`
+>   are recognised; a bare **Serial** is left alone, in case that's one of your own
+>   [[custom fields|Custom-Fields-and-Capabilities]].
+> - **Expiry date** — must be written as **`YYYY-MM-DD`** (`2026-08-01`), which is what the export
+>   writes. Anything else — `01/08/2026`, `1 Aug 2026` — is flagged in the review rather than
+>   guessed at, because `07/08/2026` means August here and July in America, and a guess would
+>   quietly mis-date a perishable by a month. Headings like `Expiry`, `Best before` and `Use by`
+>   all map to it.
+> - **Tags** — one cell holding a **comma-separated** list (`perishable, fridge`). Names you
+>   don't already use are created, and ones you do are reused whichever case you type — exactly
+>   as when you type them into an item. The cell replaces the item's *whole* tag set, so a blank
+>   one clears its tags; leave the column out of the file altogether to leave existing tags alone.
+
+> **ℹ️ Note**
 > Numbers copied straight out of a spreadsheet are read as they appear, so a quantity written
 > `1,500` imports as one thousand five hundred. A **quantity** (or reorder point / reorder
 > quantity) may carry a trailing unit the way a hand-written parts list does — `3 pcs` and

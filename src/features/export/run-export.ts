@@ -19,11 +19,13 @@ import {
   getItemRepository,
   getLocationRepository,
   getProjectRepository,
+  getTagRepository,
   type Checkout,
   type Contact,
   type Item,
 } from '@/db/repositories';
 import { getReportRepository } from '@/db/repositories';
+import { bucketIds } from '@/features/inventory/id-buckets';
 import { readImageBlob } from '@/features/images/opfs-images';
 import { download } from './download';
 import { summariseBudget } from '@/features/projects/budget';
@@ -214,6 +216,26 @@ async function collectCustomFieldColumns(items: readonly Item[]): Promise<{
   return { columns, valuesByItem };
 }
 
+/**
+ * Resolve each item's tag names for the catalogue export (issue #141).
+ *
+ * Tags live in the `item_tags` join rather than on the item row, so they are read separately —
+ * one bounded `listForItems` per {@link bucketIds} slice, rather than a single `IN (…)` the width
+ * of the whole catalogue. Items with no tags are simply absent from the map.
+ */
+async function collectItemTags(items: readonly Item[]): Promise<Map<string, string[]>> {
+  const repo = getTagRepository();
+  const byItem = new Map<string, string[]>();
+  for (const bucket of bucketIds(items.map((i) => i.id))) {
+    for (const { itemId, name } of await repo.listForItems(bucket)) {
+      const names = byItem.get(itemId);
+      if (names) names.push(name);
+      else byItem.set(itemId, [name]);
+    }
+  }
+  return byItem;
+}
+
 /** Page through a repository list to gather every item whose primary location matches (§4.5). */
 async function collectLocationItems(locationId: string, includeInactive: boolean): Promise<Item[]> {
   const repo = getItemRepository();
@@ -325,9 +347,12 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
     // stored value per item. Reads go through CategoryRepository.resolveItemFields —
     // the existing lenient-defaulting read path, never raw SQL.
     const { columns, valuesByItem } = await collectCustomFieldColumns(allItems);
+    // Tags come from their own join (issue #141), so they are read alongside rather than
+    // being carried on the item row.
+    const tagsByItem = await collectItemTags(allItems);
     const name = `gubbins-catalog-${stamp()}.csv`;
     download(
-      new Blob([buildCatalogCsv(allItems, columns, valuesByItem)], {
+      new Blob([buildCatalogCsv(allItems, columns, valuesByItem, tagsByItem)], {
         type: 'text/csv;charset=utf-8',
       }),
       name,

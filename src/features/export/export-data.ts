@@ -6,6 +6,7 @@
  */
 import type { Checkout, Contact, FieldType, Item, ItemHistoryEntry } from '@/db/repositories';
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
+import { toDateInputValue } from '@/lib/date-input';
 import { toCsv, type TabularCell, type TabularColumn } from './tabular-export';
 
 /** Schema version of the JSON data-export payload (independent of the backup format's own). */
@@ -89,6 +90,10 @@ const CATALOG_CSV_COLUMNS = [
   'description',
   'notes',
   'sku',
+  // Scanner + per-unit identity (issue #141). The barcode is what the scanner looks an item up
+  // by, so a catalogue that round-trips without it comes back unscannable.
+  'barcode',
+  'serialNumber',
   'quantity',
   'locationId',
   'categoryId',
@@ -110,10 +115,16 @@ const CATALOG_CSV_COLUMNS = [
   'depth',
   'batchNumber',
   'lotNumber',
+  // Perishable expiry (issue #141), written as the `YYYY-MM-DD` calendar day the stored instant
+  // falls on — the app-wide date-input convention, and the one form the importer reads back.
+  'expiryDate',
   'condition',
   'reorderPoint',
   'reorderQty',
   'isUnlimited',
+  // Freeform tags as a comma-separated list (issue #141). Not a column on the item row, so its
+  // value comes from `tagsByItem` rather than {@link catalogCsvValue}.
+  'tags',
 ] as const;
 
 type CatalogCsvColumn = (typeof CATALOG_CSV_COLUMNS)[number];
@@ -126,6 +137,15 @@ function catalogCsvValue(item: Item, col: CatalogCsvColumn): unknown {
   // `sku` and `mpn` refer to the same field; export as `sku` so the importer
   // auto-maps it without requiring a manual column selection.
   if (col === 'sku') return item.mpn;
+  // The expiry instant is written as its calendar day through the shared date-input seam
+  // (`@/lib/date-input`), so it round-trips exactly through the importer — which reads the same
+  // `YYYY-MM-DD` form back to the same midnight-UTC instant — in every timezone. Anything that
+  // is not a usable instant leaves the cell blank rather than throwing: `toDateInputValue` calls
+  // `toISOString`, which raises on a non-finite value, and one unusable row must not cost the
+  // user the whole export file.
+  if (col === 'expiryDate') {
+    return Number.isFinite(item.expiryDate) ? toDateInputValue(item.expiryDate) : null;
+  }
   // Gauge configuration lives in the derived `gauge` sub-object (null for every other tracking
   // mode, which leaves these cells blank). Only the stored parameters are exported: the derived
   // `percentageRemaining` / `currentGrossWeight` are computed from them on the way back in.
@@ -165,11 +185,18 @@ const IMAGE_CELL_MARKER = '[image]';
  * value is read from `valuesByItem` (item id → field id → stored value, defaulting
  * to blank). The custom columns are deduplicated by field id (first wins) so a field
  * shared by several items yields a single column.
+ *
+ * `tagsByItem` (item id → tag names, issue #141) fills the `tags` column. Tags live in their own
+ * M:N join rather than on the item row, so they have to be read separately and handed in; an
+ * item that is absent from the map simply has no tags. The names are joined with `,` — the
+ * separator the tag editor itself reserves, so no tag name can contain one — and the shared
+ * serialiser quotes the cell.
  */
 export function buildCatalogCsv(
   items: readonly Item[],
   customFields: readonly CatalogCustomFieldColumn[] = [],
   valuesByItem: ReadonlyMap<string, Readonly<Record<string, string | null>>> = new Map(),
+  tagsByItem: ReadonlyMap<string, readonly string[]> = new Map(),
 ): string {
   const seen = new Set<string>();
   const custom = customFields.filter((c) => (seen.has(c.fieldId) ? false : (seen.add(c.fieldId), true)));
@@ -177,7 +204,10 @@ export function buildCatalogCsv(
   const columns: readonly TabularColumn<Item>[] = [
     ...CATALOG_CSV_COLUMNS.map((col) => ({
       header: col,
-      value: (item: Item) => catalogCsvValue(item, col) as TabularCell,
+      value: (item: Item) =>
+        (col === 'tags'
+          ? (tagsByItem.get(item.id)?.join(', ') ?? null)
+          : catalogCsvValue(item, col)) as TabularCell,
     })),
     ...custom.map((c) => ({
       header: c.header,

@@ -30,6 +30,7 @@ import {
   getCategoryRepository,
   getItemRepository,
   getLocationRepository,
+  getTagRepository,
   type CategoryField,
   type Item,
 } from '@/db/repositories';
@@ -439,10 +440,18 @@ function ImportWorkbench({
     setApplying(true);
     setApplyError(null);
     try {
-      const res = await applyCatalogImportPlan(plan, getItemRepository(), getCategoryRepository());
+      const res = await applyCatalogImportPlan(
+        plan,
+        getItemRepository(),
+        getCategoryRepository(),
+        getTagRepository(),
+      );
       setResult(res);
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+      // A mapped tag column can auto-create tags, so the dictionary itself has moved — the
+      // per-item tag reads already sit under the items() prefix `invalidateItems` covers.
+      void client.invalidateQueries({ queryKey: inventoryKeys.tags() });
     } catch (err) {
       setApplyError(describeError(err, 'The import failed unexpectedly.'));
     } finally {
