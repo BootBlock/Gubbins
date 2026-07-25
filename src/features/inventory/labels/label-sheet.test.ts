@@ -38,11 +38,12 @@ describe('barcodeWidthMm', () => {
     expect(barcodeWidthMm(template({ columns: 4 }))).toBe(37);
   });
 
-  it('is the die-cut label less its padding', () => {
+  it('is the die-cut label less its safe area and padding', () => {
     const dieCut = (widthMm: number) =>
       barcodeWidthMm(template({ sizeMode: 'die-cut', labelWidthMm: widthMm, labelHeightMm: 30 }));
-    expect(dieCut(40)).toBe(37);
-    expect(dieCut(100)).toBe(97);
+    // 2 × (1mm safe area + 1.5mm padding) comes off the physical width (issue #337).
+    expect(dieCut(40)).toBe(35);
+    expect(dieCut(100)).toBe(95);
   });
 });
 
@@ -263,5 +264,30 @@ describe('buildLabelSheetHtml', () => {
       template({ sizeMode: 'die-cut', labelWidthMm: 4, labelHeightMm: 9999 }),
     );
     expect(html).toContain('@page{size:10mm 300mm;margin:0}');
+  });
+
+  it('insets die-cut content behind a safe area and clips overflow at it (issue #337)', () => {
+    const html = buildLabelSheetHtml(
+      [{ id: ID_A, name: 'Resistor 10k' }],
+      BASE,
+      template({ sizeMode: 'die-cut', labelWidthMm: 40, labelHeightMm: 30 }),
+    );
+    // The page is still the label's exact size — the tolerance is taken out of the content,
+    // never out of the page, or the printer would receive the wrong media size.
+    expect(html).toContain('@page{size:40mm 30mm;margin:0}');
+    expect(html).toContain('width:40mm;height:30mm');
+    // 1mm safe area + 1.5mm padding, so nothing is laid out within 1mm of the die edge.
+    expect(html).toContain('padding:2.5mm');
+    // Surplus content is cut at the safe boundary rather than bleeding to the physical edge.
+    expect(html).toContain('overflow-clip-margin:content-box');
+  });
+
+  it('keeps the A4 sheet page margin and cell padding unchanged', () => {
+    // The safe-area inset is a die-cut concern: an A4 page already carries a 10mm margin,
+    // wider than any printer's unprintable edge.
+    const html = buildLabelSheetHtml([{ id: ID_A, name: 'X' }], BASE, template());
+    expect(html).toContain('@page{size:A4;margin:10mm}');
+    expect(html).toContain('padding:3mm');
+    expect(html).not.toContain('overflow-clip-margin');
   });
 });

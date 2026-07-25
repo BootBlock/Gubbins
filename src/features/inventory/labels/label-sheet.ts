@@ -83,8 +83,30 @@ const SHEET_CELL_PADDING_MM = 3;
 const SHEET_BARCODE_MAX_MM = 40;
 /** Cap on a text line's width in an A4 label cell. */
 const SHEET_TEXT_MAX_MM = 40;
-/** Padding inside a die-cut label (each side). */
+/** Padding between a die-cut label's safe area and its content (each side). */
 const DIE_CUT_PADDING_MM = 1.5;
+/**
+ * Safe area kept clear at every edge of a die-cut label (issue #337).
+ *
+ * A die-cut page is printed at the label's exact size, so content laid out to the very edge
+ * only survives if the media lines up perfectly with the page. It doesn't: a label roll
+ * drifts a fraction of a millimetre as it feeds, and the die itself is cut to a tolerance —
+ * so an edge-to-edge design loses whatever the drift happens to be off the side that moved.
+ *
+ * 1 mm covers the drift a roll-fed thermal printer typically shows, and it is deliberately
+ * modest: an inset is paid for out of the label, and the smallest sizes on offer (down to a
+ * 10 mm edge) have very little to give. It is not enough to rescue a die-cut page sent to an
+ * ordinary inkjet, whose unprintable margin is several millimetres wide and which scales the
+ * page to its own paper regardless — the print dialogs say so instead, since nothing here can
+ * detect the printer.
+ */
+const DIE_CUT_SAFE_AREA_MM = 1;
+/**
+ * Total inset from a die-cut label's physical edge to its content — the safe area plus the
+ * content's own padding. The stylesheet's `padding` and {@link barcodeWidthMm}'s die-cut
+ * measurement are both this, so what is measured is what prints.
+ */
+const DIE_CUT_CONTENT_INSET_MM = DIE_CUT_SAFE_AREA_MM + DIE_CUT_PADDING_MM;
 
 /**
  * Truncate a label set to {@link MAX_LABELS}, keeping the first labels.
@@ -176,18 +198,34 @@ function renderCodes(
 }
 
 /**
+ * The physical size, in mm, a die-cut label actually prints at: the requested dimensions
+ * clamped to the supported range. The one place that clamp is applied, so the `@page` size,
+ * the width a barcode is measured against, and the print dialogs' printer notice (issue #337)
+ * can only ever agree about how big the label is.
+ */
+export function dieCutSizeMm(
+  widthMm: number,
+  heightMm: number,
+): { readonly widthMm: number; readonly heightMm: number } {
+  return {
+    widthMm: clampLabelDimension(widthMm, DEFAULT_LABEL_TEMPLATE.labelWidthMm),
+    heightMm: clampLabelDimension(heightMm, DEFAULT_LABEL_TEMPLATE.labelHeightMm),
+  };
+}
+
+/**
  * The width, in mm, a printed Code 128 has to fit across under `template` — what the
  * minimum-module-width floor is measured against (issue #331).
  *
  * Derived from the very constants the print stylesheets below are built from, so the
  * measurement and the CSS that produces it cannot drift apart: on an A4 sheet a barcode
  * spans its grid cell, capped at {@link SHEET_BARCODE_MAX_MM}; on a die-cut label it
- * spans the full label less its padding.
+ * spans the full label less its {@link DIE_CUT_CONTENT_INSET_MM} inset.
  */
 export function barcodeWidthMm(template: LabelTemplate): number {
   if (template.sizeMode === 'die-cut') {
-    const width = clampLabelDimension(template.labelWidthMm, DEFAULT_LABEL_TEMPLATE.labelWidthMm);
-    return Math.max(0, width - DIE_CUT_PADDING_MM * 2);
+    const { widthMm } = dieCutSizeMm(template.labelWidthMm, template.labelHeightMm);
+    return Math.max(0, widthMm - DIE_CUT_CONTENT_INSET_MM * 2);
   }
   const columns = clampColumns(template.columns);
   const printable = A4_WIDTH_MM - SHEET_PAGE_MARGIN_MM * 2;
@@ -288,10 +326,15 @@ function a4SheetDocument(cellsHtml: string, columns: number): string {
  * each `.label` match the chosen physical `labelWidthMm × labelHeightMm`; the code fills
  * the available height (staying square) and the text sits beneath it, so the same label
  * scales to whatever roll is loaded.
+ *
+ * Content is inset by {@link DIE_CUT_CONTENT_INSET_MM} so nothing is laid out into the
+ * safe area a drifting roll needs (issue #337). Overflow is clipped at the **content** box
+ * rather than the padding box, so a label with more text than fits loses the surplus at the
+ * safe boundary instead of bleeding out to the physical edge; `overflow:hidden` precedes it
+ * as the fallback where `overflow:clip` isn't understood.
  */
 function dieCutDocument(cellsHtml: string, template: LabelTemplate): string {
-  const w = clampLabelDimension(template.labelWidthMm, DEFAULT_LABEL_TEMPLATE.labelWidthMm);
-  const h = clampLabelDimension(template.labelHeightMm, DEFAULT_LABEL_TEMPLATE.labelHeightMm);
+  const { widthMm: w, heightMm: h } = dieCutSizeMm(template.labelWidthMm, template.labelHeightMm);
   return (
     '<!doctype html>' +
     '<html lang="en-GB"><head><meta charset="utf-8">' +
@@ -301,7 +344,8 @@ function dieCutDocument(cellsHtml: string, template: LabelTemplate): string {
     '*{box-sizing:border-box}' +
     'body{margin:0;font-family:system-ui,-apple-system,sans-serif;color:#000}' +
     `.label{width:${w}mm;height:${h}mm;display:flex;flex-direction:column;align-items:center;` +
-    `justify-content:center;gap:1mm;padding:${DIE_CUT_PADDING_MM}mm;overflow:hidden;text-align:center;` +
+    `justify-content:center;gap:1mm;padding:${DIE_CUT_CONTENT_INSET_MM}mm;overflow:hidden;` +
+    'overflow:clip;overflow-clip-margin:content-box;text-align:center;' +
     'break-after:page;break-inside:avoid}' +
     '.label:last-child{break-after:auto}' +
     '.label .qr{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center}' +

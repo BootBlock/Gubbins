@@ -63,3 +63,20 @@ describe('PrintLocationLabelDialog — barcode readability (issue #331)', () => 
     expect(screen.getByTestId('label-cell').querySelector('svg')).toBeNull();
   });
 });
+
+describe('PrintLocationLabelDialog — die-cut print target (issue #337)', () => {
+  it('cautions about the printer for a die-cut size, naming it', () => {
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    // The A4 grid prints on ordinary paper, so there is nothing to caution about.
+    expect(screen.queryByTestId('loc-label-die-cut-printer')).toBeNull();
+
+    chooseOption('loc-label-size', /40 .* 30 mm/);
+
+    const notice = screen.getByTestId('loc-label-die-cut-printer');
+    expect(notice.textContent).toContain('40 × 30 mm');
+    expect(notice.textContent).toContain('A4 sheet (grid)');
+
+    chooseOption('loc-label-size', /A4 sheet/);
+    expect(screen.queryByTestId('loc-label-die-cut-printer')).toBeNull();
+  });
+});
