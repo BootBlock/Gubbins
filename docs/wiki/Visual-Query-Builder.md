@@ -21,9 +21,15 @@ all build the same query:
 
 - **Match all / any.** The **AND** / **OR** toggle at the top of a group decides whether items
   must match *all* of its conditions or *any* of them.
+- **NOT.** The **NOT** button beside it flips the whole group, keeping the items that *don't*
+  match — *"not in the attic"*, *"nothing from this manufacturer"*. The wording next to the toggle
+  updates to say what the group now does.
 - **Add condition.** Select **Add condition** to add a rule — pick a field (name, quantity,
   category, a [[capability|Custom-Fields-and-Capabilities]], a custom field…), an operator, and a
   value.
+- **Has any value.** Most fields offer a **has any value** operator, which asks only whether the
+  field is filled in. Pair it with **NOT** on the group for questions like *"items with no part
+  number"* or *"anything without a category"*.
 - **Add group.** Select **Add group** to nest a sub-group with its own AND/OR — this is how you
   express things like *"(low quantity **OR** on order) **AND** in the garage"*.
 - **Clear.** Remove everything and start over with **Clear**.

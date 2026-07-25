@@ -49,10 +49,23 @@ describe('custom-field helpers (Phase 71)', () => {
     ]);
   });
 
-  it('labels HAS_CAPABILITY as "has any value" on a custom field but "has capability" elsewhere', () => {
+  it('labels HAS_CAPABILITY as "has any value" everywhere except a capability', () => {
     expect(operatorLabelFor('HAS_CAPABILITY', 'customfield')).toBe('has any value');
+    expect(operatorLabelFor('HAS_CAPABILITY', 'text')).toBe('has any value');
+    expect(operatorLabelFor('HAS_CAPABILITY', 'presence')).toBe('has any value');
     expect(operatorLabelFor('HAS_CAPABILITY', 'capability')).toBe('has capability');
     expect(operatorLabelFor('CONTAINS', 'customfield')).toBe('contains');
+  });
+
+  it('offers presence on text and number fields so a has: term round-trips (issue #139)', () => {
+    expect(operatorsForKind('text')).toEqual(['CONTAINS', 'EQUALS', 'HAS_CAPABILITY']);
+    expect(operatorsForKind('number')).toEqual(['GREATER_THAN', 'LESS_THAN', 'EQUALS', 'HAS_CAPABILITY']);
+  });
+
+  it('offers only presence for an id-keyed field with no value picker (issue #139)', () => {
+    expect(kindOfField('category')).toBe('presence');
+    expect(operatorsForKind('presence')).toEqual(['HAS_CAPABILITY']);
+    expect(fieldSelectValue('category')).toBe('category');
   });
 
   it('offers only EQUALS (read as "is") for the boolean favourite field (issue #23)', () => {

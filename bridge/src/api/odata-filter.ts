@@ -7,18 +7,24 @@
  *
  * Supported subset (deliberately small — this is not full OData `$filter`):
  *
- *   - comparisons: `eq`, `gt`, `lt`   (e.g. `quantity gt 10`, `name eq 'M3 Bolt'`)
+ *   - comparisons: `eq`, `ne`, `gt`, `lt`   (e.g. `quantity gt 10`, `name ne 'M3 Bolt'`)
  *   - the `contains(field,'text')` function (free-text CONTAINS, FTS-backed)
- *   - boolean composition: `and`, `or`, and parentheses for grouping
+ *   - boolean composition: `and`, `or`, `not`, and parentheses for grouping
  *   - literals: single-quoted strings (`''` escapes a quote), numbers, `true`/`false`
  *
- * Everything else (`ne`/`ge`/`le`, `not`, `startswith`/`endswith`, arithmetic, lambdas, …) is
- * rejected with a {@link BadQueryError} naming the supported operators, so the boundary is
- * explicit. Fields are validated against a small allow-list mapped onto the AST's own field
- * vocabulary; an unknown field is a `400`.
+ * Everything else (`ge`/`le`, `startswith`/`endswith`, arithmetic, lambdas, …) is rejected
+ * with a {@link BadQueryError} naming the supported operators, so the boundary is explicit.
+ * Fields are validated against a small allow-list mapped onto the AST's own field vocabulary;
+ * an unknown field is a `400`.
+ *
+ * `not` and `ne` both lower to the AST's negated GROUP (issue #139), so — exactly like the
+ * app's `-term` syntax — they inherit its NULL-safe reading: `location ne 'x'` includes rows
+ * with *no* location, which is what the question means even though strict OData three-valued
+ * logic would drop them.
  */
 import {
   isGroupNode,
+  negated,
   type ASTGroupNode,
   type FilterCondition,
   type FilterOperator,
@@ -55,7 +61,7 @@ const COMPARISON_OPS: Readonly<Record<string, FilterOperator>> = {
 };
 
 /** Operators recognised by OData but deliberately unsupported here — rejected with a clear reason. */
-const UNSUPPORTED_OPS = new Set(['ne', 'ge', 'le']);
+const UNSUPPORTED_OPS = new Set(['ge', 'le']);
 
 /**
  * Compile a raw `$filter` string into a {@link SearchAST}. Throws {@link BadQueryError} on any
@@ -187,8 +193,9 @@ class Parser {
     return parts.length === 1 ? parts[0]! : { type: 'GROUP', logicalOperator: 'AND', conditions: parts };
   }
 
-  /** primary := '(' orExpr ')' | functionCall | comparison */
+  /** primary := 'not' primary | '(' orExpr ')' | functionCall | comparison */
   private parsePrimary(): Node {
+    if (this.matchKeyword('not')) return negated(this.parsePrimary());
     if (this.peek()?.kind === 'lparen') {
       this.pos += 1;
       const node = this.parseOr();
@@ -201,18 +208,25 @@ class Parser {
   }
 
   /** comparison := field op literal */
-  private parseComparison(field: string): FilterCondition {
+  private parseComparison(field: string): Node {
     const opWord = this.expectWord('a comparison operator').toLowerCase();
     if (UNSUPPORTED_OPS.has(opWord)) {
       throw new BadQueryError(
-        `Operator "${opWord}" is not supported in this OData subset (supported: eq, gt, lt, contains, and, or).`,
+        `Operator "${opWord}" is not supported in this OData subset (supported: eq, ne, gt, lt, contains, and, or, not).`,
       );
     }
-    const operator = COMPARISON_OPS[opWord];
+    // `ne` has no AST operator of its own: it is `eq` under the negated GROUP (issue #139).
+    const negate = opWord === 'ne';
+    const operator = negate ? 'EQUALS' : COMPARISON_OPS[opWord];
     if (operator === undefined) {
-      throw new BadQueryError(`Unknown operator "${opWord}" in $filter (supported: eq, gt, lt).`);
+      throw new BadQueryError(`Unknown operator "${opWord}" in $filter (supported: eq, ne, gt, lt).`);
     }
-    return { field: this.resolveField(field), operator, value: this.parseLiteral() };
+    const condition: FilterCondition = {
+      field: this.resolveField(field),
+      operator,
+      value: this.parseLiteral(),
+    };
+    return negate ? negated(condition) : condition;
   }
 
   /** functionCall := 'contains' '(' field ',' string ')' */

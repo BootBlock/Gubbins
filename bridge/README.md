@@ -498,16 +498,21 @@ pagination is stable. An unknown field is a `400`.
 run through the single parameterised `parseASTtoSQL` (so it can never drift from the app's search
 semantics and has no injection surface — it is **never** bespoke SQL). Supported subset:
 
-- comparisons: `eq`, `gt`, `lt` (e.g. `quantity gt 10`, `name eq 'M3 Bolt'`)
+- comparisons: `eq`, `ne`, `gt`, `lt` (e.g. `quantity gt 10`, `name eq 'M3 Bolt'`)
 - the `contains(field, 'text')` function (free-text, FTS-backed)
-- boolean composition with `and`, `or`, and parentheses
+- boolean composition with `and`, `or`, `not`, and parentheses
 - literals: single-quoted strings (`''` escapes a quote), numbers, `true`/`false`
 - filterable fields: `name`, `description`, `notes`, `mpn`, `manufacturer`, `serialNumber`, `quantity`,
   `category`(`Id`), `location`(`Id`)
 
-Anything outside the subset (`ne`/`ge`/`le`, `not`, `startswith`/`endswith`, arithmetic, lambdas,
-an unknown field) is a `400` naming what *is* supported. When `$filter` is present it is the sole
-row filter, so the `location`/`category`/`$search` query params are ignored.
+Anything outside the subset (`ge`/`le`, `startswith`/`endswith`, arithmetic, lambdas, an unknown
+field) is a `400` naming what *is* supported. When `$filter` is present it is the sole row filter,
+so the `location`/`category`/`$search` query params are ignored.
+
+`not` binds to the single term or bracket that follows it, and `ne` is simply `not … eq …`. Both
+inherit the app's reading of absence: `locationId ne 'l1'` **includes** rows with no location,
+because "not in that location" is what the question means — strict OData three-valued logic would
+drop them instead.
 
 **`$count`** — `$count=true` computes the grand total of matching rows across *all* pages and
 returns it as `pagination.total` alongside the page (it costs one extra `COUNT` query, so it is

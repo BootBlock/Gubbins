@@ -65,11 +65,56 @@ describe('parseODataFilter — supported grammar', () => {
   });
 });
 
+describe('parseODataFilter — negation (issue #139)', () => {
+  it('compiles ne to an EQUALS under a negated group', () => {
+    expect(parseODataFilter("name ne 'M3 Bolt'")).toEqual({
+      type: 'GROUP',
+      logicalOperator: 'AND',
+      negate: true,
+      conditions: [{ field: 'name', operator: 'EQUALS', value: 'M3 Bolt' }],
+    });
+  });
+
+  it('compiles not over a single comparison', () => {
+    expect(parseODataFilter("not name eq 'M3 Bolt'")).toEqual(parseODataFilter("name ne 'M3 Bolt'"));
+  });
+
+  it('compiles not over a bracketed group, negating it in place', () => {
+    const ast = parseODataFilter("not (name eq 'a' or name eq 'b')");
+    expect(ast.logicalOperator).toBe('OR');
+    expect(ast.negate).toBe(true);
+    expect(ast.conditions).toHaveLength(2);
+  });
+
+  it('compiles not over a function call', () => {
+    expect(parseODataFilter("not contains(name,'bolt')")).toEqual({
+      type: 'GROUP',
+      logicalOperator: 'AND',
+      negate: true,
+      conditions: [{ field: 'name', operator: 'CONTAINS', value: 'bolt' }],
+    });
+  });
+
+  it('binds not to one primary, so "not a and b" is "(not a) and b"', () => {
+    const ast = parseODataFilter("not name eq 'a' and quantity gt 1");
+    expect(ast.logicalOperator).toBe('AND');
+    expect(ast.negate).toBeUndefined();
+    expect(ast.conditions).toHaveLength(2);
+    expect(ast.conditions[0]).toMatchObject({ negate: true });
+    expect(ast.conditions[1]).toMatchObject({ operator: 'GREATER_THAN' });
+  });
+
+  it('cancels a double negation', () => {
+    expect(parseODataFilter("not not name eq 'a'")).toEqual(parseODataFilter("name eq 'a'"));
+  });
+});
+
 describe('parseODataFilter — rejected input', () => {
   const bad: [string, RegExp][] = [
     ['quantity ge 10', /not supported/],
-    ['quantity ne 10', /not supported/],
+    ['quantity le 10', /not supported/],
     ['bogus eq 1', /Cannot filter/],
+    ['not', /Expected a field name or function/],
     ["startswith(name,'a')", /not supported/],
     ['quantity gt', /before a value|Expected a value/],
     ["name eq 'x' extra", /trailing input/],

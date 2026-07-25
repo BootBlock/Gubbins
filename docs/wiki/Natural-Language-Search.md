@@ -18,7 +18,8 @@ looking for and combines them:
   *"in stock"*, *"available"*.
 - **Quantity comparisons** — *"more than 10"*, *"fewer than 5"*, *"at least 10"*,
   *"exactly 3"*, *"5 in stock"* (digits or words both work).
-- **Location** — *"in the garage"*, *"on shelf 2"* (matched against your location names).
+- **Location** — *"in the garage"*, *"on shelf 2"* (matched against your location names). Say
+  *"**not** in the garage"* or *"**outside** the garage"* to exclude one instead.
 - **Category** — a category name mentioned in the phrase.
 - **Anything else** — remaining words are matched across each item's **name, description,
   manufacturer and notes** — so a word that only appears in an item's description or notes still

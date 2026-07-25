@@ -75,15 +75,53 @@ Custom category fields work the same way with `field:` (or `cf:`):
 field:material=steel
 ```
 
+## Is it filled in at all?
+
+Use `has:` to find items that carry *any* value for a field — and, with the `-` below, the ones
+that don't:
+
+```
+has:mpn                   items that have a part number
+has:Datasheet             items with a value for the "Datasheet" custom field
+-has:category             items you haven't put in a category yet
+```
+
+`has:` takes the optional fields — description, notes, MPN, manufacturer, barcode, serial number,
+weight, dimensions and `category` — under the same aliases as the table above. A name it doesn't
+recognise is read as one of your own [[custom fields|Custom-Fields-and-Capabilities]]. Asking about
+something every item always has (`has:name`, `has:qty`, `has:location`) is rejected rather than
+answered, since it would match everything.
+
+## Excluding things
+
+Put `-` (or `NOT`) in front of a term to exclude what it matches:
+
+```
+resistor -mfr:acme        resistors, but not the ones made by Acme
+-mpn=LM7805               everything except that exact part number
+-has:Datasheet            items with no datasheet on file
+-(qty<10 OR fav:yes)      neither low-stock nor favourited
+```
+
+`-` applies to the **one** term or bracket immediately after it, so `-mfr:acme resistor` means
+*"not Acme"* **and** *"resistor"*. It is also how you write "not equal to" — there's no `!=`.
+
+> **💡 Tip**
+> Excluding a field also keeps the items that have **nothing** in it. `-mfr:acme` returns items
+> with no manufacturer recorded as well as items made by someone else — which is almost always
+> what you meant.
+
 ## Combining terms
 
 - **Spaces mean AND** — every term must match: `qty<10 mfr:acme`.
 - **`OR`** — either side: `mfr:acme OR mfr:globex`.
 - **Parentheses** group logic: `cap:voltage>3.3 (qty<10 OR mfr:acme)`.
+- **`-` / `NOT`** exclude, and bind tightest of the three.
 
 > **💡 Tip**
-> A value containing a bracket or a `|` must be quoted so it isn't read as grouping — for
-> example `name:"a|b"`.
+> A value containing a bracket, a `|`, or a leading `-` must be quoted so it isn't read as
+> structure — for example `name:"a|b"` or `"-40C"`. A hyphen *inside* a term is always literal, so
+> `mpn:ABC-123` needs no quoting.
 
 > **ℹ️ Note**
 > If a term can't be understood, Gubbins tells you why rather than silently ignoring it — so a

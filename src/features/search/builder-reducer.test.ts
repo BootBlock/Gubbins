@@ -31,6 +31,25 @@ describe('builderReducer (spec §5.1, Tier 3)', () => {
     expect(ast.logicalOperator).toBe('OR');
   });
 
+  it('negates a group, and un-negating drops the flag entirely (issue #139)', () => {
+    const negated = run({ type: 'addCondition', path: [] }, { type: 'setNegate', path: [], negate: true });
+    expect(negated.negate).toBe(true);
+
+    const back = builderReducer(negated, { type: 'setNegate', path: [], negate: false });
+    expect(back.negate).toBeUndefined();
+    expect('negate' in back).toBe(false);
+  });
+
+  it('negates a nested group without touching its parent (issue #139)', () => {
+    const ast = run(
+      { type: 'addGroup', path: [] },
+      { type: 'addCondition', path: [0] },
+      { type: 'setNegate', path: [0], negate: true },
+    );
+    expect(ast.negate).toBeUndefined();
+    expect((ast.conditions[0] as ASTGroupNode).negate).toBe(true);
+  });
+
   it('nests a group and edits inside it', () => {
     const ast = run(
       { type: 'addCondition', path: [] },

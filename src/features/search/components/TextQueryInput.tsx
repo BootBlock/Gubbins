@@ -75,8 +75,8 @@ export function TextQueryInput() {
       <p id={hintId} className="flex items-center gap-1 text-[11px] text-muted-foreground">
         Power search — <code className="font-mono">field:text</code>,{' '}
         <code className="font-mono">qty&gt;10</code>, <code className="font-mono">cap:key&gt;3.3</code>,{' '}
-        <code className="font-mono">OR</code> / <code className="font-mono">( )</code>; press Enter to fill
-        the builder.
+        <code className="font-mono">-not</code>, <code className="font-mono">OR</code> /{' '}
+        <code className="font-mono">( )</code>; press Enter to fill the builder.
         <Tooltip
           content={[
             'Type a query and press **Enter** to fill the builder below.',
@@ -84,6 +84,8 @@ export function TextQueryInput() {
             '- `field:text` — match a field (e.g. `mfr:acme`, `name:resistor`)',
             '- `qty>10`, `qty<10`, `qty=10` — numeric comparisons',
             '- `cap:voltage>3.3` — compare a capability by key',
+            '- `has:mpn` — the field is filled in at all',
+            '- `-mfr:acme` (or `NOT mfr:acme`) — **exclude** a term or `-( … )` group',
             '- combine with `OR` and group with `( )`; terms are **AND**-ed by default',
           ].join('\n')}
           placement="top"

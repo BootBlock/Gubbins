@@ -12,6 +12,11 @@ export function or(...conditions: Array<ASTGroupNode | FilterCondition>): ASTGro
   return { type: 'GROUP', logicalOperator: 'OR', conditions };
 }
 
+/** A negated AND group — the shape `-term` / `NOT (…)` lowers to (issue #139). */
+export function not(...conditions: Array<ASTGroupNode | FilterCondition>): ASTGroupNode {
+  return { type: 'GROUP', logicalOperator: 'AND', negate: true, conditions };
+}
+
 export function leaf(
   field: string,
   operator: FilterOperator,

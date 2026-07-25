@@ -312,6 +312,41 @@ describe('interpretNaturalLanguage — location phrases', () => {
     const locations = conditions.filter((c): c is FilterCondition => 'field' in c && c.field === 'location');
     expect(locations).toHaveLength(1);
   });
+
+  describe('negated location phrases (issue #139)', () => {
+    /** The negated group a "not in <location>" phrase lowers to. */
+    const notInGarage: ASTGroupNode = {
+      type: 'GROUP',
+      logicalOperator: 'AND',
+      negate: true,
+      conditions: [{ field: 'location', operator: 'EQUALS', value: 'loc-garage' }],
+    };
+
+    it.each(['not in the garage', 'not at garage', 'outside the garage'])(
+      'negates the location for "%s"',
+      (phrase) => {
+        expect(singleNode(phrase)).toEqual(notInGarage);
+      },
+    );
+
+    it('echoes the negation back in the recognised label', () => {
+      const result = interpretNaturalLanguage('not in the garage', CONTEXT);
+      expect(result.recognised).toEqual([{ kind: 'location', label: 'Not in Garage' }]);
+    });
+
+    it('keeps the rest of the phrase as an ordinary text search', () => {
+      // The issue's own example: "resistors not in the Attic" — with Garage as the known name.
+      expect(conditionsOf('widgets not in the garage')).toEqual([notInGarage, keywordGroup('widget')]);
+    });
+
+    it('leaves an un-negated location alone', () => {
+      expect(singleCondition('in the garage')).toMatchObject({ field: 'location' });
+    });
+
+    it('drops a "not" that could not be attached rather than searching for the word', () => {
+      expect(singleNode('not widgets')).toEqual(keywordGroup('widget'));
+    });
+  });
 });
 
 describe('interpretNaturalLanguage — category mentions', () => {

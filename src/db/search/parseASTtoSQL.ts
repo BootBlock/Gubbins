@@ -14,6 +14,10 @@
  *   - **Hard recursion cap** of {@link MAX_AST_GROUP_DEPTH} nested GROUP nodes — a
  *     deeper tree throws {@link SearchAstError} rather than risking stack overflow
  *     or catastrophic backtracking.
+ *   - **Negation is a group property, applied once** (issue #139). A group carrying
+ *     {@link ASTGroupNode.negate} has its finished fragment wrapped in a NULL-safe `NOT`,
+ *     so every predicate below it inverts — including the FTS and EXISTS forms that have
+ *     no inverted spelling of their own — without a single translator knowing about it.
  *
  * The fragment is self-contained and parenthesised, so callers simply splice it in:
  *   `SELECT … FROM items WHERE <fragment> ORDER BY …`.
@@ -152,7 +156,18 @@ function translateGroup(node: ASTGroupNode, depth: number): Fragment | null {
 
   if (parts.length === 0) return null;
   const joiner = node.logicalOperator === 'OR' ? ' OR ' : ' AND ';
-  return { sql: `(${parts.join(joiner)})`, params };
+  const sql = `(${parts.join(joiner)})`;
+  if (!node.negate) return { sql, params };
+
+  // Negation (issue #139) wraps the *whole* group once, so it inverts FTS matches and EXISTS
+  // subqueries alike without any predicate translator knowing about it.
+  //
+  // COALESCE is what makes it mean what a person means. SQL three-valued logic makes
+  // `items.location_id = ?` NULL — not false — for an item with no location, and `NOT NULL`
+  // is still NULL, so a plain `NOT (…)` would quietly *drop* every unfiled item from "not in
+  // the Attic". Folding NULL to 0 first reads absence as "doesn't match", so its negation is
+  // "does match" — the answer the question was asking for.
+  return { sql: `(NOT COALESCE(${sql}, 0))`, params };
 }
 
 /** Translate a single leaf condition. */
@@ -217,8 +232,17 @@ function translateItemField(column: string, kind: FieldKind, condition: FilterCo
       const sign = operator === 'GREATER_THAN' ? '>' : '<';
       return { sql: `${column} ${sign} ?`, params: [toNumber(value, condition.field)] };
     }
-    case 'HAS_CAPABILITY':
-      throw new SearchAstError(`HAS_CAPABILITY applies only to capability fields, not "${condition.field}".`);
+    case 'HAS_CAPABILITY': {
+      // Reused as the generic *presence* operator (as it already is for custom fields): "this
+      // item has a value for this field at all". Pairs with group negation to answer "anything
+      // without a category" / "items with no part number" (issue #139). A cleared text field is
+      // stored as an empty string as often as NULL, so both count as absent.
+      const blankIsAbsent = kind === 'fts-text' || kind === 'id-text';
+      return {
+        sql: blankIsAbsent ? `(${column} IS NOT NULL AND TRIM(${column}) <> '')` : `${column} IS NOT NULL`,
+        params: [],
+      };
+    }
     default:
       throw unsupported(operator, condition.field);
   }

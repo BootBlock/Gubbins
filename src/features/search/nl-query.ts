@@ -22,6 +22,7 @@
  *     "3 in stock" → `quantity = 3`; digit or spelled-out numbers.
  *   - **Location phrases** — "in the garage", "on shelf 2" → `location = <id>`, the
  *     phrase resolved against the caller-supplied location names (longest match wins).
+ *     "**not** in the attic" / "**outside** the attic" negate it (issue #139).
  *   - **Category mentions** — a category name appearing in the phrase → `category = <id>`.
  *   - **Residual words** — whatever is left, minus filler words → a **multi-field** text
  *     match: each leftover keyword is searched across the item's name, description,
@@ -37,7 +38,7 @@
  * would mean hand-building SQL, which the hard rule forbids. They remain reachable via
  * the inventory status-filter chips.
  */
-import { emptyAst, type ASTGroupNode, type FilterCondition, type SearchAST } from '@/db/search/ast';
+import { emptyAst, negated, type ASTGroupNode, type FilterCondition, type SearchAST } from '@/db/search/ast';
 import { parseASTtoSQL } from '@/db/search/parseASTtoSQL';
 
 /** A location the phrase may name, resolved to its id when matched. */
@@ -134,10 +135,27 @@ const FILLER_WORDS = new Set([
   'whats',
   'where',
   'whereis',
+  // A "not" that didn't attach to a location phrase carries no predicate this layer can
+  // express, so it is dropped rather than searched for as a literal word (issue #139).
+  'not',
 ]);
 
 /** Prepositions that introduce a location phrase ("in the garage", "on shelf 2"). */
-const LOCATION_PREPOSITIONS = new Set(['in', 'at', 'on', 'inside', 'within', 'from']);
+const LOCATION_PREPOSITIONS = new Set(['in', 'at', 'on', 'inside', 'within', 'from', 'outside']);
+
+/**
+ * Prepositions that already mean "anywhere but here" — "outside the garage" (issue #139).
+ * A subset of {@link LOCATION_PREPOSITIONS}, so the phrase is matched exactly as any other
+ * location phrase and only its sense is flipped.
+ */
+const NEGATING_PREPOSITIONS = new Set(['outside']);
+
+/**
+ * Words that invert the location phrase they precede — "not in the attic" (issue #139).
+ * Deliberately only the unambiguous one: a negator that also reads as an ordinary noun or
+ * adjective would silently flip a query the user meant literally.
+ */
+const NEGATION_WORDS = new Set(['not']);
 
 /** Determiners skipped between a location preposition and the location name. */
 const LOCATION_DETERMINERS = new Set(['the', 'my', 'a', 'our']);
@@ -465,9 +483,11 @@ function matchStockLevels(
 }
 
 /**
- * Match a location phrase: a preposition ("in"/"at"/"on"…), an optional determiner
- * ("the"/"my"…), then the longest run of tokens that names a known location. At most one
- * location is emitted (a second would AND to nothing under the id-equality predicate).
+ * Match a location phrase: an optional negator ("not"), a preposition ("in"/"at"/"on"…), an
+ * optional determiner ("the"/"my"…), then the longest run of tokens that names a known
+ * location. At most one location is emitted (a second would AND to nothing under the
+ * id-equality predicate) — but a *negated* one reads the other way round, so "not in the
+ * attic" excludes that subtree instead (issue #139).
  */
 function matchLocations(
   tokens: readonly string[],
@@ -493,12 +513,17 @@ function matchLocations(
       match = longestNameMatch(tokens, consumed, afterDeterminer, maxWords, byName.map);
     }
     if (!match) continue;
+    // "resistors **not** in the attic" — a negator immediately before the preposition, which
+    // is consumed with it — or a preposition carrying the sense itself ("**outside** the attic").
+    const hasNegator = i > 0 && !consumed[i - 1] && NEGATION_WORDS.has(tokens[i - 1]!);
+    const negate = hasNegator || NEGATING_PREPOSITIONS.has(tokens[i]!);
+    const condition: FilterCondition = { field: 'location', operator: 'EQUALS', value: match.id };
     parts.push({
       kind: 'location',
-      node: { field: 'location', operator: 'EQUALS', value: match.id },
-      label: `In ${match.name}`,
+      node: negate ? negated(condition) : condition,
+      label: negate ? `Not in ${match.name}` : `In ${match.name}`,
     });
-    consume(consumed, i, nameStart + match.words);
+    consume(consumed, hasNegator ? i - 1 : i, nameStart + match.words);
     return; // one location is enough
   }
 }

@@ -7,7 +7,13 @@
  */
 import type { FilterOperator } from '@/db/search/ast';
 
-export type BuilderFieldKind = 'text' | 'number' | 'boolean' | 'capability' | 'customfield';
+/**
+ * `presence` is a field the builder can only ask "is it set?" about — the id-keyed columns
+ * that have no value picker yet, so an equality filter would mean typing a raw id. Asking
+ * whether one is filled in needs no id at all, and negating it answers "anything without a
+ * category" (issue #139).
+ */
+export type BuilderFieldKind = 'text' | 'number' | 'boolean' | 'capability' | 'customfield' | 'presence';
 
 export interface BuilderField {
   /** The AST field identifier (for capability this is just the marker `capability`). */
@@ -30,6 +36,7 @@ export const BUILDER_FIELDS: readonly BuilderField[] = [
   { value: 'height', label: 'Height (mm)', kind: 'number' },
   { value: 'depth', label: 'Depth (mm)', kind: 'number' },
   { value: 'favourite', label: 'Favourite', kind: 'boolean' },
+  { value: 'category', label: 'Category', kind: 'presence' },
   { value: 'capability', label: 'Capability', kind: 'capability' },
   { value: 'customfield', label: 'Custom field', kind: 'customfield' },
 ];
@@ -45,25 +52,33 @@ export const OPERATOR_LABELS: Readonly<Record<FilterOperator, string>> = {
 /**
  * The display label for an operator within a given field kind. Identical to
  * {@link OPERATOR_LABELS} except `HAS_CAPABILITY` — reused as the generic "presence"
- * operator — reads as "has any value" on a custom field, where "has capability" would
- * be misleading.
+ * operator — reads as "has any value" on anything that isn't a capability, where "has
+ * capability" would be misleading.
  */
 export function operatorLabelFor(operator: FilterOperator, kind: BuilderFieldKind): string {
-  if (operator === 'HAS_CAPABILITY' && kind === 'customfield') return 'has any value';
+  if (operator === 'HAS_CAPABILITY' && kind !== 'capability') return 'has any value';
   // A boolean field reads "Favourite is Yes", not "Favourite equals Yes".
   if (operator === 'EQUALS' && kind === 'boolean') return 'is';
   return OPERATOR_LABELS[operator];
 }
 
-/** The operators offered for a given field kind, in display order. */
+/**
+ * The operators offered for a given field kind, in display order.
+ *
+ * Text and number fields carry `HAS_CAPABILITY` — the generic presence operator — so the
+ * builder can show (and edit) the `has:mpn` term the text box now parses, and so "no part
+ * number at all" is expressible by pairing it with the group's NOT toggle (issue #139).
+ */
 export function operatorsForKind(kind: BuilderFieldKind): FilterOperator[] {
   switch (kind) {
     case 'text':
-      return ['CONTAINS', 'EQUALS'];
+      return ['CONTAINS', 'EQUALS', 'HAS_CAPABILITY'];
     case 'number':
-      return ['GREATER_THAN', 'LESS_THAN', 'EQUALS'];
+      return ['GREATER_THAN', 'LESS_THAN', 'EQUALS', 'HAS_CAPABILITY'];
     case 'boolean':
       return ['EQUALS'];
+    case 'presence':
+      return ['HAS_CAPABILITY'];
     case 'capability':
       return ['HAS_CAPABILITY', 'EQUALS', 'GREATER_THAN', 'LESS_THAN'];
     case 'customfield':

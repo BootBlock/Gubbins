@@ -270,6 +270,73 @@ describe('parseASTtoSQL — validation & the depth cap (spec §5.1)', () => {
   });
 });
 
+describe('parseASTtoSQL — negation & presence (issue #139)', () => {
+  function not(...conditions: Array<ASTGroupNode | FilterCondition>): ASTGroupNode {
+    return { type: 'GROUP', logicalOperator: 'AND', negate: true, conditions };
+  }
+
+  it('wraps a negated group once, folding NULL to "did not match" first', () => {
+    expect(parseASTtoSQL(not({ field: 'manufacturer', operator: 'EQUALS', value: 'TI' }))).toEqual([
+      '(NOT COALESCE((items.manufacturer = ? COLLATE NOCASE), 0))',
+      ['TI'],
+    ]);
+  });
+
+  it('negates a whole OR group without touching its individual predicates', () => {
+    const [sql, params] = parseASTtoSQL({
+      ...or(
+        { field: 'quantity', operator: 'LESS_THAN', value: 10 },
+        { field: 'capability:rohs', operator: 'HAS_CAPABILITY', value: '' },
+      ),
+      negate: true,
+    });
+    expect(sql).toBe(
+      '(NOT COALESCE((items.quantity < ? OR EXISTS (SELECT 1 FROM capabilities c ' +
+        'WHERE c.item_id = items.id AND c.key = ? COLLATE NOCASE)), 0))',
+    );
+    expect(params).toEqual([10, 'rohs']);
+  });
+
+  it('leaves an un-negated group exactly as it was', () => {
+    const [sql] = parseASTtoSQL(and({ field: 'quantity', operator: 'GREATER_THAN', value: 1 }));
+    expect(sql).toBe('(items.quantity > ?)');
+  });
+
+  it('drops an empty negated group rather than inverting "match everything"', () => {
+    expect(parseASTtoSQL(and(not()))).toEqual(['1', []]);
+  });
+
+  it('composes with the surrounding operator without re-parenthesising ambiguity', () => {
+    const [sql] = parseASTtoSQL(
+      and(
+        { field: 'quantity', operator: 'GREATER_THAN', value: 1 },
+        not({ field: 'mpn', operator: 'EQUALS', value: 'X' }),
+      ),
+    );
+    expect(sql).toBe('(items.quantity > ? AND (NOT COALESCE((items.mpn = ? COLLATE NOCASE), 0)))');
+  });
+
+  it('translates presence on a text column as "set and not blank"', () => {
+    expect(parseASTtoSQL(and({ field: 'mpn', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([
+      "((items.mpn IS NOT NULL AND TRIM(items.mpn) <> ''))",
+      [],
+    ]);
+  });
+
+  it('translates presence on an id column the same way (category, issue #139)', () => {
+    const [sql, params] = parseASTtoSQL(and({ field: 'category', operator: 'HAS_CAPABILITY', value: '' }));
+    expect(sql).toBe("((items.category_id IS NOT NULL AND TRIM(items.category_id) <> ''))");
+    expect(params).toEqual([]);
+  });
+
+  it('translates presence on a numeric column as a plain NULL test', () => {
+    expect(parseASTtoSQL(and({ field: 'weight', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([
+      '(items.weight IS NOT NULL)',
+      [],
+    ]);
+  });
+});
+
 describe('parseASTtoSQL — executes correctly against a real SQLite engine', () => {
   let driver: MemoryDriver;
 
@@ -441,6 +508,87 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
 
   it('match-all returns every item', async () => {
     expect(await run(and())).toEqual(['mcu', 'reg']);
+  });
+
+  /**
+   * Issue #139 — the questions negation exists to answer are all about *absence*, and SQL's
+   * three-valued logic is exactly what gets those wrong: a NULL column compares to NULL, and
+   * `NOT NULL` is still NULL, so an unqualified `NOT (…)` silently drops the very rows the
+   * user was asking for. These run against the real engine because that is the only place the
+   * NULL handling is actually decided.
+   */
+  describe('negation (issue #139)', () => {
+    function not(...conditions: Array<ASTGroupNode | FilterCondition>): ASTGroupNode {
+      return { type: 'GROUP', logicalOperator: 'AND', negate: true, conditions };
+    }
+
+    beforeEach(async () => {
+      // A third item with no manufacturer, mpn or description at all — the row a naive
+      // `NOT (…)` loses.
+      await makeItem('blank', 'Mystery Widget', { quantity: 1 });
+    });
+
+    it('excludes the matching items and keeps the ones with no value at all', async () => {
+      expect(await run(and({ field: 'manufacturer', operator: 'EQUALS', value: 'TI' }))).toEqual(['reg']);
+      expect(await run(not({ field: 'manufacturer', operator: 'EQUALS', value: 'TI' }))).toEqual([
+        'blank',
+        'mcu',
+      ]);
+    });
+
+    it('inverts an FTS free-text match', async () => {
+      expect(await run(and({ field: 'name', operator: 'CONTAINS', value: 'esp' }))).toEqual(['mcu']);
+      expect(await run(not({ field: 'name', operator: 'CONTAINS', value: 'esp' }))).toEqual(['blank', 'reg']);
+    });
+
+    it('inverts a capability EXISTS subquery', async () => {
+      expect(await run(not({ field: 'capability:voltage', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([
+        'blank',
+      ]);
+    });
+
+    it('negates a whole OR group as "none of these"', async () => {
+      const ids = await run({
+        ...or(
+          { field: 'manufacturer', operator: 'EQUALS', value: 'TI' },
+          { field: 'name', operator: 'CONTAINS', value: 'esp' },
+        ),
+        negate: true,
+      });
+      expect(ids).toEqual(['blank']);
+    });
+
+    it('combines a positive term with a negated one', async () => {
+      const ids = await run(
+        and(
+          { field: 'quantity', operator: 'GREATER_THAN', value: 0 },
+          not({ field: 'manufacturer', operator: 'EQUALS', value: 'TI' }),
+        ),
+      );
+      expect(ids).toEqual(['blank', 'mcu']);
+    });
+
+    it('answers "has a part number" and, negated, "has none"', async () => {
+      expect(await run(and({ field: 'mpn', operator: 'HAS_CAPABILITY', value: '' }))).toEqual(['mcu', 'reg']);
+      expect(await run(not({ field: 'mpn', operator: 'HAS_CAPABILITY', value: '' }))).toEqual(['blank']);
+    });
+
+    it('counts a blank string as absent, not as a value', async () => {
+      await driver.execute("UPDATE items SET mpn = '   ' WHERE id = 'reg';");
+      expect(await run(not({ field: 'mpn', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([
+        'blank',
+        'reg',
+      ]);
+    });
+
+    it('answers "anything without a category" (the id column is nullable)', async () => {
+      await driver.execute('INSERT INTO categories (id, name) VALUES (?, ?);', ['cat-1', 'Chips']);
+      await driver.execute("UPDATE items SET category_id = 'cat-1' WHERE id = 'mcu';");
+      expect(await run(not({ field: 'category', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([
+        'blank',
+        'reg',
+      ]);
+    });
   });
 
   describe('custom-field predicates join item_field_values ⋈ category_fields (Phase 71)', () => {
