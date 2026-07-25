@@ -70,6 +70,22 @@ describe('the reports prefix', () => {
       expect(key?.startsWith('reportKeys.'), key).toBe(true);
     }
   });
+
+  it('is what every member of the factory is built from', () => {
+    // The call-site check above only proves each hook reaches for *a* member. This is the other
+    // half, and the one that actually holds the invalidation together: a member that forgot to
+    // spread `reportKeys.all` would key its report outside the prefix `invalidateItems` sweeps,
+    // and the report would quietly stop refreshing — the #375 regression, reintroduced one
+    // report at a time. Asserted against the real arrays rather than the source text, so it
+    // holds however a member is written.
+    for (const [name, member] of Object.entries(reportKeys)) {
+      if (name === 'all') continue;
+      // Called with no arguments: the parameterised members leave `undefined` in the segments
+      // that carry their inputs, which is irrelevant here — only the leading prefix is at stake.
+      const key = (member as () => readonly unknown[])();
+      expect(key.slice(0, reportKeys.all.length), name).toEqual([...reportKeys.all]);
+    }
+  });
 });
 
 describe('item invalidation call sites', () => {
