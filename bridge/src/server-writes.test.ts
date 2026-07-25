@@ -15,7 +15,7 @@ import { hydrateFromJson, type HydrateResult } from './hydrate.ts';
 import { mintTestToken } from './fixtures/test-identity.ts';
 import { createBridgeServer, type BridgeServerState, type WriteCapability } from './server.ts';
 import { WriteError, type WriteOperation } from './write.ts';
-import type { ItemDetailDto } from './api/dto.ts';
+import type { CheckoutDto, ItemDetailDto } from './api/dto.ts';
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
 let TOKEN = '';
@@ -27,6 +27,7 @@ let state: BridgeServerState;
 const calls: WriteOperation[] = [];
 
 const stubDetail = { id: 'item-m3-bolt', name: 'M3 x 10 Hex Bolt', quantity: 41 } as unknown as ItemDetailDto;
+const stubCheckout = { id: 'loan-1', itemId: 'item-m3-bolt', status: 'OPEN' } as unknown as CheckoutDto;
 
 const writeCapability: WriteCapability = {
   execute: async (op) => {
@@ -35,7 +36,8 @@ const writeCapability: WriteCapability = {
     if (op.kind === 'adjust-quantity' && op.delta < -1000) {
       throw new WriteError(422, 'unprocessable', 'Quantity cannot fall below zero.');
     }
-    return stubDetail;
+    const isLoan = op.kind === 'check-out' || op.kind === 'check-in';
+    return { item: stubDetail, checkout: isLoan ? stubCheckout : null };
   },
 };
 
@@ -197,6 +199,118 @@ describe('writes enabled', () => {
 
   it('advertises writable:true in the API index', async () => {
     const res = await fetch(`${writableBase}/api/v1`, { headers: { authorization: `Bearer ${TOKEN}` } });
-    expect((await res.json()).writable).toBe(true);
+    const body = await res.json();
+    expect(body.writable).toBe(true);
+    expect(body.endpoints).toContain('POST /api/v1/items/{id}/check-out');
+    expect(body.endpoints).toContain('POST /api/v1/items/{id}/check-in');
+    expect(body.endpoints).toContain('POST /api/v1/items/{id}/transfer-stock');
+  });
+});
+
+// --- loans and stock movement (issue #142) ----------------------------------------
+
+describe('loan and transfer endpoints', () => {
+  it('forwards a check-out and answers with the item AND the loan', async () => {
+    calls.length = 0;
+    const res = await post(writableBase, '/api/v1/items/item-m3-bolt/check-out', {
+      contactName: 'Sam Okafor',
+      quantity: 2,
+      dueDate: '2026-08-14',
+      note: 'For the bench build',
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The loan's id is the point of the wrapped shape: it is what a later check-in names.
+    expect(body.item.id).toBe('item-m3-bolt');
+    expect(body.checkout.id).toBe('loan-1');
+    expect(calls).toEqual([
+      {
+        kind: 'check-out',
+        itemId: 'item-m3-bolt',
+        contactName: 'Sam Okafor',
+        quantity: 2,
+        dueDate: '2026-08-14',
+        note: 'For the bench build',
+      },
+    ]);
+  });
+
+  it('omits absent borrower fields rather than forwarding them as undefined', async () => {
+    calls.length = 0;
+    await post(writableBase, '/api/v1/items/item-m3-bolt/check-out', { projectId: 'proj-1' });
+    expect(calls).toEqual([{ kind: 'check-out', itemId: 'item-m3-bolt', projectId: 'proj-1' }]);
+  });
+
+  it('carries an explicit null dueDate through as an open-ended loan', async () => {
+    calls.length = 0;
+    await post(writableBase, '/api/v1/items/item-m3-bolt/check-out', {
+      contactId: 'contact-1',
+      dueDate: null,
+    });
+    expect(calls).toEqual([
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactId: 'contact-1', dueDate: null },
+    ]);
+  });
+
+  it('rejects a non-string dueDate with 400', async () => {
+    const res = await post(writableBase, '/api/v1/items/item-m3-bolt/check-out', {
+      contactId: 'contact-1',
+      dueDate: 1_760_000_000_000,
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('bad_request');
+  });
+
+  it('forwards a check-in with no body fields (the single-open-loan case)', async () => {
+    calls.length = 0;
+    const res = await post(writableBase, '/api/v1/items/item-m3-bolt/check-in', {});
+    expect(res.status).toBe(200);
+    expect((await res.json()).checkout.id).toBe('loan-1');
+    expect(calls).toEqual([{ kind: 'check-in', itemId: 'item-m3-bolt' }]);
+  });
+
+  it('forwards a check-in naming a specific loan', async () => {
+    calls.length = 0;
+    await post(writableBase, '/api/v1/items/item-m3-bolt/check-in', {
+      checkoutId: 'loan-9',
+      note: 'Chipped blade',
+    });
+    expect(calls).toEqual([
+      { kind: 'check-in', itemId: 'item-m3-bolt', checkoutId: 'loan-9', note: 'Chipped blade' },
+    ]);
+  });
+
+  it('forwards a transfer and answers with the bare item (no loan involved)', async () => {
+    calls.length = 0;
+    const res = await post(writableBase, '/api/v1/items/item-m3-bolt/transfer-stock', {
+      fromLocationId: 'loc-a',
+      toLocationId: 'loc-b',
+      quantity: 5,
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).id).toBe('item-m3-bolt'); // the item itself, exactly like adjust-*
+    expect(calls).toEqual([
+      {
+        kind: 'transfer-stock',
+        itemId: 'item-m3-bolt',
+        fromLocationId: 'loc-a',
+        toLocationId: 'loc-b',
+        quantity: 5,
+      },
+    ]);
+  });
+
+  it('rejects a transfer missing a destination with 400', async () => {
+    const res = await post(writableBase, '/api/v1/items/item-m3-bolt/transfer-stock', {
+      fromLocationId: 'loc-a',
+      quantity: 5,
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toMatch(/toLocationId/);
+  });
+
+  it('404s a loan path when writes are off, exactly like the adjust paths', async () => {
+    const res = await post(readonlyBase, '/api/v1/items/item-m3-bolt/check-out', { contactName: 'Sam' });
+    expect(res.status).toBe(404);
   });
 });

@@ -78,9 +78,10 @@ export async function startMcpServer(env: Env = process.env): Promise<RunningMcp
   log(`Gubbins MCP server ready on stdio (${writesEnabled ? 'reads + limited writes' : 'read-only'}).`);
   if (writesEnabled) {
     log(
-      'Writes ENABLED (GUBBINS_BRIDGE_ALLOW_WRITES=on): the gubbins_adjust_quantity and ' +
-        'gubbins_adjust_gauge tools can mutate the snapshot. stdio carries no bearer token, so any ' +
-        'agent that can launch this server can adjust stock. Each write round-trips through the sync merge.',
+      'Writes ENABLED (GUBBINS_BRIDGE_ALLOW_WRITES=on): the gubbins_adjust_quantity, ' +
+        'gubbins_adjust_gauge, gubbins_check_out, gubbins_check_in and gubbins_transfer_stock tools ' +
+        'can mutate the snapshot. stdio carries no bearer token, so any agent that can launch this ' +
+        'server can adjust stock and lend items out. Each write round-trips through the sync merge.',
     );
   } else if (allowWrites && source === 'sqlite') {
     log(

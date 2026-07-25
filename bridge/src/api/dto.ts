@@ -17,6 +17,7 @@ import type {
   Category,
   CategoryField,
   CategoryWithFieldCount,
+  Checkout,
   Item,
   LocationFieldValue,
   LocationWithCount,
@@ -208,6 +209,42 @@ export interface CategoryDetailDto {
   readonly fields: readonly CategoryFieldDto[];
 }
 
+/**
+ * One loan (checkout), as the opt-in loan write endpoints return it (issue #142).
+ *
+ * The **id** is the point of the shape: a caller that has just lent something out needs it to
+ * check the same loan back in later, and it is the id the iCalendar feed embeds in that loan's
+ * `UID` (`loan-<id>@gubbins.invalid`) — so a calendar-driven automation can close the very loan
+ * it was reminded about.
+ *
+ * `borrowerType` names which of the three targets the loan is to (§4 "Borrowing" B4), and
+ * `borrowerId` is that target's id — flattened from the app's tagged union so a consumer can
+ * read the borrower without knowing which of three nullable columns to look in.
+ */
+export interface CheckoutDto {
+  readonly id: string;
+  readonly itemId: string;
+  /** Which kind of target holds the loan: a contact, a project, or a location. */
+  readonly borrowerType: Checkout['borrowerType'];
+  /** The borrower's id, in whichever table `borrowerType` names. */
+  readonly borrowerId: string;
+  /** Units lent on this loan (a serialised item always lends as 1). */
+  readonly quantity: number;
+  /** Due date (UNIX-ms) for overdue tracking, or null for an open-ended loan. */
+  readonly dueDate: number | null;
+  readonly checkedOutAt: number;
+  /** Null while the loan is still out; the return instant once checked in. */
+  readonly returnedAt: number | null;
+  /** Derived from `returnedAt`, exactly as the app derives it — no stored enum. */
+  readonly status: 'OPEN' | 'RETURNED';
+  /** The note captured when the units went out. */
+  readonly note: string | null;
+  /** The note captured on return; null while the loan is open. */
+  readonly returnNote: string | null;
+  /** The placement the units were drawn from (stock is restored there on return). */
+  readonly sourceLocationId: string | null;
+}
+
 /** One distinct capability key across inventory — the queryable `cap:` vocabulary. */
 export interface CapabilityKeyDto {
   readonly key: string;
@@ -233,6 +270,30 @@ export function toItemSummary(item: Item, locationName: string | null): ItemSumm
     trackingMode: item.trackingMode,
     isActive: item.isActive,
     isUnlimited: item.isUnlimited,
+  };
+}
+
+/**
+ * Project a {@link Checkout} into the public loan DTO, flattening the borrower tagged union
+ * (exactly one of the three FK columns is non-null, per the `checkouts` XOR CHECK) and deriving
+ * the OPEN/RETURNED status from `returnedAt` the same way the app does.
+ */
+export function toCheckout(checkout: Checkout): CheckoutDto {
+  return {
+    id: checkout.id,
+    itemId: checkout.itemId,
+    borrowerType: checkout.borrowerType,
+    // The XOR CHECK guarantees one of the three is set; the fallback keeps the DTO total
+    // rather than asserting non-null over data the bridge did not write itself.
+    borrowerId: checkout.contactId ?? checkout.projectId ?? checkout.locationId ?? '',
+    quantity: checkout.quantity,
+    dueDate: checkout.dueDate,
+    checkedOutAt: checkout.checkedOutAt,
+    returnedAt: checkout.returnedAt,
+    status: checkout.returnedAt === null ? 'OPEN' : 'RETURNED',
+    note: checkout.note,
+    returnNote: checkout.returnNote,
+    sourceLocationId: checkout.sourceLocationId,
   };
 }
 

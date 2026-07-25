@@ -27,9 +27,10 @@
  *   GUBBINS_BRIDGE_MDNS           (optional) — advertise over mDNS for HA auto-discovery;
  *                                  off by default, and auto-skipped on a loopback bind.
  *   GUBBINS_BRIDGE_MDNS_NAME      (optional) — service instance name in the advertisement.
- *   GUBBINS_BRIDGE_ALLOW_WRITES   (optional) — opt into the limited write endpoints (stock
- *                                  adjust). OFF by default; the bridge is read-only unless this
- *                                  or _ALLOW_PUSH is set.
+ *   GUBBINS_BRIDGE_ALLOW_WRITES   (optional) — opt into the limited write endpoints (adjust a
+ *                                  quantity or gauge, check an item out and back in, move stock
+ *                                  between locations). OFF by default; the bridge is read-only
+ *                                  unless this or _ALLOW_PUSH is set.
  *   GUBBINS_BRIDGE_ALLOW_PUSH     (optional) — opt into the snapshot-ingest endpoint (the PWA
  *                                  "push to bridge"). OFF by default. A separate opt-in from
  *                                  writes, but a STRICTLY WIDER privilege: it merges an
@@ -135,9 +136,12 @@ export interface BridgeConfig {
   /**
    * Whether the operator opted into the limited write endpoints (`GUBBINS_BRIDGE_ALLOW_WRITES=on`).
    * **Off by default** — the bridge is read-only unless this **or {@link allowPush}** is set. When
-   * on, the POST stock-adjust endpoints become available (same bearer token + rate limit); each
+   * on, a small fixed set of POST endpoints becomes available (same bearer token + rate limit):
+   * adjust a quantity or gauge, check an item out and back in, move stock between locations. Each
    * write round-trips through the app's own mutation + the §7.3 sync merge, never a bespoke SQL
-   * write, and each is a **bounded, reversible per-item delta** recorded in the item's history.
+   * write, and each is **bounded to one named item** and recorded in that item's history. Bounded
+   * is not the same as inert: a check-out opens a loan (and, given a name that matches nobody,
+   * creates the contact it is lent to) rather than only moving a number.
    */
   readonly allowWrites: boolean;
   /**
