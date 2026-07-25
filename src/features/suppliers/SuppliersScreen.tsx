@@ -1,23 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Button,
+  Input,
+  InputClearButton,
   LiveRegion,
   PageContainer,
   PageHeader,
   Pagination,
   Surface,
   pageCount,
-  pageSliceBounds,
+  useSearchEscapeToClear,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
-import { AddIcon, MergeIcon, SupplierIcon } from '@/components/icons';
-import type { SupplierWithCounts } from '@/db/repositories';
+import { AddIcon, MergeIcon, SearchIcon, SupplierIcon } from '@/components/icons';
+import { MAX_PAGE_SIZE, type SupplierWithCounts } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
+import { cn } from '@/lib/utils';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { MergeSuppliersDialog } from './components/MergeSuppliersDialog';
 import { SupplierFormDialog } from './components/SupplierFormDialog';
-import { useSuppliers } from './queries';
+import { useSupplierCount, useSupplierPage } from './queries';
 
 /**
  * Manage the supplier dictionary (issue #384): add, edit, merge and delete the suppliers shared
@@ -28,10 +31,18 @@ import { useSuppliers } from './queries';
  * reconcile the variants. This screen is where that is tidied: fix a name once and it changes
  * everywhere, or fold a duplicate into the supplier it should always have been.
  *
- * The dictionary is small and hand-curated, so it is read as a single bounded page and paged
- * **client-side** through the shared `pageSliceBounds` seam — the same opt-in `Pagination`
- * behaviour every other list screen offers, without a per-page round trip for a list that
- * comfortably fits in one.
+ * **Every supplier is reachable, however many there are** (issue #386). The list used to read a
+ * single bounded page and slice it client-side, which left anything sorting past that page
+ * un-editable, un-mergeable and un-deletable on the very screen meant to manage all of it. Both
+ * the page and the name filter are now resolved by the database, so:
+ *
+ * - **Searching** reaches any supplier by name whatever the view preference — the fastest route
+ *   to one you can name, and the one that doesn't care how long the list is.
+ * - **Paging** walks the whole dictionary when the app-wide `Pagination` view mode is on.
+ *
+ * With that mode off the read is still one bounded page (the shared preference decides how lists
+ * look, not this screen) — so the truncation note stays, now saying how many suppliers there
+ * actually are and pointing at the search box rather than merely disclosing a dead end.
  */
 export function SuppliersScreen() {
   const t = useT();
@@ -39,31 +50,45 @@ export function SuppliersScreen() {
   const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
   const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
 
-  const suppliersQuery = useSuppliers();
-  const suppliers = useMemo(() => suppliersQuery.data?.rows ?? [], [suppliersQuery.data]);
-  // The read is bounded (§2.1); say so rather than quietly showing a truncated dictionary on the
-  // very screen meant to manage all of it.
-  const truncated = suppliersQuery.data?.hasMore ?? false;
+  const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searching = search.trim().length > 0;
+  // Escape clears the box before it means anything else, via the shared searchable-surface seam.
+  useSearchEscapeToClear(searching, searchRef, () => setSearch(''));
 
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<SupplierWithCounts | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [mergeSourceId, setMergeSourceId] = useState<string | null>(null);
+  const [mergeSource, setMergeSource] = useState<SupplierWithCounts | undefined>(undefined);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [announcement, setAnnouncement] = useState('');
 
-  const pageSize = paginated ? defaultPageSize : suppliers.length || 1;
-  const pages = pageCount(suppliers.length, pageSize);
-  const { start, end } = pageSliceBounds(page, pageSize, suppliers.length);
-  const visible = paginated ? suppliers.slice(start, end) : suppliers;
+  // Unpaginated, the screen shows as much as one strict-pagination page holds — the same single
+  // bounded read it has always done, and the case the truncation note below covers.
+  const pageSize = paginated ? defaultPageSize : MAX_PAGE_SIZE;
+  const suppliersQuery = useSupplierPage(search.trim(), page, pageSize);
+  const matchCountQuery = useSupplierCount(search.trim());
+  // The size of the whole dictionary, independent of the filter — what "is there anything to
+  // merge" is judged on. Resolves to the same query as the one above whenever nothing is typed.
+  const dictionaryCountQuery = useSupplierCount('');
+  const suppliers = suppliersQuery.data?.rows ?? [];
+  const total = matchCountQuery.data ?? 0;
+  const pages = pageCount(total, pageSize);
+  // The unpaginated read can only show its one page; say how much of the list that is rather
+  // than leaving the rest silently out of reach.
+  const truncated = !paginated && total > suppliers.length;
 
+  // Narrowing the filter (or shrinking the page size) can strand the user past the last page.
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
   // Merging or deleting the last supplier on the final page leaves the page out of range.
   useEffect(() => {
-    if (paginated && pages > 0 && page > pages) setPage(pages);
-  }, [paginated, pages, page]);
+    if (pages > 0 && page > pages) setPage(pages);
+  }, [pages, page]);
 
   const openMerge = (source?: SupplierWithCounts) => {
-    setMergeSourceId(source?.id ?? null);
+    setMergeSource(source);
     setEditing(null);
     setMergeOpen(true);
   };
@@ -78,7 +103,9 @@ export function SuppliersScreen() {
             <Button
               variant="outline"
               onClick={() => openMerge()}
-              disabled={suppliers.length < 2}
+              // Judged on the whole dictionary, not the loaded page or the filtered view: one
+              // visible row does not mean there is only one supplier to merge.
+              disabled={(dictionaryCountQuery.data ?? 0) < 2}
               data-testid="suppliers-merge"
             >
               <MergeIcon aria-hidden />
@@ -104,6 +131,33 @@ export function SuppliersScreen() {
             {t('suppliers.list.heading')}
           </h2>
 
+          {/* Name search. `pr-9` reserves the clear button's lane so the two never overlap. */}
+          <div className="relative max-w-sm">
+            <SearchIcon
+              aria-hidden
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              ref={searchRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('suppliers.search.placeholder')}
+              aria-label={t('suppliers.search.label')}
+              className={cn('pl-9', searching && 'pr-9')}
+              data-testid="suppliers-search"
+            />
+            {searching ? (
+              <InputClearButton
+                label={t('suppliers.search.clear')}
+                onClick={() => {
+                  setSearch('');
+                  searchRef.current?.focus();
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2"
+              />
+            ) : null}
+          </div>
+
           {suppliersQuery.isLoading ? (
             // The loading / error / empty states fill the list region (rather than sitting in a
             // small card) so this screen sizes like the master-detail list screens it sits beside.
@@ -122,14 +176,20 @@ export function SuppliersScreen() {
               </Button>
             </Surface>
           ) : suppliers.length === 0 ? (
+            // "No suppliers yet" would be wrong when a filter is what emptied the list, and it
+            // would send the user to add a supplier they may well already have.
             <Surface className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
               <SupplierIcon aria-hidden className="size-8 text-muted-foreground/60" />
-              <p className="text-sm text-muted-foreground">{t('suppliers.list.empty')}</p>
+              <p className="text-sm text-muted-foreground">
+                {searching
+                  ? t('suppliers.search.empty', { vars: { query: search.trim() } })
+                  : t('suppliers.list.empty')}
+              </p>
             </Surface>
           ) : (
             <>
               <ul className="flex flex-col gap-1.5">
-                {visible.map((supplier) => (
+                {suppliers.map((supplier) => (
                   <li key={supplier.id}>
                     <SupplierRow supplier={supplier} onEdit={() => setEditing(supplier)} />
                   </li>
@@ -145,13 +205,15 @@ export function SuppliersScreen() {
                   pageSizeOptions={PAGE_SIZE_PRESETS}
                   minPageSize={PAGE_SIZE_BOUNDS.min}
                   maxPageSize={PAGE_SIZE_BOUNDS.max}
-                  totalItems={suppliers.length}
+                  totalItems={total}
                   data-testid="suppliers-pagination"
                 />
               ) : null}
               {truncated ? (
                 <p className="text-xs text-muted-foreground" data-testid="suppliers-truncated">
-                  {t('suppliers.list.truncated', { vars: { shown: suppliers.length } })}
+                  {t('suppliers.list.truncated', {
+                    vars: { shown: suppliers.length, total },
+                  })}
                 </p>
               ) : null}
             </>
@@ -164,7 +226,6 @@ export function SuppliersScreen() {
       {addOpen ? (
         <SupplierFormDialog
           supplier={null}
-          others={suppliers}
           onClose={() => setAddOpen(false)}
           onMerge={openMerge}
           onAnnounce={setAnnouncement}
@@ -174,7 +235,6 @@ export function SuppliersScreen() {
       {editing ? (
         <SupplierFormDialog
           supplier={editing}
-          others={suppliers.filter((s) => s.id !== editing.id)}
           onClose={() => setEditing(null)}
           onMerge={openMerge}
           onAnnounce={setAnnouncement}
@@ -183,8 +243,7 @@ export function SuppliersScreen() {
 
       {mergeOpen ? (
         <MergeSuppliersDialog
-          suppliers={suppliers}
-          initialSourceId={mergeSourceId ?? undefined}
+          initialSource={mergeSource}
           onClose={() => setMergeOpen(false)}
           onAnnounce={setAnnouncement}
         />

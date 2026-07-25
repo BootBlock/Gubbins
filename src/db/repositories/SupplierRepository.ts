@@ -19,13 +19,15 @@
 import { normaliseSupplierName, supplierNameKey } from '../../lib/supplier-name';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
+import { escapeLike } from './like';
 import { rowToSupplier } from './mappers';
 import { tombstoneStatement } from './tombstone';
 import type {
   CreateSupplierInput,
   Page,
-  PageParams,
   Supplier,
+  SupplierFilter,
+  SupplierListParams,
   SupplierRef,
   SupplierRow,
   SupplierWithCounts,
@@ -46,17 +48,23 @@ export class SupplierRepository extends BaseRepository {
   /**
    * Paginated suppliers by name, each with the counts a delete needs to warn about: how many
    * supplier parts would go with it, and how many purchase orders would stop naming a supplier.
+   *
+   * `search` narrows to names containing that text (issue #386). Both the page and the filter
+   * are resolved here rather than by the caller slicing a bounded read, so every supplier is
+   * reachable however long the dictionary grows — pair it with {@link count} to size the pages.
    */
-  async list(params: PageParams = {}): Promise<Page<SupplierWithCounts>> {
+  async list(params: SupplierListParams = {}): Promise<Page<SupplierWithCounts>> {
     const { limit, offset } = this.resolvePage(params);
+    const { where, params: filterParams } = nameFilter(params);
     const rows = await this.driver.query<SupplierCountRow>(
       `SELECT s.*,
               (SELECT COUNT(*) FROM supplier_parts sp WHERE sp.supplier_id = s.id) AS part_count,
               (SELECT COUNT(*) FROM purchase_orders po WHERE po.supplier_id = s.id) AS order_count
        FROM suppliers s
+       ${where}
        ORDER BY s.name COLLATE NOCASE ASC
        LIMIT ? OFFSET ?;`,
-      [limit, offset],
+      [...filterParams, limit, offset],
     );
     return this.toPage(
       rows.map((r) => ({
@@ -67,6 +75,20 @@ export class SupplierRepository extends BaseRepository {
       limit,
       offset,
     );
+  }
+
+  /**
+   * How many suppliers {@link list} would return for the same filter — the total a page strip
+   * needs to know how many pages there are, and the screen needs to know whether a bounded
+   * read is showing all of them.
+   */
+  async count(filter: SupplierFilter = {}): Promise<number> {
+    const { where, params } = nameFilter(filter);
+    const row = await this.driver.queryOne<{ total: number }>(
+      `SELECT COUNT(*) AS total FROM suppliers s ${where};`,
+      params,
+    );
+    return Number(row?.total ?? 0);
   }
 
   /**
@@ -227,4 +249,34 @@ export class SupplierRepository extends BaseRepository {
     }
     return supplier;
   }
+}
+
+/**
+ * The `WHERE` clause (and its bound parameters) for a {@link SupplierFilter} — written once so
+ * {@link SupplierRepository.list} and {@link SupplierRepository.count} can never disagree about
+ * what matches, which would show a page strip sized for a different result set than the rows.
+ *
+ * The term is matched two ways, and a supplier matching either is returned:
+ *
+ * - Against the **display name**, so what the user reads on screen is searchable as written.
+ * - Against the folded **identity key**, so spacing and punctuation stop mattering — typing
+ *   `rs-components` finds the `RS Components` you have. Every other place a supplier name is
+ *   typed folds it that way ({@link supplierNameKey}); a search box that alone insisted on the
+ *   exact punctuation would be the odd one out, and would fail the user who half-remembers it.
+ *
+ * A term that folds to nothing (all punctuation) is matched on the display name alone — its key
+ * would be empty, and an empty key matches every supplier. `LIKE` is case-insensitive for ASCII
+ * in SQLite, which is what a name search wants, and both terms are escaped so a typed `%` or `_`
+ * matches itself rather than acting as a wildcard.
+ */
+function nameFilter(filter: SupplierFilter): { where: string; params: string[] } {
+  const term = filter.search?.trim() ?? '';
+  if (term.length === 0) return { where: '', params: [] };
+  const byName = `%${escapeLike(term)}%`;
+  const key = supplierNameKey(term);
+  if (key.length === 0) return { where: `WHERE s.name LIKE ? ESCAPE '\\'`, params: [byName] };
+  return {
+    where: `WHERE (s.name LIKE ? ESCAPE '\\' OR s.name_key LIKE ? ESCAPE '\\')`,
+    params: [byName, `%${escapeLike(key)}%`],
+  };
 }
