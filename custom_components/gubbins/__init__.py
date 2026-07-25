@@ -6,7 +6,8 @@ The bridge is the only data path. Everything here reads, apart from the four opt
 services below, which do nothing unless the bridge itself was started with writes enabled.
 
 Setup wires six things:
-  * a per-entry :class:`GubbinsClient` (read-only HTTP client) into ``hass.data``;
+  * a per-entry :class:`GubbinsClient` (HTTP client — reads, plus the opt-in writes) into
+    ``hass.data``;
   * a per-entry :class:`GubbinsRuntimeData` into ``entry.runtime_data``, holding the health
     coordinator — first-refreshed here so an unreachable bridge or a revoked token fails (or
     reauthenticates) the *entry* — and the slower inventory-status coordinator;

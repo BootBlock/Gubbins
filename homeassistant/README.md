@@ -288,13 +288,16 @@ actions:
 > has ended where you are. A day that doesn't exist (31 February) is refused rather than quietly
 > shifted.
 
-**Chasing an overdue loan.** Trigger on the **overdue** binary sensor from step 5 rather than on a
-calendar event: Gubbins does publish loan due-backs to a
-[calendar feed](../bridge/README.md#calendar-subscription), but Home Assistant's calendar triggers
-expose only an event's summary, description and times — not the `UID` that carries the loan's id —
-so a calendar event can tell you *that* something is due, not *which* record to close. The sensor
-tells you the same thing without the gap, and `check_in` needs only the `item_id`, which an
-automation that did the lending already has.
+**Chasing an overdue loan.** The **overdue** binary sensor from step 5 is what to trigger on.
+Gubbins also publishes loan due-backs to a
+[calendar feed](../bridge/README.md#calendar-subscription), and that event *does* name the loan —
+but only inside its `UID`, and Home Assistant's calendar triggers expose an event's summary,
+description and times, never the `UID`. So neither route hands your automation a loan to close: the
+sensor reports a count and the calendar event a name.
+
+That is usually fine, because `check_in` needs only the `item_id` — which an automation that did
+the lending already holds, and which `gubbins.search` can find otherwise. Trigger on the sensor for
+"something is late", and keep the item you care about in the automation itself.
 
 ### 8. (Optional) React to a lookup — the `gubbins_item_located` event
 
