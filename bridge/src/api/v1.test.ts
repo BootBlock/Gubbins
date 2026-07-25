@@ -357,9 +357,23 @@ describe('OData-style query options', () => {
     expect(body.data.map((i: any) => i.id)).toEqual(['item-m3-bolt', 'item-m3-washer', 'item-resistor']);
   });
 
-  it('$filter compiles the contains() function to an FTS match', async () => {
+  it('$filter answers the contains() function', async () => {
     const body = await json("/api/v1/items?$filter=contains(name,'ESP32')");
     expect(body.data.map((i: any) => i.id)).toEqual(['item-esp32']);
+  });
+
+  // Issue #369 — end to end over HTTP, because the divergence was invisible at every layer
+  // above SQLite: no error, just rows the caller never saw.
+  it("$filter's contains() is the substring test OData defines (issue #369)", async () => {
+    // Mid-word: "olt" sits inside "Bolt", which whole-word prefix matching could not reach.
+    const midWord = await json("/api/v1/items?$filter=contains(name,'olt')&$select=id");
+    expect(midWord.data).toEqual([{ id: 'item-m3-bolt' }]);
+
+    // A multi-word value is one ordered run of characters, not an unordered AND of terms.
+    const phrase = await json("/api/v1/items?$filter=contains(name,'Hex Bo')&$select=id");
+    expect(phrase.data).toEqual([{ id: 'item-m3-bolt' }]);
+    const reversed = await json("/api/v1/items?$filter=contains(name,'Bolt Hex')&$select=id");
+    expect(reversed.data).toEqual([]);
   });
 
   it('$filter composes with and/or', async () => {
