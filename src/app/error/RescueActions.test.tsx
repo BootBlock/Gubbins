@@ -221,7 +221,9 @@ describe('RescueActions', () => {
       render(<RescueActions />);
 
       expect(screen.getByRole('button', { name: /back up everything/i })).toBeInTheDocument();
-      expect(screen.getByText(/Backup & Restore/i)).toBeInTheDocument();
+      // The *where* is the point: naming the feature alone once let the advice drift to a
+      // "Settings → Backup & Restore" that no longer existed, so assert the screen too.
+      expect(screen.getByText(/Sync → Backup & restore/i)).toBeInTheDocument();
     });
 
     it('reports what the backup actually captured', async () => {

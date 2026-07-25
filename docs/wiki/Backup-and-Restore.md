@@ -4,7 +4,8 @@ A **backup** is a single portable file containing your whole Gubbins — data, i
 that you can keep safe and **restore** from later. It's your insurance against a lost device or a
 browser wiping its storage.
 
-**Where to find it:** the backup & restore tools (Sync / Data & storage areas).
+**Where to find it:** the **Sync** screen → **Backup & restore** (in the menu, when the module is
+enabled).
 
 ## What's in a backup
 

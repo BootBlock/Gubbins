@@ -53,7 +53,7 @@ prerequisite for counting by weight.
 **What you need:**
 
 1. The optional **[[bridge|Bridge-Overview]]** running, with its URL and an
-   **[[API token|Bridge-API-Tokens]]** filled in under **Settings → Sync**, and
+   **[[API token|Bridge-API-Tokens]]** filled in on the **Sync** screen → **Push to bridge**, and
 2. the bridge configured to read Home Assistant, and pointed at your instance.
 
 See **[[Home Assistant integration|Home-Assistant-Integration]]** for setting that up. Once it is
