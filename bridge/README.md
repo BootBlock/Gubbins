@@ -566,7 +566,7 @@ spellings of `limit` and a search. It adds **no dependency** and ships **nothing
 | `$orderby` | *(new)* | Sort — see below. |
 | `$filter` | *(new)* | Constrained boolean filter — see below. |
 | `$count` | *(new)* | `$count=true` adds the grand total as `pagination.total`. |
-| `$search` | *(new)* | Free-text (FTS) match across name/description/notes/mpn/manufacturer/serial number. |
+| `$search` | *(new)* | Free-text (FTS) match across `name`, `description`, `notes`, `mpn`, `manufacturer`, `barcode`, `serialNumber`. |
 
 Each `$`-prefixed option is an **alias** of its plain REST name and **wins** when both are given
 (`?$top=5&limit=9` ⇒ 5). `$select`/`$expand`/`$top` work on `/search`, `/items` and `/items/{id}`;
@@ -657,9 +657,11 @@ OData three-valued logic would drop them instead.
 returns it as `pagination.total` alongside the page (it costs one extra `COUNT` query, so it is
 opt-in). For just the number, hit the dedicated `/items/$count` path instead.
 
-**`$search`** — a free-text match over the FTS5-indexed item columns (name, description, notes,
-mpn, manufacturer, serial number), the same backend the app's own search uses. It combines with `location` /
-`category`; it is ignored when `$filter` is set (which is then the sole filter).
+**`$search`** — a free-text match over the FTS5-indexed item columns (`name`, `description`,
+`notes`, `mpn`, `manufacturer`, `barcode`, `serialNumber`), the same backend the app's own search
+uses. It matches whole-word prefixes across all of them at once, which is what makes it the fast
+counterpart to `contains()` above. It combines with `location` / `category`; it is ignored when
+`$filter` is set (which is then the sole filter).
 
 ```bash
 # Sort by quantity, biggest first, top 5:

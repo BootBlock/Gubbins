@@ -16,6 +16,7 @@ import { ITEM_STATUS_FILTERS } from '@/db/repositories/item/status-filter.ts';
 import { ITEM_FIELD_REGISTRY } from './api/item-view.ts';
 import { LOCATION_FIELD_REGISTRY } from './api/location-view.ts';
 import { FILTERABLE_FIELD_NAMES } from './api/odata-filter.ts';
+import { SEARCHABLE_FIELD_NAMES } from './api/odata.ts';
 import { API_ERROR_CODES } from './api/respond.ts';
 
 /** A plain JSON value — the spec is pure data, serialisable to JSON and YAML alike. */
@@ -227,8 +228,10 @@ const searchParam: JsonValue = {
   in: 'query',
   required: false,
   description:
-    'Free-text search across the item name/description/notes/mpn/manufacturer/serial number via the FTS5 ' +
-    'index (ignored when $filter is set).',
+    `Free-text search across ${SEARCHABLE_FIELD_NAMES.join(', ')} via the FTS5 index. Matches ` +
+    'whole-word prefixes across all of those columns at once, so it is the fast counterpart to ' +
+    "$filter's contains(), which is an unindexed substring scan of one named field. Ignored when " +
+    '$filter is set.',
   schema: { type: 'string' },
   example: 'esp32',
 };
