@@ -46,18 +46,22 @@ off in one go — perfect for labelling a new storage system or a batch of asset
 Choose **A4 sheet** under **Label size** and a second setting appears: **Sheet layout**. This is
 where you say what you are printing *onto*.
 
+Every entry says how many labels the sheet carries and how big one label is — **18 per sheet —
+60 × 42 mm**, say — with what the sheet is beside it: the code the stock is usually sold under,
+or *Plain paper* for the first entry.
+
 - **Plain paper** — the default. Labels are laid out generously across a blank sheet with a faint
   outline round each one to cut along.
-- **A named sticker sheet** — pick the one that matches the packet in your printer. Each entry
-  says how many labels the sheet carries and how big one label is (**21 per sheet — 63.5 × 38.1
-  mm**, say), with the code the stock is usually sold under beside it. Gubbins then uses that
-  sheet's own columns, rows, margins and gutters, so every label lands squarely on a sticker
-  rather than across the gap between two.
+- **A named sticker sheet** — pick the one that matches the packet in your printer. Gubbins then
+  uses that sheet's own columns, rows, margins and gutters, so every label lands squarely on a
+  sticker rather than across the gap between two.
 - **Custom…** — enter the columns, rows, page margins and gutters yourself, for stock that isn't
-  listed. The size one label works out to is shown as you type, so you can check it against the
-  packet before printing anything.
+  listed.
 
-Underneath sits **Print cut guides**. Leave it on for plain paper, where the outline is the only
+Whichever you pick, the size one label works out to is shown underneath as **Each label: …**, so
+you can check it against the packet before printing anything.
+
+Beside it sits **Print cut guides**. Leave it on for plain paper, where the outline is the only
 thing telling you where one label ends and the next begins; turn it off for a pre-cut sheet, where
 it would just print a grey box inside every sticker. Choosing a named sheet turns it off for you.
 

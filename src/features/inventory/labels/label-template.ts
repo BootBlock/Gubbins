@@ -219,7 +219,14 @@ export const PLAIN_PAPER_SHEET_LAYOUT: SheetLayout = {
   outline: true,
 };
 
-/** A named sheet of label stock: how it tiles A4, and what it is sold as. */
+/**
+ * A named sheet of label stock: how it tiles A4, and what it is sold as.
+ *
+ * It carries no display copy. What each stock *suits* is prose a reader should get in
+ * their own language, so it lives in the message catalog under
+ * `inventory.labels.sheetStockUse.<id>` rather than beside the geometry here; the size and
+ * count the picker shows are derived from the layout rather than written down.
+ */
 export interface SheetStockPreset {
   readonly id: string;
   /**
@@ -227,8 +234,6 @@ export interface SheetStockPreset {
    * Blank for the plain-paper layout, which is not a product.
    */
   readonly code: string;
-  /** What this stock is typically used for — drives the layout control's InfoHint copy. */
-  readonly use: string;
   readonly layout: SheetLayout;
 }
 
@@ -245,13 +250,11 @@ export const SHEET_STOCK_PRESETS = [
   {
     id: 'plain',
     code: '',
-    use: 'Ordinary blank A4 paper or card, with a cut guide round each label.',
     layout: PLAIN_PAPER_SHEET_LAYOUT,
   },
   {
     id: 'a4-2up',
     code: 'L7168 / J8168',
-    use: 'Half-page labels for archive boxes, crates & bin fronts.',
     layout: {
       columns: 1,
       rows: 2,
@@ -265,7 +268,6 @@ export const SHEET_STOCK_PRESETS = [
   {
     id: 'a4-4up',
     code: 'L7169 / J8169',
-    use: 'Quarter-page labels for parcels & large storage boxes.',
     layout: {
       columns: 2,
       rows: 2,
@@ -279,7 +281,6 @@ export const SHEET_STOCK_PRESETS = [
   {
     id: 'a4-8up',
     code: 'L7165 / J8165',
-    use: 'Large labels for shelves, cartons & anything read across a room.',
     layout: {
       columns: 2,
       rows: 4,
@@ -293,7 +294,6 @@ export const SHEET_STOCK_PRESETS = [
   {
     id: 'a4-14up',
     code: 'L7163 / J8163',
-    use: 'Wide labels with room for a Code 128 barcode beside a long name.',
     layout: {
       columns: 2,
       rows: 7,
@@ -307,7 +307,6 @@ export const SHEET_STOCK_PRESETS = [
   {
     id: 'a4-18up',
     code: 'L7161 / J8161',
-    use: 'Taller version of the address label — fits a QR plus three or four lines.',
     layout: {
       columns: 3,
       rows: 6,
@@ -321,7 +320,6 @@ export const SHEET_STOCK_PRESETS = [
   {
     id: 'a4-21up',
     code: 'L7160 / J8160',
-    use: 'The everyday address label, and the most widely stocked sheet of the lot.',
     layout: {
       columns: 3,
       rows: 7,
@@ -335,7 +333,6 @@ export const SHEET_STOCK_PRESETS = [
   {
     id: 'a4-24up',
     code: 'L7159 / J8159',
-    use: 'Shallower address label for shelf edges & drawer fronts.',
     layout: {
       columns: 3,
       rows: 8,
@@ -349,7 +346,6 @@ export const SHEET_STOCK_PRESETS = [
   {
     id: 'a4-40up',
     code: 'L7654',
-    use: 'Small parts, cable flags & compact bin tags.',
     layout: {
       columns: 4,
       rows: 10,
@@ -363,7 +359,6 @@ export const SHEET_STOCK_PRESETS = [
   {
     id: 'a4-65up',
     code: 'L7651',
-    use: 'Tiny component, drawer & jewellery labels — too small for a barcode.',
     layout: {
       columns: 5,
       rows: 13,
@@ -415,25 +410,10 @@ export function formatSheetCellSize(layout: SheetLayout): string {
   return `${formatMm(widthMm)} × ${formatMm(heightMm)} mm`;
 }
 
-/** `21 per sheet — 63.5 × 38.1 mm` — how a stock preset reads in the layout picker. */
-export function sheetPresetLabel(preset: SheetStockPreset): string {
-  const count = clampColumns(preset.layout.columns) * clampRows(preset.layout.rows);
-  return `${count} per sheet — ${formatSheetCellSize(preset.layout)}`;
+/** How many labels a layout puts on one page — the count the picker leads with. */
+export function sheetLabelCount(layout: SheetLayout): number {
+  return clampColumns(layout.columns) * clampRows(layout.rows);
 }
-
-/** Rich-Markdown help for the sheet-layout control (a {@link SHEET_STOCK_PRESETS} rundown). */
-export const SHEET_LAYOUT_HINT = [
-  'How labels **tile an A4 page**. Pick the stock you are printing onto and Gubbins lays',
-  'the labels out to match it — the same columns, rows, margins and gutters — so each',
-  'label lands on a sticker rather than across the gap between two.',
-  '',
-  'Check the size against the packet: the sizes below are the die-cut label sizes these',
-  'sheets are sold as.',
-  '',
-  ...SHEET_STOCK_PRESETS.map((p) => `- **${sheetPresetLabel(p)}**${p.code ? ` (${p.code})` : ''} — ${p.use}`),
-  '',
-  'Pick **Custom…** to enter the columns, rows, margins and gutters yourself.',
-].join('\n');
 
 /**
  * A label layout. The four `show*` field flags govern the text block beneath the
@@ -564,7 +544,15 @@ export function sheetLayoutSelection(layout: SheetLayout): string {
   return preset ? preset.id : SHEET_LAYOUT_CUSTOM_ID;
 }
 
-/** Do two layouts tile the page identically (outline included)? */
+/**
+ * Do two layouts tile the page identically?
+ *
+ * Deliberately **excludes** `outline`. What is on the sheet is its geometry; the cut
+ * guide is ink drawn on top of it, offered as its own toggle beside the picker. Counting
+ * it as part of the sheet's identity would mean ticking that toggle threw the picker out
+ * of the named stock the user had just chosen and into "Custom…", with the six geometry
+ * fields springing open — for a choice that changed no geometry at all.
+ */
 function sameSheetLayout(a: SheetLayout, b: SheetLayout): boolean {
   const x = normaliseSheetLayout(a);
   const y = normaliseSheetLayout(b);
@@ -574,8 +562,7 @@ function sameSheetLayout(a: SheetLayout, b: SheetLayout): boolean {
     x.marginTopMm === y.marginTopMm &&
     x.marginSideMm === y.marginSideMm &&
     x.columnGapMm === y.columnGapMm &&
-    x.rowGapMm === y.rowGapMm &&
-    x.outline === y.outline
+    x.rowGapMm === y.rowGapMm
   );
 }
 

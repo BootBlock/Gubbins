@@ -55,7 +55,7 @@ describe('barcodeWidthMm', () => {
     // cell, so the width judged here is the width the barcode is really given.
     const stock = SHEET_STOCK_PRESETS.find((p) => p.id === 'a4-21up')!;
     expect(barcodeWidthMm(template({ sheet: stock.layout }))).toBe(40);
-    // The smallest stock leaves too little for a readable Code 128 at all.
+    // The smallest stock is narrower than the cap, so it is the label that decides.
     const tiny = SHEET_STOCK_PRESETS.find((p) => p.id === 'a4-65up')!;
     expect(barcodeWidthMm(template({ sheet: tiny.layout }))).toBeCloseTo(33.86, 2);
   });

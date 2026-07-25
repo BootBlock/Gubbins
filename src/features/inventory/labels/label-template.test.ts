@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { EN_CATALOG } from '@/features/i18n/messages';
 import {
   A4_HEIGHT_MM,
   A4_WIDTH_MM,
@@ -29,8 +30,8 @@ import {
   normaliseLabelTemplate,
   normaliseSheetLayout,
   sheetCellSizeMm,
+  sheetLabelCount,
   sheetLayoutSelection,
-  sheetPresetLabel,
   shortId,
   templateHasBarcode,
   templateHasQr,
@@ -167,9 +168,18 @@ describe('sheet layouts (issue #333)', () => {
     }
   });
 
-  it('names a preset by its count and derived size', () => {
+  it('counts the labels a layout puts on a page', () => {
     const twentyOne = SHEET_STOCK_PRESETS.find((p) => p.id === 'a4-21up')!;
-    expect(sheetPresetLabel(twentyOne)).toBe('21 per sheet — 63.5 × 38.1 mm');
+    expect(sheetLabelCount(twentyOne.layout)).toBe(21);
+  });
+
+  it('every stock has copy in the catalog saying what it suits', () => {
+    // The picker names a stock by geometry alone; this prose is the only thing telling a
+    // user which sheet is theirs, so a preset added without it would ship a blank bullet.
+    for (const preset of SHEET_STOCK_PRESETS) {
+      const key = `inventory.labels.sheetStockUse.${preset.id}`;
+      expect(EN_CATALOG[key], key).toBeTruthy();
+    }
   });
 
   it('bottoms a cell out rather than deriving a negative size from an absurd layout', () => {
@@ -201,6 +211,13 @@ describe('sheet layouts (issue #333)', () => {
     }
     const edited = { ...PLAIN_PAPER_SHEET_LAYOUT, rowGapMm: 7 };
     expect(sheetLayoutSelection(edited)).toBe(SHEET_LAYOUT_CUSTOM_ID);
+  });
+
+  it('keeps a stock selected when only its cut guide is toggled', () => {
+    // The cut guide is ink on the sheet, not part of how it tiles — turning it on must not
+    // read as "you have hand-built a layout" and throw the picker into Custom.
+    const stock = SHEET_STOCK_PRESETS.find((p) => p.id === 'a4-21up')!;
+    expect(sheetLayoutSelection({ ...stock.layout, outline: !stock.layout.outline })).toBe(stock.id);
   });
 });
 

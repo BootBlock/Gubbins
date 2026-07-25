@@ -108,6 +108,30 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     fireEvent.blur(rows);
     // 6 rows of 42mm become 4 rows of (297 - 20 - 15) / 4.
     expect(screen.getByTestId('label-sheet-layout-cell-size').textContent).toContain('60 × 65.5 mm');
+
+    // An entry the bounds reject is echoed back at the value actually in use — including
+    // when the clamp lands on the value the field already held, which changes nothing for
+    // a prop-watching effect to notice.
+    fireEvent.change(rows, { target: { value: '0' } });
+    fireEvent.blur(rows);
+    expect(rows.value).toBe('1');
+    fireEvent.change(rows, { target: { value: '-3' } });
+    fireEvent.blur(rows);
+    expect(rows.value).toBe('1');
+  });
+
+  it('keeps the chosen stock selected when the cut guide is toggled (issue #333)', () => {
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    chooseOption('label-sheet-layout', /21 per sheet/);
+    // Named stock comes with the guide off; turning it on is a print choice, not a new layout.
+    const outline = screen.getByTestId('label-sheet-layout-outline') as HTMLInputElement;
+    expect(outline.checked).toBe(false);
+    fireEvent.click(outline);
+
+    expect(outline.checked).toBe(true);
+    expect(screen.getByTestId('label-sheet-layout').textContent).toContain('21 per sheet');
+    // ...and the six geometry fields stay shut.
+    expect(screen.queryByTestId('label-sheet-layout-rows')).toBeNull();
   });
 
   it('switches to a die-cut size: hides the sheet-layout control and prints an exact-sized sheet', () => {

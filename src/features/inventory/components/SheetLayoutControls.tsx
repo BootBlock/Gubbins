@@ -1,12 +1,11 @@
 import { useEffect, useId, useState } from 'react';
-import { InfoHint, Input, Select } from '@/components/foundry';
-import { useT } from '@/features/i18n';
+import { Checkbox, InfoHint, Input, Select } from '@/components/foundry';
+import { useT, type TypedTranslator } from '@/features/i18n';
 import {
   LABEL_COLUMNS_BOUNDS,
   LABEL_ROWS_BOUNDS,
   SHEET_GAP_BOUNDS,
   SHEET_LAYOUT_CUSTOM_ID,
-  SHEET_LAYOUT_HINT,
   SHEET_MARGIN_BOUNDS,
   SHEET_STOCK_PRESETS,
   clampColumns,
@@ -14,17 +13,41 @@ import {
   clampRows,
   formatSheetCellSize,
   normaliseSheetLayout,
+  sheetLabelCount,
   sheetLayoutSelection,
-  sheetPresetLabel,
+  type SheetStockPreset,
   type SheetLayout,
 } from '../labels/label-template';
 
-/** Preset + "Custom…" options for the sheet-layout combobox, in display order. */
-const LAYOUT_OPTIONS = SHEET_STOCK_PRESETS.map((p) => ({
-  value: p.id,
-  label: sheetPresetLabel(p),
-  ...(p.code ? { meta: p.code } : {}),
-}));
+/** `21 per sheet — 63.5 × 38.1 mm` — how a stock preset reads in the picker. */
+function presetLabel(preset: SheetStockPreset, t: TypedTranslator): string {
+  return t('inventory.labels.sheetPerSheet', {
+    vars: { count: sheetLabelCount(preset.layout), size: formatSheetCellSize(preset.layout) },
+  });
+}
+
+/**
+ * What each option is marked with, beside its size: the trade codes a packet of stock
+ * carries, or — for the layout that is not a product — that it is plain paper, so the
+ * default entry is not left looking like an unnamed sheet of stickers.
+ */
+function presetMeta(preset: SheetStockPreset, t: TypedTranslator): string {
+  return preset.code || t('inventory.labels.sheetPlainPaper');
+}
+
+/** Rich-Markdown help for the sheet-layout control (a {@link SHEET_STOCK_PRESETS} rundown). */
+function layoutHint(t: TypedTranslator): string {
+  return [
+    t('inventory.labels.sheetLayoutHintIntro'),
+    '',
+    ...SHEET_STOCK_PRESETS.map(
+      (p) =>
+        `- **${presetLabel(p, t)}** (${presetMeta(p, t)}) — ${t(`inventory.labels.sheetStockUse.${p.id}`)}`,
+    ),
+    '',
+    t('inventory.labels.sheetLayoutHintCustom'),
+  ].join('\n');
+}
 
 /**
  * The A4 **sheet layout** picker shared by the item and location print dialogs: a
@@ -70,11 +93,17 @@ export function SheetLayoutControls({
   const set = <K extends keyof SheetLayout>(key: K, next: SheetLayout[K]) =>
     onChange({ ...layout, [key]: next });
 
+  /** Commit one numeric field, reporting back the value actually stored (see {@link MmField}). */
+  const commit = (key: Exclude<keyof SheetLayout, 'outline'>, next: number): number => {
+    set(key, next);
+    return next;
+  };
+
   return (
     <div className="flex flex-col gap-field-gap-compact text-xs font-medium text-muted-foreground sm:col-span-2">
       <span className="flex items-center gap-1">
         <span id={labelId}>{t('inventory.labels.sheetLayout')}</span>
-        <InfoHint content={SHEET_LAYOUT_HINT} />
+        <InfoHint content={layoutHint(t)} />
       </span>
       <Select
         aria-labelledby={labelId}
@@ -82,7 +111,11 @@ export function SheetLayoutControls({
         onChange={handleSelect}
         data-testid={testId}
         options={[
-          ...LAYOUT_OPTIONS,
+          ...SHEET_STOCK_PRESETS.map((p) => ({
+            value: p.id,
+            label: presetLabel(p, t),
+            meta: presetMeta(p, t),
+          })),
           { value: SHEET_LAYOUT_CUSTOM_ID, label: t('inventory.labels.sheetCustom') },
         ]}
       />
@@ -95,7 +128,7 @@ export function SheetLayoutControls({
             step={1}
             bounds={LABEL_COLUMNS_BOUNDS}
             testId={`${testId}-columns`}
-            onCommit={(raw) => set('columns', clampColumns(raw))}
+            onCommit={(raw) => commit('columns', clampColumns(raw))}
           />
           <MmField
             label={t('inventory.labels.sheetRows')}
@@ -103,35 +136,35 @@ export function SheetLayoutControls({
             step={1}
             bounds={LABEL_ROWS_BOUNDS}
             testId={`${testId}-rows`}
-            onCommit={(raw) => set('rows', clampRows(raw))}
+            onCommit={(raw) => commit('rows', clampRows(raw))}
           />
           <MmField
             label={t('inventory.labels.sheetMarginTop')}
             value={layout.marginTopMm}
             bounds={SHEET_MARGIN_BOUNDS}
             testId={`${testId}-margin-top`}
-            onCommit={(raw) => set('marginTopMm', clampMm(raw, SHEET_MARGIN_BOUNDS, layout.marginTopMm))}
+            onCommit={(raw) => commit('marginTopMm', clampMm(raw, SHEET_MARGIN_BOUNDS, layout.marginTopMm))}
           />
           <MmField
             label={t('inventory.labels.sheetMarginSide')}
             value={layout.marginSideMm}
             bounds={SHEET_MARGIN_BOUNDS}
             testId={`${testId}-margin-side`}
-            onCommit={(raw) => set('marginSideMm', clampMm(raw, SHEET_MARGIN_BOUNDS, layout.marginSideMm))}
+            onCommit={(raw) => commit('marginSideMm', clampMm(raw, SHEET_MARGIN_BOUNDS, layout.marginSideMm))}
           />
           <MmField
             label={t('inventory.labels.sheetColumnGap')}
             value={layout.columnGapMm}
             bounds={SHEET_GAP_BOUNDS}
             testId={`${testId}-column-gap`}
-            onCommit={(raw) => set('columnGapMm', clampMm(raw, SHEET_GAP_BOUNDS, layout.columnGapMm))}
+            onCommit={(raw) => commit('columnGapMm', clampMm(raw, SHEET_GAP_BOUNDS, layout.columnGapMm))}
           />
           <MmField
             label={t('inventory.labels.sheetRowGap')}
             value={layout.rowGapMm}
             bounds={SHEET_GAP_BOUNDS}
             testId={`${testId}-row-gap`}
-            onCommit={(raw) => set('rowGapMm', clampMm(raw, SHEET_GAP_BOUNDS, layout.rowGapMm))}
+            onCommit={(raw) => commit('rowGapMm', clampMm(raw, SHEET_GAP_BOUNDS, layout.rowGapMm))}
           />
         </div>
       ) : null}
@@ -144,12 +177,10 @@ export function SheetLayoutControls({
         </span>
         <span className="flex items-center gap-1">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={layout.outline}
               onChange={(e) => set('outline', e.target.checked)}
               data-testid={`${testId}-outline`}
-              className="size-3.5 accent-primary"
             />
             {t('inventory.labels.sheetOutline')}
           </label>
@@ -164,6 +195,11 @@ export function SheetLayoutControls({
  * One small numeric field of the custom layout. Keeps the raw keystrokes in local state
  * so a partial value (mid-typing "1" before "15") is not clamped away, and commits a
  * clamped value on blur — the same contract as the die-cut size inputs.
+ *
+ * `onCommit` hands back the value it actually committed, and the field echoes *that*.
+ * Syncing on the prop alone is not enough: an out-of-range entry whose clamp lands back
+ * on the value already held changes nothing to react to, so the rejected keystrokes would
+ * sit on screen indefinitely, disagreeing with the layout in use.
  */
 function MmField({
   label,
@@ -177,7 +213,7 @@ function MmField({
   readonly value: number;
   readonly bounds: { readonly min: number; readonly max: number };
   readonly step?: number;
-  readonly onCommit: (raw: string) => void;
+  readonly onCommit: (raw: string) => number;
   readonly testId: string;
 }) {
   const id = useId();
@@ -197,7 +233,7 @@ function MmField({
         value={text}
         data-testid={testId}
         onChange={(e) => setText(e.target.value)}
-        onBlur={() => onCommit(text)}
+        onBlur={() => setText(String(onCommit(text)))}
         className="h-9"
       />
     </label>
