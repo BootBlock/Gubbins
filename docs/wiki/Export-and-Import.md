@@ -166,6 +166,11 @@ going through the item importer first.
 > leading digits would silently drop the rest (`1.5 kg` is not one). A quantity with a fractional
 > part is flagged the same way, rather than being quietly rounded.
 >
+> A **weight** column is read as **grams** and **width** / **height** / **depth** as
+> **millimetres**, in both directions and whatever [[units you read them in|Units-of-Measure]] —
+> so a file exported on one device still means the same thing on another that's set to pounds and
+> inches.
+>
 > Every importer reads numbers by the same rule, whichever decimal convention your spreadsheet
 > uses: `£1,234.56` and `1.234,56 €` both mean the same price, and prices quoted to four decimal
 > places keep their precision. Where a lone separator could be read either way, a group of exactly

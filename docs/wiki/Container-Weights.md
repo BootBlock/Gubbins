@@ -90,14 +90,14 @@ The library appears anywhere Gubbins asks for a tare:
 > — has no **Pick a container…** button. A container weight would be meaningless there, so Gubbins
 > doesn't offer one rather than filling the box with a plausible-looking wrong number.
 
-Weights are shown and entered in whatever unit you've chosen under
-[[language & region|Language-and-Region]]; Gubbins stores them in one canonical unit behind the
-scenes, so changing the setting never alters a saved container.
+Weights are shown and entered in whatever [[weight unit|Units-of-Measure]] you've chosen; Gubbins
+stores them in one canonical unit behind the scenes, so changing the setting never alters a saved
+container.
 
 ## Related pages
 
 - **[[Counting by weight|Counting-by-Weight]]** — counting small parts on a scale.
 - **[[Low stock & gauges|Low-Stock-and-Gauges]]** — weighing a consumable to gauge what's left.
 - **[[Items]]** — where an item's own weight is recorded.
-- **[[Language & region|Language-and-Region]]** — choosing your weight unit.
+- **[[Units of measure|Units-of-Measure]]** — choosing your weight unit.
 - **[[Cloud sync|Cloud-Sync]]** — keeping saved containers across devices.

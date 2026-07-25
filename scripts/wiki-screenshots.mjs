@@ -808,6 +808,17 @@ await page
   .catch(() => {});
 await page.waitForTimeout(300);
 
+// Settings → the unit rows (issue #267). The *volume* row is what's scrolled to rather than the
+// weight one: scrolling stops as soon as the target is visible, so aiming at the last of the
+// three leaves the two above it in frame, which is the point of the shot.
+await page
+  .locator('[data-testid="setting-volume-unit"]')
+  .scrollIntoViewIfNeeded()
+  .catch(() => {});
+await page.mouse.move(10, 10);
+await page.waitForTimeout(500);
+await shot('settings-units', page.getByRole('dialog').first(), { settle: 400 });
+
 // ── Users, roles & sign-in (issue #79) ───────────────────────────────────────
 // Deliberately last. The `users` module is opt-in and switching it on raises the sign-in gate
 // in front of the whole app, so anything captured after this point would have to sign in first.
