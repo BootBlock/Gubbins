@@ -114,9 +114,10 @@ export interface CalendarFeedOptions {
  * Unlike the syndication feeds this is **not** a pure function of the snapshot, because two
  * sources read a day-grained cut-off derived from `now`: a booking is kept until the end of its
  * last booked day (a **UTC**-day cut-off — bookings store midnight UTC), and the warranty window
- * is a **local** calendar date. Nothing else here moves with the clock — a TIME schedule's due
- * date is computed from its own anchor (see `maintenanceStatus`), and a projection's row
- * *ordering* is not a semantic difference, which is why the entity-tag is a weak one.
+ * is a **local** calendar date — and each is read from a day-snapped instant so it can move only on
+ * one of those two boundaries (see `warrantyEvents`). Nothing else here moves with the clock — a
+ * TIME schedule's due date is computed from its own anchor (see `maintenanceStatus`), and a
+ * projection's row *ordering* is not a semantic difference, which is why the entity-tag is weak.
  *
  * So the representation is unchanged since the latest of the snapshot's generation and those two
  * day rollovers, and a subscription can never sit on a stale copy across midnight in either
@@ -290,7 +291,15 @@ function maintenanceEvent(
 async function warrantyEvents(driver: IDatabaseDriver, dtstamp: ICalDate, now: number): Promise<VEvent[]> {
   const repo = new ItemRepository(driver);
   const rows = await collect((limit, offset) =>
-    repo.listWarrantyExpiring(WARRANTY_HORIZON_DAYS, now, { limit, offset }),
+    // Read from the *start of the UTC day*, not the raw instant. The repository derives its cut-off
+    // as the UTC date of `addCalendarDays(now, withinDays)`, which preserves local wall-clock time —
+    // so across a decade-wide horizon the offset can differ between `now` and the target, and the
+    // cut-off date would roll over an hour or so off UTC midnight. Snapping the input makes the
+    // cut-off a pure function of the UTC day, which is one of the boundaries
+    // {@link calendarModifiedAt} accounts for; without it a subscriber could be handed a `304` for
+    // a document whose horizon had already moved (issue #363). Immaterial to what the feed shows:
+    // the horizon is ten years out, so a day either way changes nothing a user would notice.
+    repo.listWarrantyExpiring(WARRANTY_HORIZON_DAYS, startOfUtcDay(now), { limit, offset }),
   );
   const events: VEvent[] = [];
   for (const item of rows) {

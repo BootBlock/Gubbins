@@ -244,3 +244,101 @@ describe('per-source date frame across a UTC boundary (America/New_York)', () =>
     expect(r.bookingStart).not.toBe(r.bookingLocal);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The warranty horizon must move only on a day boundary (issue #363).
+//
+// `calendarModifiedAt` promises a subscriber that the calendar cannot change between day
+// rollovers, and the whole `304` posture rests on it. The warranty read is the one source that
+// could break that promise: its cut-off is the UTC date of `addCalendarDays(now, horizon)`, which
+// preserves *local* wall-clock time — so across a decade-wide horizon a zone whose offset differs
+// between now and the target rolls the cut-off an hour or so off UTC midnight. Under
+// Europe/London that is 01:00Z on the days spanning a DST change; a subscriber polling in the
+// 00:00–01:00Z window would then be told `304` all day while holding the pre-roll document.
+//
+// Pinned to a child process, like the date-frame test above, because the bridge's worker pool
+// can't re-seat the zone.
+// ---------------------------------------------------------------------------
+
+describe('warranty horizon across a DST-straddling hour (Europe/London, issue #363)', () => {
+  it('yields the same warranty events either side of the hour the raw cut-off would roll at', () => {
+    const dir = import.meta.dirname; // bridge/src/ical
+    const loaderUrl = pathToFileURL(join(dir, '..', '..', 'loader.mjs')).href;
+    const feedUrl = pathToFileURL(join(dir, 'feed.ts')).href;
+    const hydrateUrl = pathToFileURL(join(dir, '..', 'hydrate.ts')).href;
+
+    // Two instants on the same UTC day, straddling 01:00Z — the moment the unsnapped cut-off
+    // advanced a day while `calendarModifiedAt` (which last moved at 00:00Z) stayed put.
+    const BEFORE = Date.parse('2026-03-26T00:30:00.000Z');
+    const AFTER = Date.parse('2026-03-26T01:30:00.000Z');
+
+    // One item per day across the window the ~10-year horizon lands in, so whichever date the
+    // cut-off falls on, an item sits exactly on the boundary a one-day drift would move.
+    const WINDOW_START = Date.UTC(2036, 2, 25); // 2036-03-25
+    const items = Array.from({ length: 16 }, (_, i) => ({
+      id: `item-warranty-${i}`,
+      name: `Horizon ${i}`,
+      description: null,
+      location_id: 'loc-horizon',
+      category_id: null,
+      tracking_mode: 'DISCRETE',
+      quantity: 1,
+      is_active: 1,
+      warranty_expires_at: new Date(WINDOW_START + i * 86_400_000).toISOString().slice(0, 10),
+      created_at: 1700000000000,
+      updated_at: 1751000000000,
+    }));
+    const snapshot = JSON.stringify({
+      formatVersion: 1,
+      generatedAt: DTSTAMP,
+      tables: {
+        locations: [
+          {
+            id: 'loc-horizon',
+            name: 'Horizon Shelf',
+            parent_id: null,
+            is_system: 0,
+            updated_at: 1751000000000,
+          },
+        ],
+        categories: [],
+        items,
+        item_stock: [],
+        stock_batches: [],
+        capabilities: [],
+      },
+      tombstones: [],
+      gaugeHistory: [],
+      itemTags: [],
+      itemHistory: [],
+    });
+
+    const script = `
+      process.env.TZ = 'Europe/London';
+      const { register } = await import('node:module');
+      register(${JSON.stringify(loaderUrl)});
+      const { buildCalendarEvents } = await import(${JSON.stringify(feedUrl)});
+      const { hydrateFromJson } = await import(${JSON.stringify(hydrateUrl)});
+      const { driver } = await hydrateFromJson(${JSON.stringify(snapshot)});
+      const uids = async (now) =>
+        (await buildCalendarEvents(driver, { dtstamp: ${DTSTAMP}, now, types: ['warranty'] }))
+          .map((e) => e.uid)
+          .sort();
+      const before = await uids(${BEFORE});
+      const after = await uids(${AFTER});
+      await driver.close();
+      process.stdout.write(JSON.stringify({ before, after }));
+    `;
+    const out = execFileSync(
+      process.execPath,
+      ['--experimental-strip-types', '--input-type=module', '-e', script],
+      { encoding: 'utf8' },
+    );
+    const r = JSON.parse(out) as { before: string[]; after: string[] };
+
+    // The window genuinely sits on the horizon, so the test could see the drift if it existed.
+    expect(r.before.length).toBeGreaterThan(0);
+    expect(r.before.length).toBeLessThan(items.length);
+    expect(r.after).toEqual(r.before);
+  });
+});
