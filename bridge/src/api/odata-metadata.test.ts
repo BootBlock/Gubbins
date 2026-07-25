@@ -13,7 +13,7 @@ import {
 } from './odata-metadata.ts';
 import { ODATA_ENTITY_SETS, SUPPORTED_OPTIONS } from './odata-service.ts';
 import { ITEM_FIELD_REGISTRY, ITEM_SUMMARY_DEFAULT_FIELDS } from './item-view.ts';
-import { FILTERABLE_PROPERTIES } from './odata-filter.ts';
+import { FILTERABLE_FIELD_NAMES } from './odata-filter.ts';
 
 /** Quote a literal for embedding in a `RegExp` — property names are identifiers today, but a
  * future one carrying a metacharacter shouldn't silently turn the pattern into a wildcard. */
@@ -98,7 +98,9 @@ describe('odataMetadataXml', () => {
     // The restriction is stated as the *complement*, so assert against the whole property list:
     // a new property must land on one side or the other, never silently in neither.
     const all = ITEM_PROPERTIES.map((p) => p.name);
-    expect(paths(nonFilterable).sort()).toEqual(all.filter((n) => !FILTERABLE_PROPERTIES.includes(n)).sort());
+    expect(paths(nonFilterable).sort()).toEqual(
+      all.filter((n) => !FILTERABLE_FIELD_NAMES.includes(n)).sort(),
+    );
     expect(paths(nonSortable).sort()).toEqual(
       all.filter((n) => !(ITEM_SORT_FIELDS as readonly string[]).includes(n)).sort(),
     );

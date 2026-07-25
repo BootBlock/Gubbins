@@ -122,15 +122,17 @@ describe('gubbins_where_is', () => {
 });
 
 describe('gubbins_get_item', () => {
-  it('returns full detail with placements and capabilities for a known id', async () => {
+  it('returns full detail with placements, capabilities and tags for a known id', async () => {
     const result = (await run('gubbins_get_item', { id: 'item-esp32' })) as {
       found: boolean;
-      item: { id: string; placements: unknown[]; capabilities: unknown[] };
+      item: { id: string; placements: unknown[]; capabilities: unknown[]; tags: string[] };
     };
     expect(result.found).toBe(true);
     expect(result.item.id).toBe('item-esp32');
     expect(result.item.placements.length).toBeGreaterThan(0);
     expect(result.item.capabilities.length).toBeGreaterThan(0);
+    // An assistant asked "is this fragile?" can only answer from the tags (issue #143).
+    expect(result.item.tags).toEqual(['fragile', 'workshop']);
   });
 
   it('reports found:false for an unknown id (not an error)', async () => {
@@ -257,23 +259,37 @@ describe('the write tools', () => {
     fixture = await readFile(fileURLToPath(FIXTURE_URL), 'utf8');
   });
 
-  it('builds exactly the two adjust tools, each with an object input schema', () => {
+  it('builds exactly the five write tools, each with an object input schema', () => {
     const tools = createWriteTools(async () => {
       throw new Error('not called');
     });
-    expect(tools.map((t) => t.name)).toEqual(['gubbins_adjust_quantity', 'gubbins_adjust_gauge']);
+    expect(tools.map((t) => t.name)).toEqual([
+      'gubbins_adjust_quantity',
+      'gubbins_adjust_gauge',
+      'gubbins_check_out',
+      'gubbins_check_in',
+      'gubbins_transfer_stock',
+    ]);
     for (const tool of tools) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.inputSchema.type).toBe('object');
-      expect(tool.inputSchema.required).toEqual(['id', 'delta']);
+      // Every one of them acts on an item, so the item id is always required.
+      expect(tool.inputSchema.required).toContain('id');
     }
   });
 
   it('keeps the write tools out of the read-only registry', () => {
     // They must only ever reach a caller via createWriteTools (i.e. under the opt-in), so a
     // global lookup must not find them even by name.
-    expect(findTool('gubbins_adjust_quantity')).toBeUndefined();
-    expect(findTool('gubbins_adjust_gauge')).toBeUndefined();
+    for (const name of [
+      'gubbins_adjust_quantity',
+      'gubbins_adjust_gauge',
+      'gubbins_check_out',
+      'gubbins_check_in',
+      'gubbins_transfer_stock',
+    ]) {
+      expect(findTool(name)).toBeUndefined();
+    }
   });
 
   it('adjusts a DISCRETE quantity and writes the merged snapshot back', async () => {
@@ -323,6 +339,86 @@ describe('the write tools', () => {
     const { tools, stored } = withInMemorySnapshot(fixture);
     await expect(runWriteTool(tools, 'gubbins_adjust_quantity', args)).rejects.toThrow(ToolInputError);
     expect(stored()).toBe(fixture); // nothing was written
+  });
+
+  it('lends an item out and reports the loan back to the model (issue #142)', async () => {
+    const { tools, stored } = withInMemorySnapshot(fixture);
+    const result = (await runWriteTool(tools, 'gubbins_check_out', {
+      id: 'item-m3-bolt',
+      contactName: 'Sam Okafor',
+      quantity: 2,
+      dueDate: '2026-08-14',
+    })) as { updated: boolean; item: { quantity: number }; checkout: { id: string; status: string } };
+
+    expect(result.updated).toBe(true);
+    expect(result.item.quantity).toBe(40);
+    // The id is what a later gubbins_check_in names, so the model has to be able to read it.
+    expect(result.checkout.id.length).toBeGreaterThan(0);
+    expect(result.checkout.status).toBe('OPEN');
+
+    const after = await hydrateFromJson(stored());
+    const rows = await after.driver.query('SELECT quantity FROM checkouts WHERE returned_at IS NULL;');
+    expect(rows).toEqual([{ quantity: 2 }]);
+    await after.driver.close();
+  });
+
+  it('returns a lent item without being told which loan, when there is only one', async () => {
+    const { tools } = withInMemorySnapshot(fixture);
+    await runWriteTool(tools, 'gubbins_check_out', { id: 'item-m3-bolt', contactName: 'Sam Okafor' });
+    const result = (await runWriteTool(tools, 'gubbins_check_in', { id: 'item-m3-bolt' })) as {
+      item: { quantity: number };
+      checkout: { status: string };
+    };
+    expect(result.item.quantity).toBe(42); // back on the shelf
+    expect(result.checkout.status).toBe('RETURNED');
+  });
+
+  it('moves stock between locations, leaving the total alone', async () => {
+    const { tools } = withInMemorySnapshot(fixture);
+    // item-esp32 is split 5 at Shelf 2 and 2 at Bin 4 in the fixture.
+    const result = (await runWriteTool(tools, 'gubbins_transfer_stock', {
+      id: 'item-esp32',
+      fromLocationId: 'loc-shelf-2',
+      toLocationId: 'loc-bin-4',
+      quantity: 3,
+    })) as { item: { quantity: number; placements: { locationId: string; quantity: number }[] } };
+    expect(result.item.quantity).toBe(7);
+    const at = (id: string) => result.item.placements.find((p) => p.locationId === id)?.quantity ?? 0;
+    expect(at('loc-shelf-2')).toBe(2);
+    expect(at('loc-bin-4')).toBe(5);
+  });
+
+  it('reports a transfer bigger than the source holds as a model-visible error', async () => {
+    const { tools, stored } = withInMemorySnapshot(fixture);
+    await expect(
+      runWriteTool(tools, 'gubbins_transfer_stock', {
+        id: 'item-esp32',
+        fromLocationId: 'loc-bin-4',
+        toLocationId: 'loc-shelf-2',
+        quantity: 10,
+      }),
+    ).rejects.toThrow(ToolInputError);
+    expect(stored()).toBe(fixture); // nothing moved — no silent partial transfer
+  });
+
+  it.each([
+    ['a non-string borrower name', 'gubbins_check_out', { id: 'item-m3-bolt', contactName: 7 }],
+    [
+      'a non-string due date',
+      'gubbins_check_out',
+      { id: 'item-m3-bolt', contactName: 'Sam', dueDate: 20260814 },
+    ],
+    ['no borrower at all', 'gubbins_check_out', { id: 'item-m3-bolt' }],
+    ['an item that is not on loan', 'gubbins_check_in', { id: 'item-m3-bolt' }],
+    [
+      'a missing destination',
+      'gubbins_transfer_stock',
+      { id: 'item-esp32', fromLocationId: 'loc-bin-4', quantity: 1 },
+    ],
+  ])('rejects %s without touching the snapshot', async (_label, tool, args) => {
+    const { tools, stored } = withInMemorySnapshot(fixture);
+    await expect(runWriteTool(tools, tool, args)).rejects.toThrow(ToolInputError);
+    expect(stored()).toBe(fixture);
   });
 
   it('accepts a fractional delta on the gauge tool (a gauge is not whole-numbered)', async () => {

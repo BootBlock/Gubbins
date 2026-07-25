@@ -14,8 +14,11 @@
  *
  * Everything else (`ge`/`le`, `startswith`/`endswith`, arithmetic, lambdas, …) is rejected
  * with a {@link BadQueryError} naming the supported operators, so the boundary is explicit.
- * Fields are validated against a small allow-list mapped onto the AST's own field vocabulary;
- * an unknown field is a `400`.
+ * Fields are validated against an allow-list mapped onto the AST's own field vocabulary — the
+ * *whole* of it, so nothing the app can filter on is unreachable here (issue #143) — and an
+ * unknown field is a `400`. Only *syntax* and vocabulary are checked at this layer; whether a
+ * given operator is valid for a given field (`condition gt 'MINT'`, say) is the translator's
+ * judgement, surfaced as a `400` when the query runs.
  *
  * `not` and `ne` both lower to the AST's negated GROUP (issue #139), so — exactly like the
  * app's `-term` syntax — they inherit its NULL-safe reading over the nullable columns:
@@ -34,54 +37,124 @@ import { MAX_FILTER_LENGTH } from './limits.ts';
 import { BadQueryError } from './odata.ts';
 
 /**
- * OData property name (lower-cased) → the AST field it maps to. Exported so the drift guard on
- * {@link FILTERABLE_PROPERTIES} can check both directions — no property claimed filterable that
- * isn't, and no filterable AST field left out of the metadata.
+ * OData property name (in its published casing) → the AST field it maps to.
+ *
+ * This is the **whole** of the app's own scalar search vocabulary (`ITEM_FIELDS` in
+ * `parseASTtoSQL`) plus its `tag` field — deliberately exhaustive, because a field the app can
+ * filter on but the API cannot is a silent capability gap rather than a design choice. It had
+ * become exactly that: `barcode` and `favourite` were searchable in the app yet unreachable over
+ * OData, so a scanner integration could not look an item up by its GTIN (issue #143). A drift test
+ * over this table and `ITEM_FIELD_NAMES` now fails the build if the two diverge again.
+ *
+ * Each field is reachable by the app's own short name *and*, where they differ, by the camel-cased
+ * property name the read model publishes (`serialNumber`, `unitCost`, `isFavourite`, …), so a
+ * caller can filter with the same spelling `$metadata` and the JSON payloads use. Matching itself
+ * is case-insensitive — see {@link FIELD_LOOKUP}.
  */
-export const FIELD_MAP: Readonly<Record<string, string>> = {
+const FILTERABLE_FIELDS: Readonly<Record<string, string>> = {
+  // Free text (FTS-backed for `contains`).
   name: 'name',
   description: 'description',
   notes: 'notes',
   mpn: 'mpn',
   manufacturer: 'manufacturer',
-  serialnumber: 'serial',
+  // The scanned identifier: a GTIN/UPC/EAN lookup is the whole point of an external scanner
+  // integration, so `barcode eq '5012345678900'` must be expressible (issue #143).
+  barcode: 'barcode',
+  serialNumber: 'serial',
   serial: 'serial',
+  // Foreign keys (exact match only).
+  category: 'category',
+  categoryId: 'category',
+  location: 'location',
+  locationId: 'location',
+  // Numbers. Weight is canonical grams and the dimensions canonical millimetres, exactly as the
+  // app's own search compares them — never the caller's display unit.
   quantity: 'quantity',
   weight: 'weight',
   width: 'width',
   height: 'height',
   depth: 'depth',
-  category: 'category',
-  categoryid: 'category',
-  location: 'location',
-  locationid: 'location',
+  reorder: 'reorder',
+  reorderPoint: 'reorder',
+  // Flags (`eq true` / `eq false`).
+  favourite: 'favourite',
+  isFavourite: 'favourite',
+  active: 'active',
+  isActive: 'active',
+  // Fixed-vocabulary enums — the value must be one of the column's own allowed spellings
+  // (matched case-insensitively, with spaces/hyphens read as underscores).
+  condition: 'condition',
+  tracking: 'tracking',
+  trackingMode: 'tracking',
+  deadstock: 'deadstock',
+  deadStockMode: 'deadstock',
+  // Calendar days, as a **quoted** `'YYYY-MM-DD'` literal: this subset has no unquoted
+  // `Edm.Date` form, and an unquoted `2026-03-01` would tokenize as one malformed number.
+  expiry: 'expiry',
+  expiryDate: 'expiry',
+  warranty: 'warranty',
+  warrantyExpiresAt: 'warranty',
+  // Money, compared in the base currency's **major** units (`unitCost gt 10` is ten pounds/
+  // dollars, not ten of the micro-units the column stores).
+  cost: 'cost',
+  unitCost: 'cost',
+  price: 'price',
+  purchasePrice: 'price',
+  value: 'value',
+  currentValue: 'value',
+  // Tags (issue #143). A tag has no value of its own — a tag *is* its name — so the comparison
+  // is against the name and an item matches when **any** of its tags satisfies it:
+  // `tag eq 'fragile'` for that exact tag, `contains(tag,'expo')` for any tag containing "expo".
+  // The plural is accepted because the projected item field is called `tags`; this subset has no
+  // lambda form, so `tags/any(...)` is not the spelling.
+  tag: 'tag',
+  tags: 'tag',
 };
 
 /**
- * The CSDL property names `$filter` accepts, in their canonical spelling.
+ * The case-insensitive lookup {@link Parser.resolveField} consults — a **Map**, never the plain
+ * object above.
  *
- * {@link FIELD_MAP} is keyed by the *lower-cased* name (so a caller's `SerialNumber` resolves)
- * and carries convenience aliases (`serial`, `category`, `location`) that are not properties of
- * the entity type. The metadata document needs the real property names, and only those, for its
- * `Org.OData.Capabilities.V1.FilterRestrictions` annotation — a client trusting it must not be
- * told to push down a filter on a name the entity type never declares. A unit test asserts every
- * entry here still resolves through `FIELD_MAP`, so the two cannot drift apart.
+ * An object also answers to its prototype's keys, so `FILTERABLE_FIELDS['constructor']` yields a
+ * *function* rather than `undefined`: the unknown-field guard would wave `constructor eq 'x'`
+ * through and hand the translator a non-string field, which fails as an unhandled `500` instead of
+ * the `400` that is owed. A Map has no prototype keys, so an unknown name is simply absent. (The
+ * app's own field lookup guards the same hazard with `Object.hasOwn`.)
  */
-export const FILTERABLE_PROPERTIES: readonly string[] = [
-  'name',
-  'description',
-  'notes',
-  'mpn',
-  'manufacturer',
-  'serialNumber',
-  'quantity',
-  'weight',
-  'width',
-  'height',
-  'depth',
-  'categoryId',
-  'locationId',
-];
+const FIELD_LOOKUP: ReadonlyMap<string, string> = new Map(
+  Object.entries(FILTERABLE_FIELDS).map(([name, field]) => [name.toLowerCase(), field]),
+);
+
+/**
+ * The OData property names `$filter` accepts, in their published casing and sorted
+ * case-insensitively — read by the OpenAPI document and the error message below so both are
+ * generated from the table rather than restated beside it (a restated copy is how the API's
+ * filterable set drifted from the app's in the first place, issue #143).
+ *
+ * Ordered by plain code-unit comparison of the lower-cased names, **not** `localeCompare`: this
+ * list is embedded in the committed `openapi.yaml`, and a locale-sensitive sort would let the same
+ * source emit a different document on a machine with a different ICU locale — failing the
+ * no-drift test for a reason that has nothing to do with the spec. Every name here is ASCII, so a
+ * code-unit sort is both stable and the order a reader expects.
+ */
+export const FILTERABLE_FIELD_NAMES: readonly string[] = Object.keys(FILTERABLE_FIELDS).sort((a, b) => {
+  const [x, y] = [a.toLowerCase(), b.toLowerCase()];
+  return x < y ? -1 : x > y ? 1 : 0;
+});
+
+/** The distinct AST fields {@link FILTERABLE_FIELDS} can reach — what the drift test checks. */
+export const FILTERABLE_AST_FIELDS: readonly string[] = [...new Set(Object.values(FILTERABLE_FIELDS))];
+
+/**
+ * The published-name → AST-field pairs, for the second drift guard: **every field you can filter
+ * on must also be one you can read.** Being able to select an item by its barcode but never read
+ * the barcode back is half a capability, and it is how the surface came apart before (issue #143).
+ * The guard is self-checking rather than a third list — it looks for a spelling of each filterable
+ * field that is also a key of the projectable item registry.
+ */
+export const FILTERABLE_FIELD_TARGETS: readonly (readonly [name: string, field: string])[] =
+  Object.entries(FILTERABLE_FIELDS);
 
 /** OData comparison keyword → AST operator (the supported subset only). */
 const COMPARISON_OPS: Readonly<Record<string, FilterOperator>> = {
@@ -288,10 +361,10 @@ class Parser {
   }
 
   private resolveField(name: string): string {
-    const mapped = FIELD_MAP[name.toLowerCase()];
+    const mapped = FIELD_LOOKUP.get(name.toLowerCase());
     if (mapped === undefined) {
       throw new BadQueryError(
-        `Cannot filter on "${name}". Filterable fields: ${[...new Set(Object.values(FIELD_MAP))].join(', ')}.`,
+        `Cannot filter on "${name}". Filterable fields: ${FILTERABLE_FIELD_NAMES.join(', ')}.`,
       );
     }
     return mapped;

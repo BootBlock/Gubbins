@@ -362,9 +362,22 @@ export class CheckoutRepository extends BaseRepository {
     await this.checkInAllForTarget('contact', contactId);
   }
 
-  /** All open (still-out) checkouts, soonest due first, with item + contact names. */
+  /**
+   * All open (still-out) checkouts, soonest due first, with item + contact names.
+   *
+   * The `k.id` tiebreak makes the order **total** (issue #132). Loans routinely share a due date —
+   * or have none at all — so without it the sort is only partially determined, and the export's
+   * offset walk over this read could return one loan on two consecutive pages while dropping
+   * another entirely. The screen's own single-page read is unaffected either way; the tiebreak
+   * costs nothing and makes paging correct.
+   */
   async listOpen(params: PageParams = {}): Promise<Page<CheckoutWithNames>> {
-    return this.listJoined('WHERE k.returned_at IS NULL', [], params, 'k.due_date IS NULL, k.due_date ASC');
+    return this.listJoined(
+      'WHERE k.returned_at IS NULL',
+      [],
+      params,
+      'k.due_date IS NULL, k.due_date ASC, k.id ASC',
+    );
   }
 
   /** A single item's checkout history (open first, then newest), bounded. */

@@ -48,20 +48,25 @@ import { useT, type MessageKey } from '@/features/i18n';
 import { addCalendarDays } from '@/lib/calendar-days';
 import { nowMs } from '@/lib/clock';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
-import { groupByKind, type Alert, type AlertKind, type AlertSeverity } from './alerts';
+import { TabularExportMenu } from '@/features/export/TabularExportMenu';
+import { alertsExportFilename, buildAlertsExport } from './alerts-export';
+import {
+  groupByKind,
+  ALERT_KIND_LABEL as KIND_LABEL,
+  ALERT_SEVERITY_LABEL as SEVERITY_LABEL,
+  type Alert,
+  type AlertKind,
+  type AlertSeverity,
+} from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
 import { useAlerts } from './useAlerts';
 
 // ---------------------------------------------------------------------------
-// Kind metadata — labels & icons for each lane
+// Kind metadata — icons and section order for each lane
 // ---------------------------------------------------------------------------
 
-const KIND_LABEL: Record<AlertKind, string> = {
-  'low-stock': 'Low stock',
-  expiry: 'Expiring stock',
-  'maintenance-due': 'Maintenance due',
-  'warranty-due': 'Warranty',
-};
+// The lane and severity *labels* live in the pure `alerts` seam, so the export (issue #132)
+// names a row exactly as this screen names its section — one definition, no drift.
 
 const KIND_ORDER: AlertKind[] = ['maintenance-due', 'warranty-due', 'expiry', 'low-stock'];
 
@@ -109,12 +114,6 @@ const SEVERITY_TOKEN: Record<AlertSeverity, string> = {
   critical: 'bg-destructive/10 text-destructive',
   warning: 'bg-warning/15 text-warning',
   info: 'bg-muted text-muted-foreground',
-};
-
-const SEVERITY_LABEL: Record<AlertSeverity, string> = {
-  critical: 'Critical',
-  warning: 'Warning',
-  info: 'Info',
 };
 
 function SeverityBadge({ severity }: { severity: AlertSeverity }) {
@@ -273,11 +272,28 @@ export function AlertsScreen() {
         icon={<AlertIcon />}
         title="Alert centre"
         actions={
-          hasHidden ? (
-            <Button variant="outline" size="sm" onClick={handleShowAll} data-testid="alerts-show-all">
-              {t('alerts.showAll', { vars: { count: hiddenCount } })}
-            </Button>
-          ) : undefined
+          <>
+            {hasHidden ? (
+              <Button variant="outline" size="sm" onClick={handleShowAll} data-testid="alerts-show-all">
+                {t('alerts.showAll', { vars: { count: hiddenCount } })}
+              </Button>
+            ) : null}
+            {/*
+             * Exports the alerts as shown — snoozed and dismissed ones stay out, because an
+             * alert the user has explicitly set aside reappearing in the file would defeat the
+             * point of setting it aside. `useAlerts` already holds the whole list, so unlike the
+             * paged lists this needs no re-read.
+             */}
+            <TabularExportMenu
+              build={(format) => buildAlertsExport(format, alerts)}
+              filename={alertsExportFilename}
+              triggerLabel={t('export.list.trigger')}
+              menuLabel={t('export.alerts.menuLabel')}
+              toastHeading={t('export.alerts.toast')}
+              disabled={isLoading || alerts.length === 0}
+              testIdPrefix="export-alerts"
+            />
+          </>
         }
       />
 

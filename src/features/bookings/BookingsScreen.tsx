@@ -34,6 +34,9 @@ import { useContacts } from '@/features/contacts/contacts';
 import type { AssetBookingWithNames } from '@/db/repositories';
 import { useErrorMessage } from '@/features/errors';
 import { useT } from '@/features/i18n';
+import { TabularExportMenu } from '@/features/export/TabularExportMenu';
+import { exportEveryPage } from '@/features/export/export-every-page';
+import { bookingsExportFilename, buildBookingsExport } from './bookings-export';
 import {
   BOOKING_STATUS_BADGE,
   BOOKING_STATUS_LABEL,
@@ -42,6 +45,7 @@ import {
   type BookingStatus,
 } from './booking-status';
 import {
+  readBookingsPage,
   useBookableAssets,
   useBookings,
   useCancelBooking,
@@ -397,7 +401,33 @@ export function BookingsScreen() {
 
   return (
     <PageContainer>
-      <PageHeader icon={<BookingIcon />} title="Bookings" />
+      <PageHeader
+        icon={<BookingIcon />}
+        title="Bookings"
+        actions={
+          /*
+           * The export re-reads every page rather than serialising the rows on screen — the
+           * screen's read is capped at one page (which is why it carries a truncation notice),
+           * so the file would stop at the same bound while looking complete. Statuses are
+           * derived against this render's single `now`, so they agree with the headings above.
+           */
+          <TabularExportMenu
+            build={(format) =>
+              exportEveryPage(
+                readBookingsPage,
+                (rows) => buildBookingsExport(format, rows, now),
+                t('export.list.truncated'),
+              )
+            }
+            filename={bookingsExportFilename}
+            triggerLabel={t('export.list.trigger')}
+            menuLabel={t('export.bookings.menuLabel')}
+            toastHeading={t('export.bookings.toast')}
+            disabled={isLoading || bookings.length === 0}
+            testIdPrefix="export-bookings"
+          />
+        }
+      />
 
       <NewBookingForm onResult={onResult} />
 

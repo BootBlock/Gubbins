@@ -94,6 +94,16 @@ export function usePurchaseOrders(page = 1, pageSize = MAX_PAGE_SIZE) {
   });
 }
 
+/**
+ * One page of the order list, for the export's read-everything walk (issue #132). The Orders tab
+ * holds a single page, so serialising the rows in hand would export that page rather than the
+ * order book; the export re-reads from the start through `exportEveryPage`. Not a hook — it is
+ * called from the export's `build` callback, outside React's render.
+ */
+export function readPurchaseOrdersPage(params: { limit: number; offset: number }) {
+  return getPurchaseOrderRepository().list(params);
+}
+
 /** How many purchase orders exist in total — the denominator for the Orders tab's pager. */
 export function usePurchaseOrderCount() {
   return useQuery({

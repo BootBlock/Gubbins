@@ -36,7 +36,11 @@ import { preferredSupplierPart } from '@/features/inventory/supplier-cost';
 import type { LocationOption } from '@/features/inventory/components/LocationSelect';
 import type { PurchaseOrderLine, PurchaseOrderWithLines } from '@/db/repositories';
 import { estimatedValue, poStatusPresentation, totalOrdered, totalReceived } from './po-presentation';
+import { TabularExportMenu } from '@/features/export/TabularExportMenu';
+import { exportEveryPage } from '@/features/export/export-every-page';
+import { buildPurchaseOrdersExport, purchaseOrdersExportFilename } from './po-export';
 import {
+  readPurchaseOrdersPage,
   useAddPurchaseOrderLine,
   useCreatePurchaseOrder,
   useDeletePurchaseOrder,
@@ -140,7 +144,29 @@ export function PurchaseOrdersScreen() {
         title="Purchase orders"
         actions={
           activeTab === 'orders' ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/*
+               * One row per order, matching the master list, with the lines folded into totals.
+               * Re-reads every page rather than serialising the page on screen — the order book
+               * grows for as long as the inventory is used, so the rows in hand are a page of it.
+               */}
+              <TabularExportMenu
+                build={(format) =>
+                  exportEveryPage(
+                    readPurchaseOrdersPage,
+                    // The same base minor unit the rows are rendered with, so an order stored
+                    // without a currency of its own totals identically in the file (issue #292).
+                    (rows) => buildPurchaseOrdersExport(format, rows, currencyDecimals),
+                    t('export.list.truncated'),
+                  )
+                }
+                filename={purchaseOrdersExportFilename}
+                triggerLabel={t('export.list.trigger')}
+                menuLabel={t('export.purchaseOrders.menuLabel')}
+                toastHeading={t('export.purchaseOrders.toast')}
+                disabled={ordersQuery.isLoading || totalOrders === 0}
+                testIdPrefix="export-purchase-orders"
+              />
               <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="po-import">
                 <UploadIcon />
                 {t('purchasing.import.open')}

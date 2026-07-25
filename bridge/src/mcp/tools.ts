@@ -27,7 +27,6 @@ import {
   toCapabilityKey,
   toCategorySummary,
   toLocation,
-  type ItemDetailDto,
   type ListEnvelope,
   type PaginationMeta,
 } from '../api/dto.ts';
@@ -46,7 +45,13 @@ import {
   SEARCH_DEFAULT_FIELDS,
 } from '../api/item-view.ts';
 import { createLocationViewContext, parseLocationSelection, projectLocation } from '../api/location-view.ts';
-import { MAX_NOTE_LENGTH, WriteError, type WriteOperation } from '../write.ts';
+import {
+  MAX_BORROWER_NAME_LENGTH,
+  MAX_NOTE_LENGTH,
+  WriteError,
+  type WriteOperation,
+  type WriteResult,
+} from '../write.ts';
 
 /** A minimal JSON-Schema subset — enough to describe each tool's arguments in `tools/list`. */
 export interface JsonSchema {
@@ -181,8 +186,9 @@ const whereIsTool: McpTool = {
 const getItemTool: McpTool = {
   name: 'gubbins_get_item',
   description:
-    'Fetch one inventory item by its stable id, with full detail: per-location placements ' +
-    'and parametric capabilities. Returns { found: false } when no item has that id. Use ' +
+    'Fetch one inventory item by its stable id, with full detail: per-location placements, ' +
+    "parametric capabilities, and the item's tags (an array of tag names — the answer to " +
+    '"is this fragile?"). Returns { found: false } when no item has that id. Use ' +
     '"fields" to project only specific fields, or "include" to add extended fields (e.g. notes, ' +
     'or "fields" for the item\'s custom-field values).',
   inputSchema: {
@@ -291,7 +297,7 @@ export function findTool(name: string): McpTool | undefined {
  * write to. The composition root binds it to the System user explicitly (see `mcp/serve.ts`) —
  * naming that choice once, in the open, rather than letting each call site default to it.
  */
-export type WriteExecutor = (op: WriteOperation) => Promise<ItemDetailDto>;
+export type WriteExecutor = (op: WriteOperation) => Promise<WriteResult>;
 
 /** The shared `delta`/`note` argument schemas for both adjust tools. */
 const NOTE_SCHEMA: JsonSchema = {
@@ -372,7 +378,132 @@ export function createWriteTools(execute: WriteExecutor): readonly McpTool[] {
     },
   };
 
-  return [adjustQuantityTool, adjustGaugeTool];
+  const checkOutTool: McpTool = {
+    name: 'gubbins_check_out',
+    mutates: true,
+    description:
+      'Lend an item out to a borrower — a person (contact), a project, or a location such as a ' +
+      'van. Supply exactly one borrower: contactId, contactName (an unknown name creates the ' +
+      'contact), projectId or locationId. Discrete stock is decremented while the loan is open; ' +
+      'a serialised item goes out as a whole and cannot be lent twice. Returns the loan, whose ' +
+      'id checks it back in later. Use gubbins_search first to get the item id, and confirm with ' +
+      'the user before lending.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The item id (as returned by gubbins_search).' },
+        contactId: { type: 'string', description: 'Lend to this existing contact.' },
+        contactName: {
+          type: 'string',
+          description:
+            "Lend to a contact by name; one is created if there's no match. " +
+            `Max ${MAX_BORROWER_NAME_LENGTH} characters.`,
+        },
+        projectId: { type: 'string', description: 'Lend to this existing project instead.' },
+        locationId: { type: 'string', description: 'Lend to this existing location instead ("in the van").' },
+        quantity: { type: 'integer', description: 'Units to lend; defaults to 1.', minimum: 1 },
+        dueDate: {
+          type: 'string',
+          description: 'Optional due date as a calendar day, "yyyy-MM-dd". Omit for an open-ended loan.',
+        },
+        fromLocationId: {
+          type: 'string',
+          description: "Draw the units from this placement; defaults to the item's own location.",
+        },
+        note: {
+          type: 'string',
+          description:
+            'Optional short reason recorded on the loan (e.g. "For the Henderson job"). ' +
+            `Max ${MAX_NOTE_LENGTH} characters.`,
+        },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    async run(_driver, args) {
+      return runWrite(execute, {
+        kind: 'check-out',
+        itemId: requireString(args, 'id'),
+        ...optionalStringArg(args, 'contactId'),
+        ...optionalStringArg(args, 'contactName'),
+        ...optionalStringArg(args, 'projectId'),
+        ...optionalStringArg(args, 'locationId'),
+        ...optionalStringArg(args, 'dueDate'),
+        ...optionalStringArg(args, 'fromLocationId'),
+        ...(args.quantity !== undefined && args.quantity !== null
+          ? { quantity: requireInteger(args, 'quantity') }
+          : {}),
+        ...noteArg(args),
+      });
+    },
+  };
+
+  const checkInTool: McpTool = {
+    name: 'gubbins_check_in',
+    mutates: true,
+    description:
+      'Return a lent item, restoring its stock to wherever it was lent from and closing the ' +
+      'loan. When the item has exactly one open loan the item id alone is enough; if it has ' +
+      'several, pass checkoutId to say which one is back. Confirm with the user before returning.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The item id (as returned by gubbins_search).' },
+        checkoutId: {
+          type: 'string',
+          description: 'Which loan to close; only needed when the item has more than one open loan.',
+        },
+        note: {
+          type: 'string',
+          description:
+            'Optional short remark recorded on the return (e.g. "Came back with a chipped blade"). ' +
+            `Max ${MAX_NOTE_LENGTH} characters.`,
+        },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    async run(_driver, args) {
+      return runWrite(execute, {
+        kind: 'check-in',
+        itemId: requireString(args, 'id'),
+        ...optionalStringArg(args, 'checkoutId'),
+        ...noteArg(args),
+      });
+    },
+  };
+
+  const transferStockTool: McpTool = {
+    name: 'gubbins_transfer_stock',
+    mutates: true,
+    description:
+      "Move units of a DISCRETE item from one location to another, leaving the item's total " +
+      'unchanged. Use this rather than two quantity adjustments — those only ever touch the ' +
+      "item's home location. The whole amount moves or none of it does. Use " +
+      'gubbins_list_locations to get the location ids, and confirm with the user before moving stock.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The item id (as returned by gubbins_search).' },
+        fromLocationId: { type: 'string', description: 'The location the units are moving out of.' },
+        toLocationId: { type: 'string', description: 'The location the units are moving into.' },
+        quantity: { type: 'integer', description: 'How many units to move.', minimum: 1 },
+      },
+      required: ['id', 'fromLocationId', 'toLocationId', 'quantity'],
+      additionalProperties: false,
+    },
+    async run(_driver, args) {
+      return runWrite(execute, {
+        kind: 'transfer-stock',
+        itemId: requireString(args, 'id'),
+        fromLocationId: requireString(args, 'fromLocationId'),
+        toLocationId: requireString(args, 'toLocationId'),
+        quantity: requireInteger(args, 'quantity'),
+      });
+    },
+  };
+
+  return [adjustQuantityTool, adjustGaugeTool, checkOutTool, checkInTool, transferStockTool];
 }
 
 /**
@@ -383,7 +514,15 @@ export function createWriteTools(execute: WriteExecutor): readonly McpTool[] {
  */
 async function runWrite(execute: WriteExecutor, op: WriteOperation): Promise<unknown> {
   try {
-    return { updated: true, item: await execute(op) };
+    const result = await execute(op);
+    // The loan operations also report the checkout they opened or closed — its id is what a
+    // later return names, so the model must be able to read it back. The stock operations have
+    // no loan, and are left with exactly the payload they have always returned.
+    return {
+      updated: true,
+      item: result.item,
+      ...(result.checkout !== null ? { checkout: result.checkout } : {}),
+    };
   } catch (err) {
     if (err instanceof WriteError) throw new ToolInputError(err.message);
     throw err;
@@ -400,6 +539,22 @@ function noteArg(args: Readonly<Record<string, unknown>>): { note?: string } {
   if (value === undefined || value === null) return {};
   if (typeof value !== 'string') throw new ToolInputError('"note" must be a string when provided.');
   return { note: value };
+}
+
+/**
+ * Read one optional string argument into a spreadable fragment, so an omitted argument stays
+ * *absent* from the operation rather than arriving as `undefined` — the difference matters for
+ * the borrower fields, where "not supplied" and "supplied as nothing" are different requests.
+ * Only the type is checked; which combination is valid is the repository's call.
+ */
+function optionalStringArg<K extends string>(
+  args: Readonly<Record<string, unknown>>,
+  key: K,
+): Partial<Record<K, string>> {
+  const value = args[key];
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'string') throw new ToolInputError(`"${key}" must be a string when provided.`);
+  return { [key]: value } as Partial<Record<K, string>>;
 }
 
 // --- argument helpers -------------------------------------------------------------

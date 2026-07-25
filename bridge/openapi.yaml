@@ -45,7 +45,7 @@ tags:
   description: "A conformant (if small) OData v4 read service at /api/v1/odata, for tools that speak OData natively — Excel/Power Query, Power BI, Simple.OData.Client. It serves a service document, the CSDL $metadata, and the same items/locations/categories reads in the OData JSON envelope ({ \"@odata.context\", \"value\" }) with the OData-Version header. The plain /api/v1 endpoints keep their { data, pagination } envelope, so nothing here changes an existing consumer. Only the items set is filterable, sortable, countable and searchable; the CSDL says so in Org.OData.Capabilities.V1 terms, and a system query option a resource does not support is a 400 rather than being ignored."
 -
   name: "writes"
-  description: "Opt-in stock mutations (off by default; enabled with GUBBINS_BRIDGE_ALLOW_WRITES=on). Each write round-trips through the same sync merge the PWA uses, so it is applied without drift on the next sync. When writes are disabled these paths return 404."
+  description: "Opt-in stock and loan mutations (off by default; enabled with GUBBINS_BRIDGE_ALLOW_WRITES=on). Each write round-trips through the same sync merge the PWA uses, so it is applied without drift on the next sync. When writes are disabled these paths return 404."
 -
   name: "push"
   description: "Opt-in snapshot ingest — the PWA \"push to bridge\" (off by default; enabled with GUBBINS_BRIDGE_ALLOW_PUSH=on, and only for a JSON snapshot source). A separate opt-in from writes, but a wider privilege: it merges caller-supplied content into the whole served dataset, not a single bounded stock delta. Accepts the same versioned backup JSON the bridge reads from a synced folder, merges it into the served snapshot and writes the result atomically; the watcher then re-hydrates. When push is disabled this path returns 404."
@@ -89,6 +89,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -96,6 +107,23 @@ paths:
               schema:
                 type: "integer"
               description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -129,6 +157,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -136,6 +175,23 @@ paths:
               schema:
                 type: "integer"
               description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -171,6 +227,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -178,6 +245,23 @@ paths:
               schema:
                 type: "integer"
               description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -236,6 +320,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -243,6 +338,23 @@ paths:
               schema:
                 type: "integer"
               description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -277,6 +389,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -284,6 +407,23 @@ paths:
               schema:
                 type: "integer"
               description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -339,7 +479,7 @@ paths:
         name: "$filter"
         in: "query"
         required: false
-        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with parentheses. Filterable fields: name, description, notes, mpn, manufacturer, serialNumber, quantity, weight, width, height, depth, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, lambdas) are a 400. When present it is the sole row filter (location/category are ignored)."
+        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/ne/gt/lt, the contains(field, string) function, and/or/not with parentheses, and single-quoted string / numeric / boolean literals. Dates are quoted 'YYYY-MM-DD' and money is in the base currency's major units. `tag` compares against a tag name and matches when ANY of the item's tags does. Field names are case-insensitive. Filterable fields: active, barcode, category, categoryId, condition, cost, currentValue, deadstock, deadStockMode, depth, description, expiry, expiryDate, favourite, height, isActive, isFavourite, location, locationId, manufacturer, mpn, name, notes, price, purchasePrice, quantity, reorder, reorderPoint, serial, serialNumber, tag, tags, tracking, trackingMode, unitCost, value, warranty, warrantyExpiresAt, weight, width. Anything outside the subset (ge/le, startswith/endswith, arithmetic, lambdas, an unknown field) is a 400, as is an operator a field does not accept. When present it is the sole row filter (location/category/$search are ignored)."
         schema:
           type: "string"
         example: "quantity gt 10 and contains(name,'bolt')"
@@ -411,6 +551,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -422,8 +573,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -500,6 +657,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -511,8 +679,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -533,7 +707,7 @@ paths:
         name: "$filter"
         in: "query"
         required: false
-        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with parentheses. Filterable fields: name, description, notes, mpn, manufacturer, serialNumber, quantity, weight, width, height, depth, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, lambdas) are a 400. When present it is the sole row filter (location/category are ignored)."
+        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/ne/gt/lt, the contains(field, string) function, and/or/not with parentheses, and single-quoted string / numeric / boolean literals. Dates are quoted 'YYYY-MM-DD' and money is in the base currency's major units. `tag` compares against a tag name and matches when ANY of the item's tags does. Field names are case-insensitive. Filterable fields: active, barcode, category, categoryId, condition, cost, currentValue, deadstock, deadStockMode, depth, description, expiry, expiryDate, favourite, height, isActive, isFavourite, location, locationId, manufacturer, mpn, name, notes, price, purchasePrice, quantity, reorder, reorderPoint, serial, serialNumber, tag, tags, tracking, trackingMode, unitCost, value, warranty, warrantyExpiresAt, weight, width. Anything outside the subset (ge/le, startswith/endswith, arithmetic, lambdas, an unknown field) is a 400, as is an operator a field does not accept. When present it is the sole row filter (location/category/$search are ignored)."
         schema:
           type: "string"
         example: "quantity gt 10 and contains(name,'bolt')"
@@ -576,6 +750,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -587,8 +772,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -606,18 +797,18 @@ paths:
       description: "A plain paged read: $select, $expand, $top and $skip only. This set is not filterable, sortable, countable or searchable — the CSDL declares that, and asking anyway is a 400."
       parameters:
       -
-        name: "fields"
+        name: "$select"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of location fields to return INSTEAD of the default set. Valid fields: id, name, parentId, isSystem, description, color, itemCount, fieldValues. Nest the array field with a dot: `fieldValues.value`. An unknown field is a 400."
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
         schema:
           type: "string"
         example: "id,name,fieldValues"
       -
-        name: "include"
+        name: "$expand"
         in: "query"
         required: false
-        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: fields (fieldValues — the location's custom-field values) and all. An unknown name is a 400."
+        description: "OData-style alias of `include` (this alias wins if both are given)."
         schema:
           type: "string"
         example: "fields"
@@ -688,6 +879,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -699,8 +901,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -725,18 +933,18 @@ paths:
           type: "string"
         example: "'abc'"
       -
-        name: "fields"
+        name: "$select"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of location fields to return INSTEAD of the default set. Valid fields: id, name, parentId, isSystem, description, color, itemCount, fieldValues. Nest the array field with a dot: `fieldValues.value`. An unknown field is a 400."
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
         schema:
           type: "string"
         example: "id,name,fieldValues"
       -
-        name: "include"
+        name: "$expand"
         in: "query"
         required: false
-        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: fields (fieldValues — the location's custom-field values) and all. An unknown name is a 400."
+        description: "OData-style alias of `include` (this alias wins if both are given)."
         schema:
           type: "string"
         example: "fields"
@@ -776,6 +984,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -787,8 +1006,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -872,6 +1097,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -883,8 +1119,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -944,6 +1186,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -955,8 +1208,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1004,6 +1263,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1015,8 +1285,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1067,6 +1343,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1078,8 +1365,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1119,7 +1412,7 @@ paths:
         name: "fields"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities, fieldValues."
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array-of-object field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, barcode, isFavourite, serialNumber, serialNo, parentId, unitCost, purchasePrice, currentValue, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, deadStockMode, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities, tags, fieldValues."
         schema:
           type: "string"
         example: "name,unitCost"
@@ -1127,7 +1420,7 @@ paths:
         name: "include"
         in: "query"
         required: false
-        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field values, with location inheritance resolved), and all (every extended field). An unknown name is a 400."
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName, tags), pricing (unitCost, purchasePrice, currentValue), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field values, with location inheritance resolved), and all (every extended field). An unknown name is a 400."
         schema:
           type: "string"
         example: "capabilities,notes"
@@ -1185,6 +1478,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1196,8 +1500,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1252,6 +1562,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1263,8 +1584,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1326,7 +1653,7 @@ paths:
         name: "fields"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities, fieldValues."
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array-of-object field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, barcode, isFavourite, serialNumber, serialNo, parentId, unitCost, purchasePrice, currentValue, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, deadStockMode, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities, tags, fieldValues."
         schema:
           type: "string"
         example: "name,unitCost"
@@ -1334,7 +1661,7 @@ paths:
         name: "include"
         in: "query"
         required: false
-        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field values, with location inheritance resolved), and all (every extended field). An unknown name is a 400."
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName, tags), pricing (unitCost, purchasePrice, currentValue), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field values, with location inheritance resolved), and all (every extended field). An unknown name is a 400."
         schema:
           type: "string"
         example: "capabilities,notes"
@@ -1382,7 +1709,7 @@ paths:
         name: "$filter"
         in: "query"
         required: false
-        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with parentheses. Filterable fields: name, description, notes, mpn, manufacturer, serialNumber, quantity, weight, width, height, depth, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, lambdas) are a 400. When present it is the sole row filter (location/category are ignored)."
+        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/ne/gt/lt, the contains(field, string) function, and/or/not with parentheses, and single-quoted string / numeric / boolean literals. Dates are quoted 'YYYY-MM-DD' and money is in the base currency's major units. `tag` compares against a tag name and matches when ANY of the item's tags does. Field names are case-insensitive. Filterable fields: active, barcode, category, categoryId, condition, cost, currentValue, deadstock, deadStockMode, depth, description, expiry, expiryDate, favourite, height, isActive, isFavourite, location, locationId, manufacturer, mpn, name, notes, price, purchasePrice, quantity, reorder, reorderPoint, serial, serialNumber, tag, tags, tracking, trackingMode, unitCost, value, warranty, warrantyExpiresAt, weight, width. Anything outside the subset (ge/le, startswith/endswith, arithmetic, lambdas, an unknown field) is a 400, as is an operator a field does not accept. When present it is the sole row filter (location/category/$search are ignored)."
         schema:
           type: "string"
         example: "quantity gt 10 and contains(name,'bolt')"
@@ -1405,7 +1732,7 @@ paths:
         example: "esp32"
       responses:
         "200":
-          description: "A page of results."
+          description: "A page of items. Each row is the full `ItemSummary` shape (plus anything added with `include`/`$expand`) unless `fields`/`$select` projects it to exactly the named fields."
           content:
             application/json:
               schema:
@@ -1417,7 +1744,7 @@ paths:
                   data:
                     type: "array"
                     items:
-                      $ref: "#/components/schemas/ItemSummary"
+                      $ref: "#/components/schemas/ItemProjection"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
         "400":
@@ -1443,6 +1770,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1454,8 +1792,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1476,7 +1820,7 @@ paths:
         name: "$filter"
         in: "query"
         required: false
-        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with parentheses. Filterable fields: name, description, notes, mpn, manufacturer, serialNumber, quantity, weight, width, height, depth, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, lambdas) are a 400. When present it is the sole row filter (location/category are ignored)."
+        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/ne/gt/lt, the contains(field, string) function, and/or/not with parentheses, and single-quoted string / numeric / boolean literals. Dates are quoted 'YYYY-MM-DD' and money is in the base currency's major units. `tag` compares against a tag name and matches when ANY of the item's tags does. Field names are case-insensitive. Filterable fields: active, barcode, category, categoryId, condition, cost, currentValue, deadstock, deadStockMode, depth, description, expiry, expiryDate, favourite, height, isActive, isFavourite, location, locationId, manufacturer, mpn, name, notes, price, purchasePrice, quantity, reorder, reorderPoint, serial, serialNumber, tag, tags, tracking, trackingMode, unitCost, value, warranty, warrantyExpiresAt, weight, width. Anything outside the subset (ge/le, startswith/endswith, arithmetic, lambdas, an unknown field) is a 400, as is an operator a field does not accept. When present it is the sole row filter (location/category/$search are ignored)."
         schema:
           type: "string"
         example: "quantity gt 10 and contains(name,'bolt')"
@@ -1519,6 +1863,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1530,8 +1885,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1552,7 +1913,7 @@ paths:
         name: "$filter"
         in: "query"
         required: false
-        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with parentheses. Filterable fields: name, description, notes, mpn, manufacturer, serialNumber, quantity, weight, width, height, depth, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, lambdas) are a 400. When present it is the sole row filter (location/category are ignored)."
+        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/ne/gt/lt, the contains(field, string) function, and/or/not with parentheses, and single-quoted string / numeric / boolean literals. Dates are quoted 'YYYY-MM-DD' and money is in the base currency's major units. `tag` compares against a tag name and matches when ANY of the item's tags does. Field names are case-insensitive. Filterable fields: active, barcode, category, categoryId, condition, cost, currentValue, deadstock, deadStockMode, depth, description, expiry, expiryDate, favourite, height, isActive, isFavourite, location, locationId, manufacturer, mpn, name, notes, price, purchasePrice, quantity, reorder, reorderPoint, serial, serialNumber, tag, tags, tracking, trackingMode, unitCost, value, warranty, warrantyExpiresAt, weight, width. Anything outside the subset (ge/le, startswith/endswith, arithmetic, lambdas, an unknown field) is a 400, as is an operator a field does not accept. When present it is the sole row filter (location/category/$search are ignored)."
         schema:
           type: "string"
         example: "quantity gt 10 and contains(name,'bolt')"
@@ -1603,6 +1964,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1614,8 +1986,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1722,6 +2100,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1733,8 +2122,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1837,6 +2232,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1848,8 +2254,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1952,6 +2364,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1963,8 +2386,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2067,6 +2496,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -2078,8 +2518,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2158,13 +2604,24 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LegacyError"
         "403":
           description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LegacyError"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyError"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -2175,9 +2632,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LegacyError"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyError"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2186,12 +2649,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LegacyError"
   /api/v1/items/{id}:
     get:
       tags:
       - "items"
-      summary: "Look up one item by id (with placements and capabilities)"
+      summary: "Look up one item by id (with placements, capabilities and tags)"
       description: "One item with its full detail. Use `fields`/`$select` to project a sparse fieldset (e.g. just the price) or `include`/`$expand` to add extended fields beyond the default detail payload."
       parameters:
       -
@@ -2205,7 +2668,7 @@ paths:
         name: "fields"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities, fieldValues."
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array-of-object field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, barcode, isFavourite, serialNumber, serialNo, parentId, unitCost, purchasePrice, currentValue, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, deadStockMode, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities, tags, fieldValues."
         schema:
           type: "string"
         example: "name,unitCost"
@@ -2213,7 +2676,7 @@ paths:
         name: "include"
         in: "query"
         required: false
-        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field values, with location inheritance resolved), and all (every extended field). An unknown name is a 400."
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName, tags), pricing (unitCost, purchasePrice, currentValue), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field values, with location inheritance resolved), and all (every extended field). An unknown name is a 400."
         schema:
           type: "string"
         example: "capabilities,notes"
@@ -2235,11 +2698,11 @@ paths:
         example: "capabilities,notes"
       responses:
         "200":
-          description: "The item."
+          description: "The item — the full `ItemDetail` shape (plus anything added with `include`/`$expand`) unless `fields`/`$select` projects it to exactly the named fields."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ItemDetail"
+                $ref: "#/components/schemas/ItemProjection"
         "400":
           description: "Bad request — missing or invalid parameter."
           content:
@@ -2269,6 +2732,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -2280,8 +2754,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2295,8 +2775,8 @@ paths:
     post:
       tags:
       - "writes"
-      summary: "Adjust a DISCRETE item’s quantity by a signed delta (check-in / check-out)"
-      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Applies a signed delta to the item’s home-location stock and logs it, exactly as the app does, then writes the merged snapshot back so the PWA reconciles it (LWW) on its next sync."
+      summary: "Adjust a DISCRETE item’s quantity by a signed delta"
+      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Applies a signed delta to the item’s home-location stock and logs it, exactly as the app does, then writes the merged snapshot back so the PWA reconciles it (LWW) on its next sync. This is stock going in or out, not a loan — to lend an item to someone and get it back, use check-out / check-in, which track who has it."
       parameters:
       -
         name: "id"
@@ -2316,7 +2796,7 @@ paths:
               properties:
                 delta:
                   type: "number"
-                  description: "Whole-number change; negative to check out."
+                  description: "Whole-number change; negative to take stock out."
                   example: -1
                 note:
                   type: "string"
@@ -2359,6 +2839,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "415":
           description: "The request body was not declared as application/json."
           content:
@@ -2382,8 +2873,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2461,6 +2958,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "415":
           description: "The request body was not declared as application/json."
           content:
@@ -2484,8 +2992,393 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/items/{id}/check-out:
+    post:
+      tags:
+      - "writes"
+      summary: "Lend an item out to a contact, project or location"
+      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Opens a loan exactly as the app does — a discrete item’s stock is drawn down from the source placement while the loan is open, a serialised item goes out as a whole and cannot be lent twice. Supply exactly one borrower; naming a contact that does not exist creates it, as the app does. The response carries the loan, whose id names it at check-in and is the id the calendar feed embeds in that loan’s UID (loan-<id>@gubbins.invalid). Needs checkouts:write (not stock:write)."
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The item id."
+        schema:
+          type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              description: "Exactly one of contactId / contactName / projectId / locationId identifies the borrower; supplying none or several is a 422."
+              properties:
+                contactId:
+                  type: "string"
+                  description: "Lend to this existing contact."
+                contactName:
+                  type: "string"
+                  maxLength: 500
+                  description: "Lend to a contact by name, creating it when there is no match."
+                projectId:
+                  type: "string"
+                  description: "Lend to this existing project."
+                locationId:
+                  type: "string"
+                  description: "Lend to this existing location (\"in the van\")."
+                quantity:
+                  type: "integer"
+                  minimum: 1
+                  description: "Units to lend; defaults to 1. A serialised item always lends as 1."
+                dueDate:
+                  type: "string"
+                  format: "date"
+                  nullable: true
+                  description: "Due date as a calendar day (yyyy-MM-dd), anchored at local end-of-day so a loan due \"the 20th\" only reads overdue once the 20th is over. Null or absent for an open-ended loan."
+                  example: "2026-08-14"
+                fromLocationId:
+                  type: "string"
+                  description: "Draw the units from this placement (the return restores them there); defaults to the item’s own location."
+                note:
+                  type: "string"
+                  nullable: true
+                  maxLength: 500
+                  description: "Optional note recorded on the loan and in the activity log."
+      responses:
+        "200":
+          description: "The updated item and the loan that was opened."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanResult"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: "The request body was not declared as application/json."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/items/{id}/check-in:
+    post:
+      tags:
+      - "writes"
+      summary: "Return a lent item, closing its loan"
+      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Restores the units to the placement (and lot) they were lent from and stamps the loan returned, exactly as the app does. `checkoutId` is optional when the item has exactly one open loan, and required (422) once it has more than one. Needs checkouts:write (not stock:write)."
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The item id."
+        schema:
+          type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                checkoutId:
+                  type: "string"
+                  description: "Which loan to close. Only needed when the item has more than one open loan; it must belong to this item and still be open."
+                note:
+                  type: "string"
+                  nullable: true
+                  maxLength: 500
+                  description: "Optional remark recorded on the return (kept separate from the loan’s own note)."
+      responses:
+        "200":
+          description: "The updated item and the loan that was closed."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanResult"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: "The request body was not declared as application/json."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/items/{id}/transfer-stock:
+    post:
+      tags:
+      - "writes"
+      summary: "Move units of a DISCRETE item between two locations"
+      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Moves stock between placements in the per-location ledger, leaving the item’s total unchanged — what adjust-quantity cannot do, since it only ever touches the item’s home location. Each moved lot keeps its batch and expiry at the destination. The whole amount moves or none of it does: too little on hand at the source is a 422, never a silent partial move."
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The item id."
+        schema:
+          type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              required:
+              - "fromLocationId"
+              - "toLocationId"
+              - "quantity"
+              properties:
+                fromLocationId:
+                  type: "string"
+                  description: "The location the units move out of."
+                toLocationId:
+                  type: "string"
+                  description: "The location the units move into."
+                quantity:
+                  type: "integer"
+                  minimum: 1
+                  description: "How many units to move."
+                  example: 5
+      responses:
+        "200":
+          description: "The updated item."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemDetail"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: "The request body was not declared as application/json."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2552,6 +3445,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "413":
           description: "The pushed snapshot exceeded the configured maximum size (GUBBINS_BRIDGE_MAX_PUSH_BYTES)."
           content:
@@ -2577,6 +3487,23 @@ paths:
               schema:
                 type: "integer"
               description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -2641,7 +3568,7 @@ paths:
         example: "capabilities,notes"
       responses:
         "200":
-          description: "A page of results."
+          description: "A page of locations. Each row is the full default location payload (plus `fieldValues` when included) unless `fields`/`$select` projects it to exactly the named fields."
           content:
             application/json:
               schema:
@@ -2673,6 +3600,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -2684,8 +3622,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2771,6 +3715,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -2782,8 +3737,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2820,7 +3781,7 @@ paths:
           default: 0
       responses:
         "200":
-          description: "A page of results."
+          description: "A page of categories."
           content:
             application/json:
               schema:
@@ -2852,6 +3813,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -2863,8 +3835,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2917,6 +3895,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -2928,8 +3917,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2967,7 +3962,7 @@ paths:
           default: 0
       responses:
         "200":
-          description: "A page of results."
+          description: "A page of capability keys."
           content:
             application/json:
               schema:
@@ -2999,6 +3994,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -3010,8 +4016,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -3060,6 +4072,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -3071,12 +4100,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/webhooks/deliveries:
     get:
       tags:
       - "webhooks"
       summary: "Read the bridge’s recent webhook delivery outcomes"
-      description: "Opt-in (GUBBINS_BRIDGE_WEBHOOKS=on); returns 404 when disabled. The bridge is read-only over a snapshot that is swapped wholesale on every hydration, so it cannot record a delivery outcome back into the database — anything it wrote would be discarded on the next hydrate. It therefore keeps a bounded in-memory log, which the app polls while its Webhooks screen is open. The log does not survive a bridge restart. No secret, signature, request header or query string is ever recorded, and each URL is reduced to its origin and path. Reads the bridge’s own memory rather than the snapshot, so it answers before a snapshot has loaded."
+      description: "Opt-in (GUBBINS_BRIDGE_WEBHOOKS=on); returns 404 when disabled. The bridge is read-only over a snapshot that is swapped wholesale on every hydration, so it cannot record a delivery outcome back into the database — anything it wrote would be discarded on the next hydrate. It therefore keeps a bounded in-memory log, which the app polls while its Webhooks screen is open. The log does not survive a bridge restart. No secret, signature, request header or query string is ever recorded, and each URL is reduced to its origin and path. Reads the bridge’s own memory rather than the snapshot — but, like every path, it still answers 503 until one has loaded, because the tokens that identify the caller arrive in that snapshot."
       parameters:
       -
         name: "since"
@@ -3154,6 +4200,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -3161,6 +4224,23 @@ paths:
               schema:
                 type: "integer"
               description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -3252,6 +4332,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "415":
           description: "The request body was not declared as application/json."
           content:
@@ -3275,8 +4372,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -3291,7 +4394,7 @@ paths:
       tags:
       - "scale"
       summary: "List the Home Assistant entities that can be used as a scale"
-      description: "Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Projects Home Assistant’s entity states down to those reporting a convertible mass unit, for the app’s scale picker. Reads Home Assistant rather than the snapshot, so it answers before a snapshot has loaded. Strictly read-only — the bridge cannot call a Home Assistant service."
+      description: "Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Projects Home Assistant’s entity states down to those reporting a convertible mass unit, for the app’s scale picker. Reads Home Assistant rather than the snapshot — but, like every path, it still answers 503 until one has loaded, because the tokens that identify the caller arrive in that snapshot. Strictly read-only — the bridge cannot call a Home Assistant service."
       responses:
         "200":
           description: "The pickable weight sensors."
@@ -3343,6 +4446,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -3350,6 +4470,29 @@ paths:
               schema:
                 type: "integer"
               description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: "Home Assistant could not be reached, refused the bridge’s access token, or answered unusably: home_assistant_unreachable, home_assistant_unauthorised or home_assistant_error."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -3397,9 +4540,8 @@ paths:
                     description: "The unit that raw value was in."
                     example: "kg"
                   lastUpdated:
-                    type:
-                    - "string"
-                    - "null"
+                    type: "string"
+                    nullable: true
                     format: "date-time"
               example:
                 entityId: "sensor.workshop_scale"
@@ -3434,14 +4576,29 @@ paths:
           description: "The Home Assistant read is disabled, or the entity is not a scale (or does not exist). A non-scale entity is deliberately indistinguishable from a missing one."
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
               example:
                 error:
                   code: "not_found"
                   message: "No such entity."
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: "A genuine scale that is unavailable, or is not reporting a numeric weight."
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
               example:
                 error:
                   code: "scale_unavailable"
@@ -3453,6 +4610,29 @@ paths:
               schema:
                 type: "integer"
               description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: "Home Assistant could not be reached, refused the bridge’s access token, or answered unusably: home_assistant_unreachable, home_assistant_unauthorised or home_assistant_error."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -3488,9 +4668,23 @@ components:
               - "unsupported_media_type"
               - "unprocessable"
               - "payload_too_large"
+              - "scale_unavailable"
+              - "scale_not_a_number"
+              - "home_assistant_unreachable"
+              - "home_assistant_unauthorised"
+              - "home_assistant_error"
               - "internal_error"
             message:
               type: "string"
+    LegacyError:
+      type: "object"
+      required:
+      - "error"
+      properties:
+        error:
+          type: "string"
+          description: "A short, secret-free explanation. No machine-readable code accompanies it."
+          example: "Method not allowed"
     Pagination:
       type: "object"
       required:
@@ -3710,8 +4904,13 @@ components:
           example: "ESP32"
         matches:
           type: "array"
+          description: "Plain — with no `fields`/`include` (or `$select`/`$expand`) — every match is the compact `ItemMatch`. With a selection each match is an `ItemProjection` instead: the selected item fields and nothing else. The two are genuinely different shapes (among other things `ItemMatch` resolves `locationId` through the locations table, so it can be null), which is why both are listed rather than one covering both."
           items:
-            $ref: "#/components/schemas/ItemMatch"
+            anyOf:
+            -
+              $ref: "#/components/schemas/ItemMatch"
+            -
+              $ref: "#/components/schemas/ItemProjection"
     Placement:
       type: "object"
       required:
@@ -3728,6 +4927,19 @@ components:
         quantity:
           type: "integer"
           example: 5
+    PlacementProjection:
+      type: "object"
+      properties:
+        locationId:
+          type: "string"
+          example: "loc-shelf-2"
+        locationName:
+          type: "string"
+          example: "Shelf 2"
+        quantity:
+          type: "integer"
+          example: 5
+      description: "Returned by a read that accepts a sparse fieldset: a dotted path such as `placements.quantity` narrows each element to exactly the named sub-keys, so no property here is required. Without one, every property below is present."
     WhereIsMatch:
       allOf:
       -
@@ -3780,6 +4992,24 @@ components:
         weight:
           type: "number"
           example: 2
+    CapabilityProjection:
+      type: "object"
+      properties:
+        key:
+          type: "string"
+          example: "voltage"
+        valueNum:
+          type: "number"
+          nullable: true
+          example: 3.3
+        valueText:
+          type: "string"
+          nullable: true
+          example: null
+        weight:
+          type: "number"
+          example: 2
+      description: "Returned by a read that accepts a sparse fieldset: a dotted path such as `placements.quantity` narrows each element to exactly the named sub-keys, so no property here is required. Without one, every property below is present."
     ItemFieldValue:
       type: "object"
       description: "One of the item's custom-field values, resolved exactly as the app resolves it: a value set on the item wins, otherwise the value offered by the nearest ancestor location that makes it inheritable, otherwise the field default. Fields with no value are omitted. Read-only."
@@ -3821,14 +5051,44 @@ components:
             locationName:
               type: "string"
               example: "Shelf 2"
+    ItemFieldValueProjection:
+      type: "object"
+      description: "One of the item's custom-field values, resolved exactly as the app resolves it: a value set on the item wins, otherwise the value offered by the nearest ancestor location that makes it inheritable, otherwise the field default. Fields with no value are omitted. Read-only.\n\nReturned by a read that accepts a sparse fieldset: a dotted path such as `placements.quantity` narrows each element to exactly the named sub-keys, so no property here is required. Without one, every property below is present."
+      properties:
+        name:
+          type: "string"
+          example: "Datasheet"
+        fieldType:
+          type: "string"
+          example: "TEXT"
+        value:
+          type: "string"
+          example: "https://example.com/esp32.pdf"
+        source:
+          type: "string"
+          enum:
+          - "stored"
+          - "inherited"
+          - "default"
+          example: "stored"
+          description: "Where the value came from: set on the item (`stored`), inherited from an ancestor location (`inherited`), or the field default (`default`)."
+        inheritedFrom:
+          type: "object"
+          nullable: true
+          description: "The location that supplied the value when `source` is `inherited`; null otherwise."
+          required:
+          - "locationId"
+          - "locationName"
+          properties:
+            locationId:
+              type: "string"
+              example: "loc-shelf-2"
+            locationName:
+              type: "string"
+              example: "Shelf 2"
     LocationFieldValue:
       type: "object"
-      description: "One custom-field value held by a location. Fields with no value are omitted. Read-only."
-      required:
-      - "name"
-      - "fieldType"
-      - "value"
-      - "isInheritable"
+      description: "One custom-field value held by a location. Fields with no value are omitted. Read-only.\n\nReturned by a read that accepts a sparse fieldset: a dotted path such as `placements.quantity` narrows each element to exactly the named sub-keys, so no property here is required. Without one, every property below is present."
       properties:
         name:
           type: "string"
@@ -3843,8 +5103,45 @@ components:
           type: "boolean"
           example: true
           description: "True when the location offers this value to the items stored beneath it; false when it is the location's own metadata only."
+    GaugeState:
+      type: "object"
+      description: "The state of a CONSUMABLE_GAUGE item’s container."
+      required:
+      - "unitOfMeasure"
+      - "grossCapacity"
+      - "tareWeight"
+      - "currentNetValue"
+      - "percentageRemaining"
+      - "currentGrossWeight"
+      - "attritionPercent"
+      properties:
+        unitOfMeasure:
+          type: "string"
+          example: "g"
+        grossCapacity:
+          type: "number"
+          example: 1000
+        tareWeight:
+          type: "number"
+          description: "Empty-container weight/volume."
+          example: 220
+        currentNetValue:
+          type: "number"
+          description: "Usable material remaining."
+          example: 640
+        percentageRemaining:
+          type: "number"
+          example: 64
+        currentGrossWeight:
+          type: "number"
+          example: 860
+        attritionPercent:
+          type: "number"
+          nullable: true
+          description: "Proportional waste a draw costs on top of the amount asked for; null for none."
     ItemSummary:
       type: "object"
+      description: "The default row shape of `GET /api/v1/items`, and the item snapshot carried by an event."
       required:
       - "id"
       - "name"
@@ -3876,6 +5173,7 @@ components:
         locationId:
           type: "string"
           example: "loc-drawer-a"
+          description: "The stable id of the item’s primary/home location — what an automation acts on."
         locationName:
           type: "string"
           nullable: true
@@ -3904,6 +5202,7 @@ components:
           type: "boolean"
           example: true
     ItemDetail:
+      description: "The default payload of `GET /api/v1/items/{id}`, and what a write returns."
       allOf:
       -
         $ref: "#/components/schemas/ItemSummary"
@@ -3912,10 +5211,12 @@ components:
         required:
         - "placements"
         - "capabilities"
+        - "tags"
         properties:
           description:
             type: "string"
             nullable: true
+            description: "What the item *is* — factual, display-worthy copy."
           categoryName:
             type: "string"
             nullable: true
@@ -3923,22 +5224,28 @@ components:
           unitCost:
             type: "number"
             nullable: true
+            description: "Current replacement value per unit, in the base currency; null if unpriced."
           condition:
             type: "string"
             nullable: true
+            description: "Operational condition; null when untracked."
           serialNumber:
             type: "string"
             nullable: true
             example: "SN-2024-0042"
+            description: "The maker’s per-unit identifier as printed on the article."
           serialNo:
             type: "integer"
             nullable: true
+            description: "Instance number (1..N) of a SERIALISED clone; null otherwise."
           parentId:
             type: "string"
             nullable: true
+            description: "The parent item when this is a child variant; null for a standalone item."
           expiryDate:
             type: "integer"
             nullable: true
+            description: "Perishable expiry instant (UNIX-ms); null when non-perishable."
           batchNumber:
             type: "string"
             nullable: true
@@ -3947,31 +5254,314 @@ components:
             nullable: true
           createdAt:
             type: "integer"
+            description: "UNIX-ms."
           updatedAt:
             type: "integer"
+            description: "UNIX-ms."
           placements:
             type: "array"
+            description: "Where this item’s stock sits, per location."
             items:
               $ref: "#/components/schemas/Placement"
           capabilities:
             type: "array"
+            description: "The item’s queryable capability values."
             items:
               $ref: "#/components/schemas/Capability"
+          tags:
+            type: "array"
+            description: "The names of the tags this item carries, ordered by name. A tag *is* its name, so these values can be fed straight back into a `$filter` as `tag eq '<name>'`. Only the item's own tags — a tag on its location belongs to that location."
+            items:
+              type: "string"
+            example:
+            - "fragile"
+            - "workshop"
           fieldValues:
             type: "array"
             description: "Present only when requested with `include=fields`."
             items:
               $ref: "#/components/schemas/ItemFieldValue"
-    Location:
+    Checkout:
       type: "object"
+      description: "One loan. The borrower is a tagged union: `borrowerType` says which kind of target holds it and `borrowerId` is that target’s id. `status` is derived from `returnedAt`."
       required:
       - "id"
-      - "name"
-      - "parentId"
-      - "isSystem"
-      - "description"
-      - "color"
-      - "itemCount"
+      - "itemId"
+      - "borrowerType"
+      - "borrowerId"
+      - "quantity"
+      - "dueDate"
+      - "checkedOutAt"
+      - "returnedAt"
+      - "status"
+      - "note"
+      - "returnNote"
+      - "sourceLocationId"
+      properties:
+        id:
+          type: "string"
+          example: "a3f1c0de-0000-4000-8000-000000000000"
+        itemId:
+          type: "string"
+          example: "item-m3-bolt"
+        borrowerType:
+          type: "string"
+          enum:
+          - "contact"
+          - "project"
+          - "location"
+          example: "contact"
+        borrowerId:
+          type: "string"
+          example: "contact-sam"
+        quantity:
+          type: "integer"
+          example: 1
+        dueDate:
+          type: "integer"
+          nullable: true
+          description: "UNIX-ms; null for an open-ended loan."
+        checkedOutAt:
+          type: "integer"
+        returnedAt:
+          type: "integer"
+          nullable: true
+          description: "UNIX-ms; null while still out."
+        status:
+          type: "string"
+          enum:
+          - "OPEN"
+          - "RETURNED"
+          example: "OPEN"
+        note:
+          type: "string"
+          nullable: true
+        returnNote:
+          type: "string"
+          nullable: true
+          description: "Null while the loan is open."
+        sourceLocationId:
+          type: "string"
+          nullable: true
+          description: "The placement the units were drawn from; stock is restored there on return."
+    LoanResult:
+      type: "object"
+      description: "What the loan endpoints return: the affected item plus the loan itself."
+      required:
+      - "item"
+      - "checkout"
+      properties:
+        item:
+          $ref: "#/components/schemas/ItemDetail"
+        checkout:
+          $ref: "#/components/schemas/Checkout"
+    ItemProjection:
+      type: "object"
+      description: "An item as returned by a read that accepts a **sparse fieldset**, which is why no property here is required.\n\nWithout `fields`/`$select` the payload is the endpoint’s documented default set — `ItemSummary` for the items list, `ItemDetail` for a single item — plus anything added with `include`/`$expand`. With `fields`/`$select` it is EXACTLY the named fields and nothing else, so `fields=name,unitCost` yields an object of two keys. Every property below is one of those selectable fields; which ones arrive is decided per request, so a generated client must treat them all as optional."
+      properties:
+        id:
+          type: "string"
+          example: "item-m3-bolt"
+        name:
+          type: "string"
+          example: "M3 x 10 Hex Bolt"
+        quantity:
+          type: "integer"
+          nullable: true
+          example: 42
+          description: "On-hand grand total across every location. **null** for an unlimited-supply item (`isUnlimited: true`) — an effectively infinite source has no finite count."
+        isUnlimited:
+          type: "boolean"
+          example: false
+          description: "True for an effectively infinite source (e.g. tap water); its `quantity` is null."
+        locationId:
+          type: "string"
+          example: "loc-drawer-a"
+          description: "The stable id of the item’s primary/home location — what an automation acts on."
+        locationName:
+          type: "string"
+          nullable: true
+          example: "Drawer A"
+        categoryId:
+          type: "string"
+          nullable: true
+          example: "cat-fasteners"
+        categoryName:
+          type: "string"
+          nullable: true
+          example: "Fasteners"
+        mpn:
+          type: "string"
+          nullable: true
+          example: "FAS-M3-10"
+        manufacturer:
+          type: "string"
+          nullable: true
+          example: "Acme Fasteners"
+        trackingMode:
+          type: "string"
+          enum:
+          - "DISCRETE"
+          - "SERIALISED"
+          - "CONSUMABLE_GAUGE"
+          - "UNTRACKED"
+          example: "DISCRETE"
+        isActive:
+          type: "boolean"
+          example: true
+        description:
+          type: "string"
+          nullable: true
+          description: "What the item *is* — factual, display-worthy copy."
+        notes:
+          type: "string"
+          nullable: true
+          description: "The owner’s own free-text remarks."
+        condition:
+          type: "string"
+          nullable: true
+          description: "Operational condition; null when untracked."
+        barcode:
+          type: "string"
+          nullable: true
+          example: "5012345678900"
+          description: "The retail barcode (GTIN — EAN/UPC) printed on the article; null if none. Distinct from `mpn`, which is the maker’s own code."
+        isFavourite:
+          type: "boolean"
+          example: false
+          description: "True when the user has starred this item."
+        serialNumber:
+          type: "string"
+          nullable: true
+          example: "SN-2024-0042"
+          description: "The maker’s per-unit identifier as printed on the article."
+        serialNo:
+          type: "integer"
+          nullable: true
+          description: "Instance number (1..N) of a SERIALISED clone; null otherwise."
+        parentId:
+          type: "string"
+          nullable: true
+          description: "The parent item when this is a child variant; null for a standalone item."
+        unitCost:
+          type: "number"
+          nullable: true
+          description: "Current replacement value per unit, in the base currency; null if unpriced."
+        purchasePrice:
+          type: "number"
+          nullable: true
+          description: "Original acquisition cost, in the base currency; null if unpriced."
+        currentValue:
+          type: "number"
+          nullable: true
+          description: "Manual current/market value per unit, in the base currency; null when none is set. When present it wins over the depreciated replacement cost in valuation."
+        weight:
+          type: "number"
+          nullable: true
+          description: "Intrinsic mass in canonical **grams**; null when not recorded."
+        width:
+          type: "number"
+          nullable: true
+          description: "Intrinsic bounding-box width in canonical **millimetres**; null when not recorded."
+        height:
+          type: "number"
+          nullable: true
+          description: "Intrinsic bounding-box height in canonical **millimetres**; null when not recorded."
+        depth:
+          type: "number"
+          nullable: true
+          description: "Intrinsic bounding-box depth in canonical **millimetres**; null when not recorded."
+        expiryDate:
+          type: "integer"
+          nullable: true
+          description: "Perishable expiry instant (UNIX-ms); null when non-perishable."
+        batchNumber:
+          type: "string"
+          nullable: true
+        lotNumber:
+          type: "string"
+          nullable: true
+        acquiredAt:
+          type: "string"
+          format: "date"
+          nullable: true
+          example: "2025-03-14"
+          description: "Acquisition date (YYYY-MM-DD); null when untracked."
+        warrantyExpiresAt:
+          type: "string"
+          format: "date"
+          nullable: true
+          example: "2027-06-15"
+          description: "Warranty expiry date (YYYY-MM-DD); null when untracked."
+        depreciationMonths:
+          type: "integer"
+          nullable: true
+          description: "Useful life for straight-line depreciation; null when it does not depreciate."
+        deadStockMode:
+          type: "string"
+          enum:
+          - "inherit"
+          - "always"
+          - "never"
+          example: "inherit"
+          description: "Whether this item is reported as dead stock. `inherit` — the default — defers to the item’s location chain; the other two override it."
+        reorderPoint:
+          type: "integer"
+          nullable: true
+          description: "This item’s own DISCRETE low-stock floor; null falls back to the global default."
+        reorderGaugePercent:
+          type: "number"
+          nullable: true
+          description: "This item’s own CONSUMABLE_GAUGE percentage-remaining floor; null falls back to the global default."
+        reorderQty:
+          type: "integer"
+          nullable: true
+          description: "Suggested top-up amount for the shopping list; null when unset."
+        operationalMetadata:
+          type: "object"
+          nullable: true
+          additionalProperties: true
+          description: "A schema-less map of arbitrary operational parameters (e.g. `{ \"bed_temp_celsius\": 60 }`); null when none are set."
+          example:
+            bed_temp_celsius: 60
+        gauge:
+          nullable: true
+          description: "The consumable-gauge state; null unless `trackingMode` is CONSUMABLE_GAUGE."
+          allOf:
+          -
+            $ref: "#/components/schemas/GaugeState"
+        createdAt:
+          type: "integer"
+          description: "UNIX-ms."
+        updatedAt:
+          type: "integer"
+          description: "UNIX-ms."
+        placements:
+          type: "array"
+          description: "Where this item’s stock sits, per location."
+          items:
+            $ref: "#/components/schemas/PlacementProjection"
+        capabilities:
+          type: "array"
+          description: "The item’s queryable capability values."
+          items:
+            $ref: "#/components/schemas/CapabilityProjection"
+        tags:
+          type: "array"
+          description: "The names of the tags this item carries, ordered by name. A tag *is* its name, so these values can be fed straight back into a `$filter` as `tag eq '<name>'`. Only the item's own tags — a tag on its location belongs to that location."
+          items:
+            type: "string"
+          example:
+          - "fragile"
+          - "workshop"
+        fieldValues:
+          type: "array"
+          description: "The item’s custom-field values, with location inheritance resolved."
+          items:
+            $ref: "#/components/schemas/ItemFieldValueProjection"
+    Location:
+      type: "object"
+      description: "A location. Without `fields`/`$select` the payload always carries `id`, `name`, `parentId`, `isSystem`, `description`, `color` and `itemCount`, plus `fieldValues` when asked for with `include=fields`. With `fields`/`$select` it carries EXACTLY the named fields — which is why no property is required (issue #367)."
       properties:
         id:
           type: "string"
@@ -3997,7 +5587,7 @@ components:
           example: 2
         fieldValues:
           type: "array"
-          description: "Present only when requested with `include=fields`."
+          description: "Present only when requested with `include=fields` (or named in `fields`)."
           items:
             $ref: "#/components/schemas/LocationFieldValue"
     CategoryField:

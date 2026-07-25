@@ -12,6 +12,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import rootPackageJson from '../../../package.json' with { type: 'json' };
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
+import { openapiDocument } from '../openapi.ts';
 import { mintTestToken } from '../fixtures/test-identity.ts';
 import { createBridgeServer, type BridgeServerState } from '../server.ts';
 
@@ -181,7 +182,7 @@ describe('GET /api/v1/items', () => {
 });
 
 describe('GET /api/v1/items/{id}', () => {
-  it('returns full detail with placements and capabilities', async () => {
+  it('returns full detail with placements, capabilities and tags', async () => {
     const res = await get('/api/v1/items/item-esp32');
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -191,6 +192,8 @@ describe('GET /api/v1/items/{id}', () => {
       locationName: 'Shelf 2',
       categoryName: 'Electronics',
       quantity: 7,
+      // Tag names, ordered by name — part of the default detail payload (issue #143).
+      tags: ['fragile', 'workshop'],
     });
     const byLocation = new Map(body.placements.map((p: any) => [p.locationName, p.quantity]));
     expect(byLocation.get('Shelf 2')).toBe(5);
@@ -224,6 +227,37 @@ describe('field selection (fields / include)', () => {
     expect(match).toMatchObject({ id: 'item-esp32', name: 'ESP32 Dev Board', mpn: 'DEV-ESP32' });
     // …plus the opted-in extended field.
     expect(match.capabilities.some((c: any) => c.key === 'voltage')).toBe(true);
+  });
+
+  it('search include= only ever ADDS — it never drops a default match field (#367)', async () => {
+    // `include` expands the default payload, so every key of the plain match must survive it.
+    // `locationId` did not: the base set the expansion started from was narrower than the
+    // shape it claimed to expand, so asking for MORE returned one field FEWER.
+    const plain = await json('/api/v1/search?q=ESP32');
+    const expanded = await json('/api/v1/search?q=ESP32&include=notes');
+    for (const key of Object.keys(plain.matches[0])) {
+      expect(expanded.matches[0], `include= dropped "${key}"`).toHaveProperty(key);
+    }
+    expect(expanded.matches[0].locationId).toBe(plain.matches[0].locationId);
+  });
+
+  it('every key a projection can return is a documented ItemProjection property (#367)', async () => {
+    // The published contract is only worth as much as its agreement with the wire: a field the
+    // engine can emit but the document never mentions is exactly what breaks a generated client.
+    const documented = new Set(
+      Object.keys((openapiDocument as any).components.schemas.ItemProjection.properties),
+    );
+    for (const path of [
+      '/api/v1/items?include=all&limit=1',
+      '/api/v1/search?q=ESP32&include=all',
+      '/api/v1/items/item-esp32?include=all',
+    ]) {
+      const body = await json(path);
+      const row = body.data?.[0] ?? body.matches?.[0] ?? body;
+      for (const key of Object.keys(row)) {
+        expect(documented.has(key), `${path} returned undocumented field "${key}"`).toBe(true);
+      }
+    }
   });
 
   it('search 400s an unknown field with the v1 envelope', async () => {
@@ -339,6 +373,51 @@ describe('OData-style query options', () => {
     const body = await json("/api/v1/items?$filter=contains(name,'M3')&$select=name&$orderby=name");
     expect(body.data.map((i: any) => i.name)).toEqual(['M3 Nylon Washer', 'M3 x 10 Hex Bolt']);
     for (const row of body.data) expect(Object.keys(row)).toEqual(['name']);
+  });
+
+  it('$filter reaches the tag surface the app already had (issue #143)', async () => {
+    const exact = await json("/api/v1/items?$filter=tag eq 'workshop'&$select=id");
+    expect(exact.data).toEqual([{ id: 'item-esp32' }]);
+
+    // Substring, via the plural spelling; and the negated form for "carries no such tag".
+    const partial = await json("/api/v1/items?$filter=contains(tags,'frag')&$select=id");
+    expect(partial.data).toEqual([{ id: 'item-esp32' }]);
+
+    const without = await json("/api/v1/items?$filter=tag ne 'workshop'&$select=id");
+    expect(without.data.map((r: any) => r.id)).not.toContain('item-esp32');
+    expect(without.pagination.count).toBe(3);
+  });
+
+  it('$filter reaches barcode and the favourite flag (the drifted fields)', async () => {
+    // Nothing in the fixture carries either, so these assert the query is *accepted* and
+    // answered — the drift made them a 400 naming them as unfilterable.
+    const barcode = await json("/api/v1/items?$filter=barcode eq '5012345678900'");
+    expect(barcode.pagination.count).toBe(0);
+    const favourite = await json('/api/v1/items?$filter=favourite eq true');
+    expect(favourite.pagination.count).toBe(0);
+    const notFavourite = await json('/api/v1/items?$filter=isFavourite eq false&$select=id');
+    expect(notFavourite.pagination.count).toBe(4);
+  });
+
+  it('$filter reads money in major units and dates as a quoted day', async () => {
+    // unitCost is null throughout the fixture, so the point is that both compile and run
+    // rather than 400 — a money value is scaled to micro-units before it is bound.
+    expect((await get('/api/v1/items?$filter=unitCost gt 10')).status).toBe(200);
+    expect((await get("/api/v1/items?$filter=expiryDate lt '2026-03-01'")).status).toBe(200);
+    // An unquoted date is not an OData literal this subset understands.
+    expect((await get('/api/v1/items?$filter=expiryDate lt 2026-03-01')).status).toBe(400);
+  });
+
+  it('400s (never 500s) a prototype key as a $filter field', async () => {
+    const res = await get("/api/v1/items?$filter=constructor eq 'x'");
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('bad_request');
+  });
+
+  it('400s (never 500s) a prototype key as an include group', async () => {
+    const res = await get('/api/v1/items/item-esp32?include=toString');
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toContain('toString');
   });
 
   it('400s an unsupported $filter operator, unknown field, and bad $orderby', async () => {
@@ -516,10 +595,13 @@ describe('routing, auth and method guards', () => {
     expect((await res.json()).error.code).toBe('unauthorized');
   });
 
-  it('405s a non-GET v1 request', async () => {
+  it('405s a non-GET v1 request, advertising what the resource does accept', async () => {
     const res = await get('/api/v1/items', { method: 'POST' });
     expect(res.status).toBe(405);
     expect((await res.json()).error.code).toBe('method_not_allowed');
+    // RFC 9110 §10.2.1: `Allow` is the methods THIS resource supports. A read resource serves
+    // HEAD (from the GET path) and OPTIONS as well, so naming only GET understated it (#367).
+    expect(res.headers.get('allow')).toBe('GET, HEAD, OPTIONS');
   });
 
   it('keeps the legacy flat error envelope on the unversioned paths', async () => {

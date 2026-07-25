@@ -36,6 +36,16 @@ export function useBookings() {
   });
 }
 
+/**
+ * One page of the bookings list, for the export's read-everything walk (issue #132). The screen
+ * reads a single capped page (and says so with its truncation notice), so serialising the rows
+ * in hand would stop the file at 100 bookings; the export re-reads from the start through
+ * `exportEveryPage`. Not a hook — it is called from the export's `build` callback.
+ */
+export function readBookingsPage(params: { limit: number; offset: number }) {
+  return getAssetBookingRepository().list(params);
+}
+
 export function useBookableAssets() {
   return useQuery({
     queryKey: bookingKeys.bookable(),

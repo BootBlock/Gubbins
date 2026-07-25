@@ -84,6 +84,21 @@ export function useOpenCheckouts() {
   });
 }
 
+/**
+ * One page of the open-loans list, for the export's read-everything walk (issue #132). The
+ * screen's own read is capped at a single 100-row page, so serialising the rows in hand would
+ * quietly stop at 100 loans; the export re-reads from the start through `exportEveryPage`.
+ * Not a hook — it is called from the export's `build` callback, outside React's render.
+ */
+export function readOpenCheckoutsPage(params: { limit: number; offset: number }) {
+  return getCheckoutRepository().listOpen(params);
+}
+
+/** One page of the contacts dictionary, for the export's read-everything walk (issue #132). */
+export function readContactsPage(params: { limit: number; offset: number }) {
+  return getContactRepository().list(params);
+}
+
 export function useItemCheckouts(itemId: string | undefined) {
   return useQuery({
     queryKey: checkoutKeys.forItem(itemId ?? ''),

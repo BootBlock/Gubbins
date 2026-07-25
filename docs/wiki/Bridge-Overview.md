@@ -36,7 +36,9 @@ The bridge is built to be cautious:
 - **Per-user tokens** — requests need an [[API token|Bridge-API-Tokens]] you mint in the app
   against a particular account, and they can only do what that account can do.
 - **Read-only by default** — it can't change your data unless you explicitly turn on writes (a
-  bounded stock adjustment) or *push* (accepting a whole dataset — the wider of the two).
+  short, fixed list: adjusting a quantity or gauge, [[checking items out and back
+  in|Loans-Check-Out-and-In]], and moving stock between locations) or *push* (accepting a whole
+  dataset — the wider of the two).
 - **Everything network-facing is opt-in** — each feature (events, MQTT, discovery) is off until you
   enable it, and every choice is logged at startup.
 
