@@ -65,6 +65,10 @@ function BarcodeScanDialogInner({
   // §6.5 scan confirmation is user-mutable; honour the current settings on a hit.
   const beepEnabled = usePreferencesStore((s) => s.scannerBeep);
   const hapticsEnabled = usePreferencesStore((s) => s.scannerHaptics);
+  // The camera choice is shared with the full scanner — one preference, so picking the lens that
+  // can actually focus on a barcode carries across both surfaces (issue #135).
+  const cameraId = usePreferencesStore((s) => s.scannerCameraId);
+  const setCameraId = usePreferencesStore((s) => s.setScannerCameraId);
 
   const [manual, setManual] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -116,8 +120,13 @@ function BarcodeScanDialogInner({
       if (e.key !== 'Tab') return;
       const container = containerRef.current;
       if (!container) return;
-      const focusables = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
       const active = document.activeElement as HTMLElement | null;
+      // Focus can legitimately sit in a pop-up this dialog opened but that portals *outside* it —
+      // the viewfinder's camera menu (issue #135). Such a panel owns its own keyboard contract
+      // (arrow keys to roam, Escape to dismiss), so yanking focus back into the trap would fight
+      // it. The trap still governs everything inside the dialog itself.
+      if (active && !container.contains(active)) return;
+      const focusables = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
       const currentIndex = active ? focusables.indexOf(active) : -1;
       const next = nextTrapIndex(focusables.length, currentIndex, e.shiftKey);
       e.preventDefault();
@@ -183,14 +192,18 @@ function BarcodeScanDialogInner({
     dismissLink();
   }, [linkPrompt, dismissLink]);
 
-  useScanner({
+  const camera = useScanner({
     videoRef,
     roiRef: reticleRef,
     status: state.status,
     dispatch,
     onDecode: handleDecode,
     onEngine: setEngine,
+    // A torch or camera the hardware refused isn't a capture failure — announce it through the same
+    // notice region a manual-entry miss uses (the screen-reader channel for this dialog).
+    onCameraWarning: setNotice,
     symbology,
+    cameraId,
   });
 
   const submitManual = () => {
@@ -243,6 +256,8 @@ function BarcodeScanDialogInner({
           error={state.error}
           onRetry={() => dispatch({ type: 'OPEN' })}
           reticleRef={reticleRef}
+          camera={camera}
+          onSelectCamera={setCameraId}
         />
 
         {/* Website-link prompt: a scanned marketing QR is a link, not a barcode (issue #59).

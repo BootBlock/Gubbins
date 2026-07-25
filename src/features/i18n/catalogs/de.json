@@ -1627,5 +1627,13 @@
   "contacts.gettingStarted.heading": "Willkommen bei Kontakte — behalten Sie den Überblick, wer was hat",
   "contacts.gettingStarted.bodyPurpose": "Kontakte sind die Personen und Organisationen, mit denen Ihr Inventar in Berührung kommt — diejenigen, an die Sie etwas verleihen und von denen Sie sich etwas leihen. Geben Sie einem Kollegen, einem Kunden oder einem Freund etwas, und ein Kontakt verknüpft diese Ausleihe mit einem Namen, sodass Sie immer wissen, wer gerade was hat.",
   "contacts.gettingStarted.bodyHowTo": "Sie müssen vorher nichts einrichten: Fügen Sie unten einen Kontakt hinzu, oder checken Sie einfach ein Objekt für eine neue Person aus, und Gubbins erstellt den Kontakt automatisch. Von hier aus sehen Sie auf einen Blick alles, was gerade ausgeliehen ist, erhalten eine Benachrichtigung, wenn etwas überfällig ist, und checken Objekte mit einem Klick wieder ein — Kontakte können über Buchungen auch Objekte im Voraus reservieren.",
-  "homeAssistant.install.minVersion": "Die benutzerdefinierte Integration erfordert Home Assistant 2025.2 oder neuer. Für das Rezept ohne Code (YAML) gilt diese Voraussetzung nicht."
+  "homeAssistant.install.minVersion": "Die benutzerdefinierte Integration erfordert Home Assistant 2025.2 oder neuer. Für das Rezept ohne Code (YAML) gilt diese Voraussetzung nicht.",
+  "scanner.torch.turnOn": "Licht einschalten",
+  "scanner.torch.turnOff": "Licht ausschalten",
+  "scanner.torch.tooltip": "**Licht** — beleuchtet einen dunklen Schrank, ein Regal oder eine Garage mit dem Licht der Kamera.\n\nWird nur angeboten, wenn die Kamera eines hat.",
+  "scanner.torch.failedOn": "Das Licht konnte nicht eingeschaltet werden. Möglicherweise verwendet eine andere App die Kamera.",
+  "scanner.torch.failedOff": "Das Licht konnte nicht ausgeschaltet werden.",
+  "scanner.camera.menuLabel": "Kamera auswählen",
+  "scanner.camera.unnamed": "Kamera {position}",
+  "scanner.camera.unavailable": "Diese Kamera ist nicht verfügbar — es wird die übliche verwendet."
 }
