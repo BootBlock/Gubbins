@@ -5,15 +5,15 @@ import { Button } from '../button';
 import { Input } from '../input';
 import { Modal } from '../modal';
 import { useSearchEscapeToClear } from '../use-search-escape';
-import { GLYPH_NAMES, getGlyphIcon, isGlyphName } from './glyph-registry';
+import { GLYPH_NAMES, getGlyphIcon, isGlyphName, type GlyphName } from './glyph-registry';
 import { filterGlyphNames, humanizeGlyphName } from './glyph-name';
 
 export interface GlyphPickerProps {
   readonly open: boolean;
   /** Cancel — Escape (from empty search / elsewhere), backdrop, Close or the Cancel button. */
   readonly onClose: () => void;
-  /** Commit the chosen glyph (double-click, the Use button, or Enter). */
-  readonly onSelect: (glyph: string) => void;
+  /** Commit the chosen glyph (double-click, the Use button, or Enter) — always a catalogue name. */
+  readonly onSelect: (glyph: GlyphName) => void;
   /** Glyph to highlight initially (canonical Lucide name); ignored when unknown. */
   readonly initialGlyph?: string | null;
   readonly title?: string;
@@ -58,7 +58,7 @@ export function GlyphPicker({
   const optionId = (index: number) => `${baseId}-opt-${index}`;
 
   const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState<string | null>(() =>
+  const [selected, setSelected] = useState<GlyphName | null>(() =>
     isGlyphName(initialGlyph) ? initialGlyph : null,
   );
 
@@ -78,7 +78,7 @@ export function GlyphPicker({
     if (activeIndex >= 0) optionRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' });
   }, [activeIndex]);
 
-  const commit = (glyph: string | null) => {
+  const commit = (glyph: GlyphName | null) => {
     if (glyph) onSelect(glyph);
   };
 
@@ -198,7 +198,7 @@ export function GlyphPicker({
                     : 'hover:bg-secondary/60 hover:text-foreground',
                 )}
               >
-                {Icon ? <Icon className="size-5" aria-hidden /> : null}
+                <Icon className="size-5" aria-hidden />
               </button>
             );
           })}

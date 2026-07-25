@@ -72,7 +72,9 @@ export function Glyph({ name, fallback: Fallback, ...props }: GlyphProps) {
     };
   }, [registry]);
 
-  const Icon = registry && name ? registry.getGlyphIcon(name) : undefined;
+  // The catalogue answers whether the stored name is one of its glyphs; only a name it
+  // vouches for reaches the lookup, which then always yields a component.
+  const Icon = registry?.isGlyphName(name) ? registry.getGlyphIcon(name) : undefined;
   if (Icon) return <Icon {...props} />;
   if (Fallback) return <Fallback {...props} />;
   return null;
