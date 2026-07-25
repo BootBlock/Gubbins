@@ -407,7 +407,7 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 | --- | --- |
 | `/search` | `id, name, quantity, locationName, mpn, manufacturer` |
 | `/items` | the above + `isUnlimited, locationId, categoryId, trackingMode, isActive` (`ItemSummary`) |
-| `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNumber, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities` (`ItemDetail`) |
+| `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNumber, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities, tags` (`ItemDetail`) |
 
 > **Unlimited supply.** An item marked _unlimited_ (an effectively infinite source — tap water,
 > mains air) reports `isUnlimited: true` and its `quantity` as **`null`** (JSON has no `Infinity`);
@@ -415,23 +415,25 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 
 **Full field vocabulary** (nameable in `fields`, or in `include` when extended): `id`, `name`,
 `quantity`, `isUnlimited`, `locationId`, `locationName`, `categoryId`, `categoryName`, `mpn`, `manufacturer`,
-`trackingMode`, `isActive`, `description`, `notes`, `condition`, `serialNumber`, `serialNo`, `parentId`,
-`unitCost`, `purchasePrice`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
-`warrantyExpiresAt`, `depreciationMonths`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
+`trackingMode`, `isActive`, `description`, `notes`, `condition`, `barcode`, `isFavourite`,
+`serialNumber`, `serialNo`, `parentId`,
+`unitCost`, `purchasePrice`, `currentValue`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
+`warrantyExpiresAt`, `depreciationMonths`, `deadStockMode`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
 `operationalMetadata`, `gauge`, `createdAt`, `updatedAt`, `placements` (nestable:
 `locationId, locationName, quantity`), `capabilities` (nestable: `key, valueNum, valueText, weight`),
-`fieldValues` (nestable: `name, fieldType, value, source, inheritedFrom` — see
+`tags` (a flat array of tag **names**, so not nestable), `fieldValues` (nestable:
+`name, fieldType, value, source, inheritedFrom` — see
 [Custom-field values](#custom-field-values-includefields)).
 
 **Include groups** (aliases usable in `include`): `relations` (placements + capabilities +
-categoryName), `pricing` (unitCost + purchasePrice), `lifecycle` (acquiredAt + warrantyExpiresAt +
-purchasePrice + depreciationMonths), `reorder` (the three reorder fields), `timestamps`
-(createdAt + updatedAt), `fields` (fieldValues), and `all` (every extended field).
+categoryName + tags), `pricing` (unitCost + purchasePrice + currentValue), `lifecycle` (acquiredAt +
+warrantyExpiresAt + purchasePrice + depreciationMonths), `reorder` (the three reorder fields),
+`timestamps` (createdAt + updatedAt), `fields` (fieldValues), and `all` (every extended field).
 
 An unknown field or include name is a `400 bad_request` whose message lists the valid vocabulary;
 an over-long selection is likewise rejected. Relational fields are resolved **lazily** — a
-projection that doesn't select `placements`/`capabilities`/`categoryName` never incurs their extra
-read. The unversioned `/search` and `/where` aliases are deliberately **frozen** (no field
+projection that doesn't select `placements`/`capabilities`/`tags`/`categoryName` never incurs their
+extra read. The unversioned `/search` and `/where` aliases are deliberately **frozen** (no field
 selection) so their long-standing contract never changes; use the `/api/v1` twins for shaping.
 
 ```bash
@@ -439,6 +441,30 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/search?q=M3%20screw&fields=name,un
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items/item-esp32?include=all"
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items?fields=id,name,quantity"
 ```
+
+### Tags (`include=tags`)
+
+Gubbins lets you tag items freely (`fragile`, `workshop`, `expo-2026`). Those tags come back as a
+flat array of **names** on the item endpoints, ordered by name:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items/item-esp32"           # tags are in the detail payload
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?include=tags"         # add them to a list
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$filter=tag eq 'fragile'&\$select=id,name,tags"
+```
+
+```json
+{ "id": "item-esp32", "name": "ESP32 Dev Board", "tags": ["fragile", "workshop"] }
+```
+
+A tag **is** its name — the dictionary is keyed by it, case-insensitively — so a value here can be
+fed straight back into a `$filter` as `tag eq '<name>'`. They are the item's *own* tags: a tag on
+its location is a property of that location, exactly as the app's own search reads it. An untagged
+item reports `[]`, never a missing field.
+
+> **ℹ️ Note** `tags` is part of the `/items/{id}` **default** payload (beside `placements` and
+> `capabilities`) but opt-in on the list endpoints, where reading the join for every row would be a
+> cost you didn't ask for. Use `include=tags` (or `include=relations`) there.
 
 ### Custom-field values (`include=fields`)
 
@@ -539,12 +565,38 @@ semantics and has no injection surface — it is **never** bespoke SQL). Support
 - the `contains(field, 'text')` function (free-text, FTS-backed)
 - boolean composition with `and`, `or`, `not`, and parentheses
 - literals: single-quoted strings (`''` escapes a quote), numbers, `true`/`false`
-- filterable fields: `name`, `description`, `notes`, `mpn`, `manufacturer`, `serialNumber`, `quantity`,
-  `category`(`Id`), `location`(`Id`)
+- filterable fields: **the whole of the app's own search vocabulary**, so nothing you can filter on
+  in Gubbins is unreachable here. Field names are case-insensitive, and each is accepted by the
+  app's short name *and* the camel-cased property name the read model publishes:
+
+  | Kind | Fields |
+  | --- | --- |
+  | Text (FTS-backed `contains`) | `name`, `description`, `notes`, `mpn`, `manufacturer`, `barcode`, `serialNumber` (`serial`) |
+  | Ids (exact match) | `categoryId` (`category`), `locationId` (`location`) |
+  | Numbers | `quantity`, `weight` (grams), `width`/`height`/`depth` (mm), `reorderPoint` (`reorder`) |
+  | Flags | `isFavourite` (`favourite`), `isActive` (`active`) |
+  | Enums | `condition`, `trackingMode` (`tracking`), `deadStockMode` (`deadstock`) |
+  | Dates (quoted `'YYYY-MM-DD'`) | `expiryDate` (`expiry`), `warrantyExpiresAt` (`warranty`) |
+  | Money (major units) | `unitCost` (`cost`), `purchasePrice` (`price`), `currentValue` (`value`) |
+  | Tags | `tag` (`tags`) |
+
+  Weight and the dimensions are compared in their canonical units (grams, millimetres), not your
+  display units, and money in the base currency's **major** units — `unitCost gt 10` is ten
+  pounds/dollars, not ten of the micro-units the column stores. A date must be a *quoted*
+  `'YYYY-MM-DD'`: this subset has no unquoted `Edm.Date` literal.
+
+  Every filterable field is also **readable** — each name in the table is a field you can name in
+  `fields`/`$select`, so a query that selects by something can always return it.
+
+  `tag` compares against a tag **name** and matches when **any** of the item's tags does, so
+  `tag eq 'fragile'` finds that exact tag (case-insensitively) and `contains(tag,'expo')` any tag
+  containing "expo". Combine it with `not` for the absence: `not (tag eq 'fragile')`. There are no
+  lambdas here, so `tags/any(…)` is not the spelling.
 
 Anything outside the subset (`ge`/`le`, `startswith`/`endswith`, arithmetic, lambdas, an unknown
-field) is a `400` naming what *is* supported. When `$filter` is present it is the sole row filter,
-so the `location`/`category`/`$search` query params are ignored.
+field) is a `400` naming what *is* supported, as is an operator a field doesn't accept (ordering
+comparisons on a text column, say). When `$filter` is present it is the sole row filter, so the
+`location`/`category`/`$search` query params are ignored.
 
 `not` binds to the single term or bracket that follows it, and `ne` is simply `not … eq …`. Both
 inherit the app's reading of absence on the nullable fields: `manufacturer ne 'Acme'` **includes**
@@ -566,6 +618,11 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$orderby=quantity desc&\$to
 # Everything with more than ten in stock whose name contains "bolt", names only, with the total:
 curl -H "Authorization: Bearer $TOKEN" \
   "$BASE/items?\$filter=quantity gt 10 and contains(name,'bolt')&\$select=name&\$count=true"
+
+# A barcode (GTIN) lookup, and everything tagged "fragile" that isn't a favourite:
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$filter=barcode eq '5012345678900'"
+curl -H "Authorization: Bearer $TOKEN" \
+  "$BASE/items?\$filter=tag eq 'fragile' and isFavourite eq false"
 
 # Just the number of ESP32-ish items, and the metadata document:
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items/\$count?\$search=esp32"

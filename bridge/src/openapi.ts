@@ -13,6 +13,8 @@
 
 import { KNOWN_EVENT_TYPES } from '@/features/events/event-types.ts';
 import { ITEM_STATUS_FILTERS } from '@/db/repositories/item/status-filter.ts';
+import { ITEM_FIELD_REGISTRY } from './api/item-view.ts';
+import { FILTERABLE_FIELD_NAMES } from './api/odata-filter.ts';
 
 /** A plain JSON value — the spec is pure data, serialisable to JSON and YAML alike. */
 export type JsonValue =
@@ -101,6 +103,13 @@ const qParam: JsonValue = {
  * default payload. Naming an extended field opts it in; one level of nesting is supported for
  * the array fields via a dotted path (e.g. `placements.quantity`).
  */
+/**
+ * The item field vocabulary, read straight off the registry that serves the requests rather than
+ * restated here. A hand-kept copy of a field list is how the API's filterable set silently drifted
+ * from the app's (issue #143), so both lists in this document are generated from their source.
+ */
+const ITEM_FIELD_LIST = [...ITEM_FIELD_REGISTRY.keys()].join(', ');
+
 const fieldsParam: JsonValue = {
   name: 'fields',
   in: 'query',
@@ -108,13 +117,8 @@ const fieldsParam: JsonValue = {
   description:
     'Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default ' +
     'set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so ' +
-    '`fields=name,unitCost` returns just those two. Nest an array field with a dot: ' +
-    '`placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, ' +
-    'isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, ' +
-    'trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, ' +
-    'weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, ' +
-    'reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, ' +
-    'updatedAt, placements, capabilities, fieldValues.',
+    '`fields=name,unitCost` returns just those two. Nest an array-of-object field with a dot: ' +
+    `\`placements.quantity\`. An unknown field is a 400. Valid fields: ${ITEM_FIELD_LIST}.`,
   schema: { type: 'string' },
   example: 'name,unitCost',
 };
@@ -129,8 +133,8 @@ const includeParam: JsonValue = {
   required: false,
   description:
     'Field expansion: a comma-separated list of extended fields, or named groups, to ADD on ' +
-    'top of the default payload. Groups: relations (placements, capabilities, categoryName), ' +
-    'pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, ' +
+    'top of the default payload. Groups: relations (placements, capabilities, categoryName, ' +
+    'tags), pricing (unitCost, purchasePrice, currentValue), lifecycle (acquiredAt, warrantyExpiresAt, ' +
     'purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, ' +
     'reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field ' +
     'values, with location inheritance resolved), and all (every extended field). An ' +
@@ -227,10 +231,14 @@ const filterParam: JsonValue = {
   required: false,
   description:
     'A constrained OData-style boolean filter compiled to the app search AST (never bespoke ' +
-    'SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with ' +
-    'parentheses. Filterable fields: name, description, notes, mpn, manufacturer, serialNumber, quantity, ' +
-    'weight, width, height, depth, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, ' +
-    'lambdas) are a 400. When present it is the sole row filter (location/category are ignored).',
+    'SQL). Supported: comparisons eq/ne/gt/lt, the contains(field, string) function, and/or/not ' +
+    'with parentheses, and single-quoted string / numeric / boolean literals. Dates are quoted ' +
+    "'YYYY-MM-DD' and money is in the base currency's major units. `tag` compares against a tag " +
+    "name and matches when ANY of the item's tags does. Field names are case-insensitive. " +
+    `Filterable fields: ${FILTERABLE_FIELD_NAMES.join(', ')}. Anything outside the subset ` +
+    '(ge/le, startswith/endswith, arithmetic, lambdas, an unknown field) is a 400, as is an ' +
+    'operator a field does not accept. When present it is the sole row filter ' +
+    '(location/category/$search are ignored).',
   schema: { type: 'string' },
   example: "quantity gt 10 and contains(name,'bolt')",
 };
@@ -843,7 +851,7 @@ export const openapiDocument: JsonValue = {
     '/api/v1/items/{id}': {
       get: {
         tags: ['items'],
-        summary: 'Look up one item by id (with placements and capabilities)',
+        summary: 'Look up one item by id (with placements, capabilities and tags)',
         description:
           'One item with its full detail. Use `fields`/`$select` to project a sparse fieldset ' +
           '(e.g. just the price) or `include`/`$expand` to add extended fields beyond the ' +
@@ -1623,7 +1631,7 @@ export const openapiDocument: JsonValue = {
           { $ref: '#/components/schemas/ItemSummary' },
           {
             type: 'object',
-            required: ['placements', 'capabilities'],
+            required: ['placements', 'capabilities', 'tags'],
             properties: {
               description: { type: 'string', nullable: true },
               categoryName: { type: 'string', nullable: true, example: 'Fasteners' },
@@ -1639,6 +1647,16 @@ export const openapiDocument: JsonValue = {
               updatedAt: { type: 'integer' },
               placements: { type: 'array', items: { $ref: '#/components/schemas/Placement' } },
               capabilities: { type: 'array', items: { $ref: '#/components/schemas/Capability' } },
+              tags: {
+                type: 'array',
+                description:
+                  'The names of the tags this item carries, ordered by name. A tag *is* its name, ' +
+                  'so these values can be fed straight back into a `$filter` as ' +
+                  "`tag eq '<name>'`. Only the item's own tags — a tag on its location belongs to " +
+                  'that location.',
+                items: { type: 'string' },
+                example: ['fragile', 'workshop'],
+              },
               fieldValues: {
                 type: 'array',
                 description: 'Present only when requested with `include=fields`.',

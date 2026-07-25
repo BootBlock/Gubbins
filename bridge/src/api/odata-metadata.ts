@@ -47,11 +47,14 @@ export const ITEM_PROPERTIES: readonly EdmProperty[] = [
   p('description', 'Edm.String'),
   p('notes', 'Edm.String'),
   p('condition', 'Edm.String'),
+  p('barcode', 'Edm.String'),
+  p('isFavourite', 'Edm.Boolean', false),
   p('serialNumber', 'Edm.String'),
   p('serialNo', 'Edm.Int64'),
   p('parentId', 'Edm.String'),
   p('unitCost', 'Edm.Decimal'),
   p('purchasePrice', 'Edm.Decimal'),
+  p('currentValue', 'Edm.Decimal'),
   p('weight', 'Edm.Decimal'),
   p('width', 'Edm.Decimal'),
   p('height', 'Edm.Decimal'),
@@ -62,6 +65,7 @@ export const ITEM_PROPERTIES: readonly EdmProperty[] = [
   p('acquiredAt', 'Edm.String'),
   p('warrantyExpiresAt', 'Edm.String'),
   p('depreciationMonths', 'Edm.Int64'),
+  p('deadStockMode', 'Edm.String', false),
   p('reorderPoint', 'Edm.Int64'),
   p('reorderGaugePercent', 'Edm.Decimal'),
   p('reorderQty', 'Edm.Int64'),
@@ -75,6 +79,8 @@ export const ITEM_PROPERTIES: readonly EdmProperty[] = [
   // the annotation on each of these spells out.
   p('placements', 'Collection(Gubbins.Placement)', false),
   p('capabilities', 'Collection(Gubbins.Capability)', false),
+  // Tag names, not a complex type: a tag *is* its name (issue #143).
+  p('tags', 'Collection(Edm.String)', false),
   p('fieldValues', 'Collection(Gubbins.ItemFieldValue)', false),
 ];
 
