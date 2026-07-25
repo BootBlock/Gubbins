@@ -137,6 +137,22 @@ describe('HEAD on the read surfaces (issue #360)', () => {
     await expect(unauth.text()).resolves.toBe('');
   });
 
+  // A probe's whole point is "has this changed?", so the conditional-request handling on the polled
+  // feeds has to be reachable by a HEAD too — a subscriber sends `If-None-Match` with the method it
+  // probes with. The `304` carries no content, so nothing is withheld and no length is invented.
+  it('answers a conditional probe with the 304 a conditional GET gets', async () => {
+    const etag = (await request('/metrics', 'GET')).headers.get('etag');
+    expect(etag).not.toBeNull();
+
+    const conditionalGet = await request('/metrics', 'GET', { 'if-none-match': etag! });
+    const conditionalHead = await request('/metrics', 'HEAD', { 'if-none-match': etag! });
+
+    expect(conditionalGet.status).toBe(304);
+    expect(conditionalHead.status).toBe(304);
+    expect(conditionalHead.headers.get('etag')).toBe(conditionalGet.headers.get('etag'));
+    expect(conditionalHead.headers.get('content-length')).toBeNull();
+  });
+
   // Holding the headers back until `end()` (the first moment the content length is known) must not
   // lose the ones set *before* the handler runs — the CORS grant and the staleness verdict are both
   // stamped that way, and a HEAD that dropped them would be unreadable to a cross-origin browser.

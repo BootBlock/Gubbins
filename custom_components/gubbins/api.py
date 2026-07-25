@@ -1,18 +1,20 @@
 """Thin async client for the Gubbins read-only bridge HTTP API.
 
 The bridge (a separate Node companion service — see ``bridge/`` in the repo) is the
-**only** data path. The client is read-only by default: it issues GET requests to the three
-documented endpoints. The one exception is :meth:`GubbinsClient.adjust_quantity`, an **opt-in**
-write that only works when the bridge itself is started with ``GUBBINS_BRIDGE_ALLOW_WRITES=on``
-(otherwise the path 404s); it round-trips through the app's own sync merge, never a bespoke
-database write. It uses Home Assistant's shared aiohttp session, so the integration adds **no**
-third-party Python dependency.
+**only** data path. The client is read-only by default: it issues GET requests to the four
+documented endpoints. The exceptions are :meth:`GubbinsClient.adjust_quantity` and
+:meth:`GubbinsClient.adjust_gauge`, **opt-in** writes that only work when the bridge itself is
+started with ``GUBBINS_BRIDGE_ALLOW_WRITES=on`` (otherwise the paths 404); they round-trip
+through the app's own sync merge, never a bespoke database write. It uses Home Assistant's
+shared aiohttp session, so the integration adds **no** third-party Python dependency.
 
 Endpoints (all require ``Authorization: Bearer <token>``):
     GET  /health → { ok, itemCount, snapshotGeneratedAt }
     GET  /search?q=<query>&limit=<n> → { query, matches: [...] }
     GET  /where?q=<query> → { query, matches: [...], spoken }
+    GET  /api/v1/status → { statuses: { "low-stock": n, ... }, snapshotGeneratedAt }
     POST /api/v1/items/<id>/adjust-quantity → updated item (opt-in; see above)
+    POST /api/v1/items/<id>/adjust-gauge → updated item (opt-in; see above)
 """
 
 from __future__ import annotations
@@ -64,6 +66,15 @@ class GubbinsRejectedError(GubbinsError):
     """The bridge accepted the request but rejected the change (HTTP 4xx, e.g. below zero)."""
 
 
+class GubbinsUnsupportedError(GubbinsError):
+    """A read this build of the bridge does not serve (HTTP 404 on a read path).
+
+    The integration can be newer than the bridge it is pointed at — they are updated
+    separately — so a read added in a later release must degrade to "this entity has no
+    value" rather than failing the whole config entry.
+    """
+
+
 class GubbinsClient:
     """A minimal, read-only HTTP client for one Gubbins bridge instance."""
 
@@ -78,8 +89,21 @@ class GubbinsClient:
         self._base_url = f"http://{host}:{port}"
         self._headers = {"Authorization": f"Bearer {token}"}
 
-    async def _get(self, path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
-        """Issue a GET and return parsed JSON, mapping failures to typed errors."""
+    async def _get(
+        self,
+        path: str,
+        params: dict[str, str] | None = None,
+        *,
+        unsupported_on_404: bool = False,
+    ) -> dict[str, Any]:
+        """Issue a GET and return parsed JSON, mapping failures to typed errors.
+
+        ``unsupported_on_404`` is set only for reads an *older* bridge legitimately will not
+        have (see :class:`GubbinsUnsupportedError`). It stays off by default so that a 404
+        on a long-standing path — the usual cause being the host/port pointing at something
+        that isn't a Gubbins bridge at all — keeps reading as a connection failure, which is
+        what the config flow tells the user about.
+        """
         try:
             async with self._session.get(
                 f"{self._base_url}{path}",
@@ -89,9 +113,11 @@ class GubbinsClient:
             ) as response:
                 if response.status == 401:
                     raise GubbinsAuthError("Bridge rejected the access token")
+                if unsupported_on_404 and response.status == 404:
+                    raise GubbinsUnsupportedError(f"This bridge does not serve {path}")
                 response.raise_for_status()
                 return await response.json()
-        except GubbinsAuthError:
+        except (GubbinsAuthError, GubbinsUnsupportedError):
             raise
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             raise GubbinsConnectionError(str(err)) from err
@@ -111,23 +137,55 @@ class GubbinsClient:
             params["limit"] = str(limit)
         return await self._get("/search", params)
 
+    async def statuses(self) -> dict[str, Any]:
+        """GET /api/v1/status — how many items match each attention status.
+
+        Backs the attention binary sensors. Every status is always present in the response
+        (a status matching nothing is a ``0``), so the sensors never have to guess at a
+        missing key. Raises :class:`GubbinsUnsupportedError` on a bridge predating the
+        endpoint, which leaves those entities unavailable rather than failing the entry.
+        """
+        return await self._get("/api/v1/status", unsupported_on_404=True)
+
     async def adjust_quantity(
         self, item_id: str, delta: int, note: str | None = None
     ) -> dict[str, Any]:
-        """POST /api/v1/items/<id>/adjust-quantity — the integration's only write.
+        """POST /api/v1/items/<id>/adjust-quantity — check a DISCRETE item in or out.
 
-        Checks a DISCRETE item in (``delta`` > 0) or out (``delta`` < 0). The bridge applies
-        it through the app's own mutation and writes the change back into the synced snapshot,
-        so the PWA merges it conflict-free on its next sync — no bespoke database write. Only
-        available when the bridge runs with ``GUBBINS_BRIDGE_ALLOW_WRITES=on``; otherwise the
-        path is a 404 and :class:`GubbinsWritesDisabledError` is raised.
+        ``delta`` > 0 checks stock in, < 0 checks it out. See :meth:`_adjust` for how the
+        change reaches the app.
+        """
+        return await self._adjust("adjust-quantity", item_id, delta, note)
+
+    async def adjust_gauge(
+        self, item_id: str, delta: float, note: str | None = None
+    ) -> dict[str, Any]:
+        """POST /api/v1/items/<id>/adjust-gauge — change a CONSUMABLE_GAUGE item's contents.
+
+        The gauge counterpart of :meth:`adjust_quantity`: ``delta`` is a signed change to the
+        item's measured contents in its own unit (e.g. ``-45`` for 45 g of filament used), so
+        it may be fractional. The app clamps the result to the item's empty/full bounds, and
+        rejects the call if the item is not gauge-tracked.
+        """
+        return await self._adjust("adjust-gauge", item_id, delta, note)
+
+    async def _adjust(
+        self, action: str, item_id: str, delta: float, note: str | None
+    ) -> dict[str, Any]:
+        """Issue one of the bridge's two stock writes, mapping failures to typed errors.
+
+        The bridge applies the change through the app's own mutation and writes it back into
+        the synced snapshot, so the PWA merges it conflict-free on its next sync — no bespoke
+        database write. Only available when the bridge runs with
+        ``GUBBINS_BRIDGE_ALLOW_WRITES=on``; otherwise the path is a 404 and
+        :class:`GubbinsWritesDisabledError` is raised.
         """
         body: dict[str, Any] = {"delta": delta}
         if note is not None:
             body["note"] = note
         try:
             async with self._session.post(
-                f"{self._base_url}/api/v1/items/{item_id}/adjust-quantity",
+                f"{self._base_url}/api/v1/items/{item_id}/{action}",
                 json=body,
                 headers=self._headers,
                 timeout=_REQUEST_TIMEOUT,

@@ -8,6 +8,7 @@
  * Storage-growing writes are gated by the Hard Stop; deletions are always permitted.
  */
 import { fromStoredMoney, toStoredMoney } from '@/lib/money';
+import { isShortItemCode } from '@/features/scanner/scan-payload';
 import { DbError } from '../../errors';
 import type { SqlStatement, SqlValue } from '../../rpc/driver';
 import { buildFtsMatch } from '../../search/fts';
@@ -148,6 +149,32 @@ export class ItemCoreRepository extends BaseRepository {
       [value],
     );
     return row ? rowToItem(row) : undefined;
+  }
+
+  /**
+   * The **active** items whose id begins with a printed short code — the fallback identifier
+   * every label carries (`shortId` in `labels/label-template.ts`, issue #338).
+   *
+   * A short code is the first group of a UUID, so it names a record only by prefix: two items
+   * *can* share one, and at that point picking a winner would be picking the wrong item as often
+   * as the right one. So this returns the matches (capped at two — enough to know "one" from
+   * "more than one") and leaves the caller to say so rather than guess. Ordered most-recent-first
+   * for a deterministic result.
+   *
+   * A value that is not a short code — anything but eight hex characters — matches nothing
+   * rather than being pattern-matched into the `LIKE`, so `%`/`_` in a scanned string can never
+   * turn this into a wildcard scan.
+   */
+  async findByShortCode(code: string): Promise<Item[]> {
+    const value = code.trim();
+    if (!isShortItemCode(value)) return [];
+    const rows = await this.driver.query<ItemRow>(
+      `SELECT ${ITEM_READ_COLUMNS} FROM items
+       WHERE items.id LIKE ? || '-%' AND is_active = 1
+       ORDER BY created_at DESC, id ASC LIMIT 2;`,
+      [value.toLowerCase()],
+    );
+    return rows.map(rowToItem);
   }
 
   /** A paginated, filtered list of items (spec §2.1), by `offset` or keyset `seek` (issue #172). */

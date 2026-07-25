@@ -24,7 +24,8 @@ you need Node **≥ 24** (or the **22.16+ LTS** line).
 >
 > - **Read (always on):** the original `GET /health`, `/search`, `/where`; an additive,
 >   OpenAPI-described [`/api/v1`](#versioned-rest-api-apiv1) surface (items, locations,
->   categories, capabilities, with field-selection + an OData-style query subset); a
+>   categories, capabilities and [inventory status counts](#inventory-status-counts), with
+>   field-selection + an OData-style query subset); a
 >   [CSV export](#csv-export); an [iCalendar subscription feed](#calendar-subscription); and
 >   [syndication feeds + a Prometheus `/metrics`](#feeds--metrics) endpoint. The same read-only
 >   core is also offered over an [MCP stdio server](#mcp-server-for-llmagent-tools) for LLM/agent
@@ -128,7 +129,7 @@ Every route requires `bridge:read` or `bridge:write` — the capability of using
 | Route | Requires |
 | --- | --- |
 | `GET /health`, `/api/v1`, `/api/v1/openapi.json`, `/api/v1/$metadata`, `/api/v1/health`, `/api/v1/events`, `/api/v1/scale/*` | `bridge:read` |
-| `GET /search`, `/where`, `/metrics`, `/api/v1/{search,where,items,items.csv,capabilities}` | `bridge:read` + `items:read` |
+| `GET /search`, `/where`, `/metrics`, `/api/v1/{search,where,items,items.csv,capabilities,status}` | `bridge:read` + `items:read` |
 | `GET /api/v1/locations…` | `bridge:read` + `locations:read` |
 | `GET /api/v1/categories…` | `bridge:read` + `categories:read` |
 | `GET /api/v1/calendar.ics` | `bridge:read` + `bookings:read` |
@@ -240,7 +241,9 @@ limit apply, so a `HEAD` of a route your role cannot reach is still a `403`.
 That matters for **subscription clients**: Outlook and several CalDAV/webcal apps `HEAD` a
 [calendar subscription](#calendar-subscription) URL to test it before they will accept a
 subscription, and feed readers probe the [syndication feeds](#feeds--metrics) the same way — the
-`Content-Length` tells them whether anything changed before they spend a download on it.
+`Content-Length` tells them whether anything changed before they spend a download on it. A probe
+may also carry the validators from a previous response and get a `304` back; see
+[Conditional requests](#conditional-requests-etag--304).
 
 The one exception is the [SSE event stream](#sse-event-stream): a `HEAD` of `/api/v1/events`
 reports the media type the stream serves and returns immediately rather than opening a stream. It
@@ -329,6 +332,7 @@ every endpoint is a **`GET`** (or [`HEAD`](#head-requests)) and strictly read-on
 | `GET /api/v1/activity.rss` (`.atom`, `.json`) | A read-only syndication feed of the recent activity log (RSS 2.0 / Atom 1.0 / JSON Feed 1.1) any feed reader can **subscribe** to. See [Feeds & metrics](#feeds--metrics). |
 | `GET /metrics` | A Prometheus/OpenMetrics text exposition of the aggregate inventory counts (root path, not under `/api/v1`). See [Feeds & metrics](#feeds--metrics). |
 | `GET /api/v1/health` | `{ ok, itemCount, snapshotGeneratedAt, … }` (alias of `/health`; see [snapshot freshness](#snapshot-freshness-and-health)). |
+| `GET /api/v1/status` | `{ statuses: { "low-stock": n, … }, snapshotGeneratedAt }` — how many active items match each attention status. See [Inventory status counts](#inventory-status-counts). |
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
 | `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=&fields=&include=&$orderby=&$filter=` | Paginated item summaries (`ItemSummary`). Supports [field selection](#field-selection--extended-fields) and [OData-style options](#odata-style-query-options) (`$orderby`, `$filter`, …). |
@@ -344,6 +348,41 @@ every endpoint is a **`GET`** (or [`HEAD`](#head-requests)) and strictly read-on
 Search is the **relevance** endpoint (top-N, capped at 25 for voice safety); to **browse all
 items** with pagination use `GET /api/v1/items`. Every read flows through the app's own
 repositories and the single parameterised `parseASTtoSQL` — no bespoke SQL, no write path.
+
+### Inventory status counts
+
+`GET /api/v1/status` answers "does anything need attention, and how much of it?" in one small
+response — the counts behind a dashboard tile or a Home Assistant binary sensor:
+
+```json
+{
+  "statuses": {
+    "low-stock": 3,
+    "out-of-stock": 1,
+    "on-order": 0,
+    "expiring": 2,
+    "warranty": 0,
+    "on-loan": 4,
+    "overdue": 1,
+    "maintenance-due": 0
+  },
+  "snapshotGeneratedAt": "2025-06-27T06:13:20.000Z"
+}
+```
+
+These are the **same** counts the app's own inventory filter chips show: each status is counted
+through the app's own predicate, in a single pass over `items`, so a scraped figure can never
+drift from what the app displays. "Low" and "out of stock" mean here exactly what they mean to
+`/metrics` and the `item.low_stock` events — same thresholds, and a drift test holds the SQL and
+in-memory definitions to the same answer — but note the **totals** can differ on a very large
+vault: `/metrics` counts the first 50,000 active items by design, whereas these counts are over
+the whole of it. Every status is **always** present — a status matching nothing is a `0`, never a
+missing key — so a client never has to distinguish "none" from "not reported".
+
+Aggregates only: how many items match each status, and nothing about *which* items, so no loan,
+order or schedule detail is disclosed. It is deliberately separate from `/health`, which stays a
+cheap liveness probe; these counts come from a scan of the inventory, and only change when the
+served snapshot does — so poll them on a slow interval.
 
 ### Examples
 
@@ -628,7 +667,9 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/calendar.ics?type=warranty"      #
 curl -H "Authorization: Bearer $TOKEN" "$BASE/calendar.ics?type=loans,bookings"
 ```
 
-An unknown `type` is a `400`. Each source is bounded (up to 5,000 events) so a very large vault
+An unknown `type` is a `400`. A subscribed calendar is refetched on a fixed interval, so this path
+answers [conditional requests](#conditional-requests-etag--304) — a poll that finds nothing new
+costs a `304`, not a re-render. Each source is bounded (up to 5,000 events) so a very large vault
 can't produce an unbounded feed. Dates from a stored calendar date (a warranty) are used verbatim;
 dates derived from a timestamp (bookings, due-backs) use UTC calendar components, so a far-eastern
 local day may appear shifted by one day — a documented limitation of a timezone-less feed.
@@ -645,7 +686,8 @@ changed" feed for any reader, and machine metrics for a Prometheus/Grafana home-
 **read-only pulls** (like `calendar.ics` / `items.csv`), so — like those — they carry **no
 `GUBBINS_BRIDGE_*` flag**; they are always available, gated by the caller's
 [token and permissions](#identities--permissions) — `items:read` for `/metrics`, `audit:view`
-for the activity feeds.
+for the activity feeds. Both are polled, so both answer
+[conditional requests](#conditional-requests-etag--304).
 
 **Syndication feeds.** `GET /api/v1/activity.rss` (plus `.atom` and `.json`) render the recent
 cross-item **activity log** — the same `item_history` projection the app's Activity screen shows —
@@ -700,6 +742,38 @@ scrape_configs:
     static_configs:
       - targets: ["127.0.0.1:8787"]
 ```
+
+### Conditional requests (ETag / 304)
+
+The three **polled** surfaces — `calendar.ics`, the `activity.*` feeds and `/metrics` — are all
+projections of the loaded snapshot, and a subscriber refetches them on a timer whether or not
+anything has changed. So each response carries validators, and a poll that sends them back gets a
+bodyless **`304 Not Modified`** without the projection ever running:
+
+```bash
+curl -sD- -o/dev/null -H "Authorization: Bearer $TOKEN" "$BASE/calendar.ics"
+#   ETag: W/"…"
+#   Last-Modified: Fri, 27 Jun 2025 04:53:20 GMT
+#   Cache-Control: private, no-cache
+
+curl -sD- -o/dev/null -H "Authorization: Bearer $TOKEN" \
+     -H 'If-None-Match: W/"…"' "$BASE/calendar.ics"          # → HTTP/1.1 304 Not Modified
+```
+
+- The `ETag` is **weak** (`W/`): responses built from the same snapshot are semantically the same
+  document, which is all a subscriber needs, even if the bytes are not identical.
+- It changes when the **snapshot re-hydrates** — and, for the calendar only, when a day rolls over
+  (bookings drop off at the end of their last day and the warranty window is a calendar date), so
+  a subscription can never sit on a stale copy across midnight.
+- `If-Modified-Since` works too, for a client that keeps only the date; `If-None-Match` wins when
+  both are sent.
+- `Cache-Control: private, no-cache` means *store it, but revalidate every time*. **Private**
+  because a feed carries your inventory (item names, borrowers, locations) behind a bearer token —
+  no shared or intermediary cache may keep a copy.
+- Nothing is required of a client: one that sends no conditional header gets the full document
+  exactly as before. A Prometheus scrape, for instance, simply ignores the validators.
+- A [`HEAD`](#head-requests) revalidates identically — same `304`, same validators — so a client
+  that probes rather than fetches gets the cheap answer too.
 
 ### OpenAPI spec
 

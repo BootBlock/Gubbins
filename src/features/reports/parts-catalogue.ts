@@ -20,6 +20,8 @@
 import { effectiveUnitCost, type ValuedUnit } from './reports';
 import {
   flattenLocationHierarchy,
+  PRINT_FULL_LIMIT,
+  PRINT_PHOTO_LIMIT,
   UNASSIGNED_GROUP_LABEL,
   type ScheduleLocationInput,
 } from './insurance-schedule';
@@ -219,6 +221,96 @@ export const CATALOGUE_SORT_BY: readonly { readonly value: CatalogueSortBy; read
 
 export const DEFAULT_CATALOGUE_GROUP_BY: CatalogueGroupBy = 'location';
 export const DEFAULT_CATALOGUE_SORT_BY: CatalogueSortBy = 'name';
+
+/*
+ * ---------------------------------------------------------------------------------------
+ * Print ceiling (issue #338)
+ *
+ * The catalogue reads its whole scope in one go and renders every line into one document, so
+ * "All items" over a large inventory had nothing standing between the reader and a browser
+ * print dialog holding hundreds of pages — and, with the QR column on, one synchronous QR
+ * encode per line before it could even open.
+ *
+ * The insurance schedule — the other printable document, and its peer in every other respect —
+ * already draws exactly this line, so the catalogue reuses its ceilings rather than inventing
+ * a second, differently-shaped one. A reader who learns the limit on one document has learnt
+ * it on both, and the {@link ./Insurance-and-Estate-Schedule} wiki page's wording carries over.
+ * ---------------------------------------------------------------------------------------
+ */
+
+/**
+ * Most catalogue lines that can be rendered into a single printable document (text only).
+ *
+ * Shared verbatim with the insurance schedule's {@link PRINT_FULL_LIMIT}: both are bounded by
+ * what a DOM and a printer will take rather than by what the database can read.
+ */
+export const CATALOGUE_PRINT_LIMIT = PRINT_FULL_LIMIT;
+
+/**
+ * The same ceiling with a **media** column on — the Photo column, whose thumbnails are BLOBs to
+ * fetch and `<img>` decodes to wait for, or the QR column, whose codes are one synchronous
+ * encode per line. Either binds long before the row count does, so both take the schedule's
+ * lower {@link PRINT_PHOTO_LIMIT}.
+ */
+export const CATALOGUE_PRINT_MEDIA_LIMIT = PRINT_PHOTO_LIMIT;
+
+/**
+ * Estimated pages above which printing asks the reader to confirm first.
+ *
+ * A catalogue under the ceiling can still be a hundred pages, and the browser's own print
+ * dialog is the first place that ever became apparent. Twenty pages is about a ream's corner —
+ * comfortably more than any everyday parts list, and few enough that a reader who did not mean
+ * to print their whole inventory finds out here rather than at the printer.
+ */
+export const CATALOGUE_CONFIRM_PAGES = 20;
+
+/**
+ * The ceiling that applies to a catalogue printing `fields` — the lower media limit whenever a
+ * media column (Photo or QR) is among them, else the full text limit.
+ */
+export function cataloguePrintLimit(fields: ReadonlySet<CatalogueFieldKey>): number {
+  const media = CATALOGUE_FIELDS.some((field) => field.media && fields.has(field.key));
+  return media ? CATALOGUE_PRINT_MEDIA_LIMIT : CATALOGUE_PRINT_LIMIT;
+}
+
+/*
+ * Row budgets behind {@link estimateCataloguePages}. Deliberately coarse: the true page count
+ * depends on the printer's margins, the reader's paper size and how many lines each cell's text
+ * wraps to, none of which is knowable before the print dialog opens. The estimate exists to
+ * tell "a couple of pages" from "four hundred", which these are ample for.
+ */
+/** Table rows an A4 page of the text-only catalogue holds. */
+const TEXT_ROWS_PER_PAGE = 40;
+/** …with the Photo column on, where a ~13 mm thumbnail sets the row height. */
+const PHOTO_ROWS_PER_PAGE = 18;
+/** …with the QR column on, whose ~17 mm code is taller still and so wins over a photo. */
+const QR_ROWS_PER_PAGE = 13;
+/** Rows a section costs beyond its lines: the heading, its totals and the table header. */
+const GROUP_ROW_COST = 3;
+/** Rows the document's own furniture costs: the letterhead, title band and totals footer. */
+const CHROME_ROWS = 6;
+
+/**
+ * Roughly how many printed pages a catalogue will run to — what the screen shows beside the
+ * Print button so the size of the job is known *before* the browser's print dialog opens
+ * (issue #338).
+ *
+ * Pure and approximate by design (see the row budgets above); never less than one page.
+ */
+export function estimateCataloguePages(input: {
+  /** Lines the document will print. */
+  readonly lineCount: number;
+  /** Sections the lines are divided into (each costs a heading + a table header). */
+  readonly groupCount: number;
+  /** The Photo column is on. */
+  readonly photos: boolean;
+  /** The QR column is on. */
+  readonly qr: boolean;
+}): number {
+  const perPage = input.qr ? QR_ROWS_PER_PAGE : input.photos ? PHOTO_ROWS_PER_PAGE : TEXT_ROWS_PER_PAGE;
+  const rows = input.lineCount + input.groupCount * GROUP_ROW_COST + CHROME_ROWS;
+  return Math.max(1, Math.ceil(rows / perPage));
+}
 
 /** Heading for the trailing bucket of items with no category (when grouping by category). */
 export const UNCATEGORISED_GROUP_LABEL = 'Uncategorised';

@@ -3,12 +3,14 @@ import {
   asOpenableLink,
   buildItemQrUrl,
   buildLocationQrUrl,
+  isShortItemCode,
   isStructuredQrPayload,
   isUuid,
   parseScannedCode,
   parseScannedItemId,
   resolveLabelBaseUrl,
 } from './scan-payload';
+import { shortId } from '@/features/inventory/labels/label-template';
 import { CooldownMap, COOLDOWN_WINDOW_MS } from './cooldown';
 import { initialScannerState, scannerReducer, isStreaming, type ScannerState } from './scanner-machine';
 import { dueDateFromDays, daysUntil, dueStatus, isOverdue, MS_PER_DAY } from './due-date';
@@ -19,7 +21,17 @@ import {
   QRCodeReader,
   RGBLuminanceSource,
 } from '@zxing/library';
-import { encodeQr, qrSvg, qrSvgOrNull, fitsInQr, MAX_QR_BYTES, QrError } from './qr-code';
+import {
+  encodeQr,
+  qrSvg,
+  qrSvgOrNull,
+  fitsInQr,
+  qrModuleCount,
+  MAX_QR_BYTES,
+  MAX_QR_MODULE_COUNT,
+  QR_QUIET_ZONE_MODULES,
+  QrError,
+} from './qr-code';
 import { emptyQueue, queueReducer } from './queue-reducer';
 
 const UUID = '00000000-0000-4000-8000-0000000000ab';
@@ -46,6 +58,39 @@ describe('scan-payload', () => {
     expect(parseScannedItemId('https://example.com/other')).toBeNull();
     expect(parseScannedItemId('')).toBeNull();
     expect(isUuid('not-a-uuid')).toBe(false);
+  });
+
+  describe('isShortItemCode — the label fallback identifier (issue #338)', () => {
+    it('recognises exactly what shortId prints, whatever the id', () => {
+      // The guard against drift: the printed form and the recognised form are pinned together,
+      // so changing how a short code is derived without changing this fails here.
+      for (const id of [
+        UUID,
+        '11111111-1111-4111-8111-111111111111',
+        'a1b2c3d4-3333-4333-8333-333333333333',
+      ]) {
+        expect(isShortItemCode(shortId(id))).toBe(true);
+      }
+    });
+
+    it('accepts either case and surrounding whitespace', () => {
+      expect(isShortItemCode('a1b2c3d4')).toBe(true);
+      expect(isShortItemCode('A1B2C3D4')).toBe(true);
+      expect(isShortItemCode('  A1B2C3D4  ')).toBe(true);
+    });
+
+    it('rejects anything that is not eight hex characters', () => {
+      expect(isShortItemCode('A1B2C3D')).toBe(false); // too short
+      expect(isShortItemCode('A1B2C3D4E')).toBe(false); // too long
+      expect(isShortItemCode('A1B2C3DZ')).toBe(false); // Z is not hex
+      expect(isShortItemCode('A1B2C3D%')).toBe(false); // a LIKE wildcard must never get through
+      expect(isShortItemCode(UUID)).toBe(false);
+      expect(isShortItemCode('')).toBe(false);
+    });
+
+    it('is not itself a ScannedCode kind — a short code names nothing without a lookup', () => {
+      expect(parseScannedCode('A1B2C3D4')).toBeNull();
+    });
   });
 
   describe('structured-QR detection (issue #59)', () => {
@@ -357,6 +402,33 @@ describe('QR encoder (§2.4.3 lean, §5)', () => {
   it('reports a ceiling that exactly matches what the encoder accepts', () => {
     expect(() => encodeQr('x'.repeat(MAX_QR_BYTES))).not.toThrow();
     expect(() => encodeQr('x'.repeat(MAX_QR_BYTES + 1))).toThrow(QrError);
+  });
+
+  // Issue #330: the quiet zone is part of the symbol, not layout padding a call site may trade
+  // away — so it is no longer an option `toSvg` accepts, and every render carries the spec 4.
+  it('always renders the mandatory 4-module quiet zone', () => {
+    expect(QR_QUIET_ZONE_MODULES).toBe(4);
+    const scale = 3;
+    const m = encodeQr(`https://example.com/Gubbins/#/inventory?item=${UUID}`);
+    const svg = qrSvg(`https://example.com/Gubbins/#/inventory?item=${UUID}`, { scale });
+    const side = (m.size + QR_QUIET_ZONE_MODULES * 2) * scale;
+    expect(svg).toContain(`width="${side}" height="${side}"`);
+    // The first dark module is inset by the quiet zone rather than sitting on the edge.
+    expect(svg).toContain(`<path d="M${QR_QUIET_ZONE_MODULES * scale} ${QR_QUIET_ZONE_MODULES * scale}h`);
+  });
+
+  // The module count is what a printed size is divided by to get one module's physical width
+  // (issue #330), so it has to agree exactly with the matrix the encoder would build.
+  it('reports a module count matching the symbol it would encode', () => {
+    for (const payload of [
+      'x',
+      `https://example.com/Gubbins/#/inventory?item=${UUID}`,
+      'x'.repeat(MAX_QR_BYTES),
+    ]) {
+      expect(qrModuleCount(payload)).toBe(encodeQr(payload).size);
+    }
+    expect(qrModuleCount('x'.repeat(MAX_QR_BYTES + 1))).toBeNull();
+    expect(MAX_QR_MODULE_COUNT).toBe(encodeQr('x'.repeat(MAX_QR_BYTES)).size);
   });
 
   it('degrades to null instead of throwing when a payload cannot fit', () => {

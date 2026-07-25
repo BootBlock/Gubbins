@@ -90,6 +90,12 @@ Gubbins deadlines then sit alongside the rest of your schedule, updating as your
 > The calendar feed is the easiest of these to use — subscribe to it from your phone or desktop
 > calendar and every Gubbins due-date appears automatically, no automation required.
 
+Calendar apps re-check a subscription on their own schedule — some every few minutes — so the feed
+tells them when nothing has changed rather than rebuilding the whole calendar each time. A check
+that finds no new data is answered in a few bytes, which keeps a busy subscription (and the
+activity feeds, and the metrics endpoint, which behave the same way) cheap on the machine running
+the bridge. Nothing to configure: your calendar app handles it.
+
 > **ℹ️ Note**
 > Some calendar apps — Outlook among them — check a subscription URL before they will accept it,
 > and only then start downloading. The bridge answers that check, so pasting the feed URL works in

@@ -101,9 +101,22 @@ const catalogueState: { isLoading: boolean; isError: boolean; data?: unknown } =
   },
 };
 
+/** How many items the chosen scope covers — the bounded count read (issue #338). */
+const scopeCountState: { data?: number } = { data: 1 };
+/** The options the screen last passed to the document read, so its `enabled` gate is testable. */
+let catalogueOptions: { enabled?: boolean } = {};
+
 vi.mock('./queries', () => ({
-  usePartsCatalogue: () => ({ ...catalogueState }),
+  usePartsCatalogue: (_scope: unknown, options: { enabled?: boolean } = {}) => {
+    catalogueOptions = options;
+    return { ...catalogueState };
+  },
+  useCatalogueItemCount: () => ({ ...scopeCountState }),
 }));
+
+// Spied so a test can prove the screen never pays for a QR encode it is going to throw away.
+const qrSvgOrNull = vi.fn(() => '<svg />');
+vi.mock('@/features/scanner/qr-code', () => ({ qrSvgOrNull: (...a: unknown[]) => qrSvgOrNull(...a) }));
 
 import { CatalogueScreen } from './CatalogueScreen';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -127,6 +140,9 @@ afterEach(() => {
   cleanup();
   usePreferencesStore.setState(BRANDING_DEFAULTS);
   useCatalogueLaunch.setState({ pendingScope: null });
+  scopeCountState.data = 1;
+  catalogueOptions = {};
+  qrSvgOrNull.mockClear();
 });
 
 describe('CatalogueScreen', () => {
@@ -250,6 +266,116 @@ describe('CatalogueScreen', () => {
     usePreferencesStore.setState({ catalogueShowGeneratedDate: false });
     render(<CatalogueScreen />);
     expect(document.body.textContent).not.toContain('Generated');
+  });
+
+  /** The print ceiling and the size readout that precede the browser's own dialog (issue #338). */
+  describe('print size', () => {
+    /** happy-dom has no `window.print`, so the screen's one is stubbed to record the call. */
+    const stubPrint = () => {
+      const print = vi.fn();
+      Object.defineProperty(window, 'print', { value: print, configurable: true, writable: true });
+      return print;
+    };
+
+    /** Swap in a catalogue of `itemCount` lines, restoring the single-line default afterwards. */
+    const withLineCount = (itemCount: number) => {
+      const data = catalogueState.data as { itemCount: number };
+      const original = data.itemCount;
+      data.itemCount = itemCount;
+      return () => {
+        data.itemCount = original;
+      };
+    };
+
+    it('states the item count and page estimate before anything is printed', () => {
+      render(<CatalogueScreen />);
+      const size = screen.getByTestId('catalogue-print-size').textContent ?? '';
+      expect(size).toContain('1 item');
+      expect(size).toContain('about 1 printed page');
+    });
+
+    it('prints straight away when the job is small', () => {
+      const print = stubPrint();
+      render(<CatalogueScreen />);
+
+      fireEvent.click(screen.getByTestId('print-catalogue'));
+
+      expect(print).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId('catalogue-print-confirm')).toBeNull();
+    });
+
+    it('asks first when the job runs to many pages, and prints once confirmed', () => {
+      const restore = withLineCount(4_000);
+      const print = stubPrint();
+      render(<CatalogueScreen />);
+
+      fireEvent.click(screen.getByTestId('print-catalogue'));
+      // The browser's print dialog must not have opened yet — that was the whole complaint.
+      expect(print).not.toHaveBeenCalled();
+      expect(screen.getByTestId('catalogue-print-confirm')).toBeTruthy();
+
+      fireEvent.click(screen.getByTestId('catalogue-print-confirm'));
+      expect(print).toHaveBeenCalledTimes(1);
+      // The confirmation is gone by the time the page is printed, so it never reaches paper.
+      expect(screen.queryByTestId('catalogue-print-confirm')).toBeNull();
+      restore();
+    });
+
+    it('refuses a scope too large to print, and never builds its document', () => {
+      scopeCountState.data = 50_000;
+      render(<CatalogueScreen />);
+
+      expect(screen.getByTestId('catalogue-too-large').textContent).toContain('50000');
+      expect(screen.getByTestId('print-catalogue').hasAttribute('disabled')).toBe(true);
+      // The stale document from the previous (smaller) scope must not stand in for this one.
+      expect(screen.queryByRole('table')).toBeNull();
+      expect(screen.queryByTestId('catalogue-print-size')).toBeNull();
+    });
+
+    it('holds the document read until the scope has actually been counted', () => {
+      // Both hooks run in the same render, so an unknown count must gate the read as firmly as
+      // an over-ceiling one. Otherwise the unbounded read fires alongside the count on the very
+      // first render — and it cannot be called back once it is in flight.
+      scopeCountState.data = undefined;
+      render(<CatalogueScreen />);
+
+      expect(catalogueOptions.enabled).toBe(false);
+      expect(screen.getByTestId('print-catalogue').hasAttribute('disabled')).toBe(true);
+    });
+
+    it('starts the read once the count comes back within the ceiling', () => {
+      render(<CatalogueScreen />);
+      expect(catalogueOptions.enabled).toBe(true);
+    });
+
+    it('encodes no QR codes for a scope it is going to refuse to print', () => {
+      // The QR column is not part of the catalogue's query key, so ticking it neither re-keys
+      // nor drops the cached document — it only lowers the ceiling. Without a guard the screen
+      // would encode a code per line of a document it is about to decline to show.
+      scopeCountState.data = 5_000;
+      render(<CatalogueScreen />);
+
+      fireEvent.click(screen.getByTestId('catalogue-field-qr'));
+
+      expect(screen.getByTestId('catalogue-too-large')).toBeTruthy();
+      expect(qrSvgOrNull).not.toHaveBeenCalled();
+    });
+
+    it('still encodes QR codes for a scope within the ceiling', () => {
+      render(<CatalogueScreen />);
+      fireEvent.click(screen.getByTestId('catalogue-field-qr'));
+      expect(qrSvgOrNull).toHaveBeenCalled();
+    });
+
+    it('lowers the ceiling once a media column is on', () => {
+      // 5,000 items is comfortably printable as text, and over the ceiling with QR codes.
+      scopeCountState.data = 5_000;
+      render(<CatalogueScreen />);
+      expect(screen.queryByTestId('catalogue-too-large')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('catalogue-field-qr'));
+      expect(screen.getByTestId('catalogue-too-large')).toBeTruthy();
+    });
   });
 });
 
