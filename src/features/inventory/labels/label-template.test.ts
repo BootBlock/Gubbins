@@ -9,6 +9,7 @@ import {
   LABEL_SIZE_SHEET_ID,
   MIN_BARCODE_MODULE_MM,
   barcodeFitsWidth,
+  barcodeFitsWidthUncompressed,
   barcodeModuleWidth,
   clampColumns,
   clampLabelDimension,
@@ -22,6 +23,8 @@ import {
 } from './label-template';
 
 const ID = 'a1b2c3d4-1111-4111-8111-111111111111';
+/** An id whose short form is all digits — the case Code 128 can compress. */
+const DIGIT_ID = '12345678-1111-4111-8111-111111111111';
 
 describe('clampColumns', () => {
   it('clamps to the inclusive bounds and rounds', () => {
@@ -137,6 +140,11 @@ describe('shortId', () => {
 
 /** The widest a barcode prints in an A4 label cell — a comfortable, realistic width. */
 const WIDE_MM = 40;
+/**
+ * A width that a compressible eight-character value clears and an uncompressible one does
+ * not, so the two measurements can be told apart.
+ */
+const BETWEEN_MM = 20;
 
 describe('barcodeModuleWidth', () => {
   it('counts 11 modules per character plus start/check/stop and both quiet zones', () => {
@@ -163,6 +171,35 @@ describe('barcodeFitsWidth', () => {
 
   it('rejects a value that cannot be encoded at all, however wide the label', () => {
     expect(barcodeFitsWidth('', 1000)).toBe(false);
+  });
+
+  it('lets a compressible value use the room its real encoding saves', () => {
+    // Eight digits pack into Code Set C (99 modules), so they genuinely need less width
+    // than eight mixed characters (143) — the exact measurement allows for that. 20 mm
+    // sits between the two thresholds.
+    expect(barcodeFitsWidth('12345678', BETWEEN_MM)).toBe(true);
+    expect(barcodeFitsWidth('A1B2C3D4', BETWEEN_MM)).toBe(false);
+  });
+});
+
+describe('barcodeFitsWidthUncompressed', () => {
+  it('gives the same answer for every value of the same length (issue #331)', () => {
+    // At the width where the exact measurement disagrees between these values, judging
+    // them uncompressed makes them agree — the label size decides, not the characters.
+    for (const value of ['12345678', 'A1B2C3D4', 'ABCDEFGH', '1234ABCD']) {
+      expect(barcodeFitsWidthUncompressed(value, BETWEEN_MM)).toBe(false);
+    }
+  });
+
+  it('agrees with the exact measurement for a value that cannot compress anyway', () => {
+    const width = barcodeModuleWidth('A1B2C3D4')! * MIN_BARCODE_MODULE_MM;
+    expect(barcodeFitsWidthUncompressed('A1B2C3D4', width + 0.01)).toBe(true);
+    expect(barcodeFitsWidthUncompressed('A1B2C3D4', width - 0.01)).toBe(false);
+  });
+
+  it('still rejects a value Code 128 cannot encode at all', () => {
+    expect(barcodeFitsWidthUncompressed('', 1000)).toBe(false);
+    expect(barcodeFitsWidthUncompressed('é', 1000)).toBe(false);
   });
 });
 
@@ -199,5 +236,30 @@ describe('fitBarcodeValue', () => {
     // An unreadable symbol is worse than none — it looks like it ought to work.
     expect(fitBarcodeValue('BIN3', ID, 10)).toEqual({ value: null, fit: 'unprintable' });
     expect(fitBarcodeValue('', ID, 10)).toEqual({ value: null, fit: 'unprintable' });
+  });
+
+  it('decides "unprintable" from the label size alone, not the shape of the id (issue #331)', () => {
+    // 27 mm is the usable width of the 30 x 15 mm die-cut label. `DIGIT_ID`'s short id is
+    // all digits, so Code Set C would squeeze it into two-thirds the width of `ID`'s — but
+    // the fallback is measured uncompressed, so both labels behave the same way.
+    const NARROW_MM = 27;
+    expect(fitBarcodeValue('A very long location name', DIGIT_ID, NARROW_MM).fit).toBe('unprintable');
+    expect(fitBarcodeValue('A very long location name', ID, NARROW_MM).fit).toBe('unprintable');
+    // …and with no preferred value to lose, still nothing to print.
+    expect(fitBarcodeValue('', DIGIT_ID, NARROW_MM).fit).toBe('unprintable');
+    expect(fitBarcodeValue('', ID, NARROW_MM).fit).toBe('unprintable');
+  });
+
+  it('still prints a fallback on a label with room for one', () => {
+    // 37 mm is the usable width of the 40 x 30 mm die-cut label and of a 4-column A4 cell.
+    const ROOMY_MM = 37;
+    expect(fitBarcodeValue('A very long location name', DIGIT_ID, ROOMY_MM)).toEqual({
+      value: '12345678',
+      fit: 'shortened',
+    });
+    expect(fitBarcodeValue('A very long location name', ID, ROOMY_MM)).toEqual({
+      value: 'A1B2C3D4',
+      fit: 'shortened',
+    });
   });
 });
