@@ -2,9 +2,9 @@
  * A thin, dependency-free **OData-style query-option layer** for the item read endpoints.
  *
  * This is a *convenience subset* of the OData v4 URL conventions — **not** a compliant OData
- * service (there is no `$metadata`/CSDL, no `$batch`, no `$apply`, no navigation-property
- * semantics). It exists purely so callers already fluent in OData get familiar spellings that
- * map 1:1 onto machinery the bridge already has:
+ * service (no `$batch`, no `$apply`, no navigation-property semantics; a CSDL `$metadata`
+ * document *is* served, by `odata-metadata.ts`). It exists purely so callers already fluent in
+ * OData get familiar spellings that map 1:1 onto machinery the bridge already has:
  *
  *   - `$select`  → the `fields` sparse fieldset (see `field-select.ts`)
  *   - `$expand`  → the `include` field expansion
