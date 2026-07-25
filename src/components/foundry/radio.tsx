@@ -25,8 +25,14 @@ export const Radio = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HTMLI
       className={cn(
         // `rounded-full` states the intent even though a native radio is drawn round by the UA:
         // it keeps the class list honest if a future restyle sets `appearance-none`.
-        'size-4 shrink-0 cursor-pointer rounded-full border-border accent-primary outline-none',
-        'focus-visible:ring-[3px] focus-visible:ring-ring/40',
+        'size-4 shrink-0 cursor-pointer rounded-full border-border accent-primary',
+        // Focus is an `outline`, not the soft `ring` halo used by `Input`/`Select`. Those pair the
+        // halo with a full-opacity `focus-visible:border-ring` on an `appearance-none` box; a
+        // native radio paints no border, so a 40%-alpha halo would be the *only* indicator and
+        // lands near 1.8:1 — under the 3:1 WCAG 1.4.11 asks of a focus indicator. An outline is
+        // also the one form that survives `forced-colors` (Windows High Contrast), where a
+        // `box-shadow` ring is stripped entirely.
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
         'disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}

@@ -2,10 +2,12 @@
  * Guards call sites against hand-rolling a native form control that Foundry already provides.
  *
  * A bare `<input type="checkbox">` or `<input type="radio">` looks harmless, so both kept
- * reappearing: every one had to re-declare `accent-primary` and a size, and every one silently
- * went without the keyboard focus ring and disabled styling the primitive supplies. That is the
- * "no hand-rolled bodges" rule in CLAUDE.md — a control that duplicates a primitive's styling
- * diverges from the design system, and nothing about it fails a type-check or a component test.
+ * reappearing: every one had to re-declare `accent-primary` and a size, and every one went without
+ * the disabled styling and the deliberate, contrast-checked focus outline the primitive supplies
+ * (a raw control keeps whatever ring the browser happens to draw, which is neither themed nor
+ * consistent between them). That is the "no hand-rolled bodges" rule in CLAUDE.md — a control that
+ * duplicates a primitive's styling diverges from the design system, and nothing about it fails a
+ * type-check or a component test.
  *
  * `Checkbox` (src/components/foundry/input.tsx) and `Radio` (src/components/foundry/radio.tsx) are
  * drop-ins: each fixes `type`, forwards its ref and spreads every other prop, so a call site keeps
@@ -112,6 +114,15 @@ describe.each(GUARDED_CONTROLS)(
 );
 
 describe('the guard itself stays honest', () => {
+  it('scans the whole source tree (guards against a silently-narrow sweep)', () => {
+    // The per-control positive controls above prove the *pattern* still matches, but not that the
+    // *walk* is still wide: both owner files are shallow `.tsx` files, so dropping `.ts` from
+    // SOURCE_EXTENSIONS or failing to recurse past `src/components` would keep them green while
+    // hiding every call site. ~940 non-test sources today; the floor is far below that so ordinary
+    // growth or pruning never trips it, while either regression above does.
+    expect(sourceFiles(SRC_DIR).length).toBeGreaterThan(500);
+  });
+
   it('does not allow-list a file that no longer declares a raw control', () => {
     const everyMatch = new Set([...scanned.values()].flat());
     const stale = ALLOW_LIST.filter((file) => !everyMatch.has(file));
