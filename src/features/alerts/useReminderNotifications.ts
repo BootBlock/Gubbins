@@ -21,6 +21,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useAlerts } from './useAlerts';
 import { useNotifiedRemindersStore } from './useNotifiedRemindersStore';
 import { type ReminderApi } from './reminder-api';
+import { useReminderWakeStore, type ReminderWakeStatus } from './useReminderWakeStore';
 import { planReminders, periodicSyncAction } from './reminders';
 
 /** Whether a persisted id set already equals the reconciled array (avoids redundant writes). */
@@ -70,11 +71,19 @@ export function useReminderFiring(api: ReminderApi): void {
 /**
  * Reconcile the best-effort Periodic Background Sync registration against the reminder opt-in.
  * Mounted regardless of the opt-in so turning reminders off unregisters the background wake.
+ *
+ * The outcome is recorded in {@link useReminderWakeStore} so Settings can say that a wanted
+ * background wake was refused, rather than showing an unqualified "on" over reminders that only
+ * arrive while Gubbins is open.
  */
 export function useReminderPeriodicSync(api: ReminderApi, enabled: boolean): void {
   useEffect(() => {
     if (!api.periodicSyncSupported) return;
     let cancelled = false;
+    const report = (status: ReminderWakeStatus) => {
+      if (!cancelled) useReminderWakeStore.getState().setStatus(status);
+    };
+
     void (async () => {
       const registered = await api.isPeriodicSyncRegistered();
       if (cancelled) return;
@@ -84,9 +93,18 @@ export function useReminderPeriodicSync(api: ReminderApi, enabled: boolean): voi
         supported: api.periodicSyncSupported,
         registered,
       });
-      if (action === 'register') await api.registerPeriodicSync();
-      else if (action === 'unregister') await api.unregisterPeriodicSync();
-    })();
+      if (action === 'register') report((await api.registerPeriodicSync()) ? 'registered' : 'unavailable');
+      else if (action === 'unregister') {
+        await api.unregisterPeriodicSync();
+        report('unknown');
+      } else report(registered ? 'registered' : 'unknown');
+    })().catch(() => {
+      // The seam is contracted never to throw, but it is injectable and this hook is mounted
+      // app-wide: an unobserved rejection would be an unhandled one, and would leave the
+      // background wake in a state nothing reports. Treat a throw as a refusal.
+      report('unavailable');
+    });
+
     return () => {
       cancelled = true;
     };
