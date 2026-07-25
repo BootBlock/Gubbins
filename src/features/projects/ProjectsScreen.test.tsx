@@ -426,11 +426,14 @@ describe('ProjectsScreen — narrowing the master list (issue #137)', () => {
 
   it('returns to the first page when the filter changes', () => {
     usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 10 });
+    // 60 projects — 40 matching "Alpha". Sized so the *filtered* set is still four pages long:
+    // page 3 remains a valid page after filtering, so only a genuine reset gets back to the
+    // first one. (Clamping to the last page would leave page 3 exactly where it was.)
     projectsState = {
       isLoading: false,
       data: {
-        rows: Array.from({ length: 25 }, (_, i) =>
-          makeProject(`p${i}`, `Project ${String(i + 1).padStart(3, '0')}`),
+        rows: Array.from({ length: 60 }, (_, i) =>
+          makeProject(`p${i}`, `${i < 40 ? 'Alpha' : 'Beta'} ${String(i + 1).padStart(3, '0')}`),
         ),
       },
     };
@@ -439,11 +442,11 @@ describe('ProjectsScreen — narrowing the master list (issue #137)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Page 3' }));
     expect(requestedPages.at(-1)).toBe(3);
 
-    // Page 3 of the unfiltered list is past the end of the filtered one; staying there would
-    // show an empty page under a filter that actually matched something.
-    fireEvent.change(screen.getByTestId('projects-search'), { target: { value: 'Project 01' } });
+    // Staying on page 3 would open the filtered list a third of the way down it, past every
+    // match the user is most likely to have been looking for.
+    fireEvent.change(screen.getByTestId('projects-search'), { target: { value: 'Alpha' } });
     expect(requestedPages.at(-1)).toBe(1);
-    expect(screen.getByRole('button', { name: /Project 010/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Alpha 001/ })).toBeInTheDocument();
 
     usePreferencesStore.setState({ paginateLists: false, defaultPageSize: 50 });
   });

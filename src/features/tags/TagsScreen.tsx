@@ -5,6 +5,7 @@ import {
   FormField,
   Input,
   InputClearButton,
+  LiveRegion,
   Modal,
   PageContainer,
   PageHeader,
@@ -218,13 +219,13 @@ export function TagsScreen() {
            * WCAG 4.1.3 — always-mounted polite status region. Filtering rewrites the list in
            * place, so without this the only feedback that typing did anything is visual.
            */}
-          <p className="sr-only" role="status" aria-live="polite" data-testid="tags-count-live">
+          <LiveRegion visuallyHidden data-testid="tags-count-live">
             {dictionary.isLoading || dictionary.isError || !searching
               ? // The visible error carries its own role="alert", and an unfiltered list has
                 // nothing to announce that the page itself doesn't already say.
                 ''
               : t('tags.list.live.matches', { vars: { count: totalTags, n: totalTags } })}
-          </p>
+          </LiveRegion>
 
           {dictionary.isLoading ? (
             <p className="text-sm text-muted-foreground">{t('tags.list.loading')}</p>

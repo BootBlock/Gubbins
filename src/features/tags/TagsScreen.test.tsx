@@ -206,7 +206,20 @@ describe('TagsScreen — filtering and sorting the dictionary (issue #137)', () 
     // whole dictionary would size the page strip for a set the filter can never fill.
     expect(requestedBrowse.at(-1)?.search).toBe('frag');
     expect(requestedCountFilters.at(-1)).toBe('frag');
-    // …and it goes back to page one, since the page it was on may be past the filtered end.
+  });
+
+  it('returns to the first page when the filter changes', () => {
+    // The filtered set stays five pages long, so page 3 is still a valid page afterwards and
+    // clamping alone would leave the user exactly where they were, part-way down the matches.
+    usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 10 });
+    dictionaryState = two;
+    countState = 42;
+    render(<TagsScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Page 3' }));
+    expect(requestedPages.at(-1)?.page).toBe(3);
+
+    fireEvent.change(screen.getByTestId('tags-search'), { target: { value: 'frag' } });
     expect(requestedPages.at(-1)?.page).toBe(1);
   });
 
