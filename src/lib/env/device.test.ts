@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { repoPath } from '@/test/repo-path';
 import { LARGE_FORMAT_QUERY, FOLDABLE_BOOK_QUERY, isLargeFormat } from './device';
 
 const realMatchMedia = globalThis.matchMedia;
@@ -79,9 +79,10 @@ describe('large-format CSS/JS parity', () => {
   const LARGE_FORMAT_VARIANT = /@custom-variant\s+large-format\s*\{\s*@media\s+([^{]+?)\s*\{/;
 
   it('declares the same media condition in the stylesheet as LARGE_FORMAT_QUERY', () => {
-    // Vitest runs from the project root; under happy-dom `import.meta.url` is an http: URL,
-    // not a file: one, so resolve against cwd (as the other source-reading guards do).
-    const css = readFileSync(resolve(process.cwd(), 'src/styles/index.css'), 'utf8');
+    // Resolve from this test file's own checkout, not cwd: a worktree's suite can be run from
+    // the primary checkout, and a cwd-relative read would then compare the *primary's* CSS
+    // against the worktree's constant — passing on exactly the drift this guard exists to catch.
+    const css = readFileSync(repoPath(import.meta.dirname, 'src', 'styles', 'index.css'), 'utf8');
     const match = LARGE_FORMAT_VARIANT.exec(css);
 
     expect(
