@@ -21,6 +21,7 @@ import { UserRepository } from '@/db/repositories/UserRepository.ts';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
+import { CheckoutRepository } from '@/db/repositories/CheckoutRepository.ts';
 import { reconcile } from '@/features/sync/reconcile';
 import { applyPlan, buildLocalSnapshot, buildSchemaDictionary } from '@/features/sync/snapshot';
 import { snapshotToBackupJson } from '@/features/sync/backup';
@@ -59,7 +60,7 @@ describe('applyOperation', () => {
   });
 
   it('adjusts a DISCRETE quantity up and logs it', async () => {
-    const item = await applyOperation(
+    const { item } = await applyOperation(
       hydrated.driver,
       {
         kind: 'adjust-quantity',
@@ -97,7 +98,7 @@ describe('applyOperation', () => {
   });
 
   it('adjusts a DISCRETE quantity down', async () => {
-    const item = await applyOperation(
+    const { item } = await applyOperation(
       hydrated.driver,
       {
         kind: 'adjust-quantity',
@@ -155,7 +156,7 @@ describe('applyOperation', () => {
   });
 
   it('accepts a note exactly at the bound', async () => {
-    const item = await applyOperation(
+    const { item } = await applyOperation(
       hydrated.driver,
       {
         kind: 'adjust-quantity',
@@ -166,6 +167,234 @@ describe('applyOperation', () => {
       ACTOR,
     );
     expect(item.id).toBe('item-m3-bolt');
+  });
+
+  // --- loans (issue #142) ---------------------------------------------------------
+
+  it('checks an item out to a new contact, drawing the units down', async () => {
+    const { item, checkout } = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Sam Okafor', quantity: 2 },
+      ACTOR,
+    );
+    expect(item.quantity).toBe(40); // 42 - 2, out with the borrower
+    expect(checkout).not.toBeNull();
+    expect(checkout!.itemId).toBe('item-m3-bolt');
+    expect(checkout!.borrowerType).toBe('contact');
+    expect(checkout!.returnedAt).toBeNull();
+    const history = await hydrated.driver.query<{ action: string }>(
+      "SELECT action FROM item_history WHERE item_id = 'item-m3-bolt' ORDER BY created_at DESC LIMIT 1;",
+    );
+    expect(history[0]?.action).toBe('CHECKED_OUT');
+  });
+
+  it('anchors a yyyy-MM-dd due date at local end-of-day, as the app does', async () => {
+    const { checkout } = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Sam Okafor', dueDate: '2026-08-14' },
+      ACTOR,
+    );
+    // Not midnight UTC: a deadline belongs to the borrower's own day (issue #318), so the
+    // instant read back as a *local* calendar day must still be the 14th.
+    expect(checkout!.dueDate).toBe(new Date('2026-08-14T23:59:59').getTime());
+  });
+
+  it('rejects a due date that is not a plain calendar day with a 422', async () => {
+    // The last two are the ones a shape check alone would miss: `Date` rolls a non-existent day
+    // forward, so 31 February would silently become 3 March.
+    for (const dueDate of [
+      '14 August 2026',
+      '2026-08-14T12:00:00Z',
+      'tomorrow',
+      '2026-02-31',
+      '2026-13-01',
+    ]) {
+      await expect(
+        applyOperation(
+          hydrated.driver,
+          { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Sam Okafor', dueDate },
+          ACTOR,
+        ),
+      ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
+    }
+  });
+
+  it('rejects a check-out with no borrower, in the app’s own words', async () => {
+    const err = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt' },
+      ACTOR,
+    ).catch((e) => e);
+    expect(err).toBeInstanceOf(WriteError);
+    expect(err.status).toBe(422);
+    expect(err.message).toMatch(/borrower/i);
+  });
+
+  it('rejects a check-out of more than is on hand with a 422', async () => {
+    await expect(
+      applyOperation(
+        hydrated.driver,
+        { kind: 'check-out', itemId: 'item-esp32', contactName: 'Sam Okafor', quantity: 99 },
+        ACTOR,
+      ),
+    ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
+  });
+
+  it('checks the item’s single open loan back in without being told which', async () => {
+    await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Sam Okafor', quantity: 2 },
+      ACTOR,
+    );
+    const { item, checkout } = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-in', itemId: 'item-m3-bolt', note: 'All back' },
+      ACTOR,
+    );
+    expect(item.quantity).toBe(42); // restored
+    expect(checkout!.returnedAt).not.toBeNull(); // RETURNED is derived from this
+    expect(checkout!.returnNote).toBe('All back');
+  });
+
+  it('refuses to guess when the item has more than one open loan', async () => {
+    for (const contactName of ['Sam Okafor', 'Ada Quinn']) {
+      await applyOperation(
+        hydrated.driver,
+        { kind: 'check-out', itemId: 'item-m3-bolt', contactName, quantity: 1 },
+        ACTOR,
+      );
+    }
+    const err = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-in', itemId: 'item-m3-bolt' },
+      ACTOR,
+    ).catch((e) => e);
+    expect(err.status).toBe(422);
+    expect(err.message).toMatch(/checkoutId/);
+  });
+
+  it('closes the named loan when there are several', async () => {
+    const first = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Sam Okafor', quantity: 1 },
+      ACTOR,
+    );
+    await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Ada Quinn', quantity: 3 },
+      ACTOR,
+    );
+    const { item, checkout } = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-in', itemId: 'item-m3-bolt', checkoutId: first.checkout!.id },
+      ACTOR,
+    );
+    expect(checkout!.id).toBe(first.checkout!.id);
+    expect(item.quantity).toBe(39); // 42 - 1 - 3, then the 1 comes back
+  });
+
+  it('rejects a check-in for an item that is not on loan with a 422', async () => {
+    await expect(
+      applyOperation(hydrated.driver, { kind: 'check-in', itemId: 'item-m3-bolt' }, ACTOR),
+    ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
+  });
+
+  it('rejects a checkoutId belonging to a different item with a 404', async () => {
+    const other = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-esp32', contactName: 'Sam Okafor', quantity: 1 },
+      ACTOR,
+    );
+    // Naming another item's loan under /items/item-m3-bolt/check-in is a mistake, not a licence
+    // to return that other item.
+    await expect(
+      applyOperation(
+        hydrated.driver,
+        { kind: 'check-in', itemId: 'item-m3-bolt', checkoutId: other.checkout!.id },
+        ACTOR,
+      ),
+    ).rejects.toMatchObject({ status: 404, code: 'not_found' });
+    expect((await new ItemRepository(hydrated.driver).getById('item-esp32'))!.quantity).toBe(6);
+  });
+
+  it('rejects re-returning an already-returned loan with a 422', async () => {
+    const lent = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Sam Okafor', quantity: 1 },
+      ACTOR,
+    );
+    await applyOperation(
+      hydrated.driver,
+      { kind: 'check-in', itemId: 'item-m3-bolt', checkoutId: lent.checkout!.id },
+      ACTOR,
+    );
+    await expect(
+      applyOperation(
+        hydrated.driver,
+        { kind: 'check-in', itemId: 'item-m3-bolt', checkoutId: lent.checkout!.id },
+        ACTOR,
+      ),
+    ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
+  });
+
+  // --- moving stock between locations (issue #142) ---------------------------------
+
+  it('moves stock between placements, leaving the total alone', async () => {
+    // item-esp32 is split 5 at Shelf 2 (its home) and 2 at Bin 4.
+    const { item } = await applyOperation(
+      hydrated.driver,
+      {
+        kind: 'transfer-stock',
+        itemId: 'item-esp32',
+        fromLocationId: 'loc-shelf-2',
+        toLocationId: 'loc-bin-4',
+        quantity: 3,
+      },
+      ACTOR,
+    );
+    expect(item.quantity).toBe(7); // a move, not a change in how much there is
+    const placements = await new ItemRepository(hydrated.driver).listStock('item-esp32');
+    const at = (id: string) => placements.find((p) => p.locationId === id)?.quantity ?? 0;
+    expect(at('loc-shelf-2')).toBe(2);
+    expect(at('loc-bin-4')).toBe(5);
+  });
+
+  it('refuses a transfer larger than the source holds rather than moving part of it', async () => {
+    // The repository clamps for the UI's benefit; over the API a partial move would be a silent
+    // wrong answer, so the shortfall is a 422 and NOTHING moves.
+    const err = await applyOperation(
+      hydrated.driver,
+      {
+        kind: 'transfer-stock',
+        itemId: 'item-esp32',
+        fromLocationId: 'loc-bin-4',
+        toLocationId: 'loc-shelf-2',
+        quantity: 10,
+      },
+      ACTOR,
+    ).catch((e) => e);
+    expect(err).toBeInstanceOf(WriteError);
+    expect(err.status).toBe(422);
+    const placements = await new ItemRepository(hydrated.driver).listStock('item-esp32');
+    expect(placements.find((p) => p.locationId === 'loc-bin-4')?.quantity).toBe(2); // untouched
+  });
+
+  it('rejects a fractional or non-positive transfer quantity with a 422', async () => {
+    for (const quantity of [0, -1, 1.5]) {
+      await expect(
+        applyOperation(
+          hydrated.driver,
+          {
+            kind: 'transfer-stock',
+            itemId: 'item-esp32',
+            fromLocationId: 'loc-shelf-2',
+            toLocationId: 'loc-bin-4',
+            quantity,
+          },
+          ACTOR,
+        ),
+      ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
+    }
   });
 
   it('rejects a gauge adjustment on a DISCRETE item with a 422', async () => {
@@ -189,7 +418,7 @@ describe('applyOperation', () => {
 describe('executeWrite', () => {
   it('applies the mutation and writes the merged snapshot back atomically', async () => {
     let stored = await fixtureJson();
-    const detail = await executeWrite({
+    const result = await executeWrite({
       actorUserId: ACTOR,
       snapshotPath: '/virtual/gubbins-sync.json',
       op: { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 5, note: 'restock' },
@@ -200,8 +429,9 @@ describe('executeWrite', () => {
         },
       },
     });
-    expect(detail.id).toBe('item-m3-bolt');
-    expect(detail.quantity).toBe(47);
+    expect(result.item.id).toBe('item-m3-bolt');
+    expect(result.item.quantity).toBe(47);
+    expect(result.checkout).toBeNull(); // a stock adjustment opens no loan
 
     // The written-back snapshot, re-hydrated, must carry the new quantity AND the ledger entry.
     const after = await hydrateFromJson(stored);
@@ -295,6 +525,54 @@ describe('round-trip through the app’s §7.3 reconcile (no drift)', () => {
 
     await pwa.driver.close();
     await bridge.driver.close();
+  });
+
+  it('carries a loan and its return to the PWA, idempotently (issue #142)', async () => {
+    const pwa = await hydrateFromJson(await fixtureJson());
+    const dictionary = await buildSchemaDictionary(pwa.driver, DICTIONARY_TABLES);
+    const onDisk = snapshotToBackupJson(await buildLocalSnapshot(pwa.driver));
+
+    // The bridge lends 2 out. A loan is not one row: it inserts a `checkouts` row (and a
+    // `contacts` row for the new borrower) as well as drawing the stock down, so this is the
+    // check that the whole set travels, not just the quantity.
+    const { json: lentJson, bridge } = await bridgeWriteBack(onDisk, {
+      kind: 'check-out',
+      itemId: 'item-m3-bolt',
+      contactName: 'Sam Okafor',
+      quantity: 2,
+    });
+    expect(await quantityOf(bridge.driver, 'item-m3-bolt')).toBe(40);
+
+    const lentRemote = JSON.parse(lentJson);
+    const lentPlan = reconcile(await buildLocalSnapshot(pwa.driver), lentRemote, { offset: 0, dictionary });
+    await applyPlan(pwa.driver, lentPlan, dictionary);
+    expect(await quantityOf(pwa.driver, 'item-m3-bolt')).toBe(40);
+    const open = await new CheckoutRepository(pwa.driver).listOpen();
+    expect(
+      open.rows.map((r) => ({ itemId: r.itemId, borrowerName: r.borrowerName, quantity: r.quantity })),
+    ).toEqual([{ itemId: 'item-m3-bolt', borrowerName: 'Sam Okafor', quantity: 2 }]);
+
+    // Re-running the same sync changes nothing (equal clocks resolve REMOTE without a write).
+    const replay = reconcile(await buildLocalSnapshot(pwa.driver), lentRemote, { offset: 0, dictionary });
+    await applyPlan(pwa.driver, replay, dictionary);
+    expect((await new CheckoutRepository(pwa.driver).listOpen()).rows).toHaveLength(1);
+
+    // ...and the return travels the same way, closing that very loan on the PWA side.
+    const { json: backJson, bridge: bridgeBack } = await bridgeWriteBack(lentJson, {
+      kind: 'check-in',
+      itemId: 'item-m3-bolt',
+    });
+    const backPlan = reconcile(await buildLocalSnapshot(pwa.driver), JSON.parse(backJson), {
+      offset: 0,
+      dictionary,
+    });
+    await applyPlan(pwa.driver, backPlan, dictionary);
+    expect(await quantityOf(pwa.driver, 'item-m3-bolt')).toBe(42);
+    expect((await new CheckoutRepository(pwa.driver).listOpen()).rows).toHaveLength(0);
+
+    await pwa.driver.close();
+    await bridge.driver.close();
+    await bridgeBack.driver.close();
   });
 
   it('does NOT bulldoze a newer local edit (correct LWW direction)', async () => {

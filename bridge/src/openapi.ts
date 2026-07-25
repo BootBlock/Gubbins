@@ -460,9 +460,10 @@ export const openapiDocument: JsonValue = {
     {
       name: 'writes',
       description:
-        'Opt-in stock mutations (off by default; enabled with GUBBINS_BRIDGE_ALLOW_WRITES=on). ' +
-        'Each write round-trips through the same sync merge the PWA uses, so it is applied without ' +
-        'drift on the next sync. When writes are disabled these paths return 404.',
+        'Opt-in stock and loan mutations (off by default; enabled with ' +
+        'GUBBINS_BRIDGE_ALLOW_WRITES=on). Each write round-trips through the same sync merge the ' +
+        'PWA uses, so it is applied without drift on the next sync. When writes are disabled ' +
+        'these paths return 404.',
     },
     {
       name: 'push',
@@ -881,6 +882,157 @@ export const openapiDocument: JsonValue = {
           'as a net-value delta, which the PWA replays through the §7.3 Delta-CRDT on its next sync.',
         parameters: [idParam('item')],
         requestBody: adjustRequestBody('Signed change to the net value (e.g. -45 for 45 consumed).'),
+        responses: {
+          200: response('The updated item.', '#/components/schemas/ItemDetail'),
+          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/items/{id}/check-out': {
+      post: {
+        tags: ['writes'],
+        summary: 'Lend an item out to a contact, project or location',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Opens a ' +
+          'loan exactly as the app does — a discrete item’s stock is drawn down from the source ' +
+          'placement while the loan is open, a serialised item goes out as a whole and cannot be ' +
+          'lent twice. Supply exactly one borrower. The response carries the loan, whose id names ' +
+          'it at check-in and matches the UID the calendar feed publishes for it. Needs ' +
+          'checkouts:write (not stock:write).',
+        parameters: [idParam('item')],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                description:
+                  'Exactly one of contactId / contactName / projectId / locationId identifies the ' +
+                  'borrower; supplying none or several is a 422.',
+                properties: {
+                  contactId: { type: 'string', description: 'Lend to this existing contact.' },
+                  contactName: {
+                    type: 'string',
+                    description: 'Lend to a contact by name, creating it when there is no match.',
+                  },
+                  projectId: { type: 'string', description: 'Lend to this existing project.' },
+                  locationId: {
+                    type: 'string',
+                    description: 'Lend to this existing location ("in the van").',
+                  },
+                  quantity: {
+                    type: 'integer',
+                    minimum: 1,
+                    description: 'Units to lend; defaults to 1. A serialised item always lends as 1.',
+                  },
+                  dueDate: {
+                    type: 'string',
+                    format: 'date',
+                    nullable: true,
+                    description:
+                      'Due date as a calendar day (yyyy-MM-dd), anchored at local end-of-day so a ' +
+                      'loan due "the 20th" only reads overdue once the 20th is over. Null or absent ' +
+                      'for an open-ended loan.',
+                    example: '2026-08-14',
+                  },
+                  fromLocationId: {
+                    type: 'string',
+                    description:
+                      'Draw the units from this placement (the return restores them there); ' +
+                      'defaults to the item’s own location.',
+                  },
+                  note: {
+                    type: 'string',
+                    nullable: true,
+                    maxLength: 500,
+                    description: 'Optional note recorded on the loan and in the activity log.',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: response('The updated item and the loan that was opened.', '#/components/schemas/LoanResult'),
+          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/items/{id}/check-in': {
+      post: {
+        tags: ['writes'],
+        summary: 'Return a lent item, closing its loan',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Restores ' +
+          'the units to the placement (and lot) they were lent from and stamps the loan returned, ' +
+          'exactly as the app does. `checkoutId` is optional when the item has exactly one open ' +
+          'loan, and required (422) once it has more than one. Needs checkouts:write (not ' +
+          'stock:write).',
+        parameters: [idParam('item')],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  checkoutId: {
+                    type: 'string',
+                    description:
+                      'Which loan to close. Only needed when the item has more than one open loan; ' +
+                      'it must belong to this item and still be open.',
+                  },
+                  note: {
+                    type: 'string',
+                    nullable: true,
+                    maxLength: 500,
+                    description:
+                      'Optional remark recorded on the return (kept separate from the loan’s own note).',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: response('The updated item and the loan that was closed.', '#/components/schemas/LoanResult'),
+          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/items/{id}/transfer-stock': {
+      post: {
+        tags: ['writes'],
+        summary: 'Move units of a DISCRETE item between two locations',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Moves ' +
+          'stock between placements in the per-location ledger, leaving the item’s total ' +
+          'unchanged — what adjust-quantity cannot do, since it only ever touches the item’s home ' +
+          'location. Each moved lot keeps its batch and expiry at the destination. The whole ' +
+          'amount moves or none of it does: too little on hand at the source is a 422, never a ' +
+          'silent partial move.',
+        parameters: [idParam('item')],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['fromLocationId', 'toLocationId', 'quantity'],
+                properties: {
+                  fromLocationId: { type: 'string', description: 'The location the units move out of.' },
+                  toLocationId: { type: 'string', description: 'The location the units move into.' },
+                  quantity: {
+                    type: 'integer',
+                    minimum: 1,
+                    description: 'How many units to move.',
+                    example: 5,
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: {
           200: response('The updated item.', '#/components/schemas/ItemDetail'),
           ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
@@ -1647,6 +1799,57 @@ export const openapiDocument: JsonValue = {
             },
           },
         ],
+      },
+      Checkout: {
+        type: 'object',
+        description:
+          'One loan. The borrower is a tagged union: `borrowerType` says which kind of target ' +
+          'holds it and `borrowerId` is that target’s id. `status` is derived from `returnedAt`.',
+        required: [
+          'id',
+          'itemId',
+          'borrowerType',
+          'borrowerId',
+          'quantity',
+          'dueDate',
+          'checkedOutAt',
+          'returnedAt',
+          'status',
+          'note',
+          'returnNote',
+          'sourceLocationId',
+        ],
+        properties: {
+          id: { type: 'string', example: 'a3f1c0de-0000-4000-8000-000000000000' },
+          itemId: { type: 'string', example: 'item-m3-bolt' },
+          borrowerType: { type: 'string', enum: ['contact', 'project', 'location'], example: 'contact' },
+          borrowerId: { type: 'string', example: 'contact-sam' },
+          quantity: { type: 'integer', example: 1 },
+          dueDate: {
+            type: 'integer',
+            nullable: true,
+            description: 'UNIX-ms; null for an open-ended loan.',
+          },
+          checkedOutAt: { type: 'integer' },
+          returnedAt: { type: 'integer', nullable: true, description: 'UNIX-ms; null while still out.' },
+          status: { type: 'string', enum: ['OPEN', 'RETURNED'], example: 'OPEN' },
+          note: { type: 'string', nullable: true },
+          returnNote: { type: 'string', nullable: true, description: 'Null while the loan is open.' },
+          sourceLocationId: {
+            type: 'string',
+            nullable: true,
+            description: 'The placement the units were drawn from; stock is restored there on return.',
+          },
+        },
+      },
+      LoanResult: {
+        type: 'object',
+        description: 'What the loan endpoints return: the affected item plus the loan itself.',
+        required: ['item', 'checkout'],
+        properties: {
+          item: { $ref: '#/components/schemas/ItemDetail' },
+          checkout: { $ref: '#/components/schemas/Checkout' },
+        },
       },
       Location: {
         type: 'object',

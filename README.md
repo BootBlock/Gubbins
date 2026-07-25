@@ -230,8 +230,9 @@ it speaks stdio, so its boundary is the process that launches it.)
 - **Two data sources** — point it at either the `gubbins-sync.json` your sync writes, *or* a raw
   exported `.sqlite` database; it auto-detects which.
 - **Opt-in, off-by-default writes** — let an automation or voice command adjust an item's quantity
-  or a consumable's gauge level (`GUBBINS_BRIDGE_ALLOW_WRITES=on`, over HTTP or MCP); changes
-  round-trip through the app's own sync merge, so there's no drift.
+  or a consumable's gauge level, lend an item out and take it back, or move stock between
+  locations (`GUBBINS_BRIDGE_ALLOW_WRITES=on`, over HTTP or MCP); changes round-trip through the
+  app's own sync merge, so there's no drift.
 - **Opt-in, off-by-default connection back to Home Assistant** — give the bridge an HA URL and a
   long-lived token (`GUBBINS_BRIDGE_HA=on`) and it calls HA *outbound* on the app's behalf,
   exposing your scale entities at `/api/v1/scale/*` so the app can read a live weight when

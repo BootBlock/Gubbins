@@ -26,28 +26,34 @@ data you'd see — and, by default, **cannot change anything**.
 > it were current. This matches the freshness signal the rest of the bridge gives; see
 > [[checking it's serving current data|Running-the-Bridge]].
 
-## Letting an assistant adjust stock (optional)
+## Letting an assistant change things (optional)
 
-If you switch **writes** on when running the bridge, two more tools appear alongside the read-only
-ones, letting an assistant *adjust* stock as well as look it up — so "I've just used two of those"
-can actually bring the count down:
+If you switch **writes** on when running the bridge, a few more tools appear alongside the
+read-only ones, letting an assistant *change* your inventory as well as look it up — so "I've just
+used two of those" can actually bring the count down, and "Sam's borrowed the multimeter" can
+actually put it out on loan:
 
 - **Adjust a quantity** — add or remove a whole number of a counted item.
 - **Adjust a gauge** — change how full a part-used item is (a solder reel, a bottle of flux).
+- **Check an item out** — [[lend it|Loans-Check-Out-and-In]] to a person, a project or a place
+  such as a van, optionally with a due date.
+- **Check an item in** — take a loan back, returning the stock to exactly where it came from.
+- **Move stock between locations** — shift some of an item from one place to another without
+  changing how much of it you have.
 
-Nothing else is exposed: an assistant cannot create, rename or delete anything, and every
-adjustment is recorded in the [[activity log|Activity-Log]] just as if you'd made it yourself — so
-you can always see what changed. Adjustments flow back through the same [[sync|Cloud-Sync]] as any
-other change, so your other devices pick them up normally.
+Nothing else is exposed: an assistant cannot create, rename or delete anything, and every change is
+recorded in the [[activity log|Activity-Log]] just as if you'd made it yourself — so you can always
+see what happened. The changes flow back through the same [[sync|Cloud-Sync]] as any other, so your
+other devices pick them up normally.
 
 > **⚠️ Heads-up**
 > This is off by default, and worth a moment's thought before switching on. Unlike the bridge's
 > web API — where every caller presents an [[API token|Bridge-API-Tokens]] and is held to that
 > account's permissions — an MCP assistant presents nothing at all: anything able to start the
-> server with writes enabled can adjust your stock, and the change is recorded against the system
-> rather than a person. Turn it on only for an assistant you trust on a machine
-> you control, and bear in mind that an assistant can be influenced by whatever it reads. Ask it
-> to confirm before it adjusts anything.
+> server with writes enabled can adjust your stock and lend your things out, and the change is
+> recorded against the system rather than a person. Turn it on only for an assistant you trust on a
+> machine you control, and bear in mind that an assistant can be influenced by whatever it reads.
+> Ask it to confirm before it changes anything.
 
 > **💡 Tip**
 > The natural-language lookups here are the "external" cousin of the in-app

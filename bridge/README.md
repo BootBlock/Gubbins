@@ -31,7 +31,7 @@ you need Node **≥ 24** (or the **22.16+ LTS** line).
 >   core is also offered over an [MCP stdio server](#mcp-server-for-llmagent-tools) for LLM/agent
 >   tools (read-only unless writes are opted in).
 > - **Opt-in, off by default (each its own `GUBBINS_BRIDGE_*` flag):**
->   [limited stock writes](#limited-writes-opt-in), [snapshot push](#snapshot-push-opt-in),
+>   [limited stock and loan writes](#limited-writes-opt-in), [snapshot push](#snapshot-push-opt-in),
 >   [outbound webhooks + an SSE event stream](#events-webhooks--sse-opt-in),
 >   [outbound MQTT publishing + Home Assistant MQTT discovery](#mqtt-publishing-opt-in), and
 >   [mDNS/zeroconf advertising](#mdns--zeroconf-discovery). Every one is a deliberate,
@@ -136,20 +136,25 @@ Every route requires `bridge:read` or `bridge:write` — the capability of using
 | `GET /api/v1/activity.{rss,atom,json}` | `bridge:read` + `audit:view` |
 | `GET /api/v1/webhooks/deliveries` | `bridge:read` + `settings:read` |
 | `POST /api/v1/webhooks/test` | `bridge:write` + `settings:write` |
-| `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` | `bridge:write` + `stock:write` |
+| `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` \| `/transfer-stock` | `bridge:write` + `stock:write` |
+| `POST /api/v1/items/{id}/check-out` \| `/check-in` | `bridge:write` + `checkouts:write` |
 | `POST /api/v1/snapshot` | `bridge:write` + `sync:write` |
 
 A few of these are deliberate rather than obvious. The **calendar** feed publishes asset
 bookings, so it is gated on `bookings:read`, not `items:read`. The **syndication feeds** publish
 the Activity Ledger — the audit trail — so they need `audit:view`, which is what makes "only
-some people may read the history" expressible at all. The **stock adjust** endpoints need
-`stock:write` rather than `items:write`, because changing how much there is of something is not
-editing the item record.
+some people may read the history" expressible at all. The **stock** endpoints need
+`stock:write` rather than `items:write`, because changing how much there is of something — or
+where it is — is not editing the item record. **Lending** is a subject of its own: the app asks a
+user for `checkouts:write` to check something out, so the bridge asks the same rather than letting
+a stock-only token open loans. (Checking out to a *name* creates the contact if there is no match,
+exactly as the app does for a `checkouts:write` holder, so no extra `contacts:write` is demanded —
+that would lock the built-in Stocker role out of lending entirely.)
 
 > **ℹ️ The MCP stdio server carries no credential at all.** Its trust boundary is the OS process
 > (see [MCP server](#mcp-server-for-llmagent-tools)), so there is no token to resolve and no
 > identity to enforce; its writes are attributed to the **System** user. Anything able to launch
-> it with the write flag set can adjust stock — configure it accordingly.
+> it with the write flag set can adjust stock and lend items out — configure it accordingly.
 
 ---
 
@@ -770,7 +775,7 @@ the app's repositories), so an agent gets exactly the answers the HTTP API and t
 
 It is **read-only by default**: an agent can only read unless you opt in. Setting
 **`GUBBINS_BRIDGE_ALLOW_WRITES=on`** — the *same* flag the HTTP endpoints use — additionally
-exposes the two [stock-adjustment tools](#write-tools-opt-in), which round-trip through the
+exposes the five [stock and loan tools](#write-tools-opt-in), which round-trip through the
 identical sync merge. With the flag off those tools are not built at all, so they are absent
 from `tools/list` **and** uncallable.
 
@@ -916,21 +921,26 @@ never annotated. The threshold is the shared `GUBBINS_BRIDGE_STALE_AFTER_FAILURE
 
 ### Write tools (opt-in)
 
-Set **`GUBBINS_BRIDGE_ALLOW_WRITES=on`** and two more tools join the six above, letting an
-agent adjust stock as well as read it ("I've used two of those" → the count drops):
+Set **`GUBBINS_BRIDGE_ALLOW_WRITES=on`** and five more tools join the six above, letting an
+agent change the inventory as well as read it ("I've used two of those" → the count drops;
+"Sam's borrowed the multimeter" → it goes out on loan):
 
 | Tool | Arguments | Effect |
 | --- | --- | --- |
-| `gubbins_adjust_quantity` | `id`, `delta` (required), `note?` | Adjust a **DISCRETE** item's home-location stock by a signed whole number (negative = check out). |
+| `gubbins_adjust_quantity` | `id`, `delta` (required), `note?` | Adjust a **DISCRETE** item's home-location stock by a signed whole number (negative = take some out). |
 | `gubbins_adjust_gauge` | `id`, `delta` (required), `note?` | Adjust a **CONSUMABLE_GAUGE** item's net value by a signed amount (clamped to `[0, capacity]`). |
+| `gubbins_check_out` | `id` (required), one of `contactId` / `contactName` / `projectId` / `locationId`, `quantity?`, `dueDate?`, `fromLocationId?`, `note?` | Lend the item out. An unmatched `contactName` creates the contact; `dueDate` is a calendar day, `yyyy-MM-dd`. Returns the loan. |
+| `gubbins_check_in` | `id` (required), `checkoutId?`, `note?` | Take the item back. `checkoutId` is only needed once the item has more than one open loan. |
+| `gubbins_transfer_stock` | `id`, `fromLocationId`, `toLocationId`, `quantity` (all required) | Move units between two locations, leaving the item's total unchanged. |
 
 Each maps 1:1 to the HTTP [write endpoints](#limited-writes-opt-in) and shares their machinery
 exactly — the same single-flight executor, the same round-trip through the app's own mutation
 code and the §7.3 sync merge, the same `note` bound (500 chars). There is no separate write
-path here. A rejection (unknown id, wrong tracking mode, quantity below zero) comes back as a
-tool result flagged `isError` carrying the reason, so the model can correct itself rather than
-just failing. A `delta` of `0` is refused — a no-op still writes a history entry, so it is far
-more likely a mistake than an intent.
+path here. A rejection (unknown id, wrong tracking mode, quantity below zero, an item with
+several open loans and no `checkoutId` to say which is back) comes back as a tool result flagged
+`isError` carrying the reason, so the model can correct itself rather than just failing. A
+`delta` of `0` is refused — a no-op still writes a history entry, so it is far more likely a
+mistake than an intent.
 
 The same source restriction applies: writes need a **JSON snapshot** source and are refused for
 a raw `.sqlite` one (no sync channel to round-trip through), in which case the server logs why
@@ -939,7 +949,7 @@ and stays read-only.
 > **⚠️ Understand the trust boundary before enabling this.** Unlike the HTTP API — where a
 > request is a *user* whose role is enforced and whose writes are attributed to them — stdio has
 > **no credential at all**: the boundary is the OS process, so *anything able to launch this
-> server with the flag set can adjust your stock*, with no second credential and no permission
+> server with the flag set can adjust your stock and lend items out*, with no second credential and no permission
 > check, and the adjustment is recorded against the System user. That is fine for an MCP
 > client you configured yourself and reasonable for a local agent you trust; it is not a
 > permission system. Leave the flag off in the client config unless you actively want an agent
@@ -953,9 +963,10 @@ and stays read-only.
 ## Limited writes (opt-in)
 
 By default the bridge is **strictly read-only** — everything above only ever reads. It can
-optionally expose a **small, fixed set of stock mutations** (check-in / check-out, quantity
-adjust) so an automation or voice command can *change* stock, not just query it. This is **off
-by default** and must be deliberately enabled.
+optionally expose a **small, fixed set of mutations** — adjust a quantity or a gauge, lend an item
+out and take it back, move stock between locations — so an automation or voice command can
+*change* the inventory, not just query it. This is **off by default** and must be deliberately
+enabled.
 
 > **Why it's safe under sync.** The bridge does **not** own the database — the PWA does, and the
 > two reconcile through the synced `gubbins-sync.json` using the app's §7.3 Last-Write-Wins /
@@ -976,9 +987,10 @@ logs a clear "Writes ENABLED" line at startup. Keeping the bridge on the `127.0.
 the safest posture; enabling writes **and** binding `0.0.0.0` is a deliberate double opt-in.
 
 The flag is the **outer** bound, not the whole gate: with it on, a caller still needs
-`bridge:write` + `stock:write` to adjust stock, and the adjustment is attributed to that token's
-owner in the Activity Ledger. A read-only role holding a token gets a `403` here and carries on
-reading. See [Identities & permissions](#identities--permissions).
+`bridge:write` + `stock:write` to move or adjust stock (or `bridge:write` + `checkouts:write` to
+lend), and the change is attributed to that token's owner in the Activity Ledger. A read-only role
+holding a token gets a `403` here and carries on reading. See
+[Identities & permissions](#identities--permissions).
 
 Writes require a **JSON snapshot** source — they are **refused for a raw `.sqlite` source** (which
 has no sync channel to round-trip through), so the write paths stay `404` there even with this set.
@@ -986,31 +998,58 @@ See [Data sources](#data-sources-json-snapshot-or-raw-sqlite).
 
 ### Endpoints
 
-Both are **POST**, under `/api/v1`, GET-everything-else unchanged. The body is a tiny JSON
-object `{ "delta": <number>, "note"?: "<string>" }`; the response is the updated item (the same
-`ItemDetail` shape as `GET /api/v1/items/{id}`).
+All are **POST**, under `/api/v1`, GET-everything-else unchanged. Every body is a small, flat JSON
+object.
 
 | Endpoint | Body | Effect |
 | --- | --- | --- |
-| `POST /api/v1/items/{id}/adjust-quantity` | `{ delta, note? }` | Adjust a **DISCRETE** item's home-location stock by a signed whole number (negative = check out). |
+| `POST /api/v1/items/{id}/adjust-quantity` | `{ delta, note? }` | Adjust a **DISCRETE** item's home-location stock by a signed whole number (negative = take some out). |
 | `POST /api/v1/items/{id}/adjust-gauge` | `{ delta, note? }` | Adjust a **CONSUMABLE_GAUGE** item's net value by a signed amount (clamped to `[0, capacity]`). |
+| `POST /api/v1/items/{id}/check-out` | `{ contactId \| contactName \| projectId \| locationId, quantity?, dueDate?, fromLocationId?, note? }` | Lend the item out. Exactly one borrower; an unmatched `contactName` creates the contact. `dueDate` is a calendar day, `yyyy-MM-dd`. |
+| `POST /api/v1/items/{id}/check-in` | `{ checkoutId?, note? }` | Take the item back, restoring stock to the placement (and lot) it was lent from. `checkoutId` is optional while there is exactly one open loan. |
+| `POST /api/v1/items/{id}/transfer-stock` | `{ fromLocationId, toLocationId, quantity }` | Move units between two locations, leaving the item's total unchanged. All of it moves or none does. |
 
-Status codes: `200` (updated item), `400` (malformed body / non-numeric `delta`), `401`
-(missing/unknown/revoked token), `403` (the owner's role lacks `bridge:write` or `stock:write`),
-`404` (writes disabled, or no such item), `422` (`unprocessable` — the
-change was rejected, e.g. quantity below zero or the wrong tracking mode), `429` (rate-limited),
-`503` (snapshot briefly unavailable). The `/api/v1` index reports `"writable": true|false`.
+The **stock** endpoints answer with the updated item — the same `ItemDetail` shape as
+`GET /api/v1/items/{id}`. The **loan** endpoints answer with
+`{ "item": ItemDetail, "checkout": Checkout }`: a caller that has just lent something out needs the
+loan's `id` to check it back in later, and that id is the same one the
+[calendar feed](#calendar-subscription) publishes as a loan event's `UID` — so a calendar-driven
+automation and an API-driven one name a loan the same way.
+
+Status codes: `200`, `400` (malformed body, or a field of the wrong JSON type), `401`
+(missing/unknown/revoked token), `403` (the owner's role lacks `bridge:write`, or `stock:write` /
+`checkouts:write` for that endpoint), `404` (writes disabled, no such item, or a `checkoutId` that
+is not this item's), `422` (`unprocessable` — the change was rejected: quantity below zero, the
+wrong tracking mode, no borrower, not enough stock at the source, or an item with several open
+loans and no `checkoutId` naming which one is back), `429` (rate-limited), `503` (snapshot briefly
+unavailable). The `/api/v1` index reports `"writable": true|false` and lists the enabled write
+paths.
 
 ### Example
 
 ```bash
-TOKEN=<YOUR_TOKEN>          # its owner needs bridge:write + stock:write
+TOKEN=<YOUR_TOKEN>          # its owner needs bridge:write + stock:write (+ checkouts:write to lend)
 BASE=http://127.0.0.1:8787/api/v1
 
-# Check out two of an item (synthetic fixture id):
+# Use two of an item (synthetic fixture id):
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"delta":-2,"note":"Taken to the workshop"}' \
   "$BASE/items/item-m3-bolt/adjust-quantity"
+
+# Lend one out, due back on a given day — the response carries the loan id:
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"contactName":"Sam Okafor","quantity":1,"dueDate":"2026-08-14"}' \
+  "$BASE/items/item-m3-bolt/check-out"
+
+# ...and take it back (the loan id is only needed if the item has more than one loan open):
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"note":"Back on the shelf"}' \
+  "$BASE/items/item-m3-bolt/check-in"
+
+# Move five between two locations:
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"fromLocationId":"loc-shelf-2","toLocationId":"loc-bin-4","quantity":5}' \
+  "$BASE/items/item-esp32/transfer-stock"
 ```
 
 The change lands in the synced `gubbins-sync.json`; the PWA applies it on its next sync. The same

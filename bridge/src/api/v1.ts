@@ -589,11 +589,31 @@ function scaleIssueMessage(issue: ScaleConflictIssue): string {
 // --- writes (opt-in, off by default) ----------------------------------------------
 
 /**
- * Route a POST to the limited write endpoints. The only valid POST targets are
- * `items/{id}/adjust-quantity` and `items/{id}/adjust-gauge`; both take a `{ delta, note? }` body
- * and round-trip through the §7.3 sync merge (see `write.ts`). A POST to a read resource is a
- * `405`; an unknown item sub-action is a `404`; and when writes are not opted in (`ctx.write`
- * absent) a write path is a `404` too, so the feature is invisible unless enabled.
+ * The write sub-actions reachable under `items/{id}/…`, and the only valid POST targets. Each
+ * one round-trips through the §7.3 sync merge (see `write.ts`).
+ */
+const WRITE_ACTIONS = ['adjust-quantity', 'adjust-gauge', 'check-out', 'check-in', 'transfer-stock'] as const;
+type WriteAction = (typeof WRITE_ACTIONS)[number];
+
+function isWriteAction(value: string): value is WriteAction {
+  return (WRITE_ACTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * The loan actions answer with `{ item, checkout }` rather than the bare item detail the stock
+ * actions return: a caller that has just lent something out needs the loan's **id** to check it
+ * back in later. Keyed on the action rather than on "did a checkout come back", so the shipped
+ * stock-endpoint response shape can never change by accident.
+ */
+function wrapsCheckout(action: WriteAction): boolean {
+  return action === 'check-out' || action === 'check-in';
+}
+
+/**
+ * Route a POST to the limited write endpoints. The valid POST targets are the
+ * {@link WRITE_ACTIONS} under `items/{id}/…`. A POST to a read resource is a `405`; an unknown
+ * item sub-action is a `404`; and when writes are not opted in (`ctx.write` absent) a write path
+ * is a `404` too, so the feature is invisible unless enabled.
  */
 async function handleWrite(res: ServerResponse, segments: string[], ctx: ApiV1Context): Promise<void> {
   const isItemAction = segments[0] === 'items' && segments.length === 3;
@@ -604,8 +624,8 @@ async function handleWrite(res: ServerResponse, segments: string[], ctx: ApiV1Co
       headers: { allow: 'GET' },
     });
   }
-  const action = segments[2];
-  if (action !== 'adjust-quantity' && action !== 'adjust-gauge') {
+  const action = segments[2]!;
+  if (!isWriteAction(action)) {
     return void sendError(res, 404, 'not_found', 'Not found', { v1: true }); // unknown sub-action
   }
   if (ctx.write === undefined) {
@@ -615,15 +635,8 @@ async function handleWrite(res: ServerResponse, segments: string[], ctx: ApiV1Co
   if (ctx.body === undefined || ctx.body.ok === false) {
     return void sendError(res, 400, 'bad_request', 'Request body must be a JSON object.', { v1: true });
   }
-  const parsed = parseAdjustBody(ctx.body.value);
+  const parsed = parseWriteBody(action, decode(segments[1]!), ctx.body.value);
   if (!parsed.ok) return void sendError(res, 400, 'bad_request', parsed.message, { v1: true });
-
-  const op: WriteOperation = {
-    kind: action,
-    itemId: decode(segments[1]!),
-    delta: parsed.delta,
-    ...(parsed.note !== undefined ? { note: parsed.note } : {}),
-  };
 
   // The server identifies every caller before routing, so this is set on any POST that gets
   // here; the guard keeps the attribution requirement honest rather than defaulting silently.
@@ -632,7 +645,12 @@ async function handleWrite(res: ServerResponse, segments: string[], ctx: ApiV1Co
   }
 
   try {
-    sendJson(res, 200, await ctx.write.execute(op, ctx.actorUserId));
+    const result = await ctx.write.execute(parsed.op, ctx.actorUserId);
+    sendJson(
+      res,
+      200,
+      wrapsCheckout(action) ? { item: result.item, checkout: result.checkout } : result.item,
+    );
   } catch (err) {
     if (err instanceof WriteError) {
       sendError(res, err.status, err.code, err.message, { v1: true });
@@ -642,23 +660,119 @@ async function handleWrite(res: ServerResponse, segments: string[], ctx: ApiV1Co
   }
 }
 
-/** Validate the `{ delta, note? }` adjust body shape (the numeric/integer domain check is the
- * repository's, so it stays single-sourced and yields a 422 with the app's own wording). */
-function parseAdjustBody(
-  value: unknown,
-): { ok: true; delta: number; note?: string } | { ok: false; message: string } {
-  if (typeof value !== 'object' || value === null) {
-    return { ok: false, message: 'Body must be a JSON object with a numeric "delta".' };
+type ParsedWriteBody = { ok: true; op: WriteOperation } | { ok: false; message: string };
+
+/**
+ * Validate one write body into its {@link WriteOperation}.
+ *
+ * Only *shape* is checked here — that a field is present and of the right JSON type. Every
+ * domain rule (which tracking modes allow what, whether there is enough stock, whether a
+ * borrower exists, how a due date is anchored) belongs to the repositories and the write core,
+ * so it stays single-sourced and comes back as a `422` in the app's own wording rather than
+ * being re-stated, and drifting, at the transport.
+ */
+function parseWriteBody(action: WriteAction, itemId: string, value: unknown): ParsedWriteBody {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { ok: false, message: 'Body must be a JSON object.' };
   }
   const record = value as Record<string, unknown>;
-  if (typeof record.delta !== 'number' || !Number.isFinite(record.delta)) {
-    return { ok: false, message: 'Body must include a finite numeric "delta".' };
+  switch (action) {
+    case 'adjust-quantity':
+    case 'adjust-gauge': {
+      if (typeof record.delta !== 'number' || !Number.isFinite(record.delta)) {
+        return { ok: false, message: 'Body must include a finite numeric "delta".' };
+      }
+      const note = readOptionalString(record, 'note');
+      if (!note.ok) return note;
+      return { ok: true, op: { kind: action, itemId, delta: record.delta, ...note.value } };
+    }
+    case 'check-out': {
+      const strings = readOptionalStrings(record, [
+        'contactId',
+        'contactName',
+        'projectId',
+        'locationId',
+        'fromLocationId',
+        'note',
+      ]);
+      if (!strings.ok) return strings;
+      if (
+        record.quantity !== undefined &&
+        record.quantity !== null &&
+        (typeof record.quantity !== 'number' || !Number.isFinite(record.quantity))
+      ) {
+        return { ok: false, message: '"quantity", when present, must be a finite number.' };
+      }
+      // `null` is a meaningful value here (an open-ended loan), so it is not folded into "absent".
+      if (record.dueDate !== undefined && record.dueDate !== null && typeof record.dueDate !== 'string') {
+        return { ok: false, message: '"dueDate", when present, must be a "yyyy-MM-dd" string or null.' };
+      }
+      return {
+        ok: true,
+        op: {
+          kind: 'check-out',
+          itemId,
+          ...strings.value,
+          ...(typeof record.quantity === 'number' ? { quantity: record.quantity } : {}),
+          ...(record.dueDate !== undefined ? { dueDate: record.dueDate as string | null } : {}),
+        },
+      };
+    }
+    case 'check-in': {
+      const strings = readOptionalStrings(record, ['checkoutId', 'note']);
+      if (!strings.ok) return strings;
+      return { ok: true, op: { kind: 'check-in', itemId, ...strings.value } };
+    }
+    case 'transfer-stock': {
+      if (typeof record.fromLocationId !== 'string' || record.fromLocationId.length === 0) {
+        return { ok: false, message: 'Body must include a "fromLocationId" string.' };
+      }
+      if (typeof record.toLocationId !== 'string' || record.toLocationId.length === 0) {
+        return { ok: false, message: 'Body must include a "toLocationId" string.' };
+      }
+      if (typeof record.quantity !== 'number' || !Number.isFinite(record.quantity)) {
+        return { ok: false, message: 'Body must include a finite numeric "quantity".' };
+      }
+      return {
+        ok: true,
+        op: {
+          kind: 'transfer-stock',
+          itemId,
+          fromLocationId: record.fromLocationId,
+          toLocationId: record.toLocationId,
+          quantity: record.quantity,
+        },
+      };
+    }
   }
-  if (record.note !== undefined && record.note !== null && typeof record.note !== 'string') {
-    return { ok: false, message: '"note", when present, must be a string.' };
+}
+
+/**
+ * Read one optional string field. `null` reads as absent (a JSON serialiser that emits every key
+ * shouldn't have to omit the ones it has no value for), anything non-string is a `400`.
+ */
+function readOptionalString<K extends string>(
+  record: Record<string, unknown>,
+  key: K,
+): { ok: true; value: Partial<Record<K, string>> } | { ok: false; message: string } {
+  const raw = record[key];
+  if (raw === undefined || raw === null) return { ok: true, value: {} };
+  if (typeof raw !== 'string') return { ok: false, message: `"${key}", when present, must be a string.` };
+  return { ok: true, value: { [key]: raw } as Partial<Record<K, string>> };
+}
+
+/** {@link readOptionalString} over several keys, collecting the present ones into one object. */
+function readOptionalStrings<K extends string>(
+  record: Record<string, unknown>,
+  keys: readonly K[],
+): { ok: true; value: Partial<Record<K, string>> } | { ok: false; message: string } {
+  const value: Partial<Record<K, string>> = {};
+  for (const key of keys) {
+    const read = readOptionalString(record, key);
+    if (!read.ok) return read;
+    Object.assign(value, read.value);
   }
-  const note = typeof record.note === 'string' ? record.note : undefined;
-  return { ok: true, delta: record.delta, ...(note !== undefined ? { note } : {}) };
+  return { ok: true, value };
 }
 
 // --- meta -------------------------------------------------------------------------
@@ -714,9 +828,7 @@ function apiIndex(writable: boolean, pushable: boolean, streamable: boolean, sca
       `${API_V1_BASE}/categories`,
       `${API_V1_BASE}/categories/{id}`,
       `${API_V1_BASE}/capabilities`,
-      ...(writable
-        ? [`POST ${API_V1_BASE}/items/{id}/adjust-quantity`, `POST ${API_V1_BASE}/items/{id}/adjust-gauge`]
-        : []),
+      ...(writable ? WRITE_ACTIONS.map((action) => `POST ${API_V1_BASE}/items/{id}/${action}`) : []),
       ...(pushable ? [`POST ${API_V1_BASE}/snapshot`] : []),
       ...(streamable ? [`${API_V1_BASE}/events`] : []),
       ...(scalable ? [`${API_V1_BASE}/scale/entities`, `${API_V1_BASE}/scale/state`] : []),

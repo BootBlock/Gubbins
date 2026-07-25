@@ -110,8 +110,10 @@ you're connected to against the app you're using and tells you when they've drif
 ## Read-only unless you say otherwise
 
 The bridge **can't modify your inventory** by default — it's a window onto your data, not a way
-in. Write-back (letting an assistant adjust stock, say) is a separate, explicit opt-in, and even
-then it goes through Gubbins' safe merge so it can't cause drift.
+in. Write-back is a separate, explicit opt-in, and even then it goes through Gubbins' safe merge so
+it can't cause drift. It covers a short, fixed list: adjusting a quantity or a gauge,
+[[checking an item out and back in|Loans-Check-Out-and-In]], and moving stock between
+[[locations|Locations-and-Stock]]. Nothing can be created, renamed or deleted through it.
 
 There are two gates, and both have to let a request through. Whoever runs the bridge decides which
 capabilities exist at all; the caller's account then decides how much of that they may use. So
@@ -126,8 +128,8 @@ last-write-wins merge the rest of Gubbins uses.
 
 > **⚠️ Heads-up**
 > *Push* is a **separate** switch from write-back, but it isn't a milder one — it's **wider**.
-> Write-back adjusts a single stock level; a push merges a whole dataset in, which can touch **any**
-> part of your data, not just stock. So turn push on with the same care as write-back, and hand its
+> Write-back makes one bounded change from that short list; a push merges a whole dataset in, which
+> can touch **any** part of your data. So turn push on with the same care as write-back, and hand its
 > account only to a device you trust. As with everything here, the caller still needs the matching
 > permission on its own account — turning the switch on doesn't give every token holder that reach.
 

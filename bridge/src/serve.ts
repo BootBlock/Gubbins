@@ -298,8 +298,9 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   console.log(`Data source: ${source === 'sqlite' ? 'raw .sqlite export' : 'JSON sync snapshot'}.`);
   if (writesEnabled) {
     console.warn(
-      'Writes ENABLED (GUBBINS_BRIDGE_ALLOW_WRITES=on): POST /api/v1/items/{id}/adjust-quantity|adjust-gauge ' +
-        'can mutate the snapshot. Each write round-trips through the sync merge.',
+      'Writes ENABLED (GUBBINS_BRIDGE_ALLOW_WRITES=on): POST /api/v1/items/{id}/' +
+        'adjust-quantity|adjust-gauge|check-out|check-in|transfer-stock can mutate the snapshot. ' +
+        'Each write round-trips through the sync merge.',
     );
   } else if (config.allowWrites && source === 'sqlite') {
     console.warn(
