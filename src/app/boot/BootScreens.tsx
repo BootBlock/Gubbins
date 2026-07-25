@@ -350,7 +350,7 @@ export function BootErrorScreen({ error }: { error: DbError }) {
             This is <span className="font-medium text-foreground">expected</span> before 1.0. To keep your
             data, take the <span className="font-medium text-foreground">Back up everything (.zip)</span> copy
             below <span className="font-medium text-foreground">before</span> resetting — that is the one you
-            can restore afterwards, from Settings → Backup &amp; Restore using{' '}
+            can restore afterwards, from Sync → Backup &amp; restore using{' '}
             <span className="font-medium text-foreground">Merge</span>. Then reset to continue. Once Gubbins
             reaches 1.0, updates will preserve your data.
           </p>

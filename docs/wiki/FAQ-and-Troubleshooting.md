@@ -162,9 +162,10 @@ data corruption. Once Gubbins reaches 1.0, updates will preserve your data.
 
 **Before you reset, press "Back up everything (.zip)" on that screen.** That builds an ordinary
 Gubbins backup out of the database Gubbins couldn't open, and it is the copy you can bring back
-afterwards: once the app starts again, restore it from **Settings → Backup & Restore → Restore**
-using **Merge**, which re-applies your records onto the new database shape. The screen tells you
-what the backup captured, and names anything the old database wouldn't give up.
+afterwards: once the app starts again, restore it from the **Sync** screen → **Backup & restore**,
+on the **Restore** tab, using **Merge**, which re-applies your records onto the new database
+shape. The screen tells you what the backup captured, and names anything the old database
+wouldn't give up.
 
 > **⚠️ Heads-up**
 > The other two downloads on that screen — the raw `.sqlite` copy and the JSON export — are for

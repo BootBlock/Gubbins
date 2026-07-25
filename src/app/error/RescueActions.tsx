@@ -94,7 +94,7 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
       const summary =
         `Saved ${result.filename} — ${items} ${items === 1 ? 'item' : 'items'}` +
         (result.manifest.counts.images > 0 ? `, ${result.manifest.counts.images} images` : '') +
-        '. Restore it from Backup & Restore once Gubbins starts again.';
+        '. Restore it from Sync → Backup & restore once Gubbins starts again.';
       setBackupNote(
         result.skipped.length > 0
           ? `${summary} Some parts could not be read and are not in the file: ${result.skipped.join(', ')}.`
@@ -154,7 +154,7 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
         <ArchiveIcon /> Back up everything (.zip)
       </Button>
       <p className="text-xs text-muted-foreground">
-        The copy to take before resetting: restore it afterwards from Settings → Backup &amp; Restore, using{' '}
+        The copy to take before resetting: restore it afterwards from Sync → Backup &amp; restore, using{' '}
         <span className="font-medium">Merge</span>, which brings your records across a schema change.
       </p>
       {/*
