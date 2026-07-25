@@ -24,6 +24,9 @@ describe('toCspOrigin — the one gate a user-supplied value passes through', ()
     expect(toCspOrigin('https://bridge.example.com')).toBe('https://bridge.example.com');
     expect(toCspOrigin('http://127.0.0.1:8787')).toBe('http://127.0.0.1:8787');
     expect(toCspOrigin('http://[::1]:8787')).toBe('http://[::1]:8787');
+    // Not DNS-valid, but routine for a container or LAN name — and `lib/bridge-url.ts` accepts
+    // it, so rejecting it here would leave the app trying an address the policy never names.
+    expect(toCspOrigin('http://gubbins_bridge:8787')).toBe('http://gubbins_bridge:8787');
   });
 
   it('refuses anything that could end one directive and begin another', () => {

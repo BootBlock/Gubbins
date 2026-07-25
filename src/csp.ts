@@ -85,9 +85,13 @@ export function toCspOrigin(value: string): string | null {
     return null;
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-  // `[A-Za-z0-9.\-:[\]]` covers hostnames, IPv4, a port, and the bracketed IPv6 form — and
-  // admits no character that could end a directive or start another one.
-  return /^https?:\/\/[A-Za-z0-9.\-:[\]]+$/.test(parsed.origin) ? parsed.origin : null;
+  // Covers hostnames, IPv4, a port, and the bracketed IPv6 form — and admits no character that
+  // could end a directive or start another one. `_` is in the set deliberately: it is not
+  // DNS-valid, but container and LAN names carry it routinely, and a self-hosted bridge on such
+  // a host would otherwise be rejected here *and* stay silent (`lib/bridge-url.ts` accepts it, so
+  // the app would go on trying to reach an address the policy never names) — the exact
+  // indistinguishable-failure this whole change exists to remove.
+  return /^https?:\/\/[A-Za-z0-9._\-:[\]]+$/.test(parsed.origin) ? parsed.origin : null;
 }
 
 /**

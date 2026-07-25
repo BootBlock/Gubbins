@@ -251,11 +251,12 @@ describe('src/sw.ts — OCR assets are cached at runtime, in their own cache', (
     );
 
     expect(response.status).toBe(200);
-    // The asset is written to the OCR cache and the **precache is never even opened** — it must
-    // stay holding precisely the manifest set its `activate` prune assumes. (The read-only
-    // bridge-origin lookup every response makes is the only other cache in play here.)
-    expect(cachesOpen).toHaveBeenCalledWith(OCR_ASSET_CACHE);
-    expect(cachesOpen).not.toHaveBeenCalledWith('gubbins-precache-v1');
+    // Exactly two caches are opened — the read-only bridge-origin lookup every response makes,
+    // and the OCR one this asset belongs in. Asserted as the *whole set* rather than as "not the
+    // precache": naming the precache would go quietly vacuous the day its name is bumped, and the
+    // invariant being guarded is that this path leaves the precache holding precisely the manifest
+    // set its `activate` prune assumes.
+    expect(cachesOpen.mock.calls.flat()).toEqual([BRIDGE_ORIGIN_CACHE, OCR_ASSET_CACHE]);
     expect(cachePut).toHaveBeenCalledTimes(1);
   });
 

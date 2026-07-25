@@ -72,22 +72,37 @@ export function hasServiceWorkerControl(): boolean {
  */
 export async function registerBridgeOrigin(origin: string | null): Promise<void> {
   if (typeof navigator === 'undefined' || navigator.serviceWorker === undefined) return;
-  await Promise.race([
-    deliverBridgeOrigin(origin).catch(() => undefined),
-    new Promise<void>((resolve) => setTimeout(resolve, REGISTER_TIMEOUT_MS)),
-  ]);
+
+  // The deadline is an `AbortSignal` rather than a bare `Promise.race` against a timer, so giving
+  // up actually *unwinds* the attempt: a race would leave the losing side pending forever, with
+  // its `MessagePort` open for the life of the page. Registration re-runs on every address change,
+  // so a leak per attempt is not academic.
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), REGISTER_TIMEOUT_MS);
+  try {
+    await deliverBridgeOrigin(origin, deadline.signal).catch(() => undefined);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-/** Post the origin to the active worker and resolve on its reply. */
-async function deliverBridgeOrigin(origin: string | null): Promise<void> {
-  const worker = (await navigator.serviceWorker.ready).active;
-  if (worker === null) return;
-  await new Promise<void>((resolve) => {
-    const channel = new MessageChannel();
-    channel.port1.onmessage = () => {
-      channel.port1.close();
-      resolve();
-    };
-    worker.postMessage({ type: BRIDGE_ORIGIN_MESSAGE, origin }, [channel.port2]);
-  });
+/** Post the origin to the active worker and resolve on its reply, or when `signal` gives up. */
+async function deliverBridgeOrigin(origin: string | null, signal: AbortSignal): Promise<void> {
+  const worker = await Promise.race([
+    navigator.serviceWorker.ready.then((registration) => registration.active),
+    // `ready` never settles while no registration has become active, so it needs the deadline too.
+    new Promise<null>((resolve) => signal.addEventListener('abort', () => resolve(null))),
+  ]);
+  if (worker === null || signal.aborted) return;
+
+  const channel = new MessageChannel();
+  try {
+    await new Promise<void>((resolve) => {
+      channel.port1.onmessage = () => resolve();
+      signal.addEventListener('abort', () => resolve());
+      worker.postMessage({ type: BRIDGE_ORIGIN_MESSAGE, origin }, [channel.port2]);
+    });
+  } finally {
+    channel.port1.close();
+  }
 }
