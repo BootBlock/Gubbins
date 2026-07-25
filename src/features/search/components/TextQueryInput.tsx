@@ -87,6 +87,7 @@ export function TextQueryInput() {
             '- `expiry<2026-03-01` — dates as `YYYY-MM-DD`; `<` is before, `>` after',
             '- `condition=needs-repair`, `tracking:serialised` — fixed choices',
             '- `cap:voltage>3.3` — compare a capability by key',
+            '- `tag:fragile` — items carrying a tag (use `tag=fragile` for the whole name)',
             '- combine with `OR` and group with `( )`; terms are **AND**-ed by default',
           ].join('\n')}
           placement="top"

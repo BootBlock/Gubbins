@@ -26,10 +26,13 @@ all build the same query:
   [[warranty|Warranty-and-Depreciation]]), money ([[unit cost, purchase price and current
   value|Valuation-and-Spend]]), and fixed choices ([[condition|Condition-Grading]],
   [[tracking mode|Tracking-Modes]], dead-stock reporting) — plus
+  [[tags|Tags-Attachments-and-Related-Items]],
   [[capabilities|Custom-Fields-and-Capabilities]] and your own custom fields.
 - **The value box matches the field.** A date field gives you a date picker, a choice field a
   drop-down of exactly the values it accepts, and a yes/no field a Yes/No toggle — so there is
   nothing to spell correctly.
+- **Tags.** Choose the **Tag** field and type a tag name: *contains* matches part of the name
+  (`expo` finds `expo-2026`), *equals* the whole name. An item matches if any of its tags does.
 - **Add group.** Select **Add group** to nest a sub-group with its own AND/OR — this is how you
   express things like *"(low quantity **OR** on order) **AND** in the garage"*.
 - **Clear.** Remove everything and start over with **Clear**.

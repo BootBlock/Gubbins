@@ -241,6 +241,50 @@ describe('parseASTtoSQL — custom fields (spec §4 Categories & Schema Evolutio
   });
 });
 
+describe('parseASTtoSQL — tags (issue #138)', () => {
+  it('translates a tag CONTAINS to an EXISTS over the item↔tag join', () => {
+    const [sql, params] = parseASTtoSQL(and({ field: 'tag', operator: 'CONTAINS', value: 'expo' }));
+    expect(sql).toBe(
+      '(EXISTS (SELECT 1 FROM item_tags it JOIN tags tg ON tg.id = it.tag_id ' +
+        "WHERE it.item_id = items.id AND tg.name LIKE ? ESCAPE '\\'))",
+    );
+    expect(params).toEqual(['%expo%']);
+  });
+
+  it('translates a tag EQUALS to a case-insensitive whole-name match', () => {
+    const [sql, params] = parseASTtoSQL(and({ field: 'tag', operator: 'EQUALS', value: 'Fragile' }));
+    expect(sql).toContain('AND tg.name = ? COLLATE NOCASE');
+    expect(params).toEqual(['Fragile']);
+  });
+
+  it('escapes LIKE wildcards in a tag CONTAINS value', () => {
+    const [, params] = parseASTtoSQL(and({ field: 'tag', operator: 'CONTAINS', value: '50%_x' }));
+    expect(params).toEqual(['%50\\%\\_x%']);
+  });
+
+  it('accepts the field name case-insensitively', () => {
+    const [sql] = parseASTtoSQL(and({ field: 'Tag', operator: 'CONTAINS', value: 'expo' }));
+    expect(sql).toContain('FROM item_tags it');
+  });
+
+  it('rejects an ordering comparison on a tag name', () => {
+    expect(() => parseASTtoSQL(and({ field: 'tag', operator: 'GREATER_THAN', value: 3 }))).toThrow(
+      /not supported/,
+    );
+    expect(() => parseASTtoSQL(and({ field: 'tag', operator: 'HAS_CAPABILITY', value: '' }))).toThrow(
+      SearchAstError,
+    );
+  });
+
+  it('never concatenates the tag name into the SQL text', () => {
+    const [sql, params] = parseASTtoSQL(
+      and({ field: 'tag', operator: 'EQUALS', value: "x'); DROP TABLE items;--" }),
+    );
+    expect(sql).not.toContain('DROP TABLE');
+    expect(params).toEqual(["x'); DROP TABLE items;--"]);
+  });
+});
+
 describe('parseASTtoSQL — validation & the depth cap (spec §5.1)', () => {
   it('throws on an unknown field', () => {
     expect(() => parseASTtoSQL(and({ field: 'nonsense', operator: 'EQUALS', value: 'x' }))).toThrow(
@@ -795,6 +839,65 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
       );
       await setFieldInherited('mcu', makerId);
       expect(await run(and({ field: 'field:Maker', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([]);
+    });
+  });
+
+  describe('tag predicates join item_tags ⋈ tags (issue #138)', () => {
+    /** Define a tag in the shared dictionary and attach it to an item. */
+    async function addTag(itemId: string, name: string): Promise<void> {
+      const tagId = crypto.randomUUID();
+      await driver.execute('INSERT INTO tags (id, name) VALUES (?, ?);', [tagId, name]);
+      await driver.execute('INSERT INTO item_tags (item_id, tag_id) VALUES (?, ?);', [itemId, tagId]);
+    }
+
+    beforeEach(async () => {
+      await addTag('reg', 'Fragile');
+      await addTag('reg', 'expo-2026');
+      await addTag('mcu', 'wireless');
+    });
+
+    it('matches a whole tag name case-insensitively', async () => {
+      expect(await run(and({ field: 'tag', operator: 'EQUALS', value: 'fragile' }))).toEqual(['reg']);
+    });
+
+    it('matches a partial tag name with CONTAINS', async () => {
+      expect(await run(and({ field: 'tag', operator: 'CONTAINS', value: 'expo' }))).toEqual(['reg']);
+    });
+
+    it("matches when any of an item's several tags satisfies the predicate", async () => {
+      // `reg` carries two tags; either one must find it.
+      expect(await run(and({ field: 'tag', operator: 'EQUALS', value: 'expo-2026' }))).toEqual(['reg']);
+      expect(await run(and({ field: 'tag', operator: 'EQUALS', value: 'Fragile' }))).toEqual(['reg']);
+    });
+
+    it('matches nothing for a tag no item carries', async () => {
+      expect(await run(and({ field: 'tag', operator: 'EQUALS', value: 'nonexistent' }))).toEqual([]);
+    });
+
+    it('returns each matching item once however many of its tags match', async () => {
+      // Both of `reg`'s tags contain an "e", but EXISTS must not duplicate the row.
+      expect(await run(and({ field: 'tag', operator: 'CONTAINS', value: 'e' }))).toEqual(['mcu', 'reg']);
+    });
+
+    it('ignores a tag that sits on a location rather than the item', async () => {
+      const tagId = crypto.randomUUID();
+      await driver.execute('INSERT INTO tags (id, name) VALUES (?, ?);', [tagId, 'climate-controlled']);
+      await driver.execute('INSERT INTO location_tags (location_id, tag_id) VALUES (?, ?);', [
+        UNASSIGNED_LOCATION_ID,
+        tagId,
+      ]);
+      expect(await run(and({ field: 'tag', operator: 'EQUALS', value: 'climate-controlled' }))).toEqual([]);
+    });
+
+    it('combines a tag predicate with the other field kinds across AND/OR', async () => {
+      // tag:wireless AND quantity < 10 → only the MCU (qty 3); the regulator holds 50.
+      const ids = await run(
+        and(
+          { field: 'tag', operator: 'CONTAINS', value: 'wireless' },
+          { field: 'quantity', operator: 'LESS_THAN', value: 10 },
+        ),
+      );
+      expect(ids).toEqual(['mcu']);
     });
   });
 });

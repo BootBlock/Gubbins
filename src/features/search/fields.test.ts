@@ -5,10 +5,13 @@ import {
   customFieldName,
   enumValuesForField,
   fieldSelectValue,
+  isCapabilityField,
   isCustomField,
+  isTagField,
   kindOfField,
   operatorLabelFor,
   operatorsForKind,
+  TAG_FIELD,
   toCustomField,
 } from './fields';
 
@@ -102,5 +105,30 @@ describe('lifecycle, valuation & policy fields (issue #140)', () => {
     for (const field of ['condition', 'tracking', 'deadstock', 'expiry', 'warranty', 'cost', 'active']) {
       expect(BUILDER_FIELDS.find((f) => f.value === field)?.label).toBeTruthy();
     }
+  });
+});
+
+describe('the tag field (issue #138)', () => {
+  it('is offered by the builder, matched by name like any other text field', () => {
+    expect(BUILDER_FIELDS.find((f) => f.value === TAG_FIELD)).toEqual({
+      value: 'tag',
+      label: 'Tag',
+      kind: 'text',
+    });
+    expect(kindOfField(TAG_FIELD)).toBe('text');
+    expect(fieldSelectValue(TAG_FIELD)).toBe('tag');
+    expect(operatorsForKind('text')).toEqual(['CONTAINS', 'EQUALS']);
+  });
+
+  it('is recognised by isTagField, case-insensitively', () => {
+    expect(isTagField('tag')).toBe(true);
+    expect(isTagField('TAG')).toBe(true);
+    expect(isTagField('name')).toBe(false);
+    expect(isTagField('field:Tag')).toBe(false);
+  });
+
+  it('is not mistaken for a capability or custom-field reference', () => {
+    expect(isCustomField(TAG_FIELD)).toBe(false);
+    expect(isCapabilityField(TAG_FIELD)).toBe(false);
   });
 });

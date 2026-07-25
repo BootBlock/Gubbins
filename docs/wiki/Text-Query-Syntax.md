@@ -51,6 +51,7 @@ Field names are **case-insensitive** and accept short aliases.
 | Dead-stock reporting | `deadstock` | The item's [[dead-stock\|ABC-Turnover-and-Aging]] setting *(choice)* |
 | Favourite | `favourite`, `favorite`, `fav` | Pinned favourites *(yes/no)* |
 | Active | `active` | Excludes decommissioned items *(yes/no)* |
+| Tag | `tag`, `tags`, `tagged` | A [[tag\|Tags-Attachments-and-Related-Items]] on the item |
 
 ## Comparisons
 
@@ -105,6 +106,27 @@ active:no         only decommissioned items
 > **ℹ️ Note**
 > Searches normally cover your live inventory only. Adding `active:no` (or `active:yes`) is the
 > exception — it lets you go looking for decommissioned items deliberately.
+
+## Tags
+
+Filter by a [[tag|Tags-Attachments-and-Related-Items]] with the `tag:` prefix. `tag:` matches
+**part** of a tag's name, `tag=` the **whole** name — both ignoring case, exactly as the tag
+dictionary itself treats `Fragile` and `fragile` as one tag:
+
+```
+tag:fragile               items tagged "fragile"
+tag:expo                  items tagged "expo-2026", "expo-spares", …
+tag=expo-2026             only the tag named exactly "expo-2026"
+tag:"needs a clean"       a tag name with spaces — quote it
+```
+
+An item matches if **any** of its tags does, so `tag:fragile tag:vintage` finds the items that
+carry both.
+
+> **ℹ️ Note**
+> This searches the tags on the **item**. A tag on a *location* describes that place rather than
+> the things inside it — narrow the location tree by its tag chips instead (see
+> [[Tags|Tags-Attachments-and-Related-Items]]).
 
 ## Capabilities
 
