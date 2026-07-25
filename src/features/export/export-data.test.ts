@@ -5,6 +5,7 @@ import {
   JSON_EXPORT_FORMAT_VERSION,
   buildCatalogCsv,
   buildItemsCsv,
+  buildItemsExport,
   buildJsonExport,
   buildProjectMasterNote,
   buildProjectVault,
@@ -469,5 +470,63 @@ describe('buildCatalogCsv — identity columns (issue #141)', () => {
 
   it('leaves the tags cell blank for an item with none', () => {
     expect(cellsOf(buildCatalogCsv([makeItem()])).tags).toBe('');
+  });
+});
+
+/**
+ * The items export is no longer CSV-only (issue #132): the same columns route through the shared
+ * dispatch every other list export uses, so the item list can be saved as a spreadsheet, a table
+ * or plain text — the formats a project's bill of materials already offered.
+ */
+describe('buildItemsExport — every tabular format (issue #132)', () => {
+  it('produces the same bytes as buildItemsCsv for the CSV format', async () => {
+    // The catalogue round-trip and the frozen CSV tests are built on buildItemsCsv; routing the
+    // wizard through the shared dispatch must not change what a CSV export contains.
+    const items = [makeItem({ name: 'Cap, 10µF' }), makeItem({ id: 'i2', name: 'Bolt' })];
+    const { content } = await buildItemsExport(items, 'csv');
+    expect(content).toBe(buildItemsCsv(items));
+  });
+
+  it('reports the MIME type and extension each format needs for its download', async () => {
+    const items = [makeItem()];
+    await expect(buildItemsExport(items, 'tsv')).resolves.toMatchObject({
+      mimeType: expect.stringContaining('tab-separated'),
+      extension: 'tsv',
+    });
+    await expect(buildItemsExport(items, 'markdown')).resolves.toMatchObject({ extension: 'md' });
+    await expect(buildItemsExport(items, 'html')).resolves.toMatchObject({ extension: 'html' });
+    await expect(buildItemsExport(items, 'json')).resolves.toMatchObject({ extension: 'json' });
+    await expect(buildItemsExport(items, 'txt')).resolves.toMatchObject({ extension: 'txt' });
+  });
+
+  it('produces a real spreadsheet — bytes, not text — for the Excel format', async () => {
+    const { content, extension, mimeType } = await buildItemsExport([makeItem()], 'xlsx');
+    expect(extension).toBe('xlsx');
+    expect(mimeType).toContain('spreadsheetml');
+    expect(content).toBeInstanceOf(Uint8Array);
+    // A .xlsx is a zip; its first two bytes are the local-file-header signature "PK".
+    expect(Array.from((content as Uint8Array).slice(0, 2))).toEqual([0x50, 0x4b]);
+  });
+
+  it('keeps native types in the JSON form, so a number stays a number', async () => {
+    const { content } = await buildItemsExport([makeItem({ quantity: 12, unitCost: 0.25 })], 'json');
+    const [row] = JSON.parse(String(content)) as Record<string, unknown>[];
+    expect(row!.quantity).toBe(12);
+    expect(row!.unitCost).toBe(0.25);
+    expect(row!.name).toBe('NE555 Timer');
+  });
+
+  it('heads and captions the document formats', async () => {
+    const { content } = await buildItemsExport([makeItem()], 'markdown');
+    expect(String(content)).toContain('# Items');
+    const text = await buildItemsExport([makeItem(), makeItem({ id: 'i2' })], 'txt');
+    expect(String(text.content)).toContain('2 items');
+  });
+
+  it('carries the unlimited-quantity blanking into every format, not just CSV', async () => {
+    const { content } = await buildItemsExport([makeItem({ name: 'Tap water', isUnlimited: true })], 'json');
+    const [row] = JSON.parse(String(content)) as Record<string, unknown>[];
+    expect(row!.quantity).toBe('');
+    expect(row!.isUnlimited).toBe(true);
   });
 });

@@ -80,3 +80,15 @@ export function useActivityFeedCount(actions: readonly HistoryAction[] | undefin
     placeholderData: keepPreviousData,
   });
 }
+
+/**
+ * One page of the feed under the current kind-filter, for the export's read-everything walk
+ * (issue #132). The export cannot serialise what the screen is holding — that is one page in
+ * paginated mode and a trimmed window in infinite mode — so it re-reads the feed from the start
+ * through `exportEveryPage`, which pairs this with the `readAllPages` ceiling. Not a hook: it is
+ * called from the export's `build` callback, outside React's render.
+ */
+export function readActivityFeedPage(actions: readonly HistoryAction[] | undefined) {
+  return (params: { limit: number; offset: number }) =>
+    getItemRepository().getHistoryFeed({ actions, ...params });
+}

@@ -8,6 +8,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { adoptUnversioned, normaliseBoolean, normaliseOneOf } from '@/lib/persisted-state';
+import type { TabularExportFormat } from './tabular-export';
 
 /**
  * JSON = a versioned data extract (not a restorable backup — issue #153);
@@ -44,10 +45,22 @@ export const REPORT_EXPORT_KINDS = [
 
 export type ReportExportKind = (typeof REPORT_EXPORT_KINDS)[number];
 
+/**
+ * Which file format an `CSV`-format (items) export is written in (issue #132).
+ *
+ * A separate axis from {@link ExportFormat} rather than five more members of it: the *kind* of
+ * export (items, catalogue, vault, report) and the *file format* it is written in are
+ * independent choices, and folding them together would multiply the format cards without
+ * telling the user anything new.
+ */
+export const ITEM_FILE_FORMATS = ['csv', 'tsv', 'xlsx', 'json', 'markdown', 'html', 'txt'] as const;
+
 /** The wizard's defaults — also where a stale or unrecognised persisted value lands. */
 export const DEFAULT_EXPORT_FORMAT: ExportFormat = 'JSON';
 export const DEFAULT_EXPORT_SCOPE: ExportScope = 'ALL';
 export const DEFAULT_REPORT_EXPORT_KIND: ReportExportKind = 'VALUATION';
+/** CSV stays the default file format — it is what the items export always produced. */
+export const DEFAULT_ITEM_FILE_FORMAT: TabularExportFormat = 'csv';
 
 /**
  * Reconcile a persisted/unknown value against the live union. Rehydrated `localStorage` is
@@ -68,6 +81,11 @@ export function normaliseReportExportKind(value: unknown): ReportExportKind {
   return normaliseOneOf(value, REPORT_EXPORT_KINDS, DEFAULT_REPORT_EXPORT_KIND);
 }
 
+/** Reconcile a persisted/unknown item file format — see {@link normaliseExportFormat}. */
+export function normaliseItemFileFormat(value: unknown): TabularExportFormat {
+  return normaliseOneOf(value, ITEM_FILE_FORMATS, DEFAULT_ITEM_FILE_FORMAT);
+}
+
 interface ExportStore {
   readonly format: ExportFormat;
   readonly scope: ExportScope;
@@ -76,11 +94,14 @@ interface ExportStore {
   readonly includeInactive: boolean;
   /** Last-used report for the `REPORTS` format — remembered like every other setting (§3). */
   readonly reportKind: ReportExportKind;
+  /** Last-used file format for the items export (issue #132) — remembered the same way. */
+  readonly itemFileFormat: TabularExportFormat;
   setFormat: (format: ExportFormat) => void;
   setScope: (scope: ExportScope) => void;
   setScopeTargetId: (id: string | null) => void;
   setIncludeInactive: (value: boolean) => void;
   setReportKind: (kind: ReportExportKind) => void;
+  setItemFileFormat: (format: TabularExportFormat) => void;
 }
 
 export const useExportStore = create<ExportStore>()(
@@ -91,12 +112,14 @@ export const useExportStore = create<ExportStore>()(
       scopeTargetId: null,
       includeInactive: false,
       reportKind: DEFAULT_REPORT_EXPORT_KIND,
+      itemFileFormat: DEFAULT_ITEM_FILE_FORMAT,
       setFormat: (format) => set({ format: normaliseExportFormat(format) }),
       // Switching scope drops a now-irrelevant target so a stale id can't leak in.
       setScope: (scope) => set({ scope: normaliseExportScope(scope), scopeTargetId: null }),
       setScopeTargetId: (scopeTargetId) => set({ scopeTargetId }),
       setIncludeInactive: (includeInactive) => set({ includeInactive }),
       setReportKind: (reportKind) => set({ reportKind: normaliseReportExportKind(reportKind) }),
+      setItemFileFormat: (itemFileFormat) => set({ itemFileFormat: normaliseItemFileFormat(itemFileFormat) }),
     }),
     {
       name: 'gubbins:export',
@@ -116,6 +139,7 @@ export const useExportStore = create<ExportStore>()(
           scopeTargetId: scope !== 'ALL' && typeof p.scopeTargetId === 'string' ? p.scopeTargetId : null,
           includeInactive: normaliseBoolean(p.includeInactive, current.includeInactive),
           reportKind: normaliseReportExportKind(p.reportKind),
+          itemFileFormat: normaliseItemFileFormat(p.itemFileFormat),
         };
       },
     },

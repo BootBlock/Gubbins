@@ -47,8 +47,15 @@ that have always been logged.
 > a cold-storage export first) from the [[storage triage|Storage-Triage]] tools — nothing is lost
 > without a copy.
 
+> **💡 Tip**
+> **Export** on the Activity screen saves the log as a spreadsheet or a table — handy for an audit
+> trail, a handover, or working out where a month's stock went. The file covers the whole log
+> under whichever kinds you have selected, not just the entries on screen. See
+> [[Export & import|Export-and-Import]].
+
 ## Related pages
 
 - **[[Alerts]]** — things that need action now.
+- **[[Export & import|Export-and-Import]]** — saving the log to a file.
 - **[[Upcoming agenda|Upcoming-Agenda]]** — things due soon.
 - **[[Storage triage|Storage-Triage]]** — managing history size.

@@ -47,7 +47,19 @@ let ordersState: {
   },
 };
 
+// The export menu owns its own download + toast machinery (covered by its own tests) and needs a
+// ToastProvider; here we only care that the screen offers it.
+vi.mock('@/features/export/TabularExportMenu', () => ({
+  TabularExportMenu: ({ disabled, testIdPrefix }: { disabled?: boolean; testIdPrefix: string }) => (
+    <button type="button" data-testid={testIdPrefix} disabled={disabled}>
+      Export
+    </button>
+  ),
+}));
+
 vi.mock('./queries', () => ({
+  // The export's read-everything walk (issue #132); never invoked here, as the menu is stubbed.
+  readPurchaseOrdersPage: vi.fn(),
   /**
    * The order list pages **server-side** (issue #149), so the stub serves pages the way the
    * repository does: `ordersState.data.rows` is every order, and the hook returns only the
@@ -495,5 +507,30 @@ describe('PurchaseOrdersScreen — a list longer than one read (issue #149)', ()
   it('shows no truncation notice when every order fits in one read', () => {
     render(<PurchaseOrdersScreen />);
     expect(screen.queryByTestId('po-truncated')).toBeNull();
+  });
+});
+
+/**
+ * The order book can be taken away as a file (issue #132). The menu is stubbed (its download +
+ * toast machinery has its own suite), so these assert what this screen owns: that the Orders tab
+ * offers the control, and gates it on there being an order to write.
+ */
+describe('PurchaseOrdersScreen — export', () => {
+  it('offers an export on the Orders tab', () => {
+    render(<PurchaseOrdersScreen />);
+    expect(screen.getByTestId('export-purchase-orders')).not.toBeDisabled();
+  });
+
+  it('disables it while there are no orders to write', () => {
+    ordersState = { isLoading: false, data: { rows: [] } };
+    orderCountState = 0;
+    render(<PurchaseOrdersScreen />);
+    expect(screen.getByTestId('export-purchase-orders')).toBeDisabled();
+  });
+
+  it('is offered only on the Orders tab, not the Reorder or Wishlist ones', () => {
+    render(<PurchaseOrdersScreen />);
+    fireEvent.click(screen.getByTestId('po-tab-wishlist'));
+    expect(screen.queryByTestId('export-purchase-orders')).toBeNull();
   });
 });
