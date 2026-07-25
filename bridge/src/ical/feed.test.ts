@@ -13,7 +13,8 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
-import { buildCalendar, buildCalendarEvents } from './feed.ts';
+import { startOfLocalDay, startOfUtcDay } from '@/lib/calendar-days.ts';
+import { buildCalendar, buildCalendarEvents, calendarModifiedAt } from './feed.ts';
 import { addDays, icalDate, icalDateFromIso, icalLocalDate, type VEvent } from './emitter.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-calendar-snapshot.json', import.meta.url);
@@ -124,6 +125,23 @@ describe('the whole feed', () => {
     expect(ics.trimEnd().endsWith('END:VCALENDAR')).toBe(true);
     expect(ics).toContain('UID:loan-checkout-open-due@gubbins.invalid\r\n');
     expect(ics).toContain('DTSTAMP:20250627T045320Z\r\n');
+  });
+});
+
+describe('calendarModifiedAt (the subscription validator basis, issue #363)', () => {
+  it('is the snapshot instant while it is the most recent of the three', () => {
+    const justAfterMidnight = startOfUtcDay(NOW) + 60_000;
+    const snapshotMs = Math.max(justAfterMidnight, startOfLocalDay(NOW) + 60_000);
+    expect(calendarModifiedAt(snapshotMs, NOW)).toBe(snapshotMs);
+  });
+
+  it('moves to the day rollover when the snapshot is older, in whichever frame rolled last', () => {
+    const stale = NOW - 30 * 24 * 60 * 60 * 1000; // hydrated a month ago, nothing since
+    const expected = Math.max(startOfUtcDay(NOW), startOfLocalDay(NOW));
+    expect(calendarModifiedAt(stale, NOW)).toBe(expected);
+    // Which is what stops a subscription revalidating its way past a day-grained cut-off: the
+    // value differs either side of that rollover even though the snapshot never changed.
+    expect(calendarModifiedAt(stale, expected - 1)).toBeLessThan(calendarModifiedAt(stale, NOW));
   });
 });
 

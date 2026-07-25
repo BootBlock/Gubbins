@@ -108,3 +108,68 @@ describe('GET /api/v1/calendar.ics', () => {
     expect(index.endpoints).toContain('/api/v1/calendar.ics');
   });
 });
+
+/**
+ * Conditional requests (issue #363). A calendar client refetches a subscription on an interval;
+ * these cover that a poll can revalidate instead of re-rendering the whole document.
+ */
+describe('GET /api/v1/calendar.ics — conditional requests', () => {
+  function conditional(path: string, headers: Record<string, string>): Promise<Response> {
+    return fetch(`${baseUrl}${path}`, { headers: { authorization: `Bearer ${TOKEN}`, ...headers } });
+  }
+
+  it('carries a weak ETag, a Last-Modified and a revalidate-every-time Cache-Control', async () => {
+    const res = await withHeader('/api/v1/calendar.ics');
+    expect(res.headers.get('etag')).toMatch(/^W\/"[A-Za-z0-9_-]+"$/);
+    expect(res.headers.get('last-modified')).toBeTruthy();
+    expect(res.headers.get('cache-control')).toBe('private, no-cache');
+  });
+
+  it('answers a revalidating poll with a bodyless 304 that repeats the validators', async () => {
+    const first = await withHeader('/api/v1/calendar.ics');
+    const etag = first.headers.get('etag')!;
+
+    const second = await conditional('/api/v1/calendar.ics', { 'if-none-match': etag });
+    expect(second.status).toBe(304);
+    expect(second.headers.get('etag')).toBe(etag);
+    expect(second.headers.get('cache-control')).toBe('private, no-cache');
+    expect(await second.text()).toBe('');
+  });
+
+  it('honours If-Modified-Since for a client that kept only the date', async () => {
+    const first = await withHeader('/api/v1/calendar.ics');
+    const lastModified = first.headers.get('last-modified')!;
+    const res = await conditional('/api/v1/calendar.ics', { 'if-modified-since': lastModified });
+    expect(res.status).toBe(304);
+  });
+
+  it('re-renders when the cached tag is stale', async () => {
+    const res = await conditional('/api/v1/calendar.ics', { 'if-none-match': 'W/"from-another-snapshot"' });
+    expect(res.status).toBe(200);
+    expect((await res.text()).startsWith('BEGIN:VCALENDAR')).toBe(true);
+  });
+
+  it('does not let one ?type= selection revalidate against another', async () => {
+    const loans = await withHeader('/api/v1/calendar.ics?type=loans');
+    const etag = loans.headers.get('etag')!;
+
+    // Same snapshot, different representation — the whole calendar must still be rendered.
+    const all = await conditional('/api/v1/calendar.ics', { 'if-none-match': etag });
+    expect(all.status).toBe(200);
+    expect(await all.text()).toContain('UID:booking-booking-active@gubbins.invalid');
+
+    // ...and the same selection still revalidates.
+    expect((await conditional('/api/v1/calendar.ics?type=loans', { 'if-none-match': etag })).status).toBe(
+      304,
+    );
+  });
+
+  it('treats a ?type= selection as a set, so the order it was written in does not matter', async () => {
+    const first = await withHeader('/api/v1/calendar.ics?type=loans,warranty');
+    const etag = first.headers.get('etag')!;
+    const reordered = await conditional('/api/v1/calendar.ics?type=warranty,loans', {
+      'if-none-match': etag,
+    });
+    expect(reordered.status).toBe(304);
+  });
+});

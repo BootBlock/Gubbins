@@ -254,6 +254,57 @@ const feedLimitParam: JsonValue = {
   schema: { type: 'integer', minimum: 1, maximum: 50, default: 50 },
 };
 
+/**
+ * The conditional-request headers every polled subscription surface accepts (issue #363). A
+ * client that echoes back the `ETag` (or the `Last-Modified`) it was given gets a `304` while
+ * the snapshot is unchanged, and the bridge skips the projection entirely.
+ */
+const conditionalParams: readonly JsonValue[] = [
+  {
+    name: 'If-None-Match',
+    in: 'header',
+    required: false,
+    description:
+      'The weak ETag from a previous response. Matches ⇒ 304 Not Modified. Takes precedence over ' +
+      'If-Modified-Since.',
+    schema: { type: 'string' },
+    example: 'W/"3Qk1s0Zk9pQmVzdEV0YWc"',
+  },
+  {
+    name: 'If-Modified-Since',
+    in: 'header',
+    required: false,
+    description:
+      'The Last-Modified value from a previous response, for a client that keeps no ETag. Only ' +
+      'consulted when If-None-Match is absent.',
+    schema: { type: 'string' },
+    example: 'Fri, 27 Jun 2025 04:53:20 GMT',
+  },
+];
+
+/** The validators a polled subscription response carries, on both the `200` and the `304`. */
+const validatorHeaders: JsonValue = {
+  ETag: { schema: { type: 'string' }, description: 'The weak entity-tag of this representation.' },
+  'Last-Modified': { schema: { type: 'string' }, description: 'When this representation last changed.' },
+  'Cache-Control': {
+    schema: { type: 'string' },
+    description:
+      'private, no-cache — store it, but revalidate every time. Private because a feed carries ' +
+      'personal inventory behind a bearer token, so no shared cache may hold a copy.',
+  },
+};
+
+/**
+ * The `304 Not Modified` a revalidating poll gets. Bodyless, and it repeats the validators so the
+ * client's stored copy is refreshed on the same terms a `200` would have set.
+ */
+const notModifiedResponse: JsonValue = {
+  description:
+    'The cached copy is still current — nothing has changed since the snapshot (or, for the ' +
+    'calendar, the day) the validators name. No body.',
+  headers: validatorHeaders,
+};
+
 /** A syndication-feed GET operation: the shared params + a single string-body media type. */
 function feedOperation(summary: string, mediaType: string, example: string): JsonValue {
   return {
@@ -265,13 +316,16 @@ function feedOperation(summary: string, mediaType: string, example: string): Jso
         'entry carrying a stable host-free URN id so a reader updates it in place rather than ' +
         'duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a ' +
         '`token` query parameter (a feed reader cannot send an Authorization header) — a deliberately ' +
-        'weaker token-in-URL posture scoped to the feed/calendar paths. Read-only.',
-      parameters: [feedTokenParam, feedLimitParam],
+        'weaker token-in-URL posture scoped to the feed/calendar paths. Read-only. A poll that ' +
+        'sends back the previous ETag is answered 304 Not Modified while the snapshot is unchanged.',
+      parameters: [feedTokenParam, feedLimitParam, ...conditionalParams],
       responses: {
         200: {
           description: 'The feed document.',
+          headers: validatorHeaders,
           content: { [mediaType]: { schema: { type: 'string' }, example } },
         },
+        304: notModifiedResponse,
         ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
       },
     },
@@ -655,7 +709,9 @@ export const openapiDocument: JsonValue = {
           'simply contributes nothing (a valid, empty calendar is the natural result). Because a ' +
           'calendar client cannot send an Authorization header, this endpoint ALSO accepts the ' +
           'bearer token as a `token` query parameter (a deliberately weaker token-in-URL posture, ' +
-          'scoped to this one path — keep the bridge loopback/LAN posture in mind). Read-only.',
+          'scoped to this one path — keep the bridge loopback/LAN posture in mind). Read-only. A ' +
+          'poll that sends back the previous ETag is answered 304 Not Modified until the snapshot ' +
+          'changes (or a day-grained cut-off rolls over), so a subscription costs a header exchange.',
         parameters: [
           {
             name: 'token',
@@ -676,10 +732,12 @@ export const openapiDocument: JsonValue = {
             schema: { type: 'string' },
             example: 'loans,warranty',
           },
+          ...conditionalParams,
         ],
         responses: {
           200: {
             description: 'The iCalendar document.',
+            headers: validatorHeaders,
             content: {
               'text/calendar': {
                 schema: { type: 'string' },
@@ -693,6 +751,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
+          304: notModifiedResponse,
           ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
         },
       },
@@ -728,10 +787,14 @@ export const openapiDocument: JsonValue = {
           'gubbins_locations_total, and the per-location gubbins_location_items / ' +
           'gubbins_location_capacity / gubbins_location_fullness_ratio (labelled by location). The ' +
           'low/out-of-stock counts reuse the same seams as the event stream and MQTT, so they never ' +
-          'drift. Auth is header-only here (no ?token=); a scrape config sends the bearer token.',
+          'drift. Auth is header-only here (no ?token=); a scrape config sends the bearer token. ' +
+          'A client that revalidates with the previous ETag is answered 304 Not Modified while the ' +
+          'snapshot is unchanged; a Prometheus scrape sends no conditional header and is unaffected.',
+        parameters: [...conditionalParams],
         responses: {
           200: {
             description: 'The metrics exposition.',
+            headers: validatorHeaders,
             content: {
               'text/plain': {
                 schema: { type: 'string' },
@@ -743,6 +806,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
+          304: notModifiedResponse,
           ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
         },
       },

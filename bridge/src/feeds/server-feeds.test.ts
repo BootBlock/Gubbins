@@ -159,3 +159,52 @@ describe('GET /metrics', () => {
     expect((await fetch(`${baseUrl}/metrics?token=${TOKEN}`)).status).toBe(401);
   });
 });
+
+/**
+ * Conditional requests (issue #363). A feed reader and a scrape job both poll on an interval;
+ * these cover that such a poll can revalidate instead of re-running the projection.
+ */
+describe('conditional requests on the feeds and metrics', () => {
+  function conditional(path: string, headers: Record<string, string>): Promise<Response> {
+    return fetch(`${baseUrl}${path}`, { headers: { authorization: `Bearer ${TOKEN}`, ...headers } });
+  }
+
+  it.each(['/api/v1/activity.rss', '/api/v1/activity.atom', '/api/v1/activity.json', '/metrics'])(
+    'revalidates %s with a bodyless 304',
+    async (path) => {
+      const first = await withHeader(path);
+      const etag = first.headers.get('etag')!;
+      expect(etag).toMatch(/^W\/"[A-Za-z0-9_-]+"$/);
+      expect(first.headers.get('cache-control')).toBe('private, no-cache');
+
+      const second = await conditional(path, { 'if-none-match': etag });
+      expect(second.status).toBe(304);
+      expect(second.headers.get('etag')).toBe(etag);
+      expect(await second.text()).toBe('');
+    },
+  );
+
+  it('honours If-Modified-Since on a feed', async () => {
+    const first = await withHeader('/api/v1/activity.rss');
+    const res = await conditional('/api/v1/activity.rss', {
+      'if-modified-since': first.headers.get('last-modified')!,
+    });
+    expect(res.status).toBe(304);
+  });
+
+  it('does not let one feed revalidate against another format or window', async () => {
+    const rss = await withHeader('/api/v1/activity.rss');
+    const etag = rss.headers.get('etag')!;
+
+    // Same snapshot, different documents — each is its own representation.
+    expect((await conditional('/api/v1/activity.atom', { 'if-none-match': etag })).status).toBe(200);
+    expect((await conditional('/api/v1/activity.rss?limit=2', { 'if-none-match': etag })).status).toBe(200);
+    expect((await conditional('/metrics', { 'if-none-match': etag })).status).toBe(200);
+  });
+
+  it('re-renders a feed whose cached tag is stale', async () => {
+    const res = await conditional('/api/v1/activity.rss', { 'if-none-match': 'W/"from-another-snapshot"' });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('<title>Gubbins activity</title>');
+  });
+});
