@@ -30,8 +30,9 @@ const FAKE_LOCATIONS = [
 vi.mock('@/db/repositories', () => ({
   getItemRepository: () => ({ list: vi.fn().mockResolvedValue({ rows: [], hasMore: false }) }),
   getProjectRepository: () => ({ list: vi.fn().mockResolvedValue({ rows: [], hasMore: false }) }),
+  // The location picker reads the whole set (issue #148) — every location must be pickable.
   getLocationRepository: () => ({
-    list: vi.fn().mockResolvedValue({ rows: FAKE_LOCATIONS, hasMore: false }),
+    listAll: vi.fn().mockResolvedValue(FAKE_LOCATIONS),
   }),
 }));
 

@@ -17,8 +17,10 @@ import {
 import {
   getCategoryRepository,
   getItemRepository,
+  type CategoryWithFieldCount,
   type CreateCategoryFieldInput,
   type CreateCategoryInput,
+  type Page,
   type SetLocationFieldValueInput,
   type UpdateCategoryFieldInput,
   type UpdateCategoryInput,
@@ -28,10 +30,25 @@ import { bucketIds, mergeBucketMaps } from './id-buckets';
 import { inventoryKeys } from './queries';
 import { invalidateItems } from './invalidate';
 
+/**
+ * The whole category set — the lookup table behind the category facet, the create/edit/bulk-edit
+ * pickers, the manager dialog, and every place an item's `categoryId` is resolved to a name.
+ *
+ * Deliberately **unpaginated** — see `CategoryRepository.listAll`. This was capped at 100, which
+ * silently gave wrong answers rather than short ones once a catalogue held more categories than
+ * that (issue #148): an item in the 101st category rendered with no category name, and no picker
+ * could offer it as a choice. Nothing here scrolls; it is all resolution, so it is read whole,
+ * exactly like the flat location list (`useLocations`) it sits beside.
+ *
+ * The `Page` shape is kept (`.rows`) so every existing caller reads it unchanged.
+ */
 export function useCategories() {
   return useQuery({
     queryKey: inventoryKeys.categoryList(),
-    queryFn: () => getCategoryRepository().list({ limit: 100 }),
+    queryFn: async (): Promise<Page<CategoryWithFieldCount>> => {
+      const rows = await getCategoryRepository().listAll();
+      return { rows, limit: rows.length, offset: 0, hasMore: false };
+    },
   });
 }
 

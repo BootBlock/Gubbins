@@ -37,6 +37,27 @@ describe('CategoryRepository', () => {
     expect(r?.fieldCount).toBe(1);
   });
 
+  it('listAll returns every category, past the default page size (issue #148)', async () => {
+    // `list` is capped by the strict page ceiling; the whole-set read the UI resolves category
+    // names and picker options from must not be — a category missing from it renders an item with
+    // no category at all and makes that category unpickable, rather than merely shortening a list.
+    const created = 120;
+    for (let i = 0; i < created; i += 1) {
+      await categories.create({ name: `Kind ${String(i).padStart(3, '0')}` });
+    }
+    const withField = await categories.create({ name: 'Aardvarks' });
+    await categories.addField(withField.id, { name: 'Snout length', fieldType: 'NUMBER' });
+
+    const paged = await categories.list();
+    const all = await categories.listAll();
+
+    expect(paged.rows.length).toBeLessThan(created);
+    expect(all.length).toBe(created + 1);
+    // Same ordering and the same derived field counts as the paged read, so the two never disagree.
+    expect(all.slice(0, paged.rows.length).map((c) => c.id)).toEqual(paged.rows.map((c) => c.id));
+    expect(all.find((c) => c.id === withField.id)?.fieldCount).toBe(1);
+  });
+
   it('rejects a blank category name', async () => {
     await expect(categories.create({ name: '   ' })).rejects.toBeInstanceOf(DbError);
   });
