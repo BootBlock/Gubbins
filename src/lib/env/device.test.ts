@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { LARGE_FORMAT_QUERY, FOLDABLE_BOOK_QUERY, isLargeFormat } from './device';
 
@@ -49,5 +51,43 @@ describe('device large-format detection (spec §2.4.2 / §3)', () => {
     // The CSS `large-format:` variant remains the authority in this case.
     (globalThis as { matchMedia?: typeof matchMedia }).matchMedia = undefined;
     expect(isLargeFormat()).toBe(false);
+  });
+});
+
+/**
+ * Guards the JS↔CSS parity that both sides *claim* but nothing checked (issue #251).
+ *
+ * `LARGE_FORMAT_QUERY` and the `large-format:` Tailwind custom variant are two independent
+ * copies of the same media condition, written in two languages that can't import from one
+ * another. Let them drift and JS and CSS disagree about what device they are on across a band
+ * of viewport sizes: a component branching on `isLargeFormat()` renders the tablet layout
+ * inside a phone-styled frame, or the reverse. That reproduces only on real hardware whose
+ * screen falls in the gap, never in a test — which is exactly why the parity has to be
+ * asserted mechanically rather than trusted to a pair of comments.
+ */
+describe('large-format CSS/JS parity', () => {
+  /**
+   * The variant's media condition, i.e. the `…` in:
+   *
+   *     @custom-variant large-format {
+   *       @media … {
+   *
+   * Whitespace-tolerant so reformatting the stylesheet doesn't fail the run, but it matches
+   * only the block form actually used — if the variant is ever rewritten some other way the
+   * match fails and the test says so, rather than quietly passing on a stale assumption.
+   */
+  const LARGE_FORMAT_VARIANT = /@custom-variant\s+large-format\s*\{\s*@media\s+([^{]+?)\s*\{/;
+
+  it('declares the same media condition in the stylesheet as LARGE_FORMAT_QUERY', () => {
+    // Vitest runs from the project root; under happy-dom `import.meta.url` is an http: URL,
+    // not a file: one, so resolve against cwd (as the other source-reading guards do).
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/index.css'), 'utf8');
+    const match = LARGE_FORMAT_VARIANT.exec(css);
+
+    expect(
+      match,
+      'no `@custom-variant large-format { @media … {` block found in src/styles/index.css',
+    ).not.toBeNull();
+    expect(match?.[1]).toBe(LARGE_FORMAT_QUERY);
   });
 });
