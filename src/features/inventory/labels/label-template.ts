@@ -15,7 +15,9 @@
  * {@link fitBarcodeValue} applies the same defensiveness to the *printed* result: a
  * Code 128 is only as readable as its narrowest bar, so a value too long for the label
  * it must fit is swapped for a short id — or dropped — rather than printed as a smear
- * (issue #331).
+ * (issue #331). {@link toBarcodeText} does the same for the *characters* it carries: a
+ * value Code 128 cannot spell is transliterated or given up on, never quietly cut down to
+ * the letters that happen to fit the symbology (issue #332).
  */
 import { code128Modules, code128WidestModules } from './code128';
 
@@ -275,14 +277,107 @@ export function shortId(id: string): string {
   return (first || id).toUpperCase();
 }
 
-/** Strip any character a Code 128 Code-B cannot encode (outside ASCII 32..126). */
-function toEncodableAscii(value: string): string {
+/**
+ * Letters and punctuation that Unicode decomposition deliberately leaves alone — `ß` is a
+ * letter in its own right, not "s with a mark" — but which have a settled ASCII spelling a
+ * reader recognises on sight. Unicode's own compatibility mappings say `ß` "expands to" `ss`
+ * and `æ` to `ae`; they simply aren't applied by `normalize`, because they are not
+ * round-trippable. A barcode value is exactly the place they *should* be applied: the point
+ * is a scannable approximation, not a faithful copy.
+ *
+ * Deliberately confined to Latin letters and typographic punctuation. Nothing here invents a
+ * reading — `£` has no ASCII spelling, so it is left to fail the encodability check below and
+ * take the whole value down to the short-id fallback, rather than being guessed at.
+ */
+const BARCODE_TRANSLITERATIONS: Readonly<Record<string, string>> = {
+  // Latin letters that carry no separable diacritic.
+  ß: 'ss',
+  ẞ: 'SS',
+  æ: 'ae',
+  Æ: 'AE',
+  œ: 'oe',
+  Œ: 'OE',
+  ø: 'o',
+  Ø: 'O',
+  đ: 'd',
+  Đ: 'D',
+  ð: 'd',
+  Ð: 'D',
+  ł: 'l',
+  Ł: 'L',
+  þ: 'th',
+  Þ: 'TH',
+  ħ: 'h',
+  Ħ: 'H',
+  ŧ: 't',
+  Ŧ: 'T',
+  ı: 'i',
+  // Typographic punctuation a word processor or phone keyboard substitutes automatically:
+  // curly quotes, the dash family, and the prime and multiplication signs a size is written with.
+  '‘': "'",
+  '’': "'",
+  '‚': "'",
+  '‛': "'",
+  '′': "'",
+  '“': '"',
+  '”': '"',
+  '„': '"',
+  '‟': '"',
+  '″': '"',
+  '‐': '-',
+  '‑': '-',
+  '‒': '-',
+  '–': '-',
+  '—': '-',
+  '―': '-',
+  '−': '-',
+  '×': 'x',
+};
+
+/**
+ * The value a Code 128 should carry for `value`, or `null` when it has no faithful
+ * Code-128-encodable form.
+ *
+ * Code Set B encodes printable ASCII (32..126) and nothing else, so a name like
+ * `Café Störage` has to be dealt with somehow. Dropping the offending characters is the one
+ * option that is never right: it prints `Caf Strage` — a value beneath a label whose name
+ * line reads `Café Störage`, matching no record, and wrong in a way that looks deliberate
+ * (issue #332).
+ *
+ * So each character is either **transliterated** or the whole value is **rejected**:
+ *
+ * 1. Compatibility-decompose (NFKD) and drop the combining marks left behind, so `é` becomes
+ *    `e`, `ﬁ` becomes `fi` and a non-breaking space becomes a space. This is the step that
+ *    covers the accented Latin alphabets, which is the common case.
+ * 2. Apply {@link BARCODE_TRANSLITERATIONS} for the letters and punctuation decomposition
+ *    leaves behind but which do have an agreed ASCII spelling.
+ * 3. If **anything** unencodable remains — an emoji, a CJK or Cyrillic character, a currency
+ *    sign — return `null`. A partly-representable name is not partly printed: the caller
+ *    falls back to the short id, which is honestly opaque rather than quietly wrong.
+ *
+ * Invisible formatting characters (zero-width joiners and spaces, bidi marks) are stripped
+ * rather than rejected — they contribute nothing a printed value could show, and one pasted
+ * invisibly into a name should not cost the label its barcode.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function toBarcodeText(value: string): string | null {
   let out = '';
-  for (const ch of value) {
-    const code = ch.charCodeAt(0);
-    if (code >= 32 && code <= 126) out += ch;
+  // Iterates by code point, so an astral character is examined whole rather than as a lone
+  // surrogate that would fail the range check for the wrong reason.
+  for (const ch of value
+    .normalize('NFKD')
+    .replace(/[\p{M}\p{Cf}]/gu, '')
+    .replace(/\s+/gu, ' ')) {
+    out += BARCODE_TRANSLITERATIONS[ch] ?? ch;
   }
-  return out.trim();
+  const text = out.trim();
+  if (text.length === 0) return null;
+  for (const ch of text) {
+    const code = ch.codePointAt(0)!;
+    if (code < 32 || code > 126) return null;
+  }
+  return text;
 }
 
 /**
@@ -373,11 +468,12 @@ export interface FittedBarcode {
  * Choose the value a label's Code 128 encodes, given the width it has to print across.
  *
  * `preferred` is the meaningful, human-facing value — an item's MPN/SKU, a location's
- * name — sanitised to encodable ASCII. It is used whenever it prints wide enough to
- * scan; otherwise the value falls back to {@link shortId} — the id's first group, so
- * short and of a predictable width whatever the record. On a label too narrow for even
- * that, no barcode is printed at all: an unreadable symbol is worse than none, because
- * it looks like it should work (issue #331).
+ * name — put through {@link toBarcodeText}, which transliterates it to Code 128's ASCII
+ * or gives up on it entirely. It is used whenever it prints wide enough to scan;
+ * otherwise the value falls back to {@link shortId} — the id's first group, so short and
+ * of a predictable width whatever the record. On a label too narrow for even that, no
+ * barcode is printed at all: an unreadable symbol is worse than none, because it looks
+ * like it should work (issue #331).
  *
  * The two are measured differently on purpose: the preferred value as it really encodes,
  * the fallback at its widest (see {@link barcodeFitsWidthUncompressed}), so `unprintable`
@@ -387,12 +483,17 @@ export interface FittedBarcode {
  * the same answer from this one place.
  */
 export function fitBarcodeValue(preferred: string, id: string, widthMm: number): FittedBarcode {
-  const wanted = toEncodableAscii(preferred);
-  if (wanted.length > 0 && barcodeFitsWidth(wanted, widthMm)) return { value: wanted, fit: 'ok' };
+  const wanted = toBarcodeText(preferred);
+  if (wanted !== null && barcodeFitsWidth(wanted, widthMm)) return { value: wanted, fit: 'ok' };
   const short = shortId(id);
   if (barcodeFitsWidthUncompressed(short, widthMm)) {
-    // No preferred value to lose (an item with no MPN) is the ordinary path, not a downgrade.
-    return { value: short, fit: wanted.length > 0 ? 'shortened' : 'ok' };
+    // `shortened` means a readable value was *cut down to fit* — what the print dialogs'
+    // "too long for this label" warning goes on to say. A value with no encodable form at
+    // all (a CJK name, an emoji) wasn't shortened and has nothing to do with the label's
+    // size, and neither has an item with no MPN: both take the short id as the ordinary
+    // path, as they always have. A short id reads as the opaque code it plainly is, so
+    // nothing on the sticker misrepresents itself either way.
+    return { value: short, fit: wanted !== null ? 'shortened' : 'ok' };
   }
   return { value: null, fit: 'unprintable' };
 }

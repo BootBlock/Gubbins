@@ -70,6 +70,15 @@ under **Code** in the print dialog.
 > characters — so if you want the full name or part number on the label as well, turn on the
 > matching field under **Show on label**.
 
+> **ℹ️ Note**
+> A Code 128 barcode can only carry plain unaccented characters, so Gubbins writes accented
+> letters in their nearest plain form: a location called **Café Störage** prints a barcode reading
+> `Cafe Storage`, and **Größe** becomes `Grosse`. Curly quotes, dashes and the like are squared off
+> the same way. Where there is no plain equivalent at all — a name in Japanese, Greek or Cyrillic,
+> or one carrying an emoji or a currency sign — the barcode carries the item's or location's short
+> code instead of a half-written name. The QR code is unaffected: it always links to the exact
+> record, whatever the name is written in, and so does the name printed on the label itself.
+
 ## Choosing the address labels point to
 
 A printed code carries a full web address, so a label is only useful if the device scanning it can
