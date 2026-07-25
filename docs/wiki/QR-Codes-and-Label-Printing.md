@@ -46,6 +46,18 @@ off in one go — perfect for labelling a new storage system or a batch of asset
 > whether or not the camera capability is enabled, and any phone camera app can open the deep
 > link.
 
+## Long names on a small label
+
+A name only has so much room. Where one is too long for the label, Gubbins keeps it to **two
+lines** and finishes it with an ellipsis (…) rather than letting it run on. On a die-cut label the
+QR code gives up a little height to make room, so the name and the code both stay whole.
+
+> **💡 Tip**
+> The preview in the print dialog is the label: it shortens the name in exactly the same place the
+> printed one will, so what you approve on screen is what comes out. If the shortened name is
+> ambiguous, choose a larger label size or fewer columns per sheet, or turn on another field —
+> a part number or location — under **Show on label** to tell similar items apart.
+
 ## QR code or barcode?
 
 Each label can carry a **QR code**, a **Code 128 barcode**, **both**, or **no code at all** — pick

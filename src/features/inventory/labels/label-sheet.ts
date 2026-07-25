@@ -87,6 +87,27 @@ const SHEET_TEXT_MAX_MM = 40;
 const DIE_CUT_PADDING_MM = 1.5;
 
 /**
+ * Lines the **name** (a label's first text line) may occupy before the rest is ellipsised.
+ *
+ * The on-screen preview has always clamped it; neither print document did, so a name that
+ * looked tidily truncated in the dialog either inflated its A4 grid row and shoved the rest of
+ * the page down, or — on a die-cut label — was hard-clipped mid-line by the label's
+ * `overflow:hidden` after squeezing the QR to make room (issue #334). Both stylesheets below
+ * clamp to this same count, and a guard test pins the preview's `line-clamp-*` utility to it,
+ * so the approved preview and the printed label agree on layout as well as content.
+ */
+export const LABEL_NAME_MAX_LINES = 2;
+
+/**
+ * Declarations clamping a text line to `lines` lines with a trailing ellipsis — byte-for-byte
+ * the properties Tailwind's `line-clamp-<n>` emits, so the print documents truncate exactly
+ * where the preview does.
+ */
+function lineClampCss(lines: number): string {
+  return `overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${lines}`;
+}
+
+/**
  * Truncate a label set to {@link MAX_LABELS}, keeping the first labels.
  *
  * @internal Exported for unit tests only.
@@ -276,7 +297,8 @@ function a4SheetDocument(cellsHtml: string, columns: number): string {
     'break-inside:avoid;text-align:center}' +
     '.label .qr svg{width:30mm;height:30mm}' +
     `.label .bc svg{max-width:${SHEET_BARCODE_MAX_MM}mm;height:14mm}` +
-    `.name{font-size:9pt;line-height:1.2;word-break:break-word;max-width:${SHEET_TEXT_MAX_MM}mm;font-weight:600}` +
+    `.name{font-size:9pt;line-height:1.2;word-break:break-word;max-width:${SHEET_TEXT_MAX_MM}mm;` +
+    `font-weight:600;${lineClampCss(LABEL_NAME_MAX_LINES)}}` +
     `.meta{font-size:8pt;line-height:1.2;word-break:break-word;max-width:${SHEET_TEXT_MAX_MM}mm;color:#444}` +
     '</style></head>' +
     `<body><div class="sheet">${cellsHtml}</div></body></html>`
@@ -308,7 +330,12 @@ function dieCutDocument(cellsHtml: string, template: LabelTemplate): string {
     '.label .qr svg{height:100%;width:auto;max-width:100%}' +
     '.label .bc{width:100%}' +
     '.label .bc svg{width:100%;height:auto;max-height:12mm}' +
-    '.name{font-size:7pt;line-height:1.15;word-break:break-word;font-weight:600}' +
+    // The QR is the one elastic item: a tall stack of text shrinks *it*, never itself. Without
+    // this the flex default shrank a clamped name back below its own two lines, and the label's
+    // `overflow:hidden` then cut it mid-line with the ellipsis clipped away as well (#334).
+    '.label .name,.label .meta{flex:0 0 auto;max-width:100%}' +
+    `.name{font-size:7pt;line-height:1.15;word-break:break-word;font-weight:600;` +
+    `${lineClampCss(LABEL_NAME_MAX_LINES)}}` +
     '.meta{font-size:6pt;line-height:1.15;word-break:break-word;color:#333}' +
     '</style></head>' +
     `<body>${cellsHtml}</body></html>`
