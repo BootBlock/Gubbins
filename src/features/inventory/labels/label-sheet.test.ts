@@ -467,10 +467,17 @@ describe('printed QR size (issue #330)', () => {
     const withBarcode = template({ ...base, symbology: 'both' });
     expect(moduleMm(everything)).toBeLessThan(moduleMm(nameOnly));
     expect(moduleMm(withBarcode)).toBeLessThan(moduleMm(nameOnly));
-    // Four text lines plus their gaps leave a 40 × 20 label nothing worth printing.
-    expect(
-      fit(template({ ...base, labelHeightMm: 20, showMpn: true, showLocation: true, showQuantity: true })),
-    ).toBe('tooSmall');
+    // Four text lines plus their gaps leave a 40 × 20 label nothing worth printing — and a
+    // shorter one nothing at all. Both must warn: a QR squeezed to zero is the worst case, not
+    // an absent measurement, so the warning must not switch itself off as the label shrinks.
+    const crowded = { ...base, showMpn: true, showLocation: true, showQuantity: true } as const;
+    for (const labelHeightMm of [20, 18, 15, 10]) {
+      const t = template({ ...crowded, labelHeightMm });
+      expect(fit(t), `${labelHeightMm} mm tall`).toBe('tooSmall');
+      // …and the code is still drawn, so the warning is the only thing telling the user.
+      expect(toLabelCells([item], BASE, t)[0]!.qrSvg, `${labelHeightMm} mm tall`).not.toBeNull();
+    }
+    expect(qrSizeMm(template({ ...crowded, labelHeightMm: 10 }), 4, null)).toBe(0);
   });
 
   it('reports no fit at all where there is no QR to measure', () => {

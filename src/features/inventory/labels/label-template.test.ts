@@ -469,10 +469,29 @@ describe('printed QR module size (issue #330)', () => {
     // The quiet zone is drawn, so it takes printed width like any other module — measuring
     // only the data area would report a module a fifth wider than the one that lands on paper.
     expect(qrModuleSizeMm(URL, 45)).toBeCloseTo(45 / TOTAL_MODULES, 10);
-    expect(qrModuleSizeMm(URL, 0)).toBeNull();
-    expect(qrModuleSizeMm(URL, -5)).toBeNull();
-    // No symbol to measure: the link is past the encoder's ceiling.
+    // No symbol to measure: the link is past the encoder's ceiling. The *only* `null` case.
     expect(qrModuleSizeMm('x'.repeat(400), 45)).toBeNull();
+    expect(qrModuleSizeMm(URL, Number.NaN)).toBeNull();
+  });
+
+  it('measures a label with no room left for the code, rather than declining to', () => {
+    // A label whose text has taken every millimetre is the worst case, not an absent
+    // measurement — reporting it as "no measurement" turned the warning off exactly there.
+    expect(qrModuleSizeMm(URL, 0)).toBe(0);
+    expect(qrModuleSizeMm(URL, -5)).toBe(0);
+    expect(fitQrToSize(URL, 0)).toBe('tooSmall');
+    expect(fitQrToSize(URL, -5)).toBe('tooSmall');
+  });
+
+  it('never turns the warning back off as the size keeps shrinking', () => {
+    // The property the zero case broke: once too small, always too small.
+    let seenTooSmall = false;
+    for (let mm = 20; mm >= 0; mm -= 0.25) {
+      const fit = fitQrToSize(URL, mm);
+      if (fit === 'tooSmall') seenTooSmall = true;
+      else expect(seenTooSmall, `fit went back to ok at ${mm} mm`).toBe(false);
+    }
+    expect(seenTooSmall).toBe(true);
   });
 
   it('reports the smallest square that clears the readable-module floor', () => {

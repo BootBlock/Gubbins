@@ -895,13 +895,21 @@ export type QrFit = 'ok' | 'tooSmall';
 /**
  * The printed width of one module, in mm, of the QR encoding `payload` when the whole symbol
  * — including its mandatory {@link QR_QUIET_ZONE_MODULES} quiet zone, which is part of what is
- * drawn — is rendered `sizeMm` across. `null` when the payload fits no supported symbol (there
- * is no code to measure) or the size is not a positive number.
+ * drawn — is rendered `sizeMm` across.
+ *
+ * `null` means one thing only: **there is no symbol to measure**, because the payload fits no
+ * supported version. A size of zero is not that — it is a label whose text has taken every
+ * millimetre the code had, which is the *worst* case and must measure as one. Folding the two
+ * together made this non-monotonic: shrinking a label past the point where the QR got no room
+ * at all turned the "too small" warning back off, exactly where it mattered most.
+ *
+ * A negative size is meaningless rather than absent, so it measures as zero for the same
+ * reason. A non-finite one is not a measurement at all.
  */
 export function qrModuleSizeMm(payload: string, sizeMm: number): number | null {
   const modules = qrModuleCount(payload);
-  if (modules === null || !(sizeMm > 0)) return null;
-  return sizeMm / (modules + QR_QUIET_ZONE_MODULES * 2);
+  if (modules === null || !Number.isFinite(sizeMm)) return null;
+  return Math.max(0, sizeMm) / (modules + QR_QUIET_ZONE_MODULES * 2);
 }
 
 /**
