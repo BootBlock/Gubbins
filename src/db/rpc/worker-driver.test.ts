@@ -56,6 +56,13 @@ class FakeWorker implements Pick<Worker, 'postMessage' | 'terminate'> {
       data: { ...response, id: envelope.id } as RpcResponseEnvelope,
     } as MessageEvent);
   }
+
+  /** Reply to the nth request with a body the protocol does not describe (issue #354). */
+  replyMalformed(index: number, body: Record<string, unknown>): void {
+    const envelope = this.posted[index];
+    if (!envelope) throw new Error(`no request posted at index ${index}`);
+    this.emit('message', { data: { ...body, id: envelope.id } } as MessageEvent);
+  }
 }
 
 let worker: FakeWorker;
@@ -116,6 +123,50 @@ describe('WorkerDatabaseDriver', () => {
 
     worker.reply(0, { ok: true, result: { pulled: 3 } });
     await expect(merged).resolves.toMatchObject({ pulled: 3 });
+  });
+
+  describe('failure replies', () => {
+    it('rejects with the database error the worker serialised', async () => {
+      const driver = createDriver();
+      const rows = driver.query('SELECT 1');
+      worker.reply(0, {
+        ok: false,
+        error: new DbError('SQLITE_BUSY', 'database is locked', { resultCode: 5 }).toSerialized(),
+      });
+      await expect(rows).rejects.toMatchObject({ code: 'SQLITE_BUSY', resultCode: 5 });
+    });
+
+    it('rejects a call whose failure reply carries no usable error (#354)', async () => {
+      const driver = createDriver();
+      const rows = driver.query('SELECT 1');
+      // Rebuilding a DbError from this used to throw *inside* the rejection path, leaving the
+      // caller parked until its budget expired rather than surfacing anything.
+      worker.replyMalformed(0, { ok: false });
+
+      await expect(rows).rejects.toBeInstanceOf(DbError);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(driver.isUnavailable).toBe(false);
+    });
+
+    it('rejects a call whose success reply carries no result (#354)', async () => {
+      const driver = createDriver();
+      const rows = driver.query('SELECT 1');
+      worker.replyMalformed(0, { ok: true });
+      await expect(rows).rejects.toBeInstanceOf(DbError);
+    });
+
+    it('ignores a malformed message that names no call, leaving in-flight work alone', async () => {
+      const driver = createDriver();
+      const rows = driver.query('SELECT 1');
+      const assertion = expect(rows).rejects.toMatchObject({ code: 'WORKER_TIMEOUT' });
+
+      expect(() => worker.emit('message', { data: { ok: false } } as MessageEvent)).not.toThrow();
+      expect(() => worker.emit('message', { data: 'not an envelope' } as MessageEvent)).not.toThrow();
+
+      // The real call is untouched by the noise, and still settles on its own budget.
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.query);
+      await assertion;
+    });
   });
 
   describe('request timeouts', () => {
