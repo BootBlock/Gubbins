@@ -56,6 +56,9 @@ import {
   type ImportFormat,
   type ImportPreviewRow,
 } from '../text-import';
+import { useFormatters } from '@/lib/useFormatters';
+import { MAX_IMPORT_FILE_BYTES, readImportFile, type ImportFileRead } from '@/features/import/file-source';
+import { ImportFileBanner } from '@/features/import/components/ImportFileBanner';
 import {
   MIGRATION_SOURCE_HINTS,
   MIGRATION_SOURCE_IDS,
@@ -744,47 +747,43 @@ function TextInputPanel({ text, onTextChange }: { text: string; onTextChange: (t
   );
 }
 
-const FILE_READ_ERROR = 'Could not read the file — please try again.';
-
 function FileInputPanel({
   filename,
+  read,
+  onRead,
   onFileLoaded,
 }: {
   filename: string | null;
+  /** The last file-read outcome — held by the dialog so it survives a tab switch. */
+  read: ImportFileRead | null;
+  onRead: (read: ImportFileRead | null) => void;
   onFileLoaded: (text: string, name: string) => void;
 }) {
   const inputId = useId();
-  const [error, setError] = useState<string | null>(null);
+  const f = useFormatters();
   const [busy, setBusy] = useState(false);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
-    setError(null);
+    onRead(null);
     setBusy(true);
-    // Every exit from the read — success, failure, abort, or a throw out of the
-    // consumer — must clear `busy`, or the panel is stuck on "Reading file…"
-    // until the dialog is reopened.
-    const fail = () => {
-      setBusy(false);
-      setError(FILE_READ_ERROR);
-    };
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        onFileLoaded(reader.result as string, file.name);
-      } catch {
-        setError(FILE_READ_ERROR);
-      } finally {
-        setBusy(false);
-      }
-    };
-    reader.onerror = fail;
-    reader.onabort = () => setBusy(false);
+    // Every exit from the read — success, refusal, or a throw out of the consumer — must clear
+    // `busy`, or the panel is stuck on "Reading file…" until the dialog is reopened.
     try {
-      reader.readAsText(file, 'utf-8');
+      // The size cap, binary sniff and strict decode all live in the shared seam, so every
+      // importer refuses the same files for the same stated reasons (issue #347).
+      const result = await readImportFile(file);
+      onRead(result);
+      if (result.ok) onFileLoaded(result.text, file.name);
     } catch {
-      fail();
+      onRead({ ok: false, rejection: { reason: 'unreadable' } });
+    } finally {
+      setBusy(false);
+      // Clear the input so picking the *same* path again still fires a change event — otherwise
+      // fixing a refused file in place and re-choosing it looks like a dead control.
+      input.value = '';
     }
   };
 
@@ -808,14 +807,18 @@ function FileInputPanel({
           {filename ? `Loaded: ${filename}` : 'Click to choose a file'}
         </span>
         <span className="text-xs text-muted-foreground">
-          {filename ? 'Choose another file to replace it' : 'CSV, TSV, JSON, Markdown, HTML or text (UTF-8)'}
+          {filename
+            ? 'Choose another file to replace it'
+            : // The cap is stated up front rather than only on refusal, and read from the seam so
+              // the two can never disagree.
+              `CSV, TSV, JSON, Markdown, HTML or text — up to ${f.bytes(MAX_IMPORT_FILE_BYTES)}`}
         </span>
         <input
           id={inputId}
           type="file"
           accept=".csv,.tsv,.tab,.txt,.json,.md,.markdown,.html,.htm,text/csv,text/tab-separated-values,text/plain,application/json,text/markdown,text/html"
           className="sr-only"
-          onChange={handleChange}
+          onChange={(e) => void handleChange(e)}
           data-testid="catalog-import-file"
         />
       </label>
@@ -825,11 +828,7 @@ function FileInputPanel({
           Reading file…
         </div>
       ) : null}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+      <ImportFileBanner read={read} data-testid="catalog-import-file-notice" />
     </div>
   );
 }
@@ -886,6 +885,7 @@ export function ImportDataDialog({
   onClose,
   initialText,
   initialFilename,
+  initialFileRead,
 }: {
   open: boolean;
   onClose: () => void;
@@ -893,14 +893,21 @@ export function ImportDataDialog({
   initialText?: string;
   /** The name of the seeded file, shown on the File tab. */
   initialFilename?: string;
+  /**
+   * The read outcome of that launched file, when there is one. A refused launch file seeds no
+   * text, so this is what lets the File tab say *why* instead of showing an unexplained blank
+   * workbench (issue #347).
+   */
+  initialFileRead?: ImportFileRead;
 }) {
   const client = useQueryClient();
   const panelId = useId();
-  // When opened with seeded file contents (a File Handling launch), land on the File tab so the
-  // provenance (filename) is visible; otherwise the Text tab is the default entry point.
-  const [tab, setTab] = useState<ImportTab>(initialText != null ? 'file' : 'text');
+  // When opened with a File Handling launch, land on the File tab so the provenance (filename, or
+  // why the file was refused) is visible; otherwise the Text tab is the default entry point.
+  const [tab, setTab] = useState<ImportTab>(initialText != null || initialFileRead != null ? 'file' : 'text');
   const [text, setText] = useState(initialText ?? '');
   const [filename, setFilename] = useState<string | null>(initialFilename ?? null);
+  const [fileRead, setFileRead] = useState<ImportFileRead | null>(initialFileRead ?? null);
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -931,6 +938,7 @@ export function ImportDataDialog({
     setTab('text');
     setText('');
     setFilename(null);
+    setFileRead(null);
     onClose();
   };
 
@@ -976,11 +984,14 @@ export function ImportDataDialog({
               onTextChange={(t) => {
                 setText(t);
                 setFilename(null);
+                setFileRead(null);
               }}
             />
           ) : (
             <FileInputPanel
               filename={filename}
+              read={fileRead}
+              onRead={setFileRead}
               onFileLoaded={(t, name) => {
                 setText(t);
                 setFilename(name);
