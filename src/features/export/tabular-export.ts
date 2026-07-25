@@ -181,7 +181,9 @@ export interface HtmlTableOptions {
  * Build a self-contained, printable HTML **document** (not a bare fragment) so the file
  * opens and prints straight from the browser. Styling is inline and deliberately minimal
  * — this is downloaded output, not app chrome, so it uses system fonts and neutral rules
- * rather than the app's design tokens.
+ * rather than the app's design tokens. The neutral palette follows the reader's OS scheme
+ * on screen but is pinned to black-on-white for print, matching the other printable
+ * surfaces (labels, catalogue, schedule).
  *
  * @internal Exported for unit tests only.
  */
@@ -204,15 +206,26 @@ export function toHtmlTable<T>(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${htmlEscape(title)}</title>
   <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; line-height: 1.4; }
+    :root { color-scheme: light dark; --page: #fff; --ink: #111; --muted: #666; --rule: #ccc; --head: #f2f2f2; --zebra: #fafafa; }
+    @media (prefers-color-scheme: dark) {
+      :root { --page: #1c1c1e; --ink: #f2f2f2; --muted: #a1a1a1; --rule: #4a4a4d; --head: #2c2c2e; --zebra: #242426; }
+    }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; line-height: 1.4; color: var(--ink); background: var(--page); }
     h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
-    .caption { margin: 0 0 1rem; color: #666; }
+    .caption { margin: 0 0 1rem; color: var(--muted); }
     table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-    th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
-    thead th { background: #f2f2f2; }
-    tbody tr:nth-child(even) { background: #fafafa; }
-    @media print { body { margin: 0; } thead th { background: #eee; } }
+    th, td { border: 1px solid var(--rule); padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
+    thead th { background: var(--head); }
+    tbody tr:nth-child(even) { background: var(--zebra); }
+    /* Paper is a fixed, theme-less medium: pin the palette back to black ink on white
+       regardless of the reader's OS scheme (issue #335). Browsers drop backgrounds when
+       printing, so a dark-scheme page would otherwise print near-white text onto white
+       paper. Declared last so it beats the dark block above at equal specificity, whether
+       or not the print job still reports a dark colour-scheme preference. */
+    @media print {
+      :root { color-scheme: light; --page: #fff; --ink: #000; --muted: #555; --rule: #ccc; --head: #eee; --zebra: #fafafa; }
+      body { margin: 0; }
+    }
   </style>
 </head>
 <body>

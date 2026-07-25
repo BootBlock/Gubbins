@@ -36,6 +36,10 @@ list. The BOM adds a grouped **EDA BOM (CSV)** for electronics tools like KiCad.
 formats load on demand the first time you use them, so they never slow the app down; once you've
 [[installed Gubbins|Installing-Gubbins]], they're cached for offline use too.
 
+> **💡 Tip** The **HTML** page opens straight in a browser and follows your system's light or
+> dark appearance on screen, but always prints as black text on white paper — so a printout is
+> legible whichever appearance you use, without turning on "print backgrounds".
+
 > **ℹ️ Note** In a **CSV** or **TSV** export, a cell that begins with `=`, `+`, `-` or `@` gets a
 > single leading quote (so `=A1` becomes `'=A1`). That stops a spreadsheet from treating a stored
 > value as a live formula when it opens the file; the quote is hidden by the spreadsheet and the
