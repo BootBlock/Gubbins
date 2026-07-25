@@ -52,14 +52,64 @@ describe('item field registry', () => {
     expect(detail).not.toHaveProperty('notes');
   });
 
-  it('does not read placements/capabilities for a projection that omits them', async () => {
+  it('does not read placements/capabilities/tags for a projection that omits them', async () => {
     const driver = hydrated.driver;
     const item = await new ItemRepository(driver).getById('item-esp32');
     const ctx = createItemViewContext(driver, item!);
     const placementsSpy = vi.spyOn(ctx, 'placements');
     const capsSpy = vi.spyOn(ctx, 'capabilities');
+    const tagsSpy = vi.spyOn(ctx, 'tags');
     await projectItem(ctx, parseItemSelection([], { fields: 'name,unitCost' }));
     expect(placementsSpy).not.toHaveBeenCalled();
     expect(capsSpy).not.toHaveBeenCalled();
+    expect(tagsSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('tags (issue #143)', () => {
+  it('projects the item’s tag names, ordered by name', async () => {
+    const driver = hydrated.driver;
+    const item = await new ItemRepository(driver).getById('item-esp32');
+    const projected = await projectItem(
+      createItemViewContext(driver, item!),
+      parseItemSelection([], { fields: 'id,tags' }),
+    );
+    // Stored workshop-then-fragile in the fixture; read back alphabetically.
+    expect(projected).toEqual({ id: 'item-esp32', tags: ['fragile', 'workshop'] });
+  });
+
+  it('is an empty array for an untagged item, never absent', async () => {
+    const driver = hydrated.driver;
+    const item = await new ItemRepository(driver).getById('item-m3-bolt');
+    const projected = await projectItem(
+      createItemViewContext(driver, item!),
+      parseItemSelection([], { fields: 'tags' }),
+    );
+    expect(projected).toEqual({ tags: [] });
+  });
+
+  it('is added by include=tags and by the relations group', async () => {
+    const driver = hydrated.driver;
+    const item = await new ItemRepository(driver).getById('item-esp32');
+    const ctx = createItemViewContext(driver, item!);
+    for (const include of ['tags', 'relations']) {
+      const projected = await projectItem(ctx, parseItemSelection(['id'], { include }));
+      expect(projected.tags).toEqual(['fragile', 'workshop']);
+    }
+  });
+
+  it('rejects a nested tags path — a tag name has no sub-fields', async () => {
+    expect(() => parseItemSelection([], { fields: 'tags.name' })).toThrow(/not a nested field/);
+  });
+
+  it('reads the tag join at most once across repeated selection', async () => {
+    const driver = hydrated.driver;
+    const item = await new ItemRepository(driver).getById('item-esp32');
+    const ctx = createItemViewContext(driver, item!);
+    const querySpy = vi.spyOn(driver, 'query');
+    await projectItem(ctx, parseItemSelection([], { fields: 'tags' }));
+    await projectItem(ctx, parseItemSelection([], { fields: 'tags' }));
+    const tagReads = querySpy.mock.calls.filter(([sql]) => String(sql).includes('item_tags'));
+    expect(tagReads).toHaveLength(1);
   });
 });

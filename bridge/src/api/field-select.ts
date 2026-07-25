@@ -104,9 +104,15 @@ export function parseSelection<TCtx>(
   };
 
   // 1. include: expand aliases → validate → union onto the selection as whole fields.
+  //
+  // Looked up with `Object.hasOwn`, never a bare index: an alias table is a plain object, so it
+  // also answers to its prototype's keys — `aliases['toString']` yields a *function*, which is
+  // neither `undefined` nor iterable, so `include=toString` would die spreading it (a 500) instead
+  // of being reported as the unknown field it is.
   const includeNames: string[] = [];
   for (const token of splitList(raw.include)) {
-    const expanded = cfg.aliases?.[token];
+    const expanded =
+      cfg.aliases !== undefined && Object.hasOwn(cfg.aliases, token) ? cfg.aliases[token] : undefined;
     if (expanded !== undefined) includeNames.push(...expanded);
     else includeNames.push(token);
   }

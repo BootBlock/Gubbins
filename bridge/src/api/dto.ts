@@ -149,6 +149,15 @@ export interface ItemDetailDto extends ItemSummaryDto {
   /** The item's parametric capabilities, ordered by key. */
   readonly capabilities: readonly CapabilityDto[];
   /**
+   * The names of the tags the item carries, ordered by name (issue #143).
+   *
+   * Names rather than `{ id, name }` pairs: a tag *is* its name — the dictionary is keyed by it,
+   * case-insensitively — and the name is also what a `$filter` compares against, so a consumer
+   * can feed a value straight back into `tag eq '…'`. Only the item's **own** tags: a tag on its
+   * location is a property of that location, exactly as the app's search reads it.
+   */
+  readonly tags: readonly string[];
+  /**
    * The item's resolved custom-field values — **present only when the caller asks for them**
    * (`include=fields`), so the default payload stays exactly as it was.
    */

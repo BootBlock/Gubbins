@@ -4,7 +4,14 @@
  * everything outside the subset.
  */
 import { describe, expect, it } from 'vitest';
-import { parseODataFilter } from './odata-filter.ts';
+import { ITEM_FIELD_NAMES, TAG_FIELD } from '@/db/search/parseASTtoSQL.ts';
+import { ITEM_FIELD_REGISTRY } from './item-view.ts';
+import {
+  FILTERABLE_AST_FIELDS,
+  FILTERABLE_FIELD_NAMES,
+  FILTERABLE_FIELD_TARGETS,
+  parseODataFilter,
+} from './odata-filter.ts';
 import { BadQueryError } from './odata.ts';
 
 describe('parseODataFilter — supported grammar', () => {
@@ -106,6 +113,112 @@ describe('parseODataFilter — negation (issue #139)', () => {
 
   it('cancels a double negation', () => {
     expect(parseODataFilter("not not name eq 'a'")).toEqual(parseODataFilter("name eq 'a'"));
+  });
+});
+
+describe('parseODataFilter — the field vocabulary (issue #143)', () => {
+  /**
+   * The drift guard the issue asks for. The OData property map and the app's own `ITEM_FIELDS`
+   * are parallel exhaustive lists, and they *had* diverged: `barcode` and `favourite` were
+   * searchable in the app but unreachable over the API, so a scanner integration could not look
+   * an item up by its GTIN. Neither list may now grow without the other.
+   */
+  it('reaches every field the app itself can filter on, and nothing it cannot', () => {
+    const reachable = new Set(FILTERABLE_AST_FIELDS);
+    for (const field of ITEM_FIELD_NAMES) expect([...reachable]).toContain(field);
+    // `tag` is a valid AST field but lives outside ITEM_FIELDS (it lowers to an EXISTS over the
+    // item↔tag join, not a column), so it is named explicitly rather than assumed.
+    expect([...reachable]).toContain(TAG_FIELD);
+    const known = new Set([...ITEM_FIELD_NAMES, TAG_FIELD]);
+    for (const field of reachable) expect([...known]).toContain(field);
+  });
+
+  it('can read back every field it can filter on', () => {
+    // Each filterable field must have at least one accepted spelling that is also a projectable
+    // item field, so `$filter=<x> …` always pairs with `$select=<x>`.
+    const readable = new Map<string, string[]>();
+    for (const [name, field] of FILTERABLE_FIELD_TARGETS) {
+      if (ITEM_FIELD_REGISTRY.has(name)) readable.set(field, [...(readable.get(field) ?? []), name]);
+    }
+    for (const field of FILTERABLE_AST_FIELDS) {
+      expect(readable.get(field), `no readable spelling of the filterable field "${field}"`).toBeDefined();
+    }
+  });
+
+  it('accepts the app short name and the published camelCase name for the same field', () => {
+    const pairs: [string, string][] = [
+      ['serialNumber', 'serial'],
+      ['unitCost', 'cost'],
+      ['purchasePrice', 'price'],
+      ['currentValue', 'value'],
+      ['isFavourite', 'favourite'],
+      ['isActive', 'active'],
+      ['trackingMode', 'tracking'],
+      ['expiryDate', 'expiry'],
+      ['warrantyExpiresAt', 'warranty'],
+      ['reorderPoint', 'reorder'],
+    ];
+    for (const [published, short] of pairs) {
+      expect(parseODataFilter(`${published} eq 'x'`).conditions[0]).toMatchObject({ field: short });
+    }
+  });
+
+  it('matches field names case-insensitively', () => {
+    expect(parseODataFilter("BarCode eq '5012345678900'").conditions[0]).toMatchObject({
+      field: 'barcode',
+      operator: 'EQUALS',
+      value: '5012345678900',
+    });
+  });
+
+  it('compiles a barcode lookup — the scanner integration the drift blocked', () => {
+    expect(parseODataFilter("barcode eq '5012345678900'").conditions[0]).toMatchObject({
+      field: 'barcode',
+      value: '5012345678900',
+    });
+  });
+
+  it('compiles the favourite flag from a boolean literal', () => {
+    expect(parseODataFilter('favourite eq true').conditions[0]).toMatchObject({
+      field: 'favourite',
+      operator: 'EQUALS',
+      value: true,
+    });
+  });
+
+  it('compiles tag/tags onto the AST tag field, exact and substring', () => {
+    expect(parseODataFilter("tag eq 'fragile'").conditions[0]).toMatchObject({
+      field: 'tag',
+      operator: 'EQUALS',
+      value: 'fragile',
+    });
+    expect(parseODataFilter("contains(tags,'expo')").conditions[0]).toMatchObject({
+      field: 'tag',
+      operator: 'CONTAINS',
+      value: 'expo',
+    });
+  });
+
+  it('compiles "carries neither tag" as a negated group over the tag predicate', () => {
+    const ast = parseODataFilter("not (tag eq 'fragile' or tag eq 'heavy')");
+    expect(ast).toMatchObject({ logicalOperator: 'OR', negate: true });
+    expect(ast.conditions).toHaveLength(2);
+  });
+
+  it('names the accepted property spellings when a field is unknown', () => {
+    expect(() => parseODataFilter('bogus eq 1')).toThrow(/barcode/);
+    expect(() => parseODataFilter('bogus eq 1')).toThrow(/tag/);
+    // The published casing, not the lower-cased lookup key.
+    expect(FILTERABLE_FIELD_NAMES).toContain('serialNumber');
+  });
+
+  it('refuses a prototype key rather than resolving it to a function', () => {
+    // A plain-object map answers to `constructor`/`toString`/`__proto__`, which would hand the
+    // translator a non-string field and fail as a 500 instead of this 400.
+    for (const key of ['constructor', 'toString', 'hasOwnProperty', '__proto__', 'valueOf']) {
+      expect(() => parseODataFilter(`${key} eq 'x'`)).toThrow(BadQueryError);
+      expect(() => parseODataFilter(`${key} eq 'x'`)).toThrow(/Cannot filter/);
+    }
   });
 });
 
