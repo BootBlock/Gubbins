@@ -842,7 +842,7 @@ paths:
       tags:
       - "calendar"
       summary: "Subscribe to the read-only iCalendar feed"
-      description: "A text/calendar (RFC 5545) VCALENDAR of Gubbins’ time-bearing facts, as VEVENTs with a stable per-source UID so a subscriber updates each event in place rather than duplicating it on refetch. Sources: loan due-backs (open checkouts with a due date), asset bookings (upcoming, not-yet-passed), maintenance/service due dates (time-based schedules), and warranty expiries. Most events are all-day. A source with no data simply contributes nothing (a valid, empty calendar is the natural result). Because a calendar client cannot send an Authorization header, this endpoint ALSO accepts the bearer token as a `token` query parameter (a deliberately weaker token-in-URL posture, scoped to this one path — keep the bridge loopback/LAN posture in mind). Read-only."
+      description: "A text/calendar (RFC 5545) VCALENDAR of Gubbins’ time-bearing facts, as VEVENTs with a stable per-source UID so a subscriber updates each event in place rather than duplicating it on refetch. Sources: loan due-backs (open checkouts with a due date), asset bookings (upcoming, not-yet-passed), maintenance/service due dates (time-based schedules), and warranty expiries. Most events are all-day. A source with no data simply contributes nothing (a valid, empty calendar is the natural result). Because a calendar client cannot send an Authorization header, this endpoint ALSO accepts the bearer token as a `token` query parameter (a deliberately weaker token-in-URL posture, scoped to this one path — keep the bridge loopback/LAN posture in mind). Read-only. A poll that sends back the previous ETag is answered 304 Not Modified until the snapshot changes (or a day-grained cut-off rolls over), so a subscription costs a header exchange."
       parameters:
       -
         name: "token"
@@ -859,14 +859,58 @@ paths:
         schema:
           type: "string"
         example: "loans,warranty"
+      -
+        name: "If-None-Match"
+        in: "header"
+        required: false
+        description: "The weak ETag from a previous response. Matches ⇒ 304 Not Modified. Takes precedence over If-Modified-Since."
+        schema:
+          type: "string"
+        example: "W/\"3Qk1s0Zk9pQmVzdEV0YWc\""
+      -
+        name: "If-Modified-Since"
+        in: "header"
+        required: false
+        description: "The Last-Modified value from a previous response, for a client that keeps no ETag. Only consulted when If-None-Match is absent."
+        schema:
+          type: "string"
+        example: "Fri, 27 Jun 2025 04:53:20 GMT"
       responses:
         "200":
           description: "The iCalendar document."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
           content:
             text/calendar:
               schema:
                 type: "string"
               example: "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Gubbins//Bridge Calendar//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:Gubbins\r\nBEGIN:VEVENT\r\nUID:warranty-item-esp32@gubbins.invalid\r\nDTSTAMP:20250627T045320Z\r\nDTSTART;VALUE=DATE:20270615\r\nDTEND;VALUE=DATE:20270616\r\nSUMMARY:Warranty expires: ESP32 Dev Board\r\nCATEGORIES:Gubbins,Warranty\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        "304":
+          description: "The cached copy is still current — nothing has changed since the snapshot (or, for the calendar, the day) the validators name. No body."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
         "400":
           description: "Bad request — missing or invalid parameter."
           content:
@@ -917,7 +961,7 @@ paths:
       tags:
       - "feeds"
       summary: "Subscribe to the recent-activity feed (RSS 2.0)"
-      description: "A read-only feed of the recent cross-item activity log (item_history), newest first, each entry carrying a stable host-free URN id so a reader updates it in place rather than duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a `token` query parameter (a feed reader cannot send an Authorization header) — a deliberately weaker token-in-URL posture scoped to the feed/calendar paths. Read-only."
+      description: "A read-only feed of the recent cross-item activity log (item_history), newest first, each entry carrying a stable host-free URN id so a reader updates it in place rather than duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a `token` query parameter (a feed reader cannot send an Authorization header) — a deliberately weaker token-in-URL posture scoped to the feed/calendar paths. Read-only. A poll that sends back the previous ETag is answered 304 Not Modified while the snapshot is unchanged."
       parameters:
       -
         name: "token"
@@ -936,14 +980,58 @@ paths:
           minimum: 1
           maximum: 50
           default: 50
+      -
+        name: "If-None-Match"
+        in: "header"
+        required: false
+        description: "The weak ETag from a previous response. Matches ⇒ 304 Not Modified. Takes precedence over If-Modified-Since."
+        schema:
+          type: "string"
+        example: "W/\"3Qk1s0Zk9pQmVzdEV0YWc\""
+      -
+        name: "If-Modified-Since"
+        in: "header"
+        required: false
+        description: "The Last-Modified value from a previous response, for a client that keeps no ETag. Only consulted when If-None-Match is absent."
+        schema:
+          type: "string"
+        example: "Fri, 27 Jun 2025 04:53:20 GMT"
       responses:
         "200":
           description: "The feed document."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
           content:
             "application/rss+xml":
               schema:
                 type: "string"
               example: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n  <channel>\n    <title>Gubbins activity</title>\n    <item>\n      <title>ESP32 Dev Board — Quantity changed</title>\n      <guid isPermaLink=\"false\">urn:gubbins:activity:hist-0007</guid>\n    </item>\n  </channel>\n</rss>\n"
+        "304":
+          description: "The cached copy is still current — nothing has changed since the snapshot (or, for the calendar, the day) the validators name. No body."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
         "401":
           description: "Missing, unknown or revoked API token."
           headers:
@@ -988,7 +1076,7 @@ paths:
       tags:
       - "feeds"
       summary: "Subscribe to the recent-activity feed (Atom 1.0)"
-      description: "A read-only feed of the recent cross-item activity log (item_history), newest first, each entry carrying a stable host-free URN id so a reader updates it in place rather than duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a `token` query parameter (a feed reader cannot send an Authorization header) — a deliberately weaker token-in-URL posture scoped to the feed/calendar paths. Read-only."
+      description: "A read-only feed of the recent cross-item activity log (item_history), newest first, each entry carrying a stable host-free URN id so a reader updates it in place rather than duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a `token` query parameter (a feed reader cannot send an Authorization header) — a deliberately weaker token-in-URL posture scoped to the feed/calendar paths. Read-only. A poll that sends back the previous ETag is answered 304 Not Modified while the snapshot is unchanged."
       parameters:
       -
         name: "token"
@@ -1007,14 +1095,58 @@ paths:
           minimum: 1
           maximum: 50
           default: 50
+      -
+        name: "If-None-Match"
+        in: "header"
+        required: false
+        description: "The weak ETag from a previous response. Matches ⇒ 304 Not Modified. Takes precedence over If-Modified-Since."
+        schema:
+          type: "string"
+        example: "W/\"3Qk1s0Zk9pQmVzdEV0YWc\""
+      -
+        name: "If-Modified-Since"
+        in: "header"
+        required: false
+        description: "The Last-Modified value from a previous response, for a client that keeps no ETag. Only consulted when If-None-Match is absent."
+        schema:
+          type: "string"
+        example: "Fri, 27 Jun 2025 04:53:20 GMT"
       responses:
         "200":
           description: "The feed document."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
           content:
             "application/atom+xml":
               schema:
                 type: "string"
               example: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<feed xmlns=\"http://www.w3.org/2005/Atom\">\n  <title>Gubbins activity</title>\n  <entry>\n    <title>ESP32 Dev Board — Quantity changed</title>\n    <id>urn:gubbins:activity:hist-0007</id>\n  </entry>\n</feed>\n"
+        "304":
+          description: "The cached copy is still current — nothing has changed since the snapshot (or, for the calendar, the day) the validators name. No body."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
         "401":
           description: "Missing, unknown or revoked API token."
           headers:
@@ -1059,7 +1191,7 @@ paths:
       tags:
       - "feeds"
       summary: "Subscribe to the recent-activity feed (JSON Feed 1.1)"
-      description: "A read-only feed of the recent cross-item activity log (item_history), newest first, each entry carrying a stable host-free URN id so a reader updates it in place rather than duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a `token` query parameter (a feed reader cannot send an Authorization header) — a deliberately weaker token-in-URL posture scoped to the feed/calendar paths. Read-only."
+      description: "A read-only feed of the recent cross-item activity log (item_history), newest first, each entry carrying a stable host-free URN id so a reader updates it in place rather than duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a `token` query parameter (a feed reader cannot send an Authorization header) — a deliberately weaker token-in-URL posture scoped to the feed/calendar paths. Read-only. A poll that sends back the previous ETag is answered 304 Not Modified while the snapshot is unchanged."
       parameters:
       -
         name: "token"
@@ -1078,14 +1210,58 @@ paths:
           minimum: 1
           maximum: 50
           default: 50
+      -
+        name: "If-None-Match"
+        in: "header"
+        required: false
+        description: "The weak ETag from a previous response. Matches ⇒ 304 Not Modified. Takes precedence over If-Modified-Since."
+        schema:
+          type: "string"
+        example: "W/\"3Qk1s0Zk9pQmVzdEV0YWc\""
+      -
+        name: "If-Modified-Since"
+        in: "header"
+        required: false
+        description: "The Last-Modified value from a previous response, for a client that keeps no ETag. Only consulted when If-None-Match is absent."
+        schema:
+          type: "string"
+        example: "Fri, 27 Jun 2025 04:53:20 GMT"
       responses:
         "200":
           description: "The feed document."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
           content:
             "application/feed+json":
               schema:
                 type: "string"
               example: "{\n  \"version\": \"https://jsonfeed.org/version/1.1\",\n  \"title\": \"Gubbins activity\",\n  \"items\": [\n    { \"id\": \"urn:gubbins:activity:hist-0007\", \"title\": \"ESP32 Dev Board — Quantity changed\" }\n  ]\n}\n"
+        "304":
+          description: "The cached copy is still current — nothing has changed since the snapshot (or, for the calendar, the day) the validators name. No body."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
         "401":
           description: "Missing, unknown or revoked API token."
           headers:
@@ -1130,15 +1306,60 @@ paths:
       tags:
       - "metrics"
       summary: "Prometheus/OpenMetrics exposition of the aggregate inventory counts"
-      description: "A text/plain (version=0.0.4) Prometheus exposition a scrape accepts directly, at the root /metrics path (the scrape convention) rather than under /api/v1. Gauges: gubbins_items_total, gubbins_low_stock_items, gubbins_out_of_stock_items, gubbins_locations_total, and the per-location gubbins_location_items / gubbins_location_capacity / gubbins_location_fullness_ratio (labelled by location). The low/out-of-stock counts reuse the same seams as the event stream and MQTT, so they never drift. Auth is header-only here (no ?token=); a scrape config sends the bearer token."
+      description: "A text/plain (version=0.0.4) Prometheus exposition a scrape accepts directly, at the root /metrics path (the scrape convention) rather than under /api/v1. Gauges: gubbins_items_total, gubbins_low_stock_items, gubbins_out_of_stock_items, gubbins_locations_total, and the per-location gubbins_location_items / gubbins_location_capacity / gubbins_location_fullness_ratio (labelled by location). The low/out-of-stock counts reuse the same seams as the event stream and MQTT, so they never drift. Auth is header-only here (no ?token=); a scrape config sends the bearer token. A client that revalidates with the previous ETag is answered 304 Not Modified while the snapshot is unchanged; a Prometheus scrape sends no conditional header and is unaffected."
+      parameters:
+      -
+        name: "If-None-Match"
+        in: "header"
+        required: false
+        description: "The weak ETag from a previous response. Matches ⇒ 304 Not Modified. Takes precedence over If-Modified-Since."
+        schema:
+          type: "string"
+        example: "W/\"3Qk1s0Zk9pQmVzdEV0YWc\""
+      -
+        name: "If-Modified-Since"
+        in: "header"
+        required: false
+        description: "The Last-Modified value from a previous response, for a client that keeps no ETag. Only consulted when If-None-Match is absent."
+        schema:
+          type: "string"
+        example: "Fri, 27 Jun 2025 04:53:20 GMT"
       responses:
         "200":
           description: "The metrics exposition."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
           content:
             text/plain:
               schema:
                 type: "string"
               example: "# HELP gubbins_items_total Total active items in the inventory.\n# TYPE gubbins_items_total gauge\ngubbins_items_total 4\n# HELP gubbins_low_stock_items Active items at or below their low-stock threshold.\n# TYPE gubbins_low_stock_items gauge\ngubbins_low_stock_items 1\n"
+        "304":
+          description: "The cached copy is still current — nothing has changed since the snapshot (or, for the calendar, the day) the validators name. No body."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
         "401":
           description: "Missing, unknown or revoked API token."
           headers:

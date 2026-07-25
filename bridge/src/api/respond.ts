@@ -13,6 +13,7 @@
  * from the `v1` flag. No PII is ever placed in a message (CLAUDE.md / security checklist).
  */
 import type { ServerResponse } from 'node:http';
+import type { CacheValidators } from './conditional.ts';
 
 /** Stable, machine-readable error codes for the v1 envelope. */
 export type ApiErrorCode =
@@ -98,15 +99,45 @@ export function sendCsv(res: ServerResponse, status: number, body: string, filen
 }
 
 /**
+ * `Cache-Control` for a feed response that carries validators (issue #363).
+ *
+ * `no-cache` does **not** mean "don't cache" — it means "store it, but revalidate with the origin
+ * before every reuse", which is exactly the contract the validators make good on: the subscriber
+ * keeps its copy and each poll costs a conditional request instead of a full re-render. `private`
+ * keeps that copy to the subscribing client: a feed carries personal inventory (item names,
+ * borrowers, locations) behind a bearer token, so no shared or intermediary cache may hold one.
+ */
+export const FEED_CACHE_CONTROL = 'private, no-cache';
+
+/**
+ * The caching headers for a feed response: the validators plus the revalidate-every-time
+ * `Cache-Control` when the bridge has a validator to offer, and the historical `no-store`
+ * when it does not (no loaded snapshot ⇒ no honest basis for one).
+ */
+function cacheHeaders(validators: CacheValidators | undefined): Record<string, string> {
+  if (validators === undefined) return { 'cache-control': 'no-store' };
+  return {
+    'cache-control': FEED_CACHE_CONTROL,
+    etag: validators.etag,
+    'last-modified': validators.lastModified,
+  };
+}
+
+/**
  * Write a `text/calendar` (iCalendar / RFC 5545) response — used by the calendar subscription
  * feed. `inline` (not an attachment) so a calendar client that fetches the subscription URL
- * renders it rather than offering it as a download; `no-store` so a subscriber always sees the
- * current snapshot's events.
+ * renders it rather than offering it as a download. Pass `validators` so a polling client can
+ * revalidate its copy (see {@link cacheHeaders}); omit them and the response stays uncacheable.
  */
-export function sendCalendar(res: ServerResponse, status: number, body: string): void {
+export function sendCalendar(
+  res: ServerResponse,
+  status: number,
+  body: string,
+  validators?: CacheValidators,
+): void {
   res.writeHead(status, {
     'content-type': 'text/calendar; charset=utf-8',
-    'cache-control': 'no-store',
+    ...cacheHeaders(validators),
     'content-disposition': 'inline; filename="gubbins.ics"',
   });
   res.end(body);
@@ -114,29 +145,51 @@ export function sendCalendar(res: ServerResponse, status: number, body: string):
 
 /**
  * Write a syndication-feed response (RSS / Atom / JSON Feed). `inline` (not an attachment) so a
- * feed reader that fetches the subscription URL renders it rather than downloading it; `no-store`
- * so a subscriber always sees the current snapshot's activity. The `contentType` names the exact
- * feed media type (e.g. `application/rss+xml`).
+ * feed reader that fetches the subscription URL renders it rather than downloading it. The
+ * `contentType` names the exact feed media type (e.g. `application/rss+xml`); `validators` let a
+ * polling reader revalidate rather than refetch.
  */
-export function sendFeed(res: ServerResponse, status: number, body: string, contentType: string): void {
+export function sendFeed(
+  res: ServerResponse,
+  status: number,
+  body: string,
+  contentType: string,
+  validators?: CacheValidators,
+): void {
   res.writeHead(status, {
     'content-type': `${contentType}; charset=utf-8`,
-    'cache-control': 'no-store',
+    ...cacheHeaders(validators),
   });
   res.end(body);
 }
 
 /**
  * Write a Prometheus/OpenMetrics text-exposition response. The `text/plain; version=0.0.4` content
- * type is the Prometheus exposition format a scrape accepts directly; `no-store` so each scrape
- * reflects the current snapshot.
+ * type is the Prometheus exposition format a scrape accepts directly; `validators` let a client
+ * that does revalidate skip the whole projection (a Prometheus scrape simply ignores them).
  */
-export function sendMetrics(res: ServerResponse, status: number, body: string): void {
+export function sendMetrics(
+  res: ServerResponse,
+  status: number,
+  body: string,
+  validators?: CacheValidators,
+): void {
   res.writeHead(status, {
     'content-type': 'text/plain; version=0.0.4; charset=utf-8',
-    'cache-control': 'no-store',
+    ...cacheHeaders(validators),
   });
   res.end(body);
+}
+
+/**
+ * Write a bodyless `304 Not Modified` — the answer to a conditional poll whose cached copy is
+ * still current. RFC 9110 §15.4.5 requires a 304 to repeat the header fields that guide cache
+ * use (the validators and `Cache-Control`), so the client's stored copy is refreshed with the
+ * same terms it would have got from a `200`.
+ */
+export function sendNotModified(res: ServerResponse, validators: CacheValidators): void {
+  res.writeHead(304, cacheHeaders(validators));
+  res.end();
 }
 
 /**

@@ -645,7 +645,9 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/calendar.ics?type=warranty"      #
 curl -H "Authorization: Bearer $TOKEN" "$BASE/calendar.ics?type=loans,bookings"
 ```
 
-An unknown `type` is a `400`. Each source is bounded (up to 5,000 events) so a very large vault
+An unknown `type` is a `400`. A subscribed calendar is refetched on a fixed interval, so this path
+answers [conditional requests](#conditional-requests-etag--304) — a poll that finds nothing new
+costs a `304`, not a re-render. Each source is bounded (up to 5,000 events) so a very large vault
 can't produce an unbounded feed. Dates from a stored calendar date (a warranty) are used verbatim;
 dates derived from a timestamp (bookings, due-backs) use UTC calendar components, so a far-eastern
 local day may appear shifted by one day — a documented limitation of a timezone-less feed.
@@ -662,7 +664,8 @@ changed" feed for any reader, and machine metrics for a Prometheus/Grafana home-
 **read-only pulls** (like `calendar.ics` / `items.csv`), so — like those — they carry **no
 `GUBBINS_BRIDGE_*` flag**; they are always available, gated by the caller's
 [token and permissions](#identities--permissions) — `items:read` for `/metrics`, `audit:view`
-for the activity feeds.
+for the activity feeds. Both are polled, so both answer
+[conditional requests](#conditional-requests-etag--304).
 
 **Syndication feeds.** `GET /api/v1/activity.rss` (plus `.atom` and `.json`) render the recent
 cross-item **activity log** — the same `item_history` projection the app's Activity screen shows —
@@ -717,6 +720,36 @@ scrape_configs:
     static_configs:
       - targets: ["127.0.0.1:8787"]
 ```
+
+### Conditional requests (ETag / 304)
+
+The three **polled** surfaces — `calendar.ics`, the `activity.*` feeds and `/metrics` — are all
+projections of the loaded snapshot, and a subscriber refetches them on a timer whether or not
+anything has changed. So each response carries validators, and a poll that sends them back gets a
+bodyless **`304 Not Modified`** without the projection ever running:
+
+```bash
+curl -sD- -o/dev/null -H "Authorization: Bearer $TOKEN" "$BASE/calendar.ics"
+#   ETag: W/"…"
+#   Last-Modified: Fri, 27 Jun 2025 04:53:20 GMT
+#   Cache-Control: private, no-cache
+
+curl -sD- -o/dev/null -H "Authorization: Bearer $TOKEN" \
+     -H 'If-None-Match: W/"…"' "$BASE/calendar.ics"          # → HTTP/1.1 304 Not Modified
+```
+
+- The `ETag` is **weak** (`W/`): responses built from the same snapshot are semantically the same
+  document, which is all a subscriber needs, even if the bytes are not identical.
+- It changes when the **snapshot re-hydrates** — and, for the calendar only, when a day rolls over
+  (bookings drop off at the end of their last day and the warranty window is a calendar date), so
+  a subscription can never sit on a stale copy across midnight.
+- `If-Modified-Since` works too, for a client that keeps only the date; `If-None-Match` wins when
+  both are sent.
+- `Cache-Control: private, no-cache` means *store it, but revalidate every time*. **Private**
+  because a feed carries your inventory (item names, borrowers, locations) behind a bearer token —
+  no shared or intermediary cache may keep a copy.
+- Nothing is required of a client: one that sends no conditional header gets the full document
+  exactly as before. A Prometheus scrape, for instance, simply ignores the validators.
 
 ### OpenAPI spec
 

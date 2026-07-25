@@ -43,9 +43,22 @@ import {
   sendCsv,
   sendCalendar,
   sendFeed,
+  sendNotModified,
   type ApiErrorCode,
 } from './respond.ts';
-import { buildCalendar, isCalendarSourceType, type CalendarSourceType } from '../ical/feed.ts';
+import {
+  cacheValidators,
+  isNotModified,
+  snapshotInstant,
+  type CacheValidators,
+  type ConditionalHeaders,
+} from './conditional.ts';
+import {
+  buildCalendar,
+  calendarModifiedAt,
+  isCalendarSourceType,
+  type CalendarSourceType,
+} from '../ical/feed.ts';
 import { buildActivityFeed } from '../feeds/feed.ts';
 import { projectItemStatuses } from '../feeds/item-status.ts';
 import { emitRss, emitAtom, emitJsonFeed, type FeedChannel } from '../feeds/emitters.ts';
@@ -167,6 +180,13 @@ export interface ApiV1Context {
    * posture as the delivery log above.
    */
   readonly webhookTest?: WebhookTestCapability;
+  /**
+   * The request's conditional headers (`If-None-Match` / `If-Modified-Since`), threaded through
+   * from the server so the polled subscription feeds can answer `304 Not Modified` instead of
+   * re-running their projections (issue #363). Absent means the client sent none, so every feed
+   * request renders in full — the behaviour before conditional requests existed here.
+   */
+  readonly conditional?: ConditionalHeaders;
   /** The parsed POST body (undefined for GET). */
   readonly body?: ParsedBody;
   /**
@@ -261,14 +281,14 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
       if (segments.length === 1) return void (await handleItemsCsv(res, driver, url));
       break;
     case 'calendar.ics':
-      if (segments.length === 1) return void (await handleCalendar(res, state, url));
+      if (segments.length === 1) return void (await handleCalendar(res, state, url, ctx.conditional));
       break;
     case 'activity.rss':
     case 'activity.atom':
     case 'activity.json': {
       const format = API_V1_FEED_PATHS[url.pathname];
       if (segments.length === 1 && format !== undefined) {
-        return void (await handleActivityFeed(res, state, url, format));
+        return void (await handleActivityFeed(res, state, url, format, ctx.conditional));
       }
       break;
     }
@@ -892,8 +912,16 @@ async function collectAllItems(
  * generation instant, so the output is stable across refetches of the same snapshot. Auth
  * (bearer header **or** the `?token=` query param, see `server.ts`) and the rate limit are
  * applied by the caller before routing here.
+ *
+ * A calendar client polls this on an interval, so it is answered conditionally: a poll whose
+ * cached copy is still current costs a `304` and none of the four projections (issue #363).
  */
-async function handleCalendar(res: ServerResponse, state: BridgeServerState, url: URL): Promise<void> {
+async function handleCalendar(
+  res: ServerResponse,
+  state: BridgeServerState,
+  url: URL,
+  conditional: ConditionalHeaders | undefined,
+): Promise<void> {
   const types = parseCalendarTypes(url);
   if (types === null) {
     return void sendError(
@@ -906,11 +934,23 @@ async function handleCalendar(res: ServerResponse, state: BridgeServerState, url
   }
   const now = Date.now();
   // Stamp events with the snapshot's generation time when known (stable across refetches),
-  // else fall back to "now". `snapshotGeneratedAt` is an ISO string; parse it back to ms.
-  const parsed = state.snapshotGeneratedAt !== null ? Date.parse(state.snapshotGeneratedAt) : NaN;
-  const dtstamp = Number.isFinite(parsed) ? parsed : now;
+  // else fall back to "now".
+  const snapshotMs = snapshotInstant(state.snapshotGeneratedAt);
+  const dtstamp = snapshotMs ?? now;
+  // The `?type=` selection is the variant: `?type=loans` and the whole calendar are different
+  // representations of the same snapshot, and must not revalidate against each other's tag. Sorted
+  // because the selection is a set — `loans,warranty` and `warranty,loans` are the same document,
+  // and would otherwise miss a revalidation for no reason.
+  const variant = types === undefined ? 'all' : [...types].sort().join(',');
+  const validators =
+    snapshotMs === null
+      ? undefined
+      : cacheValidators(calendarModifiedAt(snapshotMs, now), `calendar ${variant}`);
+  if (validators !== undefined && isNotModified(conditional, validators)) {
+    return void sendNotModified(res, validators);
+  }
   const ics = await buildCalendar(state.driver, { dtstamp, now, ...(types !== undefined ? { types } : {}) });
-  sendCalendar(res, 200, ics);
+  sendCalendar(res, 200, ics, validators);
 }
 
 /**
@@ -953,17 +993,44 @@ const FEED_RENDERERS: Record<FeedFormat, { emit: typeof emitRss; contentType: st
  * `?limit=` narrows the window (clamped to [1, 50]). Like the calendar, auth may arrive as a
  * `?token=` query param (a feed reader cannot send an auth header) — applied by the caller. The
  * feed's build timestamp is the snapshot's generation instant when known (stable across refetches).
+ *
+ * A reader polls this like a calendar client polls the `.ics`, so it too is answered conditionally
+ * — the feed is a pure projection of the snapshot, so a poll against an unchanged snapshot is a
+ * `304` and no ledger read at all (issue #363).
  */
 async function handleActivityFeed(
   res: ServerResponse,
   state: BridgeServerState,
   url: URL,
   format: FeedFormat,
+  conditional: ConditionalHeaders | undefined,
 ): Promise<void> {
-  const items = await buildActivityFeed(state.driver, { limit: readFeedLimit(url) });
   const channel = feedChannel(state, url);
   const { emit, contentType } = FEED_RENDERERS[format];
-  sendFeed(res, 200, emit(channel, items), contentType);
+  const validators = feedValidators(state, format, channel.selfUrl);
+  if (validators !== undefined && isNotModified(conditional, validators)) {
+    return void sendNotModified(res, validators);
+  }
+  const items = await buildActivityFeed(state.driver, { limit: readFeedLimit(url) });
+  sendFeed(res, 200, emit(channel, items), contentType, validators);
+}
+
+/**
+ * The validators for one activity-feed representation, or `undefined` when the snapshot carries no
+ * usable generation instant (nothing honest to validate against, so the response stays uncached).
+ *
+ * The feed reads nothing but the snapshot, so its representation changes only when the snapshot
+ * does. The variant is the format plus the token-stripped self URL — which already carries the
+ * `?limit=` window and the host the document embeds — so no two differently-shaped feeds share a
+ * tag.
+ */
+function feedValidators(
+  state: BridgeServerState,
+  format: FeedFormat,
+  selfUrl: string,
+): CacheValidators | undefined {
+  const snapshotMs = snapshotInstant(state.snapshotGeneratedAt);
+  return snapshotMs === null ? undefined : cacheValidators(snapshotMs, `activity ${format} ${selfUrl}`);
 }
 
 /** Parse the optional `?limit=` (a positive integer); `undefined` falls back to the feed default. */
@@ -980,13 +1047,12 @@ function feedChannel(state: BridgeServerState, url: URL): FeedChannel {
   // arrived as a `?token=` query param on this path.
   const self = new URL(url.href);
   self.searchParams.delete('token');
-  const parsed = state.snapshotGeneratedAt !== null ? Date.parse(state.snapshotGeneratedAt) : NaN;
   return {
     title: 'Gubbins activity',
     description: 'Recent inventory activity from Gubbins.',
     homeUrl: `${url.protocol}//${url.host}`,
     selfUrl: self.href,
-    updated: Number.isFinite(parsed) ? parsed : Date.now(),
+    updated: snapshotInstant(state.snapshotGeneratedAt) ?? Date.now(),
   };
 }
 
