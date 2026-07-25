@@ -1250,7 +1250,7 @@
   "webhooks.bridge.setUp": "Bridge setup",
   "webhooks.notes.latency": "Changes here reach the bridge on the next sync, not instantly — a new or edited webhook starts delivering once that has happened.",
   "webhooks.notes.privateNetwork": "Sending to something on your own network — Home Assistant, Node-RED, a NAS — needs to be allowed on the bridge first. Until it is, those deliveries are refused and show as “Blocked” below. This is a setting, not a fault.",
-  "webhooks.notes.coverage": "Webhooks currently cover changes to items: creating, renaming, archiving and restoring them, every stock movement, moves between locations, loans and reservations, condition and servicing, and edits to price, barcode, serial number, category, reorder levels and expiry. Changes to locations, purchase-order status, suppliers, projects, tags and custom-field values cannot raise a webhook, and neither can permanently deleting an item.",
+  "webhooks.notes.coverage": "Webhooks currently cover changes to items: creating, renaming, archiving and restoring them, every stock movement, moves between locations, loans and reservations, condition and servicing, and edits to an item's recorded details — price, barcode, serial number, manufacturer and part number, category, batch and lot numbers, reorder levels, expiry, acquisition and warranty dates, depreciation period, weight and dimensions. Changes to locations, purchase-order status, suppliers, projects, tags and custom-field values cannot raise a webhook, and neither can permanently deleting an item.",
   "webhooks.list.heading": "Your webhooks",
   "webhooks.list.loading": "Loading webhooks…",
   "webhooks.list.error": "Your webhooks couldn’t be loaded.",

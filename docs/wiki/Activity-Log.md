@@ -23,16 +23,19 @@ instead.
 - The **global Activity feed** shows everything across your inventory, newest first.
 - Each **item's Activity tab** shows just that item's history — a complete story of one thing.
 
-Editing an item's key details is recorded too, as a single **Details changed** entry naming what you
-changed: its price (unit cost, purchase price or current value), barcode, serial number, category,
-[[reorder thresholds|Low-Stock-and-Gauges]] and expiry date — alongside the renames, tracking-mode
-switches and condition changes that have always been logged.
+Editing an item's details is recorded too, as a single **Details changed** entry naming what you
+changed: its price (unit cost, purchase price or current value), barcode, serial number,
+manufacturer and manufacturer part number, category, batch and lot numbers,
+[[reorder thresholds|Low-Stock-and-Gauges]], expiry, acquisition and warranty dates, depreciation
+period, weight and dimensions — alongside the renames, tracking-mode switches and condition changes
+that have always been logged.
 
 > **ℹ️ Note**
-> Not every field is logged. Descriptive details — the description, notes, manufacturer part number,
-> dimensions and weight — change quietly, as do the **favourite** pin and the dead-stock and
-> unlimited-supply toggles, which are display and reporting preferences rather than changes to what
-> the item is. Saving a form without actually changing anything records nothing at all.
+> A few fields change quietly: the free-text description, notes and
+> [[custom fields|Custom-Fields-and-Capabilities]], where keeping a copy of long text on every edit
+> would bloat a log that syncs to your other devices; and the **favourite** pin and the dead-stock
+> and unlimited-supply toggles, which are display and reporting preferences rather than changes to
+> what the item is. Saving a form without actually changing anything records nothing at all.
 
 > **💡 Tip**
 > The Activity log is the fastest way to answer *"what changed, and when did that happen?"* — if a

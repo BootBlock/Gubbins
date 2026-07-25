@@ -7,7 +7,7 @@
  * ledger can never drift from the item state. Reads are strictly paginated (§2.1).
  * Storage-growing writes are gated by the Hard Stop; deletions are always permitted.
  */
-import { toStoredMoney } from '@/lib/money';
+import { fromStoredMoney, toStoredMoney } from '@/lib/money';
 import { DbError } from '../../errors';
 import type { SqlStatement, SqlValue } from '../../rpc/driver';
 import { buildFtsMatch } from '../../search/fts';
@@ -329,19 +329,27 @@ export class ItemCoreRepository extends BaseRepository {
     const statements: SqlStatement[] = [];
 
     /**
-     * The attributes whose edits raise a ledger row, and therefore a webhook (`W10`).
+     * The attributes whose edits raise a ledger row — the item's audit trail (issue #144),
+     * and therefore also a webhook (`W10`).
      *
-     * Only fields a user would expect to be notified about are tracked — price, identity,
-     * classification, reordering and expiry. The rest (description, notes, dimensions, …) stay
-     * silent, as do the deliberately history-free reporting toggles (`is_favourite`,
-     * `is_unlimited`, `dead_stock_mode`). `label` is British-English prose for the note; `field`
-     * is the camelCase name a machine consumer reads out of the metadata.
+     * **Every structured attribute is tracked**: identity, classification, price, reordering,
+     * perishability, provenance, lifecycle dates and physical measurements. What stays silent is
+     * only free-form prose (`description`, `notes`, `operational_metadata`) — recording a
+     * before/after copy of an arbitrarily long body of text on every edit would bloat a ledger
+     * that syncs to every device, for a field nobody audits by value — and the deliberately
+     * history-free reporting preferences (`is_favourite`, `is_unlimited`, `dead_stock_mode`).
+     * `name`, `tracking_mode` and `condition` are tracked too, by their own dedicated actions.
+     *
+     * `label` is British-English prose for the note; `field` is the camelCase name a machine
+     * consumer reads out of the metadata, alongside the `from`/`to` values that make the entry
+     * an answer to "what was this before?" rather than just "something changed".
      *
      * A value set to what it already holds is **not** a change: `track` compares before
      * recording, so re-saving an unedited form writes no ledger row and fires no webhook.
      */
     const changedLabels: string[] = [];
     const changedFields: string[] = [];
+    const changes: { field: string; from: SqlValue; to: SqlValue }[] = [];
     // `===` rather than `Object.is` deliberately: `Object.is(0, -0)` is false, and a numeric
     // field can pick up a negative zero from parsed input (`Number('-0')`), which would log a
     // change — and fire a webhook — every time an unchanged row was re-imported. No value
@@ -351,6 +359,25 @@ export class ItemCoreRepository extends BaseRepository {
       if (from === to) return;
       changedFields.push(field);
       changedLabels.push(label);
+      changes.push({ field, from, to });
+    };
+    /**
+     * `track` for a money field. The two sides arrive on different scales — `existing` is the
+     * mapped DTO (major units) while the normalised input is already stored micro-units (issue
+     * #286) — so the *comparison* happens in micro-units (a no-op edit must match exactly) while
+     * the *recorded* values are the major units every other consumer of the item speaks. That
+     * mirrors `recordRevaluation`, whose metadata likewise carries the display value.
+     */
+    const trackMoney = (
+      field: string,
+      label: string,
+      fromMajor: number | null,
+      toStored: number | null,
+    ): void => {
+      if (toStoredMoney(fromMajor) === toStored) return;
+      changedFields.push(field);
+      changedLabels.push(label);
+      changes.push({ field, from: fromMajor, to: fromStoredMoney(toStored) });
     };
 
     if (input.name !== undefined) {
@@ -364,6 +391,10 @@ export class ItemCoreRepository extends BaseRepository {
         statements.push(
           historyStatement(id, 'RENAMED', this.actorId(), {
             note: `Renamed "${existing.name}" → "${name}".`,
+            // The note has carried both names since Phase 2, but only as prose. The metadata
+            // repeats them as fields so a machine consumer reads the rename the same way it
+            // reads every other tracked edit (issue #144) rather than parsing the sentence.
+            metadata: { from: existing.name, to: name },
           }),
         );
       }
@@ -404,12 +435,16 @@ export class ItemCoreRepository extends BaseRepository {
       track('categoryId', 'category', existing.categoryId, input.categoryId);
     }
     if (input.mpn !== undefined) {
+      const mpn = normaliseText(input.mpn);
       sets.push('mpn = ?');
-      params.push(normaliseText(input.mpn));
+      params.push(mpn);
+      track('mpn', 'MPN', existing.mpn, mpn);
     }
     if (input.manufacturer !== undefined) {
+      const manufacturer = normaliseText(input.manufacturer);
       sets.push('manufacturer = ?');
-      params.push(normaliseText(input.manufacturer));
+      params.push(manufacturer);
+      track('manufacturer', 'manufacturer', existing.manufacturer, manufacturer);
     }
     if (input.barcode !== undefined) {
       const barcode = normaliseText(input.barcode);
@@ -427,9 +462,7 @@ export class ItemCoreRepository extends BaseRepository {
       const unitCost = normaliseUnitCost(input.unitCost);
       sets.push('unit_cost = ?');
       params.push(unitCost);
-      // Compare in stored micro-units (issue #286): `unitCost` is already scaled, and
-      // `existing.unitCost` is the mapped DTO (major units), so a no-op edit still matches.
-      track('unitCost', 'unit cost', toStoredMoney(existing.unitCost), unitCost);
+      trackMoney('unitCost', 'unit cost', existing.unitCost, unitCost);
     }
     if (input.expiryDate !== undefined) {
       const expiryDate = normaliseExpiry(input.expiryDate);
@@ -438,12 +471,16 @@ export class ItemCoreRepository extends BaseRepository {
       track('expiryDate', 'expiry date', existing.expiryDate, expiryDate);
     }
     if (input.batchNumber !== undefined) {
+      const batchNumber = normaliseText(input.batchNumber);
       sets.push('batch_number = ?');
-      params.push(normaliseText(input.batchNumber));
+      params.push(batchNumber);
+      track('batchNumber', 'batch number', existing.batchNumber, batchNumber);
     }
     if (input.lotNumber !== undefined) {
+      const lotNumber = normaliseText(input.lotNumber);
       sets.push('lot_number = ?');
-      params.push(normaliseText(input.lotNumber));
+      params.push(lotNumber);
+      track('lotNumber', 'lot number', existing.lotNumber, lotNumber);
     }
     if (input.condition !== undefined && input.condition !== existing.condition) {
       sets.push('condition = ?');
@@ -505,39 +542,52 @@ export class ItemCoreRepository extends BaseRepository {
       track('reorderQty', 'reorder quantity', existing.reorderQty, reorderQty);
     }
     if (input.acquiredAt !== undefined) {
+      const acquiredAt = normaliseIsoDate(input.acquiredAt);
       sets.push('acquired_at = ?');
-      params.push(normaliseIsoDate(input.acquiredAt));
+      params.push(acquiredAt);
+      track('acquiredAt', 'acquired date', existing.acquiredAt, acquiredAt);
     }
     if (input.warrantyExpiresAt !== undefined) {
+      const warrantyExpiresAt = normaliseIsoDate(input.warrantyExpiresAt);
       sets.push('warranty_expires_at = ?');
-      params.push(normaliseIsoDate(input.warrantyExpiresAt));
+      params.push(warrantyExpiresAt);
+      track('warrantyExpiresAt', 'warranty expiry', existing.warrantyExpiresAt, warrantyExpiresAt);
     }
     if (input.purchasePrice !== undefined) {
       const purchasePrice = normalisePurchasePrice(input.purchasePrice);
       sets.push('purchase_price = ?');
       params.push(purchasePrice);
-      // Compare in stored micro-units (issue #286), as for `unitCost` above.
-      track('purchasePrice', 'purchase price', toStoredMoney(existing.purchasePrice), purchasePrice);
+      trackMoney('purchasePrice', 'purchase price', existing.purchasePrice, purchasePrice);
     }
     if (input.depreciationMonths !== undefined) {
+      const depreciationMonths = normaliseDepreciationMonths(input.depreciationMonths);
       sets.push('depreciation_months = ?');
-      params.push(normaliseDepreciationMonths(input.depreciationMonths));
+      params.push(depreciationMonths);
+      track('depreciationMonths', 'depreciation period', existing.depreciationMonths, depreciationMonths);
     }
     if (input.weight !== undefined) {
+      const weight = normaliseWeight(input.weight);
       sets.push('weight = ?');
-      params.push(normaliseWeight(input.weight));
+      params.push(weight);
+      track('weight', 'weight', existing.weight, weight);
     }
     if (input.width !== undefined) {
+      const width = normaliseDimension(input.width, 'Width');
       sets.push('width = ?');
-      params.push(normaliseDimension(input.width, 'Width'));
+      params.push(width);
+      track('width', 'width', existing.width, width);
     }
     if (input.height !== undefined) {
+      const height = normaliseDimension(input.height, 'Height');
       sets.push('height = ?');
-      params.push(normaliseDimension(input.height, 'Height'));
+      params.push(height);
+      track('height', 'height', existing.height, height);
     }
     if (input.depth !== undefined) {
+      const depth = normaliseDimension(input.depth, 'Depth');
       sets.push('depth = ?');
-      params.push(normaliseDimension(input.depth, 'Depth'));
+      params.push(depth);
+      track('depth', 'depth', existing.depth, depth);
     }
     if (input.currentValue !== undefined) {
       // Manual current value (feature-gap G9). This path sets/clears the live column only —
@@ -546,8 +596,7 @@ export class ItemCoreRepository extends BaseRepository {
       const currentValue = normaliseCurrentValue(input.currentValue);
       sets.push('current_value = ?');
       params.push(currentValue);
-      // Compare in stored micro-units (issue #286), as for `unitCost` above.
-      track('currentValue', 'current value', toStoredMoney(existing.currentValue), currentValue);
+      trackMoney('currentValue', 'current value', existing.currentValue, currentValue);
     }
     if (input.operationalMetadata !== undefined) {
       // §4.1.1 schema-less map; an empty/cleared set stores SQL NULL. Serialised here
@@ -569,7 +618,12 @@ export class ItemCoreRepository extends BaseRepository {
       statements.push(
         historyStatement(id, 'ATTRIBUTES_CHANGED', this.actorId(), {
           note: `Changed ${changedLabels.join(', ')}.`,
-          metadata: { fields: changedFields },
+          // `changes` is the audit record proper (issue #144) — each field's value before and
+          // after, so "what was this item's cost in March, and who changed it?" is answerable
+          // from the ledger alone rather than merely "something about the cost moved". `fields`
+          // is the already-published field-name list (`W10`), kept beside it so an existing
+          // consumer of this metadata keeps working; it is exactly `changes.map(c => c.field)`.
+          metadata: { fields: changedFields, changes },
         }),
       );
     }

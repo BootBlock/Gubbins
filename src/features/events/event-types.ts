@@ -68,11 +68,11 @@ export const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
   REVALUED: 'item.changed',
   TESTED: 'item.changed',
   LOAN_RENEWED: 'item.changed',
-  // An edit to the item's notifiable attributes (price, barcode, serial number, category,
-  // reorder thresholds, expiry — `W10`). Mapped to the already-published generic type rather
-  // than minting `item.price_changed` & friends: the changed fields ride the entry's note, so
-  // consumers can still tell what happened without the public vocabulary (and the OpenAPI enum)
-  // having to grow a type per column.
+  // An edit to the item's structured attributes — price, identity, classification, reordering,
+  // perishability, provenance, lifecycle dates and measurements (`W10`, issue #144). Mapped to
+  // the already-published generic type rather than minting `item.price_changed` & friends: the
+  // changed fields ride the entry's note, so consumers can still tell what happened without the
+  // public vocabulary (and the OpenAPI enum) having to grow a type per column.
   ATTRIBUTES_CHANGED: 'item.changed',
 };
 
