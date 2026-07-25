@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { parseCsv } from '@/features/import/tabular';
 import { parseAmountCell, leadingIntegerCount } from '@/features/import/columns';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
+import { fromDateInputValue, toDateInputValue } from '@/lib/date-input';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { TrackingMode } from '@/db/repositories/constants';
@@ -47,6 +48,11 @@ export type CatalogField =
   | 'description'
   | 'notes'
   | 'sku'
+  // Identity columns the scanner and the perishables feature key off (issue #141): the retail
+  // barcode is the scanner's exact-lookup key and the serial number the maker's per-unit id,
+  // so without them a bulk-loaded catalogue has to be hand-annotated before either works.
+  | 'barcode'
+  | 'serialNumber'
   | 'quantity'
   | 'locationId'
   | 'categoryId'
@@ -66,10 +72,16 @@ export type CatalogField =
   | 'depth'
   | 'batchNumber'
   | 'lotNumber'
+  // The expiry instant that makes a batch/lot useful — it drives the perishables feature and
+  // the "expiring soon" widget, and was the one part of a lot's identity a file could not carry.
+  | 'expiryDate'
   | 'condition'
   | 'reorderPoint'
   | 'reorderQty'
-  | 'isUnlimited';
+  | 'isUnlimited'
+  // Freeform tags. Not a column on the item row but its own M:N join, so it is applied through
+  // `TagRepository.setForItem` after the item lands (see {@link CatalogTagRepository}).
+  | 'tags';
 
 /** All recognised logical field names (used for UI pickers). */
 export const CATALOG_FIELDS: readonly CatalogField[] = [
@@ -77,6 +89,8 @@ export const CATALOG_FIELDS: readonly CatalogField[] = [
   'description',
   'notes',
   'sku',
+  'barcode',
+  'serialNumber',
   'quantity',
   'locationId',
   'categoryId',
@@ -94,10 +108,12 @@ export const CATALOG_FIELDS: readonly CatalogField[] = [
   'depth',
   'batchNumber',
   'lotNumber',
+  'expiryDate',
   'condition',
   'reorderPoint',
   'reorderQty',
   'isUnlimited',
+  'tags',
 ];
 
 /** Human-readable label for each field (used in the import wizard UI). */
@@ -106,6 +122,8 @@ export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
   description: 'Description',
   notes: 'Notes',
   sku: 'SKU / MPN',
+  barcode: 'Barcode',
+  serialNumber: 'Serial number',
   quantity: 'Quantity',
   locationId: 'Location ID',
   categoryId: 'Category ID',
@@ -123,10 +141,12 @@ export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
   depth: 'Depth (mm)',
   batchNumber: 'Batch number',
   lotNumber: 'Lot number',
+  expiryDate: 'Expiry date',
   condition: 'Condition',
   reorderPoint: 'Reorder point',
   reorderQty: 'Reorder quantity',
   isUnlimited: 'Unlimited supply',
+  tags: 'Tags',
 };
 
 /**
@@ -183,6 +203,20 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
   ['mpn', 'sku'],
   ['manufacturerpartnumber', 'sku'],
   ['partnumber', 'sku'],
+  // Retail barcode (issue #141). The GTIN family names are product-identifier words with no
+  // other meaning in a stock sheet, so — unlike "Weight" — they are safe to accept loosely.
+  // Deliberately *not* `code`/`ref`, which mean anything at all.
+  ['barcode', 'barcode'],
+  ['gtin', 'barcode'],
+  ['ean', 'barcode'],
+  ['upc', 'barcode'],
+  // Intrinsic serial number (issue #141). `serialno` is included because that is what a great
+  // many asset exports call the column; the item's SERIALISED clone index is never a CSV column,
+  // so there is nothing for it to collide with. A bare `serial` is deliberately left out — it is
+  // exactly the kind of short word a category custom field is called, and a core synonym shadows
+  // a same-named custom field.
+  ['serialnumber', 'serialNumber'],
+  ['serialno', 'serialNumber'],
   ['quantity', 'quantity'],
   ['qty', 'quantity'],
   ['count', 'quantity'],
@@ -219,6 +253,22 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
   ['batch', 'batchNumber'],
   ['lotnumber', 'lotNumber'],
   ['lot', 'lotNumber'],
+  // Perishable expiry (issue #141). Every one of these words means a date a thing stops being
+  // good, in a grocery export as much as in a calibration schedule, so they map unambiguously.
+  ['expirydate', 'expiryDate'],
+  ['expiry', 'expiryDate'],
+  ['expires', 'expiryDate'],
+  ['expiresat', 'expiryDate'],
+  ['expiration', 'expiryDate'],
+  ['expirationdate', 'expiryDate'],
+  ['bestbefore', 'expiryDate'],
+  ['bestbeforedate', 'expiryDate'],
+  ['useby', 'expiryDate'],
+  ['usebydate', 'expiryDate'],
+  // Freeform tags (issue #141). Just the two exact forms: "Labels"/"Categories" are far more
+  // likely to be somebody's custom field than a tag list.
+  ['tags', 'tags'],
+  ['tag', 'tags'],
   ['condition', 'condition'],
   ['reorderpoint', 'reorderPoint'],
   ['reorderqty', 'reorderQty'],
@@ -300,6 +350,8 @@ const catalogRowSchema = z.object({
   description: z.string().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
   sku: z.string().trim().optional().nullable(),
+  barcode: z.string().trim().optional().nullable(),
+  serialNumber: z.string().trim().optional().nullable(),
   quantity: z
     .number()
     .int('Quantity must be a whole number.')
@@ -327,6 +379,9 @@ const catalogRowSchema = z.object({
   depth: z.number().min(0, 'Depth cannot be negative.').optional().nullable(),
   batchNumber: z.string().trim().optional().nullable(),
   lotNumber: z.string().trim().optional().nullable(),
+  // Already parsed from a `YYYY-MM-DD` cell to a midnight-UTC instant by {@link coerceRow};
+  // an unreadable cell never reaches here (it is reported as an unreadable-cell row error).
+  expiryDate: z.number().int().optional().nullable(),
   condition: conditionSchema,
   reorderPoint: z
     .number()
@@ -342,6 +397,11 @@ const catalogRowSchema = z.object({
     .nullable(),
   // "Unlimited supply" modifier (Phase 82); DISCRETE-only (enforced in the plan builder).
   isUnlimited: z.boolean().optional(),
+  // The row's whole tag set, already split from a comma-separated cell (issue #141). Absent =
+  // the file maps no tag column, so an existing item keeps whatever tags it has; an empty array
+  // = a mapped-but-blank cell, which replaces the set with nothing (the same "blank clears it"
+  // rule every other free-text column follows).
+  tags: z.array(z.string()).optional(),
 });
 
 type CatalogRowData = z.infer<typeof catalogRowSchema>;
@@ -406,6 +466,52 @@ export function parseNumericCell(text: string): number | null {
  */
 export function parseNumericCountCell(text: string): number | null {
   return parseNumericCell(text) ?? leadingIntegerCount(text);
+}
+
+/**
+ * Parse an expiry-date cell into the midnight-UTC instant the item row stores (issue #141).
+ *
+ * Deliberately strict: the cell must be a bare ISO calendar day, `YYYY-MM-DD` — the exact form
+ * the catalogue export writes and the app-wide `<input type="date">` convention
+ * ({@link fromDateInputValue}) reads. Everything else is *reported*, never guessed, because the
+ * common spreadsheet alternatives cannot be guessed safely: `07/08/2026` is August in Britain and
+ * July in America, and picking one silently mis-dates a perishable by a month. That is the same
+ * rule the repository applies to the other date fields, which reject anything that is not a bare
+ * `YYYY-MM-DD` rather than inherit a timezone shift (issue #327).
+ *
+ * A day that does not exist (`2026-02-31`) is rejected too: `Date.parse` quietly rolls it forward
+ * into March, so the parse is verified by re-serialising and comparing.
+ *
+ * Returns the instant, or `null` when the cell is present but unreadable — the caller turns that
+ * into a row error, so an import never invents an expiry date.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function parseExpiryCell(text: string): number | null {
+  const trimmed = text.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  const ms = fromDateInputValue(trimmed);
+  // `Date.parse` rolls an out-of-range day forward, so only a value that reads back as the very
+  // day it was written is a real calendar date.
+  if (ms === null || toDateInputValue(ms) !== trimmed) return null;
+  return ms;
+}
+
+/**
+ * Split a tags cell into individual tag names (issue #141).
+ *
+ * Comma is the separator because it is the one the tag editor itself reserves — typing or pasting
+ * `fragile,heavy` there commits two tags — so a tag name can never contain one, and the CSV codec
+ * quotes the cell for us. Blanks are dropped; ordering and casing are left to
+ * `TagRepository.setForItem`, which reuses an existing tag case-insensitively.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function parseTagsCell(text: string): string[] {
+  return text
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
 }
 
 /**
@@ -522,6 +628,23 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRo
   /** Read one gauge cell — only on a gauge row (an ignored cell is never reported). */
   const gaugeNum = (field: NumericCatalogField): number | undefined => (isGauge ? num(field) : undefined);
 
+  /**
+   * Read the expiry cell (issue #141). Like every other non-text field, an absent or blank cell
+   * is "not supplied" and leaves an existing value alone; a cell that is present but is not a
+   * `YYYY-MM-DD` day is recorded so the caller rejects the row rather than importing no expiry
+   * date at all.
+   */
+  const expiry = (): number | undefined => {
+    const text = raw.expiryDate ?? null;
+    if (text === null) return undefined;
+    const value = parseExpiryCell(text);
+    if (value === null) {
+      unreadable.push(`${CATALOG_FIELD_LABELS.expiryDate}: "${text}" is not a date — use YYYY-MM-DD.`);
+      return undefined;
+    }
+    return value;
+  };
+
   return {
     unreadable,
     data: {
@@ -531,6 +654,8 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRo
       // 'sku' in the column map resolves to the `mpn` field on the item — the SKU
       // concept maps directly to the manufacturer part number.
       sku: raw.sku,
+      barcode: raw.barcode,
+      serialNumber: raw.serialNumber,
       quantity: num('quantity'),
       locationId: raw.locationId ?? undefined,
       categoryId: raw.categoryId,
@@ -548,10 +673,14 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRo
       depth: num('depth'),
       batchNumber: raw.batchNumber,
       lotNumber: raw.lotNumber,
+      expiryDate: expiry(),
       condition: (raw.condition ?? undefined) as CatalogRowData['condition'],
       reorderPoint: num('reorderPoint'),
       reorderQty: num('reorderQty'),
       isUnlimited: parseOptionalBool(raw.isUnlimited ?? null),
+      // An unmapped tag column leaves the key absent (tags untouched); a mapped-but-blank cell
+      // yields the empty set, which clears them.
+      tags: 'tags' in raw ? parseTagsCell(raw.tags ?? '') : undefined,
     },
   };
 }
@@ -575,6 +704,12 @@ export interface CatalogCreate {
   readonly input: CreateItemInput;
   /** Coerced custom-field values to persist after the item is created. */
   readonly fieldValues?: CustomFieldValues;
+  /**
+   * The item's whole tag set, applied through `TagRepository.setForItem` after the item lands
+   * (issue #141). Absent when the import maps no tag column; an empty array means the row's tag
+   * cell was blank, which clears the set.
+   */
+  readonly tags?: readonly string[];
 }
 
 /** A fully-validated row destined for {@link ItemRepository.update}. */
@@ -585,6 +720,8 @@ export interface CatalogUpdate {
   readonly input: UpdateItemInput;
   /** Coerced custom-field values to persist after the item is updated. */
   readonly fieldValues?: CustomFieldValues;
+  /** The item's whole tag set — see {@link CatalogCreate.tags}. */
+  readonly tags?: readonly string[];
 }
 
 /** A row that failed validation or had a duplicate match key (never thrown). */
@@ -638,6 +775,9 @@ function toCreateInput(data: CatalogRowData): CreateItemInput {
     ...toGaugeInput(data),
     quantity: data.quantity ?? 0,
     mpn,
+    barcode: data.barcode ?? null,
+    serialNumber: data.serialNumber ?? null,
+    expiryDate: data.expiryDate ?? null,
     manufacturer: data.manufacturer ?? null,
     unitCost: data.unitCost ?? null,
     weight: data.weight ?? null,
@@ -728,6 +868,9 @@ function toUpdateInput(data: CatalogRowData): UpdateItemInput {
   if (data.description !== undefined) Object.assign(result, { description: data.description });
   if (data.notes !== undefined) Object.assign(result, { notes: data.notes });
   if (mpn !== undefined) Object.assign(result, { mpn: mpn ?? null });
+  if (data.barcode !== undefined) Object.assign(result, { barcode: data.barcode });
+  if (data.serialNumber !== undefined) Object.assign(result, { serialNumber: data.serialNumber });
+  if (data.expiryDate !== undefined) Object.assign(result, { expiryDate: data.expiryDate });
   if (data.manufacturer !== undefined) Object.assign(result, { manufacturer: data.manufacturer });
   if (data.unitCost !== undefined) Object.assign(result, { unitCost: data.unitCost ?? null });
   if (data.weight !== undefined) Object.assign(result, { weight: data.weight ?? null });
@@ -795,6 +938,16 @@ function resolveCustomFieldValues(
  */
 function withFieldValues(values: Record<string, string | null>): { fieldValues?: CustomFieldValues } {
   return Object.keys(values).length > 0 ? { fieldValues: values } : {};
+}
+
+/**
+ * Spread helper for the row's tag set, attached only when the import actually maps a tag column
+ * (issue #141) — so a plan built from a file with no tags keeps its exact previous shape. An
+ * empty array *is* attached: that is a blank cell asking for the tags to be cleared, which is
+ * different from not mentioning tags at all.
+ */
+function withTags(tags: readonly string[] | undefined): { tags?: readonly string[] } {
+  return tags === undefined ? {} : { tags };
 }
 
 // ---------------------------------------------------------------------------
@@ -1054,7 +1207,12 @@ export function buildImportPlanFromRows(
         errors.push({ sourceRow, message: createError });
         continue;
       }
-      creates.push({ sourceRow, input: toCreateInput(data), ...withFieldValues(fieldValues) });
+      creates.push({
+        sourceRow,
+        input: toCreateInput(data),
+        ...withFieldValues(fieldValues),
+        ...withTags(data.tags),
+      });
       continue;
     }
 
@@ -1085,6 +1243,7 @@ export function buildImportPlanFromRows(
         itemId: existingItem.id,
         input: toUpdateInput(data),
         ...withFieldValues(fieldValues),
+        ...withTags(data.tags),
       });
     } else {
       // No match → create. A name is required for creates.
@@ -1097,7 +1256,12 @@ export function buildImportPlanFromRows(
         errors.push({ sourceRow, message: createError });
         continue;
       }
-      creates.push({ sourceRow, input: toCreateInput(data), ...withFieldValues(fieldValues) });
+      creates.push({
+        sourceRow,
+        input: toCreateInput(data),
+        ...withFieldValues(fieldValues),
+        ...withTags(data.tags),
+      });
     }
   }
 
@@ -1137,6 +1301,16 @@ export interface CatalogCategoryRepository {
   setItemFieldValues(itemId: string, values: Readonly<Record<string, string | null>>): Promise<void>;
 }
 
+/**
+ * Minimal interface for persisting an item's tag set (issue #141). Backed in production by
+ * `TagRepository.setForItem` — the same low-friction write the tag editor uses, so an unknown
+ * tag name auto-creates its tag and a known one is reused case-insensitively, and the importer
+ * never touches the `tags` / `item_tags` rows itself.
+ */
+export interface CatalogTagRepository {
+  setForItem(itemId: string, names: readonly string[]): Promise<void>;
+}
+
 /** Outcome of a single applied row. */
 export interface ApplyRowResult {
   readonly sourceRow: number;
@@ -1172,21 +1346,26 @@ export interface CatalogApplyResult {
  *
  * Custom-field values (Phase 72) on a `create`/`update` entry are persisted through
  * the supplied `categories.setItemFieldValues` — the existing custom-field write path
- * — immediately after the item is created/updated. A custom-field write that throws
- * (e.g. the field is not on the item's category) is recorded against the row's
- * `error` without rolling back the item itself; the item create/update still counts.
+ * — immediately after the item is created/updated, and a `tags` set through
+ * `tags.setForItem` (issue #141) the same way. Neither is a column on the item row, so both
+ * are separate writes; one that throws (e.g. the field is not on the item's category) is
+ * recorded against the row's `error` without rolling back the item itself, and the item
+ * create/update still counts.
  *
  * @param plan       - The validated dry-run plan from {@link buildCatalogImportPlan}.
  * @param repo       - The item repository (production: `getItemRepository()`).
  * @param categories - Optional custom-field writer (production:
  *                     `getCategoryRepository()`); required only when the plan carries
  *                     `fieldValues`.
+ * @param tags       - Optional tag writer (production: `getTagRepository()`); required only
+ *                     when the plan carries `tags`.
  * @returns An aggregated {@link CatalogApplyResult}.
  */
 export async function applyCatalogImportPlan(
   plan: CatalogImportPlan,
   repo: CatalogItemRepository,
   categories?: CatalogCategoryRepository,
+  tags?: CatalogTagRepository,
 ): Promise<CatalogApplyResult> {
   await ensureStorageWritable();
   const rows: ApplyRowResult[] = [];
@@ -1202,11 +1381,11 @@ export async function applyCatalogImportPlan(
           rows.push({ sourceRow: entry.sourceRow, kind: 'skipped', error: 'Item was not created.' });
           continue;
         }
-        const fieldError = await applyFieldValues(categories, item.id, entry.fieldValues);
+        const sideError = await applyRowSideEffects(categories, tags, item.id, entry, true);
         rows.push({
           sourceRow: entry.sourceRow,
           kind: 'created',
-          ...(fieldError ? { error: fieldError } : {}),
+          ...(sideError ? { error: sideError } : {}),
         });
       }
     } catch (err) {
@@ -1221,11 +1400,11 @@ export async function applyCatalogImportPlan(
     for (const entry of plan.create) {
       try {
         const created = await repo.create(entry.input);
-        const fieldError = await applyFieldValues(categories, created.id, entry.fieldValues);
+        const sideError = await applyRowSideEffects(categories, tags, created.id, entry, true);
         rows.push({
           sourceRow: entry.sourceRow,
           kind: 'created',
-          ...(fieldError ? { error: fieldError } : {}),
+          ...(sideError ? { error: sideError } : {}),
         });
       } catch (err) {
         rows.push({
@@ -1240,11 +1419,11 @@ export async function applyCatalogImportPlan(
   for (const entry of plan.update) {
     try {
       await repo.update(entry.itemId, entry.input);
-      const fieldError = await applyFieldValues(categories, entry.itemId, entry.fieldValues);
+      const sideError = await applyRowSideEffects(categories, tags, entry.itemId, entry, false);
       rows.push({
         sourceRow: entry.sourceRow,
         kind: 'updated',
-        ...(fieldError ? { error: fieldError } : {}),
+        ...(sideError ? { error: sideError } : {}),
       });
     } catch (err) {
       rows.push({
@@ -1260,6 +1439,30 @@ export async function applyCatalogImportPlan(
   const skipped = rows.filter((r) => r.kind === 'skipped').length;
 
   return { created, updated, skipped, rows };
+}
+
+/**
+ * Persist the parts of a row that are not columns on the item itself — its custom-field values
+ * and its tag set — through the existing `CategoryRepository.setItemFieldValues` /
+ * `TagRepository.setForItem` write paths.
+ *
+ * Both are attempted even if the first fails, and their messages are joined: an import that got
+ * the fields wrong *and* the tags wrong should say so once rather than hide half of it behind the
+ * other. Returns the message(s) (never throws) so the item create/update is not rolled back, or
+ * `undefined` when everything wrote / there was nothing to write.
+ */
+async function applyRowSideEffects(
+  categories: CatalogCategoryRepository | undefined,
+  tags: CatalogTagRepository | undefined,
+  itemId: string,
+  entry: { readonly fieldValues?: CustomFieldValues; readonly tags?: readonly string[] },
+  isNew: boolean,
+): Promise<string | undefined> {
+  const messages = [
+    await applyFieldValues(categories, itemId, entry.fieldValues),
+    await applyTagNames(tags, itemId, entry.tags, isNew),
+  ].filter((m): m is string => m !== undefined);
+  return messages.length > 0 ? messages.join(' ') : undefined;
 }
 
 /**
@@ -1282,5 +1485,32 @@ async function applyFieldValues(
     return undefined;
   } catch (err) {
     return err instanceof Error ? err.message : 'Unknown error writing custom fields.';
+  }
+}
+
+/**
+ * Persist a row's tag set through the existing `TagRepository.setForItem` path (issue #141),
+ * which auto-creates unknown tags and reuses known ones case-insensitively. On an **update** an
+ * empty set is still written — that is a blank tag cell asking for the item's tags to be cleared,
+ * which `setForItem` does by diffing. On a **create** it is skipped: a just-created item has no
+ * tags to clear, and a whole-file blank tag column would otherwise cost one read per row.
+ * Returns an error message (never throws) or `undefined`.
+ */
+async function applyTagNames(
+  tags: CatalogTagRepository | undefined,
+  itemId: string,
+  names: readonly string[] | undefined,
+  isNew: boolean,
+): Promise<string | undefined> {
+  if (names === undefined) return undefined;
+  if (isNew && names.length === 0) return undefined;
+  if (!tags) {
+    return 'Tags were ignored: no tag repository was provided.';
+  }
+  try {
+    await tags.setForItem(itemId, names);
+    return undefined;
+  } catch (err) {
+    return err instanceof Error ? err.message : 'Unknown error writing tags.';
   }
 }

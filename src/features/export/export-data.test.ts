@@ -427,3 +427,47 @@ describe('buildProjectVault — §4.5 project folder + sub-folders (Phase 19)', 
     expect(master).toContain('- [[Bracket]]');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Issue #141 — the catalogue CSV carries the identity columns
+// ---------------------------------------------------------------------------
+
+describe('buildCatalogCsv — identity columns (issue #141)', () => {
+  /** Read one item row's cells back as a header → value map. */
+  function cellsOf(csv: string): Record<string, string> {
+    const [header, row] = csv.split('\r\n');
+    const columns = header!.split(',');
+    const cells = row!.split(',');
+    return Object.fromEntries(columns.map((c, i) => [c, cells[i] ?? '']));
+  }
+
+  it('carries the barcode, serial number and expiry date so a catalogue round-trips', () => {
+    const csv = buildCatalogCsv([
+      makeItem({
+        barcode: '5012345678900',
+        serialNumber: 'SN-4417',
+        expiryDate: Date.UTC(2026, 7, 1),
+      }),
+    ]);
+    expect(cellsOf(csv)).toMatchObject({
+      barcode: '5012345678900',
+      serialNumber: 'SN-4417',
+      // The `YYYY-MM-DD` form the importer reads back to the very same instant.
+      expiryDate: '2026-08-01',
+    });
+  });
+
+  it('leaves the expiry cell blank for an item that has none', () => {
+    expect(cellsOf(buildCatalogCsv([makeItem({ expiryDate: null })])).expiryDate).toBe('');
+  });
+
+  it('writes an item’s tags as the comma-separated list the importer reads back', () => {
+    const csv = buildCatalogCsv([makeItem()], [], new Map(), new Map([['i1', ['fridge', 'perishable']]]));
+    // The cell holds a comma, so RFC-4180 quoting is what keeps it one column.
+    expect(csv.split('\r\n')[1]).toContain('"fridge, perishable"');
+  });
+
+  it('leaves the tags cell blank for an item with none', () => {
+    expect(cellsOf(buildCatalogCsv([makeItem()])).tags).toBe('');
+  });
+});

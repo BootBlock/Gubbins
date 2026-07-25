@@ -49,6 +49,16 @@ The location sidebar then grows a row of **tag chips** at the top: tap one (or s
 the tree to the locations that carry them, keeping their parents in view so you never lose your
 place. Tap **Clear** to show everything again.
 
+### Tags in a spreadsheet
+
+Tags travel with your data. The **Catalogue CSV** [[export|Export-and-Import]] writes each item's
+tags into a single comma-separated `tags` cell, and the importer reads the same cell back —
+creating names you don't already use and reusing ones you do, case-insensitively, exactly as
+typing them here would. It's the quickest way to tag a few hundred items at once.
+
+> **⚠️ Heads-up** That cell replaces an item's **whole** tag set, so a blank one clears its tags.
+> Leave the column out of the file entirely if you want existing tags left alone.
+
 ### Showing tags on item cards
 
 Tags can appear right on the item **cards, rows and table** so you can eyeball them without
