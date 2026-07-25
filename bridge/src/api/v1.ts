@@ -4,9 +4,9 @@
  *
  * It is **purely additive**: the legacy `/health`, `/search`, `/where` paths (the shipped
  * contract HA depends on) keep their exact behaviour and are documented as permanent aliases
- * of their `/api/v1` twins. Everything here is GET-only and strictly read-only — every read
- * flows through the app's own repositories and the single parameterised `parseASTtoSQL`,
- * never bespoke SQL. Auth and the per-IP rate limit are applied by the caller (`server.ts`)
+ * of their `/api/v1` twins. Every read here is a `GET` — a `HEAD` arrives as one, with `server.ts`
+ * withholding the content — and strictly read-only: it flows through the app's own repositories
+ * and the single parameterised `parseASTtoSQL`, never bespoke SQL. Auth and the per-IP rate limit are applied by the caller (`server.ts`)
  * before routing here, so this module only handles routing, validation, 404/503, and the
  * `{ error: { code, message } }` envelope.
  */

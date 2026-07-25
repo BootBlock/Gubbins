@@ -139,6 +139,8 @@ Every route requires `bridge:read` or `bridge:write` — the capability of using
 | `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` | `bridge:write` + `stock:write` |
 | `POST /api/v1/snapshot` | `bridge:write` + `sync:write` |
 
+A [`HEAD`](#head-requests) requires exactly what the `GET` of the same route requires.
+
 A few of these are deliberate rather than obvious. The **calendar** feed publishes asset
 bookings, so it is gated on `bookings:read`, not `items:read`. The **syndication feeds** publish
 the Activity Ledger — the audit trail — so they need `audit:view`, which is what makes "only
@@ -203,7 +205,7 @@ How the raw `.sqlite` path works (and why it is safe):
 
 ## HTTP API (read-only)
 
-All endpoints are **GET-only** and require an [API token](#identities--permissions). The contract is stable —
+All endpoints are **reads** and require an [API token](#identities--permissions). The contract is stable —
 the Home Assistant integration depends on it.
 
 These three unversioned paths are **permanent, stable aliases** of their `/api/v1`
@@ -219,7 +221,8 @@ byte-for-byte identical success bodies, so existing consumers keep working uncha
 Status codes: `401` (missing/unknown/revoked token), `403` (valid token, but the owner's role
 does not permit that route — see [Identities & permissions](#identities--permissions)), `400`
 (missing or over-long `q`, max 200 chars),
-`404` (unknown path), `405` (non-GET), `429` (rate-limited — see [below](#rate-limiting)),
+`404` (unknown path), `405` (a method other than `GET`, `HEAD` or `OPTIONS` — see
+[HEAD requests](#head-requests)), `429` (rate-limited — see [below](#rate-limiting)),
 `503` (no snapshot loaded yet — so no identity can be resolved either — with a `Retry-After`),
 `500` (generic — never leaks
 internals). A `POST` that declares a `Content-Type` other than `application/json` is
@@ -227,6 +230,25 @@ refused with `415` rather than having its body read as JSON. `q` accepts the
 app's full search grammar (`field:value`, `cap:key>n`, `AND`/`OR`/parentheses) as well as a
 casual phrase like `M3 screws`. The unversioned paths keep a flat `{ "error": "<message>" }`
 body; the versioned API uses the structured envelope described next.
+
+### HEAD requests
+
+Every read answers `HEAD` as well as `GET` (RFC 9110 §9.1). The response is the one the `GET`
+would have produced — same status, same headers, including the `Content-Length` of the content
+that was withheld — with no body. Nothing else differs: the same token, permissions and rate
+limit apply, so a `HEAD` of a route your role cannot reach is still a `403`.
+
+That matters for **subscription clients**: Outlook and several CalDAV/webcal apps `HEAD` a
+[calendar subscription](#calendar-subscription) URL to test it before they will accept a
+subscription, and feed readers probe the [syndication feeds](#feeds--metrics) the same way — the
+`Content-Length` tells them whether anything changed before they spend a download on it. A probe
+may also carry the validators from a previous response and get a `304` back; see
+[Conditional requests](#conditional-requests-etag--304).
+
+The one exception is the [SSE event stream](#sse-event-stream): a `HEAD` of `/api/v1/events`
+reports the media type the stream serves and returns immediately rather than opening a stream. It
+carries no `Content-Length` (the content is unbounded), and never the `429` a `GET` gives when the
+concurrent-stream cap is reached — a probe takes no slot, so it reports the endpoint, not the queue.
 
 ### Snapshot freshness and health
 
@@ -275,7 +297,7 @@ read-only REST API under `/api/v1`. It is **purely additive** — it does not ch
 the three paths above — and is described by a committed [OpenAPI 3 spec](#openapi-spec).
 Same auth ([per-user API token](#identities--permissions)) and same per-IP
 [rate limit](#rate-limiting) as everything else;
-every endpoint is **GET-only** and strictly read-only.
+every endpoint is a **`GET`** (or [`HEAD`](#head-requests)) and strictly read-only.
 
 ### Conventions
 
@@ -750,6 +772,8 @@ curl -sD- -o/dev/null -H "Authorization: Bearer $TOKEN" \
   no shared or intermediary cache may keep a copy.
 - Nothing is required of a client: one that sends no conditional header gets the full document
   exactly as before. A Prometheus scrape, for instance, simply ignores the validators.
+- A [`HEAD`](#head-requests) revalidates identically — same `304`, same validators — so a client
+  that probes rather than fetches gets the cheap answer too.
 
 ### OpenAPI spec
 
