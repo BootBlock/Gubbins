@@ -162,11 +162,12 @@ function translateGroup(node: ASTGroupNode, depth: number): Fragment | null {
   // Negation (issue #139) wraps the *whole* group once, so it inverts FTS matches and EXISTS
   // subqueries alike without any predicate translator knowing about it.
   //
-  // COALESCE is what makes it mean what a person means. SQL three-valued logic makes
-  // `items.location_id = ?` NULL — not false — for an item with no location, and `NOT NULL`
-  // is still NULL, so a plain `NOT (…)` would quietly *drop* every unfiled item from "not in
-  // the Attic". Folding NULL to 0 first reads absence as "doesn't match", so its negation is
-  // "does match" — the answer the question was asking for.
+  // COALESCE is what makes it mean what a person means. Most of the columns above are nullable,
+  // and SQL three-valued logic makes `items.manufacturer = ?` NULL — not false — for an item with
+  // no manufacturer recorded, with `NOT NULL` still NULL. A plain `NOT (…)` would therefore
+  // quietly *drop* every such item from "not made by Acme", which is the opposite of what was
+  // asked. Folding NULL to 0 first reads absence as "doesn't match", so its negation is "does
+  // match" — the answer the question was after.
   return { sql: `(NOT COALESCE(${sql}, 0))`, params };
 }
 

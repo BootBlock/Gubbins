@@ -510,9 +510,9 @@ field) is a `400` naming what *is* supported. When `$filter` is present it is th
 so the `location`/`category`/`$search` query params are ignored.
 
 `not` binds to the single term or bracket that follows it, and `ne` is simply `not … eq …`. Both
-inherit the app's reading of absence: `locationId ne 'l1'` **includes** rows with no location,
-because "not in that location" is what the question means — strict OData three-valued logic would
-drop them instead.
+inherit the app's reading of absence on the nullable fields: `manufacturer ne 'Acme'` **includes**
+rows with no manufacturer recorded, because "not made by Acme" is what the question means — strict
+OData three-valued logic would drop them instead.
 
 **`$count`** — `$count=true` computes the grand total of matching rows across *all* pages and
 returns it as `pagination.total` alongside the page (it costs one extra `COUNT` query, so it is

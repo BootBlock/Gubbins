@@ -329,6 +329,14 @@ describe('interpretNaturalLanguage — location phrases', () => {
       },
     );
 
+    it('reads a double negative as the plain location ("not outside the garage")', () => {
+      expect(singleNode('not outside the garage')).toEqual({
+        field: 'location',
+        operator: 'EQUALS',
+        value: 'loc-garage',
+      });
+    });
+
     it('echoes the negation back in the recognised label', () => {
       const result = interpretNaturalLanguage('not in the garage', CONTEXT);
       expect(result.recognised).toEqual([{ kind: 'location', label: 'Not in Garage' }]);
@@ -343,8 +351,20 @@ describe('interpretNaturalLanguage — location phrases', () => {
       expect(singleCondition('in the garage')).toMatchObject({ field: 'location' });
     });
 
-    it('drops a "not" that could not be attached rather than searching for the word', () => {
-      expect(singleNode('not widgets')).toEqual(keywordGroup('widget'));
+    /**
+     * Only location phrases negate, and the stock/quantity matchers claim their tokens first — so
+     * a "not" in "not in stock" can never reach a negator. It must therefore stay an unrecognised
+     * residual keyword rather than becoming a filler word: dropping it would leave the phrase
+     * reading as a confident "In stock", the exact opposite of what was asked, with nothing on
+     * screen to say the negation had been ignored.
+     */
+    it('never silently drops a "not" it could not attach, so a misread stays visible', () => {
+      const result = interpretNaturalLanguage('not in stock', CONTEXT);
+      expect(result.recognised.map((r) => r.kind)).toEqual(['stock', 'text']);
+      expect(result.ast.conditions).toEqual([
+        { field: 'quantity', operator: 'GREATER_THAN', value: 0 },
+        keywordGroup('not'),
+      ]);
     });
   });
 });

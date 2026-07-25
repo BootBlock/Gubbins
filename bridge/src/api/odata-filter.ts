@@ -18,9 +18,9 @@
  * an unknown field is a `400`.
  *
  * `not` and `ne` both lower to the AST's negated GROUP (issue #139), so — exactly like the
- * app's `-term` syntax — they inherit its NULL-safe reading: `location ne 'x'` includes rows
- * with *no* location, which is what the question means even though strict OData three-valued
- * logic would drop them.
+ * app's `-term` syntax — they inherit its NULL-safe reading over the nullable columns:
+ * `manufacturer ne 'Acme'` includes rows with *no* manufacturer recorded, which is what the
+ * question means even though strict OData three-valued logic would drop them.
  */
 import {
   isGroupNode,

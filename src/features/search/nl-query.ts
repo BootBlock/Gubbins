@@ -135,10 +135,12 @@ const FILLER_WORDS = new Set([
   'whats',
   'where',
   'whereis',
-  // A "not" that didn't attach to a location phrase carries no predicate this layer can
-  // express, so it is dropped rather than searched for as a literal word (issue #139).
-  'not',
 ]);
+// Deliberately NOT filler: "not". Only location phrases negate (issue #139), and the stock and
+// quantity matchers run first — so a "not" in "not in stock" never reaches a negator. Dropping it
+// as filler would leave that phrase reading as a confident "In stock", the exact opposite of the
+// request. Left unrecognised it stays a residual keyword, which narrows the results and echoes a
+// `Matching "not"` chip — visibly a misread rather than a silent inversion.
 
 /** Prepositions that introduce a location phrase ("in the garage", "on shelf 2"). */
 const LOCATION_PREPOSITIONS = new Set(['in', 'at', 'on', 'inside', 'within', 'from', 'outside']);
@@ -516,7 +518,8 @@ function matchLocations(
     // "resistors **not** in the attic" — a negator immediately before the preposition, which
     // is consumed with it — or a preposition carrying the sense itself ("**outside** the attic").
     const hasNegator = i > 0 && !consumed[i - 1] && NEGATION_WORDS.has(tokens[i - 1]!);
-    const negate = hasNegator || NEGATING_PREPOSITIONS.has(tokens[i]!);
+    // XOR, not OR: "not outside the attic" is a double negative and means *in* the attic.
+    const negate = hasNegator !== NEGATING_PREPOSITIONS.has(tokens[i]!);
     const condition: FilterCondition = { field: 'location', operator: 'EQUALS', value: match.id };
     parts.push({
       kind: 'location',

@@ -78,7 +78,10 @@ export function operatorsForKind(kind: BuilderFieldKind): FilterOperator[] {
     case 'boolean':
       return ['EQUALS'];
     case 'presence':
-      return ['HAS_CAPABILITY'];
+      // Presence first — it is the one that needs no id. `EQUALS` stays offered because the
+      // plain-English layer resolves a category *name* to an id and emits exactly that condition;
+      // dropping it would leave those rows with an operator the dropdown cannot render.
+      return ['HAS_CAPABILITY', 'EQUALS'];
     case 'capability':
       return ['HAS_CAPABILITY', 'EQUALS', 'GREATER_THAN', 'LESS_THAN'];
     case 'customfield':

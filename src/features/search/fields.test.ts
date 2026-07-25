@@ -62,10 +62,20 @@ describe('custom-field helpers (Phase 71)', () => {
     expect(operatorsForKind('number')).toEqual(['GREATER_THAN', 'LESS_THAN', 'EQUALS', 'HAS_CAPABILITY']);
   });
 
-  it('offers only presence for an id-keyed field with no value picker (issue #139)', () => {
+  it('leads with presence for an id-keyed field with no value picker (issue #139)', () => {
     expect(kindOfField('category')).toBe('presence');
-    expect(operatorsForKind('presence')).toEqual(['HAS_CAPABILITY']);
+    expect(operatorsForKind('presence')[0]).toBe('HAS_CAPABILITY');
     expect(fieldSelectValue('category')).toBe('category');
+  });
+
+  /**
+   * The plain-English layer resolves a category *name* to an id and emits
+   * `category EQUALS <id>`, which loads straight into the builder. Every operator a condition can
+   * arrive with must be in its field's list, or the Operator dropdown renders blank and the only
+   * option offered silently rewrites the filter.
+   */
+  it('offers every operator a loaded category condition can arrive with (issue #139)', () => {
+    expect(operatorsForKind(kindOfField('category'))).toContain('EQUALS');
   });
 
   it('offers only EQUALS (read as "is") for the boolean favourite field (issue #23)', () => {
