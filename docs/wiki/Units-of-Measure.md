@@ -27,8 +27,8 @@ readings you type into [[counting by weight|Counting-by-Weight]], and the tares 
 
 ## Dimension unit
 
-The unit every **width, height and depth** is shown and entered in — **millimetres** (the
-default), **centimetres**, **metres**, **inches** or **feet**.
+The unit **widths, heights and depths** are shown and entered in — **millimetres** (the default),
+**centimetres**, **metres**, **inches** or **feet**.
 
 It applies to an item's own size on its **Details** tab, and to the internal size of a
 [[location|Locations-and-Stock]] — the measurements Gubbins turns into a usable volume.
@@ -39,12 +39,12 @@ A location's volume is *derived* from its width × height × depth, so it gets a
 Left on **Automatic** — the default — Gubbins picks a readable scale for each value from your
 dimension unit: a drawer reads in litres, a whole storage bay in cubic metres, and an imperial
 setup gets cubic inches and cubic feet. Pick **Litres**, **Cubic centimetres**, **Cubic metres**,
-**Cubic millimetres**, **Cubic inches** or **Cubic feet** instead to pin every volume to one unit.
+**Cubic millimetres**, **Cubic inches** or **Cubic feet** instead to show every volume in one unit.
 
 > **💡 Tip**
-> Automatic is worth keeping unless you have a reason not to. A fixed unit that suits a shipping
-> container makes a small parts drawer read `0.003 m³`, and one that suits the drawer makes the
-> container read in the millions.
+> Automatic is worth keeping unless you have a reason not to. Pin everything to cubic metres and a
+> small parts drawer rounds away to `0 m³`; pin it to cubic centimetres and a whole storage bay
+> runs into the millions.
 
 ## Changing a unit never changes your data
 
@@ -76,6 +76,14 @@ value is being handled as raw data rather than read off a screen:
 - **A pasted list of items.** Importing free-form lines (one item per line), a labelled weight
   *does* accept a unit — `w:2.5kg`, `weight:16oz` — while a bare number like `w:500` is read as
   grams.
+- **The [[bridge|Bridge-Overview]].** A filter on `weight` or `width` / `height` / `depth`
+  compares in grams and millimetres, so an integration reads the same figures whatever this device
+  is set to.
+- **Printed labels.** Label and page sizes are always given in millimetres — see
+  [[QR codes & label printing|QR-Codes-and-Label-Printing]].
+- **A location's usable volume.** The optional override under a location's **Advanced space
+  options** is typed in **litres** — or **cubic feet** if your dimension unit is imperial —
+  whatever the volume unit above is set to.
 
 > **ℹ️ Note**
 > A [[consumable gauge|Low-Stock-and-Gauges]] carries its **own** unit of measure, chosen per item

@@ -211,7 +211,9 @@ Real containers rarely fill to 100%, and few are perfect boxes. Two optional set
 
 - **Usable volume** overrides the width × height × depth figure for a container that isn't a neat
   box — a bag, a bin with sloped walls, a shelf with a lip. Set it and Gubbins uses your figure
-  for space used instead of the box calculation.
+  for space used instead of the box calculation. It's typed in **litres** — or **cubic feet** if
+  your [[dimension unit|Units-of-Measure]] is imperial — whatever unit volumes are *displayed* in,
+  so the field always asks for the same thing.
 - **Packing efficiency** is the share of the volume that's realistically fillable, since rigid
   items leave gaps. Set it below 100% for a more conservative reading, or leave it blank to use the
   global default from **Settings → Appearance** — where **Default packing efficiency** sets the
