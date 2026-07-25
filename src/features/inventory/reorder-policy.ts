@@ -8,6 +8,13 @@
  * rule in the database for the paginated feed; this module is the single source of truth
  * the UI (e.g. a per-item "reorder N" badge) reuses without a round-trip.
  *
+ * **These rules are stated twice — here and in SQL — so they are tested against each other.**
+ * `attention-sql.ts` holds the database half (`lowStockPredicateSql` /
+ * `outOfStockPredicateSql`), and `stock-attention-parity.test.ts` seeds one deliberately
+ * awkward inventory and asserts the two halves return the *same set* of items. That parity is
+ * why every exclusion below has a counterpart there and vice versa; the abstract-variant-parent
+ * exclusion was missing here for exactly as long as nothing compared them (issue #156).
+ *
  * An item carries its own optional `reorderPoint` (a DISCRETE quantity floor) and
  * `reorderGaugePercent` (a CONSUMABLE_GAUGE percentage floor); either NULL means "use the
  * global default" — so an item with no override behaves exactly as it did before Phase 59
@@ -31,7 +38,15 @@ export interface ReorderDefaults {
   readonly gaugePercent: number;
 }
 
-/** The reorder-relevant slice of an item — kept minimal so callers can pass any shape. */
+/**
+ * The reorder-relevant slice of an item — kept minimal so callers can pass any shape.
+ *
+ * `hasVariants` is part of that slice, not an optional extra: an abstract variant parent holds
+ * no stock of its own and is excluded by every SQL attention predicate, so the pure seam needs
+ * the same signal to reach the same answer. Requiring it means a caller that assembles its own
+ * shape has to say which it is, rather than silently defaulting to "not a parent" — which is
+ * how the two definitions drifted apart in the first place (issue #156).
+ */
 export type ReorderItem = Pick<
   Item,
   | 'trackingMode'
@@ -41,6 +56,7 @@ export type ReorderItem = Pick<
   | 'reorderGaugePercent'
   | 'reorderQty'
   | 'isUnlimited'
+  | 'hasVariants'
 >;
 
 /** The effective DISCRETE quantity floor for an item: its own override, else the default. */
@@ -66,9 +82,14 @@ export function effectiveGaugePercent(item: ReorderItem, defaults: ReorderDefaul
  *   exclusion (its permanent quantity of 0 would otherwise always flag).
  * - Unlimited supply (Phase 82) — an effectively infinite source never runs low, whatever
  *   its stored quantity, so it is never flagged and never joins the shopping list.
+ * - Abstract variant parent (issue #156) — an item with children holds no stock of its own,
+ *   so its own `quantity` is not a stock level to run low. `setParent` attaches an existing
+ *   item to a parent without clearing the parent's quantity or reorder point, so a
+ *   once-ordinary item that is later made a parent keeps values that would otherwise flag.
+ *   This is the exclusion `lowStockPredicateSql` applies with `notAVariantParentSql`.
  */
 export function isLow(item: ReorderItem, defaults: ReorderDefaults): boolean {
-  if (item.isUnlimited) return false;
+  if (item.isUnlimited || item.hasVariants) return false;
   if (item.trackingMode === 'CONSUMABLE_GAUGE') {
     if (!item.gauge || item.gauge.grossCapacity <= 0) return false;
     const floor = effectiveGaugePercent(item, defaults);
@@ -87,15 +108,12 @@ export function isLow(item: ReorderItem, defaults: ReorderDefaults): boolean {
  * Unlike {@link isLow} this is deliberately **not opt-in**: an item that has run to zero is out
  * whether or not a reorder point was ever configured, so it must never be gated behind `isLow`.
  * Mirrors `outOfStockPredicateSql` exactly — an unlimited-supply item is never out (its on-hand
- * count is ignored), a CONSUMABLE_GAUGE is out only once it has real capacity and has emptied, and
+ * count is ignored), an abstract variant parent is never out (it holds no stock of its own — its
+ * variants do), a CONSUMABLE_GAUGE is out only once it has real capacity and has emptied, and
  * SERIALISED / UNTRACKED items have no bulk stock level to deplete so neither ever qualifies.
- *
- * Abstract variant parents (items with children hold no stock of their own) are excluded at the
- * SQL layer, which this pure form cannot see — it has no child data — so a caller scanning raw
- * item rows inherits the same tiny limitation the pure `isLow` already has for parents.
  */
 export function isOutOfStock(item: ReorderItem): boolean {
-  if (item.isUnlimited) return false;
+  if (item.isUnlimited || item.hasVariants) return false;
   if (item.trackingMode === 'CONSUMABLE_GAUGE') {
     return item.gauge != null && item.gauge.grossCapacity > 0 && item.gauge.percentageRemaining <= 0;
   }
@@ -109,13 +127,15 @@ export function isOutOfStock(item: ReorderItem): boolean {
  * - `low` — on hand but at/below the effective reorder point ({@link isLow}).
  * - `healthy` — comfortably in stock.
  *
- * Unlimited-supply items are always `healthy` (an infinite source never runs low). Only
- * meaningful for DISCRETE items — the card only consults it on that branch.
+ * Unlimited-supply items are always `healthy` (an infinite source never runs low), as are
+ * abstract variant parents — a parent's own `quantity` is not a stock level, so badging its card
+ * "Out of stock" while the dashboard and the reports omit it entirely is the disagreement issue
+ * #156 is about. Only meaningful for DISCRETE items — the card only consults it on that branch.
  */
 export type StockLevel = 'out' | 'low' | 'healthy';
 
 export function discreteStockLevel(item: ReorderItem, defaults: ReorderDefaults): StockLevel {
-  if (item.isUnlimited) return 'healthy';
+  if (item.isUnlimited || item.hasVariants) return 'healthy';
   if (item.quantity <= 0) return 'out';
   return isLow(item, defaults) ? 'low' : 'healthy';
 }

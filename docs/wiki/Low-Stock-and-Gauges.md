@@ -76,6 +76,19 @@ flagged.
 > threshold of 100, while a spare you rarely need can sit at 1. Tune them in
 > **Settings → Inventory**.
 
+## What never counts as low
+
+Some items have no shelf level to run down, so they stay quiet whatever their thresholds say —
+on the item card, in the widgets and alerts, and in anything reading your inventory from
+outside (such as [[Home Assistant|Home-Assistant-Integration]]):
+
+- **Unlimited supply** items — mains water, air or a bulk pile you always have on hand
+  ([[Tracking modes|Tracking-Modes]]).
+- **Serialised** single assets and **presence-only** items — a count of one, or no count at all,
+  isn't a stock level.
+- **Parent items with [[variants|Variants-and-SKUs]]** — the stock sits on the child variants,
+  so the parent is never low or out on its own account. Set thresholds on the variants instead.
+
 ## Where low stock surfaces
 
 Once something crosses its threshold it appears in several places, so you notice however you

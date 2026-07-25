@@ -29,6 +29,7 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     lotNumber: null,
     condition: null,
     parentId: null,
+    hasVariants: false,
     isUnlimited: false,
     isFavourite: false,
     deadStockMode: 'inherit',

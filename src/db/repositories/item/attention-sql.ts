@@ -18,28 +18,40 @@
  */
 
 /**
+ * "This item **is** an abstract variant parent" — it has at least one child, so it holds no
+ * stock of its own; its variants do. `col` is the **qualified** id column of the outer row to
+ * test (e.g. `items.id`, or `i.id` in a joined query); it must be qualified, since a bare `id`
+ * would resolve against this subquery's own table rather than the outer one.
+ *
+ * A correlated `EXISTS` rather than `IN (SELECT parent_id …)`. `IN` makes SQLite materialise
+ * the whole parent-id set into an ephemeral list on every execution (`EXPLAIN QUERY PLAN`:
+ * `LIST SUBQUERY` + `CREATE BLOOM FILTER`); `EXISTS` instead probes `idx_items_parent_id` once
+ * per candidate row (`SEARCH child USING COVERING INDEX idx_items_parent_id (parent_id=?)`), so
+ * nothing is built up front — and these predicates run constantly (the dashboard feeds and the
+ * inventory list's status filter). Measured over a 200k-item table that is ~4× faster. It also
+ * drops the NULL-semantics footgun: `NOT IN` against a set containing NULL matches nothing,
+ * which is why the old negated form needed a hand-written `parent_id IS NOT NULL` guard.
+ *
+ * This is the SSOT for the concept, in both polarities: {@link notAVariantParentSql} negates it
+ * for the attention predicates, and `HAS_VARIANTS_SUBQUERY` (see `./sql.ts`) projects it onto
+ * every item read as `Item.hasVariants`, so the pure `isLow` seam can apply the *same*
+ * exclusion the SQL does (issue #156).
+ */
+export function variantParentSql(col: string): string {
+  return `EXISTS (SELECT 1 FROM items child WHERE child.parent_id = ${col})`;
+}
+
+/**
  * "This item is not an abstract variant parent" — an item with children holds no stock of
  * its own, so it never runs low, runs out, or raises a warranty alert on its own account.
- * `col` is the **qualified** id column of the outer row to test (e.g. `items.id`, or `i.id`
- * in a joined query); it must be qualified, since a bare `id` would resolve against this
- * subquery's own table rather than the outer one.
- *
- * A correlated `NOT EXISTS` rather than `NOT IN (SELECT parent_id …)`. `NOT IN` makes SQLite
- * materialise the whole parent-id set into an ephemeral list on every execution (`EXPLAIN
- * QUERY PLAN`: `LIST SUBQUERY` + `CREATE BLOOM FILTER`); `NOT EXISTS` instead probes
- * `idx_items_parent_id` once per candidate row (`SEARCH child USING COVERING INDEX
- * idx_items_parent_id (parent_id=?)`), so nothing is built up front — and these predicates
- * run constantly (the dashboard feeds and the inventory list's status filter). Measured over
- * a 200k-item table that is ~4× faster. It also drops the NULL-semantics footgun: `NOT IN`
- * against a set containing NULL matches nothing, which is why the old form needed a
- * hand-written `parent_id IS NOT NULL` guard.
+ * The negation of {@link variantParentSql}; see there for `col` and the query-plan rationale.
  *
  * This is the SSOT for the exclusion — `ReportRepository` imports it too, so the attention
  * feeds, the status filter and the reports can never disagree about what "abstract parent"
  * means.
  */
 export function notAVariantParentSql(col: string): string {
-  return `NOT EXISTS (SELECT 1 FROM items child WHERE child.parent_id = ${col})`;
+  return `NOT ${variantParentSql(col)}`;
 }
 
 /**
@@ -48,8 +60,14 @@ export function notAVariantParentSql(col: string): string {
  * its percentage remaining is at/below its effective gauge floor. Each row's floor is its
  * own `reorder_point` / `reorder_gauge_percent` when set, else the passed-in global
  * fallback — and only a *strictly positive* floor counts, so a 0 floor means "off"
- * (opt-in), matching the pure `isLow` guard. Abstract variant parents (items with children)
- * and unlimited-supply items are never low.
+ * (opt-in). Abstract variant parents (items with children) and unlimited-supply items are
+ * never low.
+ *
+ * Every one of those exclusions is also in the pure `isLow` seam, which decides the same
+ * question for the item card, the supply-state seam and the bridge's Home Assistant / metrics
+ * counts. The two are compared item-for-item by `stock-attention-parity.test.ts` rather than
+ * left to match by convention — this comment used to claim they matched while the parent
+ * exclusion existed only here (issue #156).
  *
  * Binds, in order: `[qtyThreshold, qtyThreshold, gaugePercent, gaugePercent]`.
  */
@@ -81,7 +99,8 @@ export function expiringPredicateSql(): string {
  * zero; a CONSUMABLE_GAUGE item is out when it is empty. Unlike low stock this is not opt-in
  * — nothing has to be configured for a depleted item to show. Abstract variant parents (they
  * hold no stock of their own) and unlimited-supply items are never "out"; SERIALISED and
- * UNTRACKED items are excluded (quantity is not a bulk stock level for them).
+ * UNTRACKED items are excluded (quantity is not a bulk stock level for them). Kept in step with
+ * the pure `isOutOfStock` seam by the same parity test as {@link lowStockPredicateSql}.
  *
  * Takes no bound parameters.
  */
