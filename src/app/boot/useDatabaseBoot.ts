@@ -13,7 +13,11 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { checkCriticalSupport, checkIsolationSupport } from '@/lib/env/feature-detection';
-import { diagnoseCriticalSupport, type SupportDiagnosis } from '@/lib/env/support-diagnosis';
+import {
+  diagnoseCriticalSupport,
+  isolationIsSettled,
+  type SupportDiagnosis,
+} from '@/lib/env/support-diagnosis';
 import { acquireDatabaseTabLock, type TabLockDenial } from '@/db/tab-lock';
 import { bootDatabase, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
@@ -68,15 +72,16 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
   }
 
   // 1a. Cross-origin isolation is preferred, not required (issue #255): without it the worker
-  // opens the database on the `opfs-sahpool` VFS instead of failing. So the gate only stops for
-  // the causes that would defeat *any* VFS — and for `isolation-pending`, which is not a failure
-  // at all but the normal first visit, waiting on the service worker that supplies the COOP/COEP
-  // headers. Booting through that wait would settle this origin on the fallback VFS for good,
-  // since the database it created is then the one that must keep being opened.
+  // opens the database on the `opfs-sahpool` VFS instead of failing. So the gate proceeds for the
+  // one diagnosis that means isolation is genuinely not coming — and only once that is *settled*
+  // (`isolationIsSettled`), because the choice is effectively permanent: the fallback database
+  // this boot would create is the one the origin must keep opening afterwards. Every other cause
+  // still stops here, including `isolation-pending` — the normal first visit, waiting on the
+  // service worker that supplies the COOP/COEP headers, which resolves itself on reload.
   const isolation = checkIsolationSupport();
   if (!isolation.supported) {
     const diagnosis = await diagnoseCriticalSupport(isolation.missing);
-    if (diagnosis.cause !== 'isolation-blocked') {
+    if (diagnosis.cause !== 'isolation-blocked' || !isolationIsSettled(diagnosis.signals)) {
       commit({ status: 'unsupported', diagnosis });
       return;
     }

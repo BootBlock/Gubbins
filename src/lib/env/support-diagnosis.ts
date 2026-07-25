@@ -149,6 +149,29 @@ export function diagnoseSupport(signals: SupportSignals): SupportCause {
   return 'browser-unsupported';
 }
 
+/**
+ * Whether the isolation question has *settled* — i.e. waiting longer cannot change the answer.
+ *
+ * `isolation-blocked` covers three situations, and the boot gate must not treat them alike when
+ * deciding to give up on isolation and open the fallback VFS (issue #255). That decision is
+ * effectively permanent: the database the fallback creates is the one this origin must keep
+ * opening, so making it early pins a perfectly capable browser to the fallback for good.
+ *
+ *   - **No service-worker API** — nothing can ever supply the headers here. Settled.
+ *   - **A worker is controlling this document and it is still not isolated** — its headers are
+ *     being removed in transit, and another attempt would be removed too. Settled.
+ *   - **A worker exists but has not reached `active`** — which is *also* what a first visit looks
+ *     like while the worker is still installing, and {@link SERVICE_WORKER_PROBE_TIMEOUT_MS} is
+ *     far too short to tell "still precaching a few megabytes over a slow connection" from
+ *     "cannot start". **Not** settled: the boot waits, and `coi-bootstrap.js` reloads the moment
+ *     the worker takes control.
+ *
+ * Pure, so the distinction is unit-testable rather than re-derived from live signals at the gate.
+ */
+export function isolationIsSettled(signals: SupportSignals): boolean {
+  return !signals.serviceWorkerApi || signals.serviceWorkerControlling;
+}
+
 /** The throwaway key the storage probe writes; removed again immediately. */
 const STORAGE_PROBE_KEY = 'gubbins-support-probe';
 

@@ -12,9 +12,15 @@ vi.mock('@/lib/env/feature-detection', () => ({
 const diagnoseCriticalSupport = vi.fn(() =>
   Promise.resolve({ cause: 'browser-unsupported', missing: [], signals: {} }),
 );
-vi.mock('@/lib/env/support-diagnosis', () => ({
+// `isolationIsSettled` is the real (pure) one: the gate's decision is exactly the pair
+// "cause + settled", and mocking half of it would test nothing (issue #255).
+vi.mock('@/lib/env/support-diagnosis', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/env/support-diagnosis')>()),
   diagnoseCriticalSupport: () => diagnoseCriticalSupport(),
 }));
+
+/** Signals for a page a service worker is controlling — i.e. isolation is not coming back. */
+const SETTLED = { serviceWorkerApi: true, serviceWorkerActive: true, serviceWorkerControlling: true };
 
 const acquireDatabaseTabLock = vi.fn(() =>
   Promise.resolve({ acquired: true, handle: { release: () => {} } }),
@@ -60,9 +66,13 @@ afterEach(() => {
  * creates is the one this origin would then be stuck with.
  */
 describe('useDatabaseBoot — cross-origin isolation is preferred, not required', () => {
-  it('boots on the fallback VFS when isolation is blocked outright', async () => {
+  it('boots on the fallback VFS when isolation is settled and not coming', async () => {
     checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
-    diagnoseCriticalSupport.mockResolvedValue({ cause: 'isolation-blocked', missing: [], signals: {} });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-blocked',
+      missing: [],
+      signals: SETTLED,
+    });
 
     const { result } = renderHook(() => useDatabaseBoot());
 
@@ -72,7 +82,7 @@ describe('useDatabaseBoot — cross-origin isolation is preferred, not required'
 
   it('waits instead of booting while the header-injecting worker is still starting up', async () => {
     checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
-    diagnoseCriticalSupport.mockResolvedValue({ cause: 'isolation-pending', missing: [], signals: {} });
+    diagnoseCriticalSupport.mockResolvedValue({ cause: 'isolation-pending', missing: [], signals: SETTLED });
 
     const { result } = renderHook(() => useDatabaseBoot());
 
@@ -80,9 +90,39 @@ describe('useDatabaseBoot — cross-origin isolation is preferred, not required'
     expect(bootDatabase).not.toHaveBeenCalled();
   });
 
+  it('waits when a worker exists but has not activated — a slow first install looks identical', async () => {
+    // The reading that must NOT commit this origin to the fallback VFS: the probe gives up after
+    // a few seconds, which a first visit still precaching the app can easily exceed.
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-blocked',
+      missing: [],
+      signals: { serviceWorkerApi: true, serviceWorkerActive: false, serviceWorkerControlling: false },
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('unsupported'));
+    expect(bootDatabase).not.toHaveBeenCalled();
+  });
+
+  it('boots where no service worker exists to supply the headers at all', async () => {
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-blocked',
+      missing: [],
+      signals: { serviceWorkerApi: false, serviceWorkerActive: false, serviceWorkerControlling: false },
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(bootDatabase).toHaveBeenCalledTimes(1);
+  });
+
   it('still blocks on a cause no VFS could survive', async () => {
     checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
-    diagnoseCriticalSupport.mockResolvedValue({ cause: 'site-data-blocked', missing: [], signals: {} });
+    diagnoseCriticalSupport.mockResolvedValue({ cause: 'site-data-blocked', missing: [], signals: SETTLED });
 
     const { result } = renderHook(() => useDatabaseBoot());
 

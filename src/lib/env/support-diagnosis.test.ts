@@ -6,6 +6,7 @@ import {
   SERVICE_WORKER_PROBE_TIMEOUT_MS,
   collectSupportSignals,
   diagnoseSupport,
+  isolationIsSettled,
   type SupportSignals,
 } from './support-diagnosis';
 
@@ -142,6 +143,42 @@ describe('diagnoseSupport', () => {
       // The precedence above only holds once the everyday explanations are out of the way.
       expect(diagnoseSupport(signals({ opfs: false, cookiesEnabled: false }))).toBe('site-data-blocked');
     });
+  });
+});
+
+/**
+ * `isolation-blocked` is one label over three situations, and since #255 the boot gate acts on it:
+ * it stops waiting for isolation and opens the fallback VFS. That is effectively permanent — the
+ * database the fallback creates is the one this origin must keep opening — so the one reading that
+ * is merely *slow* must not be mistaken for the two that are final.
+ */
+describe('isolationIsSettled', () => {
+  it('is settled when no service worker exists to supply the headers', () => {
+    expect(
+      isolationIsSettled(
+        signals({
+          ...NOT_ISOLATED,
+          serviceWorkerApi: false,
+          serviceWorkerActive: false,
+          serviceWorkerControlling: false,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('is settled when a worker controls the page and it is still not isolated', () => {
+    // Its headers are being removed in transit; another attempt would be removed too.
+    expect(isolationIsSettled(signals({ ...NOT_ISOLATED }))).toBe(true);
+  });
+
+  it('is NOT settled while a worker exists but has not reached active', () => {
+    // Indistinguishable, within the probe's few seconds, from a first visit still precaching the
+    // app over a slow connection. Giving up here would pin a capable browser to the fallback VFS.
+    expect(
+      isolationIsSettled(
+        signals({ ...NOT_ISOLATED, serviceWorkerActive: false, serviceWorkerControlling: false }),
+      ),
+    ).toBe(false);
   });
 });
 

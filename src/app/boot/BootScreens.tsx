@@ -106,10 +106,11 @@ interface CausePresentation {
  * is not a failure at all — it is the normal first visit, waiting on the service worker that
  * supplies the COOP/COEP headers (§2.2.6) — so it reads as progress, not an error.
  *
- * `isolation-blocked` is the one the boot gate no longer shows: since #255 that diagnosis means
- * "isolation is not coming", which is a reason to open the database on the fallback VFS rather
- * than to stop the user. Its entry stays so this table remains total over {@link SupportCause} —
- * a cause with no presentation would render nothing at all if the gate ever changed its mind.
+ * `isolation-blocked` reaches this table less often since #255: where isolation is demonstrably
+ * not coming, the boot now opens the database on the fallback VFS rather than stopping the user.
+ * It still shows for the reading that is *not* settled — a service worker that has not reached
+ * `active` yet, which is equally what a slow first install looks like, and where a reload is
+ * genuinely the right advice.
  */
 const CAUSE_PRESENTATION: Record<SupportCause, CausePresentation> = {
   'insecure-context': {
