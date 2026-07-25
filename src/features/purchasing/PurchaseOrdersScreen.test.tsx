@@ -24,6 +24,9 @@ let setStatusSpy: ReturnType<typeof vi.fn>;
 let receiveLineSpy: ReturnType<typeof vi.fn>;
 const refetchOrders = vi.fn();
 
+/** Controls usePurchaseOrderCount — the total across every page (issue #149). */
+let orderCountState: number | undefined;
+
 /** Controls usePurchaseOrders for the master-list result-count tests (Phase 64). */
 let ordersState: {
   isLoading: boolean;
@@ -45,7 +48,25 @@ let ordersState: {
 };
 
 vi.mock('./queries', () => ({
-  usePurchaseOrders: () => ({ ...ordersState, refetch: refetchOrders }),
+  /**
+   * The order list pages **server-side** (issue #149), so the stub serves pages the way the
+   * repository does: `ordersState.data.rows` is every order, and the hook returns only the
+   * requested window of it, capped at the repository's ceiling.
+   */
+  usePurchaseOrders: (page = 1, pageSize = 100) => {
+    if (!ordersState.data) return { ...ordersState, refetch: refetchOrders };
+    const all = ordersState.data.rows;
+    const limit = Math.min(pageSize, 100);
+    const offset = (page - 1) * limit;
+    const rows = all.slice(offset, offset + limit);
+    return {
+      ...ordersState,
+      data: { rows, offset, limit, hasMore: offset + rows.length < all.length },
+      refetch: refetchOrders,
+    };
+  },
+  // The total across every page. Defaults to the whole fixture, as the real COUNT(*) would.
+  usePurchaseOrderCount: () => ({ data: orderCountState ?? ordersState.data?.rows.length }),
   usePurchaseOrder: () => ({
     isLoading: false,
     data: poData,
@@ -139,6 +160,7 @@ vi.mock('./components/ImportPurchaseListDialog', () => ({
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 import { PurchaseOrdersScreen } from './PurchaseOrdersScreen';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 /** A minimal Draft PO with one line (10 ordered, 0 received). */
 function makeDraftPo(overrides: Partial<PurchaseOrderWithLines> = {}): PurchaseOrderWithLines {
@@ -168,6 +190,7 @@ afterEach(cleanup);
 
 beforeEach(() => {
   poData = makeDraftPo();
+  orderCountState = undefined;
 
   // Reset the orders-list state to the default single-PO fixture (preserves
   // existing Phase-63 tests which assume one order is present).
@@ -414,5 +437,63 @@ describe('PurchaseOrdersScreen — failed order-list load (issue #306)', () => {
     ordersState = { isLoading: false, isError: true };
     render(<PurchaseOrdersScreen />);
     expect(screen.getByTestId('po-list-count-live').textContent).toBe('');
+  });
+});
+
+describe('PurchaseOrdersScreen — a list longer than one read (issue #149)', () => {
+  afterEach(() => {
+    usePreferencesStore.setState({ paginateLists: false, defaultPageSize: 50 });
+  });
+
+  /** 125 orders — more than the repository will return in a single capped read. */
+  const manyOrders = {
+    isLoading: false,
+    data: {
+      rows: Array.from(
+        { length: 125 },
+        (_, i) =>
+          ({
+            id: `po-${i}`,
+            supplierName: `Supplier ${String(i + 1).padStart(3, '0')}`,
+            reference: `REF-${i}`,
+            effectiveStatus: 'DRAFT',
+            lines: [],
+          }) satisfies PurchaseOrderWithLines,
+      ),
+    },
+  };
+
+  it('says how many orders the capped read leaves out when pagination is off', () => {
+    ordersState = manyOrders;
+    render(<PurchaseOrdersScreen />);
+
+    const notice = screen.getByTestId('po-truncated');
+    expect(notice.textContent).toContain('100');
+    expect(notice.textContent).toContain('25');
+    expect(screen.queryByText('Supplier 101')).toBeNull();
+  });
+
+  it('reports the whole set in the live region, not just the page in view', () => {
+    ordersState = manyOrders;
+    render(<PurchaseOrdersScreen />);
+    expect(screen.getByTestId('po-list-count-live').textContent).toContain('125 purchase orders');
+  });
+
+  it('reaches the orders past the first read once pagination is on', () => {
+    usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 100 });
+    ordersState = manyOrders;
+    render(<PurchaseOrdersScreen />);
+
+    expect(screen.queryByTestId('po-truncated')).toBeNull();
+    expect(screen.getByTestId('po-pagination-summary')).toHaveTextContent('1–100 of 125');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByTestId('po-pagination-summary')).toHaveTextContent('101–125 of 125');
+    expect(screen.getByText('Supplier 101')).toBeInTheDocument();
+  });
+
+  it('shows no truncation notice when every order fits in one read', () => {
+    render(<PurchaseOrdersScreen />);
+    expect(screen.queryByTestId('po-truncated')).toBeNull();
   });
 });

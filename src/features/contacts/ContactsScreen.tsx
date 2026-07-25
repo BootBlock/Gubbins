@@ -9,7 +9,6 @@ import {
   Spinner,
   Surface,
   pageCount,
-  pageSliceBounds,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import { AddContactIcon, ContactsIcon, DeleteIcon } from '@/components/icons';
@@ -23,16 +22,34 @@ import { RenewLoanDialog } from './components/RenewLoanDialog';
 import { LoanRow } from './components/LoanRow';
 import { EditContactDialog } from './components/EditContactDialog';
 import { ContactsGettingStarted } from './components/ContactsGettingStarted';
-import { useContacts, useCreateContact, useDeleteContact, useOpenCheckouts } from './contacts';
+import {
+  useContactCount,
+  useContacts,
+  useCreateContact,
+  useDeleteContact,
+  useOpenCheckouts,
+} from './contacts';
 
 /**
  * The borrowing hub (spec §4 Borrowing & Checking Out, Phase 6): everything still
  * out on loan (with overdue alerts and one-tap return) plus the Contacts dictionary.
+ *
+ * The dictionary pages **server-side** (issue #149). It used to slice a single capped read,
+ * which paged the first hundred contacts convincingly while the hundred-and-first was simply
+ * unreachable and unmentioned.
  */
 export function ContactsScreen() {
   const t = useT();
   const open = useOpenCheckouts();
-  const contacts = useContacts();
+  // App-wide list pagination (issue #20). Read the page the pager is on; unpaginated, read one
+  // bounded page — the ceiling is the repository's, and asking for more would clamp anyway.
+  const paginated = usePreferencesStore((s) => s.paginateLists);
+  const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
+  const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
+  const [contactsPage, setContactsPage] = useState(1);
+  const contactsPageSize = paginated ? defaultPageSize : PAGE_SIZE_BOUNDS.max;
+  const contacts = useContacts(contactsPage, contactsPageSize);
+  const contactsTotal = useContactCount();
   const createContact = useCreateContact();
   const deleteContact = useDeleteContact();
   const [newName, setNewName] = useState('');
@@ -55,12 +72,6 @@ export function ContactsScreen() {
   const onLoan = open.data?.rows ?? [];
   const overdueCount = onLoan.filter((c) => c.isOverdue).length;
 
-  // App-wide list pagination (issue #20). The contacts dictionary is a plain client-side list
-  // (already capped at 100 rows), so it paginates by slicing the loaded rows — no extra query.
-  const paginated = usePreferencesStore((s) => s.paginateLists);
-  const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
-  const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
-  const [contactsPage, setContactsPage] = useState(1);
   const contactRows = contacts.data?.rows ?? [];
   // First-run guide (#424): once either list has something in it, the page speaks for
   // itself, so the guide only shows while both are confirmed (not merely loading) empty.
@@ -73,9 +84,12 @@ export function ContactsScreen() {
     !contacts.isError &&
     onLoan.length === 0 &&
     contactRows.length === 0;
-  const contactPages = pageCount(contactRows.length, defaultPageSize);
-  const { start, end } = pageSliceBounds(contactsPage, defaultPageSize, contactRows.length);
-  const visibleContacts = paginated ? contactRows.slice(start, end) : contactRows;
+  // Fall back to the rows in hand when the count is unavailable, so a failed count query
+  // degrades to "one page" rather than silently removing the pager from a longer list.
+  const totalContacts = contactsTotal.data ?? (contacts.data ? contacts.data.offset + contactRows.length : 0);
+  const contactPages = pageCount(totalContacts, contactsPageSize);
+  // Unpaginated the read is capped at one page; how many contacts that leaves unreachable.
+  const hiddenContacts = paginated ? 0 : Math.max(0, totalContacts - contactRows.length);
   // Clamp back into range if the list shrinks (a contact deleted) below the current page.
   useEffect(() => {
     if (paginated && contactPages > 0 && contactsPage > contactPages) setContactsPage(contactPages);
@@ -138,8 +152,10 @@ export function ContactsScreen() {
               ''
             : contacts.data == null
               ? 'Loading contacts…'
-              : contacts.data.rows.length > 0
-                ? `${contacts.data.rows.length} ${plural(contacts.data.rows.length, 'contact')}.`
+              : totalContacts > 0
+                ? // The whole dictionary, not the page in view — a per-page figure would
+                  // understate how many contacts the user actually has.
+                  `${totalContacts} ${plural(totalContacts, 'contact')}.`
                 : 'No contacts yet.'}
         </p>
 
@@ -220,7 +236,7 @@ export function ContactsScreen() {
           ) : contactRows.length > 0 ? (
             <>
               <ul className="grid gap-2 sm:grid-cols-2">
-                {visibleContacts.map((c) => (
+                {contactRows.map((c) => (
                   <Surface
                     key={c.id}
                     className="transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10"
@@ -252,9 +268,17 @@ export function ContactsScreen() {
                   pageSizeOptions={PAGE_SIZE_PRESETS}
                   minPageSize={PAGE_SIZE_BOUNDS.min}
                   maxPageSize={PAGE_SIZE_BOUNDS.max}
-                  totalItems={contactRows.length}
+                  totalItems={totalContacts}
                   data-testid="contacts-pagination"
                 />
+              ) : hiddenContacts > 0 ? (
+                // Unpaginated the read is still bounded, so say so rather than quietly showing a
+                // truncated dictionary as though it were everyone.
+                <p className="text-xs text-muted-foreground" data-testid="contacts-truncated">
+                  {t('contacts.list.truncated', {
+                    vars: { count: hiddenContacts, shown: contactRows.length },
+                  })}
+                </p>
               ) : null}
             </>
           ) : (

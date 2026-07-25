@@ -5,8 +5,10 @@ import {
   Money,
   PageContainer,
   PageHeader,
+  Pagination,
   Spinner,
   Surface,
+  pageCount,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import {
@@ -21,6 +23,8 @@ import {
 import { useT } from '@/features/i18n';
 import { useHotkeyScope } from '@/features/hotkeys/useHotkeyScope';
 import { useHotkeyIntent } from '@/features/hotkeys/useHotkeyIntent';
+import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ReorderTab } from './ReorderTab';
 import { WishlistTab } from './WishlistTab';
 import type { Formatters } from '@/lib/format';
@@ -37,6 +41,7 @@ import {
   useCreatePurchaseOrder,
   useDeletePurchaseOrder,
   usePurchaseOrder,
+  usePurchaseOrderCount,
   usePurchaseOrders,
   useReceivePurchaseOrderLine,
   useReturnPurchaseOrderLine,
@@ -66,6 +71,10 @@ type PoTab = 'orders' | 'reorder' | 'wishlist';
  * All three tabs live within the single `/purchase-orders` route (no new route file) so
  * route-tree merges with parallel phases remain clean. Status badges and design tokens
  * follow CLAUDE.md; copy is British English.
+ *
+ * The Orders master list pages **server-side** (issue #149): orders accumulate for as long as
+ * the inventory is used, and a single capped read left everything past the hundredth
+ * unreachable without saying so.
  */
 export function PurchaseOrdersScreen() {
   const f = useFormatters();
@@ -74,7 +83,15 @@ export function PurchaseOrdersScreen() {
   // totalled at that currency's minor unit instead.
   const currencyDecimals = f.currencyFractionDigits();
   const t = useT();
-  const ordersQuery = usePurchaseOrders();
+  // App-wide list pagination (issue #20). Unpaginated the list still reads a bounded page —
+  // the ceiling is the repository's, and asking for more than it allows would clamp anyway.
+  const paginated = usePreferencesStore((s) => s.paginateLists);
+  const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
+  const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
+  const [ordersPage, setOrdersPage] = useState(1);
+  const ordersPageSize = paginated ? defaultPageSize : PAGE_SIZE_BOUNDS.max;
+  const ordersQuery = usePurchaseOrders(ordersPage, ordersPageSize);
+  const ordersTotal = usePurchaseOrderCount();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -101,6 +118,17 @@ export function PurchaseOrdersScreen() {
 
   const orders = ordersQuery.data?.rows ?? [];
   const selected = selectedId ?? (orders.length > 0 ? orders[0]!.id : null);
+  // Fall back to the rows in hand when the count is unavailable, so a failed count query
+  // degrades to "one page" rather than silently removing the pager from a longer list.
+  const totalOrders = ordersTotal.data ?? (ordersQuery.data ? ordersQuery.data.offset + orders.length : 0);
+  const orderPages = pageCount(totalOrders, ordersPageSize);
+  // Unpaginated the read is capped at one page; how many orders that leaves unreachable.
+  const hiddenOrders = paginated ? 0 : Math.max(0, totalOrders - orders.length);
+
+  // Deleting the last order on the final page leaves the page out of range.
+  useEffect(() => {
+    if (paginated && orderPages > 0 && ordersPage > orderPages) setOrdersPage(orderPages);
+  }, [paginated, orderPages, ordersPage]);
 
   return (
     <PageContainer>
@@ -185,9 +213,11 @@ export function PurchaseOrdersScreen() {
                 ? // The visible error carries its own role="alert"; keep this polite region
                   // from also (mis)reporting an empty list on failure (issue #306).
                   ''
-                : orders.length === 0
+                : totalOrders === 0
                   ? 'No purchase orders yet.'
-                  : `${orders.length} ${plural(orders.length, 'purchase order')}.`}
+                  : // The whole set, not the page in view — a per-page figure would understate
+                    // how many orders there actually are.
+                    `${totalOrders} ${plural(totalOrders, 'purchase order')}.`}
           </p>
           {/* Order list */}
           <section aria-label="Purchase orders" className="flex flex-col gap-2">
@@ -211,16 +241,41 @@ export function PurchaseOrdersScreen() {
                 No purchase orders yet. Create one to start ordering parts from a supplier.
               </Surface>
             ) : (
-              orders.map((po) => (
-                <OrderListRow
-                  key={po.id}
-                  po={po}
-                  active={po.id === selected}
-                  formatters={f}
-                  baseDecimals={currencyDecimals}
-                  onSelect={() => setSelectedId(po.id)}
-                />
-              ))
+              <>
+                {orders.map((po) => (
+                  <OrderListRow
+                    key={po.id}
+                    po={po}
+                    active={po.id === selected}
+                    formatters={f}
+                    baseDecimals={currencyDecimals}
+                    onSelect={() => setSelectedId(po.id)}
+                  />
+                ))}
+                {paginated ? (
+                  <Pagination
+                    className="mt-1"
+                    page={ordersPage}
+                    pageCount={orderPages}
+                    onPageChange={setOrdersPage}
+                    pageSize={defaultPageSize}
+                    onPageSizeChange={setDefaultPageSize}
+                    pageSizeOptions={PAGE_SIZE_PRESETS}
+                    minPageSize={PAGE_SIZE_BOUNDS.min}
+                    maxPageSize={PAGE_SIZE_BOUNDS.max}
+                    totalItems={totalOrders}
+                    data-testid="po-pagination"
+                  />
+                ) : hiddenOrders > 0 ? (
+                  // Unpaginated the read is still bounded, so say so rather than quietly hiding
+                  // orders on the only screen that can open one.
+                  <p className="text-xs text-muted-foreground" data-testid="po-truncated">
+                    {t('purchasing.orders.truncated', {
+                      vars: { count: hiddenOrders, shown: orders.length },
+                    })}
+                  </p>
+                ) : null}
+              </>
             )}
           </section>
 

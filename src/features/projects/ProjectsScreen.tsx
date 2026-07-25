@@ -5,8 +5,10 @@ import {
   Glyph,
   PageContainer,
   PageHeader,
+  Pagination,
   Spinner,
   Surface,
+  pageCount,
   useCompactLayout,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
@@ -14,9 +16,11 @@ import { AddIcon, ImportIcon, ProjectIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { useHotkeyScope } from '@/features/hotkeys/useHotkeyScope';
 import { useHotkeyIntent } from '@/features/hotkeys/useHotkeyIntent';
+import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
-import { useProjects } from './projects';
+import { useProject, useProjectCount, useProjects } from './projects';
 import { PROJECT_STATUS_LABELS } from './components/projects-ui';
 import { CreateProjectDialog } from './components/CreateProjectDialog';
 import { ImportBomDialog } from './components/ImportBomDialog';
@@ -25,11 +29,25 @@ import { ProjectDetail } from './components/ProjectDetail';
 /**
  * The Phase 4 projects workspace (spec §5): a master list of projects on the left
  * and the selected project's BOM, costing, procurement and shopping list on the right.
+ *
+ * The master list pages **server-side** (issue #149): a single capped read left every project
+ * past the hundredth unreachable and said nothing, on the only screen that can open one. With
+ * pagination switched off it still reads one bounded page, and says how many that leaves out.
  */
 export function ProjectsScreen() {
   const t = useT();
-  const projects = useProjects();
+  const paginated = usePreferencesStore((s) => s.paginateLists);
+  const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
+  const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
+  const [page, setPage] = useState(1);
+  // Unpaginated, the list still reads a bounded page — the ceiling is the repository's, and
+  // asking for more than it allows would silently clamp anyway.
+  const pageSize = paginated ? defaultPageSize : PAGE_SIZE_BOUNDS.max;
+
+  const projects = useProjects(page, pageSize);
+  const total = useProjectCount();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedProject = useProject(selectedId ?? undefined);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   // Compact viewport (issue #147): the fixed 256px master list would take most of a phone's
@@ -44,6 +62,17 @@ export function ProjectsScreen() {
   }, [compact]);
 
   const rows = useMemo(() => projects.data?.rows ?? [], [projects.data?.rows]);
+  // Fall back to the rows in hand when the count is unavailable, so a failed count query
+  // degrades to "one page" rather than silently removing the pager from a longer list.
+  const totalProjects = total.data ?? (projects.data ? projects.data.offset + rows.length : 0);
+  const pages = pageCount(totalProjects, pageSize);
+  // Unpaginated the read is capped at one page; how many projects that leaves unreachable.
+  const hiddenProjects = paginated ? 0 : Math.max(0, totalProjects - rows.length);
+
+  // Deleting the last project on the final page leaves the page out of range.
+  useEffect(() => {
+    if (paginated && pages > 0 && page > pages) setPage(pages);
+  }, [paginated, pages, page]);
 
   // The contextual "new" shortcut (issue #127): on this screen, `N` creates a project.
   useHotkeyScope({ onNew: useCallback(() => setCreateOpen(true), []) });
@@ -96,34 +125,61 @@ export function ProjectsScreen() {
     ) : rows.length === 0 ? (
       <p className="px-2 pt-6 text-sm text-muted-foreground">No projects yet. Create one to plan a build.</p>
     ) : (
-      <ul className="space-y-1">
-        {rows.map((project) => (
-          <li key={project.id}>
-            <button
-              type="button"
-              onClick={() => onPick(project.id)}
-              className={cn(
-                'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4',
-                project.id === selectedId
-                  ? 'bg-primary/15 text-primary'
-                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
-              )}
-            >
-              <Glyph name={project.icon} fallback={ProjectIcon} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{project.name}</span>
-                <span className="block text-xs opacity-70">
-                  {project.lineCount} {plural(project.lineCount, 'part')} ·{' '}
-                  {PROJECT_STATUS_LABELS[project.status]}
+      <>
+        <ul className="space-y-1">
+          {rows.map((project) => (
+            <li key={project.id}>
+              <button
+                type="button"
+                onClick={() => onPick(project.id)}
+                className={cn(
+                  'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4',
+                  project.id === selectedId
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
+                )}
+              >
+                <Glyph name={project.icon} fallback={ProjectIcon} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{project.name}</span>
+                  <span className="block text-xs opacity-70">
+                    {project.lineCount} {plural(project.lineCount, 'part')} ·{' '}
+                    {PROJECT_STATUS_LABELS[project.status]}
+                  </span>
                 </span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+              </button>
+            </li>
+          ))}
+        </ul>
+        {paginated ? (
+          <Pagination
+            className="mt-3"
+            page={page}
+            pageCount={pages}
+            onPageChange={setPage}
+            pageSize={defaultPageSize}
+            onPageSizeChange={setDefaultPageSize}
+            pageSizeOptions={PAGE_SIZE_PRESETS}
+            minPageSize={PAGE_SIZE_BOUNDS.min}
+            maxPageSize={PAGE_SIZE_BOUNDS.max}
+            totalItems={totalProjects}
+            data-testid="projects-pagination"
+          />
+        ) : hiddenProjects > 0 ? (
+          // Unpaginated the read is still bounded, so say so rather than quietly hiding
+          // projects on the only screen that can open one.
+          <p className="px-2 pt-3 text-xs text-muted-foreground" data-testid="projects-truncated">
+            {t('projects.list.truncated', { vars: { count: hiddenProjects, shown: rows.length } })}
+          </p>
+        ) : null}
+      </>
     );
 
-  const selectedProjectLabel = rows.find((p) => p.id === selectedId)?.name ?? t('projects.list.none');
+  // Named from the project itself rather than from the rows in view: once the list pages, the
+  // selection can sit on a page you have navigated away from, and the compact trigger would
+  // otherwise read "No project selected" beside the very project it opens. `ProjectDetail`
+  // already holds this query, so this is a cache read rather than a second round trip.
+  const selectedProjectLabel = selectedProject.data?.name ?? t('projects.list.none');
 
   return (
     <PageContainer fullHeight>
@@ -204,9 +260,11 @@ export function ProjectsScreen() {
                 ? // The visible error carries its own role="alert"; keep this polite region
                   // from also (mis)reporting an empty list on failure (issue #306).
                   ''
-                : rows.length === 0
+                : totalProjects === 0
                   ? 'No projects yet.'
-                  : `${rows.length} ${plural(rows.length, 'project')}.`}
+                  : // The whole set, not the page in view — the count is what the user is
+                    // being told they have, and a per-page figure would understate it.
+                    `${totalProjects} ${plural(totalProjects, 'project')}.`}
           </p>
           {selectedId ? (
             // Keyed by project id so picking a different project replays the swap-in

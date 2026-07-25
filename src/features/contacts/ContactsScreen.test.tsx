@@ -58,12 +58,33 @@ let openCheckoutsState: { isLoading: boolean; isError?: boolean; data?: { rows: 
 let contactsState: { isLoading: boolean; isError?: boolean; data?: { rows: ContactRow[] } } = {
   isLoading: true,
 };
+/** Overrides the contacts total when a test needs it to disagree with the rows it supplies. */
+let contactCountState: number | undefined;
 const refetchOpen = vi.fn();
 const refetchContacts = vi.fn();
 
 vi.mock('./contacts', () => ({
   useOpenCheckouts: () => ({ ...openCheckoutsState, refetch: refetchOpen }),
-  useContacts: () => ({ ...contactsState, refetch: refetchContacts }),
+  /**
+   * The dictionary now pages **server-side** (issue #149), so the stub serves pages the way the
+   * repository does: `contactsState.data.rows` is the whole dictionary, and the hook returns
+   * only the requested window of it, capped at the repository's ceiling. A test that hands it
+   * more rows than one page holds therefore sees exactly what the screen would really get.
+   */
+  useContacts: (page = 1, pageSize = 100) => {
+    if (!contactsState.data) return { ...contactsState, refetch: refetchContacts };
+    const all = contactsState.data.rows;
+    const limit = Math.min(pageSize, 100);
+    const offset = (page - 1) * limit;
+    const rows = all.slice(offset, offset + limit);
+    return {
+      ...contactsState,
+      data: { rows, offset, limit, hasMore: offset + rows.length < all.length },
+      refetch: refetchContacts,
+    };
+  },
+  // The total across every page. Defaults to the whole fixture, as the real COUNT(*) would.
+  useContactCount: () => ({ data: contactCountState ?? contactsState.data?.rows.length }),
   useCreateContact: () => ({ mutate: vi.fn(), isPending: false }),
   useCheckInItem: () => ({ mutate: vi.fn(), isPending: false }),
   useRenewLoan: () => ({ mutate: vi.fn(), isPending: false }),
@@ -109,6 +130,7 @@ afterEach(cleanup);
 beforeEach(() => {
   openCheckoutsState = { isLoading: true };
   contactsState = { isLoading: true };
+  contactCountState = undefined;
   refetchOpen.mockClear();
   refetchContacts.mockClear();
 });
@@ -241,6 +263,60 @@ describe('ContactsScreen — list pagination (issue #20)', () => {
     expect(screen.getByTestId('contacts-pagination-summary')).toHaveTextContent('6–10 of 12');
     expect(screen.getByText('Contact 06')).toBeInTheDocument();
     expect(screen.queryByText('Contact 05')).toBeNull();
+  });
+});
+
+describe('ContactsScreen — a dictionary longer than one read (issue #149)', () => {
+  afterEach(() => {
+    usePreferencesStore.setState({ paginateLists: false, defaultPageSize: 50 });
+  });
+
+  /** 140 contacts — more than the repository will return in a single capped read. */
+  const manyContacts = {
+    isLoading: false,
+    data: {
+      rows: Array.from({ length: 140 }, (_, i) =>
+        makeContact(`k${i}`, `Contact ${String(i + 1).padStart(3, '0')}`),
+      ),
+    },
+  };
+
+  it('says how many contacts the capped read leaves out when pagination is off', () => {
+    contactsState = manyContacts;
+    render(<ContactsScreen />);
+
+    // The read stops at 100, so 40 contacts are unreachable — the screen must not simply show
+    // a hundred cards and let the rest vanish.
+    const notice = screen.getByTestId('contacts-truncated');
+    expect(notice.textContent).toContain('100');
+    expect(notice.textContent).toContain('40');
+    expect(screen.queryByText('Contact 101')).toBeNull();
+  });
+
+  it('reports the whole dictionary in the live region, not just the page in view', () => {
+    contactsState = manyContacts;
+    render(<ContactsScreen />);
+    expect(screen.getByTestId('contacts-count-live').textContent).toContain('140 contacts');
+  });
+
+  it('reaches the contacts past the first read once pagination is on', () => {
+    usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 100 });
+    contactsState = manyContacts;
+    render(<ContactsScreen />);
+
+    // No truncation notice — the pager is how the rest is reached now.
+    expect(screen.queryByTestId('contacts-truncated')).toBeNull();
+    expect(screen.getByTestId('contacts-pagination-summary')).toHaveTextContent('1–100 of 140');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByTestId('contacts-pagination-summary')).toHaveTextContent('101–140 of 140');
+    expect(screen.getByText('Contact 101')).toBeInTheDocument();
+  });
+
+  it('shows no truncation notice when the dictionary fits in one read', () => {
+    contactsState = { isLoading: false, data: { rows: [makeContact('k1', 'Alice')] } };
+    render(<ContactsScreen />);
+    expect(screen.queryByTestId('contacts-truncated')).toBeNull();
   });
 });
 

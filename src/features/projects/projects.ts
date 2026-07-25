@@ -7,18 +7,24 @@
  * deliberate split the category/tag hooks use). A project's BOM, costing and
  * shopping list are bounded per-project sets, fetched whole rather than virtualised;
  * the strict-pagination mandate (§2.1) targets the 100k+ item list.
+ *
+ * "Fetched whole" is enforced through {@link readAllPages} rather than assumed: the repository
+ * clamps every read to `MAX_PAGE_SIZE`, so a lone `{ limit: 100 }` (or a `{ limit: 200 }` that
+ * silently clamps to 100) quietly dropped part of a long BOM or expense ledger — and the BOM
+ * feeds the export, where a short read is a wrong file rather than a shorter screen (issue #149).
+ * The project *list* itself is a browse list and pages server-side instead.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getItemRepository,
   getProjectRepository,
+  MAX_PAGE_SIZE,
   type CostingMode,
   type CreateBomLineInput,
   type CreateBudgetCategoryInput,
   type CreateExpenseInput,
   type CreateProjectInput,
   type FinaliseAssemblyInput,
-  type PageParams,
   type ProcurementStatus,
   type ReservationStatus,
   type UpdateBomLineInput,
@@ -28,12 +34,20 @@ import {
 } from '@/db/repositories';
 import { useReportWriteFailure } from '@/features/errors';
 import { inventoryKeys } from '@/features/inventory/queries';
+import { readAllPages } from '@/lib/read-all-pages';
 import type { ParsedBomLine } from './bom-import';
 import { invalidateItems } from '@/features/inventory/invalidate';
 
 export const projectKeys = {
   all: ['projects'] as const,
   list: () => [...projectKeys.all, 'list'] as const,
+  /**
+   * One page of the project list. Nested **under** {@link projectKeys.list} so every existing
+   * `invalidateQueries({ queryKey: projectKeys.list() })` still refreshes every page and the
+   * count without each write having to learn about pagination.
+   */
+  page: (offset: number, limit: number) => [...projectKeys.list(), { offset, limit }] as const,
+  count: () => [...projectKeys.list(), 'count'] as const,
   budgetAlerts: () => [...projectKeys.all, 'budget-alerts'] as const,
   detail: (id: string) => [...projectKeys.all, 'detail', id] as const,
   lines: (id: string) => [...projectKeys.detail(id), 'lines'] as const,
@@ -47,10 +61,30 @@ export const projectKeys = {
 
 // --- reads ---------------------------------------------------------------------
 
-export function useProjects() {
+/**
+ * One page of the project list (issue #149).
+ *
+ * Defaults to the first full page, which is exactly what every picker and dashboard caller
+ * read before — only the Projects master list passes a page, so nothing else changes shape.
+ * Pair with {@link useProjectCount} wherever the whole set has to be reachable.
+ */
+export function useProjects(page = 1, pageSize = MAX_PAGE_SIZE) {
+  const limit = Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(pageSize)));
+  const offset = Math.max(0, (Math.max(1, Math.floor(page)) - 1) * limit);
   return useQuery({
-    queryKey: projectKeys.list(),
-    queryFn: () => getProjectRepository().list({ limit: 100 }),
+    queryKey: projectKeys.page(offset, limit),
+    queryFn: () => getProjectRepository().list({ limit, offset }),
+    // Hold the previous page on screen while the next one loads, so paging doesn't flash the
+    // empty state (the Tags screen's behaviour).
+    placeholderData: (previous) => previous,
+  });
+}
+
+/** How many projects exist in total — the denominator for the master list's pager. */
+export function useProjectCount() {
+  return useQuery({
+    queryKey: projectKeys.count(),
+    queryFn: () => getProjectRepository().count(),
   });
 }
 
@@ -62,10 +96,18 @@ export function useProject(id: string | undefined) {
   });
 }
 
+/**
+ * The project's **whole** bill of materials, in declared order (issue #149).
+ *
+ * Every line, not the first hundred: the BOM table, the "Finalise assembly" step and the BOM
+ * export all read these rows, so a capped read didn't shorten a list — it produced a bill of
+ * materials that was missing parts and an exported file that was quietly incomplete. `truncated`
+ * is only ever true at the {@link readAllPages} safety ceiling, and the screen says so.
+ */
 export function useBomLines(projectId: string | undefined) {
   return useQuery({
     queryKey: projectKeys.lines(projectId ?? ''),
-    queryFn: () => getProjectRepository().listLines(projectId!, { limit: 100 }),
+    queryFn: () => readAllPages((params) => getProjectRepository().listLines(projectId!, params)),
     enabled: Boolean(projectId),
   });
 }
@@ -111,11 +153,17 @@ export function useProjectBudget(projectId: string | undefined) {
   });
 }
 
-/** The project's manual expense ledger (bounded per-project; fetched whole). */
-export function useExpenses(projectId: string | undefined, params: PageParams = { limit: 200 }) {
+/**
+ * The project's manual expense ledger, fetched whole (bounded per-project).
+ *
+ * It asked for `{ limit: 200 }` before, which the repository clamped straight back to 100 — so
+ * "fetched whole" was only ever true of a short ledger, and a longer one lost its oldest
+ * entries without a word (issue #149).
+ */
+export function useExpenses(projectId: string | undefined) {
   return useQuery({
-    queryKey: [...projectKeys.expenses(projectId ?? ''), params],
-    queryFn: () => getProjectRepository().listExpenses(projectId!, params),
+    queryKey: projectKeys.expenses(projectId ?? ''),
+    queryFn: () => readAllPages((params) => getProjectRepository().listExpenses(projectId!, params)),
     enabled: Boolean(projectId),
   });
 }

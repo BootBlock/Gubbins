@@ -8,6 +8,11 @@ on the shelf"*.
 
 ![The Purchase orders screen, with its Orders, Reorder and Wishlist tabs](images/purchase-orders.png)
 
+Orders build up over time, so the list on the left splits into pages once you have more than one
+screenful. Turn it on with **Paginate list** (or **Settings → Inventory → Lists**) and every order
+stays reachable however many you have — see the [[pagination control|Inventory-Views]]. With it
+off, the list shows as many orders as it can read at once and tells you how many are left over.
+
 ## Creating an order
 
 Raise a PO against a supplier — entering the supplier's name — and add the items and quantities
