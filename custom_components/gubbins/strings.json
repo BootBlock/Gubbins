@@ -61,8 +61,8 @@
       }
     },
     "adjust_quantity": {
-      "name": "Adjust quantity (check in / out)",
-      "description": "Change a discrete item's stock by a signed amount. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on; the change syncs back to the app conflict-free.",
+      "name": "Adjust quantity (stock in / out)",
+      "description": "Change a discrete item's stock by a signed amount. This moves a number only — to record that someone has borrowed the item, use Check out instead. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on; the change syncs back to the app conflict-free.",
       "fields": {
         "item_id": {
           "name": "Item id",
@@ -70,7 +70,7 @@
         },
         "delta": {
           "name": "Delta",
-          "description": "Signed change: negative to check out, positive to check in."
+          "description": "Signed change: negative for stock going out, positive for stock coming in."
         },
         "note": {
           "name": "Note",
@@ -93,6 +93,66 @@
         "note": {
           "name": "Note",
           "description": "Optional note recorded in the item's activity log."
+        }
+      }
+    },
+    "check_out": {
+      "name": "Check out (lend an item)",
+      "description": "Lend an item to a person, a project or a place, optionally with a due date. Unlike adjusting a quantity this records who has it, so it shows as on loan and becomes overdue if the due date passes. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on, and an account with permission to lend; the change syncs back to the app conflict-free.",
+      "fields": {
+        "item_id": {
+          "name": "Item id",
+          "description": "The Gubbins record id of the item to lend (find it via the search service or the API)."
+        },
+        "contact_name": {
+          "name": "Borrower name",
+          "description": "Lend to a person by name. If nobody of that name exists yet, they are added — exactly as lending in the app would. Supply only one borrower."
+        },
+        "contact_id": {
+          "name": "Contact id",
+          "description": "Lend to an existing contact by id, instead of by name. Supply only one borrower."
+        },
+        "project_id": {
+          "name": "Project id",
+          "description": "Lend to a project rather than a person. Supply only one borrower."
+        },
+        "location_id": {
+          "name": "Borrowing location id",
+          "description": "Lend to a place, such as a van. This is where the item has gone, not where it came from. Supply only one borrower."
+        },
+        "quantity": {
+          "name": "Quantity",
+          "description": "How many units to lend. Defaults to 1; a serialised item always goes out as one."
+        },
+        "due_date": {
+          "name": "Due date",
+          "description": "The day it should come back. It only counts as overdue once that day has ended. Leave empty for an open-ended loan."
+        },
+        "from_location_id": {
+          "name": "Lend from location id",
+          "description": "Take the units from this location; the return puts them back there. Defaults to the item's own location."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Optional note recorded on the loan and in the item's activity log."
+        }
+      }
+    },
+    "check_in": {
+      "name": "Check in (return a lent item)",
+      "description": "Return a lent item, putting the stock back where it came from and closing the loan. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on, and an account with permission to lend; the change syncs back to the app conflict-free.",
+      "fields": {
+        "item_id": {
+          "name": "Item id",
+          "description": "The Gubbins record id of the item coming back (find it via the search service or the API)."
+        },
+        "checkout_id": {
+          "name": "Loan id",
+          "description": "Which loan to close. Only needed when the item is out on more than one loan at once — otherwise the single open loan is used."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Optional note recorded on the return, e.g. what state it came back in."
         }
       }
     }

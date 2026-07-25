@@ -22,11 +22,12 @@ search:
           max: 25
           mode: box
 
-# Opt-in stock check-in / check-out. This is the ONLY service that changes inventory, and it
-# works only when the bridge is started with GUBBINS_BRIDGE_ALLOW_WRITES=on (otherwise it errors
+# Opt-in change to a discrete item's count. One of four services that change inventory, and they
+# work only when the bridge is started with GUBBINS_BRIDGE_ALLOW_WRITES=on (otherwise they error
 # with "writes disabled"). The change round-trips through the app's own sync merge, so the PWA
-# applies it conflict-free on its next sync. Use a negative delta to check stock out, positive to
-# check it in. item_id is the Gubbins record id (find it via the search service or /api/v1).
+# applies it conflict-free on its next sync. Use a negative delta for stock going out, positive for
+# stock coming in. item_id is the Gubbins record id (find it via the search service or /api/v1).
+# This moves a number only — to record WHO has something, use check_out / check_in below.
 adjust_quantity:
   fields:
     item_id:
@@ -74,5 +75,87 @@ adjust_gauge:
     note:
       required: false
       example: "Printed the bracket"
+      selector:
+        text:
+
+# Lend an item out. Distinct from adjust_quantity, which only moves a number: a loan records WHO
+# has the item and when it is due, which is what the "on loan" and "overdue" binary sensors report
+# and what the app's calendar feed publishes. Same GUBBINS_BRIDGE_ALLOW_WRITES=on opt-in as the
+# adjust services; the token's account additionally needs the checkouts permission, since the app
+# draws the same line between adjusting stock and lending it.
+#
+# Supply exactly ONE borrower: contact_name (created if it matches nobody), contact_id, project_id
+# or location_id. The response carries the loan — keep its id if you want check_in to name that
+# exact loan later, though you rarely need to.
+check_out:
+  fields:
+    item_id:
+      required: true
+      example: "item-esp32"
+      selector:
+        text:
+    contact_name:
+      required: false
+      example: "Sam Okafor"
+      selector:
+        text:
+    contact_id:
+      required: false
+      example: "contact-sam"
+      selector:
+        text:
+    project_id:
+      required: false
+      example: "project-bench-build"
+      selector:
+        text:
+    location_id:
+      required: false
+      example: "loc-van"
+      selector:
+        text:
+    quantity:
+      required: false
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 1000000
+          mode: box
+    due_date:
+      required: false
+      example: "2026-08-14"
+      selector:
+        date:
+    from_location_id:
+      required: false
+      example: "loc-shelf-2"
+      selector:
+        text:
+    note:
+      required: false
+      example: "For the bench build"
+      selector:
+        text:
+
+# Take a lent item back: the stock returns to the place (and lot) it was lent from and the loan
+# closes. checkout_id is only needed when the item has more than one loan open at once — with a
+# single open loan the item id alone is unambiguous, so "that's back now" needs nothing else.
+# Same GUBBINS_BRIDGE_ALLOW_WRITES=on opt-in and checkouts permission as check_out.
+check_in:
+  fields:
+    item_id:
+      required: true
+      example: "item-esp32"
+      selector:
+        text:
+    checkout_id:
+      required: false
+      example: "a3f1c0de-0000-4000-8000-000000000000"
+      selector:
+        text:
+    note:
+      required: false
+      example: "Back on the shelf"
       selector:
         text:

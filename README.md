@@ -284,8 +284,9 @@ version:
    (category: *Integration*), restart HA, then add the
    **Gubbins** integration — it either auto-discovers the bridge or asks for its host, port, and
    an **API token** minted in the app under *Users → an account → API tokens* (the token is stored
-   by HA, never in YAML). Alongside the voice intent it registers a `gubbins.search` service, an
-   opt-in `gubbins.adjust_quantity` service, and an event you can trigger automations from. Wire the
+   by HA, never in YAML). Alongside the voice intent it registers a read-only `gubbins.search` service,
+   opt-in services to adjust stock and to lend an item out and take it back, and an event you can
+   trigger automations from. Wire the
    *"Where are my {item}?"* sentences into Assist as described in
    [`homeassistant/README.md`](homeassistant/README.md).
 

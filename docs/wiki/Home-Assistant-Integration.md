@@ -124,14 +124,15 @@ its own entry in Home Assistant, and neither is set in stone.
 
 ## Optional write-back
 
-If you choose to enable it, Home Assistant can also *adjust* stock through the bridge — a peer
+If you choose to enable it, Home Assistant can also *change* things through the bridge — a peer
 device that writes back through Gubbins' safe [[merge|Cloud-Sync]] so it can't cause drift.
 Write-back is **off by default**.
 
 Both ways of tracking stock are covered, so it doesn't matter which kind of item you're
 automating:
 
-- **Things you count** — check one in or out by a whole number.
+- **Things you count** — add or remove a whole number of them. (That's a change to the *count*;
+  to record that someone has borrowed one, see lending below.)
 - **Things you measure** — record an amount used or refilled on a
   [[gauge-tracked consumable|Low-Stock-and-Gauges]], in its own unit (grams, millilitres), fractions
   included. This is the natural partner to [[counting by weight|Counting-by-Weight]] above: if a
@@ -139,10 +140,36 @@ automating:
   straight back. Gubbins keeps the result between empty and full, and a request aimed at a
   counted item is refused rather than quietly doing something else.
 
+### Lending things out, and getting them back
+
+Home Assistant can also [[check an item out and back in|Loans-Check-Out-and-In]] — lend it to a
+person, a project or a place such as a van, optionally with a due date, and later record that it
+has come back. This is a different thing from adjusting a count: a loan records **who** has it, so
+it's what the *on loan* and *overdue* sensors above are counting.
+
+That closes the loop those sensors open. Before, an automation could tell you a loan was overdue;
+now the same automation can also chase it and mark it returned. A few things worth knowing:
+
+- The stock goes back to the **exact place and lot** it was lent from — the same as returning it in
+  the app.
+- With one loan open on an item, "it's back" needs nothing but the item; you only have to say
+  *which* loan when the same item is out to more than one borrower at once.
+- Lending to a name nobody matches **adds that [[contact|Contacts]]**, exactly as lending in the
+  app would. It's the one thing write-back can create.
+- A due date is a **day**, not a moment: something due the 20th only counts as overdue once the
+  20th has ended where you are.
+
+> **💡 Tip**
+> To chase an overdue loan, trigger on the **overdue** sensor above rather than on Gubbins'
+> [[calendar feed|Webhooks-MQTT-and-iCal]]. Both know something is late, but the sensor is the one
+> Home Assistant can act on directly — and returning an item needs only the item, which an
+> automation that lent it out already knows.
+
 > **⚠️ Heads-up**
 > Exposing the bridge to Home Assistant means it's reachable on your LAN. Give it its own
 > [[API token|Bridge-API-Tokens]] on an account with a narrow role, keep write-back off unless you
-> need it, and treat the whole setup as trusted-network only. See
+> need it, and treat the whole setup as trusted-network only. Lending is a separate permission from
+> adjusting stock, so an account can be allowed one and not the other. See
 > [[Privacy & security|Privacy-and-Security]].
 
 ## Related pages

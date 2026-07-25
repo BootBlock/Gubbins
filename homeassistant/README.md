@@ -3,7 +3,7 @@
 Ask your Home Assistant voice assistant **"Where are my M3 screws?"** and hear the answer
 from your Gubbins inventory.
 
-This folder documents a small, **read-only** Home Assistant custom integration plus a
+This folder documents a small **read-only-by-default** Home Assistant custom integration plus a
 no-code YAML fallback. The integration itself lives at the **repository root**
 (`custom_components/gubbins/`) so that HACS can install it directly; this folder holds the
 voice sentences and this guide. Both talk to the **Gubbins
@@ -17,8 +17,10 @@ Gubbins PWA → gubbins-sync.json (synced folder) → Gubbins bridge (your hardw
                                               Home Assistant  ── "Where are my M3 screws?"
 ```
 
-Nothing here ever writes to your inventory, and nothing leaves your network. The bridge is
-the only data path; this integration only issues `GET` requests.
+Nothing leaves your network, and nothing here writes to your inventory unless you deliberately
+switch writes on at the bridge — the integration issues `GET` requests for everything except the
+four opt-in write services described below, which are inert until then. The bridge is the only
+data path.
 
 > **Prerequisite — the bridge must be running first.** Set up and start the bridge as
 > described in [`../bridge/README.md`](../bridge/README.md) ("Run the read-only HTTP
@@ -36,8 +38,9 @@ the only data path; this integration only issues `GET` requests.
 | **Conversation intent** `GubbinsWhereIs` | The voice experience — "where are my {item}", "find my {item}", "how many {item} do I have". Speaks the bridge's ready-made sentence back. |
 | **Config flow** (UI setup) | Enter host, port and token in the UI. The token is stored by Home Assistant, never in YAML or this repo. A rotated token prompts you to reconnect, and *Reconfigure* moves the entry to a new host/port — neither needs the entry re-added. |
 | **`gubbins.search` service** | A read-only search you can call from scripts/automations; returns the matched items as response data. |
-| **`gubbins.adjust_quantity` service** | **Opt-in** check-in / check-out (negative delta = check out). Only works when the bridge runs with `GUBBINS_BRIDGE_ALLOW_WRITES=on`; the change syncs back to the app conflict-free. |
+| **`gubbins.adjust_quantity` service** | **Opt-in** signed change to a counted item's stock (negative = some went out). Moves a number only — for lending to a named borrower see the loan services below. Only works when the bridge runs with `GUBBINS_BRIDGE_ALLOW_WRITES=on`; the change syncs back to the app conflict-free. |
 | **`gubbins.adjust_gauge` service** | **Opt-in** use / refill of a *measured* consumable — grams of filament, millilitres of resin — by a (possibly fractional) signed amount. Same `GUBBINS_BRIDGE_ALLOW_WRITES=on` opt-in, same conflict-free sync back. |
+| **`gubbins.check_out` / `gubbins.check_in` services** | **Opt-in** lending: hand an item to a person, project or place (optionally with a due date) and take it back again. Unlike adjusting a quantity this records *who* has it — which is what the **on loan** and **overdue** sensors report, so an automation can now close the loan it was told about rather than only announcing it. Same `GUBBINS_BRIDGE_ALLOW_WRITES=on` opt-in; the token's account also needs permission to lend. |
 | **Inventory-items sensor** | Optional `/health` sensor (item count + snapshot timestamp) for dashboards and "bridge offline" automations. |
 | **Attention binary sensors** | One per inventory status — low stock, out of stock, on order, expiring, warranty expiring, on loan, overdue, maintenance due — on whenever anything matches, with the exact figure as a `count` attribute. |
 
@@ -162,7 +165,7 @@ response_variable: result
 ```
 
 `location_ids` and `located_matches` are the same shape the `gubbins_item_located` event
-uses (see step 7), so one template works for both the voice path and a script/dashboard
+uses (see step 8), so one template works for both the voice path and a script/dashboard
 path. A bridge that predates location ids still answers — those fields just come back
 empty.
 
@@ -191,8 +194,9 @@ integration simply leaves these entities unavailable — everything else keeps w
 
 ### 6. (Optional) Change stock — `gubbins.adjust_quantity` / `gubbins.adjust_gauge`
 
-These are the **only** services that *change* inventory, and both are **off unless you enable
-writes on the bridge**. Start the bridge with `GUBBINS_BRIDGE_ALLOW_WRITES=on` (see
+These, and the two loan services in step 7, are the **only** services that *change* inventory, and
+all of them are **off unless you enable writes on the bridge**. Start the bridge with
+`GUBBINS_BRIDGE_ALLOW_WRITES=on` (see
 [`../bridge/README.md`](../bridge/README.md#limited-writes-opt-in)); otherwise they return a clear
 "writes disabled" error and change nothing.
 
@@ -223,10 +227,79 @@ capacity, and refuses the call if the item isn't gauge-tracked.
 
 The bridge applies either change through the app's own mutation and writes it back into the synced
 `gubbins-sync.json`, so the PWA merges it conflict-free on its next sync — no bespoke database
-write, no drift. (Writes are deliberately **not** wired into the voice intent or MCP; a voice
+write, no drift. (Writes are deliberately **not** wired into the voice intent; a voice
 "check out" automation can call these services explicitly.)
 
-### 7. (Optional) React to a lookup — the `gubbins_item_located` event
+### 7. (Optional) Lend and return — `gubbins.check_out` / `gubbins.check_in`
+
+Adjusting a quantity moves a number. A **loan** records *who* has the item and when it is due —
+which is what the **on loan** and **overdue** binary sensors from step 5 are counting, and what
+Gubbins publishes to a calendar. Without these two, an automation could be told a loan was overdue
+and had no way to close it; now it can do both ends.
+
+Same `GUBBINS_BRIDGE_ALLOW_WRITES=on` opt-in as step 6. The token's account additionally needs
+permission to **lend** (`checkouts:write`) rather than only to adjust stock — the same line the app
+draws between the two.
+
+```yaml
+# Lend two to a person, due back on a given day.
+action: gubbins.check_out
+data:
+  item_id: "item-esp32"        # the Gubbins record id (find it via gubbins.search)
+  contact_name: "Sam Okafor"   # created if nobody of that name exists yet
+  quantity: 2
+  due_date: "2026-08-14"       # optional; omit for an open-ended loan
+  note: "For the bench build"
+```
+
+Supply **exactly one** borrower: `contact_name`, `contact_id`, `project_id` (out on a job) or
+`location_id` (out in the van). Anything else comes back as a clear rejection.
+
+```yaml
+# It's back. With one loan open, the item id is all you need.
+action: gubbins.check_in
+data:
+  item_id: "item-esp32"
+  note: "Back on the shelf"
+```
+
+The stock returns to the exact place — and lot — it was lent from. Pass `checkout_id` only when the
+item is out on more than one loan at once and you need to say which one came back; `check_out`
+returns the loan (use `response_variable`) if you want to keep its id.
+
+```yaml
+# The whole round trip: a button hands the meter to whoever's on shift.
+actions:
+  - action: gubbins.check_out
+    data:
+      item_id: "item-multimeter"
+      contact_name: "{{ states('input_text.on_shift') }}"
+      due_date: "{{ (now() + timedelta(days=7)).date() }}"
+    response_variable: loan
+  - action: notify.persistent_notification
+    data:
+      # dueDate is UNIX *milliseconds*, and is null on an open-ended loan.
+      message: >-
+        Multimeter lent out{% if loan.checkout.dueDate %}, due
+        {{ (loan.checkout.dueDate / 1000) | timestamp_custom('%d %b') }}{% endif %}.
+```
+
+> A due date is a **day**, not a moment: a loan due the 20th only counts as overdue once the 20th
+> has ended where you are. A day that doesn't exist (31 February) is refused rather than quietly
+> shifted.
+
+**Chasing an overdue loan.** The **overdue** binary sensor from step 5 is what to trigger on.
+Gubbins also publishes loan due-backs to a
+[calendar feed](../bridge/README.md#calendar-subscription), and that event *does* name the loan —
+but only inside its `UID`, and Home Assistant's calendar triggers expose an event's summary,
+description and times, never the `UID`. So neither route hands your automation a loan to close: the
+sensor reports a count and the calendar event a name.
+
+That is usually fine, because `check_in` needs only the `item_id` — which an automation that did
+the lending already holds, and which `gubbins.search` can find otherwise. Trigger on the sensor for
+"something is late", and keep the item you care about in the automation itself.
+
+### 8. (Optional) React to a lookup — the `gubbins_item_located` event
 
 Every time a voice lookup **resolves to at least one item**, the integration fires
 `gubbins_item_located` on the Home Assistant event bus, in addition to speaking the answer.
@@ -492,6 +565,16 @@ verify end-to-end against a snapshot of your own:
    silently doing something else. With writes **off** (the default), both services error with
    *"The Gubbins bridge has writes disabled…"* and nothing changes.
 
+8. **(Optional) Loans — `gubbins.check_out` / `gubbins.check_in`.** With the same
+   writes-enabled bridge running, call *Developer Tools → Actions → `gubbins.check_out`* with a
+   discrete `item_id`, `contact_name: Test Borrower` and `quantity: 1`. The item's quantity drops
+   by one, the **on loan** binary sensor turns on at its next refresh, and the response (tick
+   *"Return response data"*) carries the loan with its id. Call `gubbins.check_in` with just the
+   same `item_id` — the quantity comes back and the loan closes. Calling `check_in` again is
+   refused with *"This item is not currently checked out."*, and a `check_out` with no borrower
+   at all is refused with *"A checkout needs a borrower…"* — both the app's own wording, so the
+   reason is the same one you would see in Gubbins itself.
+
 > Use only synthetic/test values when following this recipe. The example token above is a
 > throwaway for local testing — generate a long random token for real use, and never commit
 > it.
@@ -528,11 +611,14 @@ To exercise the mDNS / zeroconf path end-to-end (HA isn't unit-testable here):
 
 ## Security & privacy
 
-- **Read-only by default; two opt-in writes.** The integration issues `GET` requests for every
-  read. The only exceptions are `gubbins.adjust_quantity` and `gubbins.adjust_gauge`, which work
-  only when *you* start the bridge with `GUBBINS_BRIDGE_ALLOW_WRITES=on`; even then the bridge
-  applies the change through the app's own mutation and syncs it back conflict-free — no SQL is
-  string-built. With writes off (the default) both services error and change nothing.
+- **Read-only by default; four opt-in writes.** The integration issues `GET` requests for every
+  read. The only exceptions are `gubbins.adjust_quantity`, `gubbins.adjust_gauge`,
+  `gubbins.check_out` and `gubbins.check_in`, which work only when *you* start the bridge with
+  `GUBBINS_BRIDGE_ALLOW_WRITES=on`; even then the bridge applies the change through the app's own
+  mutation and syncs it back conflict-free — no SQL is string-built. With writes off (the default)
+  all four error and change nothing. Nothing can be renamed or deleted through any of them; the
+  one thing they can *create* is a contact, when you lend to a name that matches nobody — exactly
+  as lending in the app would.
 - **Your token stays yours.** With the custom integration the token is stored in Home
   Assistant's config-entry store (entered in the UI), never in YAML or this repository.
   With the YAML recipe it lives in your local `secrets.yaml`, which you must not commit.
@@ -555,15 +641,15 @@ there; the voice sentences and this guide stay under `homeassistant/`.
   custom_components/gubbins/                 # the integration (must be at the repo root)
     manifest.json                            # integration metadata (HACS-compatible)
     const.py                                 # domain + config keys
-    api.py                                   # thin HTTP client (reads + the opt-in adjust_quantity / adjust_gauge writes)
-    __init__.py                              # setup: client, coordinators, intent, gubbins.search + the two adjust services
+    api.py                                   # thin HTTP client (reads + the opt-in adjust / loan writes)
+    __init__.py                              # setup: client, coordinators, intent, gubbins.search + the four write services
     coordinator.py                           # /health and /api/v1/status polling coordinators (health drives reauth when the token is rejected)
     config_flow.py                           # UI config flow: manual host/port/token, zeroconf discovery, reauth + reconfigure (all verify /health)
     intent.py                                # GubbinsWhereIs conversation intent handler
     entity.py                                # the shared device descriptor every entity belongs to
     sensor.py                                # optional /health item-count sensor
     binary_sensor.py                         # one attention binary sensor per inventory status
-    services.yaml                            # gubbins.search + adjust_quantity + adjust_gauge schemas
+    services.yaml                            # gubbins.search + adjust_quantity / adjust_gauge / check_out / check_in schemas
     strings.json / translations/en.json      # UI text
 
 homeassistant/
