@@ -61,6 +61,10 @@ export {
   // Decorative rarity gem for the "Collector cards" gamification (Appearance flair).
   Gem as RarityIcon,
   FolderTree as MoveIcon,
+  // The location hierarchy as a *place* rather than an action — the trigger that opens the
+  // locations drawer on a compact viewport. Same glyph as MoveIcon ("move to a location"),
+  // under the name that reads correctly at that call site.
+  FolderTree as LocationTreeIcon,
   Search as SearchIcon,
   ChevronRight as ChevronRightIcon,
   ChevronDown as ChevronDownIcon,

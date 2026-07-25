@@ -8,6 +8,18 @@ need, and can I afford it?"*
 
 ![A project showing its bill of materials, budget and shopping list](images/projects.png)
 
+## Choosing a project on a phone
+
+The Projects screen normally shows your list of projects down the left and the selected project's
+details beside it. On a narrow screen there isn't room for both, so the list moves into a **panel
+that slides in from the left**, and a **Projects** button above the details names whichever project
+you're looking at.
+
+Tap it to bring the list in, pick a project, and the panel closes on the one you chose. Tap the
+dimmed area beside it, press `Escape`, or use the **✕** to leave the selection as it was. Widen the
+window and the list returns to its usual place — see
+[[the same behaviour on the Inventory screen|Locations-and-Stock]].
+
 ## The bill of materials
 
 A project's **BOM** lists the items it needs and how many of each. From that list, Gubbins works

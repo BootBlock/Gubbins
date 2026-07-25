@@ -15,7 +15,7 @@
  * variants can't express.
  */
 import { useEffect, useState } from 'react';
-import { LARGE_FORMAT_QUERY } from '@/lib/env/device';
+import { COMPACT_LAYOUT_QUERY, LARGE_FORMAT_QUERY } from '@/lib/env/device';
 import { useLabFlag } from '@/state/stores/useLabStore';
 import { defaultMediaQueryProvider, type MediaQueryProvider } from './useReducedMotion';
 
@@ -59,4 +59,19 @@ export function useLargeFormat(provider: MediaQueryProvider = defaultMediaQueryP
   const matches = useMediaQuery(LARGE_FORMAT_QUERY, provider);
   const forced = useLabFlag('force-large-format');
   return forced || matches;
+}
+
+/**
+ * `true` on a **compact** viewport — narrower than the tablet floor, per
+ * {@link COMPACT_LAYOUT_QUERY} — updating live as the window is resized, the device rotates
+ * or the user zooms.
+ *
+ * This one is a hook rather than a CSS variant on purpose. The master-detail screens move
+ * their master pane *into a drawer* here, and a pane can only live in one place at a time:
+ * rendering it twice and hiding one copy would duplicate its heading id, its roving-tabindex
+ * tree and its virtualiser. That is a **structural** change, which is exactly the case
+ * {@link useMediaQuery} exists for; pure styling still belongs in a Tailwind variant.
+ */
+export function useCompactLayout(provider: MediaQueryProvider = defaultMediaQueryProvider): boolean {
+  return useMediaQuery(COMPACT_LAYOUT_QUERY, provider);
 }

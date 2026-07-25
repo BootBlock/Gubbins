@@ -30,6 +30,18 @@ window.
 On tablets and foldables, Gubbins also **widens its layout** to make better use of the extra room —
 so a big screen isn't just a stretched phone view.
 
+## Phones & narrow windows
+
+The same adaptation runs the other way. Below tablet width, screens that normally show a list beside
+its details — the location tree on **Inventory**, the project list on **Projects** — move that list
+into a **panel that slides in from the left**, reached from a button above the content. The details
+then get the whole width instead of a sliver of it.
+
+Nothing is removed: the panel holds the full list, search and all, and closes as soon as you pick
+something. It follows the **width of the window**, not the kind of device, so a narrow desktop
+window or a zoomed-in page adapts too. See
+[[Locations & stock|Locations-and-Stock]] and [[Projects & BOM|Projects-and-BOM]].
+
 ## Related pages
 
 - **[[Installing Gubbins|Installing-Gubbins]]** — running full-screen as an app.

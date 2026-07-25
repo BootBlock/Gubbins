@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, cleanup } from '@testing-library/react';
 import type { Item } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
-import { ItemDragProvider } from '../item-drag';
+import { ItemDragProvider, useLocationRowDrop } from '../item-drag';
 
 // Capture the imperative `open` the row drives on a body click (the cardClickAction shortcut).
 const { openSpy } = vi.hoisted(() => ({ openSpy: vi.fn() }));
@@ -242,10 +242,21 @@ describe('ItemRow — click-to-act (cardClickAction)', () => {
   });
 });
 
+/**
+ * A location row to drop onto. The real screen always has the tree mounted beside the list, and
+ * the provider refuses to arm a drag while nothing is registered as a target (issue #147) — so a
+ * row alone in a provider is a state that can't occur, and wouldn't prove the wiring.
+ */
+function DropRow() {
+  useLocationRowDrop('loc-1', { onDropItem: () => {} });
+  return <div data-tree-id="loc-1" />;
+}
+
 describe('ItemRow — drag-source wiring', () => {
   it('begins a pointer drag from the row root, mounting the floating preview', () => {
     const { container } = render(
       <ItemDragProvider>
+        <DropRow />
         <ItemRow item={makeItem()} locations={[]} locationName="Workshop" />
       </ItemDragProvider>,
     );

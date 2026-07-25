@@ -68,6 +68,11 @@ export {
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';
+// Off-canvas panel for a master pane that can't sit beside its detail pane on a compact
+// viewport. It shares Modal's `aria-modal` contract through `use-dialog-behaviour`, which is
+// deliberately *not* re-exported: a feature needing a modal surface composes one of these two
+// primitives rather than hand-rolling a third from the hook.
+export { Drawer, type DrawerProps } from './drawer';
 // The open-dialog count, so app-global keyboard handling can stand aside while a modal owns
 // the keyboard (issue #32) — the same LIFO registry Modal itself uses to arbitrate Escape.
 export { openModalCount } from './modal-stack';
@@ -153,7 +158,7 @@ export {
   resolveRouteViewTransitionTypes,
   ROUTE_VIEW_TRANSITION_TYPE,
 } from './view-transition';
-export { useMediaQuery, useLargeFormat } from './useMediaQuery';
+export { useMediaQuery, useLargeFormat, useCompactLayout } from './useMediaQuery';
 export { usePointerTilt, type PointerTiltOptions, type PointerTiltHandlers } from './usePointerTilt';
 export {
   computeTilt,

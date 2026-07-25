@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
-import { useMediaQuery, useLargeFormat } from './useMediaQuery';
-import { LARGE_FORMAT_QUERY } from '@/lib/env/device';
+import { useMediaQuery, useLargeFormat, useCompactLayout } from './useMediaQuery';
+import { COMPACT_LAYOUT_QUERY, LARGE_FORMAT_QUERY } from '@/lib/env/device';
 import { useLabStore } from '@/state/stores/useLabStore';
 import type { MediaQueryLike, MediaQueryProvider } from './useReducedMotion';
 
@@ -99,5 +99,29 @@ describe('useLargeFormat', () => {
       const { result } = renderHook(() => useLargeFormat(provideMedia(new FakeMedia(false))));
       expect(result.current).toBe(false);
     });
+  });
+});
+
+describe('useCompactLayout (issue #147)', () => {
+  it('resolves the compact-layout query through the provider', () => {
+    const provider = provideMedia(new FakeMedia(true));
+    const { result } = renderHook(() => useCompactLayout(provider));
+    expect(result.current).toBe(true);
+    expect(provider).toHaveBeenCalledWith(COMPACT_LAYOUT_QUERY);
+  });
+
+  it('flips live as the viewport crosses the breakpoint', () => {
+    const media = new FakeMedia(false);
+    const { result } = renderHook(() => useCompactLayout(provideMedia(media)));
+    expect(result.current).toBe(false);
+    act(() => media.set(true));
+    expect(result.current).toBe(true);
+  });
+
+  it('asks about width alone — a zoomed desktop must reflow too, so no pointer test', () => {
+    // The `handset:` variant pairs its width test with `(pointer: coarse)` because it *hides*
+    // content. This one moves content, so withholding it from a zoomed desktop would break the
+    // reflow WCAG 1.4.10 asks for. Guard the distinction rather than leave it to a comment.
+    expect(COMPACT_LAYOUT_QUERY).not.toContain('pointer');
   });
 });
