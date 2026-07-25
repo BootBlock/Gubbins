@@ -10,8 +10,9 @@
  * repository**, never bespoke SQL: {@link ItemRepository.applicableStatuses} is the single query
  * (one conditional `SUM` per status, one pass over `items`), and each status inside it reuses its
  * own SSOT predicate. The low-stock thresholds are the same {@link DEFAULT_LOW_STOCK} the derived
- * `item.low_stock` events and the `/metrics` counts use, so no bridge surface can report a
- * different idea of "low" from another.
+ * `item.low_stock` events and the `/metrics` counts use, so no bridge surface can apply a
+ * different idea of "low" from another. (The *totals* still need not match `/metrics`, which
+ * bounds its scan at `MAX_ITEMS_SCANNED` active items where this aggregates the whole table.)
  *
  * `applicableStatuses` omits zero counts (the filter bar hides a chip that matches nothing); an
  * API consumer needs the opposite — every status present, so "nothing is overdue" is a `0` rather

@@ -39,8 +39,12 @@ describe('projectItemStatuses', () => {
   });
 
   it('reports the same low/out-of-stock figures the /metrics exposition publishes', async () => {
-    // Both read through the app's own `isLow` / `isOutOfStock` seams, so this pins the guarantee
-    // that a Home Assistant binary sensor and a Prometheus gauge can never disagree.
+    // The two decide "low" separately — this counts with `lowStockPredicateSql` in SQL, `/metrics`
+    // with the pure `isLow` seam — but from the same thresholds, and the app's own drift guard
+    // (`stock-attention-parity.test.ts`) holds those two predicates to one answer. This asserts
+    // the bridge wires them to the same thresholds, so a threshold that moved on one surface and
+    // not the other shows up here. It is not a claim that the totals always match: `/metrics`
+    // stops at `MAX_ITEMS_SCANNED` active items, whereas these counts are a whole-table aggregate.
     const statuses = await projectItemStatuses(hydrated.driver);
     const metrics = await projectMetrics(hydrated.driver);
     expect(statuses['low-stock']).toBe(metrics.lowStockItems);
