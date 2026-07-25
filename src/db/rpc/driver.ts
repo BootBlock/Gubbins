@@ -32,7 +32,17 @@ export interface SqlExecuteResult {
 }
 
 export interface IDatabaseDriver {
-  /** Run a row-returning statement and marshal every row back. */
+  /**
+   * Run a row-returning statement and marshal every row back.
+   *
+   * `TRow` is an *assertion*, not a check — nothing at runtime compares it against the statement,
+   * so a property the SELECT never projects reads `undefined` while the compiler insists it is
+   * there. `query-row-shape.test.ts` closes that gap from the outside (issue #356): it prepares
+   * each call site's SQL against the real baseline schema and fails the build when a declared
+   * property is not among the columns SQLite will return. Write the statement so that test can see
+   * it — a literal, or a template whose `${…}` spans are constants — and the assertion is checked;
+   * assemble the SQL at runtime and it goes back to resting on review.
+   */
   query<TRow = SqlRow>(sql: string, params?: SqlParams): Promise<TRow[]>;
 
   /** Convenience: the first row, or `undefined` when the result set is empty. */
