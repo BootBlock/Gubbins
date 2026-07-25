@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 
-import { Code128Error, code128Modules, code128Svg, encodeCode128 } from './code128';
+import {
+  CODE128_STOP_MODULES,
+  CODE128_SYMBOL_MODULES,
+  Code128Error,
+  code128Modules,
+  code128Svg,
+  code128WidestModules,
+  encodeCode128,
+} from './code128';
 
 /** Recompute the mod-103 checksum independently, to cross-check the encoder. */
 function expectedChecksum(symbols: number[]): number {
@@ -66,6 +74,31 @@ describe('code128Modules', () => {
     const symbols = encodeCode128('ABC');
     const modules = code128Modules('ABC');
     expect(modules.length).toBe(11 * symbols.length + 2);
+  });
+});
+
+describe('code128WidestModules', () => {
+  it('matches the real encoding when nothing compresses (Code B throughout)', () => {
+    // 'ABCDEFGH' has no digit run for Code C to take, so the widest case IS the real one.
+    expect(code128WidestModules(8)).toBe(code128Modules('ABCDEFGH').length);
+  });
+
+  it('is an upper bound the compressible case comes in under', () => {
+    // The same eight characters as digits: Code C packs them into pairs.
+    expect(code128Modules('12345678').length).toBeLessThan(code128WidestModules(8));
+  });
+
+  it('depends only on the length, never on the characters', () => {
+    for (const value of ['A1B2C3D4', '12345678', 'ABCDEFGH', '1234ABCD']) {
+      expect(code128WidestModules(value.length)).toBe(code128WidestModules(8));
+    }
+  });
+
+  it('is built from the module counts the pattern table actually uses', () => {
+    // Guards the constants against drift from PATTERNS: every symbol is 11 modules, and
+    // the stop carries its 2-module termination bar.
+    expect(code128Modules('A').length).toBe(3 * CODE128_SYMBOL_MODULES + CODE128_STOP_MODULES);
+    expect(CODE128_STOP_MODULES).toBe(CODE128_SYMBOL_MODULES + 2);
   });
 });
 

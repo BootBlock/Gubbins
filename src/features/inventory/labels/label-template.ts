@@ -17,7 +17,7 @@
  * it must fit is swapped for a short id — or dropped — rather than printed as a smear
  * (issue #331).
  */
-import { code128Modules } from './code128';
+import { code128Modules, code128WidestModules } from './code128';
 
 /**
  * Which code a label carries:
@@ -323,10 +323,35 @@ export function barcodeModuleWidth(value: string): number | null {
  * Would `value` print as a *readable* Code 128 across `widthMm` of label — i.e. is each
  * module at least {@link MIN_BARCODE_MODULE_MM} wide? `false` for a value that cannot be
  * encoded at all.
+ *
+ * Measures the value **as it will actually encode**, so a compressible one (Code Set C
+ * halves a run of digits) is allowed the extra room it genuinely occupies. Right for a
+ * value the user chose and can see; see {@link barcodeFitsWidthUncompressed} for one they
+ * cannot.
  */
 export function barcodeFitsWidth(value: string, widthMm: number): boolean {
   const modules = barcodeModuleWidth(value);
   if (modules === null || modules <= 0) return false;
+  return widthMm / modules >= MIN_BARCODE_MODULE_MM;
+}
+
+/**
+ * As {@link barcodeFitsWidth}, but measuring `value` at its **widest** — as though Code 128
+ * could not compress it at all ({@link code128WidestModules}) — so the answer depends only
+ * on how many characters it has, never on which.
+ *
+ * This is what the short-id fallback is judged by. A record id is opaque to the user, and
+ * Code Set C compresses an all-digit id to roughly two-thirds the width of one carrying
+ * letters. Measured exactly, two records with equally long names on the same label size
+ * would disagree about whether a fallback barcode fits — arbitrary from the outside, since
+ * the deciding value is one nobody sees. Measured at its widest, "can this label carry a
+ * barcode at all?" becomes a property of the label size alone (issue #331), at the cost of
+ * turning down the few ids that would have squeaked through.
+ */
+export function barcodeFitsWidthUncompressed(value: string, widthMm: number): boolean {
+  // Still asks the encoder whether the value is encodable at all; only the width is assumed.
+  if (barcodeModuleWidth(value) === null) return false;
+  const modules = code128WidestModules(value.length) + BARCODE_QUIET_ZONE_MODULES * 2;
   return widthMm / modules >= MIN_BARCODE_MODULE_MM;
 }
 
@@ -354,6 +379,10 @@ export interface FittedBarcode {
  * that, no barcode is printed at all: an unreadable symbol is worse than none, because
  * it looks like it should work (issue #331).
  *
+ * The two are measured differently on purpose: the preferred value as it really encodes,
+ * the fallback at its widest (see {@link barcodeFitsWidthUncompressed}), so `unprintable`
+ * is decided by the label's size rather than by the shape of an id the user never sees.
+ *
  * Pure — the printed sheet, the on-screen preview and the dialogs' warnings all derive
  * the same answer from this one place.
  */
@@ -361,7 +390,7 @@ export function fitBarcodeValue(preferred: string, id: string, widthMm: number):
   const wanted = toEncodableAscii(preferred);
   if (wanted.length > 0 && barcodeFitsWidth(wanted, widthMm)) return { value: wanted, fit: 'ok' };
   const short = shortId(id);
-  if (barcodeFitsWidth(short, widthMm)) {
+  if (barcodeFitsWidthUncompressed(short, widthMm)) {
     // No preferred value to lose (an item with no MPN) is the ordinary path, not a downgrade.
     return { value: short, fit: wanted.length > 0 ? 'shortened' : 'ok' };
   }

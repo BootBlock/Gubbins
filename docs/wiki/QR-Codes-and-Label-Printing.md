@@ -62,9 +62,11 @@ under **Code** in the print dialog.
 > A Code 128 barcode is *wide*: every character adds another group of bars, so a long value on a
 > small label collapses into a grey smear no scanner can read. Gubbins won't print one. If the
 > value is too long for the label, the barcode carries a short code for that item or location
-> instead, and the print dialog says so above the preview. On a label too narrow for even a short
-> code, the barcode is left off entirely; choose a wider label size, use fewer columns per sheet,
-> or switch to a QR code. Either way the barcode prints its own value underneath in plain
+> instead, and the print dialog says so above the preview. That short code needs a label **a little
+> over 30 mm wide**, so on the smallest sizes — the 30 × 15 mm labels, say — only a genuinely short
+> name or part number prints as a barcode at all; anything longer leaves the barcode off entirely.
+> Choose a wider label size, use fewer columns per sheet, or switch to a QR code. Either
+> way the barcode prints its own value underneath in plain
 > characters — so if you want the full name or part number on the label as well, turn on the
 > matching field under **Show on label**.
 
