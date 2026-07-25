@@ -1,12 +1,19 @@
 /**
  * FTS5 MATCH-query construction (spec §5 FTS5 text matching, §2.2.1a).
  *
- * The genuine search backend is the `items_fts` FTS5 virtual table (built in the
- * v5 migration), **never** a `LIKE` scan. User text is turned into a prefix query
- * here and passed to SQLite as a **bound parameter** — it is never concatenated
- * into SQL. Each whitespace token is wrapped as a double-quoted FTS string (so
- * special characters like `-`, `:` or `*` are treated literally, not as FTS
- * operators) with a trailing `*` for prefix matching, then AND-combined.
+ * The genuine search backend for the indexed item text columns is the `items_fts`
+ * FTS5 virtual table (created in the squashed `v1-initial` baseline — there is no
+ * separate v5 step left to point at), **never** a `LIKE` scan: the app's search
+ * box, the text-query grammar and the bridge's `$search` all arrive here. The one
+ * exception over those columns is the AST's `SUBSTRING` operator, added so the
+ * bridge's OData `contains()` can mean substring (issue #369) — no index can serve
+ * that, so it bypasses this module entirely.
+ *
+ * User text is turned into a prefix query here and passed to SQLite as a **bound
+ * parameter** — it is never concatenated into SQL. Each whitespace token is wrapped
+ * as a double-quoted FTS string (so special characters like `-`, `:` or `*` are
+ * treated literally, not as FTS operators) with a trailing `*` for prefix matching,
+ * then AND-combined.
  *
  *   buildFtsMatch('lm78 reg')            → '"lm78"* "reg"*'
  *   buildFtsMatch('wifi', 'description') → 'description : ("wifi"*)'
