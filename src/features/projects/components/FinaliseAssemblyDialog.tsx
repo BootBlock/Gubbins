@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Input, Modal, SelectField } from '@/components/foundry';
+import { Button, Input, Modal, Radio, SelectField } from '@/components/foundry';
 import {
   ASSEMBLY_OUTCOMES,
   UNASSIGNED_LOCATION_ID,
@@ -66,13 +66,12 @@ export function FinaliseAssemblyDialog({
               key={value}
               className="flex cursor-pointer items-start gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-secondary/40 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
             >
-              <input
-                type="radio"
+              <Radio
                 name="assembly-outcome"
                 value={value}
                 checked={outcome === value}
                 onChange={() => setOutcome(value)}
-                className="mt-1 size-4 accent-primary"
+                className="mt-1"
               />
               <span>
                 <span className="block text-sm font-medium">{ASSEMBLY_OUTCOME_LABELS[value]}</span>
