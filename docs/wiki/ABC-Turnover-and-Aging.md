@@ -54,7 +54,8 @@ exempt the one thing that's meant to sit there untouched.
 ### How long is "too long"?
 
 An item counts as dead once it has gone unmoved for the **idle threshold**. The default lives in
-**Settings → Reports → Dead-stock threshold** (90 days out of the box).
+**Settings → Inventory → Stock alerts & lifecycle → Dead-stock threshold** (90 days out of the
+box).
 
 Individual locations can override it: open a location and set its own **Idle threshold**. That
 applies to everything inside it, sub-locations included, unless one of those sets its own. Leave it

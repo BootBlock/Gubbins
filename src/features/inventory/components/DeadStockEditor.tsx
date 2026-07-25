@@ -26,7 +26,8 @@ const HINT =
   '- **Report** — always flag it once it’s gone unmoved for the idle threshold, whatever ' +
   'its location says.\n' +
   '- **Ignore** — never flag it, even if its location reports everything stored there.\n\n' +
-  'The idle threshold comes from **Settings → Reports**, unless a location sets its own.';
+  'The idle threshold comes from **Settings → Inventory → Stock alerts & lifecycle**, unless a ' +
+  'location sets its own.';
 
 /** Plain-language summary of what the item's *resolved* policy currently does. */
 function PolicyNote({ item }: { item: Item }) {
