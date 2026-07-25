@@ -7,8 +7,8 @@
  * its items) and pulls
  * full-resolution image bytes out of OPFS into the vault's `/assets` (the cross-device
  * full-res transport — JSON sync keeps blobs out per §4 strict isolation). The Markdown
- * vault is zipped off-thread in {@link export-vault.worker}. Reads are paginated (≤100)
- * per §2.1 and looped to completion.
+ * vault is zipped off-thread in {@link export-vault.worker}. Item reads are paginated (≤100)
+ * per §2.1 and looped to completion; the bounded location/category name lookups are read whole.
  */
 import {
   getAttachmentRepository,
@@ -357,10 +357,14 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   const itemRepo = getItemRepository();
   const imageRepo = getImageRepository();
   const attachmentRepo = getAttachmentRepository();
-  const locations = await getLocationRepository().list({ limit: PAGE });
-  const categories = await getCategoryRepository().list({ limit: PAGE });
-  const locationNames = new Map(locations.rows.map((l) => [l.id, l.name]));
-  const categoryNames = new Map(categories.rows.map((c) => [c.id, c.name]));
+  // Whole-set reads, not a page: these are the maps every exported item's location and category
+  // name is resolved through, so a capped read wrote items out as "Unfiled" with no category once
+  // a catalogue held more than a page of either (issue #148). Both sets are bounded structure, so
+  // the repositories expose an uncapped `listAll` for exactly this kind of lookup.
+  const locations = await getLocationRepository().listAll();
+  const categories = await getCategoryRepository().listAll();
+  const locationNames = new Map(locations.map((l) => [l.id, l.name]));
+  const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
 
   const vaultItems: VaultItem[] = [];
   for (const item of items) {

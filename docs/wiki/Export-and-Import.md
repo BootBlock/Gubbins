@@ -59,6 +59,20 @@ detection — so a BOM export, a supplier basket or a typed shopping list can be
 going through the item importer first.
 
 > **ℹ️ Note**
+> A chosen file is checked *before* anything is read from it, because a file picker's "All files"
+> option lets anything through. Only **text** is importable: a spreadsheet workbook (`.xlsx`,
+> `.ods`), a PDF, a photo or an archive is turned away with a note saying what it looks like and
+> what to do instead — save the workbook as **CSV** and import that — rather than being read as
+> gibberish and offered to you as rows of nonsense. Files up to **16 MB** are accepted; split
+> anything larger and import the parts one at a time.
+>
+> If a file isn't UTF-8 — older systems and some supplier exports still use **Latin-1** —
+> Gubbins reads it as Windows-1252 and *tells you it did*, so you can check the accented
+> characters and symbols in the preview before importing instead of finding them mangled
+> afterwards. The same checks apply wherever you import: items, a bill of materials, a purchase
+> list, or a file opened straight into Gubbins from your desktop.
+
+> **ℹ️ Note**
 > A quantity of **1 is only assumed when your file gives none** — a blank cell, or no quantity
 > column at all. Anything the file *does* say is taken at its word. On a bill of materials a
 > quantity of **0** stays zero, which is how a line is marked "not needed for this build"; on a

@@ -755,3 +755,49 @@ describe('LocationSidebar — drag-to-move item feedback', () => {
     expect(screen.getByRole('treeitem', { name: 'Cabinet' }).getAttribute('aria-busy')).toBeNull();
   });
 });
+
+describe('LocationSidebar — compact placement in the drawer (issue #147)', () => {
+  /** Render the pane as it appears inside the off-canvas drawer on a phone. */
+  function renderCompact() {
+    render(
+      <ToastProvider>
+        <LocationSidebar
+          compact
+          tree={tree}
+          flat={flat}
+          selectedId={null}
+          onSelect={vi.fn()}
+          totalCount={7}
+        />
+      </ToastProvider>,
+    );
+    return document.querySelector('aside')!;
+  }
+
+  it('fills the drawer instead of holding the fixed master-pane column', () => {
+    const aside = renderCompact();
+    expect(aside.className).toContain('w-full');
+    // The 256px column is exactly what does not fit on a phone.
+    expect(aside.className).not.toContain('w-64');
+  });
+
+  it('keeps the fixed column when placed beside the item list', () => {
+    renderSidebar();
+    const aside = document.querySelector('aside')!;
+    expect(aside.className).toContain('w-64');
+    expect(aside.className).not.toContain('w-full');
+  });
+
+  it('hides its own heading visually — the drawer already shows it — but still labels the tree', () => {
+    renderCompact();
+    const heading = screen.getByRole('heading', { name: 'Locations' });
+    expect(heading.className).toContain('sr-only');
+    // The tree's accessible name comes from that heading, so it must stay in the a11y tree.
+    expect(screen.getByRole('tree', { name: 'Locations' })).toBeTruthy();
+  });
+
+  it('still offers "Add location" — the drawer must not cost the user an action', () => {
+    renderCompact();
+    expect(screen.getByRole('button', { name: 'Add location' })).toBeTruthy();
+  });
+});

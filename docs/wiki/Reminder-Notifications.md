@@ -25,6 +25,17 @@ notification opens Gubbins straight to what it's about.
 > Turn on just the lanes you'll act on. If you don't manage expiries, leave that off — you'll get
 > a cleaner, more trustworthy stream of reminders you actually respond to.
 
+## Background checks
+
+The periodic check that lets a reminder arrive while Gubbins is **closed** is a separate,
+best-effort thing your browser grants. Not every browser offers it — and one that does may still
+hold it back from a site it considers too little used.
+
+Where your browser offers the check but holds it back, Settings says so beneath the reminders
+switch (**Background checks unavailable**). Either way reminders keep working; they simply arrive
+while Gubbins is open rather than in the background. Using Gubbins regularly can be enough for a
+browser to grant the check later — nothing needs turning on again.
+
 > **⚠️ Heads-up**
 > Notifications need Gubbins **installed** and permission granted, and support varies by device
 > (for example, they're limited on iOS). Where they aren't available, Gubbins simply doesn't show

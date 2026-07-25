@@ -264,6 +264,10 @@ describe('item-drag — unified pointer drag-to-move', () => {
     render(
       <ItemDragProvider>
         <Source />
+        {/* A real location row too, because the tree never renders without one — and a drag with
+            no registered target at all is refused outright (see "with nowhere to drop" below).
+            The hit-test below still points at the unwired row, which is what this test is about. */}
+        <Target onDrop={onDrop} />
         {/* A tree row carrying a data-tree-id but never wired as a drop target — exactly like the
             synthetic "All items" filter row, which an item can't be moved *to*. */}
         <div data-tree-id="all-items" data-testid="all-items">
@@ -303,6 +307,51 @@ describe('item-drag — unified pointer drag-to-move', () => {
     expect(screen.queryByTestId('item-drag-preview')).toBeNull();
     firePointer(window, 'pointerup', { x: 10, y: 60, pointerType: 'touch' });
     expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  /**
+   * With no drop target registered there is no drop the gesture could ever resolve to. That is
+   * the state a compact viewport is in whenever the locations drawer is shut (issue #147): the
+   * whole tree is unmounted, so every row has unregistered itself. Arming regardless would be
+   * worse than inert — it takes over the touch and stops the item list scrolling under the
+   * finger, then discards the drag with nothing to show for it.
+   */
+  describe('with nowhere to drop, the drag never arms', () => {
+    function SourceOnly() {
+      return (
+        <ItemDragProvider>
+          <Source />
+        </ItemDragProvider>
+      );
+    }
+
+    it('ignores a mouse drag when no row is registered', () => {
+      render(<SourceOnly />);
+      const source = screen.getByTestId('source');
+      pointHitTestAt(null);
+
+      firePointer(source, 'pointerdown', { x: 10, y: 10 });
+      firePointer(window, 'pointermove', { x: 40, y: 40 });
+
+      expect(screen.queryByTestId('item-drag-preview')).toBeNull();
+      expect(document.body.classList.contains('gubbins-dragging')).toBe(false);
+      firePointer(window, 'pointerup', { x: 40, y: 40 });
+    });
+
+    it('leaves a long press alone, so the list keeps scrolling under the finger', () => {
+      vi.useFakeTimers();
+      render(<SourceOnly />);
+      const source = screen.getByTestId('source');
+      pointHitTestAt(null);
+
+      firePointer(source, 'pointerdown', { x: 10, y: 10, pointerType: 'touch' });
+      act(() => vi.advanceTimersByTime(250));
+
+      expect(screen.queryByTestId('item-drag-preview')).toBeNull();
+      // The scroll-suppressor is bound with the touch and only bites once the drag arms; with
+      // the drag refused it must never fire, or the list would freeze mid-scroll.
+      expect(fireTouchMove().defaultPrevented).toBe(false);
+    });
   });
 });
 

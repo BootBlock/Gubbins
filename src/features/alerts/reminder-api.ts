@@ -11,9 +11,11 @@
  * that is the only form that works from an installed PWA and the only form whose
  * `notificationclick` the worker can handle to deep-link back into the app (see `sw.ts`).
  *
- * Every method degrades silently where the underlying API is missing or refuses — a rejected
- * permission, an unavailable worker, or a browser without Periodic Background Sync all resolve
- * to a no-op rather than throwing (§3, §6.1 graceful degradation).
+ * Every method degrades where the underlying API is missing or refuses — a rejected permission,
+ * an unavailable worker, or a browser without Periodic Background Sync all resolve to a no-op
+ * rather than throwing (§3, §6.1 graceful degradation). Degrading is not the same as hiding it:
+ * {@link ReminderApi.registerPeriodicSync} resolves `false` when the browser refuses, so
+ * Settings can tell the user their reminders have no background check behind them.
  */
 import { hasNotifications, hasPeriodicSync } from '@/lib/env/feature-detection';
 import type { PlannedReminder, ReminderPermission } from './reminders';
@@ -40,8 +42,12 @@ export interface ReminderApi {
   show(reminder: PlannedReminder): Promise<void>;
   /** Whether a periodic-sync registration for our tag already exists. */
   isPeriodicSyncRegistered(): Promise<boolean>;
-  /** Register the background reminder wake-up (best-effort). Never throws. */
-  registerPeriodicSync(): Promise<void>;
+  /**
+   * Register the background reminder wake-up (best-effort). Never throws; resolves `true` when
+   * the registration was accepted and `false` when the browser refused it — the caller reports
+   * that refusal rather than leaving the user believing background checks are running.
+   */
+  registerPeriodicSync(): Promise<boolean>;
   /** Remove the background reminder wake-up (best-effort). Never throws. */
   unregisterPeriodicSync(): Promise<void>;
 }
@@ -119,15 +125,18 @@ export function browserReminderApi(): ReminderApi {
     },
 
     registerPeriodicSync: async () => {
-      if (!periodicSyncSupported) return;
+      if (!periodicSyncSupported) return false;
       const registration = await readyRegistration();
-      if (!registration?.periodicSync) return;
+      if (!registration?.periodicSync) return false;
       try {
         await registration.periodicSync.register(REMINDER_PERIODIC_SYNC_TAG, {
           minInterval: REMINDER_PERIODIC_SYNC_MIN_INTERVAL_MS,
         });
+        return true;
       } catch {
-        // Permission for background sync refused, or quota reached — degrade silently.
+        // Background-sync permission refused (Chrome declines a site it considers too little
+        // used), or quota reached. Still no throw — but report the refusal so the caller can.
+        return false;
       }
     },
 

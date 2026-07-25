@@ -62,11 +62,22 @@ under **Code** in the print dialog.
 > A Code 128 barcode is *wide*: every character adds another group of bars, so a long value on a
 > small label collapses into a grey smear no scanner can read. Gubbins won't print one. If the
 > value is too long for the label, the barcode carries a short code for that item or location
-> instead, and the print dialog says so above the preview. On a label too narrow for even a short
-> code, the barcode is left off entirely; choose a wider label size, use fewer columns per sheet,
-> or switch to a QR code. Either way the barcode prints its own value underneath in plain
+> instead, and the print dialog says so above the preview. That short code needs a label **a little
+> over 30 mm wide**, so on the smallest sizes — the 30 × 15 mm labels, say — only a genuinely short
+> name or part number prints as a barcode at all; anything longer leaves the barcode off entirely.
+> Choose a wider label size, use fewer columns per sheet, or switch to a QR code. Either
+> way the barcode prints its own value underneath in plain
 > characters — so if you want the full name or part number on the label as well, turn on the
 > matching field under **Show on label**.
+
+> **ℹ️ Note**
+> A Code 128 barcode can only carry plain unaccented characters, so Gubbins writes accented
+> letters in their nearest plain form: a location called **Café Störage** prints a barcode reading
+> `Cafe Storage`, and **Größe** becomes `Grosse`. Curly quotes, dashes and the like are squared off
+> the same way. Where there is no plain equivalent at all — a name in Japanese, Greek or Cyrillic,
+> or one carrying an emoji or a currency sign — the barcode carries the item's or location's short
+> code instead of a half-written name. The QR code is unaffected: it always links to the exact
+> record, whatever the name is written in, and so does the name printed on the label itself.
 
 ## Choosing the address labels point to
 
