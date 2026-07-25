@@ -35,7 +35,14 @@ export function getGlyphIcon(name: GlyphName): LucideIcon {
   return icons[name];
 }
 
-/** Whether a name resolves to a real catalogue glyph. */
+/**
+ * Whether a name resolves to a real catalogue glyph.
+ *
+ * `Object.hasOwn`, not `in`: the bundler materialises `icons` as an ordinary object, so it
+ * also answers to `Object.prototype`'s keys. A bare `in` would accept `'toString'` and hand
+ * back `Object.prototype.toString` as though it were an icon — a name the picker can never
+ * produce, but a stored value can (a restore, a sync, an import).
+ */
 export function isGlyphName(name: string | null | undefined): name is GlyphName {
-  return name != null && name in icons;
+  return name != null && Object.hasOwn(icons, name);
 }
