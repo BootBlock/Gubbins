@@ -31,7 +31,14 @@ import { emptyAst } from '@/db/search/ast.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { searchItems, whereIs, type LookupObserver } from './query.ts';
 import type { RateLimiter } from './rate-limit.ts';
-import { sendError, sendJson, sendMetrics } from './api/respond.ts';
+import { sendError, sendJson, sendMetrics, sendNotModified } from './api/respond.ts';
+import {
+  cacheValidators,
+  isNotModified,
+  readConditionalHeaders,
+  snapshotInstant,
+  type ConditionalHeaders,
+} from './api/conditional.ts';
 import { readQueryParam, readResultLimit } from './api/params.ts';
 import { API_V1_BASE, handleApiV1, isApiV1Path, pathAllowsUrlToken } from './api/v1.ts';
 import { isPermitted, resolveIdentity } from './identity.ts';
@@ -466,6 +473,10 @@ export async function handleRequest(
       return;
     }
 
+    // The polled subscription feeds (calendar, syndication, metrics) answer conditionally, so
+    // every GET carries whatever validators the client cached — see `api/conditional.ts`.
+    const conditional = readConditionalHeaders(req.headers);
+
     if (v1) {
       await handleApiV1(res, url, {
         method: 'GET',
@@ -477,6 +488,7 @@ export async function handleRequest(
         scale: options.scale,
         lookup: options.lookup,
         webhookDeliveries: options.webhookDeliveries,
+        conditional,
       });
       return;
     }
@@ -492,7 +504,7 @@ export async function handleRequest(
         await handleWhere(res, options, url);
         return;
       case '/metrics':
-        await handleMetrics(res, options);
+        await handleMetrics(res, options, conditional);
         return;
       default:
         sendError(res, 404, 'not_found', 'Not found', { v1: false });
@@ -615,14 +627,28 @@ async function handleSearch(res: ServerResponse, options: BridgeServerOptions, u
  * header-only here (a Prometheus scrape config can send an `Authorization: Bearer` header or read
  * it from a file), so — unlike the feeds/calendar — no `?token=` is accepted; on a trusted
  * loopback a scrape job can also share the token via its own config.
+ *
+ * The exposition is a pure projection of the snapshot, so it is answered conditionally like the
+ * feeds (issue #363): a client that revalidates gets a `304` and the vault scan is skipped. A
+ * Prometheus scrape sends no conditional header and is unaffected.
  */
-async function handleMetrics(res: ServerResponse, options: BridgeServerOptions): Promise<void> {
+async function handleMetrics(
+  res: ServerResponse,
+  options: BridgeServerOptions,
+  conditional: ConditionalHeaders | undefined,
+): Promise<void> {
   const state = options.getState();
   if (state === null) {
     sendError(res, 503, 'snapshot_unavailable', 'Snapshot not loaded yet', { v1: false });
     return;
   }
-  sendMetrics(res, 200, formatMetrics(await projectMetrics(state.driver)));
+  const snapshotMs = snapshotInstant(state.snapshotGeneratedAt);
+  const validators = snapshotMs === null ? undefined : cacheValidators(snapshotMs, 'metrics');
+  if (validators !== undefined && isNotModified(conditional, validators)) {
+    sendNotModified(res, validators);
+    return;
+  }
+  sendMetrics(res, 200, formatMetrics(await projectMetrics(state.driver)), validators);
 }
 
 /** `GET /where?q=` — the "where is X?" answer plus a spoken sentence. */

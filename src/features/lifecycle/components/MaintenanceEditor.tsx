@@ -6,7 +6,7 @@
  * usage against a usage-based schedule, or remove one.
  */
 import { useId, useState } from 'react';
-import { Button, InfoHint, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, Checkbox, InfoHint, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { SettingsIcon, AddIcon, DeleteIcon, CheckIcon, WarningIcon } from '@/components/icons';
 import { MAINTENANCE_BASES, type MaintenanceBasis, type MaintenanceSchedule } from '@/db/repositories';
 import { cn } from '@/lib/utils';
@@ -135,12 +135,10 @@ export function MaintenanceEditor({ itemId }: { itemId: string }) {
           </div>
           {basis === 'USAGE' ? (
             <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
+              <Checkbox
                 data-testid="accrue-checkout-hours"
                 checked={accrueCheckoutHours}
                 onChange={(e) => setAccrueCheckoutHours(e.target.checked)}
-                className="size-4 accent-primary"
               />
               Accrue checkout hours automatically
               <Tooltip

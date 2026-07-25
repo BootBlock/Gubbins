@@ -1,5 +1,5 @@
 import { Fragment, useId, useRef, useState } from 'react';
-import { Banner, Button, Input, LiveRegion, Modal, Surface } from '@/components/foundry';
+import { Banner, Button, Checkbox, Input, LiveRegion, Modal, Radio, Surface } from '@/components/foundry';
 import {
   DatabaseIcon,
   DownloadIcon,
@@ -187,11 +187,10 @@ function CreatePanel() {
         {TOGGLES.map(({ key, label, hint, icon: Icon }) => (
           <Fragment key={key}>
             <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-secondary/40 [&_svg]:size-5">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={selection[key]}
                 onChange={() => toggle(key)}
-                className="mt-0.5 size-4 accent-primary"
+                className="mt-0.5"
                 data-testid={`backup-toggle-${key}`}
               />
               <Icon className="mt-0.5 text-muted-foreground" />
@@ -606,13 +605,12 @@ function ModeOption({
   return (
     // eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested radio input is correctly associated; the label's text comes from the dynamic {label}/{hint} props, which the linter cannot resolve to a static string.
     <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-secondary/40">
-      <input
-        type="radio"
+      <Radio
         name={name}
         value={value}
         checked={checked}
         onChange={onChange}
-        className="mt-0.5 size-4 accent-primary"
+        className="mt-0.5"
         data-testid={`restore-mode-${value}`}
       />
       <span className="flex-1">

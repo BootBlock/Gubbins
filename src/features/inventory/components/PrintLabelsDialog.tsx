@@ -96,6 +96,11 @@ export function PrintLabelsDialog({
   // are independent rather than exclusive.
   const barcodeTooNarrow = cells.some((c) => c.barcodeFit === 'unprintable');
   const barcodeShortened = cells.some((c) => c.barcodeFit === 'shortened');
+  // A QR's module count comes from its deep-link, so a small label divides a fixed number of
+  // modules into less and less space until a phone camera can't resolve them. It is still
+  // printed — a QR can't be shortened the way a barcode's value can, and it is usually the only
+  // code on the label — but the user gets to hear about it before the sticker is on a box (#330).
+  const qrTooSmall = cells.some((c) => c.qrFit === 'tooSmall');
   const dirty = useMemo(
     () => JSON.stringify(template) !== JSON.stringify(normaliseLabelTemplate(storedTemplate)),
     [template, storedTemplate],
@@ -130,6 +135,12 @@ export function PrintLabelsDialog({
         {qrTooLong ? (
           <Banner tone="warning" data-testid="labels-qr-too-long">
             {t('inventory.qr.tooLongLabels')}
+          </Banner>
+        ) : null}
+
+        {qrTooSmall ? (
+          <Banner tone="warning" data-testid="labels-qr-too-small">
+            {t('inventory.labels.qrTooSmallItems')}
           </Banner>
         ) : null}
 
@@ -271,7 +282,12 @@ function FieldToggle({
 }) {
   const toggle = (
     <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-      <Checkbox checked={checked} onChange={(e) => onChange(e.target.checked)} data-testid={testId} />
+      <Checkbox
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="size-3.5"
+        data-testid={testId}
+      />
       {label}
     </label>
   );

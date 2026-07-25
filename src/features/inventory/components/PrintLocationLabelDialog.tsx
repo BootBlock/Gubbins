@@ -163,6 +163,16 @@ export function PrintLocationLabelDialog({
       className="max-w-[38.4rem]"
     >
       <div className="space-y-4">
+        {/* A QR's module count comes from its deep-link, so a small label divides a fixed number
+            of modules into less and less space until a phone camera can't resolve them. It is
+            still printed — a QR can't be shortened the way a barcode's value can, and it is
+            usually the only code on the label — but the user hears about it first (#330). */}
+        {cell.qrFit === 'tooSmall' ? (
+          <Banner tone="warning" data-testid="loc-label-qr-too-small">
+            {t('inventory.labels.qrTooSmallLocation')}
+          </Banner>
+        ) : null}
+
         {/* Code 128 needs a minimum bar width to scan: a long location name would print as a
             smear, so it falls back to a short code — and a very narrow label can't carry a
             barcode at all. Say which, rather than quietly printing something else (#331). */}
@@ -221,7 +231,11 @@ export function PrintLocationLabelDialog({
             {location.path && location.path.trim().length > 0 ? (
               <div className="flex items-center gap-1">
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                  <Checkbox checked={showPath} onChange={(e) => setShowPath(e.target.checked)} />
+                  <Checkbox
+                    checked={showPath}
+                    onChange={(e) => setShowPath(e.target.checked)}
+                    className="size-3.5"
+                  />
                   Show full path
                 </label>
                 <InfoHint content={SHOW_PATH_HINT} />
@@ -234,6 +248,7 @@ export function PrintLocationLabelDialog({
                 <Checkbox
                   checked={showShortCode}
                   onChange={(e) => setShowShortCode(e.target.checked)}
+                  className="size-3.5"
                   data-testid="loc-label-show-short-code"
                 />
                 {t('inventory.labels.showShortCode')}

@@ -135,7 +135,7 @@ export default tseslint.config(
       // wrapping one of these wraps a real control, exactly as if it wrapped a bare <input>.
       'jsx-a11y/label-has-associated-control': [
         'error',
-        { controlComponents: ['Input', 'Select', 'Textarea', 'Checkbox'] },
+        { controlComponents: ['Input', 'Select', 'Textarea', 'Checkbox', 'Radio'] },
       ],
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       // High-value async-safety rules — the payoff for a worker/RPC/React-Query codebase

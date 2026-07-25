@@ -1,6 +1,7 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import {
   Button,
+  Checkbox,
   FormField,
   InfoHint,
   Input,
@@ -381,12 +382,7 @@ export function EditLocationDialog({
       </FormField>
 
       <label className="flex cursor-pointer items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={isDefault}
-          onChange={(e) => setIsDefault(e.target.checked)}
-          className="size-4 accent-primary"
-        />
+        <Checkbox checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} />
         {t('inventory.location.field.default')}
         <InfoHint content={t('inventory.location.hint.default')} />
       </label>

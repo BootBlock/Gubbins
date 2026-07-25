@@ -4,13 +4,27 @@
  * UI strings.
  */
 import type { CostingMode, ProcurementStatus, ProjectStatus, ReservationStatus } from '@/db/repositories';
+import type { MessageKey } from '@/features/i18n';
 import type { BudgetStatus } from '../budget';
 
+/**
+ * The English reference for each status. Surfaces that translate read
+ * {@link PROJECT_STATUS_LABEL_KEYS} instead; this stays the base text, held byte-identical to
+ * `en.json` by the catalog-drift test.
+ */
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   PLANNING: 'Planning',
   ACTIVE: 'Active',
   COMPLETED: 'Completed',
   ARCHIVED: 'Archived',
+};
+
+/** The catalog key carrying each status label, for the surfaces that go through `t()`. */
+export const PROJECT_STATUS_LABEL_KEYS: Record<ProjectStatus, MessageKey> = {
+  PLANNING: 'projects.status.planning',
+  ACTIVE: 'projects.status.active',
+  COMPLETED: 'projects.status.completed',
+  ARCHIVED: 'projects.status.archived',
 };
 
 export const COSTING_MODE_LABELS: Record<CostingMode, string> = {

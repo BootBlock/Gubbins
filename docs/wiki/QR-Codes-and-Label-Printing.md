@@ -151,11 +151,25 @@ Each label can carry a **QR code**, a **Code 128 barcode**, **both**, or **no co
 under **Code** in the print dialog.
 
 - **QR** holds a full link, so scanning one with any phone camera opens that exact item or
-  location in Gubbins. It stays readable at small sizes, which makes it the right choice for most
+  location in Gubbins. It packs that link into a square instead of a row of bars, so it stays
+  readable on far smaller labels than a barcode does — which makes it the right choice for most
   labels.
 - **Code 128** is the familiar striped barcode, for a handheld laser scanner of the kind used in
   warehouses. It carries an item's **part number** — or a location's **name** — as plain text, so
   scanning one types that value wherever your cursor is.
+
+> **⚠️ Heads-up**
+> A QR code has its limits too. The link it carries fixes how many squares — *modules* — it is
+> made of, so the smaller the label, the smaller each one prints; below about a quarter of a
+> millimetre a phone camera stops resolving them, and the code is a tidy little square that simply
+> never scans. The print dialog says so above the preview whenever the size you have chosen would
+> take it past that point, so you find out before the labels are on the boxes. **Choose a larger
+> label size, a sheet layout with larger labels, or show fewer lines of text** — every line of text
+> takes its height out of the code. The code is still printed either way; the warning is there
+> because only you can decide whether it is worth a sheet of stickers.
+>
+> A longer **link host** (see [Choosing the address labels point to](#choosing-the-address-labels-point-to)
+> below) makes the code denser, so a shorter one buys back a little room on small labels.
 
 > **⚠️ Heads-up**
 > A Code 128 barcode is *wide*: every character adds another group of bars, so a long value on a

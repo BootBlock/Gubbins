@@ -202,6 +202,11 @@ function headerBits(version: number): number {
   return 4 + (version >= 10 ? 16 : 8);
 }
 
+/** Modules a side a symbol of this version measures — 21 at version 1, growing by 4 a version. */
+function moduleCount(version: number): number {
+  return version * 4 + 17;
+}
+
 /**
  * The largest payload (in UTF-8 bytes) the encoder can carry — the biggest version in
  * {@link VERSIONS}, less its byte-mode header. **Derived, not hard-coded**, so extending the
@@ -325,7 +330,7 @@ function interleave(dataBlocks: number[][], spec: VersionSpec): number[] {
 // --- Matrix construction --------------------------------------------------------
 
 function buildMatrix(codewords: number[], spec: VersionSpec): QrMatrix {
-  const size = spec.version * 4 + 17;
+  const size = moduleCount(spec.version);
   const modules: (boolean | null)[][] = Array.from({ length: size }, () =>
     new Array<boolean | null>(size).fill(null),
   );
@@ -604,19 +609,35 @@ function finderPenalty(line: boolean[]): number {
 
 // --- Rendering ------------------------------------------------------------------
 
+/**
+ * The light border a QR symbol must be printed inside, in modules — the **4** ISO/IEC 18004
+ * §6.3.8 mandates on every side. A decoder finds the symbol by its finder patterns' 1:1:3:1:1
+ * ratio, and reads that ratio out of the run *lengths* around them; with less clear space the
+ * neighbouring ink (a table rule, the next label, a box's own printing) joins the outermost
+ * run and the ratio no longer holds, so the symbol is never located at all.
+ *
+ * Deliberately **not** an option {@link toSvg} takes. It was one, and every call site that
+ * chose its own picked a smaller number to buy back a millimetre of layout — half-spec on the
+ * label sheet, quarter-spec in the printed catalogue (issue #330). A quiet zone is not layout
+ * padding to trade away: it is part of the symbol. Rendering it is the encoder's business, so
+ * there is nothing left for a caller to get wrong.
+ */
+export const QR_QUIET_ZONE_MODULES = 4;
+
 export interface SvgOptions {
   /** Module size in px (default 4). */
   readonly scale?: number;
-  /** Quiet-zone width in modules (default 4, per spec). */
-  readonly margin?: number;
   readonly dark?: string;
   readonly light?: string;
 }
 
-/** Render a matrix to a crisp, print-ready SVG string. */
+/**
+ * Render a matrix to a crisp, print-ready SVG string, inside the mandatory
+ * {@link QR_QUIET_ZONE_MODULES} quiet zone.
+ */
 export function toSvg(matrix: QrMatrix, options: SvgOptions = {}): string {
   const scale = options.scale ?? 4;
-  const margin = options.margin ?? 4;
+  const margin = QR_QUIET_ZONE_MODULES;
   const dark = options.dark ?? '#000000';
   const light = options.light ?? '#ffffff';
   const dim = (matrix.size + margin * 2) * scale;
@@ -667,3 +688,28 @@ export function qrSvgOrNull(text: string, options?: SvgOptions): string | null {
 export function fitsInQr(text: string): boolean {
   return utf8Bytes(text).length <= MAX_QR_BYTES;
 }
+
+/**
+ * How many modules a side the smallest symbol holding `text` measures — the number a
+ * printed size has to be divided by to get one module's physical width — or `null` when
+ * the payload fits no supported version.
+ *
+ * Chooses the version without building a matrix, so a caller sizing a label can ask
+ * "how small will this print?" for free rather than paying for Reed–Solomon and eight
+ * mask evaluations it would throw away.
+ */
+export function qrModuleCount(text: string): number | null {
+  try {
+    return moduleCount(chooseVersion(utf8Bytes(text).length).version);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The module count of the **largest** symbol this encoder can produce. What a fixed-size
+ * printed QR box has to be sized against: the payload is a deep-link whose length the user
+ * controls (Settings → "Link host"), so the box must stay readable for the biggest symbol
+ * that link could push the code up to, not merely for today's typical one.
+ */
+export const MAX_QR_MODULE_COUNT = moduleCount(VERSIONS[VERSIONS.length - 1]!.version);

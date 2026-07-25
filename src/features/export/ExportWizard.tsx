@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, LiveRegion, Modal, Select, Surface } from '@/components/foundry';
+import { Button, Checkbox, LiveRegion, Modal, Select, Surface } from '@/components/foundry';
 import { ExportIcon, ImportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
 import { getItemRepository, getLocationRepository, getProjectRepository } from '@/db/repositories';
 import { buildItemLocationOptions } from '@/features/inventory/parent-options';
@@ -277,12 +277,7 @@ export function ExportWizard({
 
         {(hasScope && scope === 'ALL') || isCatalogCsv ? (
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={includeInactive}
-              onChange={(e) => setIncludeInactive(e.target.checked)}
-              className="size-4 accent-primary"
-            />
+            <Checkbox checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
             Include removed (decommissioned) items
           </label>
         ) : null}

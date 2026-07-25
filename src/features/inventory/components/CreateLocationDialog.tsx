@@ -1,5 +1,5 @@
 import { useId, useMemo, useRef, useState } from 'react';
-import { Button, FormField, Input, InfoHint, Modal, Textarea } from '@/components/foundry';
+import { Button, Checkbox, FormField, Input, InfoHint, Modal, Textarea } from '@/components/foundry';
 import type { Location, LocationWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
@@ -270,14 +270,12 @@ export function CreateLocationDialog({
               multipleLeaves ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'
             }`}
           >
-            <input
-              type="checkbox"
+            <Checkbox
               // A multi-sibling create has no single default, so the box is unchecked + disabled;
               // the underlying preference is kept, so removing the extra siblings restores it.
               checked={isDefault && !multipleLeaves}
               disabled={multipleLeaves}
               onChange={(e) => setIsDefault(e.target.checked)}
-              className="size-4 accent-primary"
             />
             {t('inventory.location.field.default')}
             <InfoHint content={t('inventory.location.hint.default')} />

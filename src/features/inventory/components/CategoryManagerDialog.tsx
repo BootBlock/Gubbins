@@ -8,6 +8,7 @@ import {
   Input,
   InfoHint,
   Modal,
+  Radio,
   SelectField,
   Textarea,
   Tooltip,
@@ -747,12 +748,11 @@ function DatasheetLinkingConfig() {
       <div className="space-y-1.5">
         {(Object.keys(ATTACHMENT_MODE_LABELS) as AttachmentMode[]).map((m) => (
           <label key={m} className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="radio"
+            <Radio
               name="attachment-mode"
               checked={mode === m}
               onChange={() => setMode(m)}
-              className="size-3.5 accent-primary"
+              className="size-3.5"
             />
             {ATTACHMENT_MODE_LABELS[m]}
           </label>

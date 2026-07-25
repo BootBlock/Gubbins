@@ -59,8 +59,12 @@ export const Checkbox = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HT
       ref={ref}
       type="checkbox"
       className={cn(
-        'size-4 shrink-0 cursor-pointer rounded border-border accent-primary outline-none',
-        'focus-visible:ring-[3px] focus-visible:ring-ring/40',
+        'size-4 shrink-0 cursor-pointer rounded border-border accent-primary',
+        // An `outline` rather than the soft `ring` halo above — see the note in `radio.tsx`: a
+        // native tick box paints no border to carry the halo, so at 40% alpha it would be the only
+        // indicator and fall under the 3:1 WCAG 1.4.11 wants, and a `box-shadow` ring disappears
+        // altogether under `forced-colors`.
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
         'disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}

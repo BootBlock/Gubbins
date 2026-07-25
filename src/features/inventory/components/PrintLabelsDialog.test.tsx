@@ -217,6 +217,25 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     });
   });
 
+  it('warns when the label is too small for a scannable QR (issue #330)', () => {
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    // The default A4 grid has plenty of room for the deep-link's code.
+    expect(screen.queryByTestId('labels-qr-too-small')).toBeNull();
+
+    // 30 × 15 mm with a name line leaves the QR a few millimetres for 45 modules.
+    chooseOption('label-size', /30 .* 15 mm/);
+    expect(screen.getByTestId('labels-qr-too-small')).toBeTruthy();
+
+    // The QR is still drawn — it cannot be shortened the way a barcode's value can, and it is
+    // the only code on the label, so the warning is the whole remedy.
+    screen.getAllByTestId('label-cell').forEach((cell) => {
+      expect(cell.querySelector('svg')).not.toBeNull();
+    });
+
+    chooseOption('label-size', /A4 sheet/);
+    expect(screen.queryByTestId('labels-qr-too-small')).toBeNull();
+  });
+
   it('disables printing and shows a notice when nothing is selected', () => {
     render(<PrintLabelsDialog open onClose={() => {}} items={[]} />);
     expect(screen.getByTestId('print-labels-confirm')).toBeDisabled();
