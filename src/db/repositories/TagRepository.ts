@@ -5,11 +5,14 @@
  * (`location_tags`). The same dictionary is shared across both, so `fragile` on an item and
  * `fragile` on a location are the *same* tag. Tagging is deliberately low-friction (§4
  * ergonomics): assigning a brand-new tag name auto-creates the tag, reusing any existing tag
- * case-insensitively rather than duplicating it. The `setFor*` diffs the requested set against
- * the current one so only genuine additions are gated by the storage Hard Stop; dropping a tag
- * (which frees space) is always permitted. The management surface (`create`/`rename`/`remove`/
- * `merge`) edits the dictionary itself.
+ * case-insensitively rather than duplicating it — through the app's Unicode fold, so that reuse
+ * holds for `Ölkanne` as firmly as for `Fragile` (see {@link TagRepository.matchTagsByName} and
+ * `lib/name-fold`). The `setFor*` diffs the requested set against the current one so only
+ * genuine additions are gated by the storage Hard Stop; dropping a tag (which frees space) is
+ * always permitted. The management surface (`create`/`rename`/`remove`/`merge`) edits the
+ * dictionary itself.
  */
+import { foldName } from '@/lib/name-fold';
 import type { SqlStatement } from '../rpc/driver';
 import { BaseRepository } from './base';
 import { escapeLike } from './like';
@@ -234,16 +237,18 @@ export class TagRepository extends BaseRepository {
    * Rename a tag. Throws {@link TagNameInUseError} (carrying the clashing tag's id, so the
    * caller can offer a merge) if another tag already uses the name case-insensitively. Not a
    * growth-write, so not Hard-Stop gated.
+   *
+   * The clash is looked up through {@link matchTagsByName} rather than its own `WHERE`, so
+   * renaming to a name that already exists and *assigning* that name reach the same verdict —
+   * a rename that the tag editor would have folded into an existing tag must not slip past as
+   * a second one (issue #342).
    */
   async rename(id: string, name: string): Promise<void> {
     this.assertPermission('tags:write');
     const trimmed = name.trim();
     if (trimmed.length === 0) throw new Error('A tag name cannot be empty.');
-    const clash = await this.driver.queryOne<{ id: string }>(
-      'SELECT id FROM tags WHERE LOWER(name) = LOWER(?) AND id <> ?;',
-      [trimmed, id],
-    );
-    if (clash) throw new TagNameInUseError(String(clash.id), trimmed);
+    const clash = (await this.matchTagsByName([trimmed])).find((t) => t.id !== id);
+    if (clash) throw new TagNameInUseError(clash.id, trimmed);
     await this.driver.execute('UPDATE tags SET name = ? WHERE id = ?;', [trimmed, id]);
   }
 
@@ -313,20 +318,30 @@ export class TagRepository extends BaseRepository {
     ownerId: string,
     names: readonly string[],
   ): Promise<void> {
-    // Normalise: trim, drop blanks, dedupe case-insensitively (keep first casing).
+    // Normalise: trim, drop blanks, dedupe case-insensitively (keep first casing). The fold is
+    // `lib/name-fold`'s, the same one the stored rows are matched through below — dedupe the
+    // request more loosely than the dictionary is searched and one save collapses two spellings
+    // that a second save would file as two tags (issue #342).
     const desired: string[] = [];
     const seen = new Set<string>();
     for (const raw of names) {
       const name = raw.trim();
       if (name.length === 0) continue;
-      const key = name.toLowerCase();
+      const key = foldName(name);
       if (seen.has(key)) continue;
       seen.add(key);
       desired.push(name);
     }
 
     const existingTags = await this.matchTagsByName(desired);
-    const existingByKey = new Map(existingTags.map((t) => [t.name.toLowerCase(), t]));
+    // First match wins, over `matchTagsByName`'s stable order: a database written before this
+    // fold existed can already hold both `Ölkanne` and `ölkanne`, and which one a tag joins
+    // must not depend on the order the rows came back in.
+    const existingByKey = new Map<string, Tag>();
+    for (const tag of existingTags) {
+      const key = foldName(tag.name);
+      if (!existingByKey.has(key)) existingByKey.set(key, tag);
+    }
     const current = await binding.getCurrent(this, ownerId);
     const currentIds = new Set(current.map((t) => t.id));
 
@@ -334,13 +349,13 @@ export class TagRepository extends BaseRepository {
     const createStatements: SqlStatement[] = [];
     const desiredIds = new Set<string>();
     for (const name of desired) {
-      const existing = existingByKey.get(name.toLowerCase());
+      const existing = existingByKey.get(foldName(name));
       if (existing) {
         desiredIds.add(existing.id);
       } else {
         const id = crypto.randomUUID();
         desiredIds.add(id);
-        existingByKey.set(name.toLowerCase(), { ...rowToTag({ id, name, updated_at: 0 }) });
+        existingByKey.set(foldName(name), { ...rowToTag({ id, name, updated_at: 0 }) });
         createStatements.push({
           sql: 'INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?);',
           params: [id, name],
@@ -380,15 +395,44 @@ export class TagRepository extends BaseRepository {
     await this.driver.transaction(statements);
   }
 
-  /** Fetch existing tag rows matching any of the given names (case-insensitively). */
+  /**
+   * The existing tags whose names match any of `names` case-insensitively — the one seam every
+   * "is this tag already in the dictionary?" question goes through.
+   *
+   * **Decided in JS; the SQL only narrows the candidates (issue #342).** `WHERE LOWER(name) IN
+   * (…)` bound to JS-lowercased parameters reads like one comparison but is two different ones:
+   * SQLite's `LOWER()` folds ASCII A–Z and nothing else, so a stored `Ölkanne` stays `Ölkanne`
+   * while the parameter is `ölkanne`, the two never meet, and the dictionary grows a second,
+   * visually identical tag. `idx_tags_name … COLLATE NOCASE` folds ASCII only for the same
+   * reason, so it does not catch the duplicate either. The verdict therefore comes from
+   * `lib/name-fold` — the same fold the field dictionary (issue #343) and the sync merge's
+   * natural-key resolution already reach for, so all three agree on what one name means.
+   *
+   * The `WHERE` is a deliberate **superset** of the answer, in two parts. A stored name SQLite
+   * *can* fold is pure ASCII, and — names being stored trimmed — its `LOWER()` is then exactly
+   * its folded key, so binding the folded needles finds it. A stored name SQLite *cannot* fold
+   * holds a character outside printable ASCII, which the `GLOB` picks out wholesale; that is the
+   * only place the two folds can disagree. Reading the dictionary whole (as the much smaller
+   * field dictionary does) would also work, but this keeps a dictionary of plain-ASCII tags to
+   * the rows actually asked about, and costs no more than the scan the old query already did:
+   * `LOWER(name)` matches no index.
+   *
+   * Ordered so the answer is stable — a database written before this fold existed can already
+   * hold both spellings, and callers take the first match.
+   */
   private async matchTagsByName(names: readonly string[]): Promise<Tag[]> {
     if (names.length === 0) return [];
-    const placeholders = names.map(() => '?').join(', ');
+    const wanted = new Set(names.map(foldName));
+    const needles = [...wanted];
+    const placeholders = needles.map(() => '?').join(', ');
     const rows = await this.driver.query<TagRow>(
-      `SELECT * FROM tags WHERE LOWER(name) IN (${placeholders});`,
-      names.map((n) => n.toLowerCase()),
+      `SELECT * FROM tags
+        WHERE LOWER(name) IN (${placeholders})
+           OR name GLOB '*[^ -~]*'
+        ORDER BY name, id;`,
+      needles,
     );
-    return rows.map(rowToTag);
+    return rows.map(rowToTag).filter((tag) => wanted.has(foldName(tag.name)));
   }
 }
 

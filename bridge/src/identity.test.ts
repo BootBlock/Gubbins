@@ -142,6 +142,41 @@ describe('requiredPermissions', () => {
     }
     expect(requiredPermissions('POST', '/api/v1/snapshot')).toEqual(['bridge:write', 'sync:write']);
   });
+
+  it('gates the OData service on the same permissions as its REST twin (issue #361)', () => {
+    // The envelope changed, not the data — so `/odata/items` cannot be the cheaper door to items.
+    expect(requiredPermissions('GET', '/api/v1/odata/items')).toEqual(['bridge:read', 'items:read']);
+    expect(requiredPermissions('GET', "/api/v1/odata/items('abc')")).toEqual(['bridge:read', 'items:read']);
+    expect(requiredPermissions('GET', '/api/v1/odata/items/$count')).toEqual(['bridge:read', 'items:read']);
+    expect(requiredPermissions('GET', '/api/v1/odata/locations')).toEqual(['bridge:read', 'locations:read']);
+    expect(requiredPermissions('GET', '/api/v1/odata/categories')).toEqual([
+      'bridge:read',
+      'categories:read',
+    ]);
+    // The service document and the CSDL describe the service, not any inventory.
+    expect(requiredPermissions('GET', '/api/v1/odata')).toEqual(['bridge:read']);
+    expect(requiredPermissions('GET', '/api/v1/odata/$metadata')).toEqual(['bridge:read']);
+  });
+
+  it('reads a percent-encoded OData path the same way the router serves it', () => {
+    // `url.pathname` is left percent-encoded by the WHATWG URL parser while the OData router
+    // decodes before matching, so a permission map with its own reading of the segment answered
+    // "no entity set" for `%69tems` and waved through a full item read on `bridge:read` alone.
+    // Both sides now go through the router's own `entitySetOfSegment`.
+    for (const path of ['%69tems', 'items%28%27abc%27%29', '%69tems/$count', "%69tems('abc')"]) {
+      expect(requiredPermissions('GET', `/api/v1/odata/${path}`)).toEqual(['bridge:read', 'items:read']);
+    }
+    expect(requiredPermissions('GET', '/api/v1/odata/%6Cocations')).toEqual([
+      'bridge:read',
+      'locations:read',
+    ]);
+    expect(requiredPermissions('GET', '/api/v1/odata/%63ategories')).toEqual([
+      'bridge:read',
+      'categories:read',
+    ]);
+    // A segment that decodes to no entity set stays a plain `bridge:read` — the router 404s it.
+    expect(requiredPermissions('GET', '/api/v1/odata/%2569tems')).toEqual(['bridge:read']);
+  });
 });
 
 // --- resolution -------------------------------------------------------------------
@@ -164,6 +199,9 @@ describe('resolveIdentity', () => {
     expect(isPermitted(identity!, 'GET', '/api/v1/items')).toBe(true);
     expect(isPermitted(identity!, 'GET', '/api/v1/locations')).toBe(false);
     expect(isPermitted(identity!, 'POST', '/api/v1/items/x/adjust-quantity')).toBe(false);
+    // …and the OData spelling of each read lands on the same side of the line.
+    expect(isPermitted(identity!, 'GET', '/api/v1/odata/items')).toBe(true);
+    expect(isPermitted(identity!, 'GET', '/api/v1/odata/locations')).toBe(false);
   });
 
   it('denies a user with no role and a user who is disabled', async () => {
@@ -188,6 +226,22 @@ describe('the server enforces the identity it resolved', () => {
     // 401 and 403 must stay distinguishable: one sends you hunting for a bad token, the other
     // for a role.
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('forbidden');
+  });
+
+  it('403s an OData read however the caller spells the entity set', async () => {
+    // The viewer holds `bridge:read` + `items:read` and nothing else. Percent-encoding the set
+    // name must not turn a route the permission map guards into one it never sees: the router
+    // decodes the segment, so anything less than the same decode here is an authorisation bypass
+    // that hands over the whole collection (issue #361 review).
+    for (const path of ['locations', '%6Cocations', "%6Cocations('loc-drawer-a')", '%63ategories']) {
+      const res = await get(`/api/v1/odata/${path}`, viewerToken);
+      expect({ path, status: res.status }).toEqual({ path, status: 403 });
+    }
+    // …while the reads that caller *is* entitled to still answer, encoded or not.
+    for (const path of ['items', '%69tems', 'items/$count', '%69tems/$count']) {
+      const res = await get(`/api/v1/odata/${path}`, viewerToken);
+      expect({ path, status: res.status }).toEqual({ path, status: 200 });
+    }
   });
 
   it('403s the audit feeds for a caller without audit:view', async () => {

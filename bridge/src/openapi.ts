@@ -14,7 +14,9 @@
 import { KNOWN_EVENT_TYPES } from '@/features/events/event-types.ts';
 import { ITEM_STATUS_FILTERS } from '@/db/repositories/item/status-filter.ts';
 import { ITEM_FIELD_REGISTRY } from './api/item-view.ts';
+import { LOCATION_FIELD_REGISTRY } from './api/location-view.ts';
 import { FILTERABLE_FIELD_NAMES } from './api/odata-filter.ts';
+import { API_ERROR_CODES } from './api/respond.ts';
 
 /** A plain JSON value — the spec is pure data, serialisable to JSON and YAML alike. */
 export type JsonValue =
@@ -24,7 +26,11 @@ const SERVER_URL = 'http://127.0.0.1:8787';
 
 const bearerSecurity: JsonValue = [{ bearerAuth: [] }];
 
-/** The `{ error: { code, message } }` envelope every v1 error uses. */
+/**
+ * The `{ error: { code, message } }` envelope every v1 error uses. The `code` enum is the whole
+ * of {@link API_ERROR_CODES} — a published enum that omits a code the bridge can actually send
+ * is worse than none, because a client branching on it meets an "impossible" value in the field.
+ */
 const errorSchema: JsonValue = {
   type: 'object',
   required: ['error'],
@@ -33,24 +39,29 @@ const errorSchema: JsonValue = {
       type: 'object',
       required: ['code', 'message'],
       properties: {
-        code: {
-          type: 'string',
-          enum: [
-            'bad_request',
-            'unauthorized',
-            'forbidden',
-            'not_found',
-            'method_not_allowed',
-            'too_many_requests',
-            'snapshot_unavailable',
-            'unsupported_media_type',
-            'unprocessable',
-            'payload_too_large',
-            'internal_error',
-          ],
-        },
+        // Derived from the codes `respond.ts` can actually send, never hand-listed beside them.
+        code: { type: 'string', enum: [...API_ERROR_CODES] },
         message: { type: 'string' },
       },
+    },
+  },
+};
+
+/**
+ * The flat `{ "error": "<message>" }` envelope the **unversioned** paths answer with — of which
+ * `/metrics` is the only one this document describes. It is byte-for-byte the shape the bridge
+ * has always returned there, kept so the existing consumers never regress; `respond.ts` picks
+ * between the two envelopes from the request path, so an error at `/metrics` carries no `code`
+ * and cannot be described by {@link errorSchema} (issue #367).
+ */
+const legacyErrorSchema: JsonValue = {
+  type: 'object',
+  required: ['error'],
+  properties: {
+    error: {
+      type: 'string',
+      description: 'A short, secret-free explanation. No machine-readable code accompanies it.',
+      example: 'Method not allowed',
     },
   },
 };
@@ -98,18 +109,21 @@ const qParam: JsonValue = {
 };
 
 /**
+ * The item and location field vocabularies, read straight off the registries that serve the
+ * requests rather than restated here. A hand-kept copy of a field list is how the API's filterable
+ * set silently drifted from the app's (issue #143), so every list in this document is generated
+ * from its source. `field-vocabulary.test.ts` re-asserts that from the emitted document, so a
+ * future hand-written copy is caught the moment a registry moves (issue #250).
+ */
+const ITEM_FIELD_LIST = [...ITEM_FIELD_REGISTRY.keys()].join(', ');
+const LOCATION_FIELD_LIST = [...LOCATION_FIELD_REGISTRY.keys()].join(', ');
+
+/**
  * The `fields` (sparse fieldset / projection) parameter shared by the item read endpoints.
  * Present it and the response contains ONLY the named fields; omit it for the endpoint's
  * default payload. Naming an extended field opts it in; one level of nesting is supported for
  * the array fields via a dotted path (e.g. `placements.quantity`).
  */
-/**
- * The item field vocabulary, read straight off the registry that serves the requests rather than
- * restated here. A hand-kept copy of a field list is how the API's filterable set silently drifted
- * from the app's (issue #143), so both lists in this document are generated from their source.
- */
-const ITEM_FIELD_LIST = [...ITEM_FIELD_REGISTRY.keys()].join(', ');
-
 const fieldsParam: JsonValue = {
   name: 'fields',
   in: 'query',
@@ -166,16 +180,19 @@ const locationFieldsParam: JsonValue = {
   required: false,
   description:
     'Sparse fieldset: a comma-separated list of location fields to return INSTEAD of the ' +
-    'default set. Valid fields: id, name, parentId, isSystem, description, color, itemCount, ' +
-    'fieldValues. Nest the array field with a dot: `fieldValues.value`. An unknown field is a 400.',
+    `default set. Valid fields: ${LOCATION_FIELD_LIST}. Nest the array field with a dot: ` +
+    '`fieldValues.value`. An unknown field is a 400.',
   schema: { type: 'string' },
   example: 'id,name,fieldValues',
 };
 
 /**
- * OData-style query-option aliases (a convenience subset, NOT a compliant OData service — no
- * $metadata, $batch or $apply). Each is an alias of a plain REST parameter and wins when both
- * are supplied. `$orderby` and `$filter` add genuinely new capability on the items list.
+ * OData-style query-option aliases on the **plain REST** endpoints — a convenience subset for
+ * callers fluent in OData, which keeps the `{ data, pagination }` envelope. Each is an alias of
+ * a plain REST parameter and wins when both are supplied; `$orderby` and `$filter` add genuinely
+ * new capability on the items list. The same options drive the real OData service under
+ * `/api/v1/odata`, which additionally speaks the protocol (service document, JSON envelope,
+ * `OData-Version`) — see the `odata` tag.
  */
 const odataAlias = (name: string, of: string, example: string): JsonValue => ({
   name,
@@ -190,6 +207,9 @@ const selectParam = odataAlias('$select', 'fields', 'name,unitCost');
 const expandParam = odataAlias('$expand', 'include', 'capabilities,notes');
 const topParam = odataAlias('$top', 'limit', '10');
 const skipParam = odataAlias('$skip', 'offset', '0');
+
+const locationSelectParam = odataAlias('$select', 'fields', 'id,name,fieldValues');
+const locationExpandParam = odataAlias('$expand', 'include', 'fields');
 
 const countParam: JsonValue = {
   name: '$count',
@@ -335,58 +355,98 @@ function feedOperation(summary: string, mediaType: string, example: string): Jso
           content: { [mediaType]: { schema: { type: 'string' }, example } },
         },
         304: notModifiedResponse,
-        ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+        ...(errorResponses(401, 429) as Record<string, JsonValue>),
       },
     },
   };
 }
 
 /**
- * Standard error responses reused across operations.
+ * Standard error responses reused across operations, in whichever envelope the path answers with
+ * (`errorRef`) — see {@link legacyErrorSchema}.
  *
  * Asking for `401` implies `403`: since issue #79 every authenticated route can also refuse a
  * *known* caller whose role does not reach it, and listing the two together at every call site
  * would be noise that one operation would eventually be missing.
+ *
+ * `405`, `500` and `503` are added to **every** operation for the same reason, only more so: all
+ * three are answered by shared code that wraps the whole request — the method guard, the
+ * snapshot-loaded gate and the outer catch-all, each of which runs in `server.ts` *before* the
+ * request is routed anywhere. They are therefore reachable at every path, they belong to no single
+ * operation, and OpenAPI 3 gives nowhere but each operation to declare them. A contract-testing
+ * tool that meets one it cannot find in the document reports the *bridge* as at fault (issue #367).
  */
-const errorResponses = (...codes: number[]): JsonValue => {
-  const requested = codes.includes(401) ? [...codes, 403] : codes;
+function errorResponsesIn(errorRef: string, codes: readonly number[]): JsonValue {
+  const withForbidden = codes.includes(401) ? [...codes, 403] : codes;
+  const requested = [...new Set([...withForbidden, 405, 500, 503])].sort((a, b) => a - b);
   const all: Record<number, JsonValue> = {
-    400: response('Bad request — missing or invalid parameter.', '#/components/schemas/Error'),
+    400: response('Bad request — missing or invalid parameter.', errorRef),
     401: {
       description: 'Missing, unknown or revoked API token.',
       headers: { 'WWW-Authenticate': { schema: { type: 'string' }, description: 'Bearer' } },
-      content: jsonContent('#/components/schemas/Error'),
+      content: jsonContent(errorRef),
     },
-    403: response(
-      "The token is valid, but its owner's role does not permit this route.",
-      '#/components/schemas/Error',
-    ),
-    404: response('Resource not found.', '#/components/schemas/Error'),
+    403: response("The token is valid, but its owner's role does not permit this route.", errorRef),
+    404: response('Resource not found.', errorRef),
+    405: {
+      description:
+        'The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST ' +
+        'only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every ' +
+        'operation because the method guard runs ahead of routing, so it answers any request to ' +
+        'this path — not only the method documented here. That is also why `Allow` is answered ' +
+        'bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names ' +
+        'POST even for a path that only reads. A POST the versioned router itself refuses is the ' +
+        'one case answered with that resource’s own methods.',
+      headers: {
+        Allow: {
+          schema: { type: 'string' },
+          description:
+            'The methods the bridge serves, e.g. "GET, HEAD, OPTIONS" — see the description above ' +
+            'for when this is bridge-wide rather than scoped to the path.',
+        },
+      },
+      content: jsonContent(errorRef),
+    },
     413: response(
       'The pushed snapshot exceeded the configured maximum size (GUBBINS_BRIDGE_MAX_PUSH_BYTES).',
-      '#/components/schemas/Error',
+      errorRef,
     ),
-    415: response('The request body was not declared as application/json.', '#/components/schemas/Error'),
+    415: response('The request body was not declared as application/json.', errorRef),
     422: response(
       'The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build).',
-      '#/components/schemas/Error',
+      errorRef,
     ),
     429: {
       description: 'Rate limit exceeded for this client.',
       headers: {
         'Retry-After': { schema: { type: 'integer' }, description: 'Seconds to wait.' },
       },
-      content: jsonContent('#/components/schemas/Error'),
+      content: jsonContent(errorRef),
     },
+    500: {
+      description:
+        'An unexpected failure the bridge could not attribute to the request. The message is ' +
+        'fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a ' +
+        'caller (the detail is logged locally only).',
+      content: jsonContent(errorRef),
+    },
+    502: response(
+      'Home Assistant could not be reached, refused the bridge’s access token, or answered ' +
+        'unusably: home_assistant_unreachable, home_assistant_unauthorised or home_assistant_error.',
+      errorRef,
+    ),
     503: {
-      description: 'Snapshot not loaded yet.',
+      description:
+        'No snapshot has been loaded yet, so the bridge does not yet know who any caller is and ' +
+        'lets nobody in. Reachable at every path — including the reads that need no snapshot data ' +
+        'of their own — because the check precedes routing. Retry once the snapshot lands.',
       headers: {
         'Retry-After': {
           schema: { type: 'integer' },
           description: 'Seconds to wait before retrying.',
         },
       },
-      content: jsonContent('#/components/schemas/Error'),
+      content: jsonContent(errorRef),
     },
   };
   const out: Record<string, JsonValue> = {};
@@ -395,7 +455,15 @@ const errorResponses = (...codes: number[]): JsonValue => {
     if (value !== undefined) out[String(code)] = value;
   }
   return out;
-};
+}
+
+/** The error responses of a versioned (`/api/v1`) operation — the structured envelope. */
+const errorResponses = (...codes: number[]): JsonValue =>
+  errorResponsesIn('#/components/schemas/Error', codes);
+
+/** The error responses of an unversioned path — the flat, historical envelope. */
+const legacyErrorResponses = (...codes: number[]): JsonValue =>
+  errorResponsesIn('#/components/schemas/LegacyError', codes);
 
 function jsonContent(ref: string, example?: JsonValue): JsonValue {
   const media: Record<string, JsonValue> = { schema: { $ref: ref } };
@@ -407,9 +475,58 @@ function response(description: string, ref: string, example?: JsonValue): JsonVa
   return { description, content: jsonContent(ref, example) };
 }
 
-function okList(itemRef: string): JsonValue {
+/**
+ * The `{id}` path parameter of an OData key segment. The template is `…({id})`, so the value
+ * substituted is the key *inside* the parentheses — quoted or bare, both accepted.
+ */
+function odataKeyParam(resource: string): JsonValue {
   return {
-    description: 'A page of results.',
+    name: 'id',
+    in: 'path',
+    required: true,
+    description: `The ${resource} id, e.g. \`'abc'\` (quotes optional).`,
+    schema: { type: 'string' },
+    example: "'abc'",
+  };
+}
+
+/** The OData collection envelope: context, optional inline count, rows, optional paging link. */
+function okODataCollection(itemRef: string): JsonValue {
+  return {
+    description: 'A page of results in the OData JSON envelope.',
+    headers: {
+      'OData-Version': { schema: { type: 'string' }, description: '4.0 (on every response).' },
+    },
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['@odata.context', 'value'],
+          properties: {
+            '@odata.context': { type: 'string' },
+            '@odata.count': {
+              type: 'integer',
+              description: 'The grand total across all pages — present only when $count=true.',
+            },
+            value: { type: 'array', items: { $ref: itemRef } },
+            '@odata.nextLink': {
+              type: 'string',
+              description:
+                'The absolute URL of the next page. Emitted whenever a full page came back, so ' +
+                'on an exact-boundary last page it is present and leads to an empty collection — ' +
+                'follow it until a page carries no link, rather than assuming every linked page ' +
+                'has rows.',
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+function okList(description: string, itemRef: string): JsonValue {
+  return {
+    description,
     content: {
       'application/json': {
         schema: {
@@ -423,6 +540,365 @@ function okList(itemRef: string): JsonValue {
       },
     },
   };
+}
+
+/**
+ * The nested, array-of-object element shapes. Each is declared once here and published twice:
+ * strictly (every key guaranteed) for the reads that cannot be projected, and — via
+ * {@link projectedElement} — without its `required` list for the reads that can. A dotted
+ * `fields` path narrows an element to just the named sub-keys (`fields=placements.quantity`
+ * yields `[{ "quantity": 5 }]`), so the strict shape cannot describe both (issue #367).
+ */
+const placementSchema: JsonValue = {
+  type: 'object',
+  required: ['locationId', 'locationName', 'quantity'],
+  properties: {
+    locationId: { type: 'string', example: 'loc-shelf-2' },
+    locationName: { type: 'string', example: 'Shelf 2' },
+    quantity: { type: 'integer', example: 5 },
+  },
+};
+
+const capabilitySchema: JsonValue = {
+  type: 'object',
+  required: ['key', 'valueNum', 'valueText', 'weight'],
+  properties: {
+    key: { type: 'string', example: 'voltage' },
+    valueNum: { type: 'number', nullable: true, example: 3.3 },
+    valueText: { type: 'string', nullable: true, example: null },
+    weight: { type: 'number', example: 2 },
+  },
+};
+
+const itemFieldValueSchema: JsonValue = {
+  type: 'object',
+  description:
+    "One of the item's custom-field values, resolved exactly as the app resolves it: a " +
+    'value set on the item wins, otherwise the value offered by the nearest ancestor ' +
+    'location that makes it inheritable, otherwise the field default. Fields with no ' +
+    'value are omitted. Read-only.',
+  required: ['name', 'fieldType', 'value', 'source', 'inheritedFrom'],
+  properties: {
+    name: { type: 'string', example: 'Datasheet' },
+    fieldType: { type: 'string', example: 'TEXT' },
+    value: { type: 'string', example: 'https://example.com/esp32.pdf' },
+    source: {
+      type: 'string',
+      enum: ['stored', 'inherited', 'default'],
+      example: 'stored',
+      description:
+        'Where the value came from: set on the item (`stored`), inherited from an ' +
+        'ancestor location (`inherited`), or the field default (`default`).',
+    },
+    inheritedFrom: {
+      type: 'object',
+      nullable: true,
+      description: 'The location that supplied the value when `source` is `inherited`; null otherwise.',
+      required: ['locationId', 'locationName'],
+      properties: {
+        locationId: { type: 'string', example: 'loc-shelf-2' },
+        locationName: { type: 'string', example: 'Shelf 2' },
+      },
+    },
+  },
+};
+
+const locationFieldValueSchema: JsonValue = {
+  type: 'object',
+  description: 'One custom-field value held by a location. Fields with no value are omitted. Read-only.',
+  required: ['name', 'fieldType', 'value', 'isInheritable'],
+  properties: {
+    name: { type: 'string', example: 'Indicator Entity' },
+    fieldType: { type: 'string', example: 'TEXT' },
+    value: { type: 'string', example: 'light.shelf_two' },
+    isInheritable: {
+      type: 'boolean',
+      example: true,
+      description:
+        'True when the location offers this value to the items stored beneath it; false ' +
+        "when it is the location's own metadata only.",
+    },
+  },
+};
+
+/**
+ * The projected twin of a nested element schema: the same shape with its `required` list
+ * dropped, because a dotted `fields` path can narrow the element to any subset of its keys.
+ * Derived rather than restated so the two can never disagree about a property.
+ */
+function projectedElement(strict: JsonValue): JsonValue {
+  const { required: _required, ...rest } = strict as Record<string, JsonValue>;
+  const note =
+    'Returned by a read that accepts a sparse fieldset: a dotted path such as ' +
+    '`placements.quantity` narrows each element to exactly the named sub-keys, so no property ' +
+    'here is required. Without one, every property below is present.';
+  const existing = rest.description;
+  return { ...rest, description: typeof existing === 'string' ? `${existing}\n\n${note}` : note };
+}
+
+/**
+ * Every field the item projection engine can return, described **once**.
+ *
+ * `ItemSummary`, `ItemDetail` and `ItemProjection` are all curated views over this map, so a
+ * field is typed and explained in exactly one place and the three can never disagree about it.
+ * The keys are the field vocabulary of `api/item-view.ts` — the names a caller may pass to
+ * `fields`/`$select` and `include`/`$expand` — and a drift test asserts the two stay identical,
+ * so adding a field to the engine without describing it here fails the build.
+ *
+ * `ItemMatch` is deliberately *not* built from this map: it is the compact `/where` DTO, whose
+ * `locationId` is resolved through the locations table (and so is null when an item's home
+ * location cannot be resolved), whereas the projection engine reads the raw column.
+ */
+const itemFieldSchemas: Readonly<Record<string, JsonValue>> = {
+  id: { type: 'string', example: 'item-m3-bolt' },
+  name: { type: 'string', example: 'M3 x 10 Hex Bolt' },
+  quantity: {
+    type: 'integer',
+    nullable: true,
+    example: 42,
+    description:
+      'On-hand grand total across every location. **null** for an unlimited-supply ' +
+      'item (`isUnlimited: true`) — an effectively infinite source has no finite count.',
+  },
+  isUnlimited: {
+    type: 'boolean',
+    example: false,
+    description: 'True for an effectively infinite source (e.g. tap water); its `quantity` is null.',
+  },
+  locationId: {
+    type: 'string',
+    example: 'loc-drawer-a',
+    description: 'The stable id of the item’s primary/home location — what an automation acts on.',
+  },
+  locationName: { type: 'string', nullable: true, example: 'Drawer A' },
+  categoryId: { type: 'string', nullable: true, example: 'cat-fasteners' },
+  categoryName: { type: 'string', nullable: true, example: 'Fasteners' },
+  mpn: { type: 'string', nullable: true, example: 'FAS-M3-10' },
+  manufacturer: { type: 'string', nullable: true, example: 'Acme Fasteners' },
+  trackingMode: {
+    type: 'string',
+    enum: ['DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UNTRACKED'],
+    example: 'DISCRETE',
+  },
+  isActive: { type: 'boolean', example: true },
+  description: {
+    type: 'string',
+    nullable: true,
+    description: 'What the item *is* — factual, display-worthy copy.',
+  },
+  notes: { type: 'string', nullable: true, description: 'The owner’s own free-text remarks.' },
+  condition: {
+    type: 'string',
+    nullable: true,
+    description: 'Operational condition; null when untracked.',
+  },
+  barcode: {
+    type: 'string',
+    nullable: true,
+    example: '5012345678900',
+    description:
+      'The retail barcode (GTIN — EAN/UPC) printed on the article; null if none. Distinct from ' +
+      '`mpn`, which is the maker’s own code.',
+  },
+  isFavourite: {
+    type: 'boolean',
+    example: false,
+    description: 'True when the user has starred this item.',
+  },
+  serialNumber: {
+    type: 'string',
+    nullable: true,
+    example: 'SN-2024-0042',
+    description: 'The maker’s per-unit identifier as printed on the article.',
+  },
+  serialNo: {
+    type: 'integer',
+    nullable: true,
+    description: 'Instance number (1..N) of a SERIALISED clone; null otherwise.',
+  },
+  parentId: {
+    type: 'string',
+    nullable: true,
+    description: 'The parent item when this is a child variant; null for a standalone item.',
+  },
+  unitCost: {
+    type: 'number',
+    nullable: true,
+    description: 'Current replacement value per unit, in the base currency; null if unpriced.',
+  },
+  purchasePrice: {
+    type: 'number',
+    nullable: true,
+    description: 'Original acquisition cost, in the base currency; null if unpriced.',
+  },
+  currentValue: {
+    type: 'number',
+    nullable: true,
+    description:
+      'Manual current/market value per unit, in the base currency; null when none is set. When ' +
+      'present it wins over the depreciated replacement cost in valuation.',
+  },
+  weight: {
+    type: 'number',
+    nullable: true,
+    description: 'Intrinsic mass in canonical **grams**; null when not recorded.',
+  },
+  width: {
+    type: 'number',
+    nullable: true,
+    description: 'Intrinsic bounding-box width in canonical **millimetres**; null when not recorded.',
+  },
+  height: {
+    type: 'number',
+    nullable: true,
+    description: 'Intrinsic bounding-box height in canonical **millimetres**; null when not recorded.',
+  },
+  depth: {
+    type: 'number',
+    nullable: true,
+    description: 'Intrinsic bounding-box depth in canonical **millimetres**; null when not recorded.',
+  },
+  expiryDate: {
+    type: 'integer',
+    nullable: true,
+    description: 'Perishable expiry instant (UNIX-ms); null when non-perishable.',
+  },
+  batchNumber: { type: 'string', nullable: true },
+  lotNumber: { type: 'string', nullable: true },
+  acquiredAt: {
+    type: 'string',
+    format: 'date',
+    nullable: true,
+    example: '2025-03-14',
+    description: 'Acquisition date (YYYY-MM-DD); null when untracked.',
+  },
+  warrantyExpiresAt: {
+    type: 'string',
+    format: 'date',
+    nullable: true,
+    example: '2027-06-15',
+    description: 'Warranty expiry date (YYYY-MM-DD); null when untracked.',
+  },
+  depreciationMonths: {
+    type: 'integer',
+    nullable: true,
+    description: 'Useful life for straight-line depreciation; null when it does not depreciate.',
+  },
+  deadStockMode: {
+    type: 'string',
+    enum: ['inherit', 'always', 'never'],
+    example: 'inherit',
+    description:
+      'Whether this item is reported as dead stock. `inherit` — the default — defers to the ' +
+      'item’s location chain; the other two override it.',
+  },
+  reorderPoint: {
+    type: 'integer',
+    nullable: true,
+    description: 'This item’s own DISCRETE low-stock floor; null falls back to the global default.',
+  },
+  reorderGaugePercent: {
+    type: 'number',
+    nullable: true,
+    description:
+      'This item’s own CONSUMABLE_GAUGE percentage-remaining floor; null falls back to the global default.',
+  },
+  reorderQty: {
+    type: 'integer',
+    nullable: true,
+    description: 'Suggested top-up amount for the shopping list; null when unset.',
+  },
+  operationalMetadata: {
+    type: 'object',
+    nullable: true,
+    additionalProperties: true,
+    description:
+      'A schema-less map of arbitrary operational parameters (e.g. `{ "bed_temp_celsius": 60 }`); ' +
+      'null when none are set.',
+    example: { bed_temp_celsius: 60 },
+  },
+  gauge: {
+    nullable: true,
+    description: 'The consumable-gauge state; null unless `trackingMode` is CONSUMABLE_GAUGE.',
+    allOf: [{ $ref: '#/components/schemas/GaugeState' }],
+  },
+  createdAt: { type: 'integer', description: 'UNIX-ms.' },
+  updatedAt: { type: 'integer', description: 'UNIX-ms.' },
+  // The three nested fields point at the *projected* element schemas: a dotted `fields` path
+  // narrows their elements too. `ItemDetail` overrides them with the strict shapes, because a
+  // write response is never projected.
+  placements: {
+    type: 'array',
+    description: 'Where this item’s stock sits, per location.',
+    items: { $ref: '#/components/schemas/PlacementProjection' },
+  },
+  capabilities: {
+    type: 'array',
+    description: 'The item’s queryable capability values.',
+    items: { $ref: '#/components/schemas/CapabilityProjection' },
+  },
+  tags: {
+    type: 'array',
+    description:
+      'The names of the tags this item carries, ordered by name. A tag *is* its name, so these ' +
+      "values can be fed straight back into a `$filter` as `tag eq '<name>'`. Only the item's " +
+      'own tags — a tag on its location belongs to that location.',
+    items: { type: 'string' },
+    example: ['fragile', 'workshop'],
+  },
+  fieldValues: {
+    type: 'array',
+    description: 'The item’s custom-field values, with location inheritance resolved.',
+    items: { $ref: '#/components/schemas/ItemFieldValueProjection' },
+  },
+};
+
+/** The `ItemSummary` field set — the default payload of `GET /api/v1/items` rows. */
+const ITEM_SUMMARY_FIELDS: readonly string[] = [
+  'id',
+  'name',
+  'quantity',
+  'isUnlimited',
+  'locationId',
+  'locationName',
+  'categoryId',
+  'mpn',
+  'manufacturer',
+  'trackingMode',
+  'isActive',
+];
+
+/** What `ItemDetail` adds on top of `ItemSummary` — the default payload of `GET /api/v1/items/{id}`. */
+const ITEM_DETAIL_EXTRA_FIELDS: readonly string[] = [
+  'description',
+  'categoryName',
+  'unitCost',
+  'condition',
+  'serialNumber',
+  'serialNo',
+  'parentId',
+  'expiryDate',
+  'batchNumber',
+  'lotNumber',
+  'createdAt',
+  'updatedAt',
+  'placements',
+  'capabilities',
+  'tags',
+];
+
+/**
+ * Build a `properties` map for the named subset of {@link itemFieldSchemas}. Throws on an
+ * unknown name rather than emitting an `undefined` value that would serialise to broken YAML.
+ */
+function itemProps(names: readonly string[]): JsonValue {
+  return Object.fromEntries(
+    names.map((name) => {
+      const schema = itemFieldSchemas[name];
+      if (schema === undefined) throw new Error(`No item field schema for "${name}"`);
+      return [name, schema];
+    }),
+  );
 }
 
 export const openapiDocument: JsonValue = {
@@ -470,6 +946,18 @@ export const openapiDocument: JsonValue = {
     { name: 'locations', description: 'Browse the locations hierarchy.' },
     { name: 'categories', description: 'Browse categories and their custom-field schema.' },
     { name: 'capabilities', description: 'Browse the queryable capability vocabulary.' },
+    {
+      name: 'odata',
+      description:
+        'A conformant (if small) OData v4 read service at /api/v1/odata, for tools that speak ' +
+        'OData natively — Excel/Power Query, Power BI, Simple.OData.Client. It serves a service ' +
+        'document, the CSDL $metadata, and the same items/locations/categories reads in the ' +
+        'OData JSON envelope ({ "@odata.context", "value" }) with the OData-Version header. The ' +
+        'plain /api/v1 endpoints keep their { data, pagination } envelope, so nothing here ' +
+        'changes an existing consumer. Only the items set is filterable, sortable, countable and ' +
+        'searchable; the CSDL says so in Org.OData.Capabilities.V1 terms, and a system query ' +
+        'option a resource does not support is a 400 rather than being ignored.',
+    },
     {
       name: 'writes',
       description:
@@ -541,18 +1029,193 @@ export const openapiDocument: JsonValue = {
     },
     '/api/v1/$metadata': {
       get: {
-        tags: ['meta'],
-        summary: 'OData CSDL $metadata (descriptive, not full-OData conformance)',
+        tags: ['odata'],
+        summary: 'Moved — redirects to the OData service’s own $metadata',
         description:
-          'An OData v4 CSDL document describing the read model (the items/locations/categories ' +
-          'entity sets and their complex types), for OData-aware tooling. The service implements ' +
-          'only the constrained OData query subset, not the whole protocol.',
+          'A CSDL is only actionable from the service root whose entity sets it declares, so the ' +
+          'document now lives at /api/v1/odata/$metadata. This path answers 301 with that ' +
+          'location; every OData client follows it.',
+        responses: {
+          301: {
+            description: 'Permanent redirect to /api/v1/odata/$metadata.',
+            headers: {
+              Location: { schema: { type: 'string' }, description: '/api/v1/odata/$metadata' },
+            },
+          },
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata': {
+      get: {
+        tags: ['odata'],
+        summary: 'OData service document — the entity sets on offer',
+        description:
+          'The document an OData client reads first (OData Protocol §11.1.1): a @odata.context ' +
+          'pointing at $metadata and a value array naming the items, locations and categories ' +
+          'entity sets. Answered without a loaded snapshot — it describes the service, not the ' +
+          'inventory.',
+        responses: {
+          200: {
+            description: 'The service document.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['@odata.context', 'value'],
+                  properties: {
+                    '@odata.context': { type: 'string' },
+                    value: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          name: { type: 'string' },
+                          kind: { type: 'string' },
+                          url: { type: 'string' },
+                        },
+                      },
+                    },
+                  },
+                },
+                example: {
+                  '@odata.context': `${SERVER_URL}/api/v1/odata/$metadata`,
+                  value: [{ name: 'items', kind: 'EntitySet', url: 'items' }],
+                },
+              },
+            },
+          },
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/$metadata': {
+      get: {
+        tags: ['odata'],
+        summary: 'OData CSDL $metadata',
+        description:
+          'The OData v4 CSDL describing the read model — the items/locations/categories entity ' +
+          'sets, their complex types, which properties a default (unprojected) request returns, ' +
+          'and the Org.OData.Capabilities.V1 restrictions naming exactly what each set can be ' +
+          'filtered, sorted, counted and searched on. Answered without a loaded snapshot.',
         responses: {
           200: {
             description: 'The CSDL $metadata XML.',
             content: { 'application/xml': { schema: { type: 'string' } } },
           },
           ...(errorResponses(401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/items': {
+      get: {
+        tags: ['odata'],
+        summary: 'The items entity set, in the OData JSON envelope',
+        description:
+          'The same rows as GET /api/v1/items — same paging, same $filter/$orderby/$search/' +
+          '$select/$expand — wrapped as { "@odata.context", "@odata.count"?, "value", ' +
+          '"@odata.nextLink"? }. $count=true reports the grand total as @odata.count. A page ' +
+          'capped by the server carries @odata.nextLink; when $top was given, the link’s $top is ' +
+          'reduced by the rows already delivered, so following the chain returns exactly that ' +
+          'many rows. This is the only entity set that accepts $filter, $orderby, $search or ' +
+          '$count; a system query option a set does not support is a 400, not silently ignored.',
+        parameters: [
+          selectParam,
+          expandParam,
+          topParam,
+          skipParam,
+          orderbyParam,
+          filterParam,
+          countParam,
+          searchParam,
+        ],
+        responses: {
+          200: okODataCollection('#/components/schemas/ItemSummary'),
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/items({id})': {
+      get: {
+        tags: ['odata'],
+        summary: 'One item by key, in the OData JSON envelope',
+        description:
+          'The canonical OData key-in-parentheses form; the unquoted items(abc) and named ' +
+          "items(id='abc') spellings are accepted too. Returns the ItemDetail shape with a " +
+          '@odata.context ending in /$entity, or 404.',
+        parameters: [odataKeyParam('item'), selectParam, expandParam],
+        responses: {
+          200: response('The item, plus @odata.context.', '#/components/schemas/ItemDetail'),
+          ...(errorResponses(400, 401, 404, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/items/$count': {
+      get: {
+        tags: ['odata'],
+        summary: 'The matching item count as a raw value',
+        description:
+          'The OData raw-value count: the grand total of matching items as a bare text/plain ' +
+          'integer, honouring $filter/$search. items is the only countable entity set; the same ' +
+          'path on locations or categories is a 404, as the CSDL’s CountRestrictions say.',
+        parameters: [filterParam, searchParam],
+        responses: {
+          200: {
+            description: 'The count, as a plain-text integer.',
+            content: { 'text/plain': { schema: { type: 'integer' }, example: 4 } },
+          },
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/locations': {
+      get: {
+        tags: ['odata'],
+        summary: 'The locations entity set, in the OData JSON envelope',
+        description:
+          'A plain paged read: $select, $expand, $top and $skip only. This set is not filterable, ' +
+          'sortable, countable or searchable — the CSDL declares that, and asking anyway is a 400.',
+        parameters: [locationSelectParam, locationExpandParam, topParam, skipParam],
+        responses: {
+          200: okODataCollection('#/components/schemas/Location'),
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/locations({id})': {
+      get: {
+        tags: ['odata'],
+        summary: 'One location by key, in the OData JSON envelope',
+        parameters: [odataKeyParam('location'), locationSelectParam, locationExpandParam],
+        responses: {
+          200: response('The location, plus @odata.context.', '#/components/schemas/Location'),
+          ...(errorResponses(400, 401, 404, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/categories': {
+      get: {
+        tags: ['odata'],
+        summary: 'The categories entity set, in the OData JSON envelope',
+        description: 'A plain paged read: $top and $skip only.',
+        parameters: [topParam, skipParam],
+        responses: {
+          200: okODataCollection('#/components/schemas/CategorySummary'),
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/odata/categories({id})': {
+      get: {
+        tags: ['odata'],
+        summary: 'One category by key, in the OData JSON envelope',
+        parameters: [odataKeyParam('category')],
+        responses: {
+          200: response(
+            'The category and its field schema, plus @odata.context.',
+            '#/components/schemas/CategoryDetail',
+          ),
+          ...(errorResponses(400, 401, 404, 429, 503) as Record<string, JsonValue>),
         },
       },
     },
@@ -571,7 +1234,7 @@ export const openapiDocument: JsonValue = {
             lastReloadErrorAt: null,
             lastReloadAt: '2025-06-27T06:13:21.000Z',
           }),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -599,7 +1262,7 @@ export const openapiDocument: JsonValue = {
             },
             snapshotGeneratedAt: '2025-06-27T06:13:20.000Z',
           }),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -628,7 +1291,7 @@ export const openapiDocument: JsonValue = {
         ],
         responses: {
           200: response('The matches.', '#/components/schemas/SearchResult'),
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -639,7 +1302,7 @@ export const openapiDocument: JsonValue = {
         parameters: [qParam],
         responses: {
           200: response('The enriched answer.', '#/components/schemas/WhereIsResult'),
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -688,8 +1351,12 @@ export const openapiDocument: JsonValue = {
           searchParam,
         ],
         responses: {
-          200: okList('#/components/schemas/ItemSummary'),
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          200: okList(
+            'A page of items. Each row is the full `ItemSummary` shape (plus anything added with ' +
+              '`include`/`$expand`) unless `fields`/`$select` projects it to exactly the named fields.',
+            '#/components/schemas/ItemProjection',
+          ),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -706,7 +1373,7 @@ export const openapiDocument: JsonValue = {
             description: 'The count, as a plain-text integer.',
             content: { 'text/plain': { schema: { type: 'integer' }, example: 4 } },
           },
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -735,7 +1402,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -795,7 +1462,7 @@ export const openapiDocument: JsonValue = {
             },
           },
           304: notModifiedResponse,
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -850,7 +1517,8 @@ export const openapiDocument: JsonValue = {
             },
           },
           304: notModifiedResponse,
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          // The one unversioned path here, so its errors are the FLAT legacy envelope.
+          ...(legacyErrorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -864,8 +1532,12 @@ export const openapiDocument: JsonValue = {
           'default detail payload.',
         parameters: [idParam('item'), fieldsParam, includeParam, selectParam, expandParam],
         responses: {
-          200: response('The item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(400, 401, 404, 429, 503) as Record<string, JsonValue>),
+          200: response(
+            'The item — the full `ItemDetail` shape (plus anything added with `include`/`$expand`) ' +
+              'unless `fields`/`$select` projects it to exactly the named fields.',
+            '#/components/schemas/ItemProjection',
+          ),
+          ...(errorResponses(400, 401, 404, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -883,7 +1555,7 @@ export const openapiDocument: JsonValue = {
         requestBody: adjustRequestBody('Whole-number change; negative to take stock out.'),
         responses: {
           200: response('The updated item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -899,7 +1571,7 @@ export const openapiDocument: JsonValue = {
         requestBody: adjustRequestBody('Signed change to the net value (e.g. -45 for 45 consumed).'),
         responses: {
           200: response('The updated item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1094,7 +1766,7 @@ export const openapiDocument: JsonValue = {
             formatVersion: 3,
             generatedAt: 1751004800000,
           }),
-          ...(errorResponses(400, 401, 413, 415, 422, 429) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 413, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1115,8 +1787,12 @@ export const openapiDocument: JsonValue = {
           expandParam,
         ],
         responses: {
-          200: okList('#/components/schemas/Location'),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          200: okList(
+            'A page of locations. Each row is the full default location payload (plus `fieldValues` ' +
+              'when included) unless `fields`/`$select` projects it to exactly the named fields.',
+            '#/components/schemas/Location',
+          ),
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1136,7 +1812,7 @@ export const openapiDocument: JsonValue = {
         ],
         responses: {
           200: response('The location.', '#/components/schemas/Location'),
-          ...(errorResponses(401, 404, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 404, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1146,8 +1822,8 @@ export const openapiDocument: JsonValue = {
         summary: 'Browse categories (paginated)',
         parameters: [limitParam, offsetParam],
         responses: {
-          200: okList('#/components/schemas/CategorySummary'),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          200: okList('A page of categories.', '#/components/schemas/CategorySummary'),
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1158,7 +1834,7 @@ export const openapiDocument: JsonValue = {
         parameters: [idParam('category')],
         responses: {
           200: response('The category.', '#/components/schemas/CategoryDetail'),
-          ...(errorResponses(401, 404, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 404, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1171,8 +1847,8 @@ export const openapiDocument: JsonValue = {
           'can filter on with cap:<key> in a search query.',
         parameters: [limitParam, offsetParam],
         responses: {
-          200: okList('#/components/schemas/CapabilityKey'),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          200: okList('A page of capability keys.', '#/components/schemas/CapabilityKey'),
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1213,7 +1889,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(401, 429) as Record<string, JsonValue>),
+          ...(errorResponses(401, 404, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1228,8 +1904,9 @@ export const openapiDocument: JsonValue = {
           'next hydrate. It therefore keeps a bounded in-memory log, which the app polls while its ' +
           'Webhooks screen is open. The log does not survive a bridge restart. No secret, ' +
           'signature, request header or query string is ever recorded, and each URL is reduced to ' +
-          'its origin and path. Reads the bridge’s own memory rather than the snapshot, so it ' +
-          'answers before a snapshot has loaded.',
+          'its origin and path. Reads the bridge’s own memory rather than the snapshot — but, like ' +
+          'every path, it still answers 503 until one has loaded, because the tokens that identify ' +
+          'the caller arrive in that snapshot.',
         parameters: [
           {
             name: 'since',
@@ -1292,7 +1969,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1368,7 +2045,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(400, 401, 415, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1379,8 +2056,9 @@ export const openapiDocument: JsonValue = {
         description:
           'Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Projects Home Assistant’s ' +
           'entity states down to those reporting a convertible mass unit, for the app’s scale ' +
-          'picker. Reads Home Assistant rather than the snapshot, so it answers before a snapshot ' +
-          'has loaded. Strictly read-only — the bridge cannot call a Home Assistant service.',
+          'picker. Reads Home Assistant rather than the snapshot — but, like every path, it still ' +
+          'answers 503 until one has loaded, because the tokens that identify the caller arrive in ' +
+          'that snapshot. Strictly read-only — the bridge cannot call a Home Assistant service.',
         responses: {
           200: {
             description: 'The pickable weight sensors.',
@@ -1410,7 +2088,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(401, 429) as Record<string, JsonValue>),
+          ...(errorResponses(401, 404, 429, 502) as Record<string, JsonValue>),
         },
       },
     },
@@ -1448,7 +2126,7 @@ export const openapiDocument: JsonValue = {
                     grams: { type: 'number', description: 'The reading in canonical grams.', example: 1250 },
                     value: { type: 'number', description: 'The raw value as reported.', example: 1.25 },
                     unit: { type: 'string', description: 'The unit that raw value was in.', example: 'kg' },
-                    lastUpdated: { type: ['string', 'null'], format: 'date-time' },
+                    lastUpdated: { type: 'string', nullable: true, format: 'date-time' },
                   },
                 },
                 example: {
@@ -1461,30 +2139,23 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          404: {
-            description:
-              'The Home Assistant read is disabled, or the entity is not a scale (or does not ' +
+          404: response(
+            'The Home Assistant read is disabled, or the entity is not a scale (or does not ' +
               'exist). A non-scale entity is deliberately indistinguishable from a missing one.',
-            content: {
-              'application/json': {
-                example: { error: { code: 'not_found', message: 'No such entity.' } },
+            '#/components/schemas/Error',
+            { error: { code: 'not_found', message: 'No such entity.' } },
+          ),
+          409: response(
+            'A genuine scale that is unavailable, or is not reporting a numeric weight.',
+            '#/components/schemas/Error',
+            {
+              error: {
+                code: 'scale_unavailable',
+                message: 'The scale is unavailable in Home Assistant.',
               },
             },
-          },
-          409: {
-            description: 'A genuine scale that is unavailable, or is not reporting a numeric weight.',
-            content: {
-              'application/json': {
-                example: {
-                  error: {
-                    code: 'scale_unavailable',
-                    message: 'The scale is unavailable in Home Assistant.',
-                  },
-                },
-              },
-            },
-          },
-          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
+          ),
+          ...(errorResponses(400, 401, 429, 502) as Record<string, JsonValue>),
         },
       },
     },
@@ -1502,6 +2173,7 @@ export const openapiDocument: JsonValue = {
     },
     schemas: {
       Error: errorSchema,
+      LegacyError: legacyErrorSchema,
       Pagination: paginationSchema,
       ApiIndex: {
         type: 'object',
@@ -1646,18 +2318,25 @@ export const openapiDocument: JsonValue = {
         required: ['query', 'matches'],
         properties: {
           query: { type: 'string', example: 'ESP32' },
-          matches: { type: 'array', items: { $ref: '#/components/schemas/ItemMatch' } },
+          matches: {
+            type: 'array',
+            description:
+              'Plain — with no `fields`/`include` (or `$select`/`$expand`) — every match is the ' +
+              'compact `ItemMatch`. With a selection each match is an `ItemProjection` instead: ' +
+              'the selected item fields and nothing else. The two are genuinely different shapes ' +
+              '(among other things `ItemMatch` resolves `locationId` through the locations table, ' +
+              'so it can be null), which is why both are listed rather than one covering both.',
+            items: {
+              anyOf: [
+                { $ref: '#/components/schemas/ItemMatch' },
+                { $ref: '#/components/schemas/ItemProjection' },
+              ],
+            },
+          },
         },
       },
-      Placement: {
-        type: 'object',
-        required: ['locationId', 'locationName', 'quantity'],
-        properties: {
-          locationId: { type: 'string', example: 'loc-shelf-2' },
-          locationName: { type: 'string', example: 'Shelf 2' },
-          quantity: { type: 'integer', example: 5 },
-        },
-      },
+      Placement: placementSchema,
+      PlacementProjection: projectedElement(placementSchema),
       WhereIsMatch: {
         allOf: [
           { $ref: '#/components/schemas/ItemMatch' },
@@ -1683,140 +2362,72 @@ export const openapiDocument: JsonValue = {
           },
         },
       },
-      Capability: {
+      Capability: capabilitySchema,
+      CapabilityProjection: projectedElement(capabilitySchema),
+      ItemFieldValue: itemFieldValueSchema,
+      ItemFieldValueProjection: projectedElement(itemFieldValueSchema),
+      // Relaxed in place, with no strict twin: every read that can return one accepts a sparse
+      // fieldset, so there is no response left for the strict shape to describe.
+      LocationFieldValue: projectedElement(locationFieldValueSchema),
+      GaugeState: {
         type: 'object',
-        required: ['key', 'valueNum', 'valueText', 'weight'],
-        properties: {
-          key: { type: 'string', example: 'voltage' },
-          valueNum: { type: 'number', nullable: true, example: 3.3 },
-          valueText: { type: 'string', nullable: true, example: null },
-          weight: { type: 'number', example: 2 },
-        },
-      },
-      ItemFieldValue: {
-        type: 'object',
-        description:
-          "One of the item's custom-field values, resolved exactly as the app resolves it: a " +
-          'value set on the item wins, otherwise the value offered by the nearest ancestor ' +
-          'location that makes it inheritable, otherwise the field default. Fields with no ' +
-          'value are omitted. Read-only.',
-        required: ['name', 'fieldType', 'value', 'source', 'inheritedFrom'],
-        properties: {
-          name: { type: 'string', example: 'Datasheet' },
-          fieldType: { type: 'string', example: 'TEXT' },
-          value: { type: 'string', example: 'https://example.com/esp32.pdf' },
-          source: {
-            type: 'string',
-            enum: ['stored', 'inherited', 'default'],
-            example: 'stored',
-            description:
-              'Where the value came from: set on the item (`stored`), inherited from an ' +
-              'ancestor location (`inherited`), or the field default (`default`).',
-          },
-          inheritedFrom: {
-            type: 'object',
-            nullable: true,
-            description: 'The location that supplied the value when `source` is `inherited`; null otherwise.',
-            required: ['locationId', 'locationName'],
-            properties: {
-              locationId: { type: 'string', example: 'loc-shelf-2' },
-              locationName: { type: 'string', example: 'Shelf 2' },
-            },
-          },
-        },
-      },
-      LocationFieldValue: {
-        type: 'object',
-        description:
-          'One custom-field value held by a location. Fields with no value are omitted. Read-only.',
-        required: ['name', 'fieldType', 'value', 'isInheritable'],
-        properties: {
-          name: { type: 'string', example: 'Indicator Entity' },
-          fieldType: { type: 'string', example: 'TEXT' },
-          value: { type: 'string', example: 'light.shelf_two' },
-          isInheritable: {
-            type: 'boolean',
-            example: true,
-            description:
-              'True when the location offers this value to the items stored beneath it; false ' +
-              "when it is the location's own metadata only.",
-          },
-        },
-      },
-      ItemSummary: {
-        type: 'object',
+        description: 'The state of a CONSUMABLE_GAUGE item’s container.',
         required: [
-          'id',
-          'name',
-          'quantity',
-          'isUnlimited',
-          'locationId',
-          'locationName',
-          'categoryId',
-          'mpn',
-          'manufacturer',
-          'trackingMode',
-          'isActive',
+          'unitOfMeasure',
+          'grossCapacity',
+          'tareWeight',
+          'currentNetValue',
+          'percentageRemaining',
+          'currentGrossWeight',
+          'attritionPercent',
         ],
         properties: {
-          id: { type: 'string', example: 'item-m3-bolt' },
-          name: { type: 'string', example: 'M3 x 10 Hex Bolt' },
-          quantity: {
-            type: 'integer',
+          unitOfMeasure: { type: 'string', example: 'g' },
+          grossCapacity: { type: 'number', example: 1000 },
+          tareWeight: { type: 'number', description: 'Empty-container weight/volume.', example: 220 },
+          currentNetValue: { type: 'number', description: 'Usable material remaining.', example: 640 },
+          percentageRemaining: { type: 'number', example: 64 },
+          currentGrossWeight: { type: 'number', example: 860 },
+          attritionPercent: {
+            type: 'number',
             nullable: true,
-            example: 42,
-            description:
-              'On-hand grand total across every location. **null** for an unlimited-supply ' +
-              'item (`isUnlimited: true`) — an effectively infinite source has no finite count.',
+            description: 'Proportional waste a draw costs on top of the amount asked for; null for none.',
           },
-          isUnlimited: {
-            type: 'boolean',
-            example: false,
-            description: 'True for an effectively infinite source (e.g. tap water); its `quantity` is null.',
-          },
-          locationId: { type: 'string', example: 'loc-drawer-a' },
-          locationName: { type: 'string', nullable: true, example: 'Drawer A' },
-          categoryId: { type: 'string', nullable: true, example: 'cat-fasteners' },
-          mpn: { type: 'string', nullable: true, example: 'FAS-M3-10' },
-          manufacturer: { type: 'string', nullable: true, example: 'Acme Fasteners' },
-          trackingMode: {
-            type: 'string',
-            enum: ['DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UNTRACKED'],
-            example: 'DISCRETE',
-          },
-          isActive: { type: 'boolean', example: true },
         },
       },
+      /*
+       * `ItemSummary` and `ItemDetail` keep their `required` lists because each is still the
+       * guaranteed shape of a response that CANNOT be projected — the SSE event payload and the
+       * two write endpoints respectively. Every read that accepts `fields`/`$select` answers with
+       * `ItemProjection` instead (issue #367).
+       */
+      ItemSummary: {
+        type: 'object',
+        description:
+          'The default row shape of `GET /api/v1/items`, and the item snapshot carried by an event.',
+        required: [...ITEM_SUMMARY_FIELDS],
+        properties: itemProps(ITEM_SUMMARY_FIELDS),
+      },
       ItemDetail: {
+        description: 'The default payload of `GET /api/v1/items/{id}`, and what a write returns.',
         allOf: [
           { $ref: '#/components/schemas/ItemSummary' },
           {
             type: 'object',
             required: ['placements', 'capabilities', 'tags'],
             properties: {
-              description: { type: 'string', nullable: true },
-              categoryName: { type: 'string', nullable: true, example: 'Fasteners' },
-              unitCost: { type: 'number', nullable: true },
-              condition: { type: 'string', nullable: true },
-              serialNumber: { type: 'string', nullable: true, example: 'SN-2024-0042' },
-              serialNo: { type: 'integer', nullable: true },
-              parentId: { type: 'string', nullable: true },
-              expiryDate: { type: 'integer', nullable: true },
-              batchNumber: { type: 'string', nullable: true },
-              lotNumber: { type: 'string', nullable: true },
-              createdAt: { type: 'integer' },
-              updatedAt: { type: 'integer' },
-              placements: { type: 'array', items: { $ref: '#/components/schemas/Placement' } },
-              capabilities: { type: 'array', items: { $ref: '#/components/schemas/Capability' } },
-              tags: {
+              ...(itemProps([...ITEM_DETAIL_EXTRA_FIELDS, 'fieldValues']) as Record<string, JsonValue>),
+              // Restated with the strict element shapes: nothing that answers with `ItemDetail`
+              // accepts a `fields` path, so each element really does carry all of its keys.
+              placements: {
                 type: 'array',
-                description:
-                  'The names of the tags this item carries, ordered by name. A tag *is* its name, ' +
-                  'so these values can be fed straight back into a `$filter` as ' +
-                  "`tag eq '<name>'`. Only the item's own tags — a tag on its location belongs to " +
-                  'that location.',
-                items: { type: 'string' },
-                example: ['fragile', 'workshop'],
+                description: 'Where this item’s stock sits, per location.',
+                items: { $ref: '#/components/schemas/Placement' },
+              },
+              capabilities: {
+                type: 'array',
+                description: 'The item’s queryable capability values.',
+                items: { $ref: '#/components/schemas/Capability' },
               },
               fieldValues: {
                 type: 'array',
@@ -1878,9 +2489,31 @@ export const openapiDocument: JsonValue = {
           checkout: { $ref: '#/components/schemas/Checkout' },
         },
       },
+      ItemProjection: {
+        type: 'object',
+        description:
+          'An item as returned by a read that accepts a **sparse fieldset**, which is why no ' +
+          'property here is required.\n\n' +
+          'Without `fields`/`$select` the payload is the endpoint’s documented default set — ' +
+          '`ItemSummary` for the items list, `ItemDetail` for a single item — plus anything added ' +
+          'with `include`/`$expand`. With `fields`/`$select` it is EXACTLY the named fields and ' +
+          'nothing else, so `fields=name,unitCost` yields an object of two keys. Every property ' +
+          'below is one of those selectable fields; which ones arrive is decided per request, so ' +
+          'a generated client must treat them all as optional.',
+        properties: itemProps([...Object.keys(itemFieldSchemas)]),
+      },
+      /*
+       * Locations need no projected twin: every field a location has is already in its default
+       * payload, so one schema covers both cases — but both location reads accept `fields`, so
+       * nothing here can be `required`. What a caller gets without one is spelled out below.
+       */
       Location: {
         type: 'object',
-        required: ['id', 'name', 'parentId', 'isSystem', 'description', 'color', 'itemCount'],
+        description:
+          'A location. Without `fields`/`$select` the payload always carries `id`, `name`, ' +
+          '`parentId`, `isSystem`, `description`, `color` and `itemCount`, plus `fieldValues` when ' +
+          'asked for with `include=fields`. With `fields`/`$select` it carries EXACTLY the named ' +
+          'fields — which is why no property is required (issue #367).',
         properties: {
           id: { type: 'string', example: 'loc-drawer-a' },
           name: { type: 'string', example: 'Drawer A' },
@@ -1891,7 +2524,7 @@ export const openapiDocument: JsonValue = {
           itemCount: { type: 'integer', example: 2 },
           fieldValues: {
             type: 'array',
-            description: 'Present only when requested with `include=fields`.',
+            description: 'Present only when requested with `include=fields` (or named in `fields`).',
             items: { $ref: '#/components/schemas/LocationFieldValue' },
           },
         },

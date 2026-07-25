@@ -25,7 +25,8 @@ you need Node **≥ 24** (or the **22.16+ LTS** line).
 > - **Read (always on):** the original `GET /health`, `/search`, `/where`; an additive,
 >   OpenAPI-described [`/api/v1`](#versioned-rest-api-apiv1) surface (items, locations,
 >   categories, capabilities and [inventory status counts](#inventory-status-counts), with
->   field-selection + an OData-style query subset); a
+>   field-selection + an OData-style query subset); an
+>   [OData v4 service](#odata-v4-service-apiv1odata) for Excel / Power BI; a
 >   [CSV export](#csv-export); an [iCalendar subscription feed](#calendar-subscription); and
 >   [syndication feeds + a Prometheus `/metrics`](#feeds--metrics) endpoint. The same read-only
 >   core is also offered over an [MCP stdio server](#mcp-server-for-llmagent-tools) for LLM/agent
@@ -128,10 +129,10 @@ Every route requires `bridge:read` or `bridge:write` — the capability of using
 
 | Route | Requires |
 | --- | --- |
-| `GET /health`, `/api/v1`, `/api/v1/openapi.json`, `/api/v1/$metadata`, `/api/v1/health`, `/api/v1/events`, `/api/v1/scale/*` | `bridge:read` |
-| `GET /search`, `/where`, `/metrics`, `/api/v1/{search,where,items,items.csv,capabilities,status}` | `bridge:read` + `items:read` |
-| `GET /api/v1/locations…` | `bridge:read` + `locations:read` |
-| `GET /api/v1/categories…` | `bridge:read` + `categories:read` |
+| `GET /health`, `/api/v1`, `/api/v1/openapi.json`, `/api/v1/$metadata`, `/api/v1/health`, `/api/v1/events`, `/api/v1/scale/*`, `/api/v1/odata`, `/api/v1/odata/$metadata` | `bridge:read` |
+| `GET /search`, `/where`, `/metrics`, `/api/v1/{search,where,items,items.csv,capabilities,status}`, `/api/v1/odata/items…` | `bridge:read` + `items:read` |
+| `GET /api/v1/locations…`, `/api/v1/odata/locations…` | `bridge:read` + `locations:read` |
+| `GET /api/v1/categories…`, `/api/v1/odata/categories…` | `bridge:read` + `categories:read` |
 | `GET /api/v1/calendar.ics` | `bridge:read` + `bookings:read` |
 | `GET /api/v1/activity.{rss,atom,json}` | `bridge:read` + `audit:view` |
 | `GET /api/v1/webhooks/deliveries` | `bridge:read` + `settings:read` |
@@ -151,7 +152,9 @@ where it is — is not editing the item record. **Lending** is a subject of its 
 user for `checkouts:write` to check something out, so the bridge asks the same rather than letting
 a stock-only token open loans. (Checking out to a *name* creates the contact if there is no match,
 exactly as the app does for a `checkouts:write` holder, so no extra `contacts:write` is demanded —
-that would lock the built-in Stocker role out of lending entirely.)
+that would lock the built-in Stocker role out of lending entirely.) The **OData service** is the
+same reads under a different envelope, so each of its entity sets needs exactly what its REST
+twin needs — `/api/v1/odata` is never the cheaper door.
 
 > **ℹ️ The MCP stdio server carries no credential at all.** Its trust boundary is the OS process
 > (see [MCP server](#mcp-server-for-llmagent-tools)), so there is no token to resolve and no
@@ -314,14 +317,19 @@ every endpoint is a **`GET`** (or [`HEAD`](#head-requests)) and strictly read-on
 - **Errors** use a structured, machine-readable envelope:
   `{ "error": { "code": "not_found", "message": "…" } }`. Codes: `bad_request`,
   `unauthorized`, `forbidden`, `not_found`, `method_not_allowed`, `unsupported_media_type`,
-  `too_many_requests`, `snapshot_unavailable`, `internal_error`.
+  `too_many_requests`, `snapshot_unavailable`, `unprocessable`, `payload_too_large`,
+  `internal_error`, plus — on the opt-in Home Assistant reads only — `scale_unavailable`,
+  `scale_not_a_number`, `home_assistant_unreachable`, `home_assistant_unauthorised` and
+  `home_assistant_error`. The [spec](#openapi-spec) publishes the same list, generated from
+  the codes the bridge can actually send.
 - **Field selection** — the item endpoints accept `fields` (return only the named fields) and
   `include` (add extended fields on top of the default payload). See
   [Field selection & extended fields](#field-selection--extended-fields) below.
 - **OData-style options** — the item endpoints also accept a convenience subset of the OData
   query options (`$select`, `$expand`, `$top`, `$skip`, `$orderby`, `$filter`, `$count`,
-  `$search`), plus a CSDL `$metadata` document and an `/items/$count` path. See
-  [OData-style query options](#odata-style-query-options) below.
+  `$search`), plus an `/items/$count` path. See
+  [OData-style query options](#odata-style-query-options) below. For an OData *client*, use the
+  [OData v4 service](#odata-v4-service-apiv1odata) at `/api/v1/odata`.
 - All ids are the app's stable record ids; timestamps are UNIX-ms integers (as stored).
 
 ### Endpoints
@@ -330,7 +338,8 @@ every endpoint is a **`GET`** (or [`HEAD`](#head-requests)) and strictly read-on
 | --- | --- |
 | `GET /api/v1` | A small discovery index (API version, the `bridge` build block, and the endpoint list). See [Updating the bridge](#updating-the-bridge). |
 | `GET /api/v1/openapi.json` | This API's OpenAPI 3 document. |
-| `GET /api/v1/$metadata` | OData v4 CSDL describing the read model (descriptive; see [OData-style options](#odata-style-query-options)). |
+| `GET /api/v1/odata` | The [OData v4 service](#odata-v4-service-apiv1odata) root — service document, `$metadata`, and the entity sets in the OData JSON envelope, for Excel / Power BI / OData clients. |
+| `GET /api/v1/$metadata` | `301` to `/api/v1/odata/$metadata` (the CSDL moved with the service). |
 | `GET /api/v1/items/$count` | The count of matching items as a bare `text/plain` integer (honours `$filter`/`$search`). |
 | `GET /api/v1/items.csv` | A spreadsheet-friendly CSV of the matching items (refreshable pull for Excel/Power BI). See [CSV export](#csv-export). |
 | `GET /api/v1/calendar.ics` | A read-only iCalendar feed of Gubbins' time-bearing facts (loan due-backs, bookings, maintenance, warranty) that any calendar app can **subscribe** to. See [Calendar subscription](#calendar-subscription). |
@@ -432,8 +441,8 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 
 | Endpoint | Default fields |
 | --- | --- |
-| `/search` | `id, name, quantity, locationName, mpn, manufacturer` |
-| `/items` | the above + `isUnlimited, locationId, categoryId, trackingMode, isActive` (`ItemSummary`) |
+| `/search` | `id, name, quantity, locationId, locationName, mpn, manufacturer` (`ItemMatch`) |
+| `/items` | the above + `isUnlimited, categoryId, trackingMode, isActive` (`ItemSummary`) |
 | `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNumber, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities, tags` (`ItemDetail`) |
 
 > **Unlimited supply.** An item marked _unlimited_ (an effectively infinite source — tap water,
@@ -444,7 +453,8 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 `quantity`, `isUnlimited`, `locationId`, `locationName`, `categoryId`, `categoryName`, `mpn`, `manufacturer`,
 `trackingMode`, `isActive`, `description`, `notes`, `condition`, `barcode`, `isFavourite`,
 `serialNumber`, `serialNo`, `parentId`,
-`unitCost`, `purchasePrice`, `currentValue`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
+`unitCost`, `purchasePrice`, `currentValue`, `weight`, `width`, `height`, `depth`,
+`expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
 `warrantyExpiresAt`, `depreciationMonths`, `deadStockMode`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
 `operationalMetadata`, `gauge`, `createdAt`, `updatedAt`, `placements` (nestable:
 `locationId, locationName, quantity`), `capabilities` (nestable: `key, valueNum, valueText, weight`),
@@ -537,11 +547,15 @@ beneath it.
 ### OData-style query options
 
 For callers already fluent in **OData**, the item endpoints accept a small, familiar subset of
-the OData v4 query options. This is a **convenience alias layer, not a compliant OData service** —
-there is deliberately no `$batch`, no `$apply`, and no navigation-property semantics, and the
-`$metadata` document below is descriptive rather than a conformance claim (see
-[the earlier discussion](#versioned-rest-api-apiv1) of why full OData isn't a fit for a
-zero-dependency bridge). It adds **no dependency** and ships **nothing** to the PWA.
+the OData v4 query options. This is a **convenience alias layer** on the plain REST endpoints:
+they keep the `{ data, pagination }` envelope, so `$top` and `$filter` are just friendlier
+spellings of `limit` and a search. It adds **no dependency** and ships **nothing** to the PWA.
+
+> **If you want to point an OData *client* at the bridge — Excel, Power Query, Power BI,
+> `Simple.OData.Client` — use the [OData v4 service](#odata-v4-service-apiv1odata) at
+> `/api/v1/odata` instead.** It speaks the protocol, not just the dialect: a service document, the
+> `{ "@odata.context", "value" }` JSON envelope and the `OData-Version` header those tools require.
+> The options below are for hand-written HTTP calls against the plain endpoints.
 
 | Option | Maps to | Notes |
 | --- | --- | --- |
@@ -558,26 +572,14 @@ Each `$`-prefixed option is an **alias** of its plain REST name and **wins** whe
 (`?$top=5&limit=9` ⇒ 5). `$select`/`$expand`/`$top` work on `/search`, `/items` and `/items/{id}`;
 `$skip`, `$orderby`, `$filter`, `$count` and `$search` apply to the `/items` list.
 
-There are also two dedicated paths:
+There is also one dedicated path:
 
-- **`GET /api/v1/$metadata`** — an OData v4 **CSDL** document describing the read model (the
-  `items`/`locations`/`categories` entity sets and their complex types), for OData-aware tooling.
-  It is **descriptive**: the service implements only this query subset, not the whole OData
-  protocol (no service document, no `$batch`/`$apply`, no navigation-property expansion beyond the
-  bundled `placements`/`capabilities`).
-
-  Each entity type describes the **whole projectable shape**, which is wider than a default
-  request returns — `GET /items` emits the summary field set, and the rest (`placements`,
-  `capabilities`, `fieldValues`, the gauge, dimensions, pricing, …) is opt-in via
-  `fields`/`include` or `$select`/`$expand`. So that a CSDL reader isn't misled into
-  materialising columns that are always empty, every property outside its entity set's default
-  payload carries an `Org.OData.Core.V1.Description` annotation saying it is opt-in, and each
-  entity set is annotated with the exact field list an unprojected request returns. Note also
-  that on the collection-valued properties `Nullable="false"` describes the *elements* (CSDL
-  v4.01 §7.1.1) — the collection itself can never be null — and says nothing about whether the
-  property is present.
 - **`GET /api/v1/items/$count`** — the OData inline-count path: the total number of matching items
   as a bare `text/plain` integer (honouring `$filter`/`$search`/`location`/`category`).
+
+(`GET /api/v1/$metadata` used to serve the CSDL from here. It now **redirects (`301`)** to
+[`/api/v1/odata/$metadata`](#odata-v4-service-apiv1odata) — a CSDL is only actionable from the
+service root whose entity sets it declares, so the document moved with the service.)
 
 **`$orderby`** — a comma-separated list of `<field> [asc|desc]` terms (direction defaults to
 `asc`). Sortable fields: `name`, `quantity`, `unitCost`, `mpn`, `manufacturer`, `createdAt`,
@@ -658,12 +660,123 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$filter=barcode eq '5012345
 curl -H "Authorization: Bearer $TOKEN" \
   "$BASE/items?\$filter=tag eq 'fragile' and isFavourite eq false"
 
-# Just the number of ESP32-ish items, and the metadata document:
+# Just the number of ESP32-ish items:
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items/\$count?\$search=esp32"
-curl -H "Authorization: Bearer $TOKEN" "$BASE/\$metadata"
 ```
 
 (Escape the literal `$` for your shell, as above, or single-quote the whole URL.)
+
+### OData v4 service (`/api/v1/odata`)
+
+For tools that speak **OData natively** — Excel / Power Query, Power BI, `Simple.OData.Client`,
+LINQPad — the bridge serves a small but genuinely conformant **OData v4 read service** at
+`/api/v1/odata`. Point the connector at that URL, supply the [API token](#identities--permissions)
+as a bearer header, and it will discover the entity sets and read them without any further help.
+
+This is a **separate service root**, not a change to the endpoints above: `/api/v1/items` and
+friends keep their `{ data, pagination }` envelope exactly as before, so nothing that already
+consumes the API is affected. Both surfaces read through one shared engine, so the same query
+always returns the same rows.
+
+| Path | Returns |
+| --- | --- |
+| `GET /api/v1/odata` | The **service document** — the entity sets on offer (Protocol §11.1.1). |
+| `GET /api/v1/odata/$metadata` | The **CSDL** describing the read model. |
+| `GET /api/v1/odata/items` | The `items` entity set, in the OData JSON envelope. |
+| `GET /api/v1/odata/items('<id>')` | One item (also `items(<id>)` and `items(id='<id>')`). |
+| `GET /api/v1/odata/items/$count` | The matching-item total as a raw `text/plain` integer. |
+| `GET /api/v1/odata/locations`, `…('<id>')` | The `locations` entity set. |
+| `GET /api/v1/odata/categories`, `…('<id>')` | The `categories` entity set. |
+
+A collection response is the protocol's envelope, and every response — including a `401` or
+`503` — carries `OData-Version: 4.0`:
+
+```json
+{
+  "@odata.context": "http://127.0.0.1:8787/api/v1/odata/$metadata#items",
+  "@odata.count": 417,
+  "value": [ { "id": "…", "name": "…", … } ],
+  "@odata.nextLink": "http://127.0.0.1:8787/api/v1/odata/items?%24skip=50"
+}
+```
+
+A single entity is the same object with a context URL ending in `/$entity`. `@odata.count` appears
+only with `$count=true`. Because a page is capped at 100 rows, a `$top` larger than that becomes
+**server-driven paging**: the link's `$top` is reduced by the rows already delivered, so following
+the chain returns exactly the number you asked for. Errors use the same
+`{ "error": { "code", "message" } }` body as the rest of the API — which is also OData's error
+format.
+
+> **`@odata.nextLink` means "there may be more", not "there is more."** It is emitted whenever a
+> *full* page came back, so on an exact-boundary last page (a result count that is a multiple of
+> the page size) the link is present and leads to an empty collection. Follow it until a page
+> carries no link — don't assume every linked page is non-empty. This is the same honest
+> `hasMore` caveat the [REST envelope](#conventions) carries, for the same reason: knowing for
+> certain would cost a count query on every page.
+
+**It implements what it says it implements.** The service supports the query subset described
+[above](#odata-style-query-options), no more, and the CSDL declares exactly that in
+`Org.OData.Capabilities.V1` terms — which properties are filterable and sortable, and whether each
+set is countable, searchable, selectable and expandable. Only `items` is backed by the search
+index, so only it can filter, sort, search or count. In full — and this is exhaustive:
+
+| Resource | Accepts |
+| --- | --- |
+| `items` (collection) | `$select` `$expand` `$filter` `$orderby` `$search` `$top` `$skip` `$count` `$format` |
+| `items('<id>')` | `$select` `$expand` `$format` |
+| `items/$count` | `$filter` `$search` `$format` |
+| `locations` (collection) | `$select` `$expand` `$top` `$skip` `$format` |
+| `locations('<id>')` | `$select` `$expand` `$format` |
+| `categories` (collection) | `$top` `$skip` `$format` |
+| `categories('<id>')` | `$format` |
+
+A client that reads those annotations pushes down only what works and evaluates the rest itself,
+instead of failing mid-refresh. Asking anyway is an explicit `400` naming what *is* supported,
+rather than the option being silently ignored (Protocol §11.2.5), and `locations/$count` is a
+`404` because that set is declared non-countable. The bridge's own non-`$` parameters (`fields`,
+`include`, `location`, `category`, `includeInactive`, `limit`) stay usable alongside — Protocol
+§11.2.2 reserves only the `$` and `@` prefixes, so a custom query option is always allowed. There is no `$batch` and no `$apply`, and nothing is writable — the
+`Insert`/`Update`/`DeleteRestrictions` say so, since the bridge serves a snapshot it cannot modify.
+
+The CSDL's entity types describe the **whole projectable shape**, which is wider than a default
+request returns — a collection read emits the summary field set, and the rest (`placements`,
+`capabilities`, `fieldValues`, the gauge, dimensions, pricing, …) is opt-in via `$select`/`$expand`.
+So that a reader isn't misled into materialising columns that are always empty, every property
+outside its entity set's default payload carries an `Org.OData.Core.V1.Description` annotation
+saying it is opt-in, and each entity set is annotated with the exact field list an unprojected
+request returns. Note also that on the collection-valued properties `Nullable="false"` describes
+the *elements* (CSDL v4.01 §7.1.1) — the collection itself can never be null — and says nothing
+about whether the property is present.
+
+Permissions are the same as for the REST twin of each read: `/api/v1/odata/items` needs
+`items:read` just as `/api/v1/items` does, so the OData root is never the cheaper door. See
+[what each route requires](#what-each-route-requires).
+
+```bash
+# The service document, then a filtered, sorted page with the grand total:
+curl -H "Authorization: Bearer $TOKEN" "$BASE/odata"
+curl -H "Authorization: Bearer $TOKEN" \
+  "$BASE/odata/items?\$filter=quantity gt 10&\$orderby=name&\$count=true&\$top=25"
+```
+
+In Excel or Power BI the service root is `http://127.0.0.1:8787/api/v1/odata`. The **Get Data →
+OData feed** dialog offers no "bearer token" credential, so pass the header from Power Query's
+formula bar instead — `OData.Feed` takes one:
+
+```powerquery
+let
+    Source = OData.Feed(
+        "http://127.0.0.1:8787/api/v1/odata",
+        null,
+        [ Headers = [ #"Authorization" = "Bearer <YOUR_API_TOKEN>" ], Implementation = "2.0" ]
+    )
+in
+    Source
+```
+
+> **A token in a workbook is a credential in a file.** Prefer a token minted for a read-only
+> account (see [Identities & permissions](#identities--permissions)), and revoke it when the
+> workbook is retired. If you only want a flat table, the [CSV export](#csv-export) is simpler.
 
 ### CSV export
 
@@ -679,8 +792,9 @@ single page, and it honours the same `$filter`/`$search`/`$orderby`/`location`/`
 > columns, plus ten analytics reports) from its **Export Wizard** — use that for a one-off download.
 > This endpoint exists for the one thing the app can't do: a **refreshable** pull over HTTP.
 
-Point Excel/Power BI **From Web** (not the OData connector — see the note above) at the URL for a
-refreshable table; `Web.Contents` lets you attach the token as a bearer header:
+Point Excel/Power BI **From Web** at the URL for a refreshable table; `Web.Contents` lets you
+attach the token as a bearer header. (For a *modelled* connection rather than a flat table, use the
+[OData v4 service](#odata-v4-service-apiv1odata) instead.)
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items.csv?\$filter=quantity gt 0&\$orderby=name" -o items.csv
@@ -851,6 +965,27 @@ synthetic examples only). It is generated from a single typed source of truth
 (`src/openapi.ts`) — a test asserts the committed YAML never drifts from it — and the
 identical document is served live at `GET /api/v1/openapi.json`. Point Swagger UI, Redoc,
 or a client-generator at either.
+
+**Sparse fieldsets and `required`.** A read that accepts `fields`/`$select` can return *any*
+subset of an item's or location's fields — `?fields=name,unitCost` is an object of two keys —
+so those reads answer with a schema (`ItemProjection`, and `Location`) that marks **nothing**
+required. Declaring the default payload's fields required there would hand a generated client
+a non-nullable model that throws on the first projected response. The guaranteed shapes are
+still published: `ItemSummary` (the default row, and an event's item payload) and `ItemDetail`
+(what a write returns) keep their `required` lists, because nothing can project those.
+
+Every operation also declares **`405`**, **`500`** and **`503`**. None belongs to a single
+endpoint — all three come from code that wraps the whole request (the method guard, the
+snapshot-loaded gate, and the catch-all that turns any unexpected failure into a detail-free
+`internal_error`), each running before the request is routed anywhere — so they are reachable at
+every path, and a contract-testing tool meeting an undeclared one would report the bridge as at
+fault.
+
+**Two error envelopes, two schemas.** `/metrics` is the one unversioned path the spec describes,
+and an unversioned path answers with the flat `{ "error": "…" }` shape, not the structured
+`{ "error": { "code", "message" } }` — so its errors are described by `LegacyError` rather than
+`Error`. Pointing them at `Error` had made every error `/metrics` sends a documented contract
+violation.
 
 ---
 
@@ -1840,6 +1975,7 @@ parameter — see their sections):
 | Surface | Path | Requires | Notes |
 | --- | --- | --- | --- |
 | REST API + discovery/OpenAPI | `GET /health`, `/search`, `/where`, `/api/v1/*` | `bridge:read` + the route's subject | Read-only; field-selection + OData-style options. See [what each route requires](#what-each-route-requires). |
+| OData v4 service | `GET /api/v1/odata/*` | `bridge:read` + the entity set's subject (`items:read`, …) | Read-only; the same reads as the REST twin, in the OData envelope. |
 | Custom-field values | `GET /api/v1/{items,locations}…?include=fields` | as the underlying route | Read-only; **opt-in per request** — your custom fields are returned only when a caller asks with `include=fields`, never in a default payload. |
 | Item tags | `GET /api/v1/items/{id}`, and `…/items?include=tags` | as the underlying route (`items:read`) | Read-only tag **names**, gated exactly as the item's `capabilities` and custom-field values are — an item's tags travel with the item, and the app likewise shows them to anyone who can read it. Unlike custom-field values they *are* in the item-detail default payload (a tag is part of what an item is), but they stay opt-in on the list endpoints. |
 | CSV export | `GET /api/v1/items.csv` | `bridge:read` + `items:read` | Refreshable spreadsheet pull. |
@@ -2245,9 +2381,11 @@ bridge/
       field-select.ts   # generic fields/include projection engine (parse + validate + lazy project)
       item-view.ts      # item field vocabulary + lazy relational context (SSOT for projectable fields)
       location-view.ts  # location field vocabulary (defaults + the opt-in custom-field values)
+      reads.ts          # the shared read engine both envelopes project through (no drift by construction)
+      odata-service.ts  # the conformant OData v4 read service at /api/v1/odata (envelope + routing)
       odata.ts          # OData-style option layer: $-alias reader + $orderby parser
       odata-filter.ts   # constrained OData $filter → SearchAST compiler (never bespoke SQL)
-      odata-metadata.ts # OData v4 CSDL $metadata builder (descriptive read model)
+      odata-metadata.ts # OData v4 CSDL $metadata builder (+ the real capability restrictions)
       respond.ts        # shared JSON / text / xml / error-envelope helpers (legacy flat + v1 structured)
       params.ts         # shared q / pagination parsing (clamped; $top/$skip aliases)
       limits.ts         # shared request/pagination bounds
@@ -2256,7 +2394,8 @@ bridge/
       item-view.test.ts # item registry drift-guard + lazy-resolution tests
       odata.test.ts     # $orderby validation + alias-reader tests
       odata-filter.test.ts # $filter parser grammar + rejection tests
-      odata-metadata.test.ts # $metadata CSDL shape + registry drift-guard tests
+      odata-metadata.test.ts # $metadata CSDL shape + registry/capability drift-guard tests
+      odata-service.test.ts # the whole OData conversation: service doc → $metadata → entity sets
     hydrate.test.ts     # hydration tests over the synthetic fixture
     sqlite-source.test.ts # raw .sqlite source tests (generated synthetic .sqlite, detection, write-gating)
     query.test.ts       # query-core tests over the synthetic fixture

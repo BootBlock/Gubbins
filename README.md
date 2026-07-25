@@ -192,8 +192,10 @@ it speaks stdio, so its boundary is the process that launches it.)
   - **Field selection** — ask for just the fields you want (`fields=name,unitCost` → only the
     price) or opt into extended ones (`include=capabilities,notes`).
   - **A familiar OData-style query subset** — `$select`/`$expand`/`$top`/`$skip`/`$orderby`, a
-    constrained `$filter`, `$count`/`$search`, and a CSDL `$metadata` document (a convenience
-    subset, not a full OData service).
+    constrained `$filter`, and `$count`/`$search`, as aliases on the plain endpoints.
+  - **A real OData v4 service** — `GET /api/v1/odata`, with a service document, a CSDL
+    `$metadata` and the proper OData JSON envelope, so Excel / Power Query / Power BI can
+    connect to it directly.
   - **CSV export** — `GET /api/v1/items.csv` (honouring the same filter/sort/search), a
     refreshable pull you can point Excel / Power BI at.
 - **A subscribable calendar** — `GET /api/v1/calendar.ics`, a read-only iCalendar feed of your

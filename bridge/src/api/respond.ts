@@ -15,40 +15,53 @@
 import type { ServerResponse } from 'node:http';
 import type { CacheValidators } from './conditional.ts';
 
-/** Stable, machine-readable error codes for the v1 envelope. */
-export type ApiErrorCode =
-  | 'bad_request'
-  | 'unauthorized'
+/**
+ * Every stable, machine-readable error code the v1 envelope can carry, in the order the
+ * published contract lists them.
+ *
+ * A runtime tuple rather than a bare type union so the OpenAPI document can *derive* its `code`
+ * enum from it (`openapi.ts`) instead of restating it: a published enum that omits a code the
+ * bridge actually sends leaves a client branching on an "impossible" value, and that is exactly
+ * how this list had already drifted (issue #367).
+ */
+export const API_ERROR_CODES = [
+  'bad_request',
+  'unauthorized',
   // The token was valid but its owner's role does not permit this route — HTTP 403. Distinct
   // from `unauthorized` on purpose: "I don't know who you are" and "I know exactly who you are
   // and the answer is no" call for different fixes, and conflating them would send an operator
   // hunting for a bad token when the actual problem is a role (issue #79).
-  | 'forbidden'
-  | 'not_found'
-  | 'method_not_allowed'
-  | 'too_many_requests'
-  | 'snapshot_unavailable'
+  'forbidden',
+  'not_found',
+  'method_not_allowed',
+  'too_many_requests',
+  'snapshot_unavailable',
   // A POST whose `Content-Type` is not JSON — HTTP 415. The body is never parsed, so a form
   // encoding or `text/plain` is refused rather than silently read as JSON.
-  | 'unsupported_media_type'
+  'unsupported_media_type',
   // A well-formed write that the domain rejected (e.g. quantity below zero, wrong tracking
   // mode) — HTTP 422. Only reachable when the opt-in write endpoints are enabled.
-  | 'unprocessable'
+  'unprocessable',
   // A pushed snapshot exceeded the configured size cap — HTTP 413. Only reachable when the
   // opt-in snapshot-ingest endpoint (GUBBINS_BRIDGE_ALLOW_PUSH=on) is enabled.
-  | 'payload_too_large'
+  'payload_too_large',
   // A genuine scale that could not be read — HTTP 409. Only reachable when the opt-in Home
   // Assistant read (GUBBINS_BRIDGE_HA=on) is enabled. Two distinct codes because they need
   // different words in front of the user: hardware/integration versus a sensor not reporting a
   // number. An entity that isn't a scale is answered as a `404`, not one of these (issue #179).
-  | 'scale_unavailable'
-  | 'scale_not_a_number'
+  'scale_unavailable',
+  'scale_not_a_number',
   // The bridge could not talk to Home Assistant, or was refused by it — HTTP 502/404. Likewise
   // only reachable when the Home Assistant read is enabled.
-  | 'home_assistant_unreachable'
-  | 'home_assistant_unauthorised'
-  | 'home_assistant_error'
-  | 'internal_error';
+  'home_assistant_unreachable',
+  'home_assistant_unauthorised',
+  'home_assistant_error',
+  // The catch-all in `server.ts` — HTTP 500. Reachable at every path, on any unexpected failure.
+  'internal_error',
+] as const;
+
+/** Stable, machine-readable error codes for the v1 envelope. */
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
 /**
  * Seconds a client should wait before retrying a `503 snapshot_unavailable`. Short, because the
@@ -69,6 +82,25 @@ export function sendJson(
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     ...extraHeaders,
+  });
+  res.end(text);
+}
+
+/**
+ * Write an **OData JSON** payload (the `/api/v1/odata` service). Identical to {@link sendJson}
+ * but for the media type, which carries the `odata.metadata=minimal` parameter naming the
+ * annotation level the body actually uses (OData JSON Format §3.1) — a client that content-
+ * negotiates learns it is getting `@odata.context` and nothing heavier.
+ *
+ * The `OData-Version` header every response under that sub-tree must carry (Protocol §8.1.5) is
+ * **not** set here: `server.ts` stamps it for the whole path prefix, so the guard responses
+ * (`401`/`403`/`429`/`503`) that never reach a handler carry it too.
+ */
+export function sendODataJson(res: ServerResponse, status: number, body: unknown): void {
+  const text = JSON.stringify(body);
+  res.writeHead(status, {
+    'content-type': 'application/json; odata.metadata=minimal; charset=utf-8',
+    'cache-control': 'no-store',
   });
   res.end(text);
 }
@@ -189,6 +221,18 @@ export function sendMetrics(
  */
 export function sendNotModified(res: ServerResponse, validators: CacheValidators): void {
   res.writeHead(304, cacheHeaders(validators));
+  res.end();
+}
+
+/**
+ * Write a bodyless permanent redirect. Used by the legacy `/api/v1/$metadata` path, which now
+ * points at the OData service's own `$metadata`: a CSDL is only useful from the service root
+ * whose entity sets it declares, so the document moved with the service rather than being
+ * served from a root that cannot satisfy it. `301` (not `308`) because every OData client —
+ * including the older tooling this exists for — follows it on a GET.
+ */
+export function sendRedirect(res: ServerResponse, status: 301, location: string): void {
+  res.writeHead(status, { location, 'cache-control': 'no-store' });
   res.end();
 }
 

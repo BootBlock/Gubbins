@@ -12,6 +12,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import rootPackageJson from '../../../package.json' with { type: 'json' };
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
+import { openapiDocument } from '../openapi.ts';
 import { mintTestToken } from '../fixtures/test-identity.ts';
 import { createBridgeServer, type BridgeServerState } from '../server.ts';
 
@@ -228,6 +229,37 @@ describe('field selection (fields / include)', () => {
     expect(match.capabilities.some((c: any) => c.key === 'voltage')).toBe(true);
   });
 
+  it('search include= only ever ADDS — it never drops a default match field (#367)', async () => {
+    // `include` expands the default payload, so every key of the plain match must survive it.
+    // `locationId` did not: the base set the expansion started from was narrower than the
+    // shape it claimed to expand, so asking for MORE returned one field FEWER.
+    const plain = await json('/api/v1/search?q=ESP32');
+    const expanded = await json('/api/v1/search?q=ESP32&include=notes');
+    for (const key of Object.keys(plain.matches[0])) {
+      expect(expanded.matches[0], `include= dropped "${key}"`).toHaveProperty(key);
+    }
+    expect(expanded.matches[0].locationId).toBe(plain.matches[0].locationId);
+  });
+
+  it('every key a projection can return is a documented ItemProjection property (#367)', async () => {
+    // The published contract is only worth as much as its agreement with the wire: a field the
+    // engine can emit but the document never mentions is exactly what breaks a generated client.
+    const documented = new Set(
+      Object.keys((openapiDocument as any).components.schemas.ItemProjection.properties),
+    );
+    for (const path of [
+      '/api/v1/items?include=all&limit=1',
+      '/api/v1/search?q=ESP32&include=all',
+      '/api/v1/items/item-esp32?include=all',
+    ]) {
+      const body = await json(path);
+      const row = body.data?.[0] ?? body.matches?.[0] ?? body;
+      for (const key of Object.keys(row)) {
+        expect(documented.has(key), `${path} returned undocumented field "${key}"`).toBe(true);
+      }
+    }
+  });
+
   it('search 400s an unknown field with the v1 envelope', async () => {
     const res = await get('/api/v1/search?q=ESP32&fields=bogus');
     expect(res.status).toBe(400);
@@ -426,18 +458,24 @@ describe('OData-style query options', () => {
     expect(body.data.map((i: any) => i.id)).toEqual(['item-esp32']);
   });
 
-  it('serves the OData $metadata CSDL document (state-independent)', async () => {
-    const res = await get('/api/v1/$metadata');
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('application/xml');
-    const xml = await res.text();
+  it('redirects the historical $metadata path to the OData service root (issue #361)', async () => {
+    // A CSDL is only actionable from the root whose entity sets it declares, so the document
+    // moved with the service. `fetch` follows the redirect, so the body still arrives.
+    const res = await get('/api/v1/$metadata', { redirect: 'manual' });
+    expect(res.status).toBe(301);
+    expect(res.headers.get('location')).toBe('/api/v1/odata/$metadata');
+
+    const followed = await get('/api/v1/$metadata');
+    expect(followed.status).toBe(200);
+    expect(followed.headers.get('content-type')).toContain('application/xml');
+    const xml = await followed.text();
     expect(xml).toContain('<EntityType Name="Item">');
     expect(xml).toContain('<EntitySet Name="items"');
   });
 
-  it('lists $metadata and items/$count in the discovery index', async () => {
+  it('lists the OData service root and items/$count in the discovery index', async () => {
     const index = await json('/api/v1');
-    expect(index.endpoints).toContain('/api/v1/$metadata');
+    expect(index.endpoints).toContain('/api/v1/odata');
     expect(index.endpoints).toContain('/api/v1/items/$count');
   });
 });
@@ -557,10 +595,13 @@ describe('routing, auth and method guards', () => {
     expect((await res.json()).error.code).toBe('unauthorized');
   });
 
-  it('405s a non-GET v1 request', async () => {
+  it('405s a non-GET v1 request, advertising what the resource does accept', async () => {
     const res = await get('/api/v1/items', { method: 'POST' });
     expect(res.status).toBe(405);
     expect((await res.json()).error.code).toBe('method_not_allowed');
+    // RFC 9110 §10.2.1: `Allow` is the methods THIS resource supports. A read resource serves
+    // HEAD (from the GET path) and OPTIONS as well, so naming only GET understated it (#367).
+    expect(res.headers.get('allow')).toBe('GET, HEAD, OPTIONS');
   });
 
   it('keeps the legacy flat error envelope on the unversioned paths', async () => {
