@@ -10,8 +10,12 @@ import { describe, it, expect } from 'vitest';
 import {
   buildAlerts,
   applyDismissals,
+  pruneDismissals,
   groupByKind,
   maintenanceDueAtMs,
+  STALE_DISMISSAL_DAYS,
+  type AlertDismissal,
+  type AlertDismissals,
   type AlertSources,
   type LowStockSource,
   type ExpirySource,
@@ -307,11 +311,18 @@ describe('buildAlerts — dueAt ordering', () => {
 // applyDismissals
 // ---------------------------------------------------------------------------
 
+const DAY = 24 * 60 * 60 * 1000;
+
+/** A dismissal map from `[id, until]` pairs; `at` defaults to `NOW` unless given. */
+function dismissals(...entries: readonly (readonly [string, number | null, number?])[]): AlertDismissals {
+  return new Map<string, AlertDismissal>(entries.map(([id, until, at]) => [id, { until, at: at ?? NOW }]));
+}
+
 describe('applyDismissals', () => {
-  it('returns all alerts when dismissedIds is empty', () => {
+  it('returns all alerts when there are no dismissals', () => {
     const s = sources({ lowStock: [{ id: 'x', name: 'X' }] });
     const alerts = buildAlerts(s, NOW);
-    expect(applyDismissals(alerts, new Set())).toHaveLength(1);
+    expect(applyDismissals(alerts, new Map(), NOW)).toHaveLength(1);
   });
 
   it('filters out dismissed alerts by id', () => {
@@ -322,8 +333,7 @@ describe('applyDismissals', () => {
       ],
     });
     const alerts = buildAlerts(s, NOW);
-    const dismissed = new Set(['low-stock:a']);
-    const result = applyDismissals(alerts, dismissed);
+    const result = applyDismissals(alerts, dismissals(['low-stock:a', null]), NOW);
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('low-stock:b');
   });
@@ -331,15 +341,83 @@ describe('applyDismissals', () => {
   it('returns an empty list when all alerts are dismissed', () => {
     const s = sources({ lowStock: [{ id: 'c', name: 'C' }] });
     const alerts = buildAlerts(s, NOW);
-    const dismissed = new Set(['low-stock:c']);
-    expect(applyDismissals(alerts, dismissed)).toHaveLength(0);
+    expect(applyDismissals(alerts, dismissals(['low-stock:c', null]), NOW)).toHaveLength(0);
   });
 
   it('ignores dismissal ids that do not match any alert', () => {
     const s = sources({ lowStock: [{ id: 'd', name: 'D' }] });
     const alerts = buildAlerts(s, NOW);
-    const dismissed = new Set(['low-stock:nonexistent']);
-    expect(applyDismissals(alerts, dismissed)).toHaveLength(1);
+    expect(applyDismissals(alerts, dismissals(['low-stock:nonexistent', null]), NOW)).toHaveLength(1);
+  });
+
+  it('keeps an alert hidden while its snooze is still running', () => {
+    const s = sources({ lowStock: [{ id: 'e', name: 'E' }] });
+    const alerts = buildAlerts(s, NOW);
+    expect(applyDismissals(alerts, dismissals(['low-stock:e', NOW + DAY]), NOW)).toHaveLength(0);
+  });
+
+  it('shows the alert again once its snooze has elapsed', () => {
+    const s = sources({ lowStock: [{ id: 'f', name: 'F' }] });
+    const alerts = buildAlerts(s, NOW);
+    const snoozed = dismissals(['low-stock:f', NOW - 1]);
+    expect(applyDismissals(alerts, snoozed, NOW)).toHaveLength(1);
+  });
+
+  it('treats a snooze deadline of exactly now as elapsed', () => {
+    const s = sources({ lowStock: [{ id: 'g', name: 'G' }] });
+    const alerts = buildAlerts(s, NOW);
+    expect(applyDismissals(alerts, dismissals(['low-stock:g', NOW]), NOW)).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pruneDismissals
+// ---------------------------------------------------------------------------
+
+describe('pruneDismissals', () => {
+  const STALE_AT = NOW - (STALE_DISMISSAL_DAYS + 1) * DAY;
+
+  it('returns null when there is nothing to drop', () => {
+    const kept = dismissals(['low-stock:a', null]);
+    expect(pruneDismissals(kept, new Set(['low-stock:a']), NOW)).toBeNull();
+  });
+
+  it('drops a snooze that has elapsed', () => {
+    const before = dismissals(['low-stock:a', NOW - 1]);
+    const after = pruneDismissals(before, new Set(['low-stock:a']), NOW);
+    expect(after?.size).toBe(0);
+  });
+
+  it('drops a record whose alert stopped firing long ago', () => {
+    const before = dismissals(['low-stock:gone', null, STALE_AT]);
+    const after = pruneDismissals(before, new Set(), NOW);
+    expect(after?.size).toBe(0);
+  });
+
+  it('keeps a record whose alert is absent but still within its grace period', () => {
+    const before = dismissals(['low-stock:gone', null, NOW - DAY]);
+    expect(pruneDismissals(before, new Set(), NOW)).toBeNull();
+  });
+
+  it('keeps an old record while its alert is still firing', () => {
+    const before = dismissals(['low-stock:a', null, STALE_AT]);
+    expect(pruneDismissals(before, new Set(['low-stock:a']), NOW)).toBeNull();
+  });
+
+  it('drops only the dead records, leaving the rest untouched', () => {
+    const before = dismissals(
+      ['low-stock:live', null],
+      ['low-stock:elapsed', NOW - 1],
+      ['low-stock:gone', null, STALE_AT],
+    );
+    const after = pruneDismissals(before, new Set(['low-stock:live']), NOW);
+    expect([...(after?.keys() ?? [])]).toEqual(['low-stock:live']);
+  });
+
+  it('never mutates the map it was given', () => {
+    const before = dismissals(['low-stock:gone', null, STALE_AT]);
+    pruneDismissals(before, new Set(), NOW);
+    expect(before.size).toBe(1);
   });
 });
 
