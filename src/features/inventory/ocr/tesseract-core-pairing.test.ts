@@ -23,6 +23,7 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { repoPath } from '@/test/repo-path';
 
 const require_ = createRequire(import.meta.url);
 
@@ -31,7 +32,10 @@ function pkgDir(name: string): string {
   return dirname(require_.resolve(`${name}/package.json`));
 }
 
-const rootPkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as {
+// Read the repository files through `repoPath`, not cwd: a worktree's suite can be run from the
+// primary checkout, and a cwd-relative guard would then check the *primary's* dependency ranges
+// and variant list while the branch's own edits went unverified — green, and proving nothing.
+const rootPkg = JSON.parse(readFileSync(repoPath(import.meta.dirname, 'package.json'), 'utf8')) as {
   dependencies: Record<string, string>;
 };
 
@@ -86,7 +90,10 @@ describe('staged core variants cover every one the worker can select', () => {
     ...new Set(
       [
         ...readFileSync(resolve(pkgDir('tesseract.js'), 'dist/worker.min.js'), 'utf8').matchAll(
-          /tesseract-core[a-z-]*(?=\.wasm\.js)/g,
+          // `[a-z0-9-]` rather than `[a-z-]`: a future variant with a digit in its name (say
+          // `-simd128`) would otherwise be missing from *both* lists and the equality below
+          // would stay green while the variant went unstaged.
+          /tesseract-core[a-z0-9-]*(?=\.wasm\.js)/g,
         ),
       ].map((match) => match[0]),
     ),
@@ -94,7 +101,7 @@ describe('staged core variants cover every one the worker can select', () => {
 
   /** The list `scripts/setup-ocr-assets.mjs` gates a published build on. */
   const declared = (() => {
-    const script = readFileSync(resolve(process.cwd(), 'scripts/setup-ocr-assets.mjs'), 'utf8');
+    const script = readFileSync(repoPath(import.meta.dirname, 'scripts', 'setup-ocr-assets.mjs'), 'utf8');
     const block = /const CORE_VARIANTS = \[([^\]]*)\]/.exec(script);
     if (!block) throw new Error('CORE_VARIANTS not found in scripts/setup-ocr-assets.mjs');
     return [...block[1].matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
