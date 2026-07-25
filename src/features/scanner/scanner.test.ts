@@ -230,6 +230,29 @@ describe('scannerReducer (§6.2)', () => {
     const s = scannerReducer(open(initialScannerState()), { type: 'CLOSE' });
     expect(s.status).toBe('IDLE');
   });
+
+  it('REOPEN re-requests from the live view, so a camera swap has one acquisition path (issue #135)', () => {
+    const live = scannerReducer(open(initialScannerState()), { type: 'PERMISSION_GRANTED' });
+    const reopening = scannerReducer(live, { type: 'REOPEN' });
+    expect(reopening.status).toBe('REQUESTING_PERMISSIONS');
+    expect(reopening.error).toBeNull();
+    expect(scannerReducer(reopening, { type: 'PERMISSION_GRANTED' }).status).toBe('STREAM_ACTIVE');
+  });
+
+  it('REOPEN is a no-op anywhere the camera menu is not on screen', () => {
+    // Only the live view offers the picker: from IDLE/ERROR the way in is OPEN, and from the batch
+    // review pane a re-request would discard the queue the user is standing in.
+    const idle = initialScannerState();
+    expect(scannerReducer(idle, { type: 'REOPEN' })).toBe(idle);
+    const requesting = open(idle);
+    expect(scannerReducer(requesting, { type: 'REOPEN' })).toBe(requesting);
+    const denied = scannerReducer(requesting, { type: 'PERMISSION_DENIED' });
+    expect(scannerReducer(denied, { type: 'REOPEN' })).toBe(denied);
+    const reviewing = scannerReducer(scannerReducer(requesting, { type: 'PERMISSION_GRANTED' }), {
+      type: 'REVIEW_QUEUE',
+    });
+    expect(scannerReducer(reviewing, { type: 'REOPEN' })).toBe(reviewing);
+  });
 });
 
 describe('due-date maths (§4)', () => {

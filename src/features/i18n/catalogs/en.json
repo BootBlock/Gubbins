@@ -1634,5 +1634,22 @@
   "contacts.gettingStarted.heading": "Welcome to Contacts — track who has what",
   "contacts.gettingStarted.bodyPurpose": "Contacts are the people and organisations your inventory touches — the folks you lend items to and borrow from. Give something to a colleague, a client or a friend, and a contact is what ties that loan back to a name, so you always know who currently has it.",
   "contacts.gettingStarted.bodyHowTo": "You don't need to set anything up first: add a contact below, or simply check an item out to someone new and Gubbins creates the contact automatically. From here you can see everything out on loan at a glance, get an alert when something's overdue, and check items back in with one tap — contacts can also reserve items ahead of time through bookings.",
-  "homeAssistant.install.minVersion": "The custom integration needs Home Assistant 2025.2 or newer. The no-code YAML recipe has no such requirement."
+  "homeAssistant.install.minVersion": "The custom integration needs Home Assistant 2025.2 or newer. The no-code YAML recipe has no such requirement.",
+  "alerts.showAll": "Show all ({count} hidden)",
+  "alerts.empty.allHidden": "Every alert is snoozed or dismissed. Choose “Show all” above to bring them back.",
+  "alerts.dismiss.buttonLabel": "Dismiss alert: {title}",
+  "alerts.snooze.menuLabel": "Snooze alert: {title}",
+  "alerts.snooze.day": "Snooze for a day",
+  "alerts.snooze.week": "Snooze for a week",
+  "alerts.snooze.month": "Snooze for a month",
+  "alerts.snoozed": "Snoozed: {title}",
+  "alerts.dismissed": "Dismissed: {title}",
+  "scanner.torch.turnOn": "Turn the torch on",
+  "scanner.torch.turnOff": "Turn the torch off",
+  "scanner.torch.tooltip": "**Torch** — light up a dark cupboard, shelf or garage with the camera's own light.\n\nOnly offered where the camera has one.",
+  "scanner.torch.failedOn": "The torch couldn’t be switched on. Another app may be using the camera.",
+  "scanner.torch.failedOff": "The torch couldn’t be switched off.",
+  "scanner.camera.menuLabel": "Choose a camera",
+  "scanner.camera.unnamed": "Camera {position}",
+  "scanner.camera.unavailable": "That camera isn’t available — using the usual one instead."
 }

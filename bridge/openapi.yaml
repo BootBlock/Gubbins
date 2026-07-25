@@ -2458,7 +2458,7 @@ components:
           properties:
             version:
               type: "string"
-              example: "1.2.0"
+              example: "0.3.0"
             schemaVersion:
               type: "integer"
               description: "The stored-data compatibility generation. A bridge behind on this may read the snapshot with out-of-date assumptions."

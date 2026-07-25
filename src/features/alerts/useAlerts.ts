@@ -8,6 +8,7 @@
  * warranty lane (`listWarrantyExpiring`, added to feeds.ts as the only new
  * SQL query genuinely required — no existing method covered warranty expiry).
  */
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getItemRepository } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
@@ -15,7 +16,14 @@ import { useLowStockItems, useExpiringItems, useDueMaintenance } from '@/feature
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { WARRANTY_EXPIRING_SOON_DAYS } from '@/features/inventory/asset-lifecycle';
-import { buildAlerts, applyDismissals, maintenanceDueAtMs, type Alert, type AlertSources } from './alerts';
+import {
+  buildAlerts,
+  applyDismissals,
+  pruneDismissals,
+  maintenanceDueAtMs,
+  type Alert,
+  type AlertSources,
+} from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
 import { nowMs } from '@/lib/clock';
 
@@ -124,10 +132,27 @@ export function useAlerts(): {
 
   // --- Dismissals ---
 
-  const dismissedIds = useDismissedAlertsStore((s) => s.dismissedIds);
+  const dismissals = useDismissedAlertsStore((s) => s.dismissals);
 
   const allAlerts = buildAlerts(sources, now);
-  const alerts = applyDismissals(allAlerts, dismissedIds);
+  const alerts = applyDismissals(allAlerts, dismissals, now);
+
+  // Keep the dismissal records bounded (issue #134). Reconciling them against the live feed on
+  // every settled pass — the same shape `planReminders` uses for `useNotifiedRemindersStore` —
+  // retires elapsed snoozes and records whose alert stopped firing long ago, so a dismissal no
+  // longer outlives the item that raised it. It runs from the hook rather than the screen so the
+  // always-mounted nav badge does the housekeeping too, not just a visit to the alert centre.
+  // `pruneDismissals` returns null when there is nothing to drop, so the store write below can
+  // never re-trigger this effect in a loop.
+  const settled = !isLoading && !isError;
+  const liveIdKey = allAlerts.map((a) => a.id).join('\n');
+  useEffect(() => {
+    if (!settled) return;
+    const store = useDismissedAlertsStore.getState();
+    const liveIds = new Set(liveIdKey === '' ? [] : liveIdKey.split('\n'));
+    const pruned = pruneDismissals(store.dismissals, liveIds, nowMs());
+    if (pruned) store.replace(pruned);
+  }, [settled, liveIdKey]);
 
   return { alerts, allAlerts, isLoading, isError };
 }

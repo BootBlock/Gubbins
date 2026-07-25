@@ -25,7 +25,7 @@
 import rootPackageJson from '../../package.json' with { type: 'json' };
 
 /**
- * The Gubbins version this bridge is part of, e.g. `1.2.0`. Compare it against the PWA's
+ * The Gubbins version this bridge is part of, e.g. `0.3.0`. Compare it against the PWA's
  * `APP_VERSION` to see whether a checkout has fallen behind the app it is serving.
  */
 export const BRIDGE_VERSION: string = rootPackageJson.version;

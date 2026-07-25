@@ -20,7 +20,7 @@ Gubbins runs entirely in your browser — **no install or local server required*
 
 A **local-first, offline-capable Progressive Web App** for tracking *anything* — electronics, 3D-printing supplies, tools, collections, household items, and general inventory. All data resides and is processed entirely within the user's browser/device.
 
-> Status: **v0.1.1** (pre-release) · **feature-complete** — the master specification (phases 1–9) and the full consolidation roadmap are implemented. Remaining work is trigger-gated backlog only (see `docs/dev/deferred-features.md`). While Gubbins is before **1.0**, database schema changes between updates are not migrated — an update may need your local data to be reset (back up first).
+> Status: **v0.3.0** (pre-release) · **feature-complete** — the master specification (phases 1–9) and the full consolidation roadmap are implemented. Remaining work is trigger-gated backlog only (see `docs/dev/deferred-features.md`). While Gubbins is before **1.0**, database schema changes between updates are not migrated — an update may need your local data to be reset (back up first).
 
 ## Features
 

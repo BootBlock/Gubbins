@@ -7,9 +7,11 @@
  *  - Maintenance due (schedules past their service interval)
  *  - Warranty due (warranty expiring soon or already expired, Phase-66 fields)
  *
- * Each alert carries a Dismiss action (device-local, no migration). Dismissed
- * alerts are hidden; a "Show all" control restores them. Deep links navigate the
- * user to the relevant item in the inventory.
+ * Each alert carries a Snooze menu and a Dismiss action (device-local, no migration).
+ * Snoozing hides the alert until the chosen date and then lets it come back on its own —
+ * the answer to "I have already ordered more, ask me again next week"; dismissing hides it
+ * until the user restores it. A "Show all" control restores everything currently hidden.
+ * Deep links navigate the user to the relevant item in the inventory.
  *
  * Accessibility: §3 WCAG 4.1.3 — an always-mounted `<LiveRegion>` announces the
  * undismissed count once data loads. The screen carries `id={MAIN_CONTENT_ID}` so
@@ -22,6 +24,8 @@ import { Link } from '@tanstack/react-router';
 import {
   Button,
   LiveRegion,
+  Menu,
+  MenuAction,
   PageContainer,
   PageHeader,
   Spinner,
@@ -37,8 +41,12 @@ import {
   NotificationIcon,
   PackageIcon,
   CloseIcon,
+  SnoozeIcon,
 } from '@/components/icons';
 import { requestHighlight } from '@/lib/highlight';
+import { useT, type MessageKey } from '@/features/i18n';
+import { addCalendarDays } from '@/lib/calendar-days';
+import { nowMs } from '@/lib/clock';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { groupByKind, type Alert, type AlertKind, type AlertSeverity } from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
@@ -69,6 +77,24 @@ function KindIcon({ kind }: { kind: AlertKind }) {
       return <NotificationIcon aria-hidden />;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Snooze durations
+// ---------------------------------------------------------------------------
+
+/**
+ * The offered "remind me later" windows, in calendar days (issue #134). Three is deliberate:
+ * long enough to cover "a delivery is on its way" (a day), "I've ordered against it" (a week)
+ * and "this can wait" (a month) without turning a two-click action into a date picker.
+ *
+ * The durations are calendar days, not fixed 24-hour blocks, so a snooze set the evening before
+ * a clock change still ends at the same time of day (issue #325).
+ */
+const SNOOZE_PRESETS: readonly { readonly days: number; readonly labelKey: MessageKey }[] = [
+  { days: 1, labelKey: 'alerts.snooze.day' },
+  { days: 7, labelKey: 'alerts.snooze.week' },
+  { days: 30, labelKey: 'alerts.snooze.month' },
+];
 
 // ---------------------------------------------------------------------------
 // Severity badge
@@ -110,7 +136,16 @@ function SeverityBadge({ severity }: { severity: AlertSeverity }) {
 // Single alert card
 // ---------------------------------------------------------------------------
 
-function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string) => void }) {
+function AlertCard({
+  alert,
+  onSnooze,
+  onDismiss,
+}: {
+  alert: Alert;
+  onSnooze: (alert: Alert, days: number) => void;
+  onDismiss: (alert: Alert) => void;
+}) {
+  const t = useT();
   return (
     <Surface className="flex flex-col gap-2 p-4" data-testid={`alert-card-${alert.id}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -118,16 +153,39 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
           <SeverityBadge severity={alert.severity} />
           <span className="text-sm font-medium">{alert.title}</span>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`Dismiss alert: ${alert.title}`}
-          onClick={() => onDismiss(alert.id)}
-          data-testid={`dismiss-alert-${alert.id}`}
-          className="size-7 shrink-0"
-        >
-          <CloseIcon className="size-4" />
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          {/* Snooze — hide this alert for a while and let it come back by itself. Named after
+              the alert it belongs to so a screen reader landing on the button knows which of
+              the feed's many identical controls it has reached. */}
+          <Menu
+            label={t('alerts.snooze.menuLabel', { vars: { title: alert.title } })}
+            trigger={<SnoozeIcon className="size-4" />}
+            triggerVariant="ghost"
+            triggerSize="icon"
+            triggerClassName="size-7"
+            triggerProps={{ 'data-testid': `snooze-alert-${alert.id}` }}
+          >
+            {SNOOZE_PRESETS.map((preset) => (
+              <MenuAction
+                key={preset.days}
+                onSelect={() => onSnooze(alert, preset.days)}
+                data-testid={`snooze-alert-${alert.id}-${preset.days}`}
+              >
+                {t(preset.labelKey)}
+              </MenuAction>
+            ))}
+          </Menu>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t('alerts.dismiss.buttonLabel', { vars: { title: alert.title } })}
+            onClick={() => onDismiss(alert)}
+            data-testid={`dismiss-alert-${alert.id}`}
+            className="size-7"
+          >
+            <CloseIcon className="size-4" />
+          </Button>
+        </div>
       </div>
       <p className="text-xs text-muted-foreground">{alert.detail}</p>
       {/* Deep-link: seed the inventory search so the target item is loaded and on-screen,
@@ -158,12 +216,34 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
  * existing alert sources (low stock, expiry, maintenance, warranty).
  */
 export function AlertsScreen() {
+  const t = useT();
   const { alerts, allAlerts, isLoading, isError } = useAlerts();
-  const { dismiss, clearAll } = useDismissedAlertsStore();
-  const dismissedIds = useDismissedAlertsStore((s) => s.dismissedIds);
+  const { dismiss, snooze, clearAll } = useDismissedAlertsStore();
 
-  const hasDismissed = dismissedIds.size > 0;
+  // Count what is hidden *right now* rather than how many records the store holds: a record for
+  // an alert that is no longer firing hides nothing, and "Show all (0 hidden)" would restore
+  // nothing visible. Snoozed and dismissed alerts both count — "Show all" brings back both.
   const hiddenCount = allAlerts.length - alerts.length;
+  const hasHidden = hiddenCount > 0;
+
+  // Hiding a card is a silent change for a screen-reader user, so each action says what it did
+  // (WCAG 4.1.3). Kept apart from the count announcement below, which fires once on load.
+  const [actionAnnouncement, setActionAnnouncement] = useState('');
+
+  const handleSnooze = (alert: Alert, days: number) => {
+    snooze(alert.id, addCalendarDays(nowMs(), days));
+    setActionAnnouncement(t('alerts.snoozed', { vars: { title: alert.title } }));
+  };
+
+  const handleDismiss = (alert: Alert) => {
+    dismiss(alert.id);
+    setActionAnnouncement(t('alerts.dismissed', { vars: { title: alert.title } }));
+  };
+
+  const handleShowAll = () => {
+    clearAll();
+    setActionAnnouncement('');
+  };
 
   // Group undismissed alerts by kind for sectioned rendering.
   const groups = groupByKind(alerts);
@@ -193,9 +273,9 @@ export function AlertsScreen() {
         icon={<AlertIcon />}
         title="Alert centre"
         actions={
-          hasDismissed ? (
-            <Button variant="outline" size="sm" onClick={clearAll} data-testid="alerts-show-all">
-              Show all ({hiddenCount} hidden)
+          hasHidden ? (
+            <Button variant="outline" size="sm" onClick={handleShowAll} data-testid="alerts-show-all">
+              {t('alerts.showAll', { vars: { count: hiddenCount } })}
             </Button>
           ) : undefined
         }
@@ -225,8 +305,8 @@ export function AlertsScreen() {
             <AlertIcon className="size-10 text-muted-foreground" />
             <p className="font-medium">No active alerts</p>
             <p className="text-sm text-muted-foreground">
-              {hasDismissed
-                ? 'All alerts have been dismissed. Click "Show all" above to restore them.'
+              {hasHidden
+                ? t('alerts.empty.allHidden')
                 : 'All stock levels, expiry dates, maintenance schedules and warranties look good.'}
             </p>
           </Surface>
@@ -251,7 +331,12 @@ export function AlertsScreen() {
                   </h2>
                   <div className="flex flex-col gap-3">
                     {kindAlerts.map((alert) => (
-                      <AlertCard key={alert.id} alert={alert} onDismiss={dismiss} />
+                      <AlertCard
+                        key={alert.id}
+                        alert={alert}
+                        onSnooze={handleSnooze}
+                        onDismiss={handleDismiss}
+                      />
                     ))}
                   </div>
                 </section>
@@ -264,6 +349,10 @@ export function AlertsScreen() {
       {/* Always-mounted live region (WCAG 4.1.3) — announces alert count. */}
       <LiveRegion visuallyHidden data-testid="alerts-live-region">
         {!isError && announcement ? <p>{announcement}</p> : null}
+      </LiveRegion>
+      {/* Confirms a snooze or dismissal, which otherwise just removes a card in silence. */}
+      <LiveRegion visuallyHidden data-testid="alerts-action-live-region">
+        {actionAnnouncement ? <p>{actionAnnouncement}</p> : null}
       </LiveRegion>
       <LiveRegion urgency="assertive" visuallyHidden data-testid="alerts-error-live-region">
         {isError && announcement ? <p>{announcement}</p> : null}

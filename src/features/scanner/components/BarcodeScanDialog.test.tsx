@@ -97,4 +97,35 @@ describe('BarcodeScanDialog', () => {
 
     opener.remove();
   });
+
+  it('pulls a Tab back inside when focus has fallen out of the dialog', () => {
+    // The trap's recovery case, not an edge case: whatever held focus can simply unmount (the
+    // viewfinder's own controls come and go with the camera state), leaving focus on <body>. The
+    // next Tab must land back inside the dialog rather than walking into the page behind it.
+    render(<BarcodeScanDialog open onClose={vi.fn()} onCapture={vi.fn()} />);
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+
+    fireEvent.keyDown(document, { key: 'Tab' });
+
+    expect(screen.getByTestId('barcode-scan-dialog').contains(document.activeElement)).toBe(true);
+  });
+
+  it('leaves a Tab alone while focus sits in a menu portaled outside it (issue #135)', () => {
+    // The viewfinder's camera picker is a Foundry Menu, whose panel portals to <body> — outside
+    // this dialog's container. A menu owns its own keyboard contract, so the trap must not yank
+    // focus off it the moment the user Tabs.
+    render(<BarcodeScanDialog open onClose={vi.fn()} onCapture={vi.fn()} />);
+    const panel = document.createElement('div');
+    panel.setAttribute('role', 'menu');
+    const row = document.createElement('button');
+    panel.appendChild(row);
+    document.body.appendChild(panel);
+    row.focus();
+
+    fireEvent.keyDown(document, { key: 'Tab' });
+
+    expect(document.activeElement).toBe(row);
+    panel.remove();
+  });
 });
