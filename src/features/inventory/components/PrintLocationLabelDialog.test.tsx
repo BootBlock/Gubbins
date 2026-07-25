@@ -55,7 +55,7 @@ describe('PrintLocationLabelDialog — barcode readability (issue #331)', () => 
       />,
     );
     chooseOption('loc-label-symbology', 'Barcode (Code 128)');
-    // The smallest shipped preset has no room for a readable Code 128 at any value.
+    // The smallest shipped preset has no room for the fallback short code.
     chooseOption('loc-label-size', /30 .* 15 mm/);
 
     expect(screen.getByTestId('loc-label-barcode-too-narrow')).toBeTruthy();

@@ -132,7 +132,8 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     chooseOption('label-symbology', 'Barcode (Code 128)');
     expect(screen.queryByTestId('labels-barcode-too-narrow')).toBeNull();
 
-    // The smallest shipped preset has no room for a readable Code 128 at any value.
+    // The smallest shipped preset has no room for the fallback short code, and these items'
+    // own values are too long for it as well — so nothing is left to print.
     chooseOption('label-size', /30 .* 15 mm/);
 
     expect(screen.getByTestId('labels-barcode-too-narrow')).toBeTruthy();
