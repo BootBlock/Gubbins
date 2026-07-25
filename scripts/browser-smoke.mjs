@@ -1850,11 +1850,16 @@ try {
         timeout: 5000,
       });
 
-      // Save the query under a name → a recall chip appears.
-      await page.locator('[data-testid="saved-search-save"]').click();
-      await page.locator('[data-testid="saved-search-name"]').fill('Voltage parts');
-      await page.locator('[data-testid="saved-search-confirm"]').click();
-      const chip = page.locator('[data-testid="saved-search-recall"]', { hasText: 'Voltage parts' });
+      // Save the query under a name → a recall chip appears. The same saved-search controls are
+      // also mounted on the Inventory quick-search box (issue #136), so every locator here is
+      // scoped to the builder panel — an unscoped one would match both copies.
+      const builderSaved = page.locator('[data-testid="visual-builder"]');
+      await builderSaved.locator('[data-testid="saved-search-save"]').click();
+      await builderSaved.locator('[data-testid="saved-search-name"]').fill('Voltage parts');
+      await builderSaved.locator('[data-testid="saved-search-confirm"]').click();
+      const chip = builderSaved.locator('[data-testid="saved-search-recall"]', {
+        hasText: 'Voltage parts',
+      });
       await chip.waitFor({ state: 'visible', timeout: 5000 });
 
       // Clear the builder (the filament returns), then recall the saved search → the same
@@ -1868,7 +1873,42 @@ try {
       });
 
       // Tidy up so the saved chip doesn't linger into later steps.
-      await page.locator('[data-testid="saved-search-remove"]').first().click();
+      await builderSaved.locator('[data-testid="saved-search-remove"]').first().click();
+    });
+
+    // Issue #136: the same saved searches are reachable from the Inventory quick-search box, and
+    // a recall lands wherever the query can actually run — bare words go back into that box,
+    // power syntax loads the Visual Builder instead.
+    await step('saves and recalls a search from the quick-search box (issue #136)', async () => {
+      await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+
+      const quickSearch = page.locator('input[aria-label="Search items"]');
+      await quickSearch.fill(screwName);
+      await page.locator('[data-testid="inventory-saved-searches-toggle"]').click();
+
+      const strip = page.locator('[data-testid="inventory-saved-searches"]');
+      await strip.locator('[data-testid="saved-search-save"]').click();
+      await strip.locator('[data-testid="saved-search-name"]').fill('The screws');
+      await strip.locator('[data-testid="saved-search-confirm"]').click();
+
+      const chip = strip.locator('[data-testid="saved-search-recall"]', { hasText: 'The screws' });
+      await chip.waitFor({ state: 'visible', timeout: 5000 });
+
+      // Clearing the box then recalling refills it — a bare-word query belongs in this box, not
+      // in the builder, so the box is what comes back carrying it and the results follow.
+      await quickSearch.fill('');
+      await chip.click();
+      await page.waitForFunction(
+        (name) => document.querySelector('input[aria-label="Search items"]')?.value === name,
+        screwName,
+        { timeout: 5000 },
+      );
+      await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
+
+      // Tidy up so the saved chip doesn't linger into later steps.
+      await strip.locator('[data-testid="saved-search-remove"]').first().click();
+      await quickSearch.fill('');
     });
 
     // Phase 15 (§4/§5.1): weighted-capability "best match" ranking. Two items share a
