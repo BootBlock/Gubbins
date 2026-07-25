@@ -243,8 +243,9 @@ subscription, and feed readers probe the [syndication feeds](#feeds--metrics) th
 `Content-Length` tells them whether anything changed before they spend a download on it.
 
 The one exception is the [SSE event stream](#sse-event-stream): a `HEAD` of `/api/v1/events`
-reports the stream's headers and returns immediately rather than opening a stream, and carries no
-`Content-Length` (the content is unbounded).
+reports the media type the stream serves and returns immediately rather than opening a stream. It
+carries no `Content-Length` (the content is unbounded), and never the `429` a `GET` gives when the
+concurrent-stream cap is reached — a probe takes no slot, so it reports the endpoint, not the queue.
 
 ### Snapshot freshness and health
 

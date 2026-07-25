@@ -2,7 +2,7 @@ openapi: "3.0.3"
 info:
   title: "Gubbins Bridge API"
   version: "1.0.0"
-  description: "Read-only HTTP API over a Gubbins inventory snapshot, served by the local companion bridge. Every endpoint is a read and requires a bearer token; each accepts HEAD as well as GET (same status and headers, no body), so a calendar or feed client can probe a URL before subscribing to it. The unversioned paths (/health, /search, /where) are permanent, stable aliases of their /api/v1 equivalents, kept so existing consumers (the Home Assistant integration) keep working unchanged."
+  description: "Read-only HTTP API over a Gubbins inventory snapshot, served by the local companion bridge. Every endpoint is a read and requires a bearer token; each accepts HEAD as well as GET (same status and headers, no body), so a calendar or feed client can probe a URL before subscribing to it. The one exception is /api/v1/events: a HEAD there reports the media type the stream serves and returns at once, rather than opening a stream, so it carries no Content-Length and never the 429 a GET gives at the concurrent-stream cap. The unversioned paths (/health, /search, /where) are permanent, stable aliases of their /api/v1 equivalents, kept so existing consumers (the Home Assistant integration) keep working unchanged."
   license:
     name: "MIT"
 servers:

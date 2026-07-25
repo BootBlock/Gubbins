@@ -60,7 +60,13 @@ export function suppressResponseBody(res: ServerResponse): void {
       // either genuinely empty or a stream (the SSE endpoint) whose length is knowable only while
       // the content is being generated — `0` would be a lie in both cases.
       if (bytes > 0 && !hasContentLength(res, head)) res.setHeader('content-length', String(bytes));
-      if (head !== null) passWriteHead(...head);
+      // Write the head unconditionally, *including* when the handler never called `writeHead`.
+      // Node's own `_implicitHeader()` is `this.writeHead(this.statusCode)`, which now lands on the
+      // patch above and stores its arguments instead of storing the header — so a handler that
+      // relies on the implicit header (`res.statusCode = 404; res.end(body)`) would otherwise put
+      // no status line on the wire at all and hang the client until the request timeout.
+      // `[res.statusCode]` is precisely what that implicit call would have passed.
+      passWriteHead(...(head ?? [res.statusCode]));
     }
     return passEnd(finalCallback(chunk, encoding, callback));
   }) as ServerResponse['end'];
