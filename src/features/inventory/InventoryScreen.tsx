@@ -42,6 +42,7 @@ import {
   TagIcon,
 } from '@/components/icons';
 import {
+  Checkbox,
   InfoHint,
   Menu,
   MenuAction,
@@ -1027,11 +1028,10 @@ function InventoryWorkspace() {
                   {showRemovedToggle ? (
                     <div className="flex items-center gap-1.5">
                       <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={includeInactive}
                           onChange={(e) => setIncludeInactive(e.target.checked)}
-                          className="size-3.5 accent-primary"
+                          className="size-3.5"
                         />
                         Show removed
                       </label>

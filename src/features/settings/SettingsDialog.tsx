@@ -1411,8 +1411,8 @@ export default function SettingsDialog({
               label="Storage triage"
               description="Reclaim local space at any time — not just when storage is full."
               hint={
-                'Opens the **Storage Triage** dashboard: see what is using local space and reclaim it — purge old history, downgrade old photos, remove orphaned files.\n\n' +
-                'You can run it any time, not only when a storage-full banner appears.'
+                'Opens the **Storage Triage** dashboard: see what is using local space and reclaim it — purge old history, downgrade old photos.\n\n' +
+                'You can run it any time, not only when a storage-full banner appears. To compact the database file itself and sweep orphaned images, use **Maintain database** below.'
               }
             >
               <Button

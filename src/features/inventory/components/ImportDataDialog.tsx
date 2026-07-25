@@ -6,8 +6,8 @@
  *   - "Import text" — paste or type items; the extraction is previewed live as
  *     items (auto-detecting CSV / TSV / free-form line lists) so the user can see
  *     exactly how their text will land before committing.
- *   - "Import file" — choose a `.csv` / `.tsv` / `.txt` file; its contents flow
- *     through the *same* engine and preview.
+ *   - "Import file" — choose a `.csv` / `.tsv` / `.json` / `.md` / `.html` / `.txt`
+ *     file; its contents flow through the *same* engine and preview.
  *
  * Both tabs feed one shared "workbench": detect format → (for tabular input) map
  * columns → preview the extracted items with per-row create/update/error status →
