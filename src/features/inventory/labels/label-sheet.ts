@@ -25,6 +25,7 @@ import {
   formatMm,
   normaliseSheetLayout,
   sheetCellSizeMm,
+  shortId,
   templateHasBarcode,
   templateHasQr,
   type BarcodeFit,
@@ -66,7 +67,11 @@ export interface LabelCell {
    * print dialogs' "too small to scan" warning (issue #330).
    */
   readonly qrFit: QrFit | null;
-  /** Text lines beneath the code, already filtered by the template's field flags. */
+  /**
+   * Text lines beneath the code, already filtered by the template's field flags — the
+   * record's own fields first, then the short-code fallback line where the template asks
+   * for one ({@link resolveCell}).
+   */
   readonly lines: string[];
 }
 
@@ -285,7 +290,8 @@ export function clampLabels<T>(items: readonly T[]): T[] {
 }
 
 /**
- * The text lines an item label shows, in display order, per the template's flags.
+ * The item **field** lines a label shows, in display order, per the template's flags. The
+ * short-code fallback line is appended later, by {@link resolveCell}.
  *
  * @internal Exported for unit tests only.
  */
@@ -319,13 +325,43 @@ export interface LabelSpec {
    * size-check it itself.
    */
   readonly barcodePreferred: string;
+  /** The record's own field lines; {@link resolveCell} appends the short-code line. */
   readonly lines: string[];
 }
 
 /** Resolve a {@link LabelSpec} to a rendered {@link LabelCell} under a template. */
 export function resolveCell(spec: LabelSpec, template: LabelTemplate): LabelCell {
   const codes = renderCodes(spec, template);
-  return { id: spec.id, name: spec.name, url: spec.url, ...codes, lines: spec.lines };
+  return {
+    id: spec.id,
+    name: spec.name,
+    url: spec.url,
+    ...codes,
+    lines: withShortIdLine(spec, template, codes),
+  };
+}
+
+/**
+ * Append the record's {@link shortId} as the label's last text line — its fallback
+ * identifier when the printed code cannot be read (issue #338).
+ *
+ * It lives here rather than in either caller's `lines` builder for two reasons. It is the one
+ * line neither an item nor a location contributes — it is derived from the id both already
+ * carry — so writing it once keeps item and location labels honest about the same thing. And
+ * only here is the *resolved* barcode known: when the template already prints that same short
+ * code as the barcode's own human-readable text (the `shortened` fallback of issue #331), a
+ * second identical line beneath the bars would say nothing new and cost a small label a line
+ * it has no room for.
+ */
+function withShortIdLine(
+  spec: LabelSpec,
+  template: LabelTemplate,
+  codes: { readonly barcodeSvg: string | null; readonly barcodeValue: string | null },
+): string[] {
+  if (!template.showShortId) return spec.lines;
+  const short = shortId(spec.id);
+  const alreadyUnderBarcode = template.showText && codes.barcodeSvg !== null && codes.barcodeValue === short;
+  return alreadyUnderBarcode ? spec.lines : [...spec.lines, short];
 }
 
 /**

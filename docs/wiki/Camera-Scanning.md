@@ -120,6 +120,18 @@ settings and tap **Scan** again, or type the code in by hand in the meantime.
 > On iPhone and iPad, a browser may refuse to start a live picture in some situations — for
 > example inside another app's in-app browser. Opening Gubbins in Safari itself usually clears it.
 
+## When the code itself is damaged
+
+A scuffed QR or a smudged barcode is nobody's fault, and it doesn't leave you stuck. Every label
+Gubbins prints also carries a **short code** — eight characters such as `A1B2C3D4` on its last
+line. Type that into the box at the bottom of the scanner and it opens the item, or jumps to the
+location, exactly as scanning would have. See
+[[QR codes & label printing|QR-Codes-and-Label-Printing]].
+
+> **ℹ️ Note**
+> Very occasionally two records start with the same eight characters. Gubbins says so rather than
+> opening one of them and hoping — reach for the QR code, or search by name, in that case.
+
 ## When a code isn't found
 
 A barcode with no matching item isn't an error — it just means nothing's linked to it yet. Gubbins

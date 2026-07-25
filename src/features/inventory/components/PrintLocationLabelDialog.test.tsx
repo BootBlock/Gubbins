@@ -96,3 +96,26 @@ describe('PrintLocationLabelDialog — die-cut print target (issue #337)', () =>
     expect(screen.queryByTestId('loc-label-die-cut-printer')).toBeNull();
   });
 });
+
+/** The printed fallback identifier — what still names the bin once its code is damaged (#338). */
+describe('PrintLocationLabelDialog — short-code fallback line', () => {
+  it('prints the location’s short code by default, and drops it when the toggle is cleared', () => {
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    expect(screen.getByText('00000000')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('loc-label-show-short-code'));
+
+    expect(screen.queryByText('00000000')).toBeNull();
+    // The name is still on the label — only the fallback line went. (It also appears as the
+    // dialog's own description, hence `getAllByText`.)
+    expect(screen.getAllByText('Bin 3').length).toBeGreaterThan(0);
+  });
+
+  it('seeds the toggle from the saved default template', () => {
+    usePreferencesStore.setState({
+      labelTemplate: { ...DEFAULT_LABEL_TEMPLATE, showShortId: false },
+    });
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    expect(screen.queryByText('00000000')).toBeNull();
+  });
+});

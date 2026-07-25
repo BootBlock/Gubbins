@@ -417,7 +417,7 @@ export function sheetLabelCount(layout: SheetLayout): number {
 }
 
 /**
- * A label layout. The four `show*` field flags govern the text block beneath the
+ * A label layout. The five `show*` field flags govern the text block beneath the
  * code; `showText` governs the human-readable line printed under a Code 128 barcode
  * (the digits/letters the bars encode); `sheet` is how labels tile an A4 page.
  * `sizeMode` (+ `labelWidthMm`/`labelHeightMm`) selects the A4 grid vs a fixed physical
@@ -429,6 +429,11 @@ export interface LabelTemplate {
   readonly showMpn: boolean;
   readonly showLocation: boolean;
   readonly showQuantity: boolean;
+  /**
+   * Print the record's {@link shortId} as a plain text line — the label's fallback
+   * identifier, readable by eye when the code itself is not (issue #338).
+   */
+  readonly showShortId: boolean;
   /** Render the human-readable value under a Code 128 barcode. */
   readonly showText: boolean;
   /** How labels tile the printed A4 sheet (sheet mode only). */
@@ -442,8 +447,16 @@ export interface LabelTemplate {
 }
 
 /**
- * The default template — the pre-Phase-73 behaviour (a QR with the item name) so an
- * untouched preference prints exactly the labels it always did (never a regression).
+ * The default template — the pre-Phase-73 behaviour (a QR with the item name), plus the
+ * short-code fallback line.
+ *
+ * `showShortId` is the one field flag that defaults **on**, and deliberately so: every other
+ * flag adds detail, whereas this one is what makes the label identifiable at all once its code
+ * is damaged. A default label carried a name and nothing else, so a scuffed or torn QR left
+ * a sticker that mapped back to no particular record — two bins of the same screw, or a name
+ * since edited, and there was nothing to tell them apart (issue #338). Because
+ * {@link normaliseLabelTemplate} falls back field-by-field, a template saved before this
+ * existed picks the line up too.
  */
 export const DEFAULT_LABEL_TEMPLATE: LabelTemplate = {
   symbology: 'qr',
@@ -451,6 +464,7 @@ export const DEFAULT_LABEL_TEMPLATE: LabelTemplate = {
   showMpn: false,
   showLocation: false,
   showQuantity: false,
+  showShortId: true,
   showText: true,
   sheet: PLAIN_PAPER_SHEET_LAYOUT,
   // Defaults to the A4 grid (pre-size-mode behaviour); the die-cut dimensions seed the
@@ -594,6 +608,7 @@ export function normaliseLabelTemplate(value: unknown): LabelTemplate {
     showMpn: bool(v.showMpn, DEFAULT_LABEL_TEMPLATE.showMpn),
     showLocation: bool(v.showLocation, DEFAULT_LABEL_TEMPLATE.showLocation),
     showQuantity: bool(v.showQuantity, DEFAULT_LABEL_TEMPLATE.showQuantity),
+    showShortId: bool(v.showShortId, DEFAULT_LABEL_TEMPLATE.showShortId),
     showText: bool(v.showText, DEFAULT_LABEL_TEMPLATE.showText),
     sheet,
     sizeMode: v.sizeMode === 'die-cut' ? 'die-cut' : 'sheet',
@@ -631,9 +646,17 @@ export function templateHasQr(template: LabelTemplate): boolean {
 }
 
 /**
- * The short, human-friendly form of an id used as a Code 128 fallback value — the
- * first hyphen-delimited group of a UUID, upper-cased (e.g. `A1B2C3D4`). Always
- * Code-128-encodable (hex digits only), so it is a safe last resort.
+ * The short, human-friendly form of an id — the first hyphen-delimited group of a UUID,
+ * upper-cased (e.g. `A1B2C3D4`). Always Code-128-encodable (hex digits only), so it is a
+ * safe last resort for a barcode value.
+ *
+ * It is also the label's **printed fallback identifier** (issue #338): the one line that
+ * still identifies the record when the QR is scuffed, the barcode smudged or the name since
+ * edited. Both uses want the same properties — short enough to fit any label, long enough to
+ * be all but unique, and transcribable by eye — so they share this one derivation. The app
+ * resolves a code typed or scanned in this form back to its item
+ * (`isShortItemCode` / `ItemRepository.findByShortCode`), which is what makes it a
+ * fallback rather than an ornament.
  */
 export function shortId(id: string): string {
   const first = id.split('-')[0] ?? id;

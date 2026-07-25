@@ -11,6 +11,8 @@ import {
   BARCODE_QUIET_ZONE_MODULES,
   LABEL_SYMBOLOGY_OPTIONS,
   fitBarcodeValue,
+  normaliseLabelTemplate,
+  shortId,
   type LabelSymbology,
 } from '../labels/label-template';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -38,6 +40,10 @@ export function QrCodeDialog({
 }) {
   const t = useT();
   const defaultSymbology = usePreferencesStore((s) => s.labelTemplate.symbology);
+  // The fallback identifier the sheet labels print (issue #338), governed by the same device
+  // preference so one setting decides it everywhere a label is produced. Normalised on read, so
+  // a template saved before the flag existed still gets the line.
+  const showShortCode = usePreferencesStore((s) => normaliseLabelTemplate(s.labelTemplate).showShortId);
   const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
   // Seed from the saved default, coercing 'none' (meaningless for a single-code dialog)
   // and any stale/garbage persisted value to QR.
@@ -102,6 +108,18 @@ export function QrCodeDialog({
   const barcodeShortened = showBarcode && barcode128.fit === 'shortened';
   /** Whether anything at all encoded — the print/download actions need at least one code. */
   const hasCode = qr !== null || barcode !== null;
+  /**
+   * The short code to print beneath the label, or `null` when it would say nothing new.
+   *
+   * This dialog always prints the barcode's human-readable text, so where the barcode has
+   * already fallen back to the short id (issue #331) a second identical line is redundant —
+   * the same rule the sheet labels apply.
+   */
+  const printedShortCode = useMemo(() => {
+    if (!showShortCode) return null;
+    const code = shortId(itemId);
+    return barcode !== null && barcode128.value === code ? null : code;
+  }, [showShortCode, itemId, barcode, barcode128]);
 
   const print = () => {
     const w = window.open('', '_blank', 'width=420,height=560');
@@ -111,10 +129,14 @@ export function QrCodeDialog({
         `<style>body{font-family:system-ui,sans-serif;text-align:center;padding:24px}` +
         `h1{font-size:16px;margin:0 0 12px}svg{max-width:${PRINTED_BARCODE_MM}mm}` +
         `.qr svg{width:240px;height:240px}.bc{margin-top:12px}.bc svg{height:80px}` +
-        `p{font-size:11px;color:#555;word-break:break-all;margin-top:12px}</style>` +
+        `p{font-size:11px;color:#555;word-break:break-all;margin-top:12px}` +
+        // The fallback identifier is set larger and darker than the link beneath it: it is the
+        // line someone reads off a damaged label and types in, so it has to survive a photocopy.
+        `.code{font-family:ui-monospace,monospace;font-size:14px;letter-spacing:.08em;color:#000}</style>` +
         `<h1>${escapeHtml(itemName)}</h1>` +
         (qr ? `<div class="qr">${qr}</div>` : '') +
         (barcode ? `<div class="bc">${barcode}</div>` : '') +
+        (printedShortCode ? `<p class="code">${escapeHtml(printedShortCode)}</p>` : '') +
         (qr ? `<p>${escapeHtml(url)}</p>` : ''),
     );
     w.document.close();
@@ -188,6 +210,17 @@ export function QrCodeDialog({
             </p>
           ) : null}
         </div>
+
+        {/* Shown as well as printed, so the code can be read straight off the screen — the
+            fastest way to identify an item whose label has already been damaged. */}
+        {printedShortCode ? (
+          <p
+            className="text-center font-mono text-sm tracking-widest text-foreground"
+            data-testid="item-short-code"
+          >
+            {printedShortCode}
+          </p>
+        ) : null}
 
         {qr ? (
           <p className="break-all text-center text-xs text-muted-foreground" data-testid="item-qr-url">

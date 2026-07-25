@@ -3,12 +3,14 @@ import {
   asOpenableLink,
   buildItemQrUrl,
   buildLocationQrUrl,
+  isShortItemCode,
   isStructuredQrPayload,
   isUuid,
   parseScannedCode,
   parseScannedItemId,
   resolveLabelBaseUrl,
 } from './scan-payload';
+import { shortId } from '@/features/inventory/labels/label-template';
 import { CooldownMap, COOLDOWN_WINDOW_MS } from './cooldown';
 import { initialScannerState, scannerReducer, isStreaming, type ScannerState } from './scanner-machine';
 import { dueDateFromDays, daysUntil, dueStatus, isOverdue, MS_PER_DAY } from './due-date';
@@ -56,6 +58,39 @@ describe('scan-payload', () => {
     expect(parseScannedItemId('https://example.com/other')).toBeNull();
     expect(parseScannedItemId('')).toBeNull();
     expect(isUuid('not-a-uuid')).toBe(false);
+  });
+
+  describe('isShortItemCode — the label fallback identifier (issue #338)', () => {
+    it('recognises exactly what shortId prints, whatever the id', () => {
+      // The guard against drift: the printed form and the recognised form are pinned together,
+      // so changing how a short code is derived without changing this fails here.
+      for (const id of [
+        UUID,
+        '11111111-1111-4111-8111-111111111111',
+        'a1b2c3d4-3333-4333-8333-333333333333',
+      ]) {
+        expect(isShortItemCode(shortId(id))).toBe(true);
+      }
+    });
+
+    it('accepts either case and surrounding whitespace', () => {
+      expect(isShortItemCode('a1b2c3d4')).toBe(true);
+      expect(isShortItemCode('A1B2C3D4')).toBe(true);
+      expect(isShortItemCode('  A1B2C3D4  ')).toBe(true);
+    });
+
+    it('rejects anything that is not eight hex characters', () => {
+      expect(isShortItemCode('A1B2C3D')).toBe(false); // too short
+      expect(isShortItemCode('A1B2C3D4E')).toBe(false); // too long
+      expect(isShortItemCode('A1B2C3DZ')).toBe(false); // Z is not hex
+      expect(isShortItemCode('A1B2C3D%')).toBe(false); // a LIKE wildcard must never get through
+      expect(isShortItemCode(UUID)).toBe(false);
+      expect(isShortItemCode('')).toBe(false);
+    });
+
+    it('is not itself a ScannedCode kind — a short code names nothing without a lookup', () => {
+      expect(parseScannedCode('A1B2C3D4')).toBeNull();
+    });
   });
 
   describe('structured-QR detection (issue #59)', () => {

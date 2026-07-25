@@ -92,6 +92,9 @@ export function PrintLocationLabelDialog({
   const [symbology, setSymbology] = useState<LabelSymbology>('qr');
   const [sheet, setSheet] = useState<SheetLayout>(PLAIN_PAPER_SHEET_LAYOUT);
   const [showPath, setShowPath] = useState(true);
+  // The fallback identifier line (issue #338) — seeded from the saved default, like the
+  // symbology and sheet layout, so a device that turned it off keeps it off here too.
+  const [showShortCode, setShowShortCode] = useState(true);
   const [copies, setCopies] = useState(1);
   const [sizeMode, setSizeMode] = useState<LabelSizeMode>('sheet');
   const [labelWidthMm, setLabelWidthMm] = useState(40);
@@ -102,6 +105,7 @@ export function PrintLocationLabelDialog({
     setSymbology(seed.symbology === 'none' ? 'qr' : seed.symbology);
     setSheet(seed.sheet);
     setShowPath(true);
+    setShowShortCode(seed.showShortId);
     setCopies(1);
     setSizeMode(seed.sizeMode);
     setLabelWidthMm(seed.labelWidthMm);
@@ -126,12 +130,13 @@ export function PrintLocationLabelDialog({
       showLocation: showPath,
       showMpn: false,
       showQuantity: false,
+      showShortId: showShortCode,
       showText: true,
       sizeMode,
       labelWidthMm,
       labelHeightMm,
     }),
-    [symbology, sheet, showPath, sizeMode, labelWidthMm, labelHeightMm],
+    [symbology, sheet, showPath, showShortCode, sizeMode, labelWidthMm, labelHeightMm],
   );
 
   const cell = useMemo(() => toLocationLabelCell(location, baseUrl, template), [location, baseUrl, template]);
@@ -220,19 +225,37 @@ export function PrintLocationLabelDialog({
             <SheetLayoutControls testId="loc-label-sheet-layout" value={sheet} onChange={setSheet} />
           ) : null}
 
-          {location.path && location.path.trim().length > 0 ? (
-            <div className="flex items-center gap-1 self-end">
+          {/* The label's text toggles. The help badge sits *outside* each label so tapping it
+              opens the tooltip rather than flipping the checkbox. */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 self-end">
+            {location.path && location.path.trim().length > 0 ? (
+              <div className="flex items-center gap-1">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                  <Checkbox
+                    checked={showPath}
+                    onChange={(e) => setShowPath(e.target.checked)}
+                    className="size-3.5"
+                  />
+                  Show full path
+                </label>
+                <InfoHint content={SHOW_PATH_HINT} />
+              </div>
+            ) : null}
+
+            {/* The fallback identifier — what still names the bin when the code is damaged (#338). */}
+            <div className="flex items-center gap-1">
               <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
                 <Checkbox
-                  checked={showPath}
-                  onChange={(e) => setShowPath(e.target.checked)}
+                  checked={showShortCode}
+                  onChange={(e) => setShowShortCode(e.target.checked)}
                   className="size-3.5"
+                  data-testid="loc-label-show-short-code"
                 />
-                Show full path
+                {t('inventory.labels.showShortCode')}
               </label>
-              <InfoHint content={SHOW_PATH_HINT} />
+              <InfoHint content={t('inventory.labels.showShortCodeHintLocation')} />
             </div>
-          ) : null}
+          </div>
         </div>
 
         <div className="mx-auto w-48">

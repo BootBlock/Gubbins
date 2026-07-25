@@ -44,6 +44,31 @@ export function isUuid(value: string): boolean {
 }
 
 /**
+ * A printed **short code** — the first group of an id's UUID, as `shortId` renders it onto a
+ * label (issue #338). Eight hex characters, in either case.
+ */
+const SHORT_CODE_RE = /^[0-9a-f]{8}$/i;
+
+/**
+ * True when `value` has the shape of a label's printed short code — the fallback identifier
+ * `shortId` (`labels/label-template.ts`) puts on every label and uses as the Code 128 fallback
+ * value when the preferred one is too long to print (issue #331).
+ *
+ * Deliberately a *shape* test rather than a parse: a short code names no record on its own, so
+ * it can only be resolved by asking the database (`ItemRepository.findByShortCode`, or a scan
+ * of the loaded locations). It is therefore **not** a {@link ScannedCode} kind — a caller
+ * checks this, then looks the code up, rather than being handed an id it cannot use. A unit
+ * test pins it against `shortId`'s own output so the printed form and the recognised form
+ * cannot drift apart.
+ *
+ * Note the overlap with an 8-digit GTIN-8: callers resolve a valid GTIN first, so a genuine
+ * retail barcode is never mistaken for a short code.
+ */
+export function isShortItemCode(value: string): boolean {
+  return SHORT_CODE_RE.test(value.trim());
+}
+
+/**
  * Build the printable deep-link payload for an item.
  *
  * @param itemId  The item's UUID.

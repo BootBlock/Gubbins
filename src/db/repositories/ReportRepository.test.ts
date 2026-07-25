@@ -1773,6 +1773,34 @@ describe('ReportRepository', () => {
       expect(catalogue.hasValue).toBe(true);
     });
 
+    it('counts a scope without fetching it, describing exactly the set the document would (issue #338)', async () => {
+      const garage = await locations.create({ name: 'Garage' });
+      const shelf = await locations.create({ name: 'Shelf A', parentId: garage.id });
+      const kitchen = await locations.create({ name: 'Kitchen' });
+      await items.create({ name: 'Anvil', locationId: garage.id, quantity: 1 });
+      await items.create({ name: 'Widget', locationId: shelf.id, quantity: 1 });
+      await items.create({ name: 'Kettle', locationId: kitchen.id, quantity: 1 });
+
+      // A variant parent is abstract and a removed item is gone — neither is counted, exactly as
+      // neither is catalogued. The count and the document must never describe different sets.
+      const parent = await items.create({ name: 'Kit', trackingMode: 'SERIALISED' });
+      await items.createVariant(parent.id, { name: 'Kit v2' });
+      const removed = await items.create({ name: 'Gone', quantity: 1 });
+      await items.softDelete(removed.id);
+
+      for (const scope of [
+        { kind: 'all' } as const,
+        { kind: 'location', locationId: garage.id } as const,
+        { kind: 'items', itemIds: [] } as const,
+      ]) {
+        const catalogue = await reports.partsCatalogue(scope);
+        expect(await reports.partsCatalogueCount(scope)).toBe(catalogue.itemCount);
+      }
+      expect(await reports.partsCatalogueCount({ kind: 'all' })).toBe(4); // Anvil, Widget, Kettle, Kit v2
+      expect(await reports.partsCatalogueCount({ kind: 'location', locationId: garage.id })).toBe(2);
+      expect(await reports.partsCatalogueCount({ kind: 'items', itemIds: [] })).toBe(0);
+    });
+
     it('for the "location" scope includes the whole subtree but nothing outside it', async () => {
       const garage = await locations.create({ name: 'Garage' });
       const shelf = await locations.create({ name: 'Shelf A', parentId: garage.id });

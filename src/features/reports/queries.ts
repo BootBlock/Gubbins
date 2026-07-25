@@ -370,17 +370,45 @@ export async function loadFullScheduleLines(
  *
  * `scope` is `null` while the reader has not yet chosen a location/project — the query stays
  * idle (disabled) until a concrete scope exists, so no rows are fetched for an incomplete pick.
+ * `options.enabled` is the second gate: the screen counts the scope first
+ * ({@link useCatalogueItemCount}) and leaves this read idle when it is too large to print at
+ * all, so an unbounded document is never fetched (issue #338).
  */
-export function usePartsCatalogue(scope: CatalogueScope | null, options: CataloguePartsOptions = {}) {
-  const { includePhotos = false, groupBy, sortBy } = options;
+export function usePartsCatalogue(
+  scope: CatalogueScope | null,
+  options: CataloguePartsOptions & { readonly enabled?: boolean } = {},
+) {
+  const { includePhotos = false, groupBy, sortBy, enabled = true } = options;
   const currency = useValuationCurrency();
   return useQuery({
     queryKey: [...reportKeys.all, 'parts-catalogue', scope, includePhotos, groupBy, sortBy, currency],
     queryFn: () => getReportRepository().partsCatalogue(scope!, { includePhotos, groupBy, sortBy }),
-    enabled: scope !== null,
+    enabled: scope !== null && enabled,
     // Re-keyed as the reader changes scope/grouping/columns; keep the previous document on screen
     // while the new one loads instead of flashing to a spinner.
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * How many items a catalogue scope covers, without fetching any of them (issue #338).
+ *
+ * The catalogue screen leads with this — as the insurance schedule leads with its bounded
+ * summary read — so the size of the job is known before a single row, thumbnail BLOB or QR
+ * encode is paid for, and a scope too large to print never builds a document at all.
+ *
+ * Unlike {@link usePartsCatalogue} this is not re-keyed by the chosen columns or grouping:
+ * neither changes which items are in scope, so switching a column on must not re-run the count.
+ */
+export function useCatalogueItemCount(scope: CatalogueScope | null) {
+  return useQuery({
+    queryKey: [...reportKeys.all, 'parts-catalogue-count', scope],
+    queryFn: () => getReportRepository().partsCatalogueCount(scope!),
+    enabled: scope !== null,
+    // Deliberately **not** `keepPreviousData`, unlike every other read on this screen. This
+    // count is a gate, not a display value: holding the previous scope's answer while a new
+    // one loads would let a ten-item location's count wave through the read for "All items".
+    // An undefined count has to mean "not known yet", so the caller can wait for it.
   });
 }
 
