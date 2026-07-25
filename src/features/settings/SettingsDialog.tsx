@@ -1,10 +1,11 @@
-import { type ReactNode, useEffect, useId, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   Banner,
   Button,
   CurrencySelect,
   Input,
+  InputClearButton,
   RailModal,
   Select,
   Tooltip,
@@ -12,6 +13,7 @@ import {
   useInstallPrompt,
   useReducedMotion,
   useRovingRadioGroup,
+  useSearchEscapeToClear,
   type RailTab,
 } from '@/components/foundry';
 import {
@@ -35,6 +37,7 @@ import {
   PackageIcon,
   QrCodeIcon,
   ScanIcon,
+  SearchIcon,
   StorageIcon,
   SystemThemeIcon,
 } from '@/components/icons';
@@ -47,6 +50,7 @@ import { useFeature } from '@/features/modules/useFeature';
 import { useT, hasInterfaceTranslation } from '@/features/i18n';
 import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
+import { SettingsSearchGroup, SettingsSearchResults } from './SettingsSearchResults';
 import { ReminderSettings } from '@/features/alerts/ReminderSettings';
 import { CardFieldsSetting } from '@/features/inventory/components/CardFieldsSetting';
 import { CARD_BADGE_OPTIONS } from '@/features/inventory/card-badge';
@@ -201,6 +205,13 @@ export default function SettingsDialog({
   const prefs = usePreferencesStore();
   const [triageOpen, setTriageOpen] = useState(false);
   const install = useInstallPrompt();
+  // The cross-tab filter (issue #133). Non-empty swaps the rail and panel for one scrolling
+  // view of every tab's matching rows; the dialog is unmounted when closed (see
+  // `SettingsDialogHost`), so a query never survives into the next visit.
+  const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searching = query.trim() !== '';
+  useSearchEscapeToClear(open, searchRef, () => setQuery(''));
   // OS-level signal only (issue #420) — not the in-app Animation level, which is a deliberate
   // choice this notice shouldn't second-guess; see BackgroundEffects.tsx for the matching gate.
   const osReducedMotion = useReducedMotion();
@@ -1400,8 +1411,8 @@ export default function SettingsDialog({
               label="Storage triage"
               description="Reclaim local space at any time — not just when storage is full."
               hint={
-                'Opens the **Storage Triage** dashboard: see what is using local space and reclaim it — purge old history, downgrade old photos, remove orphaned files.\n\n' +
-                'You can run it any time, not only when a storage-full banner appears.'
+                'Opens the **Storage Triage** dashboard: see what is using local space and reclaim it — purge old history, downgrade old photos.\n\n' +
+                'You can run it any time, not only when a storage-full banner appears. To compact the database file itself and sweep orphaned images, use **Maintain database** below.'
               }
             >
               <Button
@@ -1526,6 +1537,53 @@ export default function SettingsDialog({
         idPrefix="settings"
         tabs={tabs}
         initialTabId={initialTab}
+        toolbar={
+          <div className="relative">
+            <SearchIcon
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            {/* A plain text field, as every other Gubbins filter box is: `type="search"` would
+                add the browser's own ✕ beside the Foundry one, giving the box two clear
+                buttons. */}
+            <Input
+              ref={searchRef}
+              type="text"
+              autoComplete="off"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label={t('settings.search.label')}
+              placeholder={t('settings.search.placeholder')}
+              className={cn('pl-9', query !== '' && 'pr-9')}
+              data-testid="settings-search"
+            />
+            {query !== '' ? (
+              <InputClearButton
+                label={t('settings.search.clear')}
+                onClick={() => {
+                  setQuery('');
+                  searchRef.current?.focus();
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2"
+              />
+            ) : null}
+          </div>
+        }
+        overrideContent={
+          searching ? (
+            // Every tab's panel at once, filtered — the point of the box is that you don't have
+            // to know which section a setting lives in. Each tab's own subtree moves here while
+            // the filter is on, so a panel's transient local state (a half-typed link host, a
+            // hotkey mid-recording) restarts; beginning a search is a deliberate change of view.
+            <SettingsSearchResults query={query}>
+              {tabs.map((tab) => (
+                <SettingsSearchGroup key={tab.id} label={tab.label}>
+                  {tab.content}
+                </SettingsSearchGroup>
+              ))}
+            </SettingsSearchResults>
+          ) : undefined
+        }
         footer={
           <Button variant="secondary" data-testid="settings-close" onClick={onClose}>
             Close

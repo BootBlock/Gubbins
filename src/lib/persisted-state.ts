@@ -75,6 +75,40 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 }
 
 /**
+ * A persisted Zustand blob taken apart: the `state` object, and the envelope it sits in (which
+ * carries the persist `version` the store's `migrate` keys off).
+ */
+export interface PersistedBlob {
+  readonly state: Record<string, unknown>;
+  readonly envelope: Record<string, unknown>;
+}
+
+/**
+ * Read a `localStorage` value written by zustand's `persist`, or null when it isn't one.
+ *
+ * Anything that hands a store's stored state around — the backup settings picker, live settings
+ * sync — needs the same two-part view, and needs the envelope preserved rather than rebuilt: drop
+ * the `version` and the store's `migrate` would run against the wrong baseline on the next boot.
+ */
+export function parsePersistedBlob(raw: string): PersistedBlob | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isPlainObject(parsed) || !isPlainObject(parsed.state)) return null;
+    return { state: parsed.state, envelope: parsed };
+  } catch {
+    return null;
+  }
+}
+
+/** Re-serialise a blob with a replacement `state`, keeping its envelope (and so its version). */
+export function serialisePersistedBlob(
+  blob: PersistedBlob,
+  state: Readonly<Record<string, unknown>>,
+): string {
+  return JSON.stringify({ ...blob.envelope, state });
+}
+
+/**
  * Reconcile a rehydrated integer, falling back when it isn't a finite whole number and
  * clamping it into `[min, max]` when bounds are given.
  */

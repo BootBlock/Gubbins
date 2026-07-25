@@ -39,7 +39,7 @@ import {
 import type { SqlRow } from '@/db/rpc/driver';
 import { resolveBookingConflicts, type BookingWindow } from '@/features/bookings/booking-overlap';
 import { applyOffset } from './clock';
-import { buildConflict, nonLwwColumns } from './conflict-detect';
+import { buildConflict, detectsConflicts, nonLwwColumns } from './conflict-detect';
 import { reconcileGauge, reconcileStockQuantity } from './delta-crdt';
 import { FK_REFS } from './fk-refs';
 import { resolveLww } from './lww';
@@ -386,6 +386,9 @@ function resolveTableMerges(
     const localTomb = tombstonesFor(local.tombstones, table);
     const remoteTomb = tombstonesFor(remote.tombstones, table);
     const allowed = dictionary[table] ?? [];
+    // Some tables are resolved by LWW *as promised* rather than in spite of the user's intent, so a
+    // losing row there is a settled outcome and not a lost edit to report (issue #72 / #382).
+    const reportable = detecting && detectsConflicts(table);
 
     const ids = new Set<string>([...localRows.keys(), ...remoteRows.keys()]);
 
@@ -396,7 +399,7 @@ function resolveTableMerges(
       const rUpd = r ? num(r.updated_at) : undefined;
       const rTomb = remoteTomb.get(id);
       // A local edit made *after* the last sync that now loses is a genuine collision (#72).
-      const localEditedSinceSync = detecting && lUpd !== undefined && lUpd > conflictSince!;
+      const localEditedSinceSync = reportable && lUpd !== undefined && lUpd > conflictSince!;
 
       // Remote deleted this row.
       if (rTomb !== undefined) {

@@ -177,9 +177,11 @@ export type Condition = (typeof CONDITIONS)[number];
  * Basis a maintenance schedule fires on (spec §4.3 "alerts based on time elapsed
  * or usage metrics"):
  * - `TIME` — calendar interval in days from the last service (or creation).
- * - `USAGE` — a manually-logged usage counter (e.g. running hours); due once the
- *   accrued usage since the last service reaches `interval_usage`. No automatic
- *   usage telemetry exists, so the counter is advanced by explicit user entry.
+ * - `USAGE` — a usage counter (e.g. running hours); due once the accrued usage
+ *   since the last service reaches `interval_usage`. The counter is advanced by
+ *   explicit user entry, or — where the schedule opts in via
+ *   `accrue_checkout_hours` — derived on read from the `checkouts` ledger, so a
+ *   tool's loan hours count towards its next service automatically.
  */
 export const MAINTENANCE_BASES = ['TIME', 'USAGE'] as const;
 export type MaintenanceBasis = (typeof MAINTENANCE_BASES)[number];

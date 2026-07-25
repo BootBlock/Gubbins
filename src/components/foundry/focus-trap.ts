@@ -21,6 +21,24 @@ export const FOCUSABLE_SELECTOR = ['a[href]', 'button', 'input', 'select', 'text
   .join(',');
 
 /**
+ * The elements a focus trap inside `node` should actually cycle through: everything matching
+ * {@link FOCUSABLE_SELECTOR} that is not sitting in an `inert` subtree.
+ *
+ * The `inert` filter is what stops a *hidden* region of a dialog from swallowing Tab. A region
+ * the dialog has hidden rather than unmounted — Settings hides the sections a search filtered
+ * out, because their children are what report whether anything inside still matches — is still
+ * returned by `querySelectorAll`, but `.focus()` on a `display: none` element does nothing. A
+ * trap that cycled onto one would park the index there and leave Tab a dead key with no way out
+ * but Escape. Marking such a region `inert`, which is also how the platform is told it is not
+ * interactive, takes it out of the cycle.
+ */
+export function trapFocusables(node: ParentNode): HTMLElement[] {
+  return Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (el) => el.closest('[inert]') === null,
+  );
+}
+
+/**
  * Given the number of focusable elements in the dialog, the index of the one
  * that currently holds focus (`-1` when focus is on the dialog container or has
  * escaped the set), and whether Shift is held, return the index a trapped Tab

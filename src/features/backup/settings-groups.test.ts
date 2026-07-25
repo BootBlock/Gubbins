@@ -1,14 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_SETTINGS_GROUPS,
+  LIVE_SYNCABLE_SETTINGS_GROUP_IDS,
+  LIVE_SYNCED_STORE_KEYS,
   NON_PORTABLE_PREF_FIELDS,
   PREFERENCES_KEY,
   SETTINGS_GROUPS,
   SETTINGS_GROUP_IDS,
   allSettingsGroups,
   filterSettingsByGroups,
+  isLiveSyncableGroup,
   mergePreferencesBlob,
   ownerOfPrefField,
+  ownerOfStoreField,
   settingsGroup,
   settingsGroupsPresent,
 } from './settings-groups';
@@ -65,6 +69,35 @@ describe('the group registry', () => {
   it('resolves a group by id and shrugs off an unknown one', () => {
     expect(settingsGroup('appearance')?.id).toBe('appearance');
     expect(settingsGroup('not-a-group')).toBeUndefined();
+  });
+
+  it('marks every group except the device-specific one as live-syncable (issue #382)', () => {
+    // Backups and live sync ask separate questions, but the answers must stay in step with the
+    // partition itself: a *new* group has to make a conscious choice here rather than inherit one.
+    expect(settingsGroup('device')?.liveSyncable).toBe(false);
+    expect(LIVE_SYNCABLE_SETTINGS_GROUP_IDS).not.toContain('device');
+    expect([...LIVE_SYNCABLE_SETTINGS_GROUP_IDS].sort()).toEqual(
+      SETTINGS_GROUP_IDS.filter((id) => id !== 'device').sort(),
+    );
+    expect(isLiveSyncableGroup('not-a-group')).toBe(false);
+  });
+
+  it('exposes the preferences blob and every live-syncable whole key as a sync surface', () => {
+    expect(LIVE_SYNCED_STORE_KEYS).toContain(PREFERENCES_KEY);
+    for (const group of SETTINGS_GROUPS) {
+      for (const key of group.storageKeys ?? []) {
+        expect(LIVE_SYNCED_STORE_KEYS.includes(key), `${key} (${group.id})`).toBe(group.liveSyncable);
+      }
+    }
+  });
+
+  it('answers field ownership for both kinds of group through one lookup', () => {
+    expect(ownerOfStoreField(PREFERENCES_KEY, 'mode')).toBe('appearance');
+    // A whole-key store's group owns every field inside it, whatever the field is called.
+    expect(ownerOfStoreField('gubbins:layout', 'density')).toBe('dashboard');
+    expect(ownerOfStoreField('gubbins:layout', 'anything')).toBe('dashboard');
+    expect(ownerOfStoreField(PREFERENCES_KEY, 'bridgeToken')).toBeUndefined();
+    expect(ownerOfStoreField('gubbins:lab', 'flags')).toBeUndefined();
   });
 });
 

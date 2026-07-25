@@ -86,6 +86,8 @@ export async function createBackup(
   const snapshot = filterSnapshot(full, {
     includeHistory: selection.history,
     includeRemovedItems: selection.removedItems,
+    includeSettings: selection.settings,
+    settingGroups: selection.settingGroups,
   });
 
   // Copy the sqlite bytes out of WASM memory so the Blob is independent of the worker heap.

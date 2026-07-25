@@ -89,6 +89,7 @@
 **Data, sync & resilience**
 - [[How your data is stored|How-Your-Data-Is-Stored]]
 - [[Cloud sync|Cloud-Sync]]
+- [[Sharing settings between devices|Sharing-Settings-Between-Devices]]
 - [[Backup & restore|Backup-and-Restore]]
 - [[Export & import|Export-and-Import]]
 - [[Migrating from another tool|Migrating-from-Another-Tool]]
@@ -105,6 +106,7 @@
 - [[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]
 
 **Settings & customisation**
+- [[Finding a setting|Finding-a-Setting]]
 - [[Appearance & theming|Appearance-and-Theming]]
 - [[Branding|Branding]]
 - [[Dashboard & widgets|Dashboard-and-Widgets]]

@@ -27,10 +27,10 @@ quick chips you can select to re-run instantly, or remove when you no longer nee
 Any item can be marked a **favourite** — a quick pin for the things you use most. A favourite
 item shows a small gold star on its card.
 
-### The favourites filter
+### Seeing just your favourites
 
-To see just your pinned items, use the **favourites filter** on the Inventory screen — or search
-for them directly with the [[text syntax|Text-Query-Syntax]]:
+Favourited items already float to the top of any list. To narrow to *only* them, search for them
+with the [[text syntax|Text-Query-Syntax]]:
 
 ```
 fav:yes

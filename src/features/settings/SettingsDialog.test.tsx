@@ -280,6 +280,66 @@ describe('SettingsDialog — reduced-motion notice on Background effect (issue #
   });
 });
 
+describe('SettingsDialog — cross-tab search (issue #133)', () => {
+  /** Open the dialog and type into the filter box. */
+  function search(query: string) {
+    render(<SettingsDialog open onClose={() => {}} />);
+    fireEvent.change(screen.getByTestId('settings-search'), { target: { value: query } });
+  }
+
+  it('leaves the rail alone until something is typed', () => {
+    render(<SettingsDialog open onClose={() => {}} />);
+    expect(screen.getByRole('tablist', { name: 'Settings sections' })).toBeInTheDocument();
+    expect(screen.queryByTestId('settings-search-results')).toBeNull();
+  });
+
+  it('finds a control on a tab other than the one showing, without opening it', () => {
+    // Appearance is the tab in view; the purge window lives behind Data & storage.
+    search('purge');
+    expect(screen.getByTestId('setting-prune-window')).toBeInTheDocument();
+    // The rail steps aside while the results span every tab, so no section claims to be selected.
+    expect(screen.queryByRole('tablist', { name: 'Settings sections' })).toBeNull();
+    // …and the tab the match came from is named above it.
+    expect(screen.getByRole('region', { name: 'Data & storage' })).toBeInTheDocument();
+  });
+
+  it('drops the rows that do not match, including on the tab that was showing', () => {
+    search('purge');
+    expect(screen.queryByTestId('setting-oled')).toBeNull();
+    expect(screen.queryByTestId('setting-page-size')).toBeNull();
+    // A neighbour in the very same section goes too — matching is per row, not per section.
+    expect(screen.queryByTestId('setting-label-base-url')).toBeNull();
+  });
+
+  it('matches a setting on wording that only appears in its hint', () => {
+    // "OLED" is in the label, but "battery" only in the rich hint behind the info badge.
+    search('battery');
+    expect(screen.getByTestId('setting-oled')).toBeInTheDocument();
+  });
+
+  it('honours a term supplied by the section a row sits in', () => {
+    search('scanner beep');
+    expect(screen.getByTestId('setting-scanner-beep')).toBeInTheDocument();
+    expect(screen.queryByTestId('setting-scanner-symbology')).toBeNull();
+  });
+
+  it('says so when nothing matches, and restores the rail when the box is cleared', () => {
+    search('flux capacitor');
+    expect(screen.getByTestId('settings-search-empty')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear the settings search' }));
+    expect(screen.getByRole('tablist', { name: 'Settings sections' })).toBeInTheDocument();
+    expect(screen.getByTestId('setting-oled')).toBeInTheDocument();
+  });
+
+  it('never turns up a setting whose feature is switched off', () => {
+    useModulesStore.getState().setFeatureIntent('scanner', false);
+    search('beep');
+    expect(screen.queryByTestId('setting-scanner-beep')).toBeNull();
+    expect(screen.getByTestId('settings-search-empty')).toBeInTheDocument();
+  });
+});
+
 describe('SettingsDialog — nav-tile count pickers (A1/A2)', () => {
   it('shows a metric picker for each configurable tile on the Dashboard tab', () => {
     renderTab('Dashboard');
