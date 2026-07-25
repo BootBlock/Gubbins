@@ -19,6 +19,7 @@ import {
   shortId,
   templateHasBarcode,
   templateHasQr,
+  toBarcodeText,
   type LabelTemplate,
 } from './label-template';
 
@@ -138,6 +139,59 @@ describe('shortId', () => {
   });
 });
 
+describe('toBarcodeText', () => {
+  it('passes plain ASCII through, trimmed and with whitespace collapsed', () => {
+    expect(toBarcodeText('RC0805-10K')).toBe('RC0805-10K');
+    expect(toBarcodeText('  Bin 3 \n B  ')).toBe('Bin 3 B');
+  });
+
+  it('transliterates accented Latin rather than deleting the accents (issue #332)', () => {
+    // The bug: `Café Störage` used to encode as `Caf Strage`, sitting beneath a name
+    // line that still read `Café Störage`.
+    expect(toBarcodeText('Café Störage')).toBe('Cafe Storage');
+    expect(toBarcodeText('Zaÿçon')).toBe('Zaycon');
+    // A decomposed `é` (e + combining acute) reaches the same value as a precomposed one.
+    expect(toBarcodeText('Café')).toBe('Cafe');
+  });
+
+  it('spells out the letters decomposition leaves alone', () => {
+    expect(toBarcodeText('Größe')).toBe('Grosse');
+    expect(toBarcodeText('Ærø Þing Łódź')).toBe('AEro THing Lodz');
+  });
+
+  it('folds typographic punctuation to its ASCII form', () => {
+    expect(toBarcodeText('Dave’s bin — no. 3')).toBe("Dave's bin - no. 3");
+    expect(toBarcodeText('40×30 “spare”')).toBe('40x30 "spare"');
+    // A vulgar fraction decomposes to digits around a fraction slash, which maps to '/'.
+    expect(toBarcodeText('½" pipe')).toBe('1/2" pipe');
+    // A non-breaking space becomes an ordinary one, via NFKD.
+    expect(toBarcodeText('Bay 1')).toBe('Bay 1');
+  });
+
+  it('rejects a value with any character that has no ASCII form', () => {
+    // Partly-representable is the case the old code mangled: it must reject, not truncate.
+    expect(toBarcodeText('AB£é')).toBeNull();
+    expect(toBarcodeText('Bin 3 鈴木')).toBeNull();
+    expect(toBarcodeText('Полка 4')).toBeNull();
+    // An astral character is examined whole, not as the lone surrogate `charCodeAt` saw.
+    expect(toBarcodeText('Shelf \u{1f9f0}')).toBeNull();
+    // A ZWJ family sequence: the joiners go, but the emoji themselves still reject it.
+    expect(toBarcodeText('\u{1f468}‍\u{1f469}‍\u{1f467}')).toBeNull();
+  });
+
+  it('is null for a value that is blank or only whitespace', () => {
+    expect(toBarcodeText('')).toBeNull();
+    expect(toBarcodeText('   ')).toBeNull();
+  });
+
+  it('strips invisible formatting characters rather than failing over them', () => {
+    // A zero-width space or bidi mark pasted into a name prints nothing either way, so it
+    // must not cost the label its barcode.
+    expect(toBarcodeText('Bin​ 3')).toBe('Bin 3');
+    expect(toBarcodeText('‎Shelf B')).toBe('Shelf B');
+  });
+});
+
 /** The widest a barcode prints in an A4 label cell — a comfortable, realistic width. */
 const WIDE_MM = 40;
 /**
@@ -213,10 +267,19 @@ describe('fitBarcodeValue', () => {
     expect(fitBarcodeValue('   ', ID, WIDE_MM)).toEqual({ value: 'A1B2C3D4', fit: 'ok' });
   });
 
-  it('strips characters Code 128 Code-B cannot encode, falling back if nothing remains', () => {
-    // The "£" (163) and "é" (233) are outside 32..126 and are stripped.
-    expect(fitBarcodeValue('AB£é', ID, WIDE_MM)).toEqual({ value: 'AB', fit: 'ok' });
-    expect(fitBarcodeValue('é', ID, WIDE_MM)).toEqual({ value: 'A1B2C3D4', fit: 'ok' });
+  it('transliterates a value Code 128 cannot encode verbatim (issue #332)', () => {
+    // `Café Störage` prints `Cafe Storage` — legible, and the same value the human-readable
+    // line under the bars shows. It never prints the old `Caf Strage`.
+    expect(fitBarcodeValue('Café Störage', ID, WIDE_MM)).toEqual({
+      value: 'Cafe Storage',
+      fit: 'ok',
+    });
+  });
+
+  it('falls back rather than printing a value it can only partly represent (issue #332)', () => {
+    // The "£" has no ASCII spelling, so `AB£é` is rejected whole instead of printing `ABe`.
+    expect(fitBarcodeValue('AB£é', ID, WIDE_MM)).toEqual({ value: 'A1B2C3D4', fit: 'ok' });
+    expect(fitBarcodeValue('鈴木電子', ID, WIDE_MM)).toEqual({ value: 'A1B2C3D4', fit: 'ok' });
   });
 
   it('shortens a value too long to print readably (issue #331)', () => {
