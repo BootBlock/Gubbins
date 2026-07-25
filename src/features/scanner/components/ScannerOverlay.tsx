@@ -112,6 +112,9 @@ function ScannerOverlayInner({
   // preference). Read both flags so a successful scan honours the current settings.
   const beepEnabled = usePreferencesStore((s) => s.scannerBeep);
   const hapticsEnabled = usePreferencesStore((s) => s.scannerHaptics);
+  // Which camera to open, and where the viewfinder's picker writes the user's choice (issue #135).
+  const cameraId = usePreferencesStore((s) => s.scannerCameraId);
+  const setCameraId = usePreferencesStore((s) => s.setScannerCameraId);
 
   const [manual, setManual] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -221,14 +224,18 @@ function ScannerOverlayInner({
     [state.mode, queue, beepEnabled, hapticsEnabled, locationRows, onLocationScanned],
   );
 
-  useScanner({
+  const camera = useScanner({
     videoRef,
     roiRef: reticleRef,
     status: state.status,
     dispatch,
     onDecode: (raw) => void handleDecode(raw),
     onEngine: setEngine,
+    // A torch or camera the hardware refused isn't a scan failure — say so through the same notice
+    // region a manual-entry miss uses, which is the screen-reader channel for this screen.
+    onCameraWarning: setNotice,
     symbology,
+    cameraId,
   });
 
   // Tap-to-scan over Web NFC (issue #71), alongside the camera. Only arms where the user has
@@ -412,6 +419,8 @@ function ScannerOverlayInner({
           error={state.error}
           onRetry={() => dispatch({ type: 'OPEN' })}
           reticleRef={reticleRef}
+          camera={camera}
+          onSelectCamera={setCameraId}
         />
 
         {/* "Ready to tap" NFC indicator (issue #71) — shown only where the NFC capability is on

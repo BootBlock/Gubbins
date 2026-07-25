@@ -12,7 +12,8 @@
  * nothing for it, matching the `'none'` case of `warrantyStatus`.
  *
  * **Dismissal**: dismissed alert ids are stored device-locally (no DB migration).
- * A re-triggered alert with a *new* id reappears automatically.
+ * A re-triggered alert with a *new* id reappears automatically. A dismissal can also
+ * carry a deadline — a snooze — after which the alert returns on its own.
  *
  * **Web push**: not implemented here. This is a backend-less PWA; web push requires a
  * server-side push subscription service. Deferred — see docs/dev/deferred-features.md.
@@ -260,13 +261,84 @@ export function buildAlerts(sources: AlertSources, now: number): Alert[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Filter out alerts whose ids are in the dismissed set.
+ * One recorded dismissal: how long the alert stays hidden, and when the user said so.
  *
- * Dismissed ids are stored device-locally (Zustand persist) — see
- * `useDismissedAlertsStore.ts`. A re-triggered alert with a new id reappears.
+ * A plain dismissal is indefinite (`until: null`) — the alert only comes back if the user
+ * restores it, or if the underlying condition changes enough to give it a new id. A *snooze*
+ * sets `until` to the instant it should return, so "I have already ordered more, ask me again
+ * next week" no longer means choosing between permanent silence and permanent nagging.
  */
-export function applyDismissals(alerts: readonly Alert[], dismissedIds: ReadonlySet<string>): Alert[] {
-  return alerts.filter((a) => !dismissedIds.has(a.id));
+export interface AlertDismissal {
+  /** Epoch-ms at which the alert reappears; `null` = hidden until explicitly restored. */
+  readonly until: number | null;
+  /** Epoch-ms the dismissal was recorded — the age {@link pruneDismissals} measures. */
+  readonly at: number;
+}
+
+/** Alert id → its dismissal record. */
+export type AlertDismissals = ReadonlyMap<string, AlertDismissal>;
+
+/** Is this record still hiding its alert at `now`? A snooze stops hiding once it elapses. */
+function isHiding(dismissal: AlertDismissal, now: number): boolean {
+  return dismissal.until === null || dismissal.until > now;
+}
+
+/**
+ * How long a dismissal outlives the alert it silenced, in calendar days.
+ *
+ * "Not in the current feed" is not proof the condition is gone: a lane can be switched off in
+ * the Modules manager, the warranty feed is capped, and every feed reads empty while it loads.
+ * A record therefore gets this long a grace period before {@link pruneDismissals} drops it —
+ * long enough that no ordinary gap evicts a live dismissal, short enough that a deleted item's
+ * record does not sit in `localStorage` for the lifetime of the install.
+ */
+export const STALE_DISMISSAL_DAYS = 30;
+
+/**
+ * Filter out alerts that a dismissal is currently hiding.
+ *
+ * Dismissals are stored device-locally (Zustand persist) — see `useDismissedAlertsStore.ts`.
+ * A re-triggered alert with a new id reappears, and a snoozed one reappears by itself once
+ * `until` has passed.
+ */
+export function applyDismissals(alerts: readonly Alert[], dismissals: AlertDismissals, now: number): Alert[] {
+  return alerts.filter((a) => {
+    const dismissal = dismissals.get(a.id);
+    return dismissal === undefined || !isHiding(dismissal, now);
+  });
+}
+
+/**
+ * Reconcile the dismissal records against the live alert feed, dropping the ones that can no
+ * longer do anything (issue #134). Two records are dead weight:
+ *
+ *  - a **snooze that has elapsed** — its alert is already showing again, so there is nothing
+ *    left to remember;
+ *  - a record whose alert **has not fired for {@link STALE_DISMISSAL_DAYS}** — the item was
+ *    most likely deleted, or the condition resolved for good.
+ *
+ * Without this the set only ever grew: an id dismissed once stayed in `localStorage` forever,
+ * even after its item was deleted. This is the same reconcile-against-the-feed shape
+ * `planReminders` uses to bound `useNotifiedRemindersStore`.
+ *
+ * @param liveIds - Ids of every alert currently produced by the feed (before dismissal filtering).
+ * @returns The pruned map, or `null` when nothing needed dropping — so a caller can skip the
+ *          store write, and an effect driving this can never loop on its own update.
+ */
+export function pruneDismissals(
+  dismissals: AlertDismissals,
+  liveIds: ReadonlySet<string>,
+  now: number,
+): AlertDismissals | null {
+  const staleBefore = addCalendarDays(now, -STALE_DISMISSAL_DAYS);
+  const kept = new Map<string, AlertDismissal>();
+  for (const [id, dismissal] of dismissals) {
+    if (!isHiding(dismissal, now)) continue;
+    if (!liveIds.has(id) && dismissal.at <= staleBefore) continue;
+    kept.set(id, dismissal);
+  }
+  // Records are only ever dropped, never added or altered, so the size settles the question.
+  return kept.size === dismissals.size ? null : kept;
 }
 
 /**

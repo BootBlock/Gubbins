@@ -270,6 +270,18 @@ interface PreferencesStore {
    * labels* group; resolved by `resolveLabelBaseUrl`.
    */
   readonly labelBaseUrl: string;
+  /**
+   * Which camera the live scanner opens, as a `deviceId` picked from the viewfinder's camera menu
+   * (issue #135). Empty — the default — asks for "a rear camera" and lets the browser choose; a
+   * phone with several rear lenses often picks the ultra-wide, which cannot focus at
+   * barcode-reading distance, so the choice is worth remembering once made.
+   *
+   * **Device-local and deliberately non-portable** (see `NON_PORTABLE_PREF_FIELDS`): a `deviceId`
+   * is an opaque per-origin handle to *this* machine's hardware and means nothing anywhere else.
+   * An id that no longer opens is fallen back from at acquisition time, so a stale value is
+   * self-healing rather than a dead scanner.
+   */
+  readonly scannerCameraId: string;
   /** Play a synthesised confirmation beep on a successful scan (§6.5). On by default. */
   readonly scannerBeep: boolean;
   /** Trigger a haptic bump (`navigator.vibrate`) on a successful scan (§6.5). On by default. */
@@ -610,6 +622,8 @@ interface PreferencesStore {
   setScannerSymbology: (symbology: ScannerSymbology) => void;
   setLabelTemplate: (template: LabelTemplate) => void;
   setLabelBaseUrl: (url: string) => void;
+  /** Remember which camera the live scanner should open (issue #135); `''` restores the default. */
+  setScannerCameraId: (deviceId: string) => void;
   setScannerBeep: (enabled: boolean) => void;
   setScannerHaptics: (enabled: boolean) => void;
   setVisualCardMetric: (metric: VisualCardMetric) => void;
@@ -736,6 +750,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
       labelTemplate: DEFAULT_LABEL_TEMPLATE,
       labelBaseUrl: '',
+      scannerCameraId: '',
       scannerBeep: true,
       scannerHaptics: true,
       visualCardMetric: DEFAULT_VISUAL_CARD_METRIC,
@@ -838,6 +853,9 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setLabelTemplate: (template) => set({ labelTemplate: normaliseLabelTemplate(template) }),
       // Stored verbatim (trimmed); the forgiving `resolveLabelBaseUrl` normalises at read time.
       setLabelBaseUrl: (labelBaseUrl) => set({ labelBaseUrl: labelBaseUrl.trim() }),
+      // A `deviceId` is an opaque browser string, so there is nothing to validate here — an id that
+      // no longer opens is recovered from at acquisition time (see `useScanner`), not on write.
+      setScannerCameraId: (scannerCameraId) => set({ scannerCameraId }),
       setScannerBeep: (scannerBeep) => set({ scannerBeep }),
       setScannerHaptics: (scannerHaptics) => set({ scannerHaptics }),
       // Normalise so a stale/unknown persisted value can never reach the card renderer.

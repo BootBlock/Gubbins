@@ -29,6 +29,31 @@ Each alert links straight to the thing that raised it, so you can act on it in a
 > is the forward calendar of everything *due*. They overlap but answer different questions — "what
 > needs fixing?" versus "what's coming up?".
 
+## Clearing an alert — for now, or for good
+
+Once you've dealt with something, you don't want to keep hearing about it. Each alert has two
+controls in its top-right corner:
+
+- **Snooze** (the alarm-clock button) hides the alert for **a day, a week or a month**, then lets
+  it come back by itself. Use this when you've already acted but the situation hasn't caught up
+  yet — the replacement stock is on order, the service is booked — and you'd like a nudge later if
+  it still isn't sorted.
+- **Dismiss** (the ✕) hides the alert until you bring it back. Nothing re-raises it while the same
+  condition persists, so it's the right choice for something you've decided to live with.
+
+**Show all** appears in the header whenever anything is hidden, tells you how many, and brings back
+everything — snoozed and dismissed alike.
+
+> **💡 Tip**
+> A snooze also quietens the matching **[[notification|Reminder-Notifications]]** for as long as it
+> lasts, so a snoozed alert won't buzz your phone either. When it comes back, so does the reminder.
+
+> **ℹ️ Note**
+> What you've hidden is remembered **on that device only** — it isn't [[synced|Cloud-Sync]], so
+> dismissing an alert on your laptop leaves it showing on your tablet. Gubbins keeps these notes
+> tidy on your behalf: once an alert has stopped appearing for a month — its item deleted, say —
+> the record that you'd hidden it is quietly discarded.
+
 ## Getting alerts as notifications
 
 On an **installed** app, alerts can also arrive as **[[OS notifications|Reminder-Notifications]]**,

@@ -257,12 +257,14 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
 ];
 
 /**
- * Preference fields that never travel in a backup at all, whatever the user picks. Currently just
- * the bridge **access token** — a shared backup must not leak it (the non-secret bridge URL is in
- * the `device` group instead). Listed here so the drift test can tell "deliberately excluded"
- * apart from "someone forgot to group it".
+ * Preference fields that never travel in a backup at all, whatever the user picks. The bridge
+ * **access token** because a shared backup must not leak it (the non-secret bridge URL is in the
+ * `device` group instead), and the scanner's chosen **camera** because a `deviceId` is an opaque
+ * per-origin handle to *this* machine's hardware — restoring one elsewhere names a camera that
+ * doesn't exist. Listed here so the drift test can tell "deliberately excluded" apart from
+ * "someone forgot to group it".
  */
-export const NON_PORTABLE_PREF_FIELDS: readonly string[] = ['bridgeToken'];
+export const NON_PORTABLE_PREF_FIELDS: readonly string[] = ['bridgeToken', 'scannerCameraId'];
 
 /** Which groups the user chose, keyed by id. */
 export type SettingsGroupSelection = Readonly<Record<SettingsGroupId, boolean>>;
