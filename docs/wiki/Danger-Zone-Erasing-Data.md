@@ -106,9 +106,14 @@ need to reload:
 
 > **⚠️ Heads-up**
 > These three — **App preferences**, **Dashboard layout** and **Saved searches** — are the ones
-> [[settings sharing|Sharing-Settings-Between-Devices]] can carry between devices. If you have that
-> switched on, resetting one here resets it on your other devices too when they next sync, for the
-> groups you're sharing. Turn sharing off first if you only meant to reset *this* device.
+> [[settings sharing|Sharing-Settings-Between-Devices]] can carry between devices, and with sharing
+> switched on they do not all behave the same way:
+>
+> - **Dashboard layout** and **Saved searches** reset on your other devices too, when they next
+>   sync — provided you are sharing that group. Turn sharing off first if you only meant to reset
+>   *this* device.
+> - **App preferences** stays local, because the sharing choice is itself one of the preferences it
+>   resets: sharing is switched **off** here, and your other devices keep the settings they have.
 
 ## Erasing on your other devices too
 

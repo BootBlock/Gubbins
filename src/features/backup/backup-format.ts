@@ -213,10 +213,12 @@ export function filterSnapshot(
   }
 
   if (!options.includeRemovedItems) {
-    const excluded = excludedItemIds(snapshot.tables.items ?? []);
+    const excluded = excludedItemIds(tables.items ?? []);
 
+    // Built from `tables`, never `snapshot.tables`: this rebuilds the whole map, so re-deriving it
+    // from the original would silently undo the settings narrowing applied above.
     const next: Record<string, readonly SqlRow[]> = {};
-    for (const [table, rows] of Object.entries(snapshot.tables)) {
+    for (const [table, rows] of Object.entries(tables)) {
       next[table] =
         table === 'items'
           ? rows.filter((row) => !excluded.has(String(row.id)))
@@ -231,6 +233,28 @@ export function filterSnapshot(
   }
 
   return { ...snapshot, tables, itemHistory, gaugeHistory, stockDeltas, itemTags, itemRegions };
+}
+
+/**
+ * Narrow a snapshot's `settings` table to the chosen groups (issue #382) — the restore-side
+ * counterpart to what {@link filterSnapshot} does on create. **Pure.**
+ *
+ * The restore picker's promise is that an unticked group is "left exactly as it is on this device".
+ * Applying it to `settings.json` alone would not keep that promise for anyone sharing settings
+ * live: the shared rows would land in the table regardless, and the next sync would adopt them into
+ * the very preferences the user declined. (A `replace` restore from the embedded `.sqlite` copy is
+ * necessarily exempt — an exact byte copy overrides every selective choice by definition, items
+ * included.)
+ */
+export function narrowSnapshotSettings(
+  snapshot: SyncSnapshot,
+  settingGroups: SettingsGroupSelection,
+): SyncSnapshot {
+  if (!snapshot.tables[SHARED_SETTINGS_TABLE]) return snapshot;
+  return {
+    ...snapshot,
+    tables: filterSharedSettingRows(snapshot.tables, { includeSettings: true, settingGroups }),
+  };
 }
 
 /**

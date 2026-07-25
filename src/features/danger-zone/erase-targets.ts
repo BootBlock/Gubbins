@@ -557,16 +557,21 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   // --- App & this device -----------------------------------------------------------
   //
-  // These three are the settings live settings sharing can carry between devices (issue #382), so
-  // each says so: with sharing on, the reset publishes the restored defaults and reaches the other
-  // devices on their next sync. Saying "on this device" alone would be untrue for anyone using it,
-  // and a Danger-Zone tooltip is the last place to understate a reach.
+  // These three hold the settings live settings sharing can carry between devices (issue #382), and
+  // they do NOT behave alike — the tooltips say which is which, because a Danger-Zone tooltip is the
+  // last place to be vague about reach:
+  //
+  //  · `preferences` resets the sharing **opt-in itself** (it is one of these preferences), so by the
+  //    time the reset lands sharing is already off and nothing is published. The reset really is
+  //    local, and it leaves sharing switched off here.
+  //  · `dashboard-layout` / `saved-searches` reset stores that do not hold the opt-in, so with
+  //    sharing on the restored defaults publish and reach the other devices on their next sync.
   {
     id: 'preferences',
     section: 'local',
     label: 'App preferences',
     tooltip:
-      'Resets your app preferences on this device (theme, units, scanner settings and so on) to their defaults. If you share settings between devices, the reset reaches the shared groups on your other devices too.',
+      'Resets your app preferences on this device (theme, units, scanner settings and so on) to their defaults. That includes the settings-sharing choice, so sharing switches off here and your other devices keep their own settings.',
     scope: 'local',
     localKeys: localKeysFor('preferences'),
   },

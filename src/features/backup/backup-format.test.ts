@@ -6,6 +6,7 @@ import {
   assembleBackup,
   buildManifest,
   filterSnapshot,
+  narrowSnapshotSettings,
   parseBackupEntries,
   readBackupFile,
   InvalidBackupError,
@@ -147,6 +148,45 @@ describe('filterSnapshot — shared settings rows (issue #382)', () => {
       ...{ includeSettings: true, settingGroups: allSettingsGroups(true) },
     });
     expect(fields(out)).toEqual(['mode', 'catalogueOrgName']);
+  });
+
+  it('keeps the narrowing when removed items are excluded too', () => {
+    // The removed-items pass rebuilds the whole table map, so deriving it from the *original*
+    // snapshot would silently undo the narrowing — and the letterhead would ship after all.
+    const out = filterSnapshot(withSettings(), {
+      includeHistory: true,
+      includeRemovedItems: false,
+      includeSettings: true,
+      settingGroups: { ...allSettingsGroups(false), appearance: true },
+    });
+    expect(fields(out)).toEqual(['mode']);
+  });
+
+  it('carries none at all when settings are excluded and removed items are too', () => {
+    const out = filterSnapshot(withSettings(), {
+      includeHistory: true,
+      includeRemovedItems: false,
+      includeSettings: false,
+      settingGroups: allSettingsGroups(true),
+    });
+    expect(fields(out)).toEqual([]);
+  });
+
+  it('narrowSnapshotSettings applies the same rule on the way back in', () => {
+    // The restore picker's untick has to reach the shared rows as well, or a device that shares
+    // settings live would adopt the group it just declined on its next sync.
+    const narrowed = narrowSnapshotSettings(withSettings(), {
+      ...allSettingsGroups(false),
+      catalogue: true,
+    });
+    expect(fields(narrowed)).toEqual(['catalogueOrgName']);
+    // Pure: the input is untouched.
+    expect(fields(withSettings())).toEqual(['mode', 'catalogueOrgName', 'somethingNewer']);
+  });
+
+  it('narrowSnapshotSettings leaves a snapshot with no settings table untouched', () => {
+    const plain = makeSnapshot();
+    expect(narrowSnapshotSettings(plain, allSettingsGroups(true))).toBe(plain);
   });
 
   it('leaves a snapshot with no settings table alone', () => {

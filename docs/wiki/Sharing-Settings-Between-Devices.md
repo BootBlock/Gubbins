@@ -65,9 +65,11 @@ What was already shared stays in the shared copy until some device changes it ag
 picker, so unticking there is what keeps a setting out of a file you intend to share with someone.
 
 > **⚠️ Heads-up**
-> Erasing your app preferences from [[Danger zone|Danger-Zone-Erasing-Data]] while sharing is on
-> resets them on your **other** devices too when they next sync — that's what sharing means. Turn
-> sharing off first if you only meant to reset this one.
+> Resetting **Dashboard layout** or **Saved searches** from [[Danger zone|Danger-Zone-Erasing-Data]]
+> while you're sharing that group resets it on your other devices too, when they next sync — that's
+> what sharing means. Turn sharing off first if you only meant to reset this one. Resetting **App
+> preferences** is different: the sharing choice is itself one of the preferences it resets, so
+> sharing simply switches off here and your other devices are left alone.
 
 ## If a setting doesn't arrive
 
