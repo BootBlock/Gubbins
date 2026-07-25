@@ -341,6 +341,7 @@ def _async_register_transfer_stock_service(hass: HomeAssistant) -> None:
     Moves units between two locations, leaving the item's total untouched — the *where*, not
     the *how much*. Two ``adjust_quantity`` calls cannot stand in for it: that service only
     ever touches the item's home location, so it has no way to name the two ends of a move.
+    DISCRETE items only; a gauge measures one body of material and has nothing to split.
 
     All of it moves or none does; too little at the source is a rejection rather than a
     partial transfer, so an automation is never left having moved some of what it asked for.

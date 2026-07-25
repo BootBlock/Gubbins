@@ -158,7 +158,7 @@
     },
     "transfer_stock": {
       "name": "Transfer stock (move between locations)",
-      "description": "Move some of an item from one location to another. The item's total doesn't change — only where it is. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on; the change syncs back to the app conflict-free.",
+      "description": "Move some of a counted item from one location to another. The item's total doesn't change — only where it is. Measured consumables can't be moved this way: a gauge tracks one body of material, so there is nothing to split. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on; the change syncs back to the app conflict-free.",
       "fields": {
         "item_id": {
           "name": "Item id",

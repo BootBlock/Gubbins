@@ -49,7 +49,8 @@ SERVICE_CHECK_IN = "check_in"
 
 # Move stock from one location to another, leaving the item's total alone. Distinct from
 # adjust_quantity in the other direction to the loan pair: that one changes HOW MUCH there is
-# (and only ever at the item's home location), this one changes WHERE it is. Same
+# (and only ever at the item's home location), this one changes WHERE it is. DISCRETE items
+# only — a gauge has one body of material and nothing to split. Same
 # GUBBINS_BRIDGE_ALLOW_WRITES=on opt-in and the same stock permission as adjust_quantity.
 SERVICE_TRANSFER_STOCK = "transfer_stock"
 

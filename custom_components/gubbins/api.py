@@ -245,7 +245,8 @@ class GubbinsClient:
 
         Changes *where* stock is, not how much of it there is: the item's total is the same
         afterwards. This is what :meth:`adjust_quantity` cannot express — that one only ever
-        touches the item's home location.
+        touches the item's home location. DISCRETE items only: a gauge tracks one body of
+        material, so there is nothing to split across places, and the app refuses the call.
 
         All of it moves or none does: too little at the source is a rejection, never a silent
         partial move. Returns the updated item, whose ``placements`` show the new split.
