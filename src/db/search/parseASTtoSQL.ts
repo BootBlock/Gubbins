@@ -76,7 +76,8 @@ export const TAG_FIELD = 'tag';
 /**
  * How a scalar item column is compared.
  *
- * - `fts-text` — free text; CONTAINS routes through the FTS5 index, EQUALS is exact (NOCASE).
+ * - `fts-text` — free text; CONTAINS routes through the FTS5 index, SUBSTRING is an unindexed
+ *   `LIKE '%…%'` scan (issue #369), and EQUALS is exact (NOCASE).
  * - `id-text` — an exact-match foreign key (no ordering, no FTS).
  * - `numeric` — a plain number column; supports ordering comparisons.
  * - `boolean` — a 0/1 flag column; EQUALS only.
@@ -353,6 +354,33 @@ function translateItemField(meta: ItemFieldMeta, condition: FilterCondition): Fr
         params: [match],
       };
     }
+    case 'SUBSTRING': {
+      // The literal "b occurs anywhere in a" test OData's `contains()` defines (issue #369) —
+      // deliberately **not** the FTS path above, which cannot match mid-word. That costs the
+      // index (this is a scan), but a caller promised substring semantics and quietly given
+      // token matching gets missing rows with no error to explain them, which is far worse
+      // than a slower query. The app's own search box keeps using CONTAINS and stays indexed.
+      //
+      // Only the free-text columns take it, for exactly the reason CONTAINS does: a substring
+      // test over an opaque id, a number or a flag is a category error, not a useful query.
+      //
+      // `''` matches every row with a value (`''` is a substring of every string) while NULL
+      // rows drop out, since `NULL LIKE …` is NULL — both of which are what OData's own
+      // three-valued reading of `contains(a,'')` gives.
+      //
+      // Case folding is SQLite's, so ASCII only — the same limit EQUALS carries via COLLATE
+      // NOCASE, which at least keeps the two scalar comparisons agreeing with each other. It
+      // is narrower than the FTS path above, whose unicode61 tokeniser folds accented letters
+      // too, so `SUBSTRING 'écran'` misses an "Écran" that `CONTAINS` would find. Documented
+      // on the bridge's `$filter`, since that is where a caller meets it.
+      if (kind !== 'fts-text') {
+        throw unsupported(operator, condition.field);
+      }
+      return {
+        sql: `${column} LIKE ? ESCAPE '\\'`,
+        params: [`%${escapeLike(String(value))}%`],
+      };
+    }
     case 'EQUALS': {
       if (kind === 'boolean') {
         // A 0/1 flag column — match the stored integer, coercing the AST value to a strict boolean.
@@ -452,7 +480,10 @@ function translateCapability(key: string, condition: FilterCondition): Fragment 
         params: [key, String(value)],
       };
     }
-    case 'CONTAINS': {
+    // Synonyms here: a capability value is not FTS-indexed, so CONTAINS was already the
+    // substring test SUBSTRING asks for (issue #369).
+    case 'CONTAINS':
+    case 'SUBSTRING': {
       return {
         sql: `EXISTS (${base} AND c.value_text LIKE ? ESCAPE '\\')`,
         params: [key, `%${escapeLike(String(value))}%`],
@@ -511,7 +542,10 @@ function translateCustomField(name: string, condition: FilterCondition): Fragmen
         params: [name, String(value)],
       };
     }
-    case 'CONTAINS': {
+    // Synonyms: a custom-field value is not FTS-indexed either, so CONTAINS is already the
+    // substring test (issue #369).
+    case 'CONTAINS':
+    case 'SUBSTRING': {
       return {
         sql: `EXISTS (${base} AND ifv.value LIKE ? ESCAPE '\\')`,
         params: [name, `%${escapeLike(String(value))}%`],
@@ -539,7 +573,11 @@ function translateTag(condition: FilterCondition): Fragment {
   const base = 'SELECT 1 FROM item_tags it JOIN tags tg ON tg.id = it.tag_id WHERE it.item_id = items.id';
 
   switch (operator) {
+    // Synonyms: a tag name is not FTS-indexed, so CONTAINS is already the substring test the
+    // bridge's OData `contains(tag,…)` needs (issue #369) — it was the one field where the
+    // API's `contains()` was already conformant.
     case 'CONTAINS':
+    case 'SUBSTRING':
       return {
         sql: `EXISTS (${base} AND tg.name LIKE ? ESCAPE '\\')`,
         params: [`%${escapeLike(String(value))}%`],
@@ -551,8 +589,19 @@ function translateTag(condition: FilterCondition): Fragment {
   }
 }
 
+/**
+ * How an operator is named in the error a caller reads. `SUBSTRING` is an internal distinction
+ * — the substring-exact form of "contains" the bridge's OData `$filter` compiles to (issue
+ * #369) — and nobody types it: a caller who wrote `contains(quantity,'5')` must be told
+ * CONTAINS is unsupported on that field, not an operator name they have never seen. A **Map**
+ * rather than an object literal so an operator called `constructor` cannot inherit a lookup
+ * hit from the prototype.
+ */
+const OPERATOR_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([['SUBSTRING', 'CONTAINS']]);
+
 function unsupported(operator: string, field: string): SearchAstError {
-  return new SearchAstError(`Operator ${operator} is not supported for field "${field}".`);
+  const name = OPERATOR_DISPLAY_NAMES.get(operator) ?? operator;
+  return new SearchAstError(`Operator ${name} is not supported for field "${field}".`);
 }
 
 /**

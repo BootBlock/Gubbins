@@ -591,7 +591,12 @@ run through the single parameterised `parseASTtoSQL` (so it can never drift from
 semantics and has no injection surface — it is **never** bespoke SQL). Supported subset:
 
 - comparisons: `eq`, `ne`, `gt`, `lt` (e.g. `quantity gt 10`, `name eq 'M3 Bolt'`)
-- the `contains(field, 'text')` function (free-text, FTS-backed)
+- the `contains(field, 'text')` function — a **substring** match, exactly as
+  [OData URL Conventions §5.1.1.8](https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part2-url-conventions.html#_Toc31361024)
+  defines it: true when the text appears anywhere in the field, mid-word included.
+  `contains(name,'olt')` finds "M3 Bolt", and `contains(name,'M3 Bo')` matches that exact run of
+  characters rather than two separate words. Case is ignored for ASCII, the same fold `eq` uses
+  on these fields
 - boolean composition with `and`, `or`, `not`, and parentheses
 - literals: single-quoted strings (`''` escapes a quote), numbers, `true`/`false`
 - filterable fields: **every scalar field the app's own search can filter on**, plus tags — so no
@@ -603,7 +608,7 @@ semantics and has no injection surface — it is **never** bespoke SQL). Support
 
   | Kind | Fields |
   | --- | --- |
-  | Text (FTS-backed `contains`) | `name`, `description`, `notes`, `mpn`, `manufacturer`, `barcode`, `serialNumber` (`serial`) |
+  | Text (substring `contains`) | `name`, `description`, `notes`, `mpn`, `manufacturer`, `barcode`, `serialNumber` (`serial`) |
   | Ids (exact match) | `categoryId` (`category`), `locationId` (`location`) |
   | Numbers | `quantity`, `weight` (grams), `width`/`height`/`depth` (mm), `reorderPoint` (`reorder`) |
   | Flags | `isFavourite` (`favourite`), `isActive` (`active`) |
@@ -633,6 +638,15 @@ Anything outside the subset (`ge`/`le`, `startswith`/`endswith`, arithmetic, lam
 field) is a `400` naming what *is* supported, as is an operator a field doesn't accept (ordering
 comparisons on a text column, say). When `$filter` is present it is the sole row filter, so the
 `location`/`category`/`$search` query params are ignored.
+
+> **ℹ️ Note** `contains()` is a literal substring scan, so it is **not** served by the full-text
+> index — on a very large catalogue it is slower than `$search`, which is. That is a deliberate
+> trade: `contains()` means what OData says it means, and if you want the fast, whole-word match,
+> `$search=bolt` is the parameter for it. The two differ in more than speed — `$search` matches
+> whole-word prefixes across all the indexed columns at once and folds case for accented letters
+> too, while `contains(name,'olt')` picks out that run of characters wherever it sits, in one
+> named field, folding case for ASCII only. So `contains(name,'écran')` will not find "Écran",
+> though `$search=écran` will.
 
 `not` binds to the single term or bracket that follows it, and `ne` is simply `not … eq …`. Both
 inherit the app's reading of absence on the nullable fields: `manufacturer ne 'Acme'` **includes**

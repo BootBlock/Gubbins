@@ -35,12 +35,22 @@ describe('parseODataFilter — supported grammar', () => {
     });
   });
 
-  it('compiles the contains() function to CONTAINS', () => {
+  // Not the AST's CONTAINS: that is the app's FTS-backed search-box match, which cannot see
+  // inside a word, and OData §5.1.1.8 promises a substring test (issue #369).
+  it('compiles the contains() function to SUBSTRING, not the FTS-backed CONTAINS', () => {
     expect(parseODataFilter("contains(name,'bolt')").conditions[0]).toEqual({
       field: 'name',
-      operator: 'CONTAINS',
+      operator: 'SUBSTRING',
       value: 'bolt',
     });
+  });
+
+  it('compiles contains() to SUBSTRING on every filterable field, tags included', () => {
+    for (const field of ['description', 'mpn', 'barcode', 'serialNumber', 'tags']) {
+      expect(parseODataFilter(`contains(${field},'x')`).conditions[0]).toMatchObject({
+        operator: 'SUBSTRING',
+      });
+    }
   });
 
   it('aliases categoryId/locationId onto the AST category/location fields', () => {
@@ -98,7 +108,7 @@ describe('parseODataFilter — negation (issue #139)', () => {
       type: 'GROUP',
       logicalOperator: 'AND',
       negate: true,
-      conditions: [{ field: 'name', operator: 'CONTAINS', value: 'bolt' }],
+      conditions: [{ field: 'name', operator: 'SUBSTRING', value: 'bolt' }],
     });
   });
 
@@ -194,7 +204,7 @@ describe('parseODataFilter — the field vocabulary (issue #143)', () => {
     });
     expect(parseODataFilter("contains(tags,'expo')").conditions[0]).toMatchObject({
       field: 'tag',
-      operator: 'CONTAINS',
+      operator: 'SUBSTRING',
       value: 'expo',
     });
   });

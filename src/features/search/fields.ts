@@ -79,6 +79,11 @@ export function enumValuesForField(field: string): readonly string[] {
 export const OPERATOR_LABELS: Readonly<Record<FilterOperator, string>> = {
   EQUALS: 'equals',
   CONTAINS: 'contains',
+  // Never offered by `operatorsForKind`, so the Builder cannot produce one: SUBSTRING is the
+  // bridge's OData-conformant `contains()` (issue #369), not a second choice for a human to
+  // weigh up. It carries a label only so the record stays total over `FilterOperator` — and
+  // so a tree that somehow arrives with one still renders as words rather than blank.
+  SUBSTRING: 'contains',
   GREATER_THAN: 'greater than',
   LESS_THAN: 'less than',
   HAS_CAPABILITY: 'has capability',

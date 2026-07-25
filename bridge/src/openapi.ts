@@ -252,7 +252,10 @@ const filterParam: JsonValue = {
   description:
     'A constrained OData-style boolean filter compiled to the app search AST (never bespoke ' +
     'SQL). Supported: comparisons eq/ne/gt/lt, the contains(field, string) function, and/or/not ' +
-    'with parentheses, and single-quoted string / numeric / boolean literals. Dates are quoted ' +
+    'with parentheses, and single-quoted string / numeric / boolean literals. contains() is the ' +
+    'substring test OData URL Conventions 5.1.1.8 defines - true when the text occurs anywhere ' +
+    'in the field, mid-word included, ignoring case for ASCII - so it is a scan rather than a ' +
+    'full-text index lookup; use $search for the fast whole-word match. Dates are quoted ' +
     "'YYYY-MM-DD' and money is in the base currency's major units. `tag` compares against a tag " +
     "name and matches when ANY of the item's tags does. Field names are case-insensitive. " +
     `Filterable fields: ${FILTERABLE_FIELD_NAMES.join(', ')}. Anything outside the subset ` +

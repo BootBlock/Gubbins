@@ -8,7 +8,14 @@
  * Supported subset (deliberately small — this is not full OData `$filter`):
  *
  *   - comparisons: `eq`, `ne`, `gt`, `lt`   (e.g. `quantity gt 10`, `name ne 'M3 Bolt'`)
- *   - the `contains(field,'text')` function (free-text CONTAINS, FTS-backed)
+ *   - the `contains(field,'text')` function — a **substring** test, exactly as OData URL
+ *     Conventions §5.1.1.8 defines it: true when the text occurs anywhere in the field,
+ *     mid-word included, so `contains(name,'olt')` matches "M3 Bolt" (issue #369). It lowers
+ *     to the AST's `SUBSTRING`, not its `CONTAINS`; the latter is the app's search-box match,
+ *     which is FTS-indexed and therefore whole-word-prefix only. Conformance is worth the
+ *     index here — a client silently missing rows cannot debug what it was never told. For
+ *     the fast, index-backed match, use `$search` instead: it also folds case for accented
+ *     letters, which the `LIKE` this lowers to does not (SQLite folds ASCII only).
  *   - boolean composition: `and`, `or`, `not`, and parentheses for grouping
  *   - literals: single-quoted strings (`''` escapes a quote), numbers, `true`/`false`
  *
@@ -52,7 +59,7 @@ import { BadQueryError } from './odata.ts';
  * is case-insensitive — see {@link FIELD_LOOKUP}.
  */
 const FILTERABLE_FIELDS: Readonly<Record<string, string>> = {
-  // Free text (FTS-backed for `contains`).
+  // Free text: `eq` is an exact match, `contains` a substring one (issue #369).
   name: 'name',
   description: 'description',
   notes: 'notes',
@@ -343,7 +350,14 @@ class Parser {
     if (fn !== 'contains') {
       throw new BadQueryError(`Function "${name}" is not supported (only contains(field,'text') is).`);
     }
-    return { field: this.resolveField(field), operator: 'CONTAINS', value };
+    // `SUBSTRING`, **not** the AST's `CONTAINS` (issue #369). OData URL Conventions §5.1.1.8
+    // defines `contains(a,b)` as "b is a substring of a", and the AST's `CONTAINS` is the app's
+    // search-box match — on an FTS-indexed column that is whitespace-split *prefix* terms, so
+    // `contains(name,'olt')` found nothing in "M3 Bolt" and `contains(name,'M3 Bolt')` matched
+    // the two words in either order. Neither is what the spec promises, and a client got no
+    // error to explain the rows it never saw. `SUBSTRING` is the literal test; the app's own
+    // search keeps `CONTAINS` and keeps the index.
+    return { field: this.resolveField(field), operator: 'SUBSTRING', value };
   }
 
   private parseLiteral(): string | number | boolean {

@@ -111,6 +111,28 @@ describe('parseASTtoSQL — structure & parameterisation (spec §5.1)', () => {
     expect(params).toEqual(['notes : ("spare"*)']);
   });
 
+  it('translates SUBSTRING to a column LIKE, deliberately bypassing the FTS index (issue #369)', () => {
+    const [sql, params] = parseASTtoSQL(and({ field: 'name', operator: 'SUBSTRING', value: 'olt' }));
+    expect(sql).toBe("(items.name LIKE ? ESCAPE '\\')");
+    expect(sql).not.toContain('items_fts');
+    expect(params).toEqual(['%olt%']);
+  });
+
+  it('escapes LIKE wildcards in a SUBSTRING value so they match literally', () => {
+    const [, params] = parseASTtoSQL(and({ field: 'mpn', operator: 'SUBSTRING', value: '50%_x' }));
+    expect(params).toEqual(['%50\\%\\_x%']);
+  });
+
+  it('keeps SUBSTRING off the non-text kinds, and names it CONTAINS in the error (issue #369)', () => {
+    // Nobody types "SUBSTRING" — it is what the bridge compiles `contains()` to — so a caller
+    // who wrote `contains(quantity,'5')` must be told CONTAINS is unsupported there.
+    for (const field of ['quantity', 'category', 'favourite', 'condition', 'cost', 'expiry']) {
+      expect(() => parseASTtoSQL(and({ field, operator: 'SUBSTRING', value: '5' }))).toThrow(
+        `Operator CONTAINS is not supported for field "${field}".`,
+      );
+    }
+  });
+
   it('never concatenates values into the SQL text (only ? placeholders)', () => {
     const [sql, params] = parseASTtoSQL(
       and(
@@ -172,6 +194,13 @@ describe('parseASTtoSQL — capabilities (spec §4 Weighted Capabilities)', () =
     expect(params).toEqual(['package', 'SMD']);
   });
 
+  // A capability value is not FTS-indexed, so CONTAINS is already a substring test (issue #369).
+  it('treats SUBSTRING as a synonym of CONTAINS on a capability value (issue #369)', () => {
+    expect(parseASTtoSQL(and({ field: 'capability:package', operator: 'SUBSTRING', value: 'SM' }))).toEqual(
+      parseASTtoSQL(and({ field: 'capability:package', operator: 'CONTAINS', value: 'SM' })),
+    );
+  });
+
   it('rejects a capability field with no key', () => {
     expect(() =>
       parseASTtoSQL(and({ field: 'capability:', operator: 'HAS_CAPABILITY', value: true })),
@@ -206,6 +235,13 @@ describe('parseASTtoSQL — custom fields (spec §4 Categories & Schema Evolutio
   it('escapes LIKE wildcards in a custom-field CONTAINS value', () => {
     const [, params] = parseASTtoSQL(and({ field: 'field:Notes', operator: 'CONTAINS', value: '50%_x' }));
     expect(params).toEqual(['Notes', '%50\\%\\_x%']);
+  });
+
+  // Not FTS-indexed either, so the two operators are the same predicate here (issue #369).
+  it('treats SUBSTRING as a synonym of CONTAINS on a custom-field value (issue #369)', () => {
+    expect(parseASTtoSQL(and({ field: 'field:Notes', operator: 'SUBSTRING', value: 'rev2' }))).toEqual(
+      parseASTtoSQL(and({ field: 'field:Notes', operator: 'CONTAINS', value: 'rev2' })),
+    );
   });
 
   it('translates a text EQUALS case-insensitively against the stored value', () => {
@@ -260,6 +296,14 @@ describe('parseASTtoSQL — tags (issue #138)', () => {
   it('escapes LIKE wildcards in a tag CONTAINS value', () => {
     const [, params] = parseASTtoSQL(and({ field: 'tag', operator: 'CONTAINS', value: '50%_x' }));
     expect(params).toEqual(['%50\\%\\_x%']);
+  });
+
+  // A tag name is not FTS-indexed, so CONTAINS was already the substring test SUBSTRING asks
+  // for — the one field where the bridge's `contains()` was conformant all along (issue #369).
+  it('treats SUBSTRING as a synonym of CONTAINS on a tag name (issue #369)', () => {
+    expect(parseASTtoSQL(and({ field: 'tag', operator: 'SUBSTRING', value: 'expo' }))).toEqual(
+      parseASTtoSQL(and({ field: 'tag', operator: 'CONTAINS', value: 'expo' })),
+    );
   });
 
   it('accepts the field name case-insensitively', () => {
@@ -676,6 +720,65 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
   it('matches a column-scoped CONTAINS on notes via FTS5 (issue #120)', async () => {
     // Only the MCU carries a note; a scoped notes search must find it (and nothing else).
     expect(await run(and({ field: 'notes', operator: 'CONTAINS', value: 'spare' }))).toEqual(['mcu']);
+  });
+
+  /**
+   * Issue #369 — the divergence that made the bridge's OData `contains()` wrong, decided
+   * against the real engine because tokenisation is the whole question and only SQLite
+   * actually answers it. `SUBSTRING` is what OData §5.1.1.8 promises; `CONTAINS` is the app's
+   * FTS match, and these assert both — the point is that they *differ*, not that one wins.
+   */
+  describe('SUBSTRING vs CONTAINS on an FTS column (issue #369)', () => {
+    beforeEach(async () => {
+      await makeItem('bolt', 'M3 Bolt', { description: 'stainless, 10mm', quantity: 500 });
+    });
+
+    it('matches mid-word, where the FTS prefix match cannot', async () => {
+      expect(await run(and({ field: 'name', operator: 'SUBSTRING', value: 'olt' }))).toEqual(['bolt']);
+      // The behaviour the issue reported: whole-word prefixes only, so "olt" finds nothing.
+      expect(await run(and({ field: 'name', operator: 'CONTAINS', value: 'olt' }))).toEqual([]);
+    });
+
+    it('treats a multi-word value as one ordered run, not an unordered AND of terms', async () => {
+      expect(await run(and({ field: 'name', operator: 'SUBSTRING', value: 'M3 Bolt' }))).toEqual(['bolt']);
+      expect(await run(and({ field: 'name', operator: 'SUBSTRING', value: 'Bolt M3' }))).toEqual([]);
+      // CONTAINS AND-combines the two prefix terms, so the reversed order still matches.
+      expect(await run(and({ field: 'name', operator: 'CONTAINS', value: 'Bolt M3' }))).toEqual(['bolt']);
+    });
+
+    it('matches case-insensitively over ASCII, exactly as EQUALS does on these columns', async () => {
+      expect(await run(and({ field: 'name', operator: 'SUBSTRING', value: 'BOLT' }))).toEqual(['bolt']);
+    });
+
+    // SQLite's LIKE folds ASCII only — the same limit `EQUALS`'s COLLATE NOCASE carries, so
+    // the two comparison forms at least agree with each other. Asserted rather than assumed:
+    // FTS5's unicode61 tokeniser *does* fold this, so it is a real difference between the two
+    // operators and the docs must not claim otherwise.
+    it('folds ASCII only, so a non-ASCII capital is not matched by its lower case', async () => {
+      await makeItem('screen', 'Écran LCD', { quantity: 1 });
+      expect(await run(and({ field: 'name', operator: 'SUBSTRING', value: 'Écran' }))).toEqual(['screen']);
+      expect(await run(and({ field: 'name', operator: 'SUBSTRING', value: 'écran' }))).toEqual([]);
+      expect(await run(and({ field: 'name', operator: 'CONTAINS', value: 'écran' }))).toEqual(['screen']);
+    });
+
+    it('reads an empty value as OData does — every row that has one, and no NULLs', async () => {
+      // `''` is a substring of every string, so every item with a name matches...
+      expect(await run(and({ field: 'name', operator: 'SUBSTRING', value: '' }))).toEqual([
+        'bolt',
+        'mcu',
+        'reg',
+      ]);
+      // ...but a NULL column is not a string, and `NULL LIKE …` is NULL, so it drops out —
+      // leaving only the one item that actually carries a note.
+      expect(await run(and({ field: 'notes', operator: 'SUBSTRING', value: '' }))).toEqual(['mcu']);
+    });
+
+    it('matches a wildcard character literally rather than as a LIKE pattern', async () => {
+      await makeItem('pct', '50% duty cycle', { quantity: 1 });
+      expect(await run(and({ field: 'name', operator: 'SUBSTRING', value: '50%' }))).toEqual(['pct']);
+      // Were the % unescaped this would match everything; it is data, not syntax.
+      expect(await run(and({ field: 'name', operator: 'SUBSTRING', value: '%' }))).toEqual(['pct']);
+    });
   });
 
   it('filters by the boolean favourite flag against the real engine (issue #23)', async () => {

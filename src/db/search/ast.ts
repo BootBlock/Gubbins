@@ -11,8 +11,34 @@
 /** How sibling conditions in a group combine. */
 export type LogicalOperator = 'AND' | 'OR';
 
-/** The comparison a single condition applies to its field (spec §5.1). */
-export type FilterOperator = 'EQUALS' | 'CONTAINS' | 'GREATER_THAN' | 'LESS_THAN' | 'HAS_CAPABILITY';
+/**
+ * The comparison a single condition applies to its field (spec §5.1).
+ *
+ * `CONTAINS` and `SUBSTRING` are both "the value appears in this field", but they are **not**
+ * the same test on the FTS-indexed text columns, and the difference is the whole reason both
+ * exist (issue #369):
+ *
+ * - **`CONTAINS`** is the app's own free-text match — what the search box, the text-query
+ *   parser and the Visual Builder all emit. On an FTS column it routes through the `items_fts`
+ *   index as whitespace-split *prefix* terms, AND-combined: `name CONTAINS 'bol'` finds
+ *   "M3 Bolt", `'olt'` finds nothing, and `'M3 Bolt'` matches the two words in any order. That
+ *   is the right behaviour for a search box, and it is index-backed.
+ * - **`SUBSTRING`** is the literal test OData `contains(a,b)` defines (URL Conventions
+ *   §5.1.1.8): true when the value occurs anywhere in the field, mid-word included. It lowers
+ *   to a `LIKE '%…%'` scan, so it is slower, unindexed, and folds case for ASCII only — but it
+ *   is what an OData client is promised, and it is the only operator the bridge's `$filter`
+ *   emits for `contains()`.
+ *
+ * On every *non*-FTS text target — tags, capability values, custom-field values — `CONTAINS`
+ * was already a `LIKE` substring test, so the two operators are exact synonyms there and the
+ * translators accept them interchangeably.
+ *
+ * `SUBSTRING` is deliberately absent from the Builder's operator menu (`operatorsForKind` in
+ * `features/search/fields.ts`): it exists for protocol conformance at the API boundary, not as
+ * a second "contains" for a human to have to choose between.
+ */
+export type FilterOperator =
+  'EQUALS' | 'CONTAINS' | 'SUBSTRING' | 'GREATER_THAN' | 'LESS_THAN' | 'HAS_CAPABILITY';
 
 /** A single leaf predicate, e.g. `{ field: 'capability:voltage', operator: 'GREATER_THAN', value: 3.3 }`. */
 export interface FilterCondition {
