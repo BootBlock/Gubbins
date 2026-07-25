@@ -7,7 +7,7 @@ import { collectCapabilityKeys, parseASTtoSQL } from '../../search/parseASTtoSQL
 import type { SearchAST } from '../../search/ast';
 import { rowToItem } from '../mappers';
 import type { Item, ItemRow, Page, PageParams } from '../types';
-import { capabilityMatchScore, itemOrderByClause, THUMBNAIL_SUBQUERY, type ItemSort } from './sql';
+import { capabilityMatchScore, itemOrderByClause, ITEM_READ_COLUMNS, type ItemSort } from './sql';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 
@@ -53,7 +53,7 @@ export function withSearch<TBase extends Constructor<ItemCoreRepository>>(Base: 
         `${rankOrder}name COLLATE NOCASE ASC, serial_no ASC, created_at ASC`;
 
       const rows = await this.driver.query<ItemRow>(
-        `SELECT items.*, ${THUMBNAIL_SUBQUERY}${rankSelect} FROM items WHERE (${where})${active}
+        `SELECT ${ITEM_READ_COLUMNS}${rankSelect} FROM items WHERE (${where})${active}
          ORDER BY ${order}
          LIMIT ? OFFSET ?;`,
         [...rankParams, ...whereParams, limit, offset],

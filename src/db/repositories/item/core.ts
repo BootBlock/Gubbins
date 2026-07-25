@@ -50,7 +50,7 @@ import {
 } from './normalise';
 import { buildInsert, resolveCreate } from './create';
 import { buildCategoryMaintenanceInsert, type CategoryMaintenanceDefault } from './maintenance-default';
-import { THUMBNAIL_SUBQUERY, type ItemSort } from './sql';
+import { ITEM_READ_COLUMNS, type ItemSort } from './sql';
 import { buildStatusFilter, type ItemStatusFilter } from './status-filter';
 import type { LowStockThresholds } from '../types';
 import { nowMs } from '@/lib/clock';
@@ -109,7 +109,7 @@ export interface ItemListFilters extends PageParams {
 export class ItemCoreRepository extends BaseRepository {
   async getById(id: string): Promise<Item | undefined> {
     const row = await this.driver.queryOne<ItemRow>(
-      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items WHERE id = ?;`,
+      `SELECT ${ITEM_READ_COLUMNS} FROM items WHERE id = ?;`,
       [id],
     );
     return row ? rowToItem(row) : undefined;
@@ -125,7 +125,7 @@ export class ItemCoreRepository extends BaseRepository {
     const unique = [...new Set(ids)];
     if (unique.length === 0) return new Map();
     const rows = await this.driver.query<ItemRow>(
-      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items WHERE id IN (${unique.map(() => '?').join(', ')});`,
+      `SELECT ${ITEM_READ_COLUMNS} FROM items WHERE id IN (${unique.map(() => '?').join(', ')});`,
       unique as SqlValue[],
     );
     return new Map(rows.map((row) => [row.id, rowToItem(row)]));
@@ -143,7 +143,7 @@ export class ItemCoreRepository extends BaseRepository {
     const value = barcode.trim();
     if (value.length === 0) return undefined;
     const row = await this.driver.queryOne<ItemRow>(
-      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
+      `SELECT ${ITEM_READ_COLUMNS} FROM items
        WHERE barcode = ? COLLATE NOCASE AND is_active = 1
        ORDER BY created_at DESC, id ASC LIMIT 1;`,
       [value],
@@ -184,7 +184,7 @@ export class ItemCoreRepository extends BaseRepository {
     if (!seek) params.push(offset);
 
     const rows = await this.driver.query<ItemRow>(
-      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items ${whereClause}
+      `SELECT ${ITEM_READ_COLUMNS} FROM items ${whereClause}
        ORDER BY ${renderOrderBy(orderTerms)}
        LIMIT ?${seek ? '' : ' OFFSET ?'};`,
       params,

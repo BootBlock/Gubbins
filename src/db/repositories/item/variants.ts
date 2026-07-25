@@ -10,7 +10,7 @@ import { rowToItem } from '../mappers';
 import type { CreateItemInput, Item, ItemRow, Page } from '../types';
 import { buildInsert, resolveCreate } from './create';
 import { historyStatement } from './history';
-import { THUMBNAIL_SUBQUERY } from './sql';
+import { ITEM_READ_COLUMNS } from './sql';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 
@@ -19,7 +19,7 @@ export function withVariants<TBase extends Constructor<ItemCoreRepository>>(Base
     /** The child variants of a parent item, ordered by name then serial (spec §4). */
     async listVariants(parentId: string): Promise<Page<Item>> {
       const rows = await this.driver.query<ItemRow>(
-        `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items WHERE parent_id = ?
+        `SELECT ${ITEM_READ_COLUMNS} FROM items WHERE parent_id = ?
          ORDER BY name COLLATE NOCASE ASC, serial_no ASC, created_at ASC;`,
         [parentId],
       );

@@ -20,6 +20,12 @@ own stock, SKU/part number, price and details. Browsing stays tidy, but you can 
 whole family together.
 
 > **ℹ️ Note**
+> The stock lives on the **variants**, not the parent — so a parent never shows as low or out of
+> stock, and never appears in the [[alerts|Alerts]], the
+> [[shopping list|Reorder-and-Shopping-List]] or your inventory's total value on its own account.
+> Set [[low-stock thresholds|Low-Stock-and-Gauges]] on the variants you actually reorder.
+
+> **ℹ️ Note**
 > Variants are for the **same product**. That's different from:
 > - **[[Kits & bundles|Kits-and-Bundles]]** — an item *made of* several other items.
 > - **[[Related items|Tags-Attachments-and-Related-Items]]** — separate items that *work with*

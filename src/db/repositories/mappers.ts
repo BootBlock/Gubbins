@@ -175,6 +175,9 @@ export function rowToItem(row: ItemRow): Item {
     lotNumber: row.lot_number,
     condition: row.condition,
     parentId: row.parent_id,
+    // Derived per read via `HAS_VARIANTS_SUBQUERY` — an abstract variant parent holds no stock
+    // of its own, so the pure reorder seam excludes it exactly as the SQL does (issue #156).
+    hasVariants: row.has_variants === 1,
     // "Unlimited supply" modifier (Phase 82); DISCRETE-only infinite source.
     isUnlimited: row.is_unlimited === 1,
     // "Favourite" pin (issue #23): starred items sort ahead of the rest of the list.

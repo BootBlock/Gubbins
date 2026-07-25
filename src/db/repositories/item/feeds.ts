@@ -17,7 +17,7 @@ import type {
   Page,
   PageParams,
 } from '../types';
-import { THUMBNAIL_SUBQUERY } from './sql';
+import { ITEM_READ_COLUMNS } from './sql';
 import { expiringPredicateSql, lowStockPredicateSql, warrantyExpiringPredicateSql } from './attention-sql';
 import { ITEM_STATUS_FILTERS, buildStatusFilter, type ItemStatusFilter } from './status-filter';
 import type { Constructor } from './mixin';
@@ -161,7 +161,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       const rows = await this.driver.query<ItemRow>(
         // The expiry predicate is shared with the inventory list's status filter — see
         // `attention-sql.ts` — so the widget feed and the filter can never diverge.
-        `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
+        `SELECT ${ITEM_READ_COLUMNS} FROM items
          WHERE is_active = 1 AND ${expiringPredicateSql()}
          ORDER BY expiry_date ASC LIMIT ? OFFSET ?;`,
         [before, limit, offset],
@@ -212,7 +212,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
         // floor; the `> 0` guard makes a 0 floor mean "off"/opt-in). The qty ordering below
         // divides by `MAX(effectiveFloor, 1)` to avoid a divide-by-zero (belt-and-braces —
         // a 0-floor row is already excluded by the predicate, so ordering never sees it).
-        `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
+        `SELECT ${ITEM_READ_COLUMNS} FROM items
          WHERE is_active = 1 AND ${lowStockPredicateSql()}
          ORDER BY
            CASE WHEN tracking_mode = 'CONSUMABLE_GAUGE' THEN current_net_value / gross_capacity
@@ -248,7 +248,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       const rows = await this.driver.query<ItemRow>(
         // The warranty predicate is shared with the inventory list's status filter — see
         // `attention-sql.ts` — so the alert-centre feed and the filter can never diverge.
-        `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
+        `SELECT ${ITEM_READ_COLUMNS} FROM items
          WHERE is_active = 1 AND ${warrantyExpiringPredicateSql()}
          ORDER BY warranty_expires_at ASC, name COLLATE NOCASE ASC
          LIMIT ? OFFSET ?;`,

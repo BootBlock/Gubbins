@@ -21,6 +21,7 @@ function discrete(quantity: number, overrides: Partial<ReorderItem> = {}): Reord
     reorderGaugePercent: null,
     reorderQty: null,
     isUnlimited: false,
+    hasVariants: false,
     ...overrides,
   };
 }
@@ -41,6 +42,7 @@ function gauge(percentageRemaining: number, overrides: Partial<ReorderItem> = {}
     reorderGaugePercent: null,
     reorderQty: null,
     isUnlimited: false,
+    hasVariants: false,
     ...overrides,
   };
 }
@@ -112,6 +114,17 @@ describe('reorder-policy — isLow', () => {
     expect(isLow(discrete(0, { isUnlimited: true }), DEFAULTS)).toBe(false);
     expect(isLow(discrete(0, { isUnlimited: true, reorderPoint: 20 }), DEFAULTS)).toBe(false);
   });
+
+  it('never flags an abstract variant parent (issue #156)', () => {
+    // Attaching a variant to an existing item leaves the parent's quantity and reorder point
+    // alone, so a once-ordinary item keeps values that used to flag — but it now holds no
+    // stock of its own. `lowStockPredicateSql` has always excluded it; so must this.
+    expect(isLow(discrete(0, { hasVariants: true }), DEFAULTS)).toBe(false);
+    expect(isLow(discrete(0, { hasVariants: true, reorderPoint: 5 }), DEFAULTS)).toBe(false);
+    expect(isLow(gauge(0, { hasVariants: true }), DEFAULTS)).toBe(false);
+    // The same item without children is low, so the guard is what's doing the work.
+    expect(isLow(discrete(0, { reorderPoint: 5 }), DEFAULTS)).toBe(true);
+  });
 });
 
 describe('reorder-policy — isOutOfStock (not opt-in)', () => {
@@ -148,6 +161,12 @@ describe('reorder-policy — isOutOfStock (not opt-in)', () => {
 
   it('never flags an unlimited-supply item, whatever its on-hand count', () => {
     expect(isOutOfStock(discrete(0, { isUnlimited: true }))).toBe(false);
+  });
+
+  it('never flags an abstract variant parent (issue #156)', () => {
+    expect(isOutOfStock(discrete(0, { hasVariants: true }))).toBe(false);
+    expect(isOutOfStock(gauge(0, { hasVariants: true }))).toBe(false);
+    expect(isOutOfStock(discrete(0))).toBe(true); // the same item without children
   });
 });
 
@@ -206,6 +225,13 @@ describe('reorder-policy — discreteStockLevel', () => {
   it('reports "healthy" for an unlimited-supply item even at zero on hand', () => {
     expect(discreteStockLevel(discrete(0, { isUnlimited: true }), DEFAULTS)).toBe('healthy');
   });
+
+  it('reports "healthy" for an abstract variant parent even at zero on hand (issue #156)', () => {
+    // Its card must not badge "Out of stock" for stock the dashboard and reports agree it
+    // does not hold — the parent's variants carry the stock.
+    expect(discreteStockLevel(discrete(0, { hasVariants: true }), DEFAULTS)).toBe('healthy');
+    expect(discreteStockLevel(discrete(2, { hasVariants: true }), DEFAULTS)).toBe('healthy');
+  });
 });
 
 describe('reorder-policy — shortfall', () => {
@@ -231,5 +257,10 @@ describe('reorder-policy — shortfall', () => {
   it('returns 0 for an unlimited-supply item (never on the shopping list)', () => {
     expect(shortfall(discrete(0, { isUnlimited: true }), DEFAULTS)).toBe(0);
     expect(shortfall(discrete(0, { isUnlimited: true, reorderQty: 50 }), DEFAULTS)).toBe(0);
+  });
+
+  it('returns 0 for an abstract variant parent (its variants are what get re-ordered)', () => {
+    expect(shortfall(discrete(0, { hasVariants: true }), DEFAULTS)).toBe(0);
+    expect(shortfall(discrete(0, { hasVariants: true, reorderQty: 50 }), DEFAULTS)).toBe(0);
   });
 });

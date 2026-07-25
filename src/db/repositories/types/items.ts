@@ -90,6 +90,14 @@ export interface ItemRow {
    * `item_images` (spec §4.2.4). The high-resolution path is *never* selected here.
    */
   readonly thumbnail_blob?: Uint8Array | null;
+  /**
+   * 1 when the item has at least one child variant — an **abstract variant parent**, which
+   * holds no stock of its own. Derived, not stored: every `rowToItem` read projects it via
+   * `HAS_VARIANTS_SUBQUERY` (part of `ITEM_READ_COLUMNS`), so it is always present on a row
+   * that becomes an {@link Item}. Optional only because the raw column does not exist in the
+   * table, so a non-item read (a snapshot, a `SELECT *` in a test) cannot supply it.
+   */
+  readonly has_variants?: number;
 }
 
 /**
@@ -154,6 +162,17 @@ export interface Item {
   readonly condition: Condition | null;
   /** Parent item id when this is a child variant; null for a standalone/parent item (§4). */
   readonly parentId: string | null;
+  /**
+   * `true` when this item has at least one child variant — an **abstract variant parent**,
+   * which holds no stock of its own (its variants do), so it never runs low and never runs
+   * out (§4 Variant/SKU).
+   *
+   * The other half of {@link parentId}: that says who *this* item hangs off, this says whether
+   * anything hangs off *it*. Derived per read (no stored column — parentage lives in the
+   * children's `parent_id`), and it is what lets the pure `reorder-policy.ts` seam apply the
+   * same exclusion `lowStockPredicateSql` does, instead of the two disagreeing (issue #156).
+   */
+  readonly hasVariants: boolean;
   /**
    * "Unlimited supply" modifier (Phase 82): `true` = an effectively infinite source (tap
    * water, mains air/electricity, a bulk pile). DISCRETE-only. When set, the on-hand
