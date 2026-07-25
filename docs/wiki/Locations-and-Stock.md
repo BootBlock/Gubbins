@@ -74,6 +74,11 @@ down the side.
 > browser window or a zoomed-in page gets the same treatment. Nothing is hidden either way; the
 > tree is always a tap away.
 
+The one thing this layout can't offer is **dragging an item card onto a location** — the two are
+never on screen together, so there's nothing to drag onto. Use **Move item** on the card's menu,
+which does the same job at any width. Re-nesting a location by dragging it onto another still
+works inside the panel.
+
 ## Photos of a location
 
 A location can also carry **photos**, with named regions drawn on them, so an item can point at
@@ -92,6 +97,12 @@ exactly where on a shelf it sits. See [[Location photos & regions|Location-Photo
 > You can **drag an item card onto a location** to move its stock there — a fast way to tidy up
 > after a reorganise. On a touchscreen, **press and hold** the card briefly until it lifts, then
 > drag it onto the location; a quick swipe still scrolls the list as usual.
+
+> **ℹ️ Note**
+> Dragging needs the tree and your items on screen together, so it isn't available on a narrow
+> screen where the tree lives in a slide-in panel (see [On a phone](#on-a-phone) above) — nothing
+> happens if you press and hold, and the list keeps scrolling as normal. Use **Move item** on the
+> card's menu instead; it works at any width, and it's the keyboard-friendly route on a desktop too.
 
 ## Stock is tracked per location
 
