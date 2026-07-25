@@ -13,11 +13,13 @@ import { useMemo, useState } from 'react';
 import { Select } from '@/components/foundry';
 import { SettingRow } from '@/features/settings/SettingsSection';
 import { useFeature } from '@/features/modules/useFeature';
+import { useT } from '@/features/i18n';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { AlertKind } from './alerts';
 import { REMINDER_KINDS, REMINDER_KIND_LABELS } from './reminders';
 import { browserReminderApi, type ReminderApi } from './reminder-api';
 import { useNotifiedRemindersStore } from './useNotifiedRemindersStore';
+import { useReminderWakeStore } from './useReminderWakeStore';
 
 /** On/off pair (On listed first), matching the other boolean-preference selects. */
 const ON_OFF_OPTIONS = [
@@ -37,8 +39,10 @@ const KIND_FEATURE: Partial<Record<AlertKind, 'perishables' | 'maintenance' | 'w
  * the browser seam. Designed to sit inside a Settings `divide-y` section alongside other rows.
  */
 export function ReminderSettings({ apiOverride }: { readonly apiOverride?: ReminderApi } = {}) {
+  const t = useT();
   const api = useMemo(() => apiOverride ?? browserReminderApi(), [apiOverride]);
   const [permission, setPermission] = useState(() => api.permission());
+  const wakeStatus = useReminderWakeStore((s) => s.status);
 
   const enabled = usePreferencesStore((s) => s.remindersEnabled);
   const kinds = usePreferencesStore((s) => s.reminderKinds);
@@ -113,6 +117,20 @@ export function ReminderSettings({ apiOverride }: { readonly apiOverride?: Remin
         >
           <span className="text-sm text-warning" data-testid="reminders-denied-note">
             Blocked
+          </span>
+        </SettingRow>
+      ) : null}
+
+      {/* The background wake-up is best-effort, but a browser that refuses it leaves reminders
+          arriving only while Gubbins is open — say so rather than leaving the toggle reading a
+          plain "On". Nothing is shown where one was never wanted or the platform lacks it. */}
+      {showPerKind && wakeStatus === 'unavailable' ? (
+        <SettingRow
+          label={t('settings.reminders.backgroundWake.label')}
+          description={t('settings.reminders.backgroundWake.description')}
+        >
+          <span className="text-sm text-warning" data-testid="reminders-background-wake-note">
+            {t('settings.reminders.backgroundWake.status')}
           </span>
         </SettingRow>
       ) : null}
