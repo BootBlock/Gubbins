@@ -1,5 +1,6 @@
 import { Menu, MenuAction, MenuSeparator, useToast } from '@/components/foundry';
 import { DownloadIcon, ErrorIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { download } from './download';
 import type { TabularExportFormat, TabularExportResult } from './tabular-export';
 
@@ -66,6 +67,7 @@ export function TabularExportMenu({
   testIdPrefix,
 }: TabularExportMenuProps) {
   const { show } = useToast();
+  const t = useT();
 
   const save = async (
     produce: () => TabularExportResult | Promise<TabularExportResult>,
@@ -84,7 +86,13 @@ export function TabularExportMenu({
         tone: notice ? 'warning' : 'success',
         icon: <DownloadIcon />,
         heading: toastHeading,
-        message: notice ? `${name} saved to your downloads. ${notice}` : `${name} saved to your downloads.`,
+        // Both halves go through the catalog rather than being concatenated: `notice` is itself
+        // a translated sentence, so splicing it onto an English literal would render a
+        // mixed-language toast — and a `{notice}` placeholder lets a translation put the caveat
+        // where that language wants it rather than always trailing.
+        message: notice
+          ? t('export.list.savedTruncated', { vars: { name, notice } })
+          : t('export.list.saved', { vars: { name } }),
       });
     } catch {
       // Serialising can fail — e.g. the lazily-loaded spreadsheet module can't be fetched
@@ -92,8 +100,8 @@ export function TabularExportMenu({
       show({
         tone: 'danger',
         icon: <ErrorIcon />,
-        heading: 'Export failed',
-        message: 'That file could not be created. Please try again.',
+        heading: t('export.list.failed.heading'),
+        message: t('export.list.failed.body'),
       });
     }
   };

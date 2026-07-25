@@ -150,3 +150,22 @@ describe('AlertsScreen — showing everything again', () => {
     expect(screen.queryByTestId('alerts-show-all')).toBeNull();
   });
 });
+
+/**
+ * The alert list can be taken away as a file (issue #132). The menu itself is stubbed here — its
+ * download and toast machinery has its own suite — so these assert only what this screen owns:
+ * that it offers the control at all, and gates it on there being something to write.
+ */
+describe('AlertsScreen — export', () => {
+  it('offers an export for the alert list', () => {
+    render(<AlertsScreen />);
+    expect(screen.getByTestId('export-alerts')).toBeInTheDocument();
+  });
+
+  it('disables it once every alert is hidden, since the file would be empty', () => {
+    render(<AlertsScreen />);
+    // Dismiss the only alert; the export has nothing left to write.
+    fireEvent.click(screen.getByTestId(`dismiss-alert-${ALERT.id}`));
+    expect(screen.getByTestId('export-alerts')).toBeDisabled();
+  });
+});

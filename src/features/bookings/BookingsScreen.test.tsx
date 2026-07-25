@@ -129,3 +129,22 @@ describe('BookingsScreen — a bounded read (issue #149)', () => {
     expect(screen.getByTestId('bookings-load-error')).toBeInTheDocument();
   });
 });
+
+/**
+ * The booking list can be taken away as a file (issue #132). The menu is stubbed (its download +
+ * toast machinery has its own suite), so these assert what this screen owns: that it offers the
+ * control, and gates it on there being a booking to write.
+ */
+describe('BookingsScreen — export', () => {
+  it('offers an export once there are bookings', () => {
+    bookingsState = { isLoading: false, data: { rows: [makeBooking('b1')], hasMore: false } };
+    render(<BookingsScreen />);
+    expect(screen.getByTestId('export-bookings')).not.toBeDisabled();
+  });
+
+  it('disables it while there are no bookings to write', () => {
+    bookingsState = { isLoading: false, data: { rows: [], hasMore: false } };
+    render(<BookingsScreen />);
+    expect(screen.getByTestId('export-bookings')).toBeDisabled();
+  });
+});

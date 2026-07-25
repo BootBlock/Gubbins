@@ -40,16 +40,19 @@ function receivedQty(po: PurchaseOrderWithLines): number {
  * snapshot, so a partially-received order reads "Partially received" in the file exactly as it
  * does on screen.
  *
- * `Total` is quantised to the order's *own* currency minor unit, not a flat 2dp and not the base
- * currency's (issue #292): a line cost was copied verbatim from the supplier's quote and is never
- * converted, so a yen-quoted order totals in whole yen even under a sterling base. The adjacent
- * `Currency` column names which currency the figure is in — blank meaning the base currency,
- * the same convention the stored column uses. The value stays a raw number so the reader's
- * spreadsheet formats it.
+ * `Total` is quantised to the order's *own* currency minor unit, not a flat 2dp (issue #292): a
+ * line cost was copied verbatim from the supplier's quote and is never converted, so a yen-quoted
+ * order totals in whole yen even under a sterling base. A **null** currency is the stored "this
+ * order is in the base currency" convention, so it quantises to `baseDecimals` — passing it
+ * through `moneyDecimals(null)` would silently fall back to 2, which under a 0dp base (JPY) puts
+ * a half-yen in the file, and under a 3dp base (BHD) drops a fils. `baseDecimals` is injected
+ * rather than read from a store so this module stays pure and the figure matches the one the
+ * screen rendered. The adjacent `Currency` column names which currency the figure is in — blank
+ * meaning the base currency — and the value stays a raw number for the reader's spreadsheet.
  *
  * @internal Exported for unit tests only.
  */
-export function poExportColumns(): readonly TabularColumn<PurchaseOrderWithLines>[] {
+export function poExportColumns(baseDecimals: number): readonly TabularColumn<PurchaseOrderWithLines>[] {
   return [
     { header: 'Reference', value: (po) => po.reference },
     { header: 'Supplier', value: (po) => po.supplierName },
@@ -58,18 +61,27 @@ export function poExportColumns(): readonly TabularColumn<PurchaseOrderWithLines
     { header: 'Ordered qty', value: (po) => orderedQty(po) },
     { header: 'Received qty', value: (po) => receivedQty(po) },
     { header: 'Currency', value: (po) => po.currency },
-    { header: 'Total', value: (po) => estimatedValue(po.lines, moneyDecimals(po.currency)) },
+    {
+      header: 'Total',
+      value: (po) => estimatedValue(po.lines, po.currency ? moneyDecimals(po.currency) : baseDecimals),
+    },
     { header: 'Created', value: (po): TabularCell => isoTimestamp(po.createdAt) },
     { header: 'Ordered', value: (po): TabularCell => isoTimestamp(po.orderedAt) },
   ];
 }
 
-/** Serialise the purchase-order list to the chosen format via the shared exporter. */
+/**
+ * Serialise the purchase-order list to the chosen format via the shared exporter.
+ *
+ * @param baseDecimals The base currency's minor unit, for orders stored without a currency of
+ *   their own — the same figure the master list rows are rendered with.
+ */
 export function buildPurchaseOrdersExport(
   format: TabularExportFormat,
   orders: readonly PurchaseOrderWithLines[],
+  baseDecimals: number,
 ): Promise<TabularExportResult> {
-  return buildTabularExport(format, poExportColumns(), orders, {
+  return buildTabularExport(format, poExportColumns(baseDecimals), orders, {
     title: 'Purchase orders',
     caption: `${orders.length} order${orders.length === 1 ? '' : 's'}`,
   });

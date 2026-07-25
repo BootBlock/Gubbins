@@ -36,7 +36,15 @@ import { useErrorMessage } from '@/features/errors';
  * — via `initialLocationId` — is auto-selected when the calling screen has a location in
  * view, so opening Export defaults to what's currently on screen instead of last time's scope.
  */
-const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof ExportIcon }[] = [
+const FORMATS: {
+  value: ExportFormat;
+  label: string;
+  hint: string;
+  /** Catalog keys, where the card's copy has been converted; the literals are the fallback. */
+  labelKey?: MessageKey;
+  hintKey?: MessageKey;
+  icon: typeof ExportIcon;
+}[] = [
   {
     value: 'JSON',
     label: 'JSON data export',
@@ -45,8 +53,14 @@ const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof 
   },
   {
     value: 'CSV',
+    // Translated (issue #132), unlike its neighbours: this card's copy changed in the same
+    // change that added the translated file-format picker below it, and an English card sitting
+    // over a German picker — telling the reader to "pick the file format below" — is worse than
+    // either state on its own. The rest of the wizard is still awaiting conversion.
     label: 'Items file',
+    labelKey: 'export.items.card.label',
     hint: 'The selected items as a spreadsheet, a table or plain text — pick the file format below.',
+    hintKey: 'export.items.card.hint',
     icon: PackageIcon,
   },
   {
@@ -222,8 +236,10 @@ export function ExportWizard({
               >
                 <Icon className={selected ? 'text-primary' : 'text-muted-foreground'} />
                 <span className="flex-1">
-                  <span className="block text-sm font-medium">{f.label}</span>
-                  <span className="block text-xs text-muted-foreground">{f.hint}</span>
+                  <span className="block text-sm font-medium">{f.labelKey ? t(f.labelKey) : f.label}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {f.hintKey ? t(f.hintKey) : f.hint}
+                  </span>
                 </span>
               </button>
             );

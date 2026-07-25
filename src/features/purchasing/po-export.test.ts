@@ -35,8 +35,11 @@ function order(overrides: Partial<PurchaseOrderWithLines> = {}): PurchaseOrderWi
   };
 }
 
-const cells = (row: PurchaseOrderWithLines): Record<string, unknown> =>
-  Object.fromEntries(poExportColumns().map((c) => [c.header, c.value(row)]));
+/** Sterling-like base unless a test says otherwise. */
+const BASE_DECIMALS = 2;
+
+const cells = (row: PurchaseOrderWithLines, baseDecimals = BASE_DECIMALS): Record<string, unknown> =>
+  Object.fromEntries(poExportColumns(baseDecimals).map((c) => [c.header, c.value(row)]));
 
 describe('poExportColumns', () => {
   it('summarises the master row: identity, status, line totals and value', () => {
@@ -84,6 +87,31 @@ describe('poExportColumns', () => {
     expect(cells(order({ currency: null })).Currency).toBeNull();
   });
 
+  it('totals a currency-less order at the BASE minor unit, not a flat 2dp', () => {
+    // A null currency means "the base currency" (issue #292). Quantising it at 2dp would put a
+    // half-yen in the file under a JPY base — an amount the currency cannot hold — and would
+    // disagree with the figure the master list rendered for the very same order.
+    const yenBase = cells(order({ currency: null, lines: [line({ orderedQty: 3, unitCost: 100.5 })] }), 0);
+    expect(yenBase.Total).toBe(302);
+  });
+
+  it('keeps a 3dp base currency’s precision on a currency-less order', () => {
+    const bahrainiBase = cells(
+      order({ currency: null, lines: [line({ orderedQty: 1, unitCost: 1.2345 })] }),
+      3,
+    );
+    expect(bahrainiBase.Total).toBe(1.235);
+  });
+
+  it('uses the order’s own currency over the base when it names one', () => {
+    // The base being 0dp must not quantise a sterling-quoted order down to whole pounds.
+    const sterlingOrder = cells(
+      order({ currency: 'GBP', lines: [line({ orderedQty: 1, unitCost: 12.34 })] }),
+      0,
+    );
+    expect(sterlingOrder.Total).toBe(12.34);
+  });
+
   it('treats a line with no unit cost as contributing nothing to the total', () => {
     const row = cells(
       order({ lines: [line({ unitCost: null }), line({ id: 'l2', unitCost: 2, orderedQty: 3 })] }),
@@ -98,10 +126,11 @@ describe('poExportColumns', () => {
 
 describe('buildPurchaseOrdersExport', () => {
   it('serialises one row per order through the shared exporter', async () => {
-    const { content } = await buildPurchaseOrdersExport('csv', [
-      order(),
-      order({ id: 'po2', reference: 'PO-1002' }),
-    ]);
+    const { content } = await buildPurchaseOrdersExport(
+      'csv',
+      [order(), order({ id: 'po2', reference: 'PO-1002' })],
+      BASE_DECIMALS,
+    );
     const lines = String(content).split('\r\n');
     expect(lines[0]).toBe(
       'Reference,Supplier,Status,Lines,Ordered qty,Received qty,Currency,Total,Created,Ordered',
@@ -110,7 +139,7 @@ describe('buildPurchaseOrdersExport', () => {
   });
 
   it('captions a single order in the singular', async () => {
-    const { content } = await buildPurchaseOrdersExport('txt', [order()]);
+    const { content } = await buildPurchaseOrdersExport('txt', [order()], BASE_DECIMALS);
     expect(String(content)).toContain('1 order\n');
   });
 });

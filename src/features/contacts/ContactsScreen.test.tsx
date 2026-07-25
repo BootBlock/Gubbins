@@ -433,3 +433,31 @@ describe('ContactsScreen — renew loan affordance (B3)', () => {
     expect(screen.getByTestId('renew-due-date')).toBeTruthy();
   });
 });
+
+/**
+ * Both of this screen's lists export separately (issue #132) — a loan row is about an item and a
+ * contact row is about a person, so one merged file would be half-empty on every row. The menus
+ * are stubbed (their download + toast machinery has its own suite); these assert what the screen
+ * owns: that there are two controls, and that each is gated on *its own* list.
+ */
+describe('ContactsScreen — export', () => {
+  it('offers a separate export for each of the two lists', () => {
+    openCheckoutsState = { isLoading: false, data: { rows: [makeCheckout('k1', false)] } };
+    contactsState = { isLoading: false, data: { rows: [makeContact('c1', 'Alex Rivera')] } };
+    render(<ContactsScreen />);
+
+    expect(screen.getByTestId('export-loans')).not.toBeDisabled();
+    expect(screen.getByTestId('export-contacts')).not.toBeDisabled();
+  });
+
+  it('gates each control on its own list, not the other', () => {
+    // Nothing on loan but contacts on file: only the loans export goes dark. Sharing one gate
+    // would wrongly disable an export that has plenty to write.
+    openCheckoutsState = { isLoading: false, data: { rows: [] } };
+    contactsState = { isLoading: false, data: { rows: [makeContact('c1', 'Alex Rivera')] } };
+    render(<ContactsScreen />);
+
+    expect(screen.getByTestId('export-loans')).toBeDisabled();
+    expect(screen.getByTestId('export-contacts')).not.toBeDisabled();
+  });
+});

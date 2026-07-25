@@ -509,3 +509,28 @@ describe('PurchaseOrdersScreen — a list longer than one read (issue #149)', ()
     expect(screen.queryByTestId('po-truncated')).toBeNull();
   });
 });
+
+/**
+ * The order book can be taken away as a file (issue #132). The menu is stubbed (its download +
+ * toast machinery has its own suite), so these assert what this screen owns: that the Orders tab
+ * offers the control, and gates it on there being an order to write.
+ */
+describe('PurchaseOrdersScreen — export', () => {
+  it('offers an export on the Orders tab', () => {
+    render(<PurchaseOrdersScreen />);
+    expect(screen.getByTestId('export-purchase-orders')).not.toBeDisabled();
+  });
+
+  it('disables it while there are no orders to write', () => {
+    ordersState = { isLoading: false, data: { rows: [] } };
+    orderCountState = 0;
+    render(<PurchaseOrdersScreen />);
+    expect(screen.getByTestId('export-purchase-orders')).toBeDisabled();
+  });
+
+  it('is offered only on the Orders tab, not the Reorder or Wishlist ones', () => {
+    render(<PurchaseOrdersScreen />);
+    fireEvent.click(screen.getByTestId('po-tab-wishlist'));
+    expect(screen.queryByTestId('export-purchase-orders')).toBeNull();
+  });
+});

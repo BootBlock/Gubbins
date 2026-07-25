@@ -189,3 +189,22 @@ describe('TagsScreen (issue #84)', () => {
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toContain('fragile');
   });
 });
+
+/**
+ * The tag dictionary can be taken away as a file (issue #132). The menu is stubbed (its download +
+ * toast machinery has its own suite), so these assert what this screen owns: that it offers the
+ * control, and gates it on the dictionary having something in it.
+ */
+describe('TagsScreen — export', () => {
+  it('offers an export for the tag dictionary', () => {
+    dictionaryState = { isLoading: false, isError: false, data: { rows: [tag('a', 'fragile')] } };
+    countState = 1;
+    render(<TagsScreen />);
+    expect(screen.getByTestId('export-tags')).not.toBeDisabled();
+  });
+
+  it('disables it while the dictionary is empty', () => {
+    render(<TagsScreen />);
+    expect(screen.getByTestId('export-tags')).toBeDisabled();
+  });
+});

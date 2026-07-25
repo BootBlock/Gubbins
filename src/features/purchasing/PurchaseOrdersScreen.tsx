@@ -154,7 +154,9 @@ export function PurchaseOrdersScreen() {
                 build={(format) =>
                   exportEveryPage(
                     readPurchaseOrdersPage,
-                    (rows) => buildPurchaseOrdersExport(format, rows),
+                    // The same base minor unit the rows are rendered with, so an order stored
+                    // without a currency of its own totals identically in the file (issue #292).
+                    (rows) => buildPurchaseOrdersExport(format, rows, currencyDecimals),
                     t('export.list.truncated'),
                   )
                 }
