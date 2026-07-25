@@ -439,7 +439,8 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 `quantity`, `isUnlimited`, `locationId`, `locationName`, `categoryId`, `categoryName`, `mpn`, `manufacturer`,
 `trackingMode`, `isActive`, `description`, `notes`, `condition`, `barcode`, `isFavourite`,
 `serialNumber`, `serialNo`, `parentId`,
-`unitCost`, `purchasePrice`, `currentValue`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
+`unitCost`, `purchasePrice`, `currentValue`, `weight`, `width`, `height`, `depth`,
+`expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
 `warrantyExpiresAt`, `depreciationMonths`, `deadStockMode`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
 `operationalMetadata`, `gauge`, `createdAt`, `updatedAt`, `placements` (nestable:
 `locationId, locationName, quantity`), `capabilities` (nestable: `key, valueNum, valueText, weight`),
