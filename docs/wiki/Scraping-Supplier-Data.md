@@ -1,8 +1,8 @@
 # Scraping supplier data
 
 With the [[companion extension|Companion-Extension-Setup]] installed, Gubbins can **read a supplier
-or retailer page** and fill an item's details from it — part number, manufacturer, parameters,
-price, datasheet — so you don't retype what's already on screen.
+or retailer page** and fill an item's details from it — part number, manufacturer, description and
+price — so you don't retype what's already on screen.
 
 **Where to find it:** the **Scrape** controls on an item, unlocked once the extension is connected.
 
@@ -11,7 +11,9 @@ price, datasheet — so you don't retype what's already on screen.
 Open a product page for a part and scrape it. Gubbins has purpose-built parsers for major
 electronics suppliers and retailers, plus a generic fallback for other sites:
 
-- **DigiKey, Mouser, Farnell, LCSC, RS, Adafruit, SparkFun, Amazon** — dedicated parsers.
+- **DigiKey, Mouser, Farnell, LCSC, RS, Adafruit, SparkFun** — dedicated parsers, from a pasted
+  product URL.
+- **Amazon** — read from the listing tab you already have open, rather than from a pasted link.
 - **Any other site** — a generic metadata fallback that grabs what it can.
 
 It can also do a **barcode → product lookup** and a **one-click price refresh** to update what a
@@ -48,7 +50,7 @@ Scraped data is applied carefully:
 - You review what came in before it's kept.
 
 > **💡 Tip**
-> Scrape when you *first add* a part — you get its datasheet link, MPN and parameters in one step —
+> Scrape when you *first add* a part — you get its MPN, manufacturer and description in one step —
 > then use the **price refresh** later to keep costs current without re-entering anything.
 
 > **ℹ️ Note**

@@ -14,11 +14,17 @@ Just start typing in the **Search items** box. Gubbins matches across your items
 details as you type, powered by a fast full-text index:
 
 - **Prefix matching** — typing `screw` finds *screws* and *screwdriver*.
-- **Stemming** — *drills* and *drilling* find *drill*.
-- **Fuzzy matching** — a small typo still finds the right item.
+- **Every word narrows** — `blue m3` finds only the items matching both words.
+- **Across the details** — names, descriptions, notes, MPNs, manufacturers, barcodes and serial
+  numbers are all indexed.
 
 > **💡 Tip**
 > Press **Escape** in the search box to clear it without reaching for the mouse.
+
+> **⚠️ Heads-up**
+> Matching works from the *start* of each word, so a typo won't find it and a longer form won't
+> match a shorter one (`drills` does not find *drill*). Trim back to the shortest beginning you're
+> sure of — `dril` finds both.
 
 ## Four ways to search
 
