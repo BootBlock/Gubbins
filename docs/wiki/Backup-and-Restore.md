@@ -42,6 +42,12 @@ thresholds, and vice versa.
 > [[API token|Bridge-API-Tokens]] itself is never stored anywhere — only a scrambled fingerprint
 > of it — so a `.zip` you share or store elsewhere can't leak one.
 
+> **💡 Tip**
+> A backup carries settings **on demand**, in one direction, to a file. If what you actually want is
+> for a preference changed on one device to show up on the others, that is a separate opt-in —
+> see **[[Sharing settings between devices|Sharing-Settings-Between-Devices]]**. The groups you
+> untick here also stay out of the file when settings are being shared.
+
 ## Restoring: Merge or Replace
 
 There are two ways to restore:
@@ -141,5 +147,7 @@ reminder stays put until a backup has actually been taken.
 ## Related pages
 
 - **[[Cloud sync|Cloud-Sync]]** — continuous multi-device sync.
+- **[[Sharing settings between devices|Sharing-Settings-Between-Devices]]** — the same settings
+  groups, kept in step continuously rather than copied into a file.
 - **[[Export & import|Export-and-Import]]** — open-format exports.
 - **[[Storage triage|Storage-Triage]]** — reclaiming space.

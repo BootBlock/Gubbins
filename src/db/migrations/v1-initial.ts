@@ -1934,6 +1934,57 @@ const baselineStatements: SqlStatement[] = [
     sql: updatedAtTrigger('webhooks'),
   },
 
+  // --- Shared settings: preferences that travel live between devices (issue #382) -
+  //
+  // The user's preferences live in `localStorage` as one Zustand blob per store, which is the
+  // right home for them: they hydrate synchronously before first paint, work offline, and cost
+  // no query. What that shape cannot do is *reconcile*. Sync resolves rows by Last-Write-Wins on
+  // a per-row `updated_at`, and a blob is one opaque string with no per-preference identity — so
+  // syncing it wholesale would mean changing the theme on a phone silently discarded the alert
+  // threshold tuned on a desktop, because the two edits are the same "row".
+  //
+  // This table is that missing identity, and *only* that: one row per (store, preference), so
+  // each preference reconciles on its own timestamp against the same preference on every other
+  // device. It is a shared noticeboard, not the source of truth — the stores still read and write
+  // `localStorage`, a device publishes a row when the user changes an eligible preference, and
+  // applies a row a peer wrote when a sync brings a newer one in. Nothing here is required for
+  // the app to work: with settings sync off (the shipped default) the table simply stays empty.
+  //
+  // `id` is *derived* — `<store key>#<field>` — rather than a random UUID, so the same preference
+  // is the same row id on every device without any coordination. That is what makes LWW resolve
+  // "my theme" against "your theme" instead of accumulating one row per device, and it is why the
+  // table needs no `UNIQUE_KEY_SPECS` entry (there is no random id for a unique-key collision to
+  // reconcile). `store_key` and `field` are stored alongside rather than re-split from `id` at
+  // every read: `#` is legal inside a field name, so the split is not reliably reversible.
+  //
+  // `value` is the JSON encoding of one preference value — a string, number, boolean, array or
+  // object. It arrives from a peer, so it is untrusted: the apply path shape-checks it against
+  // the value the store currently holds and drops anything that doesn't match, exactly as a
+  // restored backup's settings are trusted only as far as the stores' own read-side normalising.
+  // No CHECK on it for the reason webhooks' JSON columns carry none: one malformed value from a
+  // peer must cost that one preference, not abort the whole sync apply.
+  //
+  // Deliberately NOT here: the `device` settings group (bridge address, kiosk mode, snooze
+  // timestamps) and the bridge access token. See `features/backup/settings-groups.ts`, which owns
+  // the eligibility answer for both this and the backup file.
+  //
+  // No index: a device holds at most a few dozen rows and every read is the whole table.
+  {
+    sql: `
+        CREATE TABLE settings (
+          id         TEXT    PRIMARY KEY NOT NULL,  -- '<store key>#<field>' — derived, identical on every device
+          store_key  TEXT    NOT NULL,              -- the persisted store, e.g. 'gubbins:preferences'
+          field      TEXT    NOT NULL,              -- the preference's field name within that store
+          value      TEXT    NOT NULL,              -- JSON encoding of the value (app-validated on apply)
+          created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+  },
+  {
+    sql: updatedAtTrigger('settings'),
+  },
+
   // --- Location photos & item regions (issue #81) --------------------------------
   //
   // A photo of a location, onto which named *regions* are drawn; items reference a region

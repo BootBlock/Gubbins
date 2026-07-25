@@ -141,6 +141,13 @@ devices.
 > the middle. The Google Drive option uses Google's own sign-in and stays within an app-private
 > folder. See [[Privacy & security|Privacy-and-Security]].
 
+## Sharing your settings too
+
+By default sync carries your **records** — items, locations, loans and the rest — and leaves each
+device's **settings** to itself. If you'd rather your theme, thresholds and saved searches followed
+you around as well, the **Shared settings** section on this screen turns that on, per settings group
+and per device. See **[[Sharing settings between devices|Sharing-Settings-Between-Devices]]**.
+
 ## Sync vs backup
 
 > **ℹ️ Note**
@@ -150,6 +157,8 @@ devices.
 
 ## Related pages
 
+- **[[Sharing settings between devices|Sharing-Settings-Between-Devices]]** — carrying preferences,
+  not just records.
 - **[[Backup & restore|Backup-and-Restore]]** — point-in-time copies.
 - **[[How your data is stored|How-Your-Data-Is-Stored]]** — the local-first model.
 - **[[Storage triage|Storage-Triage]]** — keeping storage healthy.

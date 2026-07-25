@@ -88,6 +88,7 @@ export const SYNC_TABLES = [
   'purchase_orders', // FK → suppliers (SET NULL) — Phase 62 / issue #384; ordered after suppliers and after items/supplier_parts so its own and its child's FKs never trip on an UPSERT batch
   'purchase_order_lines', // FK → purchase_orders (CASCADE), items + supplier_parts (SET NULL) — ordered after its parent PO and after items/supplier_parts (Phase 62)
   'webhooks', // independent (issue #87 — user-configured event subscriptions; LWW leaf, no FK → no FK_REFS reconcile entry, like wishlist/tare_presets). Syncing it IS the delivery mechanism: the bridge reads its targets from the database it hydrates, so a subscription excluded from the snapshot would simply never fire.
+  'settings', // independent (issue #382 — the shared noticeboard of preferences that travel live between devices; LWW leaf, no FK). Its id is DERIVED from (store, field), so "my theme" and "your theme" are one row that resolves by timestamp rather than one row per device — which is the whole point of the table, and why it needs no UNIQUE_KEY_SPECS entry.
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];

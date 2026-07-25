@@ -39,6 +39,29 @@ export function nonLwwColumns(table: SyncTable): ReadonlySet<string> {
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
 
+/**
+ * Tables whose Last-Write-Wins outcome is **never** a user-facing "one of your edits was
+ * overwritten" conflict (issue #72), however genuinely concurrent it was.
+ *
+ * {@link NON_LWW_COLUMNS} above excuses a *column* because it isn't resolved by LWW. This set
+ * excuses a *table* for the opposite reason: LWW is exactly the promised behaviour, and reporting
+ * it as a lost edit would contradict what the user was told.
+ *
+ * `settings` — the shared copy of the preferences that travel between devices (issue #382). "The
+ * device that changed it most recently wins" is the documented rule and the whole point, so
+ * changing your theme on a phone after changing it on a desktop is a *resolved* preference, not a
+ * casualty. Surfacing it would also be actively harmful: it fires on routine use, the review UI has
+ * no name-like column to label the row with, it evicts real inventory conflicts from a capped
+ * store, and "Use my version" would rewrite a row the live store has *already* adopted the winner
+ * of — so the next sync would re-adopt the restored value and flip the user's setting back.
+ */
+export const CONFLICT_EXEMPT_TABLES: ReadonlySet<SyncTable> = new Set<SyncTable>(['settings']);
+
+/** Whether a losing local row in this table is worth reporting to the user (issue #72). */
+export function detectsConflicts(table: SyncTable): boolean {
+  return !CONFLICT_EXEMPT_TABLES.has(table);
+}
+
 /** Columns tried, in order, for a human-friendly row label before falling back to the id. */
 const LABEL_COLUMNS = ['name', 'title', 'label', 'alias', 'display_name', 'username', 'note'] as const;
 

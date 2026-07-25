@@ -89,6 +89,7 @@
 **Data, sync & resilience**
 - [[How your data is stored|How-Your-Data-Is-Stored]]
 - [[Cloud sync|Cloud-Sync]]
+- [[Sharing settings between devices|Sharing-Settings-Between-Devices]]
 - [[Backup & restore|Backup-and-Restore]]
 - [[Export & import|Export-and-Import]]
 - [[Migrating from another tool|Migrating-from-Another-Tool]]

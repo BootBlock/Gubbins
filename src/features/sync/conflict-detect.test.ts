@@ -8,6 +8,7 @@ import type { GaugeHistoryDelta, ItemTagEdge, SyncSnapshot, Tombstone } from './
 const DICTIONARY = {
   contacts: ['id', 'name', 'updated_at'],
   items: ['id', 'name', 'location_id', 'tracking_mode', 'current_net_value', 'quantity', 'updated_at'],
+  settings: ['id', 'store_key', 'field', 'value', 'updated_at'],
 };
 
 function snapshot(partial: {
@@ -50,6 +51,68 @@ describe('conflict detection (#72)', () => {
     });
     expect(c.localVersion.name).toBe('Mine');
     expect(c.remoteVersion?.name).toBe('Theirs');
+  });
+
+  it('does NOT flag a shared setting the other device changed later (issue #382)', () => {
+    // `settings` is exempt: "the device that changed it most recently wins" is the documented rule
+    // for a shared preference, so a losing local change is a *resolved* setting, not lost work.
+    // Reporting it would fire on routine use, label the row with no name to show, and offer a
+    // "Use my version" that the next sync would immediately re-adopt away again.
+    const local = snapshot({
+      tables: {
+        settings: [
+          {
+            id: 'gubbins:preferences#mode',
+            store_key: 'gubbins:preferences',
+            field: 'mode',
+            value: '"dark"',
+            updated_at: 150,
+          },
+        ],
+      },
+    });
+    const remote = snapshot({
+      tables: {
+        settings: [
+          {
+            id: 'gubbins:preferences#mode',
+            store_key: 'gubbins:preferences',
+            field: 'mode',
+            value: '"light"',
+            updated_at: 200,
+          },
+        ],
+      },
+    });
+    const plan = reconcile(local, remote, opts);
+
+    expect(plan.localUpserts[0]!.row.value).toBe('"light"'); // LWW still applies the winner
+    expect(plan.conflicts).toHaveLength(0);
+  });
+
+  it('does NOT flag a shared setting the other device deleted (issue #382)', () => {
+    // The tombstone branch is a separate path to the same report, so the exemption has to cover it
+    // too — otherwise withdrawing a preference elsewhere would raise a conflict here.
+    const local = snapshot({
+      tables: {
+        settings: [
+          {
+            id: 'gubbins:preferences#mode',
+            store_key: 'gubbins:preferences',
+            field: 'mode',
+            value: '"dark"',
+            updated_at: 150,
+          },
+        ],
+      },
+    });
+    const remote = snapshot({
+      tombstones: [{ tableName: 'settings', id: 'gubbins:preferences#mode', deletedAt: 200 }],
+    });
+    const plan = reconcile(local, remote, opts);
+
+    expect(plan.localDeletes).toHaveLength(1); // the deletion still applies
+    expect(plan.conflicts).toHaveLength(0);
   });
 
   it('does NOT flag when only the remote changed (this device merely catching up)', () => {
