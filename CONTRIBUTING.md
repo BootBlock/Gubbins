@@ -11,9 +11,10 @@ work — it is a consequence of how this repository is developed.
 
 Gubbins moves at an extremely high rate of change. `main` advances continuously — often by
 hundreds of commits in a single day — and much of the codebase is touched by work happening in
-parallel. (Development is heavily AI-assisted; see
-[AI-assisted development](README.md#ai-assisted-development) in the README.) In practice that
-means:
+parallel. Development is heavily AI-assisted — but that does not mean code is merged unexamined:
+landed work is audited from several independent angles and has to clear the automated gates that
+guard `main`. See [AI-assisted development](README.md#ai-assisted-development) in the README for
+what that involves. In practice the pace means:
 
 - An external pull request goes stale very quickly — frequently before it can be reviewed.
 - The area you changed has often already been rewritten, refactored, or reworked by in-flight

@@ -1,8 +1,46 @@
 # Agent instructions
 
 This file is the cross-agent (AGENTS.md) entry point. The full working conventions live in
-[CLAUDE.md](CLAUDE.md) — read it before making changes. The two rules below are mandatory and
-repeated here so no agent can miss them.
+[CLAUDE.md](CLAUDE.md) — **read it before making changes.** This file is deliberately a pointer,
+not a copy: it repeats in full only the rules whose cost of being missed is unrecoverable, and
+links the rest.
+
+## Mandatory rules — the complete list
+
+Every rule below is mandatory. The first four are spelled out on this page; the rest are one
+click away and are **equally binding** — "I only read AGENTS.md" is not a defence.
+
+| Rule | Where |
+| --- | --- |
+| Work in a git worktree — **before your first edit** | 🌳 below |
+| No secrets in the repository | 🔒 below |
+| Public-repository hygiene | 🌐 below |
+| Attribution on GitHub issues and PRs you write | ✍️ below |
+| Design tokens, not hard-coded colour/motion values | [CLAUDE.md](CLAUDE.md#design-tokens-are-mandatory-where-one-exists) |
+| Foundry primitives and spacing tokens — no hand-rolled controls | [CLAUDE.md](CLAUDE.md#controls--spacing-no-hand-rolled-bodges) |
+| User-facing strings go through `t()`, translated in **every** catalog | [CLAUDE.md](CLAUDE.md#user-facing-strings-are-translated-i18n) |
+| The wiki reflects user-facing changes, in the same change | [CLAUDE.md](CLAUDE.md#the-wiki-must-reflect-user-facing-changes-mandatory) |
+| Plan docs under `docs/todo/` carry a status banner | [CLAUDE.md](CLAUDE.md#plan-docs-carry-a-status-docstodo) |
+| The GitHub issue workflow, end to end | [CLAUDE.md](CLAUDE.md#actioning-a-github-issue-workflow) |
+
+## 🌳 Every task runs in a git worktree (mandatory)
+
+**This rule gates your first action, which is why it is repeated here rather than only linked.**
+
+Multiple agents edit this repo concurrently, so **every** task starts by creating a **new git
+worktree** and doing all of its work there. This is not limited to issue work — it applies to
+any task that touches repository content: code, tests, docs, wiki pages, plan docs, config.
+Editing the primary checkout directly can destroy another agent's in-flight work.
+
+- **The only exception is a task that touches no repo code at all** — e.g. filing a new GitHub
+  issue, answering a question, reading/reviewing without editing, or a pure `gh` operation.
+  Those may run in the primary checkout.
+- Edit via worktree-relative absolute paths, never touch another agent's worktree, and expect
+  `main` to have advanced while you worked.
+- Merge back with `--no-ff`, then clean up: remove the `node_modules` junction **before**
+  `git worktree remove`.
+- Running the app or tests from a worktree is supported via the committed
+  `vite.worktree.config.ts` / `vitest.worktree.config.ts`.
 
 ## 🔒 No secrets in the repository (mandatory)
 
@@ -55,6 +93,26 @@ they can.
 - **Keep the ignore rules tight.** Before committing a new kind of generated or local file,
   confirm it belongs in the repo; if it's a build artefact, local cache, or could contain
   real data, add it to `.gitignore` instead.
+
+## ✍️ Attribution on GitHub content (mandatory)
+
+Anything **you** post or edit on GitHub on the maintainer's behalf must disclose that an agent
+wrote it. This covers **every** issue and pull-request **comment**, and every issue/PR
+**description or body** you author or edit. Attribution is disclosure, not internal process, so
+it always stays — unlike the plumbing that must never leak (see above).
+
+Append it as the **last lines**, after a `---` rule, wording the verb to match what you did
+(`actioned` / `opened` / `updated`, and `pull request` in place of `issue`):
+
+```markdown
+---
+This issue was actioned by an agent on behalf of @BootBlock.
+```
+
+Omit it only when GitHub gives you no body to sign (e.g. adding a label); if in doubt, include
+it. This does **not** apply to git commit messages — those carry a `Co-Authored-By` trailer
+instead. Full detail in
+[CLAUDE.md](CLAUDE.md#agent-attribution-on-github-content-mandatory).
 
 ## ⚠️ Use design tokens, not hard-coded values
 
