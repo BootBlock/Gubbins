@@ -314,7 +314,11 @@ every endpoint is a **`GET`** (or [`HEAD`](#head-requests)) and strictly read-on
 - **Errors** use a structured, machine-readable envelope:
   `{ "error": { "code": "not_found", "message": "…" } }`. Codes: `bad_request`,
   `unauthorized`, `forbidden`, `not_found`, `method_not_allowed`, `unsupported_media_type`,
-  `too_many_requests`, `snapshot_unavailable`, `internal_error`.
+  `too_many_requests`, `snapshot_unavailable`, `unprocessable`, `payload_too_large`,
+  `internal_error`, plus — on the opt-in Home Assistant reads only — `scale_unavailable`,
+  `scale_not_a_number`, `home_assistant_unreachable`, `home_assistant_unauthorised` and
+  `home_assistant_error`. The [spec](#openapi-spec) publishes the same list, generated from
+  the codes the bridge can actually send.
 - **Field selection** — the item endpoints accept `fields` (return only the named fields) and
   `include` (add extended fields on top of the default payload). See
   [Field selection & extended fields](#field-selection--extended-fields) below.
@@ -432,8 +436,8 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 
 | Endpoint | Default fields |
 | --- | --- |
-| `/search` | `id, name, quantity, locationName, mpn, manufacturer` |
-| `/items` | the above + `isUnlimited, locationId, categoryId, trackingMode, isActive` (`ItemSummary`) |
+| `/search` | `id, name, quantity, locationId, locationName, mpn, manufacturer` (`ItemMatch`) |
+| `/items` | the above + `isUnlimited, categoryId, trackingMode, isActive` (`ItemSummary`) |
 | `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNumber, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities, tags` (`ItemDetail`) |
 
 > **Unlimited supply.** An item marked _unlimited_ (an effectively infinite source — tap water,
@@ -851,6 +855,27 @@ synthetic examples only). It is generated from a single typed source of truth
 (`src/openapi.ts`) — a test asserts the committed YAML never drifts from it — and the
 identical document is served live at `GET /api/v1/openapi.json`. Point Swagger UI, Redoc,
 or a client-generator at either.
+
+**Sparse fieldsets and `required`.** A read that accepts `fields`/`$select` can return *any*
+subset of an item's or location's fields — `?fields=name,unitCost` is an object of two keys —
+so those reads answer with a schema (`ItemProjection`, and `Location`) that marks **nothing**
+required. Declaring the default payload's fields required there would hand a generated client
+a non-nullable model that throws on the first projected response. The guaranteed shapes are
+still published: `ItemSummary` (the default row, and an event's item payload) and `ItemDetail`
+(what a write returns) keep their `required` lists, because nothing can project those.
+
+Every operation also declares **`405`**, **`500`** and **`503`**. None belongs to a single
+endpoint — all three come from code that wraps the whole request (the method guard, the
+snapshot-loaded gate, and the catch-all that turns any unexpected failure into a detail-free
+`internal_error`), each running before the request is routed anywhere — so they are reachable at
+every path, and a contract-testing tool meeting an undeclared one would report the bridge as at
+fault.
+
+**Two error envelopes, two schemas.** `/metrics` is the one unversioned path the spec describes,
+and an unversioned path answers with the flat `{ "error": "…" }` shape, not the structured
+`{ "error": { "code", "message" } }` — so its errors are described by `LegacyError` rather than
+`Error`. Pointing them at `Error` had made every error `/metrics` sends a documented contract
+violation.
 
 ---
 
