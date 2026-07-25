@@ -53,6 +53,17 @@ const reportRepo = {
   }),
 };
 
+/** Two items, served as one full-and-final page, for the items-export tests below. */
+const itemRepo = {
+  list: vi.fn(async () => ({
+    rows: [
+      { id: 'i1', name: 'NE555 Timer', quantity: 12, isUnlimited: false },
+      { id: 'i2', name: 'Bolt', quantity: 4, isUnlimited: false },
+    ],
+    hasMore: false,
+  })),
+};
+
 vi.mock('@/db/repositories', () => ({
   getReportRepository: () => reportRepo,
   getAttachmentRepository: () => ({}),
@@ -60,7 +71,7 @@ vi.mock('@/db/repositories', () => ({
   getCategoryRepository: () => ({}),
   getContactRepository: () => ({}),
   getImageRepository: () => ({}),
-  getItemRepository: () => ({}),
+  getItemRepository: () => itemRepo,
   getLocationRepository: () => ({}),
   getProjectRepository: () => ({}),
 }));
@@ -145,5 +156,47 @@ describe('report CSV export — selected window reaches the repository', () => {
 
     await runExport('REPORTS', { includeInactive: false, reportKind: 'DATA_HYGIENE' });
     expect(calls.dataHygiene?.[0]).toBe(DATA_HYGIENE_STALE_DAYS);
+  });
+});
+
+/**
+ * The items export names and types its download from the chosen file format (issue #132). It used
+ * to hard-code `.csv` and `text/csv` in both places, which is what kept the item list CSV-only
+ * while a project's bill of materials could already be saved as a spreadsheet.
+ */
+describe('items export — the chosen file format reaches the download', () => {
+  /** The Blob + filename the export handed to the download side-effect. */
+  async function exportItems(itemFileFormat?: Parameters<typeof runExport>[1]['itemFileFormat']) {
+    const name = await runExport('CSV', { includeInactive: false, scope: 'ALL', itemFileFormat });
+    const [blob] = downloadSpy.mock.calls[0]! as [Blob, string];
+    return { name, blob };
+  }
+
+  it('defaults to CSV when no file format is chosen, as it always did', async () => {
+    const { name, blob } = await exportItems(undefined);
+    expect(name).toMatch(/^gubbins-items-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(blob.type).toContain('text/csv');
+  });
+
+  it('names the file for the chosen format rather than always .csv', async () => {
+    const { name } = await exportItems('markdown');
+    expect(name).toMatch(/^gubbins-items-\d{4}-\d{2}-\d{2}\.md$/);
+  });
+
+  it('types the Blob for the chosen format rather than always text/csv', async () => {
+    const { blob } = await exportItems('json');
+    expect(blob.type).toContain('application/json');
+  });
+
+  it('downloads the binary spreadsheet as a real .xlsx, not text', async () => {
+    const { name, blob } = await exportItems('xlsx');
+    expect(name).toMatch(/\.xlsx$/);
+    expect(blob.type).toContain('spreadsheetml');
+    expect(blob.size).toBeGreaterThan(0);
+  });
+
+  it('reads every page of items, not just the first', async () => {
+    await exportItems('csv');
+    expect(itemRepo.list).toHaveBeenCalled();
   });
 });

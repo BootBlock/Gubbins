@@ -14,6 +14,14 @@ import {
 import { AddContactIcon, ContactsIcon, DeleteIcon } from '@/components/icons';
 import type { CheckoutWithNames, ContactWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
+import { TabularExportMenu } from '@/features/export/TabularExportMenu';
+import { exportEveryPage } from '@/features/export/export-every-page';
+import {
+  buildContactsExport,
+  buildLoansExport,
+  contactsExportFilename,
+  loansExportFilename,
+} from './contacts-export';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
 import { plural } from '@/lib/plural';
@@ -23,6 +31,8 @@ import { LoanRow } from './components/LoanRow';
 import { EditContactDialog } from './components/EditContactDialog';
 import { ContactsGettingStarted } from './components/ContactsGettingStarted';
 import {
+  readContactsPage,
+  readOpenCheckoutsPage,
   useContactCount,
   useContacts,
   useCreateContact,
@@ -166,13 +176,36 @@ export function ContactsScreen() {
 
         {/* On loan */}
         <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">On loan</h2>
-            {overdueCount > 0 ? (
-              <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive">
-                {overdueCount} overdue
-              </span>
-            ) : null}
+          {/*
+           * Each of the screen's two lists exports on its own (issue #132) rather than sharing
+           * one control in the header: a loan row is about an item and a contact row is about a
+           * person, so a single merged file would be half-empty on every row — and a single
+           * trigger would not say which list it meant.
+           */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">On loan</h2>
+              {overdueCount > 0 ? (
+                <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive">
+                  {overdueCount} overdue
+                </span>
+              ) : null}
+            </div>
+            <TabularExportMenu
+              build={(format) =>
+                exportEveryPage(
+                  readOpenCheckoutsPage,
+                  (rows) => buildLoansExport(format, rows),
+                  t('export.list.truncated'),
+                )
+              }
+              filename={loansExportFilename}
+              triggerLabel={t('export.list.trigger')}
+              menuLabel={t('export.loans.menuLabel')}
+              toastHeading={t('export.loans.toast')}
+              disabled={open.isLoading || onLoan.length === 0}
+              testIdPrefix="export-loans"
+            />
           </div>
 
           {open.isLoading ? (
@@ -208,7 +241,24 @@ export function ContactsScreen() {
 
         {/* Contacts dictionary */}
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Contacts</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Contacts</h2>
+            <TabularExportMenu
+              build={(format) =>
+                exportEveryPage(
+                  readContactsPage,
+                  (rows) => buildContactsExport(format, rows),
+                  t('export.list.truncated'),
+                )
+              }
+              filename={contactsExportFilename}
+              triggerLabel={t('export.list.trigger')}
+              menuLabel={t('export.contacts.menuLabel')}
+              toastHeading={t('export.contacts.toast')}
+              disabled={contacts.isLoading || totalContacts === 0}
+              testIdPrefix="export-contacts"
+            />
+          </div>
           <div className="flex gap-2">
             <Input
               value={newName}

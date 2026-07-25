@@ -39,9 +39,13 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
 import { listRowCount, resolveListRow } from '@/features/inventory/list-window';
 import { describeHistoryEntry, HISTORY_TONE_BADGE } from '@/features/inventory/history-format';
+import { useT } from '@/features/i18n';
+import { TabularExportMenu } from '@/features/export/TabularExportMenu';
+import { exportEveryPage } from '@/features/export/export-every-page';
 import type { ActivityFeedEntry } from '@/db/repositories';
+import { activityExportFilename, buildActivityExport } from './activity-export';
 import { ACTIVITY_KINDS, ACTIVITY_KIND_LABEL, actionsForKinds, type ActivityKind } from './activity-kind';
-import { useActivityFeed, useActivityFeedCount, useActivityPage } from './queries';
+import { readActivityFeedPage, useActivityFeed, useActivityFeedCount, useActivityPage } from './queries';
 
 /** Estimated entry height — also the height of a not-yet-resident placeholder. */
 const ROW_HEIGHT = 64;
@@ -136,6 +140,7 @@ function ActivityRow({ entry, fmt }: { entry: ActivityFeedEntry; fmt: Formatters
 
 export function ActivityFeedScreen() {
   const fmt = useFormatters();
+  const t = useT();
   const parentRef = useRef<HTMLDivElement>(null);
 
   // App-wide list pagination (issue #20). The feed has no grouped/visualisation modes, so the
@@ -238,7 +243,33 @@ export function ActivityFeedScreen() {
 
   return (
     <PageContainer>
-      <PageHeader icon={<HistoryIcon />} title="Activity" />
+      <PageHeader
+        icon={<HistoryIcon />}
+        title="Activity"
+        actions={
+          /*
+           * The export re-reads the feed under the current kind filter rather than serialising
+           * the rows on screen: those are one page when paginated and a trimmed virtual window
+           * otherwise, so the file would be arbitrarily short. The ledger is the one list here
+           * that can genuinely outgrow the read-everything ceiling, hence the truncation notice.
+           */
+          <TabularExportMenu
+            build={(format) =>
+              exportEveryPage(
+                readActivityFeedPage(actions),
+                (rows) => buildActivityExport(format, rows),
+                t('export.list.truncated'),
+              )
+            }
+            filename={activityExportFilename}
+            triggerLabel={t('export.list.trigger')}
+            menuLabel={t('export.activity.menuLabel')}
+            toastHeading={t('export.activity.toast')}
+            disabled={isLoading || entries.length === 0}
+            testIdPrefix="export-activity"
+          />
+        }
+      />
 
       <p className="text-sm text-muted-foreground">
         Every recent change across your whole inventory, newest first.

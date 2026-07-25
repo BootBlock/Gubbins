@@ -72,6 +72,31 @@ export interface Alert {
 }
 
 // ---------------------------------------------------------------------------
+// Display metadata (British English labels; tone/badge classes stay in the screen)
+// ---------------------------------------------------------------------------
+
+/**
+ * Human-readable lane names, one per {@link AlertKind} — the alert centre's section headings.
+ *
+ * Lives here beside the type rather than in the screen so the alert **export** (issue #132)
+ * labels a row exactly as the screen labels its section: one definition, no drift between what
+ * the user reads and what the file says.
+ */
+export const ALERT_KIND_LABEL: Record<AlertKind, string> = {
+  'low-stock': 'Low stock',
+  expiry: 'Expiring stock',
+  'maintenance-due': 'Maintenance due',
+  'warranty-due': 'Warranty',
+};
+
+/** Human-readable urgency names, one per {@link AlertSeverity} (shared with the export). */
+export const ALERT_SEVERITY_LABEL: Record<AlertSeverity, string> = {
+  critical: 'Critical',
+  warning: 'Warning',
+  info: 'Info',
+};
+
+// ---------------------------------------------------------------------------
 // Source shapes (minimal slices — callers pass their own repository DTOs)
 // ---------------------------------------------------------------------------
 

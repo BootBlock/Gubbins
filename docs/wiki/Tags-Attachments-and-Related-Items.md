@@ -104,6 +104,14 @@ to look through:
 > **Least used first** brings the tags on nothing to the top — the quickest way to spot the
 > one-offs and typos worth deleting or merging.
 
+#### Taking the dictionary with you
+
+**Export** saves the tag list as a spreadsheet or a table, with each tag's item and location
+counts — a quick way to review the whole vocabulary somewhere other than the screen. It covers
+every tag, not just the page in view, and follows whatever **filter** and **sort** you have
+applied, so the file is the list you narrowed to, in the order you put it. See
+[[Export & import|Export-and-Import]].
+
 ## Attachments & datasheets
 
 **Where to find it:** the **Media & docs** tab of an item's details.

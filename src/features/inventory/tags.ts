@@ -36,6 +36,19 @@ export function useTagDictionary(page = 1, pageSize = 100, browse: TagBrowse = {
 }
 
 /**
+ * One page of the tag dictionary under a given filter/sort, for the export's read-everything walk
+ * (issue #132). The screen holds a single page, so serialising the rows in hand would export that
+ * page rather than the dictionary; the export re-reads from the start through `exportEveryPage`.
+ *
+ * It takes the screen's `browse` (issue #137) so the file matches the list the user is looking at:
+ * exporting the whole dictionary from under a filter would hand back rows they had just narrowed
+ * away. Not a hook — it is called from the export's `build` callback, outside React's render.
+ */
+export function readTagDictionaryPage(browse: TagBrowse = {}) {
+  return (params: { limit: number; offset: number }) => getTagRepository().list({ ...browse, ...params });
+}
+
+/**
  * How many tags match `search` — the denominator for the Tags screen's pagination (issue #84)
  * and the figure the filtered list announces (issue #137). Held through a filter change so the
  * page strip doesn't flicker between counts as the box is typed into.

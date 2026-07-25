@@ -29,6 +29,16 @@ vi.mock('@/components/BrandMark', () => ({
   BrandMark: () => <span data-testid="brand-mark" />,
 }));
 
+// The export menu owns its own download + toast machinery (covered by its own tests) and needs a
+// ToastProvider; here we only care that the screen offers one per list.
+vi.mock('@/features/export/TabularExportMenu', () => ({
+  TabularExportMenu: ({ disabled, testIdPrefix }: { disabled?: boolean; testIdPrefix: string }) => (
+    <button type="button" data-testid={testIdPrefix} disabled={disabled}>
+      Export
+    </button>
+  ),
+}));
+
 // The global nav menu has its own suite; stub it so this screen test needs no
 // router/alerts context for the header.
 vi.mock('@/components/nav/AppNav', () => ({
@@ -65,6 +75,9 @@ const refetchContacts = vi.fn();
 
 vi.mock('./contacts', () => ({
   useOpenCheckouts: () => ({ ...openCheckoutsState, refetch: refetchOpen }),
+  // The export's read-everything walk (issue #132); never invoked here, as the menu is stubbed.
+  readOpenCheckoutsPage: vi.fn(),
+  readContactsPage: vi.fn(),
   /**
    * The dictionary now pages **server-side** (issue #149), so the stub serves pages the way the
    * repository does: `contactsState.data.rows` is the whole dictionary, and the hook returns
@@ -418,5 +431,33 @@ describe('ContactsScreen — renew loan affordance (B3)', () => {
     expect(screen.queryByTestId('renew-due-date')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /renew/i }));
     expect(screen.getByTestId('renew-due-date')).toBeTruthy();
+  });
+});
+
+/**
+ * Both of this screen's lists export separately (issue #132) — a loan row is about an item and a
+ * contact row is about a person, so one merged file would be half-empty on every row. The menus
+ * are stubbed (their download + toast machinery has its own suite); these assert what the screen
+ * owns: that there are two controls, and that each is gated on *its own* list.
+ */
+describe('ContactsScreen — export', () => {
+  it('offers a separate export for each of the two lists', () => {
+    openCheckoutsState = { isLoading: false, data: { rows: [makeCheckout('k1', false)] } };
+    contactsState = { isLoading: false, data: { rows: [makeContact('c1', 'Alex Rivera')] } };
+    render(<ContactsScreen />);
+
+    expect(screen.getByTestId('export-loans')).not.toBeDisabled();
+    expect(screen.getByTestId('export-contacts')).not.toBeDisabled();
+  });
+
+  it('gates each control on its own list, not the other', () => {
+    // Nothing on loan but contacts on file: only the loans export goes dark. Sharing one gate
+    // would wrongly disable an export that has plenty to write.
+    openCheckoutsState = { isLoading: false, data: { rows: [] } };
+    contactsState = { isLoading: false, data: { rows: [makeContact('c1', 'Alex Rivera')] } };
+    render(<ContactsScreen />);
+
+    expect(screen.getByTestId('export-loans')).toBeDisabled();
+    expect(screen.getByTestId('export-contacts')).not.toBeDisabled();
   });
 });

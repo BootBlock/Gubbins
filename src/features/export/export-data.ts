@@ -7,7 +7,14 @@
 import type { Checkout, Contact, FieldType, Item, ItemHistoryEntry } from '@/db/repositories';
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import { toDateInputValue } from '@/lib/date-input';
-import { toCsv, type TabularCell, type TabularColumn } from './tabular-export';
+import {
+  buildTabularExport,
+  toCsv,
+  type TabularCell,
+  type TabularColumn,
+  type TabularExportFormat,
+  type TabularExportResult,
+} from './tabular-export';
 
 /** Schema version of the JSON data-export payload (independent of the backup format's own). */
 export const JSON_EXPORT_FORMAT_VERSION = 1;
@@ -64,8 +71,12 @@ const CSV_COLUMNS = [
   'depth',
 ] as const;
 
-/** Item CSV columns as a {@link TabularColumn} spec for the shared serialiser. */
-const ITEM_CSV_COLUMNS: readonly TabularColumn<Item>[] = CSV_COLUMNS.map((col) => ({
+/**
+ * Item export columns as a {@link TabularColumn} spec for the shared serialiser.
+ *
+ * @internal Exported for unit tests only.
+ */
+export const ITEM_CSV_COLUMNS: readonly TabularColumn<Item>[] = CSV_COLUMNS.map((col) => ({
   header: col,
   value: (item) => {
     // An unlimited-supply item (Phase 82) has no finite count — leave its quantity cell
@@ -78,6 +89,27 @@ const ITEM_CSV_COLUMNS: readonly TabularColumn<Item>[] = CSV_COLUMNS.map((col) =
 /** Build a spreadsheet-friendly CSV of items (RFC-4180 quoting via the shared serialiser). */
 export function buildItemsCsv(items: readonly Item[]): string {
   return toCsv(ITEM_CSV_COLUMNS, items);
+}
+
+/**
+ * Serialise the item list to any of the shared tabular formats (issue #132).
+ *
+ * The columns were already a `TabularColumn` spec, so the wizard's items export was CSV-only
+ * for no reason beyond the branch that produced it: a project's bill of materials could be
+ * saved as an Excel workbook while the item list it was drawn from could not. This routes the
+ * same columns through the same dispatch every other list export uses.
+ *
+ * `buildItemsCsv` stays as the CSV shorthand — the catalogue round-trip and the frozen
+ * byte-for-byte CSV tests are built on it.
+ */
+export function buildItemsExport(
+  items: readonly Item[],
+  format: TabularExportFormat,
+): Promise<TabularExportResult> {
+  return buildTabularExport(format, ITEM_CSV_COLUMNS, items, {
+    title: 'Items',
+    caption: `${items.length} item${items.length === 1 ? '' : 's'}`,
+  });
 }
 
 /**

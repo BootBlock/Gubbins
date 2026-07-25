@@ -107,9 +107,17 @@ Received stock lands in your inventory and the in-transit figure drops according
 > Purchase orders need [[Contacts]] enabled. If the module is off, turn it on in
 > [[Modular UI|Modular-UI]] and the dependency is offered automatically.
 
+> **💡 Tip**
+> **Export** on the Orders tab saves the order book as a spreadsheet or a table — one row per
+> order, with its supplier, reference, status, ordered and received quantities and total. Handy
+> for reconciling against invoices. The file covers every order, not just the page on screen; each
+> total is in that order's own currency, named in the adjacent column. See
+> [[Export & import|Export-and-Import]].
+
 ## Related pages
 
 - **[[Reorder & shopping list|Reorder-and-Shopping-List]]** — deciding what to order.
+- **[[Export & import|Export-and-Import]]** — saving the order book to a file.
 - **[[Supplier parts & price history|Supplier-Parts-and-Price-History]]** — supplier codes and
   prices.
 - **[[Wishlist]]** — things you want but aren't ordering yet.

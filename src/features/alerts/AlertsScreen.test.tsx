@@ -22,6 +22,16 @@ const ALERT: Alert = {
   target: { route: '/inventory', itemId: 'widget-1', itemName: 'Brass widget' },
 };
 
+// The export menu owns its own download + toast machinery (covered by its own tests) and needs a
+// ToastProvider; here we only care that the screen offers it.
+vi.mock('@/features/export/TabularExportMenu', () => ({
+  TabularExportMenu: ({ disabled, testIdPrefix }: { disabled?: boolean; testIdPrefix: string }) => (
+    <button type="button" data-testid={testIdPrefix} disabled={disabled}>
+      Export
+    </button>
+  ),
+}));
+
 // The feed is stubbed, but its dismissal filtering is not: the mock runs the real seam against
 // the real store, so what the screen shows reflects what the card's controls actually recorded.
 vi.mock('./useAlerts', () => ({
@@ -138,5 +148,24 @@ describe('AlertsScreen — showing everything again', () => {
     render(<AlertsScreen />);
 
     expect(screen.queryByTestId('alerts-show-all')).toBeNull();
+  });
+});
+
+/**
+ * The alert list can be taken away as a file (issue #132). The menu itself is stubbed here — its
+ * download and toast machinery has its own suite — so these assert only what this screen owns:
+ * that it offers the control at all, and gates it on there being something to write.
+ */
+describe('AlertsScreen — export', () => {
+  it('offers an export for the alert list', () => {
+    render(<AlertsScreen />);
+    expect(screen.getByTestId('export-alerts')).toBeInTheDocument();
+  });
+
+  it('disables it once every alert is hidden, since the file would be empty', () => {
+    render(<AlertsScreen />);
+    // Dismiss the only alert; the export has nothing left to write.
+    fireEvent.click(screen.getByTestId(`dismiss-alert-${ALERT.id}`));
+    expect(screen.getByTestId('export-alerts')).toBeDisabled();
   });
 });
