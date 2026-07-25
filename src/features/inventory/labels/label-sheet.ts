@@ -4,7 +4,7 @@
  *
  * The Phase-49 sheet printed a fixed grid of QR-plus-name labels. This generalises it
  * to a {@link LabelTemplate}: the chosen symbology (QR / Code 128 barcode / both /
- * none), the selected text fields, and the columns-per-sheet. The lean hand-rolled
+ * none), the selected text fields, and how the sheet tiles an A4 page. The lean hand-rolled
  * encoders are reused — {@link qrSvgOrNull} (§2.4.3 native/no-bloat) and {@link code128Svg}
  * — and the canonical deep-link payload {@link buildItemQrUrl}.
  *
@@ -19,13 +19,16 @@ import { code128Svg } from './code128';
 import {
   BARCODE_QUIET_ZONE_MODULES,
   DEFAULT_LABEL_TEMPLATE,
-  clampColumns,
   clampLabelDimension,
   fitBarcodeValue,
+  formatMm,
+  normaliseSheetLayout,
+  sheetCellSizeMm,
   templateHasBarcode,
   templateHasQr,
   type BarcodeFit,
   type LabelTemplate,
+  type SheetLayout,
 } from './label-template';
 
 /** The item fields a label may surface (all but id/name optional). */
@@ -67,24 +70,32 @@ export const MAX_LABELS = 500;
 
 /*
  * Printed-label geometry, in mm. Both print stylesheets in this module are built from
- * these constants — and so is {@link barcodeWidthMm}, which decides whether a barcode can
- * print readably at all (issue #331) — so the layout and the measurement of it can never
- * disagree.
+ * these constants and from the sheet cell {@link sheetCellSizeMm} derives — and so is
+ * {@link barcodeWidthMm}, which decides whether a barcode can print readably at all
+ * (issue #331) — so the layout and the measurement of it can never disagree.
  */
-/** The short edge of an A4 page. */
-const A4_WIDTH_MM = 210;
-/** `@page` margin around the A4 sheet. */
-const SHEET_PAGE_MARGIN_MM = 10;
-/** Gap between label cells in the A4 grid. */
-const SHEET_GAP_MM = 6;
-/** Padding inside an A4 label cell (each side). */
+/** Padding inside an A4 label cell (each side), on a cell with room to spare for it. */
 const SHEET_CELL_PADDING_MM = 3;
 /** Cap on a barcode's printed width in an A4 label cell (a wide cell doesn't stretch it). */
 const SHEET_BARCODE_MAX_MM = 40;
-/** Cap on a text line's width in an A4 label cell. */
-const SHEET_TEXT_MAX_MM = 40;
+/** Cap on a barcode's printed height in an A4 label cell. */
+const SHEET_BARCODE_MAX_HEIGHT_MM = 14;
+/** Cell height (mm) below which the A4 cell drops to the smaller die-cut type sizes. */
+const SHEET_SMALL_CELL_MM = 30;
 /** Padding inside a die-cut label (each side). */
 const DIE_CUT_PADDING_MM = 1.5;
+
+/**
+ * Padding inside one A4 label cell (each side).
+ *
+ * A fixed 3 mm is right on an address label and absurd on a 21 mm-tall one, where it
+ * would eat a third of the height before anything is drawn — so on a small cell it
+ * scales down with the cell instead. {@link barcodeWidthMm} measures against this same
+ * function, so the width a barcode is judged by is the width it is actually given.
+ */
+function sheetCellPaddingMm(cell: { readonly widthMm: number; readonly heightMm: number }): number {
+  return Math.min(SHEET_CELL_PADDING_MM, cell.heightMm / 10, cell.widthMm / 10);
+}
 
 /**
  * Truncate a label set to {@link MAX_LABELS}, keeping the first labels.
@@ -189,10 +200,9 @@ export function barcodeWidthMm(template: LabelTemplate): number {
     const width = clampLabelDimension(template.labelWidthMm, DEFAULT_LABEL_TEMPLATE.labelWidthMm);
     return Math.max(0, width - DIE_CUT_PADDING_MM * 2);
   }
-  const columns = clampColumns(template.columns);
-  const printable = A4_WIDTH_MM - SHEET_PAGE_MARGIN_MM * 2;
-  const cell = (printable - SHEET_GAP_MM * (columns - 1)) / columns - SHEET_CELL_PADDING_MM * 2;
-  return Math.max(0, Math.min(SHEET_BARCODE_MAX_MM, cell));
+  const cell = sheetCellSizeMm(template.sheet);
+  const inner = cell.widthMm - sheetCellPaddingMm(cell) * 2;
+  return Math.max(0, Math.min(SHEET_BARCODE_MAX_MM, inner));
 }
 
 /** Resolve each (capped) item to a {@link LabelCell} under the given template. */
@@ -237,8 +247,8 @@ export function labelCellHtml(cell: LabelCell): string {
 
 /**
  * Build a complete, self-contained printable HTML document of labels — either an A4
- * grid (`sheet` mode, the template's `columns` across) or one physical die-cut label
- * per page (`die-cut` mode). The opener writes this into a fresh window and calls
+ * grid (`sheet` mode, tiled to the template's {@link SheetLayout}) or one physical
+ * die-cut label per page (`die-cut` mode). The opener writes this into a fresh window and calls
  * `print()`; nothing here touches the DOM, so it is a pure deterministic transform.
  */
 export function buildLabelSheetHtml(
@@ -257,27 +267,51 @@ export function buildLabelSheetHtml(
 export function sheetDocument(cellsHtml: string, template: LabelTemplate): string {
   return template.sizeMode === 'die-cut'
     ? dieCutDocument(cellsHtml, template)
-    : a4SheetDocument(cellsHtml, template.columns);
+    : a4SheetDocument(cellsHtml, template.sheet);
 }
 
-/** An A4 page tiling labels in a `columns`-wide grid (the original sheet layout). */
-function a4SheetDocument(cellsHtml: string, columns: number): string {
+/**
+ * An A4 page tiling labels to a {@link SheetLayout} — the columns, rows, page margins and
+ * gutters of the chosen sheet stock.
+ *
+ * Every cell is given the **same explicit size**, derived once by {@link sheetCellSizeMm}.
+ * The row height is the part that matters: an auto-height grid sizes each row to its
+ * tallest cell, so a single two-line name made its row taller and pushed every row below
+ * it down the page, the misalignment compounding towards the bottom (issue #333). With a
+ * fixed `grid-auto-rows` the rows land where the stock's die-cuts are, whatever any one
+ * label happens to contain — which is also what lets a named sheet be targeted at all.
+ *
+ * A cell being a fixed size, its contents have to live within it: the code takes the
+ * height the text leaves it, and anything that still will not fit is clipped rather than
+ * allowed to shove the sheet out of register.
+ */
+function a4SheetDocument(cellsHtml: string, layout: SheetLayout): string {
+  const l = normaliseSheetLayout(layout);
+  const cell = sheetCellSizeMm(l);
+  const pad = sheetCellPaddingMm(cell);
+  const small = cell.heightMm < SHEET_SMALL_CELL_MM;
+  const barcodeHeight = Math.min(SHEET_BARCODE_MAX_HEIGHT_MM, cell.heightMm * 0.35);
+  const mm = (value: number) => `${formatMm(value)}mm`;
   return (
     '<!doctype html>' +
     '<html lang="en-GB"><head><meta charset="utf-8">' +
     '<title>Gubbins — labels</title>' +
     '<style>' +
-    `@page{size:A4;margin:${SHEET_PAGE_MARGIN_MM}mm}` +
+    `@page{size:A4;margin:${mm(l.marginTopMm)} ${mm(l.marginSideMm)}}` +
     '*{box-sizing:border-box}' +
     'body{margin:0;font-family:system-ui,-apple-system,sans-serif;color:#000}' +
-    `.sheet{display:grid;grid-template-columns:repeat(${columns},1fr);gap:${SHEET_GAP_MM}mm}` +
-    '.label{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;' +
-    `gap:2mm;padding:${SHEET_CELL_PADDING_MM}mm;border:1px solid #ddd;border-radius:2mm;` +
-    'break-inside:avoid;text-align:center}' +
-    '.label .qr svg{width:30mm;height:30mm}' +
-    `.label .bc svg{max-width:${SHEET_BARCODE_MAX_MM}mm;height:14mm}` +
-    `.name{font-size:9pt;line-height:1.2;word-break:break-word;max-width:${SHEET_TEXT_MAX_MM}mm;font-weight:600}` +
-    `.meta{font-size:8pt;line-height:1.2;word-break:break-word;max-width:${SHEET_TEXT_MAX_MM}mm;color:#444}` +
+    `.sheet{display:grid;grid-template-columns:repeat(${l.columns},${mm(cell.widthMm)});` +
+    `grid-auto-rows:${mm(cell.heightMm)};column-gap:${mm(l.columnGapMm)};row-gap:${mm(l.rowGapMm)}}` +
+    '.label{display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+    `gap:${small ? '1mm' : '2mm'};padding:${mm(pad)};` +
+    (l.outline ? 'border:1px solid #ddd;border-radius:2mm;' : '') +
+    'overflow:hidden;break-inside:avoid;text-align:center}' +
+    '.label .qr{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center}' +
+    '.label .qr svg{height:100%;width:auto;max-width:100%}' +
+    '.label .bc{width:100%;display:flex;justify-content:center}' +
+    `.label .bc svg{width:100%;max-width:${SHEET_BARCODE_MAX_MM}mm;height:auto;max-height:${mm(barcodeHeight)}}` +
+    `.name{font-size:${small ? '7pt' : '9pt'};line-height:1.2;word-break:break-word;max-width:100%;font-weight:600}` +
+    `.meta{font-size:${small ? '6pt' : '8pt'};line-height:1.2;word-break:break-word;max-width:100%;color:#444}` +
     '</style></head>' +
     `<body><div class="sheet">${cellsHtml}</div></body></html>`
   );

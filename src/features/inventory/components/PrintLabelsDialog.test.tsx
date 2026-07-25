@@ -69,28 +69,61 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     // Nothing changed yet → nothing to save.
     expect(save).toBeDisabled();
 
-    chooseOption('label-columns', '4');
+    chooseOption('label-sheet-layout', /21 per sheet/);
     expect(save).not.toBeDisabled();
 
     fireEvent.click(save);
-    expect(usePreferencesStore.getState().labelTemplate.columns).toBe(4);
+    expect(usePreferencesStore.getState().labelTemplate.sheet.columns).toBe(3);
+    expect(usePreferencesStore.getState().labelTemplate.sheet.rows).toBe(7);
     expect(save).toBeDisabled();
   });
 
-  it('switches to a die-cut size: hides the columns control and prints an exact-sized sheet', () => {
+  it('tiles a chosen sheet stock and reports the size one label works out to (issue #333)', () => {
+    const fakeDoc = { write: vi.fn(), close: vi.fn() };
+    const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    expect(screen.getByTestId('label-sheet-layout-cell-size').textContent).toContain('60 × 42 mm');
+
+    chooseOption('label-sheet-layout', /21 per sheet/);
+    expect(screen.getByTestId('label-sheet-layout-cell-size').textContent).toContain('63.5 × 38.1 mm');
+
+    fireEvent.click(screen.getByTestId('print-labels-confirm'));
+    const written = fakeDoc.write.mock.calls[0]![0] as string;
+    expect(written).toContain('grid-template-columns:repeat(3,63.5mm)');
+    expect(written).toContain('grid-auto-rows:38.1mm');
+
+    openSpy.mockRestore();
+  });
+
+  it('reveals the columns/rows/margin/gutter fields for a custom sheet layout (issue #333)', () => {
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    expect(screen.queryByTestId('label-sheet-layout-rows')).toBeNull();
+
+    chooseOption('label-sheet-layout', /Custom/);
+
+    const rows = screen.getByTestId('label-sheet-layout-rows') as HTMLInputElement;
+    fireEvent.change(rows, { target: { value: '4' } });
+    fireEvent.blur(rows);
+    // 6 rows of 42mm become 4 rows of (297 - 20 - 15) / 4.
+    expect(screen.getByTestId('label-sheet-layout-cell-size').textContent).toContain('60 × 65.5 mm');
+  });
+
+  it('switches to a die-cut size: hides the sheet-layout control and prints an exact-sized sheet', () => {
     const fakeDoc = { write: vi.fn(), close: vi.fn() };
     const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
 
     render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
 
-    // Sheet mode shows the columns control...
-    expect(screen.queryByTestId('label-columns')).not.toBeNull();
+    // Sheet mode shows the layout control...
+    expect(screen.queryByTestId('label-sheet-layout')).not.toBeNull();
 
     chooseOption('label-size', /40 .* 30 mm/);
 
-    // ...die-cut mode replaces it (columns are meaningless for one-label-per-page).
-    expect(screen.queryByTestId('label-columns')).toBeNull();
+    // ...die-cut mode replaces it (tiling is meaningless for one-label-per-page).
+    expect(screen.queryByTestId('label-sheet-layout')).toBeNull();
 
     fireEvent.click(screen.getByTestId('print-labels-confirm'));
     const written = fakeDoc.write.mock.calls[0]![0] as string;

@@ -113,8 +113,12 @@ export function LabelSizeControls({
 
 /**
  * One millimetre dimension input. Keeps the raw keystrokes in local state so a partial
- * value (e.g. mid-typing "4" before "40") is not clamped away; commits a rounded, bounds-
- * clamped value on blur, falling back to the previous value for unparseable input.
+ * value (e.g. mid-typing "4" before "40") is not clamped away; commits a bounds-clamped
+ * value on blur, falling back to the previous value for unparseable input.
+ *
+ * Fractions of a millimetre are kept: an imperial roll converts to one (4 × 6" is
+ * 101.6 × 152.4 mm), and rounding each edge to whole millimetres would shrink the label
+ * the print is laid out inside (issue #333).
  */
 function DimField({
   label,
@@ -143,7 +147,8 @@ function DimField({
       <Input
         id={id}
         type="number"
-        inputMode="numeric"
+        inputMode="decimal"
+        step={0.1}
         min={LABEL_SIZE_BOUNDS.min}
         max={LABEL_SIZE_BOUNDS.max}
         value={text}

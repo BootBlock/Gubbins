@@ -9,7 +9,13 @@ import {
   toLabelCells,
   type LabelItem,
 } from './label-sheet';
-import { DEFAULT_LABEL_TEMPLATE, type LabelTemplate } from './label-template';
+import {
+  PLAIN_PAPER_SHEET_LAYOUT,
+  SHEET_STOCK_PRESETS,
+  DEFAULT_LABEL_TEMPLATE,
+  type LabelTemplate,
+  type SheetLayout,
+} from './label-template';
 
 const BASE = 'https://example.test/Gubbins/';
 const ID_A = '11111111-1111-4111-8111-111111111111';
@@ -22,20 +28,36 @@ const template = (over: Partial<LabelTemplate> = {}): LabelTemplate => ({
   ...over,
 });
 
+/** The default (plain-paper) A4 tiling with a field or two changed. */
+const sheet = (over: Partial<SheetLayout> = {}): SheetLayout => ({
+  ...PLAIN_PAPER_SHEET_LAYOUT,
+  ...over,
+});
+
 function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
 describe('barcodeWidthMm', () => {
   it('caps a roomy A4 cell at the stylesheet max-width', () => {
-    expect(barcodeWidthMm(template({ columns: 1 }))).toBe(40);
-    expect(barcodeWidthMm(template({ columns: 3 }))).toBe(40);
+    expect(barcodeWidthMm(template({ sheet: sheet({ columns: 1 }) }))).toBe(40);
+    expect(barcodeWidthMm(template({ sheet: sheet({ columns: 3 }) }))).toBe(40);
   });
 
   it('narrows to the grid cell once the columns squeeze it below that cap', () => {
-    // A4 (210mm) less 2 × 10mm page margin = 190mm; less 3 × 6mm gaps, over 4 columns,
+    // A4 (210mm) less 2 × 10mm page margin = 190mm; less 3 × 5mm gaps, over 4 columns,
     // less the cell's 2 × 3mm padding.
-    expect(barcodeWidthMm(template({ columns: 4 }))).toBe(37);
+    expect(barcodeWidthMm(template({ sheet: sheet({ columns: 4 }) }))).toBe(37.75);
+  });
+
+  it('measures a named stock at the size that stock actually is (issue #333)', () => {
+    // 21-per-sheet address labels are 63.5mm wide; the cell's padding scales with the
+    // cell, so the width judged here is the width the barcode is really given.
+    const stock = SHEET_STOCK_PRESETS.find((p) => p.id === 'a4-21up')!;
+    expect(barcodeWidthMm(template({ sheet: stock.layout }))).toBe(40);
+    // The smallest stock leaves too little for a readable Code 128 at all.
+    const tiny = SHEET_STOCK_PRESETS.find((p) => p.id === 'a4-65up')!;
+    expect(barcodeWidthMm(template({ sheet: tiny.layout }))).toBeCloseTo(33.86, 2);
   });
 
   it('is the die-cut label less its padding', () => {
@@ -192,12 +214,55 @@ describe('clampLabels', () => {
 
 describe('buildLabelSheetHtml', () => {
   it('returns a complete, self-contained printable document with the template column count', () => {
-    const html = buildLabelSheetHtml([{ id: ID_A, name: 'Resistor 10k' }], BASE, template({ columns: 4 }));
+    const html = buildLabelSheetHtml(
+      [{ id: ID_A, name: 'Resistor 10k' }],
+      BASE,
+      template({ sheet: sheet({ columns: 4 }) }),
+    );
     expect(html.startsWith('<!doctype html>')).toBe(true);
     expect(html).toContain('@page');
     expect(html).toContain('A4');
-    expect(html).toContain('grid-template-columns:repeat(4,1fr)');
+    // (210 - 2 × 10 margin - 3 × 5 gutter) / 4.
+    expect(html).toContain('grid-template-columns:repeat(4,43.75mm)');
     expect(html).toContain('break-inside');
+  });
+
+  it('gives every row the same fixed height, so a tall label cannot shift the rest (issue #333)', () => {
+    // A two-line name used to make its row taller than the others and push every row below
+    // it down the page. An explicit `grid-auto-rows` is what stops that: the row is the
+    // stock's row whatever the label carries.
+    const html = buildLabelSheetHtml(
+      [
+        { id: ID_A, name: 'A name long enough to wrap onto a second printed line' },
+        { id: ID_B, name: 'Short' },
+      ],
+      BASE,
+      template(),
+    );
+    // (297 - 2 × 10 margin - 5 × 5 gutter) / 6.
+    expect(html).toContain('grid-auto-rows:42mm');
+    expect(html).not.toContain('1fr');
+    // A fixed cell only holds if its contents are kept inside it.
+    expect(html).toContain('overflow:hidden');
+  });
+
+  it('tiles a named sheet stock to its own margins and gutters (issue #333)', () => {
+    const stock = SHEET_STOCK_PRESETS.find((p) => p.id === 'a4-21up')!;
+    const html = buildLabelSheetHtml(
+      [{ id: ID_A, name: 'Resistor 10k' }],
+      BASE,
+      template({ sheet: stock.layout }),
+    );
+    expect(html).toContain('@page{size:A4;margin:15.15mm 7.25mm}');
+    expect(html).toContain('grid-template-columns:repeat(3,63.5mm)');
+    expect(html).toContain('grid-auto-rows:38.1mm');
+    expect(html).toContain('column-gap:2.5mm;row-gap:0mm');
+    // Pre-cut stickers are already cut — an outline would print a box inside each one.
+    expect(html).not.toContain('border:1px solid');
+  });
+
+  it('draws a cut guide on plain paper, where nothing else marks the label out', () => {
+    expect(buildLabelSheetHtml([{ id: ID_A, name: 'X' }], BASE, template())).toContain('border:1px solid');
   });
 
   it('renders one QR SVG and the item name per label by default', () => {
