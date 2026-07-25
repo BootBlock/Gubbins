@@ -115,7 +115,12 @@ export function useSettingSearchMatch(parts: readonly (string | undefined)[]): b
 export interface SettingsSearchContainer {
   /** How many rows inside are currently showing — 0 while the dialog is unfiltered. */
   readonly count: number;
-  /** True when the filter is active and nothing inside this container survived it. */
+  /**
+   * True when the filter is active and nothing inside this container survived it. The caller
+   * both hides it *and* marks it `inert`: the children stay mounted (see {@link wrap}), so a
+   * focusable among them that isn't a row would otherwise stay in the dialog's focus trap and
+   * make Tab a dead key — `foundry/focus-trap` skips inert subtrees for exactly this.
+   */
   readonly hidden: boolean;
   /**
    * Wrap the container's children, so rows inside can match on its label and report back to

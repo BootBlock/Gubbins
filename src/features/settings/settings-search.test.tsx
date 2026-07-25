@@ -72,9 +72,14 @@ function Fixture({ query }: { readonly query: string }) {
   );
 }
 
-/** Whether the `SettingsSection` card carrying this heading is filtered out of view. */
+/** The `SettingsSection` card carrying this heading. */
+function sectionCard(title: string): HTMLElement {
+  return screen.getByRole('heading', { name: title }).closest('div.p-5') as HTMLElement;
+}
+
+/** Whether that card is filtered out of view. */
 function sectionHidden(title: string): boolean {
-  return screen.getByRole('heading', { name: title }).closest('div.p-5')!.className.includes('hidden');
+  return sectionCard(title).className.includes('hidden');
 }
 
 describe('the results view', () => {
@@ -113,6 +118,18 @@ describe('the results view', () => {
     expect(sectionHidden('Card fields')).toBe(false);
     expect(sectionHidden('Storage')).toBe(true);
     expect(screen.getByTestId('settings-search-count')).toHaveTextContent('1 setting matches');
+  });
+
+  it('marks a hidden section inert, so nothing left mounted inside it can be tabbed to', () => {
+    // The card-fields picker is a focusable control that is *not* a SettingRow, so it stays
+    // mounted inside its hidden section. Without `inert` the dialog's focus trap would still
+    // find it and Tab would stall on a control nobody can see.
+    render(<Fixture query="history" />);
+    expect(sectionCard('Card fields').hasAttribute('inert')).toBe(true);
+    expect(sectionCard('Storage').hasAttribute('inert')).toBe(false);
+    expect(
+      screen.getByRole('heading', { name: 'Appearance' }).closest('section')!.hasAttribute('inert'),
+    ).toBe(true);
   });
 
   it('names the query it found nothing for', () => {

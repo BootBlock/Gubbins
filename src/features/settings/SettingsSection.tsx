@@ -31,8 +31,11 @@ export function SettingsSection({
   const search = useSettingsSearchContainer(title);
   return (
     // Hidden rather than unmounted: the children are what report whether anything inside still
-    // matches, so they have to stay in the tree for the section to ever come back.
-    <Surface id={id} className={cn('p-5', search.hidden && 'hidden')}>
+    // matches, so they have to stay in the tree for the section to ever come back. `inert` is
+    // what keeps that honest — a section can hold a focusable that isn't a `SettingRow` (the
+    // Card-fields picker, the reduced-motion notice's link), and a `display: none` control the
+    // dialog's focus trap still finds would make Tab a dead key. See `foundry/focus-trap`.
+    <Surface id={id} inert={search.hidden} className={cn('p-5', search.hidden && 'hidden')}>
       <div className="flex items-center gap-2.5 text-muted-foreground [&_svg]:size-4">
         {icon}
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>

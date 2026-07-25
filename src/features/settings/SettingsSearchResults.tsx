@@ -29,7 +29,13 @@ export function SettingsSearchGroup({
   const search = useSettingsSearchContainer(label);
   const captionId = useId();
   return (
-    <section aria-labelledby={captionId} className={cn('space-y-4', search.hidden && 'hidden')}>
+    <section
+      aria-labelledby={captionId}
+      // `inert` alongside the hide, so nothing left mounted inside a filtered-out tab can still
+      // be tabbed to — see the note on `SettingsSection` and `foundry/focus-trap`.
+      inert={search.hidden}
+      className={cn('space-y-4', search.hidden && 'hidden')}
+    >
       <h2 id={captionId} className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </h2>
