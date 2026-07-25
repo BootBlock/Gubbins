@@ -1,3 +1,4 @@
+import { assertExhaustive } from '@/lib/exhaustive';
 import { cn } from '@/lib/utils';
 import { Money } from '@/components/foundry';
 import { LowStockIcon, SuccessIcon, WarningIcon } from '@/components/icons';
@@ -33,6 +34,8 @@ export function DiscreteCardMetric({ item }: { item: Item }) {
   const fallback = usePreferencesStore((s) => s.visualCardMetricFallback);
   const metric = resolveVisualCardMetric(item, primary, fallback);
   switch (metric) {
+    case 'stockHealth':
+      return <StockHealthMetric item={item} />;
     case 'value':
       return <ValueMetric item={item} />;
     case 'lastUpdated':
@@ -42,6 +45,11 @@ export function DiscreteCardMetric({ item }: { item: Item }) {
     case 'manufacturer':
       return <ManufacturerMetric item={item} />;
     default:
+      // Exhaustiveness guard (#355): a new VisualCardMetric must extend this switch or this
+      // stops compiling. Without it `metricHasContent` would demand attention for the new
+      // metric while the hero slot quietly drew stock health instead. Stock health stays the
+      // runtime fallback — it is the one metric every item can always show.
+      assertExhaustive(metric);
       return <StockHealthMetric item={item} />;
   }
 }

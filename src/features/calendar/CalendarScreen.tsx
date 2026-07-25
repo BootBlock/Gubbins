@@ -30,6 +30,7 @@ import {
   MaintenanceIcon,
   NotificationIcon,
 } from '@/components/icons';
+import { assertExhaustive } from '@/lib/exhaustive';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import {
@@ -69,6 +70,12 @@ function KindIcon({ kind }: { kind: AgendaKind }) {
       return <LowStockIcon aria-hidden />;
     case 'booking':
       return <BookingIcon aria-hidden />;
+    default:
+      // Exhaustiveness guard (#355), matching the alert centre's lane icon: a new AgendaKind
+      // must extend this switch or this stops compiling. A component has no return-type
+      // annotation to fall back on, so without it a new kind's rows would render no icon.
+      assertExhaustive(kind);
+      return <DueDateIcon aria-hidden />;
   }
 }
 
