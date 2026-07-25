@@ -302,9 +302,9 @@ describe('fitBarcodeValue', () => {
   });
 
   it('decides "unprintable" from the label size alone, not the shape of the id (issue #331)', () => {
-    // 27 mm is the usable width of the 30 x 15 mm die-cut label. `DIGIT_ID`'s short id is
-    // all digits, so Code Set C would squeeze it into two-thirds the width of `ID`'s — but
-    // the fallback is measured uncompressed, so both labels behave the same way.
+    // 27 mm is just under the ~27.2 mm an 8-character fallback needs. `DIGIT_ID`'s short id
+    // is all digits, so Code Set C would squeeze it into two-thirds the width of `ID`'s —
+    // but the fallback is measured uncompressed, so both labels behave the same way.
     const NARROW_MM = 27;
     expect(fitBarcodeValue('A very long location name', DIGIT_ID, NARROW_MM).fit).toBe('unprintable');
     expect(fitBarcodeValue('A very long location name', ID, NARROW_MM).fit).toBe('unprintable');
@@ -314,7 +314,7 @@ describe('fitBarcodeValue', () => {
   });
 
   it('still prints a fallback on a label with room for one', () => {
-    // 37 mm is the usable width of the 40 x 30 mm die-cut label and of a 4-column A4 cell.
+    // 37 mm is the usable width of a 4-column A4 cell.
     const ROOMY_MM = 37;
     expect(fitBarcodeValue('A very long location name', DIGIT_ID, ROOMY_MM)).toEqual({
       value: '12345678',

@@ -111,7 +111,7 @@ describe('toLabelCells', () => {
   });
 
   it('treats every label on a too-narrow size alike, whatever its id (issue #331)', () => {
-    // The 30 x 15 mm preset leaves 27 mm — under the width a fallback code needs. `ID_A`'s
+    // The 30 x 15 mm preset leaves 25 mm — under the width a fallback code needs. `ID_A`'s
     // short id is all digits and `ID_C`'s is not; measured as encoded, Code Set C would let
     // the first through and not the second. The sheet must not be arbitrary like that.
     const cells = toLabelCells(
