@@ -7,6 +7,13 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { openapiDocument, type JsonValue } from './openapi.ts';
 import { emitYaml } from './openapi-yaml.ts';
+import { API_ERROR_CODES } from './api/respond.ts';
+import {
+  ITEM_DETAIL_DEFAULT_FIELDS,
+  ITEM_FIELD_REGISTRY,
+  ITEM_SUMMARY_DEFAULT_FIELDS,
+} from './api/item-view.ts';
+import { LOCATION_FIELD_REGISTRY } from './api/location-view.ts';
 
 const YAML_URL = new URL('../openapi.yaml', import.meta.url);
 
@@ -101,10 +108,11 @@ describe('openapiDocument', () => {
     expect(doc2.components.schemas.Location.properties.fieldValues.items.$ref).toBe(
       '#/components/schemas/LocationFieldValue',
     );
-    // …and are OPTIONAL: neither schema lists fieldValues as required, because the default
-    // payload does not contain it — a caller opts in with `include=fields`.
+    // …and are OPTIONAL: neither schema makes fieldValues required, because the default
+    // payload does not contain it — a caller opts in with `include=fields`. (Location declares
+    // nothing required at all; both of its reads accept a sparse fieldset — see #367 below.)
     expect(itemDetail.required).not.toContain('fieldValues');
-    expect(doc2.components.schemas.Location.required).not.toContain('fieldValues');
+    expect(doc2.components.schemas.Location.required).toBeUndefined();
 
     // An inherited value is distinguishable from a directly-set one.
     expect(doc2.components.schemas.ItemFieldValue.properties.source.enum).toEqual([
@@ -128,6 +136,106 @@ describe('openapiDocument', () => {
       const name = ref.replace('#/components/schemas/', '');
       expect(schemas.has(name), `missing schema for ${ref}`).toBe(true);
     }
+  });
+
+  it('publishes every error code the bridge can actually send (#367)', () => {
+    expect(doc.components.schemas.Error.properties.error.properties.code.enum).toEqual([...API_ERROR_CODES]);
+  });
+
+  it('declares the two responses reachable at every path — 405 and 500 (#367)', () => {
+    for (const [path, item] of Object.entries(doc.paths as Record<string, any>)) {
+      for (const method of ['get', 'post']) {
+        const op = item[method];
+        if (op === undefined) continue;
+        // Both are answered by request-wrapping code (the pre-routing method guard and the
+        // catch-all in server.ts), so they belong to no single operation — and OpenAPI 3 has
+        // nowhere but each operation to declare them.
+        expect(Object.keys(op.responses), `${method.toUpperCase()} ${path}`).toEqual(
+          expect.arrayContaining(['405', '500']),
+        );
+      }
+    }
+  });
+
+  describe('sparse fieldsets vs required (#367)', () => {
+    /** The item/location field vocabularies a caller may name in `fields` / `$select`. */
+    const itemFields = [...ITEM_FIELD_REGISTRY.keys()];
+    const locationFields = [...LOCATION_FIELD_REGISTRY.keys()];
+
+    it('lists exactly the selectable names in the `fields` parameter’s own prose', () => {
+      // The parameter description names the vocabulary a caller may pass; a name missing from it
+      // is a valid request the document calls a 400, and a name it invents is the reverse.
+      const validFields = (path: string): string[] => {
+        const param = (doc.paths[path].get.parameters as { name: string; description: string }[]).find(
+          (p) => p.name === 'fields',
+        )!;
+        return param.description.split('Valid fields: ')[1]!.split('.')[0]!.split(', ');
+      };
+      expect(validFields('/api/v1/items')).toEqual(itemFields);
+      expect(validFields('/api/v1/locations')).toEqual(locationFields);
+    });
+
+    it('describes exactly the projectable item fields, no more and no fewer', () => {
+      // The drift guard: a field added to the engine but not described here (or vice versa)
+      // fails the build rather than silently shipping an under-documented projection.
+      expect(Object.keys(doc.components.schemas.ItemProjection.properties)).toEqual(itemFields);
+      expect(Object.keys(doc.components.schemas.Location.properties)).toEqual(locationFields);
+    });
+
+    it('keeps the strict shapes exactly as the engine reports its default payloads', () => {
+      expect(doc.components.schemas.ItemSummary.required).toEqual([...ITEM_SUMMARY_DEFAULT_FIELDS]);
+      const detail = [
+        ...doc.components.schemas.ItemSummary.required,
+        ...Object.keys(doc.components.schemas.ItemDetail.allOf[1].properties),
+      ];
+      // `fieldValues` is the one described-but-not-default detail property (include=fields).
+      expect(detail.filter((name) => name !== 'fieldValues')).toEqual([...ITEM_DETAIL_DEFAULT_FIELDS]);
+    });
+
+    it('answers every projectable read with a projection-tolerant schema', () => {
+      // Each read that advertises `fields` must resolve its payload to a schema that admits a
+      // partial object — otherwise a client generated from `required` throws the moment anyone
+      // uses the headline sparse-fieldset feature.
+      const deref = (schema: any): any =>
+        schema.$ref === undefined
+          ? schema
+          : doc.components.schemas[schema.$ref.replace('#/components/schemas/', '')];
+      const payloadRef = (path: string): string => {
+        const body = doc.paths[path].get.responses['200'].content['application/json'].schema;
+        // The rows inside a list/search envelope, or the single resource itself.
+        const schema = deref(body);
+        const rows = schema.properties?.data?.items ?? schema.properties?.matches?.items ?? body;
+        // A `$ref`, or (on search, whose two shapes genuinely differ) one branch of an `anyOf`.
+        return (rows.anyOf ?? [rows]).map((s: { $ref: string }) => s.$ref).join(' | ');
+      };
+      expect(payloadRef('/api/v1/items')).toBe('#/components/schemas/ItemProjection');
+      expect(payloadRef('/api/v1/items/{id}')).toBe('#/components/schemas/ItemProjection');
+      expect(payloadRef('/api/v1/search')).toContain('#/components/schemas/ItemProjection');
+      expect(payloadRef('/api/v1/locations')).toBe('#/components/schemas/Location');
+      expect(payloadRef('/api/v1/locations/{id}')).toBe('#/components/schemas/Location');
+
+      // …and each of those schemas — nested elements included — really is required-free.
+      for (const name of [
+        'ItemProjection',
+        'Location',
+        'PlacementProjection',
+        'CapabilityProjection',
+        'ItemFieldValueProjection',
+        'LocationFieldValue',
+      ]) {
+        expect(doc.components.schemas[name].required, `${name} must not declare required`).toBeUndefined();
+      }
+    });
+
+    it('keeps a strict twin wherever a response genuinely cannot be projected', () => {
+      // The guarantee is not simply dropped: the shapes behind the SSE stream and the write
+      // endpoints are still published in full, because nothing can project those.
+      expect(doc.components.schemas.ItemSummary.required.length).toBeGreaterThan(0);
+      expect(doc.components.schemas.ItemDetail.allOf[1].required).toEqual(['placements', 'capabilities']);
+      for (const name of ['Placement', 'Capability', 'ItemFieldValue', 'ItemMatch']) {
+        expect(doc.components.schemas[name].required.length, name).toBeGreaterThan(0);
+      }
+    });
   });
 });
 

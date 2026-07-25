@@ -309,7 +309,11 @@ every endpoint is a **`GET`** (or [`HEAD`](#head-requests)) and strictly read-on
 - **Errors** use a structured, machine-readable envelope:
   `{ "error": { "code": "not_found", "message": "…" } }`. Codes: `bad_request`,
   `unauthorized`, `forbidden`, `not_found`, `method_not_allowed`, `unsupported_media_type`,
-  `too_many_requests`, `snapshot_unavailable`, `internal_error`.
+  `too_many_requests`, `snapshot_unavailable`, `unprocessable`, `payload_too_large`,
+  `internal_error`, plus — on the opt-in Home Assistant reads only — `scale_unavailable`,
+  `scale_not_a_number`, `home_assistant_unreachable`, `home_assistant_unauthorised` and
+  `home_assistant_error`. The [spec](#openapi-spec) publishes the same list, generated from
+  the codes the bridge can actually send.
 - **Field selection** — the item endpoints accept `fields` (return only the named fields) and
   `include` (add extended fields on top of the default payload). See
   [Field selection & extended fields](#field-selection--extended-fields) below.
@@ -782,6 +786,20 @@ synthetic examples only). It is generated from a single typed source of truth
 (`src/openapi.ts`) — a test asserts the committed YAML never drifts from it — and the
 identical document is served live at `GET /api/v1/openapi.json`. Point Swagger UI, Redoc,
 or a client-generator at either.
+
+**Sparse fieldsets and `required`.** A read that accepts `fields`/`$select` can return *any*
+subset of an item's or location's fields — `?fields=name,unitCost` is an object of two keys —
+so those reads answer with a schema (`ItemProjection`, and `Location`) that marks **nothing**
+required. Declaring the default payload's fields required there would hand a generated client
+a non-nullable model that throws on the first projected response. The guaranteed shapes are
+still published: `ItemSummary` (the default row, and an event's item payload) and `ItemDetail`
+(what a write returns) keep their `required` lists, because nothing can project those.
+
+Every operation also declares **`405`** and **`500`**. Neither belongs to a single endpoint —
+both come from code that wraps the whole request (the method guard that runs ahead of routing,
+and the catch-all that turns any unexpected failure into a detail-free `internal_error`) — so
+they are reachable at every path, and a contract-testing tool meeting an undeclared one would
+report the bridge as at fault.
 
 ---
 

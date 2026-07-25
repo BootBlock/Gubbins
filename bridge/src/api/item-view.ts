@@ -176,11 +176,18 @@ const ITEM_FIELDS: readonly (readonly [string, FieldNode<ItemViewContext>])[] = 
 /** The item field registry as a lookup map (iteration order preserved from {@link ITEM_FIELDS}). */
 export const ITEM_FIELD_REGISTRY: FieldRegistry<ItemViewContext> = new Map(ITEM_FIELDS);
 
-/** The default field set of `GET /api/v1/search` matches — the compact `ItemMatch` shape. */
+/**
+ * The default field set of `GET /api/v1/search` matches — the compact `ItemMatch` shape.
+ *
+ * `locationId` belongs here because `ItemMatch` carries it: without it, `include=`, which only
+ * ever *adds* to the default payload, silently returned one field FEWER than asking for nothing
+ * at all — the base set it expanded was narrower than the shape it claimed to be expanding.
+ */
 export const SEARCH_DEFAULT_FIELDS: readonly string[] = [
   'id',
   'name',
   'quantity',
+  'locationId',
   'locationName',
   'mpn',
   'manufacturer',

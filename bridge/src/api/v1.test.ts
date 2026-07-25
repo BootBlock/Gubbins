@@ -12,6 +12,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import rootPackageJson from '../../../package.json' with { type: 'json' };
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
+import { openapiDocument } from '../openapi.ts';
 import { mintTestToken } from '../fixtures/test-identity.ts';
 import { createBridgeServer, type BridgeServerState } from '../server.ts';
 
@@ -224,6 +225,37 @@ describe('field selection (fields / include)', () => {
     expect(match).toMatchObject({ id: 'item-esp32', name: 'ESP32 Dev Board', mpn: 'DEV-ESP32' });
     // …plus the opted-in extended field.
     expect(match.capabilities.some((c: any) => c.key === 'voltage')).toBe(true);
+  });
+
+  it('search include= only ever ADDS — it never drops a default match field (#367)', async () => {
+    // `include` expands the default payload, so every key of the plain match must survive it.
+    // `locationId` did not: the base set the expansion started from was narrower than the
+    // shape it claimed to expand, so asking for MORE returned one field FEWER.
+    const plain = await json('/api/v1/search?q=ESP32');
+    const expanded = await json('/api/v1/search?q=ESP32&include=notes');
+    for (const key of Object.keys(plain.matches[0])) {
+      expect(expanded.matches[0], `include= dropped "${key}"`).toHaveProperty(key);
+    }
+    expect(expanded.matches[0].locationId).toBe(plain.matches[0].locationId);
+  });
+
+  it('every key a projection can return is a documented ItemProjection property (#367)', async () => {
+    // The published contract is only worth as much as its agreement with the wire: a field the
+    // engine can emit but the document never mentions is exactly what breaks a generated client.
+    const documented = new Set(
+      Object.keys((openapiDocument as any).components.schemas.ItemProjection.properties),
+    );
+    for (const path of [
+      '/api/v1/items?include=all&limit=1',
+      '/api/v1/search?q=ESP32&include=all',
+      '/api/v1/items/item-esp32?include=all',
+    ]) {
+      const body = await json(path);
+      const row = body.data?.[0] ?? body.matches?.[0] ?? body;
+      for (const key of Object.keys(row)) {
+        expect(documented.has(key), `${path} returned undocumented field "${key}"`).toBe(true);
+      }
+    }
   });
 
   it('search 400s an unknown field with the v1 envelope', async () => {
