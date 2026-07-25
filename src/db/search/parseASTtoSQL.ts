@@ -21,6 +21,9 @@
  * Builder's initial state lists all items.
  */
 import type { SqlValue } from '@/db/rpc/driver';
+import { CONDITIONS, DEAD_STOCK_MODES, TRACKING_MODES } from '@/db/repositories/constants';
+import { nextUtcDay } from '@/lib/calendar-days';
+import { toStoredMoney } from '@/lib/money';
 import {
   MAX_AST_GROUP_DEPTH,
   isGroupNode,
@@ -54,14 +57,39 @@ const CAPABILITY_PREFIX = 'capability:';
  */
 const CUSTOM_FIELD_PREFIX = 'field:';
 
-type FieldKind = 'fts-text' | 'id-text' | 'numeric' | 'boolean';
+/**
+ * How a scalar item column is compared.
+ *
+ * - `fts-text` — free text; CONTAINS routes through the FTS5 index, EQUALS is exact (NOCASE).
+ * - `id-text` — an exact-match foreign key (no ordering, no FTS).
+ * - `numeric` — a plain number column; supports ordering comparisons.
+ * - `boolean` — a 0/1 flag column; EQUALS only.
+ * - `enum` — a TEXT column constrained to a fixed vocabulary (the column's own `CHECK`);
+ *   EQUALS only, and the value must be one of {@link ItemFieldMeta.values}.
+ * - `money` — an INTEGER column of **micro-units** (issue #286). The search value is a
+ *   major-unit amount, scaled with {@link toStoredMoney} before it is bound, so
+ *   `cost>10` means ten pounds/dollars, not ten micro-units.
+ * - `date-ms` — a day-grained UNIX-ms column snapped to midnight UTC (issue #320).
+ *   Compared as a half-open day window so a stored value carrying a time of day
+ *   (an import, a bridge write) still matches the day it falls on.
+ * - `date-text` — a bare `YYYY-MM-DD` TEXT column. Fixed-width ISO dates sort
+ *   lexicographically in date order, so `<`/`>` are plain string comparisons.
+ */
+type FieldKind = 'fts-text' | 'id-text' | 'numeric' | 'boolean' | 'enum' | 'money' | 'date-ms' | 'date-text';
+
+interface ItemFieldMeta {
+  readonly column: string;
+  readonly kind: FieldKind;
+  /** For `enum` fields only: the exact stored values the column's `CHECK` constraint allows. */
+  readonly values?: readonly string[];
+}
 
 /**
  * The known scalar item fields the Builder may filter on, mapped to their real
  * column and kind. `fts-text` columns also back CONTAINS via the FTS5 index;
  * `id-text` are exact-match foreign keys; `numeric` support ordering comparisons.
  */
-const ITEM_FIELDS: Readonly<Record<string, { column: string; kind: FieldKind }>> = {
+const ITEM_FIELDS: Readonly<Record<string, ItemFieldMeta>> = {
   name: { column: 'items.name', kind: 'fts-text' },
   description: { column: 'items.description', kind: 'fts-text' },
   notes: { column: 'items.notes', kind: 'fts-text' },
@@ -85,7 +113,67 @@ const ITEM_FIELDS: Readonly<Record<string, { column: string; kind: FieldKind }>>
   // "Favourite" pin (issue #23) — a boolean flag, matched with EQUALS only, e.g.
   // `favourite:yes` for the starred items (or `favourite:no` for the rest).
   favourite: { column: 'items.is_favourite', kind: 'boolean' },
+  // --- Lifecycle, valuation & stock policy (issue #140) -------------------------
+  // Columns that already drive whole features but were unreachable from search: the status
+  // chips could only ask fixed yes/no questions ("expiring soon"), never a comparison
+  // ("expiring before March").
+  //
+  // Only some of these carry an index, and the three that do are **partial**: `expiry_date`
+  // and `warranty_expires_at` (both `WHERE … IS NOT NULL`) and `dead_stock_mode`
+  // (`WHERE dead_stock_mode <> 'inherit'`) — so `deadstock:inherit` sits outside its own index
+  // — plus `is_active`. The condition, tracking-mode, money and reorder-point columns have no
+  // index at all, so those predicates are a scan of the items table. That is the same cost the
+  // list already pays for an unindexed filter and is fine at inventory scale, but it is worth
+  // knowing before adding one of these to a hot path.
+  //
+  // Operational condition (§4 "Condition Tracking") — a validated enum; NULL means untracked.
+  condition: { column: 'items.condition', kind: 'enum', values: CONDITIONS },
+  // Tracking level (§4 "Tracking Levels") — how the item's stock is represented.
+  tracking: { column: 'items.tracking_mode', kind: 'enum', values: TRACKING_MODES },
+  // Dead-stock reporting opt-in (issue #92) — the item's own mode, before location inheritance
+  // is resolved (that resolution is a pure seam over the location ancestry, not a column).
+  deadstock: { column: 'items.dead_stock_mode', kind: 'enum', values: DEAD_STOCK_MODES },
+  // Perishable expiry (day-grained UNIX-ms, midnight UTC), e.g. `expiry<2026-03-01`.
+  expiry: { column: 'items.expiry_date', kind: 'date-ms' },
+  // Warranty end (bare `YYYY-MM-DD` TEXT), e.g. `warranty<2027-01-01`.
+  warranty: { column: 'items.warranty_expires_at', kind: 'date-text' },
+  // Money columns, all stored as integer micro-units (issue #286) but searched in major units.
+  cost: { column: 'items.unit_cost', kind: 'money' },
+  price: { column: 'items.purchase_price', kind: 'money' },
+  value: { column: 'items.current_value', kind: 'money' },
+  // Per-item low-stock floor (NULL falls back to the global default), e.g. `reorder>0` for
+  // the items that carry their own floor at all.
+  reorder: { column: 'items.reorder_point', kind: 'numeric' },
+  // Soft-deletion flag. Searching this is only meaningful because an explicit `active`
+  // condition also lifts the search path's implicit "active inventory only" scope — see
+  // {@link astFiltersActiveFlag}.
+  active: { column: 'items.is_active', kind: 'boolean' },
 };
+
+/** The `active` field name, shared with {@link astFiltersActiveFlag} so the two can't drift. */
+const ACTIVE_FIELD = 'active';
+
+/**
+ * Look a field name up in {@link ITEM_FIELDS} — via `Object.hasOwn`, never a bare index.
+ *
+ * A plain object also answers to its prototype's keys, so `ITEM_FIELDS['constructor']` (or
+ * `'toString'`) yields a *function* rather than `undefined`: the "unknown search field" guard
+ * would pass it through and the translator would emit `undefined = ?` as the column. Values are
+ * always bound parameters so nothing is injectable, but the query is nonsense where a clear
+ * error is owed.
+ */
+function itemField(field: string): ItemFieldMeta | undefined {
+  return Object.hasOwn(ITEM_FIELDS, field) ? ITEM_FIELDS[field] : undefined;
+}
+
+/**
+ * The values an `enum` search field accepts, or `null` when the field isn't one — the
+ * Visual Builder reads this to offer a picker rather than a free-text box, so the UI's
+ * vocabulary is the column's `CHECK` constraint and cannot drift from it.
+ */
+export function itemFieldEnumValues(field: string): readonly string[] | null {
+  return itemField(field.trim())?.values ?? null;
+}
 
 interface Fragment {
   readonly sql: string;
@@ -126,6 +214,28 @@ export function collectCapabilityKeys(ast: SearchAST): string[] {
   };
   visit(ast);
   return [...keys];
+}
+
+/**
+ * True when a tree filters on the `active` field anywhere (issue #140).
+ *
+ * The AST search path scopes every query to active inventory (`AND items.is_active = 1`) unless
+ * the caller opts out, which would quietly reduce an explicit `active:no` to "no results" — the
+ * one predicate the implicit scope contradicts. `ItemRepository.searchByAst` therefore drops the
+ * implicit clause when this returns true, letting the user's own condition decide. Every *other*
+ * query keeps the scope untouched, so the default stays "active inventory only".
+ *
+ * Pure and recursion-safe, exactly like {@link collectCapabilityKeys}: it walks the whole tree
+ * without validating depth, so it never throws on a tree the parser would reject.
+ */
+export function astFiltersActiveFlag(ast: SearchAST): boolean {
+  const visit = (node: ASTGroupNode): boolean =>
+    node.conditions.some((child) =>
+      // Matched exactly as `translateCondition` looks the field up (`ITEM_FIELDS[field.trim()]`),
+      // so the flag can never be set by a spelling the translator would reject as unknown.
+      isGroupNode(child) ? visit(child) : child.field.trim() === ACTIVE_FIELD,
+    );
+  return visit(ast);
 }
 
 /**
@@ -170,15 +280,16 @@ function translateCondition(condition: FilterCondition): Fragment {
     return translateCustomField(field.slice(CUSTOM_FIELD_PREFIX.length).trim(), condition);
   }
 
-  const meta = ITEM_FIELDS[field];
+  const meta = itemField(field);
   if (!meta) {
     throw new SearchAstError(`Unknown search field "${condition.field}".`);
   }
-  return translateItemField(meta.column, meta.kind, condition);
+  return translateItemField(meta, condition);
 }
 
 /** Translate a scalar item-column condition (name/category/quantity…). */
-function translateItemField(column: string, kind: FieldKind, condition: FilterCondition): Fragment {
+function translateItemField(meta: ItemFieldMeta, condition: FilterCondition): Fragment {
+  const { column, kind } = meta;
   const { operator, value } = condition;
 
   switch (operator) {
@@ -206,16 +317,48 @@ function translateItemField(column: string, kind: FieldKind, condition: FilterCo
       if (kind === 'numeric') {
         return { sql: `${column} = ?`, params: [toNumber(value, condition.field)] };
       }
+      if (kind === 'money') {
+        return { sql: `${column} = ?`, params: [toStoredAmount(value, condition.field)] };
+      }
+      if (kind === 'enum') {
+        // Canonicalised to the stored spelling, so no COLLATE is needed (or wanted — the
+        // column's CHECK vocabulary is exact).
+        return { sql: `${column} = ?`, params: [toEnumValue(value, meta, condition.field)] };
+      }
+      if (kind === 'date-text') {
+        return { sql: `${column} = ?`, params: [toCalendarDay(value, condition.field).text] };
+      }
+      if (kind === 'date-ms') {
+        // Half-open day window: "on this day", whatever time of day the stored instant carries.
+        const [start, end] = dayWindow(value, condition.field);
+        return { sql: `(${column} >= ? AND ${column} < ?)`, params: [start, end] };
+      }
       // Text/id equality is case-insensitive.
       return { sql: `${column} = ? COLLATE NOCASE`, params: [String(value)] };
     }
     case 'GREATER_THAN':
     case 'LESS_THAN': {
-      if (kind !== 'numeric') {
-        throw unsupported(operator, condition.field);
-      }
       const sign = operator === 'GREATER_THAN' ? '>' : '<';
-      return { sql: `${column} ${sign} ?`, params: [toNumber(value, condition.field)] };
+      if (kind === 'numeric') {
+        return { sql: `${column} ${sign} ?`, params: [toNumber(value, condition.field)] };
+      }
+      if (kind === 'money') {
+        return { sql: `${column} ${sign} ?`, params: [toStoredAmount(value, condition.field)] };
+      }
+      if (kind === 'date-text') {
+        // Fixed-width `YYYY-MM-DD` sorts lexicographically in date order, and a bare day never
+        // carries a time, so a plain string comparison is already "strictly before/after that day".
+        return { sql: `${column} ${sign} ?`, params: [toCalendarDay(value, condition.field).text] };
+      }
+      if (kind === 'date-ms') {
+        // Compare against the *day* boundaries so "after 1 March" excludes 1 March itself even
+        // when a stored instant carries a time of day.
+        const [start, end] = dayWindow(value, condition.field);
+        return operator === 'GREATER_THAN'
+          ? { sql: `${column} >= ?`, params: [end] }
+          : { sql: `${column} < ?`, params: [start] };
+      }
+      throw unsupported(operator, condition.field);
     }
     case 'HAS_CAPABILITY':
       throw new SearchAstError(`HAS_CAPABILITY applies only to capability fields, not "${condition.field}".`);
@@ -353,6 +496,100 @@ function toBoolean(value: string | number | boolean, field: string): boolean {
     throw new SearchAstError(`Field "${field}" needs a yes/no value, received "${String(value)}".`);
   }
   return parsed;
+}
+
+/**
+ * Canonicalise an AST value to one of an `enum` field's stored values, or throw a typed error
+ * naming the vocabulary. Matching is case-insensitive and treats spaces and hyphens as
+ * underscores, so `needs repair`, `needs-repair` and `NEEDS_REPAIR` all reach the stored
+ * `NEEDS_REPAIR` — while the *returned* value is always the column's own spelling, which differs
+ * in case between enums (`MINT` vs `inherit`).
+ */
+function toEnumValue(value: string | number | boolean, meta: ItemFieldMeta, field: string): string {
+  const allowed = meta.values ?? [];
+  const wanted = normaliseEnumToken(String(value));
+  const match = allowed.find((candidate) => normaliseEnumToken(candidate) === wanted);
+  if (match === undefined) {
+    throw new SearchAstError(`Field "${field}" accepts ${allowed.join(', ')}, received "${String(value)}".`);
+  }
+  return match;
+}
+
+/** Fold an enum token to its comparison form: case-insensitive, hyphens/spaces as underscores. */
+function normaliseEnumToken(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+}
+
+/**
+ * Canonicalise a value to one of an `enum` field's stored spellings, or `null` when the field
+ * isn't an enum or the value isn't in its vocabulary.
+ *
+ * Exported for the same reason {@link parseBooleanValue} is: the text-query parser canonicalises
+ * through the **same** vocabulary the SQL layer coerces with, so the two can't drift — and so the
+ * tree it loads into the Visual Builder already carries the spelling that field's picker offers.
+ * Without it `condition:mint` would still run correctly but leave the picker blank, because a
+ * `Select` whose value matches no option renders its placeholder instead.
+ */
+export function parseEnumValue(field: string, value: string | number | boolean): string | null {
+  const allowed = itemFieldEnumValues(field);
+  if (allowed === null) return null;
+  const wanted = normaliseEnumToken(String(value));
+  return allowed.find((candidate) => normaliseEnumToken(candidate) === wanted) ?? null;
+}
+
+/** Coerce an AST value to the integer micro-units a money column stores (issue #286). */
+function toStoredAmount(value: string | number | boolean, field: string): number {
+  return toStoredMoney(toNumber(value, field));
+}
+
+/** A validated calendar day: its canonical `YYYY-MM-DD` text and its midnight-UTC instant. */
+interface CalendarDay {
+  readonly text: string;
+  readonly startMs: number;
+}
+
+/**
+ * Coerce an AST value to a calendar day, or throw a typed error.
+ *
+ * Deliberately strict — only the bare ISO day form is accepted, and its fields must round-trip
+ * through `Date.UTC` unchanged. `Date.parse` alone is not enough: it happily reads `2026-02-31`
+ * as 2 March, so a typo'd day would silently filter on a *different* day than the one asked for.
+ * This is the same rule the write path applies to `warranty_expires_at` (issue #327); rejecting
+ * a locale-shaped `01/03/2026` outright likewise beats guessing which of the two numbers is the
+ * month.
+ */
+function toCalendarDay(value: string | number | boolean, field: string): CalendarDay {
+  const text = String(value).trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const startMs = Date.UTC(year, month - 1, day);
+    const parsed = new Date(startMs);
+    if (
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+    ) {
+      return { text, startMs };
+    }
+  }
+  throw new SearchAstError(`Field "${field}" needs a date as YYYY-MM-DD, received "${String(value)}".`);
+}
+
+/**
+ * The half-open `[start, end)` UNIX-ms window naming the calendar day an AST value picks — the
+ * comparison unit for a day-grained UTC column (issue #320). Day-grained values are stored at
+ * midnight UTC, so this is normally a one-instant window; going through the boundaries anyway
+ * keeps the predicate correct for a row whose value carries a time of day.
+ */
+function dayWindow(value: string | number | boolean, field: string): [start: number, end: number] {
+  const { startMs } = toCalendarDay(value, field);
+  return [startMs, nextUtcDay(startMs)];
 }
 
 /** Coerce an AST value to a finite number, or throw a typed error. */

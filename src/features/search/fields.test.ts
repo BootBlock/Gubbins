@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { CONDITIONS, DEAD_STOCK_MODES } from '@/db/repositories/constants';
 import {
+  BUILDER_FIELDS,
   customFieldName,
+  enumValuesForField,
   fieldSelectValue,
   isCustomField,
   kindOfField,
@@ -60,5 +63,44 @@ describe('custom-field helpers (Phase 71)', () => {
     expect(operatorsForKind('boolean')).toEqual(['EQUALS']);
     expect(operatorLabelFor('EQUALS', 'boolean')).toBe('is');
     expect(operatorLabelFor('EQUALS', 'number')).toBe('equals');
+  });
+});
+
+describe('lifecycle, valuation & policy fields (issue #140)', () => {
+  it('maps each new field to the kind that decides its input control', () => {
+    expect(kindOfField('condition')).toBe('enum');
+    expect(kindOfField('tracking')).toBe('enum');
+    expect(kindOfField('deadstock')).toBe('enum');
+    expect(kindOfField('expiry')).toBe('date');
+    expect(kindOfField('warranty')).toBe('date');
+    expect(kindOfField('cost')).toBe('number');
+    expect(kindOfField('active')).toBe('boolean');
+  });
+
+  it('offers a date field before/after/on rather than the numeric operator wording', () => {
+    expect(operatorsForKind('date')).toEqual(['LESS_THAN', 'GREATER_THAN', 'EQUALS']);
+    expect(operatorLabelFor('LESS_THAN', 'date')).toBe('before');
+    expect(operatorLabelFor('GREATER_THAN', 'date')).toBe('after');
+    expect(operatorLabelFor('EQUALS', 'date')).toBe('on');
+    // The same operators keep their numeric wording elsewhere.
+    expect(operatorLabelFor('LESS_THAN', 'number')).toBe('less than');
+  });
+
+  it('offers only EQUALS (read as "is") for an enum field', () => {
+    expect(operatorsForKind('enum')).toEqual(['EQUALS']);
+    expect(operatorLabelFor('EQUALS', 'enum')).toBe('is');
+  });
+
+  it("takes an enum picker's options from the column vocabulary, not a second list", () => {
+    expect(enumValuesForField('condition')).toEqual([...CONDITIONS]);
+    expect(enumValuesForField('deadstock')).toEqual([...DEAD_STOCK_MODES]);
+    // Any other kind has no vocabulary to offer.
+    expect(enumValuesForField('quantity')).toEqual([]);
+  });
+
+  it('gives every new field a label, so the builder dropdown never shows a blank', () => {
+    for (const field of ['condition', 'tracking', 'deadstock', 'expiry', 'warranty', 'cost', 'active']) {
+      expect(BUILDER_FIELDS.find((f) => f.value === field)?.label).toBeTruthy();
+    }
   });
 });

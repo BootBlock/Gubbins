@@ -83,6 +83,9 @@ export function TextQueryInput() {
             '',
             '- `field:text` — match a field (e.g. `mfr:acme`, `name:resistor`)',
             '- `qty>10`, `qty<10`, `qty=10` — numeric comparisons',
+            '- `cost>10`, `value<50` — money, in your base currency',
+            '- `expiry<2026-03-01` — dates as `YYYY-MM-DD`; `<` is before, `>` after',
+            '- `condition=needs-repair`, `tracking:serialised` — fixed choices',
             '- `cap:voltage>3.3` — compare a capability by key',
             '- combine with `OR` and group with `( )`; terms are **AND**-ed by default',
           ].join('\n')}

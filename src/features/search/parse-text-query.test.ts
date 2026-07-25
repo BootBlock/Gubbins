@@ -182,6 +182,109 @@ describe('parseTextQuery — boolean field (favourite, issue #23)', () => {
   });
 });
 
+describe('parseTextQuery — lifecycle, valuation & policy fields (issue #140)', () => {
+  it('reads a date term, with : meaning "on that day" and >/< after/before it', () => {
+    expect(singleCondition('expiry<2026-03-01')).toEqual({
+      field: 'expiry',
+      operator: 'LESS_THAN',
+      value: '2026-03-01',
+    });
+    expect(singleCondition('expiry>2026-03-01')).toMatchObject({ operator: 'GREATER_THAN' });
+    expect(singleCondition('expiry:2026-03-01')).toMatchObject({ operator: 'EQUALS' });
+    expect(singleCondition('warranty<2027-01-01')).toMatchObject({
+      field: 'warranty',
+      operator: 'LESS_THAN',
+      value: '2027-01-01',
+    });
+  });
+
+  it('rejects a date the SQL translator could not read, via the final gate', () => {
+    // The date form is validated in one place; the parser surfaces that error verbatim.
+    for (const q of ['expiry<01/03/2026', 'expiry:2026-02-31', 'warranty:soon']) {
+      const result = parseTextQuery(q);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/YYYY-MM-DD/);
+    }
+  });
+
+  it('reads an enum term through either separator, canonicalised to the stored spelling', () => {
+    // The value is folded to the column's own spelling here, not just at translation time, so
+    // the tree loaded into the Visual Builder matches that field's picker (a Select whose value
+    // matches no option renders blank).
+    expect(singleCondition('condition=needs-repair')).toEqual({
+      field: 'condition',
+      operator: 'EQUALS',
+      value: 'NEEDS_REPAIR',
+    });
+    expect(singleCondition('condition:mint')).toMatchObject({ value: 'MINT' });
+    expect(singleCondition('tracking:serialised')).toMatchObject({
+      field: 'tracking',
+      value: 'SERIALISED',
+    });
+    // The dead-stock vocabulary is lower-case; canonicalising must not upper-case it.
+    expect(singleCondition('deadstock:ALWAYS')).toMatchObject({ field: 'deadstock', value: 'always' });
+    // A multi-word spelling needs quoting only because the lexer splits on whitespace.
+    expect(singleCondition('condition:"needs repair"')).toMatchObject({ value: 'NEEDS_REPAIR' });
+  });
+
+  it('leaves an unrecognised enum value alone, so the final gate names the vocabulary', () => {
+    const result = parseTextQuery('condition:shabby');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/MINT, GOOD/);
+  });
+
+  it('rejects an ordering comparison and an unknown member on an enum field', () => {
+    const compared = parseTextQuery('condition>MINT');
+    expect(compared.ok).toBe(false);
+    if (!compared.ok) expect(compared.error).toMatch(/fixed set of values/);
+
+    const unknown = parseTextQuery('condition:shabby');
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) expect(unknown.error).toMatch(/MINT, GOOD/);
+  });
+
+  it('reads money in major units, leaving the micro-unit scaling to the SQL layer', () => {
+    expect(singleCondition('cost>10')).toEqual({ field: 'cost', operator: 'GREATER_THAN', value: 10 });
+    expect(singleCondition('price<2.5')).toMatchObject({ field: 'price', value: 2.5 });
+    expect(singleCondition('value=99.99')).toMatchObject({ field: 'value', value: 99.99 });
+    expect(
+      parseASTtoSQL({ type: 'GROUP', logicalOperator: 'AND', conditions: [singleCondition('cost>10')] }),
+    ).toEqual(['(items.unit_cost > ?)', [10_000_000]]);
+  });
+
+  it('accepts the aliases for each new field', () => {
+    expect(singleCondition('cond:mint')).toMatchObject({ field: 'condition' });
+    expect(singleCondition('unitcost>1')).toMatchObject({ field: 'cost' });
+    expect(singleCondition('purchaseprice>1')).toMatchObject({ field: 'price' });
+    expect(singleCondition('worth>1')).toMatchObject({ field: 'value' });
+    expect(singleCondition('expires<2026-03-01')).toMatchObject({ field: 'expiry' });
+    expect(singleCondition('reorderpoint>0')).toMatchObject({ field: 'reorder' });
+    expect(singleCondition('trackingmode:discrete')).toMatchObject({ field: 'tracking' });
+  });
+
+  it('reads the active flag as a yes/no, like favourite', () => {
+    expect(singleCondition('active:no')).toEqual({ field: 'active', operator: 'EQUALS', value: false });
+    expect(singleCondition('active:yes')).toMatchObject({ value: true });
+  });
+
+  it('reports a missing value rather than silently dropping the term', () => {
+    for (const q of ['expiry:', 'condition:', 'cost>']) {
+      expect(parseTextQuery(q).ok).toBe(false);
+    }
+  });
+
+  it("treats a prefix inherited from the alias table's prototype as a plain name search", () => {
+    // A bare index would return `Object.prototype.constructor` — a truthy "alias" with no kind.
+    for (const prefix of ['constructor', 'toString', 'valueOf']) {
+      expect(singleCondition(`${prefix}:foo`)).toEqual({
+        field: 'name',
+        operator: 'CONTAINS',
+        value: `${prefix}:foo`,
+      });
+    }
+  });
+});
+
 describe('parseTextQuery — capabilities', () => {
   it('cap:<key> with no operator → HAS_CAPABILITY', () => {
     expect(singleCondition('cap:rohs')).toEqual({

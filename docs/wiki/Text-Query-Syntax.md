@@ -40,7 +40,17 @@ Field names are **case-insensitive** and accept short aliases.
 | Quantity | `quantity`, `qty` | On-hand count *(numeric)* |
 | Weight | `weight` | Item weight *(numeric)* |
 | Dimensions | `width`, `height`, `depth` | Bounding size *(numeric)* |
+| Reorder point | `reorder`, `reorderpoint` | The item's own low-stock floor *(numeric)* |
+| Unit cost | `cost`, `unitcost` | What a unit costs *(money)* |
+| Purchase price | `price`, `purchaseprice`, `paid` | What you paid *(money)* |
+| Current value | `value`, `currentvalue`, `worth` | Latest [[revalued worth\|Current-Value-and-Revaluation]] *(money)* |
+| Expiry date | `expiry`, `expires`, `expirydate` | When [[perishable stock\|Batches-and-Lots]] expires *(date)* |
+| Warranty expiry | `warranty`, `warrantyexpires` | When [[cover ends\|Warranty-and-Depreciation]] *(date)* |
+| Condition | `condition`, `cond` | [[Condition grade\|Condition-Grading]] *(choice)* |
+| Tracking mode | `tracking`, `trackingmode` | [[How stock is tracked\|Tracking-Modes]] *(choice)* |
+| Dead-stock reporting | `deadstock` | The item's [[dead-stock\|ABC-Turnover-and-Aging]] setting *(choice)* |
 | Favourite | `favourite`, `favorite`, `fav` | Pinned favourites *(yes/no)* |
+| Active | `active` | Excludes decommissioned items *(yes/no)* |
 
 ## Comparisons
 
@@ -52,11 +62,49 @@ qty=0             out of stock
 weight>500        heavier than 500 g
 ```
 
-The favourite flag is a yes/no:
+Money is typed in your base currency's normal units — `cost>10` means over ten, not ten pence:
+
+```
+cost>10           units costing more than 10
+value<50          worth less than 50 now
+```
+
+Dates are written `YYYY-MM-DD`, where `<` means *before* that day and `>` means *after* it:
+
+```
+expiry<2026-03-01     expiring before March
+warranty>2027-01-01   still covered beyond 2027
+expiry:2026-03-01     expiring on that exact day
+```
+
+Choice fields match one of a fixed set of values. Case doesn't matter, and you can write a
+multi-word value with a hyphen (or quote it):
+
+| Field | Accepted values |
+| --- | --- |
+| `condition` | `mint`, `good`, `needs-repair`, `out-for-calibration` |
+| `tracking` | `discrete` *(shown as Bulk)*, `serialised`, `consumable-gauge`, `untracked` |
+| `deadstock` | `inherit`, `always` *(shown as Report)*, `never` *(shown as Ignore)* |
+
+```
+condition=needs-repair    or condition:"needs repair"
+tracking:serialised
+deadstock:always
+```
+
+> **💡 Tip**
+> Get one wrong and Gubbins lists the values it will accept, so you never have to guess.
+
+The yes/no flags:
 
 ```
 fav:yes           only your favourites
+active:no         only decommissioned items
 ```
+
+> **ℹ️ Note**
+> Searches normally cover your live inventory only. Adding `active:no` (or `active:yes`) is the
+> exception — it lets you go looking for decommissioned items deliberately.
 
 ## Capabilities
 
