@@ -55,10 +55,33 @@ describe('custom-field helpers (Phase 71)', () => {
     ]);
   });
 
-  it('labels HAS_CAPABILITY as "has any value" on a custom field but "has capability" elsewhere', () => {
+  it('labels HAS_CAPABILITY as "has any value" everywhere except a capability', () => {
     expect(operatorLabelFor('HAS_CAPABILITY', 'customfield')).toBe('has any value');
+    expect(operatorLabelFor('HAS_CAPABILITY', 'text')).toBe('has any value');
+    expect(operatorLabelFor('HAS_CAPABILITY', 'presence')).toBe('has any value');
     expect(operatorLabelFor('HAS_CAPABILITY', 'capability')).toBe('has capability');
     expect(operatorLabelFor('CONTAINS', 'customfield')).toBe('contains');
+  });
+
+  it('offers presence on text and number fields so a has: term round-trips (issue #139)', () => {
+    expect(operatorsForKind('text')).toEqual(['CONTAINS', 'EQUALS', 'HAS_CAPABILITY']);
+    expect(operatorsForKind('number')).toEqual(['GREATER_THAN', 'LESS_THAN', 'EQUALS', 'HAS_CAPABILITY']);
+  });
+
+  it('leads with presence for an id-keyed field with no value picker (issue #139)', () => {
+    expect(kindOfField('category')).toBe('presence');
+    expect(operatorsForKind('presence')[0]).toBe('HAS_CAPABILITY');
+    expect(fieldSelectValue('category')).toBe('category');
+  });
+
+  /**
+   * The plain-English layer resolves a category *name* to an id and emits
+   * `category EQUALS <id>`, which loads straight into the builder. Every operator a condition can
+   * arrive with must be in its field's list, or the Operator dropdown renders blank and the only
+   * option offered silently rewrites the filter.
+   */
+  it('offers every operator a loaded category condition can arrive with (issue #139)', () => {
+    expect(operatorsForKind(kindOfField('category'))).toContain('EQUALS');
   });
 
   it('offers only EQUALS (read as "is") for the boolean favourite field (issue #23)', () => {
@@ -117,7 +140,9 @@ describe('the tag field (issue #138)', () => {
     });
     expect(kindOfField(TAG_FIELD)).toBe('text');
     expect(fieldSelectValue(TAG_FIELD)).toBe('tag');
-    expect(operatorsForKind('text')).toEqual(['CONTAINS', 'EQUALS']);
+    // Contains leads, then equals — the two a tag name is matched with. The rest of the text
+    // list is asserted where it is defined, so a later addition to it isn't a tag change.
+    expect(operatorsForKind('text').slice(0, 2)).toEqual(['CONTAINS', 'EQUALS']);
   });
 
   it('is recognised by isTagField, case-insensitively', () => {

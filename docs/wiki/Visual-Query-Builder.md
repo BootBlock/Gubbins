@@ -21,6 +21,9 @@ all build the same query:
 
 - **Match all / any.** The **AND** / **OR** toggle at the top of a group decides whether items
   must match *all* of its conditions or *any* of them.
+- **NOT.** The **NOT** button beside it flips the whole group, keeping the items that *don't*
+  match — *"not in the attic"*, *"nothing from this manufacturer"*. The wording next to the toggle
+  updates to say what the group now does.
 - **Add condition.** Select **Add condition** to add a rule — pick a field, an operator, and a
   value. Alongside the text and number fields you'll find dates ([[expiry|Batches-and-Lots]],
   [[warranty|Warranty-and-Depreciation]]), money ([[unit cost, purchase price and current
@@ -33,6 +36,9 @@ all build the same query:
   nothing to spell correctly.
 - **Tags.** Choose the **Tag** field and type a tag name: *contains* matches part of the name
   (`expo` finds `expo-2026`), *equals* the whole name. An item matches if any of its tags does.
+- **Has any value.** Most fields offer a **has any value** operator, which asks only whether the
+  field is filled in. Pair it with **NOT** on the group for questions like *"items with no part
+  number"* or *"anything without a category"*.
 - **Add group.** Select **Add group** to nest a sub-group with its own AND/OR — this is how you
   express things like *"(low quantity **OR** on order) **AND** in the garage"*.
 - **Clear.** Remove everything and start over with **Clear**.

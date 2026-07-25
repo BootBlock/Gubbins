@@ -312,6 +312,61 @@ describe('interpretNaturalLanguage — location phrases', () => {
     const locations = conditions.filter((c): c is FilterCondition => 'field' in c && c.field === 'location');
     expect(locations).toHaveLength(1);
   });
+
+  describe('negated location phrases (issue #139)', () => {
+    /** The negated group a "not in <location>" phrase lowers to. */
+    const notInGarage: ASTGroupNode = {
+      type: 'GROUP',
+      logicalOperator: 'AND',
+      negate: true,
+      conditions: [{ field: 'location', operator: 'EQUALS', value: 'loc-garage' }],
+    };
+
+    it.each(['not in the garage', 'not at garage', 'outside the garage'])(
+      'negates the location for "%s"',
+      (phrase) => {
+        expect(singleNode(phrase)).toEqual(notInGarage);
+      },
+    );
+
+    it('reads a double negative as the plain location ("not outside the garage")', () => {
+      expect(singleNode('not outside the garage')).toEqual({
+        field: 'location',
+        operator: 'EQUALS',
+        value: 'loc-garage',
+      });
+    });
+
+    it('echoes the negation back in the recognised label', () => {
+      const result = interpretNaturalLanguage('not in the garage', CONTEXT);
+      expect(result.recognised).toEqual([{ kind: 'location', label: 'Not in Garage' }]);
+    });
+
+    it('keeps the rest of the phrase as an ordinary text search', () => {
+      // The issue's own example: "resistors not in the Attic" — with Garage as the known name.
+      expect(conditionsOf('widgets not in the garage')).toEqual([notInGarage, keywordGroup('widget')]);
+    });
+
+    it('leaves an un-negated location alone', () => {
+      expect(singleCondition('in the garage')).toMatchObject({ field: 'location' });
+    });
+
+    /**
+     * Only location phrases negate, and the stock/quantity matchers claim their tokens first — so
+     * a "not" in "not in stock" can never reach a negator. It must therefore stay an unrecognised
+     * residual keyword rather than becoming a filler word: dropping it would leave the phrase
+     * reading as a confident "In stock", the exact opposite of what was asked, with nothing on
+     * screen to say the negation had been ignored.
+     */
+    it('never silently drops a "not" it could not attach, so a misread stays visible', () => {
+      const result = interpretNaturalLanguage('not in stock', CONTEXT);
+      expect(result.recognised.map((r) => r.kind)).toEqual(['stock', 'text']);
+      expect(result.ast.conditions).toEqual([
+        { field: 'quantity', operator: 'GREATER_THAN', value: 0 },
+        keywordGroup('not'),
+      ]);
+    });
+  });
 });
 
 describe('interpretNaturalLanguage — category mentions', () => {

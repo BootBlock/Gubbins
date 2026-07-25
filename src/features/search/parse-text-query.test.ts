@@ -579,9 +579,158 @@ describe('parseTextQuery — OR / parentheses (grammar depth, Phase 48)', () => 
   });
 });
 
+describe('parseTextQuery — negation (issue #139)', () => {
+  /** Narrow + assert a successful parse, returning the whole root group. */
+  function rootOf(input: string): SearchAST {
+    const result = parseTextQuery(input);
+    if (!result.ok) throw new Error(`expected ok parse, got error: ${result.error}`);
+    return result.ast;
+  }
+
+  it('-term wraps the single condition in a negated group', () => {
+    expect(rootOf('-mfr:acme')).toEqual({
+      type: 'GROUP',
+      logicalOperator: 'AND',
+      negate: true,
+      conditions: [{ field: 'manufacturer', operator: 'CONTAINS', value: 'acme' }],
+    });
+  });
+
+  it('accepts the NOT keyword in any case as the same form', () => {
+    for (const q of ['NOT mfr:acme', 'not mfr:acme', 'Not mfr:acme']) {
+      expect(rootOf(q)).toEqual(rootOf('-mfr:acme'));
+    }
+  });
+
+  it('negates a whole bracketed group in place, without an extra wrapper', () => {
+    expect(rootOf('-(blue OR widget)')).toEqual({
+      type: 'GROUP',
+      logicalOperator: 'OR',
+      negate: true,
+      conditions: [
+        { field: 'name', operator: 'CONTAINS', value: 'blue' },
+        { field: 'name', operator: 'CONTAINS', value: 'widget' },
+      ],
+    });
+  });
+
+  it('binds to one factor, so "-a b" is "(not a) and b"', () => {
+    const root = rootOf('-mfr:acme esp32');
+    expect(root.logicalOperator).toBe('AND');
+    expect(root.negate).toBeUndefined();
+    expect(root.conditions).toEqual([
+      {
+        type: 'GROUP',
+        logicalOperator: 'AND',
+        negate: true,
+        conditions: [{ field: 'manufacturer', operator: 'CONTAINS', value: 'acme' }],
+      },
+      { field: 'name', operator: 'CONTAINS', value: 'esp32' },
+    ]);
+  });
+
+  it('cancels a double negation back to the plain group', () => {
+    expect(rootOf('--esp32')).toEqual({
+      type: 'GROUP',
+      logicalOperator: 'AND',
+      conditions: [{ field: 'name', operator: 'CONTAINS', value: 'esp32' }],
+    });
+  });
+
+  it('writes "not equal to" as a negated EQUALS', () => {
+    expect(rootOf('-mpn=ABC-123')).toEqual({
+      type: 'GROUP',
+      logicalOperator: 'AND',
+      negate: true,
+      conditions: [{ field: 'mpn', operator: 'EQUALS', value: 'ABC-123' }],
+    });
+  });
+
+  it('leaves a hyphen inside a term, a value or a quoted phrase literal', () => {
+    expect(rootOf('mpn:ABC-123').conditions).toEqual([
+      { field: 'mpn', operator: 'CONTAINS', value: 'ABC-123' },
+    ]);
+    expect(rootOf('qty>-1').conditions).toEqual([{ field: 'quantity', operator: 'GREATER_THAN', value: -1 }]);
+    expect(rootOf('"-40C"').conditions).toEqual([{ field: 'name', operator: 'CONTAINS', value: '-40C' }]);
+  });
+
+  it('leaves a dangling or standalone hyphen as an ordinary word', () => {
+    expect(rootOf('esp32 -').conditions).toEqual([
+      { field: 'name', operator: 'CONTAINS', value: 'esp32' },
+      { field: 'name', operator: 'CONTAINS', value: '-' },
+    ]);
+  });
+
+  it('ignores a negated empty group rather than inverting "everything"', () => {
+    expect(rootOf('esp32 -()').conditions).toEqual([{ field: 'name', operator: 'CONTAINS', value: 'esp32' }]);
+  });
+
+  it('rejects a NOT with nothing to negate', () => {
+    for (const q of ['NOT', 'esp32 NOT', 'NOT OR esp32']) {
+      const result = parseTextQuery(q);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/NOT/);
+    }
+  });
+});
+
+describe('parseTextQuery — presence (has:, issue #139)', () => {
+  it('has:<field> → presence on the scalar column', () => {
+    expect(singleCondition('has:mpn')).toEqual({ field: 'mpn', operator: 'HAS_CAPABILITY', value: '' });
+  });
+
+  it('accepts the same short aliases the comparison forms do', () => {
+    expect(singleCondition('has:mfr')).toMatchObject({ field: 'manufacturer' });
+    expect(singleCondition('has:sn')).toMatchObject({ field: 'serial' });
+    expect(singleCondition('have:desc')).toMatchObject({ field: 'description' });
+  });
+
+  it('answers "anything without a category" when negated', () => {
+    const result = parseTextQuery('-has:category');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.ast).toEqual({
+        type: 'GROUP',
+        logicalOperator: 'AND',
+        negate: true,
+        conditions: [{ field: 'category', operator: 'HAS_CAPABILITY', value: '' }],
+      });
+    }
+  });
+
+  it('reads an unknown name as a category custom field', () => {
+    expect(singleCondition('has:Datasheet')).toEqual({
+      field: 'field:Datasheet',
+      operator: 'HAS_CAPABILITY',
+      value: '',
+    });
+    expect(singleCondition('has:"Voltage rating"')).toMatchObject({ field: 'field:Voltage rating' });
+  });
+
+  it('rejects a field every item always has, rather than matching everything', () => {
+    for (const q of ['has:name', 'has:qty', 'has:location', 'has:fav']) {
+      const result = parseTextQuery(q);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/every item/i);
+    }
+  });
+
+  it('rejects has: with no field', () => {
+    const result = parseTextQuery('has:');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/needs a field/i);
+  });
+});
+
 describe('parseTextQuery — every output round-trips through parseASTtoSQL', () => {
   const queries = [
     'esp32',
+    '-esp32',
+    'NOT mfr:acme',
+    '-(qty<10 OR mfr:acme)',
+    'esp32 -has:Datasheet',
+    '-has:category',
+    'has:mpn',
     'name:"esp 32"',
     'mpn=ABC-123',
     'quantity>10',

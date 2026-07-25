@@ -12,7 +12,14 @@
 import type { FilterOperator } from '@/db/search/ast';
 import { itemFieldEnumValues } from '@/db/search/parseASTtoSQL';
 
-export type BuilderFieldKind = 'text' | 'number' | 'boolean' | 'date' | 'enum' | 'capability' | 'customfield';
+/**
+ * `presence` is a field the builder can only ask "is it set?" about — the id-keyed columns
+ * that have no value picker yet, so an equality filter would mean typing a raw id. Asking
+ * whether one is filled in needs no id at all, and negating it answers "anything without a
+ * category" (issue #139).
+ */
+export type BuilderFieldKind =
+  'text' | 'number' | 'boolean' | 'date' | 'enum' | 'capability' | 'customfield' | 'presence';
 
 export interface BuilderField {
   /** The AST field identifier (for capability this is just the marker `capability`). */
@@ -38,6 +45,9 @@ export const BUILDER_FIELDS: readonly BuilderField[] = [
   { value: 'height', label: 'Height (mm)', kind: 'number' },
   { value: 'depth', label: 'Depth (mm)', kind: 'number' },
   { value: 'favourite', label: 'Favourite', kind: 'boolean' },
+  // Category has no id picker yet, so the builder can only ask whether one is set — which,
+  // negated, is "anything without a category" (issue #139).
+  { value: 'category', label: 'Category', kind: 'presence' },
   // A tag is matched by name (issue #138): "contains" finds a partial name, "equals" the
   // whole one — so it behaves like any other text field, with the tag name as the value.
   { value: TAG_FIELD, label: 'Tag', kind: 'text' },
@@ -77,11 +87,11 @@ export const OPERATOR_LABELS: Readonly<Record<FilterOperator, string>> = {
 /**
  * The display label for an operator within a given field kind. Identical to
  * {@link OPERATOR_LABELS} except `HAS_CAPABILITY` — reused as the generic "presence"
- * operator — reads as "has any value" on a custom field, where "has capability" would
- * be misleading.
+ * operator — reads as "has any value" on anything that isn't a capability, where "has
+ * capability" would be misleading.
  */
 export function operatorLabelFor(operator: FilterOperator, kind: BuilderFieldKind): string {
-  if (operator === 'HAS_CAPABILITY' && kind === 'customfield') return 'has any value';
+  if (operator === 'HAS_CAPABILITY' && kind !== 'capability') return 'has any value';
   // A boolean field reads "Favourite is Yes", not "Favourite equals Yes".
   if (operator === 'EQUALS' && kind === 'boolean') return 'is';
   // An enum reads "Condition is Mint" for the same reason.
@@ -95,15 +105,26 @@ export function operatorLabelFor(operator: FilterOperator, kind: BuilderFieldKin
   return OPERATOR_LABELS[operator];
 }
 
-/** The operators offered for a given field kind, in display order. */
+/**
+ * The operators offered for a given field kind, in display order.
+ *
+ * Text and number fields carry `HAS_CAPABILITY` — the generic presence operator — so the
+ * builder can show (and edit) the `has:mpn` term the text box now parses, and so "no part
+ * number at all" is expressible by pairing it with the group's NOT toggle (issue #139).
+ */
 export function operatorsForKind(kind: BuilderFieldKind): FilterOperator[] {
   switch (kind) {
     case 'text':
-      return ['CONTAINS', 'EQUALS'];
+      return ['CONTAINS', 'EQUALS', 'HAS_CAPABILITY'];
     case 'number':
-      return ['GREATER_THAN', 'LESS_THAN', 'EQUALS'];
+      return ['GREATER_THAN', 'LESS_THAN', 'EQUALS', 'HAS_CAPABILITY'];
     case 'boolean':
       return ['EQUALS'];
+    case 'presence':
+      // Presence first — it is the one that needs no id. `EQUALS` stays offered because the
+      // plain-English layer resolves a category *name* to an id and emits exactly that condition;
+      // dropping it would leave those rows with an operator the dropdown cannot render.
+      return ['HAS_CAPABILITY', 'EQUALS'];
     // "Before" leads: a date filter is far more often a deadline than an exact day.
     case 'date':
       return ['LESS_THAN', 'GREATER_THAN', 'EQUALS'];

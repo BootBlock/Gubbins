@@ -31,13 +31,15 @@ export function GroupEditor({
       }
     >
       <div className="flex items-center gap-2">
+        <NegateToggle
+          value={group.negate === true}
+          onChange={(negate) => dispatch({ type: 'setNegate', path, negate })}
+        />
         <OperatorToggle
           value={group.logicalOperator}
           onChange={(operator) => dispatch({ type: 'setOperator', path, operator })}
         />
-        <span className="text-xs text-muted-foreground">
-          {group.logicalOperator === 'AND' ? 'match all of' : 'match any of'}
-        </span>
+        <span className="text-xs text-muted-foreground">{groupSummary(group)}</span>
         {!isRoot ? (
           <Tooltip
             content="Remove this nested group and all the conditions inside it."
@@ -111,6 +113,42 @@ export function GroupEditor({
         </Tooltip>
       </div>
     </div>
+  );
+}
+
+/**
+ * How the group reads in plain English. Negation flips it into the "exclude these" phrasing
+ * rather than leaving the operator label saying the opposite of what the group now does
+ * (issue #139): `NOT` over an OR group means *none* of them, over an AND group *not all*.
+ */
+function groupSummary(group: ASTGroupNode): string {
+  if (group.negate !== true) return group.logicalOperator === 'AND' ? 'match all of' : 'match any of';
+  return group.logicalOperator === 'AND' ? 'don’t match all of' : 'match none of';
+}
+
+/** A toggle that inverts the whole group (issue #139). */
+function NegateToggle({ value, onChange }: { value: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <Tooltip
+      content="**NOT** inverts this whole group, keeping the items that *don’t* match it — for questions like *not in the attic* or *without a datasheet*."
+      triggerTabIndex={-1}
+    >
+      <span>
+        <button
+          type="button"
+          aria-pressed={value}
+          aria-label="Invert this group (NOT)"
+          onClick={() => onChange(!value)}
+          className={
+            value
+              ? 'rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground'
+              : 'rounded-lg bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground'
+          }
+        >
+          NOT
+        </button>
+      </span>
+    </Tooltip>
   );
 }
 

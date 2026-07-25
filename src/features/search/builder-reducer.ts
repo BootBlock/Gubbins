@@ -24,6 +24,7 @@ export type BuilderAction =
   | { type: 'remove'; path: BuilderPath }
   | { type: 'updateCondition'; path: BuilderPath; patch: Partial<FilterCondition> }
   | { type: 'setOperator'; path: BuilderPath; operator: LogicalOperator }
+  | { type: 'setNegate'; path: BuilderPath; negate: boolean }
   | { type: 'load'; ast: ASTGroupNode }
   | { type: 'reset' };
 
@@ -64,6 +65,14 @@ export function builderReducer(ast: ASTGroupNode, action: BuilderAction): ASTGro
         ...g,
         logicalOperator: action.operator,
       }));
+
+    case 'setNegate':
+      // Invert the whole group (issue #139). Switching it back off drops the key rather than
+      // storing `negate: false`, so an un-negated tree stays identical to one never negated.
+      return replaceGroupAtPath(ast, action.path, (g) => {
+        const { negate: _negate, ...rest } = g;
+        return action.negate ? { ...rest, negate: true } : rest;
+      });
 
     case 'remove': {
       if (action.path.length === 0) return emptyAst(ast.logicalOperator);

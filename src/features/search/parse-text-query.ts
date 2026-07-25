@@ -20,10 +20,17 @@
  *   - `field:<name>`    → custom-field CONTAINS (`field:Datasheet:rev2`)
  *   - `field:<name>>n`… → custom-field compare / EQUALS (numeric or text)
  *   - `tag:<name>`      → tag name CONTAINS (`tag=<name>` for the whole name)
+ *   - `has:<field>`     → presence — the item carries *any* value for it (`has:mpn`)
  *   - bare word / "phrase" → name CONTAINS
  *   - `a b`             → AND (juxtaposition, or the explicit `AND` keyword)
  *   - `a OR b` / `a|b`  → OR (case-insensitive keyword, or the `|` operator)
  *   - `( … )`           → an explicit nested group (overriding precedence)
+ *   - `-a` / `NOT a`    → negation, binding to the single following term or group
+ *
+ * Negation (issue #139) is the one form that changes the *shape* of the tree rather than a
+ * leaf: it lowers to a negated GROUP (see {@link negated}), so `-mfr:acme` is "NOT (the
+ * manufacturer contains acme)" and `-(a OR b)` negates the whole bracket. That is also how
+ * "not equal to" is written — `-mpn=ABC-123` — rather than adding a separate `!=` operator.
  *
  * Field names are case-insensitive and accept short aliases (`desc`, `mfr`, `qty`).
  * Anything that wouldn't translate (a `>` on a text field, a non-numeric quantity,
@@ -35,11 +42,13 @@
  * an AST it would reject (e.g. an over-deep nest snaps back to an inline error).
  *
  * A bracket or `|` inside a value must be quoted (`name:"a|b"`) — unquoted they are
- * structural, exactly so the grammar is unambiguous.
+ * structural, exactly so the grammar is unambiguous. The same applies to a leading `-`:
+ * it negates, so a term that genuinely starts with one must be quoted (`"-40C"`).
  */
 import {
   emptyAst,
   isGroupNode,
+  negated,
   type ASTGroupNode,
   type FilterCondition,
   type FilterOperator,
@@ -153,6 +162,56 @@ const CAPABILITY_ALIASES = new Set(['cap', 'capability']);
  */
 const CUSTOM_FIELD_ALIASES = new Set(['field', 'cf']);
 
+/** Prefixes that introduce a presence term, `has:<field>` (issue #139). */
+const PRESENCE_ALIASES = new Set(['has', 'have']);
+
+/**
+ * Alias → canonical field for `has:<field>`, restricted to the columns an item can genuinely
+ * be *missing* (issue #139). Absence is the whole point of the form, so a `NOT NULL` column
+ * has no business here: `has:name` would match every item, and its negation none.
+ *
+ * `category` appears only in this table, not in {@link FIELD_ALIASES}: the column holds an id,
+ * so `category:kitchen` has nothing sensible to compare against and is left to fall through to
+ * a plain name search — but "has a category at all" needs no id, so presence works fine.
+ */
+const PRESENCE_FIELDS: Readonly<Record<string, string>> = {
+  description: 'description',
+  desc: 'description',
+  notes: 'notes',
+  note: 'notes',
+  mpn: 'mpn',
+  manufacturer: 'manufacturer',
+  mfr: 'manufacturer',
+  make: 'manufacturer',
+  barcode: 'barcode',
+  gtin: 'barcode',
+  upc: 'barcode',
+  ean: 'barcode',
+  serial: 'serial',
+  serialnumber: 'serial',
+  sn: 'serial',
+  weight: 'weight',
+  width: 'width',
+  height: 'height',
+  depth: 'depth',
+  category: 'category',
+};
+
+/**
+ * Fields every item always carries, mapped to how to say so. Asking `has:` about one is
+ * always-true (and its negation always-false), which is far more likely a misunderstanding
+ * than an intent — so it is named as such rather than silently answered.
+ */
+const ALWAYS_PRESENT_FIELDS: Readonly<Record<string, string>> = {
+  name: 'name',
+  quantity: 'quantity',
+  qty: 'quantity',
+  location: 'location',
+  favourite: 'favourite flag',
+  favorite: 'favourite flag',
+  fav: 'favourite flag',
+};
+
 /** Separator characters that introduce a field term's operator. */
 const SEPARATORS = new Set([':', '=', '>', '<']);
 const QUOTES = new Set(['"', "'"]);
@@ -162,7 +221,12 @@ type TermResult = { condition: FilterCondition } | { skip: true } | { error: str
 
 /** A lexical token: the boolean/paren structure, plus opaque leaf `TERM` text. */
 type LexToken =
-  { kind: 'TERM'; text: string } | { kind: 'OR' } | { kind: 'AND' } | { kind: 'LPAREN' } | { kind: 'RPAREN' };
+  | { kind: 'TERM'; text: string }
+  | { kind: 'OR' }
+  | { kind: 'AND' }
+  | { kind: 'NOT' }
+  | { kind: 'LPAREN' }
+  | { kind: 'RPAREN' };
 
 /**
  * Parse a text query into the Visual-Builder {@link SearchAST}. Lexes into a token
@@ -200,9 +264,19 @@ export function parseTextQuery(input: string): ParseTextQueryResult {
     return combine(factors, 'AND');
   };
 
-  /** `factor := '(' orExpr ')' | TERM`. */
+  /** `factor := ('NOT' | '-') factor | '(' orExpr ')' | TERM`. */
   const parseFactor = (): Node => {
-    const token = peek()!; // the caller only enters here on a TERM or LPAREN
+    const token = peek()!; // the caller only enters here on a TERM, NOT or LPAREN
+    if (token.kind === 'NOT') {
+      pos++;
+      const next = peek();
+      if (!next || next.kind === 'OR' || next.kind === 'AND' || next.kind === 'RPAREN') {
+        throw new TextQueryError('"NOT" needs a term to negate — e.g. NOT mfr:acme (or -mfr:acme).');
+      }
+      // Negation binds to one factor, so `-a b` is "(not a) and b", not "not (a and b)".
+      const inner = parseFactor();
+      return inner === null ? null : negated(inner);
+    }
     if (token.kind === 'LPAREN') {
       pos++;
       const inner = parseOrExpr();
@@ -268,11 +342,17 @@ function termToNode(text: string): Node {
 
 /**
  * Lex the query into structural tokens. Whitespace, `(`, `)` and `|` are token
- * boundaries; a bare `OR`/`AND` word (case-insensitive, unquoted) is a keyword.
+ * boundaries; a bare `OR`/`AND`/`NOT` word (case-insensitive, unquoted) is a keyword.
  * Quoted spans are kept verbatim so a bracket or `|` inside quotes is literal.
+ *
+ * A `-` is the shorthand `NOT` **only where a term could start** — buffer empty, outside
+ * quotes, and immediately followed by something to negate. Everywhere else it stays an
+ * ordinary character, which is what keeps `mpn:ABC-123`, `qty>-1` and a trailing `-`
+ * lexing exactly as they did before negation existed (issue #139).
  */
 function lex(input: string): LexToken[] {
   const tokens: LexToken[] = [];
+  const chars = [...input];
   let buffer = '';
   let quote: string | null = null;
   const flush = () => {
@@ -280,10 +360,12 @@ function lex(input: string): LexToken[] {
     const upper = buffer.toUpperCase();
     if (upper === 'OR') tokens.push({ kind: 'OR' });
     else if (upper === 'AND') tokens.push({ kind: 'AND' });
+    else if (upper === 'NOT') tokens.push({ kind: 'NOT' });
     else tokens.push({ kind: 'TERM', text: buffer });
     buffer = '';
   };
-  for (const ch of input) {
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i]!;
     if (quote) {
       buffer += ch;
       if (ch === quote) quote = null;
@@ -313,10 +395,19 @@ function lex(input: string): LexToken[] {
       tokens.push({ kind: 'OR' });
       continue;
     }
+    if (ch === '-' && buffer.length === 0 && startsANegatableTerm(chars[i + 1])) {
+      tokens.push({ kind: 'NOT' });
+      continue;
+    }
     buffer += ch;
   }
   flush();
   return tokens;
+}
+
+/** True when the character after a leading `-` could begin a term or bracket to negate. */
+function startsANegatableTerm(next: string | undefined): boolean {
+  return next !== undefined && !/\s/.test(next) && next !== ')' && next !== '|';
 }
 
 /** Parse one whitespace-delimited token into a leaf condition (or skip/error). */
@@ -343,6 +434,11 @@ function parseTerm(token: string): TermResult {
   // Custom-field terms use the `field:<name>[op<value>]` form (separator is always ':').
   if (CUSTOM_FIELD_ALIASES.has(fieldKey) && sep === ':') {
     return parseCustomFieldTerm(rest);
+  }
+
+  // Presence terms use the `has:<field>` form (separator is always ':').
+  if (PRESENCE_ALIASES.has(fieldKey) && sep === ':') {
+    return parsePresenceTerm(rest);
   }
 
   // `Object.hasOwn`, never a bare index: a plain object also answers to its prototype's keys, so
@@ -509,6 +605,36 @@ function parseCustomFieldTerm(rest: string): TermResult {
   }
   // `:` — a substring (CONTAINS) match against the stored value.
   return { condition: { field, operator: 'CONTAINS', value } };
+}
+
+/**
+ * Parse the `<field>` remainder after a `has:` prefix — "the item carries any value for
+ * this" (issue #139). Pairs with negation to ask the question that actually gets asked:
+ * `-has:category` is "anything without a category", `-has:Datasheet` "no datasheet".
+ *
+ * A name that isn't one of the {@link PRESENCE_FIELDS} columns is read as a category
+ * **custom field**, since those are the fields a user names themselves. Resolution happens
+ * in the SQL layer, so an unknown name is not an error here — it simply matches nothing.
+ */
+function parsePresenceTerm(rest: string): TermResult {
+  const name = unquote(rest);
+  if (name.length === 0) {
+    return { error: 'A presence filter needs a field, e.g. has:mpn or has:Datasheet.' };
+  }
+
+  // `Object.hasOwn`, never a bare index — same reason as the field-alias lookup above:
+  // `ALWAYS_PRESENT_FIELDS['constructor']` would otherwise be a truthy *function*, so
+  // `has:constructor` would report "every item has a function () { … }" instead of reading as
+  // the name of one of your own custom fields.
+  const key = name.toLowerCase();
+  if (Object.hasOwn(ALWAYS_PRESENT_FIELDS, key)) {
+    const label = ALWAYS_PRESENT_FIELDS[key];
+    return { error: `Every item has a ${label}, so "has:${name}" would match everything.` };
+  }
+
+  const scalar = Object.hasOwn(PRESENCE_FIELDS, key) ? PRESENCE_FIELDS[key] : undefined;
+  const field = scalar ?? toCustomField(name);
+  return { condition: { field, operator: 'HAS_CAPABILITY', value: '' } };
 }
 
 /** Index of the first comparison/CONTAINS operator in a custom-field remainder. */
