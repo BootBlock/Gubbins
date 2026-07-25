@@ -83,7 +83,7 @@ export function QrCodeDialog({
   // Guarded encode: the deep-link's length depends on the user's "Link host" setting, so a
   // payload that won't fit any supported symbol must degrade to an explanation (below) rather
   // than throw out of this render.
-  const qr = useMemo(() => (showQr ? qrSvgOrNull(url, { scale: 8, margin: 4 }) : null), [showQr, url]);
+  const qr = useMemo(() => (showQr ? qrSvgOrNull(url, { scale: 8 }) : null), [showQr, url]);
   const qrTooLong = showQr && qr === null;
   const barcode = useMemo(() => {
     if (!showBarcode || barcode128.value === null) return null;

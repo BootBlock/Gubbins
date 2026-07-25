@@ -2841,9 +2841,17 @@
     object-fit: cover;
   }
 
+  /* 18 mm is a *derived* minimum, not a taste call (issue #330). The deep-link a QR carries is
+   * as long as the user's "Link host" setting makes it, so this box has to stay readable for
+   * the largest symbol the encoder can produce: 57 modules plus the mandatory 4-module quiet
+   * zone each side is 65, and 65 × the 0.25 mm module floor is 16.25 mm — the 16 mm this used
+   * to be left the biggest codes below the floor, with no quiet zone to speak of between them
+   * and the neighbouring table rule. A unit test pins this value against those constants, so
+   * shrinking it (or raising MAX_QR_BYTES) fails the build rather than quietly printing
+   * catalogues nobody can scan. Raw mm is intentional here, as elsewhere in this print block. */
   .catalogue-qr {
-    width: 16mm !important;
-    height: 16mm !important;
+    width: 18mm !important;
+    height: 18mm !important;
   }
 }
 

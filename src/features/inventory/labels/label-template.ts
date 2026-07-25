@@ -19,6 +19,7 @@
  * value Code 128 cannot spell is transliterated or given up on, never quietly cut down to
  * the letters that happen to fit the symbology (issue #332).
  */
+import { QR_QUIET_ZONE_MODULES, qrModuleCount } from '@/features/scanner/qr-code';
 import { code128Modules, code128WidestModules } from './code128';
 
 /**
@@ -859,4 +860,77 @@ export function fitBarcodeValue(preferred: string, id: string, widthMm: number):
     return { value: short, fit: wanted !== null ? 'shortened' : 'ok' };
   }
   return { value: null, fit: 'unprintable' };
+}
+
+/**
+ * The narrowest a single printed QR module may be and still be read, in millimetres.
+ *
+ * The QR counterpart of {@link MIN_BARCODE_MODULE_MM}, and the number the label geometry was
+ * never checked against (issue #330): a symbol's module count is set by its payload, so
+ * squeezing a deep-link's QR into a small label divides a fixed number of modules into less
+ * and less space until a camera cannot resolve one from the next.
+ *
+ * 0.25 mm (10 mil) is the practical floor for the camera these codes are read with — a phone
+ * held a few centimetres away, autofocusing, with no illumination of its own. Like the barcode
+ * floor it is a hard minimum rather than a quality target: GS1's general specifications ask
+ * 0.375 mm and up for a QR that has to be read reliably by any scanner, so a code that merely
+ * clears this is still better printed larger where there is room.
+ */
+export const MIN_QR_MODULE_MM = 0.25;
+
+/**
+ * How a label's QR fared at the size it will print:
+ * - `ok`      — its modules clear {@link MIN_QR_MODULE_MM}.
+ * - `tooSmall` — they don't; it will print, but a phone is unlikely to read it.
+ *
+ * Deliberately *not* the barcode's `unprintable` — there, a too-small symbol is dropped
+ * because a shorter value or a bare label is a genuine alternative. A QR's payload is a
+ * deep-link that cannot be shortened, it is usually the only code on the label, and the size
+ * it prints at depends on how the text beside it happens to wrap — so dropping it on an
+ * estimate would trade a code that might scan for a sticker that certainly does nothing. It
+ * is printed, and the print dialogs say what will happen.
+ */
+export type QrFit = 'ok' | 'tooSmall';
+
+/**
+ * The printed width of one module, in mm, of the QR encoding `payload` when the whole symbol
+ * — including its mandatory {@link QR_QUIET_ZONE_MODULES} quiet zone, which is part of what is
+ * drawn — is rendered `sizeMm` across.
+ *
+ * `null` means one thing only: **there is no symbol to measure**, because the payload fits no
+ * supported version. A size of zero is not that — it is a label whose text has taken every
+ * millimetre the code had, which is the *worst* case and must measure as one. Folding the two
+ * together made this non-monotonic: shrinking a label past the point where the QR got no room
+ * at all turned the "too small" warning back off, exactly where it mattered most.
+ *
+ * A negative size is meaningless rather than absent, so it measures as zero for the same
+ * reason. A non-finite one is not a measurement at all.
+ */
+export function qrModuleSizeMm(payload: string, sizeMm: number): number | null {
+  const modules = qrModuleCount(payload);
+  if (modules === null || !Number.isFinite(sizeMm)) return null;
+  return Math.max(0, sizeMm) / (modules + QR_QUIET_ZONE_MODULES * 2);
+}
+
+/**
+ * Whether the QR encoding `payload` will print readably at `sizeMm` across — see
+ * {@link QrFit}. An un-encodable payload is reported `ok`: there is no QR on that label at
+ * all, which is a different problem the caller already surfaces ("link too long"), and calling
+ * it too small as well would put two warnings on screen for one cause.
+ */
+export function fitQrToSize(payload: string, sizeMm: number): QrFit {
+  const module = qrModuleSizeMm(payload, sizeMm);
+  if (module === null) return 'ok';
+  return module >= MIN_QR_MODULE_MM ? 'ok' : 'tooSmall';
+}
+
+/**
+ * The smallest square, in mm, that prints the QR encoding `payload` at or above the
+ * {@link MIN_QR_MODULE_MM} floor — what a fixed-size printed QR box has to be sized against,
+ * and what a warning quotes as the size to aim for.
+ */
+export function minQrSizeMm(payload: string): number | null {
+  const modules = qrModuleCount(payload);
+  if (modules === null) return null;
+  return (modules + QR_QUIET_ZONE_MODULES * 2) * MIN_QR_MODULE_MM;
 }
