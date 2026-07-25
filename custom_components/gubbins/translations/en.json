@@ -155,6 +155,28 @@
           "description": "Optional note recorded on the return, e.g. what state it came back in."
         }
       }
+    },
+    "transfer_stock": {
+      "name": "Transfer stock (move between locations)",
+      "description": "Move some of a counted item from one location to another. The item's total doesn't change — only where it is. Measured consumables can't be moved this way: a gauge tracks one body of material, so there is nothing to split. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on; the change syncs back to the app conflict-free.",
+      "fields": {
+        "item_id": {
+          "name": "Item id",
+          "description": "The Gubbins record id of the item to move (find it via the search service or the API)."
+        },
+        "from_location_id": {
+          "name": "From location id",
+          "description": "The location the units are moving out of. There must be enough there — the whole amount moves or none of it does."
+        },
+        "to_location_id": {
+          "name": "To location id",
+          "description": "The location the units are moving into."
+        },
+        "quantity": {
+          "name": "Quantity",
+          "description": "How many units to move."
+        }
+      }
     }
   }
 }

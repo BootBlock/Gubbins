@@ -22,7 +22,7 @@ search:
           max: 25
           mode: box
 
-# Opt-in change to a discrete item's count. One of four services that change inventory, and they
+# Opt-in change to a discrete item's count. One of five services that change inventory, and they
 # work only when the bridge is started with GUBBINS_BRIDGE_ALLOW_WRITES=on (otherwise they error
 # with "writes disabled"). The change round-trips through the app's own sync merge, so the PWA
 # applies it conflict-free on its next sync. Use a negative delta for stock going out, positive for
@@ -159,3 +159,36 @@ check_in:
       example: "Back on the shelf"
       selector:
         text:
+
+# Move stock from one location to another, for a DISCRETE (counted) item — a gauge measures one
+# body of material and has nothing to split, so it is refused. This changes WHERE stock is;
+# adjust_quantity above changes HOW MUCH there is, and only ever at the item's home location, so it
+# cannot express a move. The item's total is unchanged afterwards, and each moved lot keeps its
+# batch and expiry at the destination. All of it moves or none does — too little at the source is
+# an error, never a silent partial move. Same GUBBINS_BRIDGE_ALLOW_WRITES=on opt-in and stock
+# permission as adjust_quantity. Location ids come from the app or /api/v1/locations.
+transfer_stock:
+  fields:
+    item_id:
+      required: true
+      example: "item-esp32"
+      selector:
+        text:
+    from_location_id:
+      required: true
+      example: "loc-shelf-2"
+      selector:
+        text:
+    to_location_id:
+      required: true
+      example: "loc-bin-4"
+      selector:
+        text:
+    quantity:
+      required: true
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 1000000
+          mode: box
