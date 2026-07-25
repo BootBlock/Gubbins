@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import type { Item, ItemSortField, LocationWithCount } from '@/db/repositories';
+import { Checkbox } from '@/components/foundry';
 import { SortAscIcon, SortDescIcon } from '@/components/icons';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import { columnAriaSort, nextSortForColumn } from '../sorting';
@@ -192,13 +193,11 @@ const ItemTableRowBody = memo(function ItemTableRow({
     >
       {selection ? (
         <span role="cell" className="flex items-center">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={selected}
             onChange={() => selection.onToggle(item)}
             aria-label={`Select ${item.name}`}
             data-testid="item-select"
-            className="size-4 shrink-0 accent-primary"
           />
         </span>
       ) : null}

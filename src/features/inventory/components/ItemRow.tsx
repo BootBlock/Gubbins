@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
+import { Checkbox } from '@/components/foundry';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useHighlightTarget } from '@/lib/highlight';
 import { isUnlimited } from '../unlimited';
@@ -98,13 +99,11 @@ const ItemRowBody = memo(function ItemRow({
       )}
     >
       {selection ? (
-        <input
-          type="checkbox"
+        <Checkbox
           checked={selected}
           onChange={() => selection.onToggle(item)}
           aria-label={`Select ${item.name}`}
           data-testid="item-select"
-          className="size-4 shrink-0 accent-primary"
         />
       ) : null}
 

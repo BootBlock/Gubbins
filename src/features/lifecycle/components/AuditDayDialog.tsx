@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { plural } from '@/lib/plural';
 import {
   Button,
+  Checkbox,
   LiveRegion,
   Modal,
   SelectField,
@@ -238,9 +239,7 @@ function ScopePicker({ onClose }: { onClose: () => void }) {
                   className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-secondary/40"
                   style={{ paddingLeft: `${0.5 + l.depth * 1}rem` }}
                 >
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-primary"
+                  <Checkbox
                     checked={selectedIds.has(l.id)}
                     onChange={() => toggleSelected(l.id)}
                     data-testid={`audit-pick-${l.id}`}

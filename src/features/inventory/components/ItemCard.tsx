@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
-import { Surface, usePointerTilt } from '@/components/foundry';
+import { Checkbox, Surface, usePointerTilt } from '@/components/foundry';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useHighlightTarget } from '@/lib/highlight';
@@ -168,13 +168,12 @@ const ItemCardBody = memo(function ItemCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           {selection ? (
-            <input
-              type="checkbox"
+            <Checkbox
               checked={selected}
               onChange={() => selection.onToggle(item)}
               aria-label={`Select ${item.name}`}
               data-testid="item-select"
-              className="mt-1 size-4 shrink-0 accent-primary"
+              className="mt-1"
             />
           ) : null}
           {item.thumbnailBlob ? (

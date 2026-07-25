@@ -10,6 +10,7 @@ import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import {
   Button,
+  Checkbox,
   Input,
   InputClearButton,
   LiveRegion,
@@ -514,11 +515,10 @@ export function LocationSidebar({
 
       {archivedCount > 0 ? (
         <label className="flex shrink-0 cursor-pointer items-center gap-2 px-1 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={showArchived}
             onChange={(e) => setShowArchived(e.target.checked)}
-            className="size-3.5 accent-primary"
+            className="size-3.5"
           />
           Show archived ({archivedCount})
         </label>

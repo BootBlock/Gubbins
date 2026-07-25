@@ -10,33 +10,41 @@ import { getTagRepository } from '@/db/repositories';
 import { useReportWriteFailure, type WriteFailureHeadingKey } from '@/features/errors';
 import type { Tag } from '@/db/repositories/types/tags';
 import { bucketIds, mergeBucketMaps } from './id-buckets';
-import { inventoryKeys } from './queries';
+import { inventoryKeys, type TagBrowse } from './queries';
 import { invalidateItems } from './invalidate';
 import { projectTagSet } from './tag-set';
 
 /**
- * One page of the tag dictionary with live item + location counts (issue #84).
+ * One page of the tag dictionary with live item + location counts, optionally narrowed and
+ * re-ordered (issues #84, #137).
  *
  * Paged **server-side**: the dictionary can outgrow a single read, and the management screen
  * must be able to reach every tag, so the page is fetched by offset rather than sliced out of
- * one capped result (which would silently hide everything past the first page).
+ * one capped result (which would silently hide everything past the first page). The filter is
+ * resolved the same way, so it reaches tags that sort past the page on screen rather than
+ * narrowing the page in hand. Pair with {@link useTagCount} given the same filter.
  */
-export function useTagDictionary(page = 1, pageSize = 100) {
+export function useTagDictionary(page = 1, pageSize = 100, browse: TagBrowse = {}) {
   const offset = Math.max(0, (page - 1) * pageSize);
   return useQuery({
-    queryKey: inventoryKeys.tagList(offset, pageSize),
-    queryFn: () => getTagRepository().list({ limit: pageSize, offset }),
-    // Keep the previous page on screen while the next one loads, so paging doesn't flash
-    // the empty/loading state.
+    queryKey: inventoryKeys.tagList(offset, pageSize, browse),
+    queryFn: () => getTagRepository().list({ ...browse, limit: pageSize, offset }),
+    // Keep the previous page on screen while the next one loads (or the filter changes), so
+    // paging and typing don't flash the empty/loading state.
     placeholderData: (previous) => previous,
   });
 }
 
-/** Total number of tags — the denominator for the Tags screen's pagination (issue #84). */
-export function useTagCount() {
+/**
+ * How many tags match `search` — the denominator for the Tags screen's pagination (issue #84)
+ * and the figure the filtered list announces (issue #137). Held through a filter change so the
+ * page strip doesn't flicker between counts as the box is typed into.
+ */
+export function useTagCount(search = '') {
   return useQuery({
-    queryKey: inventoryKeys.tagCount(),
-    queryFn: () => getTagRepository().count(),
+    queryKey: inventoryKeys.tagCount(search),
+    queryFn: () => getTagRepository().count({ search }),
+    placeholderData: (previous) => previous,
   });
 }
 

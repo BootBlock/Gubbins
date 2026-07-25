@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Button, Input, Modal, Select } from '@/components/foundry';
+import { Button, Checkbox, Input, Modal, Select } from '@/components/foundry';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { type Condition, type LocationWithCount } from '@/db/repositories';
@@ -217,11 +217,10 @@ function FieldRow({
   return (
     <div className="space-y-1">
       <label className="flex w-fit cursor-pointer items-center gap-2 text-sm font-medium">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={enabled}
           onChange={(e) => onToggle(e.target.checked)}
-          className="size-3.5 accent-primary"
+          className="size-3.5"
           data-testid={testId}
         />
         {label}

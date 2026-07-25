@@ -21,7 +21,16 @@
  */
 import { useEffect, useId, useMemo, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { Button, LiveRegion, Modal, Select, Spinner, Surface, Textarea } from '@/components/foundry';
+import {
+  Button,
+  Checkbox,
+  LiveRegion,
+  Modal,
+  Select,
+  Spinner,
+  Surface,
+  Textarea,
+} from '@/components/foundry';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { decimalSeparatorForLocale } from '@/lib/format';
@@ -614,13 +623,7 @@ function ImportWorkbench({
       {/* Header-row toggle (delimited formats only) */}
       {isDelimitedFormat(extraction.format) ? (
         <label htmlFor={headerId} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-          <input
-            id={headerId}
-            type="checkbox"
-            checked={hasHeader}
-            onChange={(e) => setHasHeader(e.target.checked)}
-            className="size-4 rounded border-border"
-          />
+          <Checkbox id={headerId} checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} />
           The first row is a header row
         </label>
       ) : null}

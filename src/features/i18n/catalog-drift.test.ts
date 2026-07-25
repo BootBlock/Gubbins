@@ -7,6 +7,7 @@ import { LAB_FLAGS } from '@/features/lab/lab-flags';
 import { DENSITY_MODES } from '@/features/inventory/view-modes';
 import { GROUP_MODES } from '@/features/inventory/grouping';
 import { SORT_MODES } from '@/features/inventory/sorting';
+import { PROJECT_STATUS_LABELS, PROJECT_STATUS_LABEL_KEYS } from '@/features/projects/components/projects-ui';
 import { BUILTIN_ROLES } from '@/features/users/builtin-roles';
 import { builtinRoleDescriptionKey, builtinRoleNameKey } from '@/features/users/builtin-role-labels';
 import { EN_CATALOG } from './messages';
@@ -81,6 +82,16 @@ describe('catalog ↔ registry drift', () => {
       expect(EN_CATALOG[builtinRoleDescriptionKey(role.id)], `role ${role.id} description`).toBe(
         role.description,
       );
+    }
+  });
+
+  // The project statuses are read both ways: the Projects master list and its status filter go
+  // through `t()`, while `PROJECT_STATUS_LABELS` is still the English reference other project
+  // surfaces render directly. Let those drift and the same status reads two different words.
+  it('every project status label equals its message key in the English catalog', () => {
+    for (const [status, label] of Object.entries(PROJECT_STATUS_LABELS)) {
+      const key = PROJECT_STATUS_LABEL_KEYS[status as keyof typeof PROJECT_STATUS_LABEL_KEYS];
+      expect(EN_CATALOG[key], `project status ${status}`).toBe(label);
     }
   });
 

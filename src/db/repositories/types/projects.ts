@@ -9,6 +9,7 @@ import type {
   ProjectStatus,
   ReservationStatus,
 } from '../constants';
+import type { PageParams } from './pagination';
 import type { ItemStockPlacement } from './stock';
 
 // --- Projects (spec §4 "Projects & BOMs", Phase 4) ------------------------------
@@ -44,6 +45,32 @@ export interface Project {
 /** A project plus its denormalised BOM-line count, for the list view. */
 export interface ProjectWithCount extends Project {
   readonly lineCount: number;
+}
+
+/**
+ * What narrows a project read (issue #137).
+ *
+ * The master list is the only way into a project, so once there are more projects than fit on a
+ * page, "find the one I mean" has to be something other than paging blindly. `search` is a
+ * case-insensitive substring of the project's **name** — what the list actually prints, so a
+ * match is always visible as the reason the row is there — and `status` narrows to one stage of
+ * the build lifecycle (the everyday "hide the finished ones").
+ */
+export interface ProjectFilter {
+  readonly search?: string;
+  readonly status?: ProjectStatus;
+}
+
+/**
+ * How the project list is ordered (issue #137). Newest-first is the default and the order the
+ * list has always used; the rest exist because "which did I start first" and "find it
+ * alphabetically" are the two other ways a shelf of projects is looked through.
+ */
+export type ProjectSort = 'NEWEST' | 'OLDEST' | 'NAME_ASC' | 'NAME_DESC';
+
+/** {@link ProjectFilter} plus the ordering and the page to read of the matching projects. */
+export interface ProjectListParams extends PageParams, ProjectFilter {
+  readonly sort?: ProjectSort;
 }
 
 export interface CreateProjectInput {

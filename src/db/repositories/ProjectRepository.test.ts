@@ -72,6 +72,85 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(beta.lineCount).toBe(0);
   });
 
+  // --- narrowing the list (issue #137) --------------------------------------------
+
+  describe('search, status filter and sort (issue #137)', () => {
+    /** Three projects with distinct names, statuses and creation instants. */
+    async function seed() {
+      const bench = await projects.create({ name: 'Bench PSU' });
+      const rover = await projects.create({ name: 'Garden rover' });
+      const lamp = await projects.create({ name: 'Desk lamp' });
+      await projects.update(rover.id, { status: 'ACTIVE' });
+      await projects.update(lamp.id, { status: 'COMPLETED' });
+      // Stamp distinct creation instants: three inserts can land in the same millisecond, and a
+      // tie would fall through to the name tiebreak and make the date orderings assert nothing.
+      await driver.execute('UPDATE projects SET created_at = 1000 WHERE id = ?;', [bench.id]);
+      await driver.execute('UPDATE projects SET created_at = 2000 WHERE id = ?;', [rover.id]);
+      await driver.execute('UPDATE projects SET created_at = 3000 WHERE id = ?;', [lamp.id]);
+      return { bench, rover, lamp };
+    }
+
+    it('narrows to names containing the term, case-insensitively', async () => {
+      const { bench } = await seed();
+      const page = await projects.list({ search: 'psu' });
+      expect(page.rows.map((p) => p.id)).toEqual([bench.id]);
+    });
+
+    it('counts what the same filter would list, not the whole table', async () => {
+      await seed();
+      // A page strip sized from an unfiltered count would offer pages the filter cannot fill.
+      expect(await projects.count()).toBe(3);
+      expect(await projects.count({ search: 'psu' })).toBe(1);
+      expect(await projects.count({ status: 'COMPLETED' })).toBe(1);
+      expect(await projects.count({ search: 'rover', status: 'COMPLETED' })).toBe(0);
+    });
+
+    it('matches a typed wildcard literally rather than as a pattern', async () => {
+      await projects.create({ name: '50% duty cycle' });
+      await projects.create({ name: 'Bench PSU' });
+      // Unescaped, `%` would match every project — the search box would silently lie.
+      const page = await projects.list({ search: '50%' });
+      expect(page.rows.map((p) => p.name)).toEqual(['50% duty cycle']);
+    });
+
+    it('combines the search and the status filter as an intersection', async () => {
+      const { rover } = await seed();
+      const page = await projects.list({ search: 'r', status: 'ACTIVE' });
+      expect(page.rows.map((p) => p.id)).toEqual([rover.id]);
+    });
+
+    it('orders by each supported sort, defaulting to newest first', async () => {
+      const { bench, rover, lamp } = await seed();
+      const ids = async (sort?: Parameters<typeof projects.list>[0]) =>
+        (await projects.list(sort)).rows.map((p) => p.id);
+
+      expect(await ids()).toEqual([lamp.id, rover.id, bench.id]);
+      expect(await ids({ sort: 'OLDEST' })).toEqual([bench.id, rover.id, lamp.id]);
+      expect(await ids({ sort: 'NAME_ASC' })).toEqual([bench.id, lamp.id, rover.id]);
+      expect(await ids({ sort: 'NAME_DESC' })).toEqual([rover.id, lamp.id, bench.id]);
+    });
+
+    it('keeps the BOM-line counts correct under a filter (the JOIN still groups per project)', async () => {
+      const { bench } = await seed();
+      await projects.addLine(bench.id, { description: 'R1' });
+      await projects.addLine(bench.id, { description: 'R2' });
+      const page = await projects.list({ search: 'bench' });
+      expect(page.rows[0]?.lineCount).toBe(2);
+    });
+
+    it('pages the filtered set rather than filtering one page', async () => {
+      for (let i = 0; i < 5; i += 1) await projects.create({ name: `Rig ${i}` });
+      await projects.create({ name: 'Something else' });
+
+      const first = await projects.list({ search: 'Rig', sort: 'NAME_ASC', limit: 2, offset: 0 });
+      const last = await projects.list({ search: 'Rig', sort: 'NAME_ASC', limit: 2, offset: 4 });
+      expect(first.rows.map((p) => p.name)).toEqual(['Rig 0', 'Rig 1']);
+      // The fifth match is reachable, and the non-matching project never appears on any page.
+      expect(last.rows.map((p) => p.name)).toEqual(['Rig 4']);
+      expect(await projects.count({ search: 'Rig' })).toBe(5);
+    });
+  });
+
   it('updates a project and toggles the costing mode', async () => {
     const p = await projects.create({ name: 'X' });
     const updated = await projects.update(p.id, {
