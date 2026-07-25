@@ -10,6 +10,8 @@ import {
   type ImportFormat,
 } from '@/features/import/tabular';
 import { ImportProblemsBanner } from '@/features/import/components/ImportProblemsBanner';
+import { ImportFileBanner } from '@/features/import/components/ImportFileBanner';
+import { readImportFile, type ImportFileRead } from '@/features/import/file-source';
 import { useCreateProjectFromBom, useImportBom } from '../projects';
 import { parseBom, BomImportError, type BomParseResult } from '../bom-import';
 import { useErrorMessage } from '@/features/errors';
@@ -61,6 +63,9 @@ export function ImportBomDialog({
   // 'auto' → detect the source shape from the content; a format id forces that parser.
   const [formatOverride, setFormatOverride] = useState<ImportFormat | 'auto'>('auto');
   const [parsed, setParsed] = useState<BomParseResult | null>(null);
+  // What the last chosen file turned out to be — a refusal to explain, or the encoding it had to
+  // be read as. Cleared as soon as the text is edited by hand, since it no longer describes it.
+  const [fileRead, setFileRead] = useState<ImportFileRead | null>(null);
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
   const [summary, setSummary] = useState<string | null>(null);
@@ -73,6 +78,7 @@ export function ImportBomDialog({
     setText('');
     setFormatOverride('auto');
     setParsed(null);
+    setFileRead(null);
     setError(null);
     setSummary(null);
   };
@@ -103,12 +109,19 @@ export function ImportBomDialog({
 
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
-    // Seed a new project's name from the file's base name, unless the user typed one.
-    if (isNewProject && !nameTouched) {
-      const base = file.name.replace(/\.[^.]+$/, '').trim();
-      if (base.length > 0) setName(base);
+    // The shared seam decides whether this file can be text at all — size cap, binary sniff and a
+    // strict decode — so an .xlsx or a Latin-1 export cannot become garbage lines (issue #347).
+    const read = await readImportFile(file);
+    if (read.ok) {
+      // Seed a new project's name from the file's base name, unless the user typed one. Only for a
+      // file that was actually read: a refused one contributes nothing, not even its name.
+      if (isNewProject && !nameTouched) {
+        const base = file.name.replace(/\.[^.]+$/, '').trim();
+        if (base.length > 0) setName(base);
+      }
+      runParse(read.text, formatOverride);
     }
-    runParse(await file.text(), formatOverride);
+    setFileRead(read);
   };
 
   // When auto-detecting, show which tabular shape was recognised (a `lines` result means
@@ -201,7 +214,12 @@ export function ImportBomDialog({
               type="file"
               accept={BOM_FILE_ACCEPT}
               className="hidden"
-              onChange={(e) => void handleFile(e.target.files?.[0])}
+              onChange={(e) => {
+                void handleFile(e.target.files?.[0]);
+                // Clear the input so re-choosing the same path fires another change event —
+                // otherwise fixing a refused file in place and picking it again does nothing.
+                e.target.value = '';
+              }}
             />
           </div>
           <div className="ml-auto space-y-field-gap-compact">
@@ -233,9 +251,14 @@ export function ImportBomDialog({
           </div>
         </div>
 
+        <ImportFileBanner read={fileRead} data-testid="bom-import-file-notice" />
+
         <Textarea
           value={text}
-          onChange={(e) => runParse(e.target.value, formatOverride)}
+          onChange={(e) => {
+            setFileRead(null);
+            runParse(e.target.value, formatOverride);
+          }}
           placeholder={'Reference,Value,Quantity,MPN,Manufacturer\nR1,10k,2,RC0805FR-0710KL,Yageo'}
           className="h-40 font-mono"
           aria-label="BOM text"
