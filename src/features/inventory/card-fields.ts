@@ -13,7 +13,7 @@
  */
 import type { Item } from '@/db/repositories';
 import type { Condition, FieldType } from '@/db/repositories/constants';
-import { isImageDataUrl } from './custom-fields';
+import { isImageDataUrl } from '@/lib/image-data-url';
 import { UNLIMITED_GLYPH } from './unlimited';
 
 /** The built-in (always-available) card fields — those derivable from the item row itself. */

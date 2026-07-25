@@ -5,8 +5,8 @@ import { encodeFieldImage } from '@/features/images/compression';
 import { useErrorMessage } from '@/features/errors';
 import { useT } from '@/features/i18n';
 import { assertExhaustive } from '@/lib/exhaustive';
+import { isImageDataUrl } from '@/lib/image-data-url';
 import { cn } from '@/lib/utils';
-import { isImageDataUrl } from '../custom-fields';
 import type { FieldType } from '@/db/repositories';
 
 /** ARIA validation wiring (aria-invalid/describedby) to spread onto the primary control. */

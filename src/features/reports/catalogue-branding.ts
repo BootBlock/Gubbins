@@ -11,6 +11,7 @@
  * production build + manual verification, not the `:memory:` unit suite. The pure
  * {@link normaliseCatalogueLogo} guard *is* unit-tested.
  */
+import { isImageDataUrl } from '@/lib/image-data-url';
 
 /** Longest-edge cap for the stored logo — small enough to keep the data URL a few KB. */
 const MAX_LOGO_DIMENSION = 320;
@@ -43,10 +44,19 @@ export async function logoToDataUrl(file: Blob): Promise<string> {
 }
 
 /**
- * Guard a persisted logo value: only a `data:image/…` URL is allowed to reach the `<img>` tag;
- * anything else (a stale/garbage value, a non-image URL) normalises to `''` (no logo). Keeps a
- * corrupt persisted preference from ever rendering a broken or unexpected image.
+ * Guard a persisted logo value: only a base64 image `data:` URL — the shape {@link logoToDataUrl}
+ * produces — is allowed to reach the `<img>` tag; anything else (a stale/garbage value, a non-image
+ * URL, unencoded SVG markup) normalises to `''` (no logo).
+ *
+ * This runs on the way *in* (`setCatalogueLogo`) and again on rehydration, because the logo is not
+ * merely local: `catalogueLogo` is a `liveSyncable` field in a settings backup group
+ * ({@link import('@/features/backup/settings-groups')}), so it arrives from other devices and from
+ * restored backups. It is the same rule, on the same class of value, as an `IMAGE` custom field's —
+ * hence the shared {@link isImageDataUrl}, applied to the trimmed string so what is stored is what
+ * was checked.
  */
 export function normaliseCatalogueLogo(value: unknown): string {
-  return typeof value === 'string' && value.startsWith('data:image/') ? value : '';
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  return isImageDataUrl(trimmed) ? trimmed : '';
 }
