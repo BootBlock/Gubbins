@@ -143,6 +143,96 @@ describe('SupplierRepository (issue #384)', () => {
     });
   });
 
+  describe('paging and searching (issue #386)', () => {
+    /** `Supplier 001`…`Supplier 0NN`, so name order is predictable and stable. */
+    const seed = async (n: number) => {
+      for (let i = 1; i <= n; i += 1) {
+        await repo.create({ name: `Supplier ${String(i).padStart(3, '0')}` });
+      }
+    };
+
+    it('reaches suppliers past the first page by offset', async () => {
+      // Offset paging already worked here — it was the screen that only ever asked for page one.
+      // Pinned all the same, because that is now the seam every supplier's reachability rests on.
+      await seed(120);
+
+      const second = await repo.list({ limit: 100, offset: 100 });
+
+      expect(second.rows).toHaveLength(20);
+      expect(second.rows[19]?.name).toBe('Supplier 120');
+      expect(second.hasMore).toBe(false);
+    });
+
+    it('counts the whole dictionary, not the page', async () => {
+      await seed(120);
+      expect(await repo.count()).toBe(120);
+      expect((await repo.list({ limit: 100 })).rows).toHaveLength(100);
+    });
+
+    it('filters on a substring of the name, ignoring case', async () => {
+      await repo.create({ name: 'RS Components' });
+      await repo.create({ name: 'Farnell' });
+      await repo.create({ name: 'Mouser' });
+
+      const page = await repo.list({ search: 'components' });
+
+      expect(page.rows.map((s) => s.name)).toEqual(['RS Components']);
+      expect(await repo.count({ search: 'components' })).toBe(1);
+    });
+
+    it('ignores spacing and punctuation, as every other name comparison does', async () => {
+      // A user who half-remembers the punctuation should still find the supplier; a search box
+      // that alone insisted on the exact spelling would be the odd one out in the app.
+      await repo.create({ name: 'RS Components' });
+      await repo.create({ name: 'Mouser' });
+
+      for (const typed of ['rs-components', 'RS  Components', 'r.s. components']) {
+        expect((await repo.list({ search: typed })).rows.map((s) => s.name)).toEqual(['RS Components']);
+        expect(await repo.count({ search: typed })).toBe(1);
+      }
+    });
+
+    it('surfaces near-duplicates together so a merge can reconcile them', async () => {
+      // Two rows for one company — the case merge exists for. Both must come back for the name
+      // they share, or the user cannot see there is anything to reconcile.
+      await repo.create({ name: 'Farnell' });
+      await repo.create({ name: 'Farnell UK Ltd.' });
+      await repo.create({ name: 'Mouser' });
+
+      expect((await repo.list({ search: 'farnell' })).rows.map((s) => s.name)).toEqual([
+        'Farnell',
+        'Farnell UK Ltd.',
+      ]);
+    });
+
+    it('counts exactly what the same filter lists', async () => {
+      // A count that disagreed with the list would size the page strip for a different result
+      // set than the rows, stranding the user on a page that renders nothing.
+      await repo.create({ name: 'Alpha Parts' });
+      await repo.create({ name: 'Beta Parts' });
+      await repo.create({ name: 'Gamma Supplies' });
+
+      expect(await repo.count({ search: 'parts' })).toBe(2);
+      expect((await repo.list({ search: 'parts' })).rows).toHaveLength(2);
+    });
+
+    it('treats LIKE wildcards in the search text as literal characters', async () => {
+      // Typed as-is into a LIKE pattern, `%` would match every supplier — a search box has to
+      // find what the user typed, not everything.
+      await repo.create({ name: '50% Off Spares' });
+      await repo.create({ name: 'Farnell' });
+
+      expect((await repo.list({ search: '%' })).rows.map((s) => s.name)).toEqual(['50% Off Spares']);
+      expect(await repo.count({ search: '%' })).toBe(1);
+    });
+
+    it('ignores a blank search rather than matching nothing', async () => {
+      await repo.create({ name: 'Farnell' });
+      expect((await repo.list({ search: '   ' })).rows).toHaveLength(1);
+      expect(await repo.count({ search: '   ' })).toBe(1);
+    });
+  });
+
   describe('resolveRef', () => {
     it('returns an existing id unchanged and creates from a name', async () => {
       const supplier = await repo.create({ name: 'Farnell' });

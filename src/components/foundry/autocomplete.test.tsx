@@ -105,6 +105,43 @@ describe('Autocomplete — editable combobox (WAI-ARIA APG)', () => {
     expect(input.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
   });
+
+  it('offers a prefiltered list verbatim, however little it looks like the typed text', () => {
+    // A server-searched list has already been narrowed — possibly by rules this control cannot
+    // reproduce (folded punctuation, synonyms). Re-filtering it literally would throw matches
+    // away, so `prefiltered` shows exactly what was handed over, capped and no more.
+    render(
+      <AutocompleteField
+        label="Supplier"
+        value="RS Comp"
+        onChange={() => {}}
+        suggestions={['RS-Components', 'R.S. Components Ltd']}
+        prefiltered
+      />,
+    );
+    fireEvent.mouseDown(document.querySelector('button')!);
+
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'RS-Components',
+      'R.S. Components Ltd',
+    ]);
+  });
+
+  it('still caps a prefiltered list at maxOptions', () => {
+    render(
+      <AutocompleteField
+        label="Supplier"
+        value=""
+        onChange={() => {}}
+        suggestions={MAKERS}
+        prefiltered
+        maxOptions={2}
+      />,
+    );
+    fireEvent.mouseDown(document.querySelector('button')!);
+
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+  });
 });
 
 describe('AutocompleteField — labelled wrapper', () => {

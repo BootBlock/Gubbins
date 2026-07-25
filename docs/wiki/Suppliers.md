@@ -29,9 +29,23 @@ numbers are what tell you the cost of deleting it — and whether merging it wou
 
 Select a supplier to edit it.
 
+### Finding one
+
+**Search by name** above the list narrows it to suppliers whose name contains what you type —
+useful once the list is long enough that scrolling for one is tedious. The search looks at your
+whole supplier list, not just the part currently on screen, so it will always find a supplier you
+can name. Capitals, spaces and punctuation are ignored, so `rs-components` finds **RS Components**.
+Press `Esc` (or the ✕ in the box) to clear it.
+
 > **💡 Tip**
 > Turn on **Paginate lists** in settings if you'd rather page through a long list than scroll it.
-> See [[Language & region|Language-and-Region]] and the settings pages for the display options.
+> The page control then walks the entire list, which is the easiest way to browse a big one. See
+> [[Language & region|Language-and-Region]] and the settings pages for the display options.
+
+> **ℹ️ Note**
+> Without pagination the screen shows as much of the list as it can read in one go, and says so
+> underneath when there is more (*"Showing the first 100 of 120 suppliers"*). Search — or turn
+> pagination on — to reach the rest.
 
 ## Adding and editing a supplier
 
@@ -58,9 +72,14 @@ existing supplier when the name matches one.
 **Merge suppliers** is the repair path for duplicates that already exist, and the way to retire a
 supplier while its order history keeps naming a supplier.
 
-Pick the supplier to **merge away** and the one to **merge into**. Before anything happens, Gubbins
-spells out exactly what will move — for example *"12 supplier parts and 3 purchase orders will move
-to RS Components; RS-Components will be deleted."* — and asks you to confirm.
+Pick the supplier to **merge away** and the one to **merge into**. Both are search fields: start
+typing and the matching suppliers appear, from anywhere in your list. Before anything happens,
+Gubbins spells out exactly what will move — for example *"12 supplier parts and 3 purchase orders
+will move to RS Components; RS-Components will be deleted."* — and asks you to confirm.
+
+Each field only accepts a supplier that already exists, so a half-typed name selects nothing and
+says so. Choosing one from the list is the surest way; typing a full name works too, and matching
+ignores capitals, spaces and punctuation just as it does everywhere else.
 
 Merging then, in one step:
 
