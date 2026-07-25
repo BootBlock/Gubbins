@@ -24,7 +24,8 @@ you need Node **≥ 24** (or the **22.16+ LTS** line).
 >
 > - **Read (always on):** the original `GET /health`, `/search`, `/where`; an additive,
 >   OpenAPI-described [`/api/v1`](#versioned-rest-api-apiv1) surface (items, locations,
->   categories, capabilities, with field-selection + an OData-style query subset); a
+>   categories, capabilities and [inventory status counts](#inventory-status-counts), with
+>   field-selection + an OData-style query subset); a
 >   [CSV export](#csv-export); an [iCalendar subscription feed](#calendar-subscription); and
 >   [syndication feeds + a Prometheus `/metrics`](#feeds--metrics) endpoint. The same read-only
 >   core is also offered over an [MCP stdio server](#mcp-server-for-llmagent-tools) for LLM/agent
@@ -128,7 +129,7 @@ Every route requires `bridge:read` or `bridge:write` — the capability of using
 | Route | Requires |
 | --- | --- |
 | `GET /health`, `/api/v1`, `/api/v1/openapi.json`, `/api/v1/$metadata`, `/api/v1/health`, `/api/v1/events`, `/api/v1/scale/*` | `bridge:read` |
-| `GET /search`, `/where`, `/metrics`, `/api/v1/{search,where,items,items.csv,capabilities}` | `bridge:read` + `items:read` |
+| `GET /search`, `/where`, `/metrics`, `/api/v1/{search,where,items,items.csv,capabilities,status}` | `bridge:read` + `items:read` |
 | `GET /api/v1/locations…` | `bridge:read` + `locations:read` |
 | `GET /api/v1/categories…` | `bridge:read` + `categories:read` |
 | `GET /api/v1/calendar.ics` | `bridge:read` + `bookings:read` |
@@ -309,6 +310,7 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/activity.rss` (`.atom`, `.json`) | A read-only syndication feed of the recent activity log (RSS 2.0 / Atom 1.0 / JSON Feed 1.1) any feed reader can **subscribe** to. See [Feeds & metrics](#feeds--metrics). |
 | `GET /metrics` | A Prometheus/OpenMetrics text exposition of the aggregate inventory counts (root path, not under `/api/v1`). See [Feeds & metrics](#feeds--metrics). |
 | `GET /api/v1/health` | `{ ok, itemCount, snapshotGeneratedAt, … }` (alias of `/health`; see [snapshot freshness](#snapshot-freshness-and-health)). |
+| `GET /api/v1/status` | `{ statuses: { "low-stock": n, … }, snapshotGeneratedAt }` — how many active items match each attention status. See [Inventory status counts](#inventory-status-counts). |
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
 | `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=&fields=&include=&$orderby=&$filter=` | Paginated item summaries (`ItemSummary`). Supports [field selection](#field-selection--extended-fields) and [OData-style options](#odata-style-query-options) (`$orderby`, `$filter`, …). |
@@ -324,6 +326,41 @@ every endpoint is **GET-only** and strictly read-only.
 Search is the **relevance** endpoint (top-N, capped at 25 for voice safety); to **browse all
 items** with pagination use `GET /api/v1/items`. Every read flows through the app's own
 repositories and the single parameterised `parseASTtoSQL` — no bespoke SQL, no write path.
+
+### Inventory status counts
+
+`GET /api/v1/status` answers "does anything need attention, and how much of it?" in one small
+response — the counts behind a dashboard tile or a Home Assistant binary sensor:
+
+```json
+{
+  "statuses": {
+    "low-stock": 3,
+    "out-of-stock": 1,
+    "on-order": 0,
+    "expiring": 2,
+    "warranty": 0,
+    "on-loan": 4,
+    "overdue": 1,
+    "maintenance-due": 0
+  },
+  "snapshotGeneratedAt": "2025-06-27T06:13:20.000Z"
+}
+```
+
+These are the **same** counts the app's own inventory filter chips show: each status is counted
+through the app's own predicate, in a single pass over `items`, so a scraped figure can never
+drift from what the app displays. "Low" and "out of stock" mean here exactly what they mean to
+`/metrics` and the `item.low_stock` events — same thresholds, and a drift test holds the SQL and
+in-memory definitions to the same answer — but note the **totals** can differ on a very large
+vault: `/metrics` counts the first 50,000 active items by design, whereas these counts are over
+the whole of it. Every status is **always** present — a status matching nothing is a `0`, never a
+missing key — so a client never has to distinguish "none" from "not reported".
+
+Aggregates only: how many items match each status, and nothing about *which* items, so no loan,
+order or schedule detail is disclosed. It is deliberately separate from `/health`, which stays a
+cheap liveness probe; these counts come from a scan of the inventory, and only change when the
+served snapshot does — so poll them on a slow interval.
 
 ### Examples
 

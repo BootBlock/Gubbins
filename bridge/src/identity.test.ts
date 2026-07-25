@@ -94,6 +94,7 @@ describe('requiredPermissions', () => {
       '/metrics',
       '/api/v1',
       '/api/v1/openapi.json',
+      '/api/v1/status',
       '/api/v1/items',
       '/api/v1/locations',
       '/api/v1/categories',
@@ -114,6 +115,8 @@ describe('requiredPermissions', () => {
 
   it('maps a route to the subject it actually exposes', () => {
     expect(requiredPermissions('GET', '/api/v1/items')).toEqual(['bridge:read', 'items:read']);
+    // The attention counts are aggregates over items, so they need the same subject items do.
+    expect(requiredPermissions('GET', '/api/v1/status')).toEqual(['bridge:read', 'items:read']);
     expect(requiredPermissions('GET', '/api/v1/locations')).toEqual(['bridge:read', 'locations:read']);
     expect(requiredPermissions('GET', '/api/v1/categories')).toEqual(['bridge:read', 'categories:read']);
     // The calendar publishes bookings and the feeds publish the audit trail — neither is "items".

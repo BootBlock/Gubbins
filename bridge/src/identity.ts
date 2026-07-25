@@ -129,6 +129,10 @@ export function requiredPermissions(method: string, pathname: string): readonly 
     case 'events':
     case 'scale':
       return ['bridge:read'];
+    // `status` sits with the item reads because its counts are aggregates over `items` — how
+    // many match each attention status, never which, so no loan, order or schedule detail is
+    // disclosed by it.
+    case 'status':
     case 'search':
     case 'where':
     case 'items':

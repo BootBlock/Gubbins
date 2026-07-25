@@ -77,6 +77,24 @@
           "description": "Optional note recorded in the item's activity log."
         }
       }
+    },
+    "adjust_gauge": {
+      "name": "Adjust gauge (use / refill a consumable)",
+      "description": "Change how much is in a measured consumable — grams of filament, millilitres of resin — by a signed amount. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on; the change syncs back to the app conflict-free.",
+      "fields": {
+        "item_id": {
+          "name": "Item id",
+          "description": "The Gubbins record id of the consumable (find it via the search service or the API)."
+        },
+        "delta": {
+          "name": "Delta",
+          "description": "Signed change in the item's own unit, and may be fractional: negative for an amount used, positive for a refill."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Optional note recorded in the item's activity log."
+        }
+      }
     }
   }
 }

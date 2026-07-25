@@ -47,3 +47,32 @@ adjust_quantity:
       example: "Checked out for the workshop"
       selector:
         text:
+
+# The gauge counterpart of adjust_quantity, for a CONSUMABLE_GAUGE item — one whose contents are
+# measured (grams of filament, millilitres of resin) rather than counted. Use a negative delta for
+# an amount used, positive for a refill; fractional values are fine. Subject to the same
+# GUBBINS_BRIDGE_ALLOW_WRITES=on opt-in, and round-tripped through the app's own sync merge in the
+# same way. The app clamps the result between empty and the item's capacity, and the call is
+# rejected if the item isn't gauge-tracked. This pairs naturally with a smart scale: read the
+# weight in Home Assistant, send the difference here.
+adjust_gauge:
+  fields:
+    item_id:
+      required: true
+      example: "item-pla-filament"
+      selector:
+        text:
+    delta:
+      required: true
+      example: -45
+      selector:
+        number:
+          min: -1000000
+          max: 1000000
+          step: 0.001
+          mode: box
+    note:
+      required: false
+      example: "Printed the bracket"
+      selector:
+        text:

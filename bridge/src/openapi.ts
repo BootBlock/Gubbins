@@ -12,6 +12,7 @@
  */
 
 import { KNOWN_EVENT_TYPES } from '@/features/events/event-types.ts';
+import { ITEM_STATUS_FILTERS } from '@/db/repositories/item/status-filter.ts';
 
 /** A plain JSON value — the spec is pure data, serialisable to JSON and YAML alike. */
 export type JsonValue =
@@ -555,6 +556,34 @@ export const openapiDocument: JsonValue = {
             lastReloadError: null,
             lastReloadErrorAt: null,
             lastReloadAt: '2025-06-27T06:13:21.000Z',
+          }),
+          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/status': {
+      get: {
+        tags: ['meta'],
+        summary: 'How many active items currently match each attention status',
+        description:
+          'The same counts the app’s inventory filter chips show — low stock, out of stock, on ' +
+          'order, expiring, warranty expiring, on loan, overdue and maintenance due. Every status ' +
+          'is always present, so a status matching nothing is a 0 rather than a missing key. ' +
+          'Aggregates only: no loan, order or schedule detail is disclosed. Kept apart from ' +
+          '/health because it scans items, so liveness stays cheap to poll.',
+        responses: {
+          200: response('The attention counts.', '#/components/schemas/ItemStatusCounts', {
+            statuses: {
+              'low-stock': 3,
+              'out-of-stock': 1,
+              'on-order': 0,
+              expiring: 2,
+              warranty: 0,
+              'on-loan': 4,
+              overdue: 1,
+              'maintenance-due': 0,
+            },
+            snapshotGeneratedAt: '2025-06-27T06:13:20.000Z',
           }),
           ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
         },
@@ -1392,6 +1421,29 @@ export const openapiDocument: JsonValue = {
             nullable: true,
             format: 'date-time',
             description: 'When the served snapshot was last loaded successfully.',
+          },
+        },
+      },
+      ItemStatusCounts: {
+        type: 'object',
+        required: ['statuses', 'snapshotGeneratedAt'],
+        properties: {
+          statuses: {
+            type: 'object',
+            description:
+              'One non-negative count per attention status. Derived from the canonical status ' +
+              'list, so it cannot drift from the filters the app itself offers.',
+            required: [...ITEM_STATUS_FILTERS],
+            properties: Object.fromEntries(
+              ITEM_STATUS_FILTERS.map((status) => [status, { type: 'integer', minimum: 0 }]),
+            ) as JsonValue,
+            additionalProperties: false,
+          },
+          snapshotGeneratedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'When the snapshot these counts were read from was generated.',
           },
         },
       },

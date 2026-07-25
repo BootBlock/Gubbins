@@ -89,6 +89,30 @@ describe('meta endpoints', () => {
     expect(v1).toEqual(legacy);
     expect(v1.itemCount).toBe(4);
   });
+
+  it('serves the attention counts, every status present even at zero (issue #146)', async () => {
+    const res = await get('/api/v1/status');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Nothing in this fixture needs attention, which is exactly the case a consumer must be able
+    // to read as "0" rather than as an absent key it has to guess the meaning of.
+    expect(body.statuses).toEqual({
+      'low-stock': 0,
+      'out-of-stock': 0,
+      'on-order': 0,
+      expiring: 0,
+      warranty: 0,
+      'on-loan': 0,
+      overdue: 0,
+      'maintenance-due': 0,
+    });
+    // The counts are only as fresh as the snapshot they came from, so it travels with them.
+    expect(body.snapshotGeneratedAt).toBe((await json('/api/v1/health')).snapshotGeneratedAt);
+  });
+
+  it('advertises the attention counts in the discovery index', async () => {
+    expect((await json('/api/v1')).endpoints).toContain('/api/v1/status');
+  });
 });
 
 describe('search / where are aliases of the legacy contract', () => {
