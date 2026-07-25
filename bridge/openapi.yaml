@@ -87,12 +87,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -109,7 +109,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -144,12 +155,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -166,7 +177,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -202,12 +224,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -224,7 +246,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -268,12 +301,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -290,13 +323,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -348,12 +381,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -370,13 +403,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -483,12 +516,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -505,13 +538,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -567,12 +600,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -589,13 +622,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -775,12 +808,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -797,13 +830,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -868,12 +901,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -890,13 +923,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -969,12 +1002,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -991,13 +1024,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1105,12 +1138,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -1127,13 +1160,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1237,12 +1270,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -1259,13 +1292,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1369,12 +1402,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -1391,13 +1424,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1501,12 +1534,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -1523,13 +1556,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1608,24 +1641,24 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LegacyError"
         "403":
           description: "The token is valid, but its owner's role does not permit this route."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LegacyError"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LegacyError"
         "429":
           description: "Rate limit exceeded for this client."
           headers:
@@ -1636,15 +1669,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LegacyError"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LegacyError"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1653,7 +1686,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LegacyError"
   /api/v1/items/{id}:
     get:
       tags:
@@ -1737,12 +1770,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -1759,13 +1792,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1844,12 +1877,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -1878,13 +1911,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -1963,12 +1996,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -1997,13 +2030,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2071,12 +2104,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -2111,7 +2144,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -2209,12 +2253,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -2231,13 +2275,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2324,12 +2368,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -2346,13 +2390,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2422,12 +2466,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -2444,13 +2488,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2504,12 +2548,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -2526,13 +2570,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2603,12 +2647,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -2625,13 +2669,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2681,12 +2725,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -2703,7 +2747,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -2713,7 +2768,7 @@ paths:
       tags:
       - "webhooks"
       summary: "Read the bridge’s recent webhook delivery outcomes"
-      description: "Opt-in (GUBBINS_BRIDGE_WEBHOOKS=on); returns 404 when disabled. The bridge is read-only over a snapshot that is swapped wholesale on every hydration, so it cannot record a delivery outcome back into the database — anything it wrote would be discarded on the next hydrate. It therefore keeps a bounded in-memory log, which the app polls while its Webhooks screen is open. The log does not survive a bridge restart. No secret, signature, request header or query string is ever recorded, and each URL is reduced to its origin and path. Reads the bridge’s own memory rather than the snapshot, so it answers before a snapshot has loaded."
+      description: "Opt-in (GUBBINS_BRIDGE_WEBHOOKS=on); returns 404 when disabled. The bridge is read-only over a snapshot that is swapped wholesale on every hydration, so it cannot record a delivery outcome back into the database — anything it wrote would be discarded on the next hydrate. It therefore keeps a bounded in-memory log, which the app polls while its Webhooks screen is open. The log does not survive a bridge restart. No secret, signature, request header or query string is ever recorded, and each URL is reduced to its origin and path. Reads the bridge’s own memory rather than the snapshot — but, like every path, it still answers 503 until one has loaded, because the tokens that identify the caller arrive in that snapshot."
       parameters:
       -
         name: "since"
@@ -2792,12 +2847,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -2814,7 +2869,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -2907,12 +2973,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -2941,13 +3007,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: "Snapshot not loaded yet."
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
           headers:
             Retry-After:
               schema:
@@ -2962,7 +3028,7 @@ paths:
       tags:
       - "scale"
       summary: "List the Home Assistant entities that can be used as a scale"
-      description: "Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Projects Home Assistant’s entity states down to those reporting a convertible mass unit, for the app’s scale picker. Reads Home Assistant rather than the snapshot, so it answers before a snapshot has loaded. Strictly read-only — the bridge cannot call a Home Assistant service."
+      description: "Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Projects Home Assistant’s entity states down to those reporting a convertible mass unit, for the app’s scale picker. Reads Home Assistant rather than the snapshot — but, like every path, it still answers 503 until one has loaded, because the tokens that identify the caller arrive in that snapshot. Strictly read-only — the bridge cannot call a Home Assistant service."
       responses:
         "200":
           description: "The pickable weight sensors."
@@ -3014,13 +3080,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -3037,13 +3109,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "502":
           description: "Home Assistant could not be reached, refused the bridge’s access token, or answered unusably: home_assistant_unreachable, home_assistant_unauthorised or home_assistant_error."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -3134,12 +3217,12 @@ paths:
                   code: "not_found"
                   message: "No such entity."
         "405":
-          description: "The request method is not allowed. The bridge accepts GET and HEAD on every path, and POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge currently accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
+          description: "The request method is not allowed for this path. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; `Allow` names the methods this path accepts. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here."
           headers:
             Allow:
               schema:
                 type: "string"
-              description: "The methods this bridge accepts, e.g. \"GET, HEAD, OPTIONS\"."
+              description: "The methods this path accepts, e.g. \"GET, HEAD, OPTIONS\"."
           content:
             application/json:
               schema:
@@ -3166,13 +3249,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: "An unexpected failure the bridge could not attribute to the request. The body always carries the `internal_error` code and a fixed, detail-free message — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "502":
           description: "Home Assistant could not be reached, refused the bridge’s access token, or answered unusably: home_assistant_unreachable, home_assistant_unauthorised or home_assistant_error."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -3216,6 +3310,15 @@ components:
               - "internal_error"
             message:
               type: "string"
+    LegacyError:
+      type: "object"
+      required:
+      - "error"
+      properties:
+        error:
+          type: "string"
+          description: "A short, secret-free explanation. No machine-readable code accompanies it."
+          example: "Method not allowed"
     Pagination:
       type: "object"
       required:

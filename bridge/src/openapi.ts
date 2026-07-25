@@ -44,6 +44,25 @@ const errorSchema: JsonValue = {
   },
 };
 
+/**
+ * The flat `{ "error": "<message>" }` envelope the **unversioned** paths answer with — of which
+ * `/metrics` is the only one this document describes. It is byte-for-byte the shape the bridge
+ * has always returned there, kept so the existing consumers never regress; `respond.ts` picks
+ * between the two envelopes from the request path, so an error at `/metrics` carries no `code`
+ * and cannot be described by {@link errorSchema} (issue #367).
+ */
+const legacyErrorSchema: JsonValue = {
+  type: 'object',
+  required: ['error'],
+  properties: {
+    error: {
+      type: 'string',
+      description: 'A short, secret-free explanation. No machine-readable code accompanies it.',
+      example: 'Method not allowed',
+    },
+  },
+};
+
 const paginationSchema: JsonValue = {
   type: 'object',
   required: ['limit', 'offset', 'count', 'hasMore'],
@@ -318,91 +337,94 @@ function feedOperation(summary: string, mediaType: string, example: string): Jso
           content: { [mediaType]: { schema: { type: 'string' }, example } },
         },
         304: notModifiedResponse,
-        ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+        ...(errorResponses(401, 429) as Record<string, JsonValue>),
       },
     },
   };
 }
 
 /**
- * Standard error responses reused across operations.
+ * Standard error responses reused across operations, in whichever envelope the path answers with
+ * (`errorRef`) — see {@link legacyErrorSchema}.
  *
  * Asking for `401` implies `403`: since issue #79 every authenticated route can also refuse a
  * *known* caller whose role does not reach it, and listing the two together at every call site
  * would be noise that one operation would eventually be missing.
  *
- * `405` and `500` are added to **every** operation for the same reason, only more so: both are
- * answered by shared code that wraps the whole request — the pre-routing method guard and the
- * outer catch-all in `server.ts` — so they are reachable at every path, and a contract-testing
- * tool that meets one it cannot find in the document reports the *bridge* as at fault. Neither
- * belongs to any single operation, and OpenAPI 3 has nowhere else to declare them (issue #367).
+ * `405`, `500` and `503` are added to **every** operation for the same reason, only more so: all
+ * three are answered by shared code that wraps the whole request — the method guard, the
+ * snapshot-loaded gate and the outer catch-all, each of which runs in `server.ts` *before* the
+ * request is routed anywhere. They are therefore reachable at every path, they belong to no single
+ * operation, and OpenAPI 3 gives nowhere but each operation to declare them. A contract-testing
+ * tool that meets one it cannot find in the document reports the *bridge* as at fault (issue #367).
  */
-const errorResponses = (...codes: number[]): JsonValue => {
+function errorResponsesIn(errorRef: string, codes: readonly number[]): JsonValue {
   const withForbidden = codes.includes(401) ? [...codes, 403] : codes;
-  const requested = [...new Set([...withForbidden, 405, 500])].sort((a, b) => a - b);
+  const requested = [...new Set([...withForbidden, 405, 500, 503])].sort((a, b) => a - b);
   const all: Record<number, JsonValue> = {
-    400: response('Bad request — missing or invalid parameter.', '#/components/schemas/Error'),
+    400: response('Bad request — missing or invalid parameter.', errorRef),
     401: {
       description: 'Missing, unknown or revoked API token.',
       headers: { 'WWW-Authenticate': { schema: { type: 'string' }, description: 'Bearer' } },
-      content: jsonContent('#/components/schemas/Error'),
+      content: jsonContent(errorRef),
     },
-    403: response(
-      "The token is valid, but its owner's role does not permit this route.",
-      '#/components/schemas/Error',
-    ),
-    404: response('Resource not found.', '#/components/schemas/Error'),
+    403: response("The token is valid, but its owner's role does not permit this route.", errorRef),
+    404: response('Resource not found.', errorRef),
     405: {
       description:
-        'The request method is not allowed. The bridge accepts GET and HEAD on every path, and ' +
-        'POST only on the opt-in write and snapshot-ingest paths; `Allow` names what this bridge ' +
-        'currently accepts. Declared on every operation because the method guard runs ahead of ' +
-        'routing, so it answers any request to this path — not only the method documented here.',
+        'The request method is not allowed for this path. The bridge answers GET and HEAD ' +
+        'everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; ' +
+        '`Allow` names the methods this path accepts. Declared on every operation because the ' +
+        'method guard runs ahead of routing, so it answers any request to this path — not only ' +
+        'the method documented here.',
       headers: {
         Allow: {
           schema: { type: 'string' },
-          description: 'The methods this bridge accepts, e.g. "GET, HEAD, OPTIONS".',
+          description: 'The methods this path accepts, e.g. "GET, HEAD, OPTIONS".',
         },
       },
-      content: jsonContent('#/components/schemas/Error'),
+      content: jsonContent(errorRef),
     },
     413: response(
       'The pushed snapshot exceeded the configured maximum size (GUBBINS_BRIDGE_MAX_PUSH_BYTES).',
-      '#/components/schemas/Error',
+      errorRef,
     ),
-    415: response('The request body was not declared as application/json.', '#/components/schemas/Error'),
+    415: response('The request body was not declared as application/json.', errorRef),
     422: response(
       'The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build).',
-      '#/components/schemas/Error',
+      errorRef,
     ),
     429: {
       description: 'Rate limit exceeded for this client.',
       headers: {
         'Retry-After': { schema: { type: 'integer' }, description: 'Seconds to wait.' },
       },
-      content: jsonContent('#/components/schemas/Error'),
+      content: jsonContent(errorRef),
     },
     500: {
       description:
-        'An unexpected failure the bridge could not attribute to the request. The body always ' +
-        'carries the `internal_error` code and a fixed, detail-free message — no stack trace, ' +
-        'file path, SQL or query text ever reaches a caller (the detail is logged locally only).',
-      content: jsonContent('#/components/schemas/Error'),
+        'An unexpected failure the bridge could not attribute to the request. The message is ' +
+        'fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a ' +
+        'caller (the detail is logged locally only).',
+      content: jsonContent(errorRef),
     },
     502: response(
       'Home Assistant could not be reached, refused the bridge’s access token, or answered ' +
         'unusably: home_assistant_unreachable, home_assistant_unauthorised or home_assistant_error.',
-      '#/components/schemas/Error',
+      errorRef,
     ),
     503: {
-      description: 'Snapshot not loaded yet.',
+      description:
+        'No snapshot has been loaded yet, so the bridge does not yet know who any caller is and ' +
+        'lets nobody in. Reachable at every path — including the reads that need no snapshot data ' +
+        'of their own — because the check precedes routing. Retry once the snapshot lands.',
       headers: {
         'Retry-After': {
           schema: { type: 'integer' },
           description: 'Seconds to wait before retrying.',
         },
       },
-      content: jsonContent('#/components/schemas/Error'),
+      content: jsonContent(errorRef),
     },
   };
   const out: Record<string, JsonValue> = {};
@@ -411,7 +433,15 @@ const errorResponses = (...codes: number[]): JsonValue => {
     if (value !== undefined) out[String(code)] = value;
   }
   return out;
-};
+}
+
+/** The error responses of a versioned (`/api/v1`) operation — the structured envelope. */
+const errorResponses = (...codes: number[]): JsonValue =>
+  errorResponsesIn('#/components/schemas/Error', codes);
+
+/** The error responses of an unversioned path — the flat, historical envelope. */
+const legacyErrorResponses = (...codes: number[]): JsonValue =>
+  errorResponsesIn('#/components/schemas/LegacyError', codes);
 
 function jsonContent(ref: string, example?: JsonValue): JsonValue {
   const media: Record<string, JsonValue> = { schema: { $ref: ref } };
@@ -907,7 +937,7 @@ export const openapiDocument: JsonValue = {
             lastReloadErrorAt: null,
             lastReloadAt: '2025-06-27T06:13:21.000Z',
           }),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -935,7 +965,7 @@ export const openapiDocument: JsonValue = {
             },
             snapshotGeneratedAt: '2025-06-27T06:13:20.000Z',
           }),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -964,7 +994,7 @@ export const openapiDocument: JsonValue = {
         ],
         responses: {
           200: response('The matches.', '#/components/schemas/SearchResult'),
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -975,7 +1005,7 @@ export const openapiDocument: JsonValue = {
         parameters: [qParam],
         responses: {
           200: response('The enriched answer.', '#/components/schemas/WhereIsResult'),
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1029,7 +1059,7 @@ export const openapiDocument: JsonValue = {
               '`include`/`$expand`) unless `fields`/`$select` projects it to exactly the named fields.',
             '#/components/schemas/ItemProjection',
           ),
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1046,7 +1076,7 @@ export const openapiDocument: JsonValue = {
             description: 'The count, as a plain-text integer.',
             content: { 'text/plain': { schema: { type: 'integer' }, example: 4 } },
           },
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1075,7 +1105,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1135,7 +1165,7 @@ export const openapiDocument: JsonValue = {
             },
           },
           304: notModifiedResponse,
-          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1190,7 +1220,8 @@ export const openapiDocument: JsonValue = {
             },
           },
           304: notModifiedResponse,
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          // The one unversioned path here, so its errors are the FLAT legacy envelope.
+          ...(legacyErrorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1209,7 +1240,7 @@ export const openapiDocument: JsonValue = {
               'unless `fields`/`$select` projects it to exactly the named fields.',
             '#/components/schemas/ItemProjection',
           ),
-          ...(errorResponses(400, 401, 404, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1225,7 +1256,7 @@ export const openapiDocument: JsonValue = {
         requestBody: adjustRequestBody('Whole-number change; negative to check out.'),
         responses: {
           200: response('The updated item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1241,7 +1272,7 @@ export const openapiDocument: JsonValue = {
         requestBody: adjustRequestBody('Signed change to the net value (e.g. -45 for 45 consumed).'),
         responses: {
           200: response('The updated item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1309,7 +1340,7 @@ export const openapiDocument: JsonValue = {
               'when included) unless `fields`/`$select` projects it to exactly the named fields.',
             '#/components/schemas/Location',
           ),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1329,7 +1360,7 @@ export const openapiDocument: JsonValue = {
         ],
         responses: {
           200: response('The location.', '#/components/schemas/Location'),
-          ...(errorResponses(401, 404, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 404, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1340,7 +1371,7 @@ export const openapiDocument: JsonValue = {
         parameters: [limitParam, offsetParam],
         responses: {
           200: okList('A page of categories.', '#/components/schemas/CategorySummary'),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1351,7 +1382,7 @@ export const openapiDocument: JsonValue = {
         parameters: [idParam('category')],
         responses: {
           200: response('The category.', '#/components/schemas/CategoryDetail'),
-          ...(errorResponses(401, 404, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 404, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1365,7 +1396,7 @@ export const openapiDocument: JsonValue = {
         parameters: [limitParam, offsetParam],
         responses: {
           200: okList('A page of capability keys.', '#/components/schemas/CapabilityKey'),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1421,8 +1452,9 @@ export const openapiDocument: JsonValue = {
           'next hydrate. It therefore keeps a bounded in-memory log, which the app polls while its ' +
           'Webhooks screen is open. The log does not survive a bridge restart. No secret, ' +
           'signature, request header or query string is ever recorded, and each URL is reduced to ' +
-          'its origin and path. Reads the bridge’s own memory rather than the snapshot, so it ' +
-          'answers before a snapshot has loaded.',
+          'its origin and path. Reads the bridge’s own memory rather than the snapshot — but, like ' +
+          'every path, it still answers 503 until one has loaded, because the tokens that identify ' +
+          'the caller arrive in that snapshot.',
         parameters: [
           {
             name: 'since',
@@ -1561,7 +1593,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(400, 401, 415, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1572,8 +1604,9 @@ export const openapiDocument: JsonValue = {
         description:
           'Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Projects Home Assistant’s ' +
           'entity states down to those reporting a convertible mass unit, for the app’s scale ' +
-          'picker. Reads Home Assistant rather than the snapshot, so it answers before a snapshot ' +
-          'has loaded. Strictly read-only — the bridge cannot call a Home Assistant service.',
+          'picker. Reads Home Assistant rather than the snapshot — but, like every path, it still ' +
+          'answers 503 until one has loaded, because the tokens that identify the caller arrive in ' +
+          'that snapshot. Strictly read-only — the bridge cannot call a Home Assistant service.',
         responses: {
           200: {
             description: 'The pickable weight sensors.',
@@ -1603,7 +1636,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(401, 429, 502) as Record<string, JsonValue>),
+          ...(errorResponses(401, 404, 429, 502) as Record<string, JsonValue>),
         },
       },
     },
@@ -1688,6 +1721,7 @@ export const openapiDocument: JsonValue = {
     },
     schemas: {
       Error: errorSchema,
+      LegacyError: legacyErrorSchema,
       Pagination: paginationSchema,
       ApiIndex: {
         type: 'object',

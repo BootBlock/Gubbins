@@ -142,17 +142,37 @@ describe('openapiDocument', () => {
     expect(doc.components.schemas.Error.properties.error.properties.code.enum).toEqual([...API_ERROR_CODES]);
   });
 
-  it('declares the two responses reachable at every path — 405 and 500 (#367)', () => {
+  it('declares the responses reachable at every path — 405, 500 and 503 (#367)', () => {
     for (const [path, item] of Object.entries(doc.paths as Record<string, any>)) {
       for (const method of ['get', 'post']) {
         const op = item[method];
         if (op === undefined) continue;
-        // Both are answered by request-wrapping code (the pre-routing method guard and the
-        // catch-all in server.ts), so they belong to no single operation — and OpenAPI 3 has
-        // nowhere but each operation to declare them.
+        // All three are answered by request-wrapping code in server.ts — the method guard, the
+        // snapshot-loaded gate and the outer catch-all — every one of which runs before the
+        // request is routed. They belong to no single operation, and OpenAPI 3 has nowhere but
+        // each operation to declare them.
         expect(Object.keys(op.responses), `${method.toUpperCase()} ${path}`).toEqual(
-          expect.arrayContaining(['405', '500']),
+          expect.arrayContaining(['405', '500', '503']),
         );
+      }
+    }
+  });
+
+  it('describes each path’s errors in the envelope that path actually sends (#367)', () => {
+    // `respond.ts` picks the envelope from the path: the structured `{ error: { code, message } }`
+    // under /api/v1, and the flat `{ error: "…" }` on an unversioned path. /metrics is the only
+    // unversioned path here, and pointing it at the structured schema made every error it sends
+    // a documented contract violation.
+    for (const [path, item] of Object.entries(doc.paths as Record<string, any>)) {
+      const expected = path.startsWith('/api/v1')
+        ? '#/components/schemas/Error'
+        : '#/components/schemas/LegacyError';
+      for (const op of [item.get, item.post].filter(Boolean)) {
+        for (const [code, res] of Object.entries(op.responses as Record<string, any>)) {
+          const ref = res.content?.['application/json']?.schema?.$ref;
+          if (Number(code) < 400 || ref === undefined) continue;
+          expect(ref, `${path} → ${code}`).toBe(expected);
+        }
       }
     }
   });

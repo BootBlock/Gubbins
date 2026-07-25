@@ -542,10 +542,13 @@ describe('routing, auth and method guards', () => {
     expect((await res.json()).error.code).toBe('unauthorized');
   });
 
-  it('405s a non-GET v1 request', async () => {
+  it('405s a non-GET v1 request, advertising what the resource does accept', async () => {
     const res = await get('/api/v1/items', { method: 'POST' });
     expect(res.status).toBe(405);
     expect((await res.json()).error.code).toBe('method_not_allowed');
+    // RFC 9110 §10.2.1: `Allow` is the methods THIS resource supports. A read resource serves
+    // HEAD (from the GET path) and OPTIONS as well, so naming only GET understated it (#367).
+    expect(res.headers.get('allow')).toBe('GET, HEAD, OPTIONS');
   });
 
   it('keeps the legacy flat error envelope on the unversioned paths', async () => {

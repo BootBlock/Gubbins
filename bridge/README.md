@@ -431,8 +431,8 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 
 | Endpoint | Default fields |
 | --- | --- |
-| `/search` | `id, name, quantity, locationName, mpn, manufacturer` |
-| `/items` | the above + `isUnlimited, locationId, categoryId, trackingMode, isActive` (`ItemSummary`) |
+| `/search` | `id, name, quantity, locationId, locationName, mpn, manufacturer` (`ItemMatch`) |
+| `/items` | the above + `isUnlimited, categoryId, trackingMode, isActive` (`ItemSummary`) |
 | `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNumber, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities` (`ItemDetail`) |
 
 > **Unlimited supply.** An item marked _unlimited_ (an effectively infinite source — tap water,
@@ -795,11 +795,18 @@ a non-nullable model that throws on the first projected response. The guaranteed
 still published: `ItemSummary` (the default row, and an event's item payload) and `ItemDetail`
 (what a write returns) keep their `required` lists, because nothing can project those.
 
-Every operation also declares **`405`** and **`500`**. Neither belongs to a single endpoint —
-both come from code that wraps the whole request (the method guard that runs ahead of routing,
-and the catch-all that turns any unexpected failure into a detail-free `internal_error`) — so
-they are reachable at every path, and a contract-testing tool meeting an undeclared one would
-report the bridge as at fault.
+Every operation also declares **`405`**, **`500`** and **`503`**. None belongs to a single
+endpoint — all three come from code that wraps the whole request (the method guard, the
+snapshot-loaded gate, and the catch-all that turns any unexpected failure into a detail-free
+`internal_error`), each running before the request is routed anywhere — so they are reachable at
+every path, and a contract-testing tool meeting an undeclared one would report the bridge as at
+fault.
+
+**Two error envelopes, two schemas.** `/metrics` is the one unversioned path the spec describes,
+and an unversioned path answers with the flat `{ "error": "…" }` shape, not the structured
+`{ "error": { "code", "message" } }` — so its errors are described by `LegacyError` rather than
+`Error`. Pointing them at `Error` had made every error `/metrics` sends a documented contract
+violation.
 
 ---
 

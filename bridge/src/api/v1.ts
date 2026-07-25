@@ -599,9 +599,13 @@ async function handleWrite(res: ServerResponse, segments: string[], ctx: ApiV1Co
   const isItemAction = segments[0] === 'items' && segments.length === 3;
   if (!isItemAction) {
     // POST to a GET resource (e.g. /api/v1/items) or a non-existent path: method not allowed.
+    // RFC 9110 §10.2.1 makes `Allow` the methods *this resource* supports, and a read resource
+    // supports all three of these — HEAD is served wholesale from the GET path (issue #360) and
+    // OPTIONS answers the preflight. Naming only `GET` understated it, and never matched the
+    // wider string `server.ts` sends from its own pre-routing guard.
     return void sendError(res, 405, 'method_not_allowed', 'Method not allowed', {
       v1: true,
-      headers: { allow: 'GET' },
+      headers: { allow: 'GET, HEAD, OPTIONS' },
     });
   }
   const action = segments[2];
