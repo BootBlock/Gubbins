@@ -13,6 +13,7 @@
  * Kept free of any `./format` import so the reactive `Formatters` bundle can depend on
  * these conversions without a circular module reference.
  */
+import { normaliseOneOf } from './persisted-state';
 
 /** The weight units the user may read/enter weights in. Canonical storage is always grams. */
 export type WeightUnit = 'g' | 'kg' | 'oz' | 'lb';
@@ -49,8 +50,8 @@ export const WEIGHT_UNIT_OPTIONS = [
  * total so a stale localStorage value from an older/newer build can never reach the
  * formatter or a conversion.
  */
-export function normaliseWeightUnit(value: string): WeightUnit {
-  return (WEIGHT_UNITS as readonly string[]).includes(value) ? (value as WeightUnit) : DEFAULT_WEIGHT_UNIT;
+export function normaliseWeightUnit(value: unknown): WeightUnit {
+  return normaliseOneOf(value, WEIGHT_UNITS, DEFAULT_WEIGHT_UNIT);
 }
 
 /** Convert a value expressed in `unit` to canonical grams (for storage). */

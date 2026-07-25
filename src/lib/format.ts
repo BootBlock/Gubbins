@@ -60,6 +60,42 @@ export const CURRENCY_OPTIONS = [
 ] as const satisfies readonly { value: string; label: string }[];
 
 /**
+ * Reconcile a persisted/unknown **locale tag** against what `Intl` will actually accept,
+ * falling back to `fallback` (by default {@link DEFAULT_LOCALE}).
+ *
+ * Unlike the option-set preferences there is no closed list to check against — the picker
+ * offers four locales but any well-formed BCP-47 tag formats correctly — so validity is judged
+ * by asking `Intl` to canonicalise it, which throws on a malformed tag. That matters because
+ * {@link makeFormatters} constructs its `Intl.*Format` objects eagerly and *without* a guard:
+ * a rehydrated `{"locale": 42}` would otherwise throw on the first render that formats anything.
+ */
+export function normaliseLocale(value: unknown, fallback: string = DEFAULT_LOCALE): string {
+  if (typeof value !== 'string') return fallback;
+  try {
+    return Intl.getCanonicalLocales(value).length > 0 ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Reconcile a persisted/unknown **currency code** to one `Intl.NumberFormat` can format,
+ * falling back to `fallback` (by default {@link DEFAULT_CURRENCY}) — the first-run guess where
+ * the caller has one, so a corrupt entry doesn't override a sensible locale-derived choice.
+ *
+ * Deliberately checked by *shape* (three letters, upper-cased) rather than against
+ * {@link CURRENCY_OPTIONS}: the offered list is a pragmatic subset that may grow or shrink,
+ * and a code a past release let the user choose should keep working. Three alphabetic
+ * characters is exactly what `Intl` requires of a currency, so this guarantees the eager
+ * formatter construction in {@link makeFormatters} cannot throw on a rehydrated value.
+ */
+export function normaliseCurrency(value: unknown, fallback: string = DEFAULT_CURRENCY): string {
+  if (typeof value !== 'string') return fallback;
+  const code = value.trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(code) ? code : fallback;
+}
+
+/**
  * The character a locale uses as its **decimal separator** — `.` for en-GB / en-US,
  * `,` for de-DE / fr-FR and most of the eurozone. Derived from a live `Intl.NumberFormat`
  * (so it needs no hand-maintained table and stays correct as the platform's CLDR data

@@ -26,7 +26,10 @@
  * belong in **media queries**, while component-internal reflow belongs in **container
  * queries** (`@container`, already used by the inventory grid via its `ResizeObserver`).
  * This constant is the single source of truth for the media query, mirrored 1:1 by the
- * `large-format:` Tailwind custom variant in `styles/index.css` so CSS and JS agree.
+ * `large-format:` Tailwind custom variant in `styles/index.css` so CSS and JS agree. The two
+ * are independent literals in two languages, so `device.test.ts` reads the stylesheet and
+ * asserts they match — drift there is a build failure, not a bug that only shows up on one
+ * real tablet.
  */
 
 /**

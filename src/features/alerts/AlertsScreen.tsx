@@ -43,6 +43,7 @@ import {
   CloseIcon,
   SnoozeIcon,
 } from '@/components/icons';
+import { assertExhaustive } from '@/lib/exhaustive';
 import { requestHighlight } from '@/lib/highlight';
 import { useT, type MessageKey } from '@/features/i18n';
 import { addCalendarDays } from '@/lib/calendar-days';
@@ -80,6 +81,12 @@ function KindIcon({ kind }: { kind: AlertKind }) {
       return <MaintenanceIcon aria-hidden />;
     case 'warranty-due':
       return <NotificationIcon aria-hidden />;
+    default:
+      // Exhaustiveness guard (#355): a new alert lane must extend this switch or this stops
+      // compiling. A component has no return-type annotation to fall back on, so without it
+      // a new lane's rows would silently render with no icon at all.
+      assertExhaustive(kind);
+      return <AlertIcon aria-hidden />;
   }
 }
 

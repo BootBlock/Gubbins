@@ -16,15 +16,15 @@
  * puts that decision somewhere it can be compared with its neighbours; the judgement stays
  * yours.
  */
-import { readdirSync, readFileSync } from 'node:fs';
-import { extname, join, relative, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { repoPath, sourceFiles } from '@/test/repo-path';
 
-// Vitest runs from the project root; under happy-dom `import.meta.url` is an http: URL, not a
-// file: one, so resolve against cwd (the same approach as the other source-scanning guards).
-const SRC_DIR = resolve(process.cwd(), 'src');
-
-const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
+// Rooted in this file's own checkout, and swept with the shared walker, so a worktree's suite run
+// from the primary checkout can't sweep the *primary's* sources and pass without ever seeing the
+// change under test.
+const SRC_DIR = repoPath(import.meta.dirname, 'src');
 
 /** A key spelled as an array literal at the call site, rather than taken from a factory. */
 const INLINE_QUERY_KEY = /queryKey:\s*\[/g;
@@ -43,20 +43,6 @@ const FACTORY_OPEN = /^(?:export )?const (\w+Keys) = \{$/;
 const FACTORY_ROOT = /^\s*all: \[(.*)] as const,$/;
 /** A root holding exactly one quoted string segment. */
 const SINGLE_SEGMENT = /^'([a-z0-9-]+)'$/;
-
-/** Every non-test source file under `src/`, recursively. */
-function sourceFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...sourceFiles(path));
-    } else if (SOURCE_EXTENSIONS.has(extname(entry.name)) && !/\.test\.tsx?$/.test(entry.name)) {
-      out.push(path);
-    }
-  }
-  return out;
-}
 
 const FILES = sourceFiles(SRC_DIR).map((path) => ({
   path: relative(process.cwd(), path).replaceAll('\\', '/'),

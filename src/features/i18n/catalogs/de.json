@@ -600,6 +600,7 @@
   "inventory.fields.unused.title": "Nicht verwendete benutzerdefinierte Felder",
   "inventory.fields.unused.hint": "Benutzerdefinierte Felder werden von allen Kategorien und Orten gemeinsam genutzt. Wird eines aus einer Kategorie entfernt, bleibt seine Definition daher für die übrigen erhalten. Diese Definitionen werden nirgendwo mehr verwendet – weder von einer Kategorie noch von einem Ort oder Artikel – und überladen nur die Listen „Feld auswählen“. Ein Entfernen hier nimmt nichts mit.",
   "inventory.fields.unused.remove": "Nicht verwendetes Feld {name} entfernen",
+  "inventory.fields.image.notAnImage": "Der gespeicherte Wert ist kein Bild und kann daher nicht angezeigt werden. Wählen Sie ein Bild, um ihn zu ersetzen.",
   "inventory.location.fields.title": "Vererbbare Felder",
   "inventory.location.fields.intro": "Hier festgelegte Werte können von den Artikeln an diesem Ort und von den darin enthaltenen Orten geerbt werden.",
   "inventory.location.fields.empty": "Keine Werte festgelegt. Fügen Sie einen hinzu, damit Artikel ihn erben können.",

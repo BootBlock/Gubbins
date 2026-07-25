@@ -1,18 +1,18 @@
 /**
- * Query-key SSOT for the "Upcoming" agenda (Phase 75).
+ * Query-key SSOT for the §3 "Upcoming" agenda.
  *
- * The agenda is six independent feeds under one `['agenda', …]` prefix, so invalidating the
- * prefix refreshes the whole screen at once. Like `@/features/reports/keys` this lives in its
- * own dependency-free module rather than beside {@link useAgenda}, so the write side — a
- * booking, a checkout, a maintenance log — can import the prefix without pulling in the read
- * hook and its repositories.
+ * Every agenda lane hangs off the `['agenda', …]` prefix, so invalidating the prefix refreshes
+ * the whole screen at once. This lives in its own dependency-free module (rather than in
+ * `./useAgenda`, which pulls the repositories, the modules store and the formatter seam) so the
+ * write side — inventory, lifecycle, contacts, purchasing, bookings — can import the prefix
+ * without dragging the read hook in.
  *
- * Every feed has a named member here, so the set of things the agenda reads is enumerable in
- * one place: adding a feed without a key to hang it on, or a write that refreshes only some of
- * them, is visible here rather than spread between six call sites (issue #379).
+ * The prefix used to be re-typed as a bare `['agenda']` literal at its single write site, which
+ * is how five of the six lanes came to be refreshed by nothing at all (issue #374); building
+ * every key here is what stops a lane drifting out from under the sweep unnoticed.
  */
 export const agendaKeys = {
-  /** The prefix every agenda feed is built from; invalidate this to refresh them all. */
+  /** The prefix every agenda lane is built from; invalidate this to refresh them all. */
   all: ['agenda'] as const,
   maintenance: () => [...agendaKeys.all, 'maintenance'] as const,
   warranty: (lookaheadDays: number) => [...agendaKeys.all, 'warranty', lookaheadDays] as const,

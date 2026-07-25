@@ -3,7 +3,10 @@ import { Checkbox, Input, Select, Spinner, Textarea, useRovingRadioGroup } from 
 import { CloseIcon, UploadIcon } from '@/components/icons';
 import { encodeFieldImage } from '@/features/images/compression';
 import { useErrorMessage } from '@/features/errors';
+import { useT } from '@/features/i18n';
+import { assertExhaustive } from '@/lib/exhaustive';
 import { cn } from '@/lib/utils';
+import { isImageDataUrl } from '../custom-fields';
 import type { FieldType } from '@/db/repositories';
 
 /** ARIA validation wiring (aria-invalid/describedby) to spread onto the primary control. */
@@ -55,7 +58,15 @@ export function TypedFieldControl({
 }: TypedFieldControlProps) {
   const naming = { 'aria-label': ariaLabel, 'aria-labelledby': labelId, onBlur };
 
+  // TEXT's control, and the graceful degradation for a value that reaches us out of band —
+  // shared so the two branches below can never drift apart.
+  const plainTextInput = (
+    <Input value={value} onChange={(e) => onChange(e.target.value)} {...naming} {...controlProps} />
+  );
+
   switch (fieldType) {
+    case 'TEXT':
+      return plainTextInput;
     case 'NUMBER':
       return (
         <Input
@@ -154,7 +165,13 @@ export function TypedFieldControl({
         />
       );
     default:
-      return <Input value={value} onChange={(e) => onChange(e.target.value)} {...naming} {...controlProps} />;
+      // Exhaustiveness guard, mirroring `validateFieldValue`: a new FieldType must
+      // extend this switch explicitly or this stops compiling — otherwise the validator
+      // would loudly demand attention while the editor quietly rendered a text box (#355).
+      // The runtime fallback stays, so a value arriving out of band still degrades to a
+      // usable control rather than blanking the field editor.
+      assertExhaustive(fieldType);
+      return plainTextInput;
   }
 }
 
@@ -180,6 +197,7 @@ function ImageFieldControl({
   labelId?: string;
   controlProps: TypedFieldControlAria;
 }) {
+  const t = useT();
   const describeError = useErrorMessage();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -200,15 +218,34 @@ function ImageFieldControl({
     }
   };
 
+  // Only a genuine image `data:` URL is ever pointed at — the same shape `validateFieldValue`
+  // enforces on save (see {@link isImageDataUrl}). A value that isn't one can still reach this
+  // control (a field retyped from TEXT keeps its stored text, and rows arrive from sync peers
+  // and restored backups), and putting it in `src` would make the app fetch a string a peer
+  // chose. Anything else reads as "no image": the picker shows, the stale value is not loaded.
+  // Trimmed first, and the trimmed form is what's shown, so this accepts exactly what saving
+  // does — validation trims before applying the same test.
+  const trimmed = value.trim();
+  const preview = isImageDataUrl(trimmed) ? trimmed : null;
+
   return (
     <div className="space-y-field-gap-compact">
       {value ? (
         <div className="relative inline-block">
-          <img
-            src={value}
-            alt={ariaLabel ? `${ariaLabel} preview` : 'Selected image'}
-            className="max-h-32 rounded-lg border border-border object-contain"
-          />
+          {preview ? (
+            <img
+              src={preview}
+              alt={ariaLabel ? `${ariaLabel} preview` : 'Selected image'}
+              className="max-h-32 rounded-lg border border-border object-contain"
+            />
+          ) : (
+            // Say the stored value isn't an image rather than silently showing an empty
+            // picker — and keep the remove control reachable, since a value this control
+            // can't display is also one `validateFieldValue` will refuse to save.
+            <span className="block max-w-xs rounded-lg border border-dashed border-border py-2 pl-3 pr-9 text-xs text-muted-foreground">
+              {t('inventory.fields.image.notAnImage')}
+            </span>
+          )}
           <button
             type="button"
             aria-label="Remove image"

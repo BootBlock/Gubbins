@@ -217,8 +217,8 @@ export const DEAD_STOCK_DAYS_BOUNDS = { min: 1, max: 3650 } as const;
  * Clamp a dead-stock idle threshold to {@link DEAD_STOCK_DAYS_BOUNDS}, rounded to a whole
  * number. Non-finite input falls back to {@link DEAD_STOCK_SINCE_DAYS}.
  */
-export function clampDeadStockDays(value: number): number {
-  if (!Number.isFinite(value)) return DEAD_STOCK_SINCE_DAYS;
+export function clampDeadStockDays(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEAD_STOCK_SINCE_DAYS;
   return Math.min(DEAD_STOCK_DAYS_BOUNDS.max, Math.max(DEAD_STOCK_DAYS_BOUNDS.min, Math.round(value)));
 }
 

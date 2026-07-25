@@ -4,7 +4,7 @@
  * serialisation is unit-tested in isolation; the wizard wires these to repository
  * reads and the download/zip side-effects.
  */
-import type { Checkout, Contact, FieldType, Item, ItemHistoryEntry } from '@/db/repositories';
+import type { Checkout, Contact, FieldType, GaugeState, Item, ItemHistoryEntry } from '@/db/repositories';
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import { toDateInputValue } from '@/lib/date-input';
 import {
@@ -52,6 +52,19 @@ export function buildJsonExport(
   return JSON.stringify(payload, null, 2);
 }
 
+/**
+ * The keys of `T` whose value can be written straight into a tabular cell.
+ *
+ * `Item` carries object-valued fields alongside its scalars (`gauge`, `operationalMetadata`,
+ * `thumbnailBlob`), and a column list is just a list of names — so without this filter, adding
+ * one of them compiles cleanly and emits `[object Object]` into the user's file (issue #357).
+ * Constraining the lists below to `ScalarKeys<Item>` makes that a compile error instead, and
+ * lets each value be read off the row directly rather than through a cast.
+ */
+type ScalarKeys<T> = {
+  [K in keyof T]-?: T[K] extends TabularCell ? K : never;
+}[keyof T];
+
 const CSV_COLUMNS = [
   'id',
   'name',
@@ -69,7 +82,7 @@ const CSV_COLUMNS = [
   'width',
   'height',
   'depth',
-] as const;
+] as const satisfies readonly ScalarKeys<Item>[];
 
 /**
  * Item export columns as a {@link TabularColumn} spec for the shared serialiser.
@@ -82,7 +95,7 @@ export const ITEM_CSV_COLUMNS: readonly TabularColumn<Item>[] = CSV_COLUMNS.map(
     // An unlimited-supply item (Phase 82) has no finite count — leave its quantity cell
     // blank (∞ has no numeric CSV representation); the `isUnlimited` column carries the truth.
     if (col === 'quantity' && item.isUnlimited) return '';
-    return (item as unknown as Record<string, TabularCell>)[col];
+    return item[col];
   },
 }));
 
@@ -157,15 +170,37 @@ const CATALOG_CSV_COLUMNS = [
   // Freeform tags as a comma-separated list (issue #141). Not a column on the item row, so its
   // value comes from `tagsByItem` rather than {@link catalogCsvValue}.
   'tags',
-] as const;
+] as const satisfies readonly (ScalarKeys<Item> | VirtualCatalogColumn)[];
 
 type CatalogCsvColumn = (typeof CATALOG_CSV_COLUMNS)[number];
 
 /** The gauge sub-object's fields, which sit one level down on the item rather than flat. */
-const GAUGE_CSV_COLUMNS = ['unitOfMeasure', 'grossCapacity', 'tareWeight', 'currentNetValue'] as const;
+const GAUGE_CSV_COLUMNS = [
+  'unitOfMeasure',
+  'grossCapacity',
+  'tareWeight',
+  'currentNetValue',
+] as const satisfies readonly ScalarKeys<GaugeState>[];
 
-/** Map a logical catalog-CSV column to the Item field that holds the value. */
-function catalogCsvValue(item: Item, col: CatalogCsvColumn): unknown {
+type GaugeCsvColumn = (typeof GAUGE_CSV_COLUMNS)[number];
+
+/**
+ * The catalog columns that are *not* a plain field of the item row: they either rename a field
+ * (`sku`), reformat one (`expiryDate`), read the gauge sub-object, or come from a separate
+ * table (`tags`). Every other column name has to be a scalar `Item` key, which is what keeps
+ * {@link catalogCsvValue}'s fall-through a direct read.
+ */
+type VirtualCatalogColumn = 'sku' | 'expiryDate' | 'tags' | GaugeCsvColumn;
+
+function isGaugeColumn(col: CatalogCsvColumn): col is GaugeCsvColumn {
+  return (GAUGE_CSV_COLUMNS as readonly string[]).includes(col);
+}
+
+/**
+ * Map a logical catalog-CSV column to the Item field that holds the value. `tags` is handled by
+ * the caller (it comes from a separate map, not the item row), so it is excluded here.
+ */
+function catalogCsvValue(item: Item, col: Exclude<CatalogCsvColumn, 'tags'>): TabularCell {
   // `sku` and `mpn` refer to the same field; export as `sku` so the importer
   // auto-maps it without requiring a manual column selection.
   if (col === 'sku') return item.mpn;
@@ -181,10 +216,10 @@ function catalogCsvValue(item: Item, col: CatalogCsvColumn): unknown {
   // Gauge configuration lives in the derived `gauge` sub-object (null for every other tracking
   // mode, which leaves these cells blank). Only the stored parameters are exported: the derived
   // `percentageRemaining` / `currentGrossWeight` are computed from them on the way back in.
-  if ((GAUGE_CSV_COLUMNS as readonly string[]).includes(col)) {
-    return item.gauge?.[col as (typeof GAUGE_CSV_COLUMNS)[number]] ?? null;
+  if (isGaugeColumn(col)) {
+    return item.gauge?.[col] ?? null;
   }
-  return (item as unknown as Record<string, unknown>)[col];
+  return item[col];
 }
 
 /**
@@ -237,9 +272,7 @@ export function buildCatalogCsv(
     ...CATALOG_CSV_COLUMNS.map((col) => ({
       header: col,
       value: (item: Item) =>
-        (col === 'tags'
-          ? (tagsByItem.get(item.id)?.join(', ') ?? null)
-          : catalogCsvValue(item, col)) as TabularCell,
+        col === 'tags' ? (tagsByItem.get(item.id)?.join(', ') ?? null) : catalogCsvValue(item, col),
     })),
     ...custom.map((c) => ({
       header: c.header,

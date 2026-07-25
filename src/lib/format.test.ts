@@ -4,10 +4,44 @@ import {
   DEFAULT_LOCALE,
   decimalSeparatorForLocale,
   makeFormatters,
+  normaliseCurrency,
+  normaliseLocale,
   snapMoneyInput,
 } from './format';
 
 const gb = makeFormatters(); // en-GB / GBP defaults (§1.2.1)
+
+describe('normaliseLocale / normaliseCurrency', () => {
+  it('keeps a tag and a code Intl accepts', () => {
+    expect(normaliseLocale('de-DE')).toBe('de-DE');
+    expect(normaliseCurrency('EUR')).toBe('EUR');
+  });
+
+  it('upper-cases and trims a currency code', () => {
+    expect(normaliseCurrency('  eur ')).toBe('EUR');
+  });
+
+  it.each([[undefined], [null], [42], [{}], ['en_GB!'], ['']])('replaces the bad locale %p', (value) => {
+    expect(normaliseLocale(value)).toBe(DEFAULT_LOCALE);
+  });
+
+  it.each([[undefined], [null], [42], [{}], ['not-a-code'], ['GB'], ['GBPX']])(
+    'replaces the bad currency %p',
+    (value) => {
+      expect(normaliseCurrency(value)).toBe(DEFAULT_CURRENCY);
+    },
+  );
+
+  it('takes an explicit fallback from the caller when one is given', () => {
+    expect(normaliseLocale(42, 'fr-FR')).toBe('fr-FR');
+    expect(normaliseCurrency(42, 'USD')).toBe('USD');
+  });
+
+  /** The point of the guard: `makeFormatters` builds its Intl objects eagerly and unguarded. */
+  it('yields values makeFormatters can be built from', () => {
+    expect(() => makeFormatters(normaliseLocale('nonsense!'), normaliseCurrency(42))).not.toThrow();
+  });
+});
 
 describe('decimalSeparatorForLocale', () => {
   it('returns a dot for English locales', () => {

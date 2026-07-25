@@ -57,6 +57,16 @@ export function normaliseBoolean(value: unknown, fallback: boolean): boolean {
 }
 
 /**
+ * Reconcile a rehydrated free-text field, falling back when it isn't a string (missing, `null`,
+ * a number, an object). The *content* is deliberately not judged — a tagline, a letterhead line
+ * or an opaque device id is whatever the user typed — so this only guarantees that the value
+ * reaching render is a string at all.
+ */
+export function normaliseString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+/**
  * Reconcile a rehydrated array, falling back to `fallback` when it isn't one. Element shape
  * is *not* checked — pass an `item` guard to filter the members too.
  */
@@ -122,4 +132,14 @@ export function normaliseInteger(
   const min = bounds?.min ?? Number.NEGATIVE_INFINITY;
   const max = bounds?.max ?? Number.POSITIVE_INFINITY;
   return Math.min(Math.max(whole, min), max);
+}
+
+/**
+ * Reconcile a rehydrated *nullable* integer — the "an instant, or never" shape a stored
+ * timestamp takes (`lastArchivedAt`, a snooze deadline). Anything that isn't a finite number
+ * becomes `null`, which every such field already means as "no value recorded", so a corrupt
+ * entry reads as *never* rather than as a nonsense date.
+ */
+export function normaliseNullableInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null;
 }
