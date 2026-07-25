@@ -9,9 +9,16 @@
 import { downloadBlob, fileTimestamp } from '@/lib/download';
 import { resetAppShell } from '@/lib/app-shell-reset';
 import { getDatabaseDriver, disposeDatabase } from '@/db/client';
-// From the leaf constants module, never `db/worker/sqlite-bootstrap` — that would pull the
-// whole SQLite WASM glue into this chunk for the sake of one string (issue #165).
-import { DB_FILENAME } from '@/db/db-file';
+// From the leaf storage module, never `db/worker/sqlite-bootstrap` — that would pull the
+// whole SQLite WASM glue into this chunk for the sake of a path (issue #165).
+import {
+  deletePlainDatabaseFiles,
+  deleteSahPoolStore,
+  detectDbStorageLayout,
+  hasSahPoolStore,
+  readPlainDatabaseFile,
+  writePlainDatabaseFile,
+} from '@/db/db-storage';
 import { inspectRestoreCandidate } from '@/db/restore-candidate';
 import { isSqliteFile } from '@/db/sqlite-header';
 import { removeImagesDirectory } from '@/features/images/opfs-images';
@@ -29,56 +36,45 @@ export async function downloadRawSqlite(): Promise<void> {
 export { isSqliteFile } from '@/db/sqlite-header';
 
 /**
- * Overwrite the OPFS database file with raw SQLite bytes (the shared write step behind
- * both raw-`.sqlite` and full-archive restore). The production database uses the standard
- * OPFS VFS — the file at `DB_FILENAME` *is* the raw SQLite database — so the new bytes are
- * written verbatim and any stale WAL/SHM/journal sidecars are cleared, or the next open would
- * read the new file through the old session's journal. The caller must have disposed the
- * worker beforehand and must reload afterwards so the worker re-opens it.
+ * The database driver, replacing the worker first if the one it holds is already dead.
  *
- * **Order matters (issue #203).** The write comes *first* and the sidecars go only once it has
- * committed. Deleting them up front discards, before anything has replaced it, the one thing
- * that could repair the current database — a hot rollback journal left by an unclean shutdown —
- * so a write that then fails (quota, a tab closed mid-write, any OPFS error) turns a database
- * that was merely un-updated into one that is unrecoverable. A failed write aborts the
- * writable rather than closing it, so the original file keeps its contents and its sidecars
- * still match it.
+ * A crashed worker latches the driver permanently unusable (issue #299) — sound for ordinary
+ * calls, but these rescues run on the crash screen, and under the `opfs-sahpool` VFS the
+ * database can *only* be reached through a worker. Refusing here would make the recovery
+ * unavailable in exactly the state it exists for. The dead worker has already been terminated,
+ * so the file handles it held are released and a fresh one can take them.
  */
-export async function overwriteOpfsDatabase(bytes: Uint8Array): Promise<void> {
-  const baseName = DB_FILENAME.replace(/^\//, '');
-  const root = await navigator.storage.getDirectory();
-
-  const handle = await root.getFileHandle(baseName, { create: true });
-  const writable = await handle.createWritable();
-  try {
-    await writable.write(bytes as BufferSource);
-    await writable.close();
-  } catch (error) {
-    // Discard the staged write instead of committing a partial file. Best-effort: the stream
-    // may already be errored, and that must not mask the failure the caller needs to see.
-    await writable.abort?.().catch(() => {});
-    throw error;
-  }
-
-  // Only now the new bytes are on disk: a sidecar from the old session would otherwise be
-  // replayed over them. A removal that fails for a reason other than absence is *not*
-  // swallowed — the database has been replaced but a stale journal survives beside it, which
-  // the caller must surface rather than reload into.
-  for (const name of DB_SIDECAR_SUFFIXES.map((suffix) => `${baseName}${suffix}`)) {
-    try {
-      await root.removeEntry(name);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'NotFoundError') continue;
-      throw new StaleJournalError(name, error);
-    }
-  }
+async function rescueDriver(): Promise<ReturnType<typeof getDatabaseDriver>> {
+  if (getDatabaseDriver().isUnavailable) await disposeDatabase();
+  return getDatabaseDriver();
 }
 
 /**
- * The journal/WAL sidecar files SQLite keeps beside the database. Shared so the restore
- * overwrite and {@link hardResetLocalData} can never disagree about what counts as a sidecar.
+ * Replace the stored database with raw SQLite bytes (the shared write step behind both
+ * raw-`.sqlite` and full-archive restore), then release the worker so the caller can reload
+ * into the restored database.
+ *
+ * Where the bytes go depends on which VFS this origin's database lives on (issue #255). Under
+ * the primary `opfs` VFS the file at `DB_FILENAME` *is* the raw database, so it is written
+ * here — on the crash screen, which is where a restore usually starts, the worker is quite
+ * likely the thing that failed. Under the `opfs-sahpool` fallback there is no such file to
+ * write, and on a fresh install nothing on disk says which VFS the next boot will pick; both
+ * cases go through the worker, which owns that decision. Disposal is deliberately part of this
+ * function rather than the caller's job, because the two orders are opposites: the direct write
+ * needs the worker *gone* first, the delegated one needs it alive.
  */
-const DB_SIDECAR_SUFFIXES = ['-journal', '-wal', '-shm'] as const;
+export async function overwriteDatabaseFile(bytes: Uint8Array): Promise<void> {
+  if ((await detectDbStorageLayout()) === 'opfs') {
+    await disposeDatabase();
+    const { staleSidecar, cause } = await writePlainDatabaseFile(bytes);
+    if (staleSidecar) throw new StaleJournalError(staleSidecar, cause);
+    return;
+  }
+
+  const { staleSidecar } = await (await rescueDriver()).writeDatabaseFile(bytes);
+  await disposeDatabase();
+  if (staleSidecar) throw new StaleJournalError(staleSidecar, undefined);
+}
 
 /**
  * Thrown when the new database bytes committed but one of the old session's sidecars could
@@ -123,41 +119,39 @@ export interface RestoreOptions {
  * overwrites it (issue #198).
  *
  * The undo for a destructive restore, mirroring what `BackupDialog` does before a Replace.
- * Reads the OPFS file **directly** rather than asking the worker to serialise it: this runs
- * on the crash screen, where the worker is quite likely the thing that failed, and the file
- * at `DB_FILENAME` already *is* the raw database.
+ * Reads the OPFS file **directly** where it can rather than asking the worker to serialise it:
+ * this runs on the crash screen, where the worker is quite likely the thing that failed, and
+ * under the primary VFS the file at `DB_FILENAME` already *is* the raw database. Only the
+ * `opfs-sahpool` fallback, whose files no directory handle can resolve, goes through the worker
+ * (issue #255) — and it reads the *file*, not the database, so a corrupt one still copies out.
  *
  * Returns whether anything was captured — a device with no database yet has nothing to lose,
  * which is not a reason to block a restore. Throws when a database is present but unreadable:
  * that *is* a reason, since overwriting it would destroy data no copy exists of.
  */
 export async function captureRestorePoint(): Promise<boolean> {
-  const baseName = DB_FILENAME.replace(/^\//, '');
-  let root: FileSystemDirectoryHandle;
-  try {
-    root = await navigator.storage.getDirectory();
-  } catch {
-    // No OPFS at all — there is no database here for a restore to overwrite.
-    return false;
+  // Only *absence* is benign here. Anything else — a locked file, an I/O error — means data is
+  // there and we could not copy it, so `readPlainDatabaseFile` lets the failure reach the
+  // caller and stop the restore. Swallowing it would overwrite a database with no copy behind
+  // it, which is the exact loss this function exists to prevent.
+  const file = await readPlainDatabaseFile();
+  if (file && file.size > 0) {
+    // The `File` is already a `Blob` over the OPFS bytes, so it downloads without ever
+    // materialising the whole database in memory.
+    return await downloadRestorePoint(file);
   }
+  if (!(await hasSahPoolStore())) return false;
 
-  let file: File;
-  try {
-    const handle = await root.getFileHandle(baseName);
-    file = await handle.getFile();
-  } catch (error) {
-    // Only *absence* is benign. Anything else — a locked file, an I/O error — means data is
-    // there and we could not copy it, so the failure must reach the caller and stop the
-    // restore. Swallowing it here would overwrite a database with no copy behind it, which is
-    // the exact loss this function exists to prevent.
-    if (error instanceof DOMException && error.name === 'NotFoundError') return false;
-    throw error;
-  }
-  if (file.size === 0) return false;
+  const bytes = await (await rescueDriver()).readDatabaseFile();
+  if (!bytes || bytes.length === 0) return false;
+  // Copy into a standalone ArrayBuffer: bytes crossing from the worker can be
+  // SharedArrayBuffer-backed, which `Blob` rejects.
+  return await downloadRestorePoint(new Blob([bytes.slice()], { type: 'application/x-sqlite3' }));
+}
 
-  // The `File` is already a `Blob` over the OPFS bytes, so it downloads without ever
-  // materialising the whole database in memory.
-  downloadBlob(`gubbins-restore-point-${fileTimestamp()}.sqlite`, file);
+/** Save the captured bytes, then let the download commit before the caller overwrites. */
+async function downloadRestorePoint(blob: Blob): Promise<true> {
+  downloadBlob(`gubbins-restore-point-${fileTimestamp()}.sqlite`, blob);
   // Let the browser commit the download before the caller overwrites the database and
   // reloads — a reload in the same tick can cancel an in-flight save.
   await new Promise((resolve) => setTimeout(resolve, RESTORE_POINT_SETTLE_MS));
@@ -198,10 +192,10 @@ export async function prepareDestructiveRestore(
 /**
  * Restore the database from a raw `.sqlite` binary (spec §3 — the inverse of
  * {@link downloadRawSqlite}). **Destructive** — the caller must confirm first. Checks the
- * incoming database is sound and downloads a restore point of the current one, then disposes
- * the worker, overwrites the OPFS file and reloads so the worker re-opens the new database.
- * Throws `InvalidRawSqliteError` for a non-SQLite file, or `DamagedDatabaseError` for one
- * that fails the pre-flight checks — in every failure case, before anything is overwritten.
+ * incoming database is sound and downloads a restore point of the current one, then replaces
+ * the stored database and reloads so the worker re-opens the new one. Throws
+ * `InvalidRawSqliteError` for a non-SQLite file, or `DamagedDatabaseError` for one that fails
+ * the pre-flight checks — in every failure case, before anything is overwritten.
  */
 export async function restoreRawSqlite(file: File, options: RestoreOptions = {}): Promise<void> {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -211,8 +205,7 @@ export async function restoreRawSqlite(file: File, options: RestoreOptions = {})
 
   await prepareDestructiveRestore(bytes, options);
 
-  await disposeDatabase();
-  await overwriteOpfsDatabase(bytes);
+  await overwriteDatabaseFile(bytes);
 
   location.reload();
 }
@@ -281,24 +274,26 @@ export async function downloadJsonDump(): Promise<void> {
 
 /**
  * Purge all local data and reload from a clean slate. Disposes the worker, deletes
- * the OPFS database file(s), and clears caches/service workers.
+ * the database file(s), and clears caches/service workers.
  */
 export async function hardResetLocalData(): Promise<void> {
+  // The `opfs-sahpool` fallback keeps the database inside its own store, and the worker holds
+  // a sync access handle on every file in it — a directory removal can fail outright while
+  // those are live, which would leave a "purge everything" quietly not purging the data. So
+  // ask the VFS to blank its own files *first*, while it still owns them (issue #255).
+  if (await hasSahPoolStore()) {
+    try {
+      await (await rescueDriver()).wipeDatabaseFiles();
+    } catch {
+      // A wedged or dead worker is exactly why a user reaches for this; the directory removal
+      // below is the second pass at it.
+    }
+  }
+
   await disposeDatabase();
 
-  const baseName = DB_FILENAME.replace(/^\//, '');
-  try {
-    const root = await navigator.storage.getDirectory();
-    for (const name of [baseName, ...DB_SIDECAR_SUFFIXES.map((suffix) => `${baseName}${suffix}`)]) {
-      try {
-        await root.removeEntry(name);
-      } catch {
-        // File not present — ignore.
-      }
-    }
-  } catch {
-    // OPFS unavailable — nothing to purge there.
-  }
+  await deletePlainDatabaseFiles();
+  await deleteSahPoolStore();
 
   // The code half of the purge — service worker + Cache Storage — is exactly what
   // `resetServiceWorkerOnly` does on its own; sharing it keeps the two from drifting.

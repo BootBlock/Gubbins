@@ -105,6 +105,12 @@ interface CausePresentation {
  * environmental, so they lead with what to change and stay at `warning`. `isolation-pending`
  * is not a failure at all — it is the normal first visit, waiting on the service worker that
  * supplies the COOP/COEP headers (§2.2.6) — so it reads as progress, not an error.
+ *
+ * `isolation-blocked` reaches this table less often since #255: where isolation is demonstrably
+ * not coming, the boot now opens the database on the fallback VFS rather than stopping the user.
+ * It still shows for the reading that is *not* settled — a service worker that has not reached
+ * `active` yet, which is equally what a slow first install looks like, and where a reload is
+ * genuinely the right advice.
  */
 const CAUSE_PRESENTATION: Record<SupportCause, CausePresentation> = {
   'insecure-context': {

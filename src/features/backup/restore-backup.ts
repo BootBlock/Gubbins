@@ -19,7 +19,7 @@
  * needed so the caller can either reload (carrying a one-off notice via
  * {@link consumeRestoreNotice}) or refresh in place.
  */
-import { getDatabaseDriver, disposeDatabase } from '@/db/client';
+import { getDatabaseDriver } from '@/db/client';
 import {
   buildCloneStatements,
   buildSchemaDictionary,
@@ -28,7 +28,7 @@ import {
   SYNC_TABLES,
 } from '@/features/sync/snapshot';
 import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE } from '@/db/repositories';
-import { overwriteOpfsDatabase, StaleJournalError } from '@/app/error/safe-mode-actions';
+import { overwriteDatabaseFile, StaleJournalError } from '@/app/error/safe-mode-actions';
 import { writeImageFiles } from '@/features/images/opfs-images';
 import { BASELINE_REVISION } from '@/db/migrations';
 import { readBackupFile, type ParsedBackup } from './backup-format';
@@ -108,8 +108,8 @@ async function restoreMerge(parsed: ParsedBackup): Promise<void> {
 }
 
 /**
- * Exact point-in-time restore. With an embedded `.sqlite` copy, dispose the worker and
- * overwrite the OPFS database verbatim (then re-hydrate images) — a reload is then required.
+ * Exact point-in-time restore. With an embedded `.sqlite` copy, replace the stored database
+ * verbatim (then re-hydrate images) — that releases the worker, so a reload is required.
  * Without it, wipe-and-clone the portable snapshot in one transaction through the live worker
  * (no reload needed). Returns whether the worker was disposed.
  */
@@ -137,13 +137,12 @@ async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
           'brings your records across without replacing the database file.',
       );
     }
-    await disposeDatabase();
     // A `StaleJournalError` lands *after* the new bytes commit, so the images still belong
     // beside them — write them, then let the failure through so the caller reports it rather
     // than reloading into a journal replay (#203).
     let staleJournal: StaleJournalError | undefined;
     try {
-      await overwriteOpfsDatabase(parsed.sqlite);
+      await overwriteDatabaseFile(parsed.sqlite);
     } catch (error) {
       if (!(error instanceof StaleJournalError)) throw error;
       staleJournal = error;

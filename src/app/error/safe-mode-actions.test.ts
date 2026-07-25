@@ -1,15 +1,26 @@
 /**
  * The destructive raw-`.sqlite` restore (spec §3) and the guards added in issue #198: prove
  * the incoming database is sound, and secure the current one, *before* anything is overwritten.
+ *
+ * Also the fallback-VFS half of issue #255: under `opfs-sahpool` the database is *not* a file
+ * any directory handle can reach, so every one of these actions has to notice that and go
+ * through the worker instead — a rescue that silently wrote beside the real database would be
+ * worse than one that refused.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const inspectRestoreCandidate = vi.hoisted(() => vi.fn());
 const disposeDatabase = vi.hoisted(() => vi.fn());
 const downloadBlob = vi.hoisted(() => vi.fn());
+const readDatabaseFile = vi.hoisted(() => vi.fn());
+const writeDatabaseFile = vi.hoisted(() => vi.fn());
+const wipeDatabaseFiles = vi.hoisted(() => vi.fn());
+const getDatabaseDriver = vi.hoisted(() =>
+  vi.fn(() => ({ readDatabaseFile, writeDatabaseFile, wipeDatabaseFiles })),
+);
 
 vi.mock('@/db/restore-candidate', () => ({ inspectRestoreCandidate }));
-vi.mock('@/db/client', () => ({ disposeDatabase, getDatabaseDriver: vi.fn() }));
+vi.mock('@/db/client', () => ({ disposeDatabase, getDatabaseDriver }));
 vi.mock('@/lib/download', () => ({ downloadBlob, fileTimestamp: () => '20260719-120000' }));
 vi.mock('@/features/images/opfs-images', () => ({ removeImagesDirectory: vi.fn() }));
 vi.mock('@/lib/app-shell-reset', () => ({ resetAppShell: vi.fn() }));
@@ -18,11 +29,13 @@ import {
   DamagedDatabaseError,
   RestorePointError,
   captureRestorePoint,
+  hardResetLocalData,
   isSqliteFile,
-  overwriteOpfsDatabase,
+  overwriteDatabaseFile,
   restoreRawSqlite,
   StaleJournalError,
 } from './safe-mode-actions';
+import { SAHPOOL_DIRECTORY } from '@/db/db-storage';
 import { SQLITE_MAGIC } from '@/db/sqlite-header';
 
 /** A file whose first 16 bytes are the SQLite magic — all the pre-#198 guard ever checked. */
@@ -53,7 +66,10 @@ type OpfsFailure = 'write' | 'close' | 'remove';
  * `size` is the live database's byte count; `'absent'` is a device with no database yet, and
  * `'unreadable'` is one whose database is there but cannot be read.
  */
-function mockOpfs(size: number | 'absent' | 'unreadable', options: { failAt?: OpfsFailure } = {}): string[] {
+function mockOpfs(
+  size: number | 'absent' | 'unreadable',
+  options: { failAt?: OpfsFailure; sahPool?: boolean } = {},
+): string[] {
   const events: string[] = [];
   const failWith = (message: string, name: string) => {
     throw new DOMException(message, name);
@@ -85,7 +101,17 @@ function mockOpfs(size: number | 'absent' | 'unreadable', options: { failAt?: Op
     if (name.endsWith('-shm')) failWith('No such file.', 'NotFoundError');
     events.push(`remove:${name}`);
   });
-  vi.stubGlobal('navigator', { storage: { getDirectory: async () => ({ getFileHandle, removeEntry }) } });
+  // The fallback VFS's store is a *directory*, and its presence is what tells the main thread
+  // the database is somewhere only the worker can reach (issue #255).
+  const getDirectoryHandle = vi.fn(async (name: string) => {
+    if (!options.sahPool || name !== SAHPOOL_DIRECTORY) {
+      failWith('No such directory.', 'NotFoundError');
+    }
+    return {};
+  });
+  vi.stubGlobal('navigator', {
+    storage: { getDirectory: async () => ({ getFileHandle, getDirectoryHandle, removeEntry }) },
+  });
   return events;
 }
 
@@ -94,7 +120,15 @@ beforeEach(() => {
   vi.unstubAllGlobals();
   // `location.reload` is the last line of a successful restore; jsdom refuses the real one.
   vi.stubGlobal('location', { ...window.location, reload: vi.fn() });
+  // `clearAllMocks` forgets the *calls* but keeps the implementations, and several tests here
+  // install one to record ordering or force a failure — reset the two that would otherwise leak
+  // into the next test (the driver mock keeps its own, so it is deliberately not reset).
+  downloadBlob.mockReset();
+  disposeDatabase.mockReset();
   inspectRestoreCandidate.mockResolvedValue({ status: 'ok', problems: [] });
+  writeDatabaseFile.mockResolvedValue({ staleSidecar: null });
+  readDatabaseFile.mockResolvedValue(null);
+  wipeDatabaseFiles.mockResolvedValue(undefined);
   mockOpfs(4096);
 });
 
@@ -195,14 +229,14 @@ describe('restoreRawSqlite (issue #198)', () => {
   });
 });
 
-describe('overwriteOpfsDatabase (issue #203)', () => {
+describe('overwriteDatabaseFile (issue #203)', () => {
   it('writes and commits the new bytes before it clears the journal sidecars', async () => {
     // A hot rollback journal is the only thing that can repair the current database, so it
     // must outlive every step that could still fail. The `-shm` removal is absent here, which
     // is the ordinary case after a clean shutdown rather than a failure.
     const events = mockOpfs(4096);
 
-    await overwriteOpfsDatabase(sqliteBytes());
+    await overwriteDatabaseFile(sqliteBytes());
 
     expect(events).toEqual([
       'write',
@@ -218,7 +252,7 @@ describe('overwriteOpfsDatabase (issue #203)', () => {
       // `close()` matters most: OPFS stages the write, so a quota error normally lands there.
       const events = mockOpfs(4096, { failAt });
 
-      await expect(overwriteOpfsDatabase(sqliteBytes())).rejects.toThrow(/quota/i);
+      await expect(overwriteDatabaseFile(sqliteBytes())).rejects.toThrow(/quota/i);
 
       // Nothing was deleted: the database is un-updated, not destroyed.
       expect(events.filter((event) => event.startsWith('remove:'))).toEqual([]);
@@ -231,16 +265,90 @@ describe('overwriteOpfsDatabase (issue #203)', () => {
     // the fresh file is exactly the corruption the caller must not reload into.
     mockOpfs(4096, { failAt: 'remove' });
 
-    await expect(overwriteOpfsDatabase(sqliteBytes())).rejects.toBeInstanceOf(StaleJournalError);
+    await expect(overwriteDatabaseFile(sqliteBytes())).rejects.toBeInstanceOf(StaleJournalError);
   });
 
   it('names the sidecar it could not remove, and keeps the cause', async () => {
     mockOpfs(4096, { failAt: 'remove' });
 
-    await expect(overwriteOpfsDatabase(sqliteBytes())).rejects.toMatchObject({
+    await expect(overwriteDatabaseFile(sqliteBytes())).rejects.toMatchObject({
       sidecar: 'gubbins.sqlite3-journal',
       cause: expect.objectContaining({ name: 'NoModificationAllowedError' }),
     });
+  });
+});
+
+describe('the opfs-sahpool fallback VFS (issue #255)', () => {
+  it('captures the restore point through the worker, since no directory handle can reach it', async () => {
+    mockOpfs('absent', { sahPool: true });
+    readDatabaseFile.mockResolvedValue(sqliteBytes());
+
+    expect(await captureRestorePoint()).toBe(true);
+    expect(downloadBlob).toHaveBeenCalledWith(
+      expect.stringContaining('gubbins-restore-point-'),
+      expect.any(Blob),
+    );
+  });
+
+  it('reports nothing captured when the pool holds no database', async () => {
+    mockOpfs('absent', { sahPool: true });
+    readDatabaseFile.mockResolvedValue(null);
+
+    expect(await captureRestorePoint()).toBe(false);
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('writes a restore through the worker, and only then releases it', async () => {
+    // The order is the opposite of the plain-OPFS one: dispose first and the pool's own bytes
+    // would be unreachable, so the restore would land in a file nothing ever opens.
+    const order: string[] = [];
+    mockOpfs('absent', { sahPool: true });
+    writeDatabaseFile.mockImplementation(async () => {
+      order.push('write');
+      return { staleSidecar: null };
+    });
+    disposeDatabase.mockImplementation(() => order.push('dispose'));
+
+    await overwriteDatabaseFile(sqliteBytes());
+
+    expect(order).toEqual(['write', 'dispose']);
+  });
+
+  it('still raises a sidecar the worker could not clear', async () => {
+    mockOpfs('absent', { sahPool: true });
+    writeDatabaseFile.mockResolvedValue({ staleSidecar: 'gubbins.sqlite3-journal' });
+
+    await expect(overwriteDatabaseFile(sqliteBytes())).rejects.toBeInstanceOf(StaleJournalError);
+  });
+
+  it('writes through the worker on a fresh install too — only it knows which VFS will boot', async () => {
+    mockOpfs('absent');
+
+    await overwriteDatabaseFile(sqliteBytes());
+
+    expect(writeDatabaseFile).toHaveBeenCalledOnce();
+  });
+
+  it('has the VFS blank its own files before the purge terminates the worker', async () => {
+    // A `removeEntry` on the pool directory can fail outright while the worker still holds a
+    // sync access handle on every file in it — which would leave "erase everything" not erasing.
+    const order: string[] = [];
+    mockOpfs('absent', { sahPool: true });
+    wipeDatabaseFiles.mockImplementation(async () => void order.push('wipe'));
+    disposeDatabase.mockImplementation(() => order.push('dispose'));
+
+    await hardResetLocalData();
+
+    expect(order).toEqual(['wipe', 'dispose']);
+  });
+
+  it('still purges when the worker is too far gone to answer', async () => {
+    const events = mockOpfs('absent', { sahPool: true });
+    wipeDatabaseFiles.mockRejectedValue(new Error('The database driver was disposed.'));
+
+    await hardResetLocalData();
+
+    expect(events).toContain(`remove:${SAHPOOL_DIRECTORY}`);
   });
 });
 

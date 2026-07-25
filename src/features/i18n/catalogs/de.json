@@ -324,6 +324,7 @@
   "dashboard.widget.platform.sab": "SharedArrayBuffer",
   "dashboard.widget.platform.sabYes": "Verfügbar",
   "dashboard.widget.platform.sabNo": "Fehlt",
+  "dashboard.widget.platform.storageEngine": "Speicher-Engine",
   "dashboard.widget.platform.dbFile": "DB-Datei",
   "inventory.results.loading": "Wird geladen…",
   "inventory.results.count.one": "{count} Artikel stimmt überein",

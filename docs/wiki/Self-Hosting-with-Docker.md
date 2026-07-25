@@ -23,9 +23,10 @@ from** — not where your data lives. The container holds no inventory at all.
 
 What you *do* get:
 
-- **A more robust setup for the in-browser database.** Gubbins needs a browser feature called
-  cross-origin isolation to run its database. The hosted site has to enable this indirectly,
-  through a workaround; a self-hosted server enables it directly and properly.
+- **A more robust setup for the in-browser database.** Gubbins runs on either of two storage
+  engines (see [[Installing Gubbins|Installing-Gubbins]]), and the faster one needs a browser
+  feature called cross-origin isolation. The hosted site has to enable that indirectly, through a
+  workaround; a self-hosted server enables it directly and properly.
 - **Your own address.** Serve Gubbins from your own domain or LAN, at the root of the site or under
   a sub-path of your choosing.
 - **No dependency on the hosted site** — useful on an isolated or offline network.

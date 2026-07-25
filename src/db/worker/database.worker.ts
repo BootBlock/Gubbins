@@ -14,6 +14,7 @@
  */
 import { createLocalDriver } from './local-driver';
 import { bootstrapDatabase, readDiagnostics, type BootstrapResult } from './sqlite-bootstrap';
+import { readDatabaseFile, wipeDatabaseFiles, writeDatabaseFile } from './db-file-store';
 import { verifySqliteBinary } from './verify-binary';
 import { DbError } from '../errors';
 import { runSnapshotMerge, type SnapshotMergeRequest, type SnapshotMergeResult } from '@/features/sync/merge';
@@ -47,11 +48,7 @@ async function handle(envelope: RpcRequestEnvelope): Promise<void> {
 
 async function dispatch(request: DbRequest): Promise<unknown> {
   if (request.kind === 'close') {
-    if (boot) {
-      boot.db.close();
-      boot = null;
-      bootPromise = null;
-    }
+    closeConnection();
     return null;
   }
 
@@ -60,6 +57,23 @@ async function dispatch(request: DbRequest): Promise<unknown> {
   // (issue #198). It opens only its own transient in-memory copy.
   if (request.kind === 'verifyBinary') {
     return verifySqliteBinary(request.bytes);
+  }
+
+  // Ahead of `ensureBoot` for the same reason (issue #255): these operate on the database
+  // *file*, and a file that cannot be opened is exactly what they exist to replace or clear.
+  // Both mutating ones close the live connection first — the fallback VFS gives undefined
+  // results for an import or a wipe over a file it still holds open.
+  if (request.kind === 'readDatabaseFile') {
+    return readDatabaseFile();
+  }
+  if (request.kind === 'writeDatabaseFile') {
+    closeConnection();
+    return writeDatabaseFile(request.bytes);
+  }
+  if (request.kind === 'wipeDatabaseFiles') {
+    closeConnection();
+    await wipeDatabaseFiles();
+    return null;
   }
 
   const active = await ensureBoot();
@@ -81,6 +95,21 @@ async function dispatch(request: DbRequest): Promise<unknown> {
     default:
       return assertNever(request);
   }
+}
+
+/**
+ * Release the live connection, if there is one, and forget the boot so the next request opens
+ * a fresh one. Idempotent — every caller here reaches for it precisely because it cannot know
+ * whether the database ever opened.
+ */
+function closeConnection(): void {
+  const open = boot;
+  // Cleared unconditionally, not just when a connection existed: a *failed* boot latches its
+  // rejection in `bootPromise`, and replacing the database file is exactly the fix that should
+  // let the next request try again.
+  boot = null;
+  bootPromise = null;
+  open?.db.close();
 }
 
 function ensureBoot(): Promise<BootstrapResult> {

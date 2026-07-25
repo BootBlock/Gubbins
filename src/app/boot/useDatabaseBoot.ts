@@ -2,7 +2,8 @@
  * The application boot state machine (Tier-3 ephemeral state, spec §2.1).
  *
  * Runs once on mount and drives the gate the user sees before the app is usable:
- *   1. Critical platform support (COOP/COEP + SharedArrayBuffer + OPFS — §2.2.6).
+ *   1. Critical platform support (OPFS — §2.2.6), plus the cross-origin isolation that decides
+ *      which VFS the database opens on (issue #255).
  *   2. Single-tab ownership via the Web Lock guard (§2.2.7).
  *   3. Open the OPFS database, verify FTS5, and run migrations (§2.2, §2.3).
  *   4. Request persistent storage and begin quota telemetry (§2, §7.6.1).
@@ -11,8 +12,12 @@
  * in development, and never sets state after a genuine unmount.
  */
 import { useEffect, useRef, useState } from 'react';
-import { checkCriticalSupport } from '@/lib/env/feature-detection';
-import { diagnoseCriticalSupport, type SupportDiagnosis } from '@/lib/env/support-diagnosis';
+import { checkCriticalSupport, checkIsolationSupport } from '@/lib/env/feature-detection';
+import {
+  diagnoseCriticalSupport,
+  isolationIsSettled,
+  type SupportDiagnosis,
+} from '@/lib/env/support-diagnosis';
 import { acquireDatabaseTabLock, type TabLockDenial } from '@/db/tab-lock';
 import { bootDatabase, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
@@ -64,6 +69,22 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
   if (!support.supported) {
     commit({ status: 'unsupported', diagnosis: await diagnoseCriticalSupport(support.missing) });
     return;
+  }
+
+  // 1a. Cross-origin isolation is preferred, not required (issue #255): without it the worker
+  // opens the database on the `opfs-sahpool` VFS instead of failing. So the gate proceeds for the
+  // one diagnosis that means isolation is genuinely not coming — and only once that is *settled*
+  // (`isolationIsSettled`), because the choice is effectively permanent: the fallback database
+  // this boot would create is the one the origin must keep opening afterwards. Every other cause
+  // still stops here, including `isolation-pending` — the normal first visit, waiting on the
+  // service worker that supplies the COOP/COEP headers, which resolves itself on reload.
+  const isolation = checkIsolationSupport();
+  if (!isolation.supported) {
+    const diagnosis = await diagnoseCriticalSupport(isolation.missing);
+    if (diagnosis.cause !== 'isolation-blocked' || !isolationIsSettled(diagnosis.signals)) {
+      commit({ status: 'unsupported', diagnosis });
+      return;
+    }
   }
 
   // Lab-only test seam (`schema-too-new`): present the "database is from a newer build"

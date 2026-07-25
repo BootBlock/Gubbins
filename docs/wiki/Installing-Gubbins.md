@@ -11,11 +11,19 @@ Gubbins is a web app: open it in a modern browser and you're running. Because it
 
 ### Supported browsers
 
-Gubbins uses modern browser storage (OPFS) and needs a **cross-origin-isolated** context, which
-current versions of major browsers provide. It's tested on Chromium-based browsers (Chrome, Edge)
-and works across current mainstream browsers; some advanced features degrade gracefully where a
-browser doesn't support them (for example, [[notifications|Reminder-Notifications]] are limited on
-iOS).
+Gubbins uses modern browser storage (OPFS) to keep your inventory on your device, so it runs on
+any current mainstream browser — Chrome, Edge, Firefox and Safari, on desktop and mobile. It's
+tested on Chromium-based browsers (Chrome, Edge). Some advanced features degrade gracefully where
+a browser doesn't support them (for example, [[notifications|Reminder-Notifications]] are limited
+on iOS).
+
+Under the bonnet Gubbins picks one of two storage engines for its database, whichever your browser
+can provide — the faster one where the page is *cross-origin isolated*, and an equally durable
+fallback everywhere else (including iOS 16, and networks that strip the headers isolation needs).
+Either way your data is stored the same and everything works the same; the
+[[Platform widget|Dashboard-and-Widgets]] on the dashboard names the one in use if you're curious.
+Gubbins settles on an engine the first time it stores anything and then sticks with it, so your
+data never ends up split between the two.
 
 > **ℹ️ Note**
 > On your **first visit**, Gubbins may pause on a **“Preparing secure storage…”** screen for a
