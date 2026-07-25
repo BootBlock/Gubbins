@@ -8,7 +8,9 @@ explicitly choose to. Understanding this explains a lot about how the app behave
 
 Gubbins keeps your data in an in-browser **SQLite database** (running as WebAssembly, stored in
 your browser's private **OPFS** storage). That database is the **single source of truth** — every
-item, location, loan and report reads from it.
+item, location, loan and report reads from it. Exactly which of the two OPFS storage engines holds
+it depends on what your browser offers — see [[Installing Gubbins|Installing-Gubbins]] — but it is
+one database either way, and everything below applies to both.
 
 Because it's all local:
 

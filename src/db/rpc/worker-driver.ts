@@ -28,6 +28,7 @@ import {
   type DbRequest,
   type RpcRequestEnvelope,
   type VerifyBinaryResult,
+  type WriteDatabaseFileResult,
 } from './protocol';
 import type { IDatabaseDriver, SqlExecuteResult, SqlParams, SqlRow, SqlStatement } from './driver';
 import type { SnapshotMergeRequest, SnapshotMergeResult } from '@/features/sync/merge';
@@ -51,6 +52,14 @@ export const RPC_TIMEOUT_MS: Readonly<Record<DbRequest['kind'], number>> = {
   // Reads every page of the candidate file, so it scales with the database being restored —
   // budgeted like the other whole-database operations rather than like a query.
   verifyBinary: 300_000,
+  // Whole-database file operations (#255), so budgeted alongside them.
+  readDatabaseFile: 300_000,
+  writeDatabaseFile: 300_000,
+  // Budgeted like `close`, and for the same reason: it only blanks the VFS's handful of file
+  // slots, and it is awaited by the Safe Mode purge — which a user reaches for precisely when
+  // the worker is wedged. Waiting 30s before falling through to the file-system sweep that
+  // follows it would just freeze the recovery path.
+  wipeDatabaseFiles: 5_000,
   // Reads, reconciles and rewrites the whole syncable database (#173), so it is budgeted like
   // the other whole-database operations rather than like a query.
   snapshotMerge: 300_000,
@@ -114,6 +123,30 @@ export class WorkerDatabaseDriver implements IDatabaseDriver {
    */
   verifyBinary(bytes: Uint8Array): Promise<VerifyBinaryResult> {
     return this.#send<VerifyBinaryResult>({ kind: 'verifyBinary', bytes });
+  }
+
+  /**
+   * Read the stored database's raw bytes **without opening it** (issue #255).
+   *
+   * The rescue paths read the OPFS file directly where they can; this is for the `opfs-sahpool`
+   * fallback VFS, whose files no directory handle can resolve. Resolves to `null` when this
+   * origin has no database at all.
+   */
+  readDatabaseFile(): Promise<Uint8Array | null> {
+    return this.#send<Uint8Array | null>({ kind: 'readDatabaseFile' });
+  }
+
+  /**
+   * Replace the stored database with raw SQLite bytes, wherever the next boot will read it
+   * from (issue #255). Closes the live connection first; the caller must reload afterwards.
+   */
+  writeDatabaseFile(bytes: Uint8Array): Promise<WriteDatabaseFileResult> {
+    return this.#send<WriteDatabaseFileResult>({ kind: 'writeDatabaseFile', bytes });
+  }
+
+  /** Clear the stored database and its sidecars through the VFS that owns them (issue #255). */
+  async wipeDatabaseFiles(): Promise<void> {
+    await this.#send<null>({ kind: 'wipeDatabaseFiles' });
   }
 
   /**

@@ -321,6 +321,7 @@
   "dashboard.widget.platform.sab": "SharedArrayBuffer",
   "dashboard.widget.platform.sabYes": "Available",
   "dashboard.widget.platform.sabNo": "Missing",
+  "dashboard.widget.platform.storageEngine": "Storage engine",
   "dashboard.widget.platform.dbFile": "DB file",
   "inventory.results.loading": "Loading…",
   "inventory.results.count.one": "{count} item matches",

@@ -129,11 +129,18 @@ describe('diagnoseSupport', () => {
       ).toBe('site-data-blocked');
     });
 
-    it('missing OPFS does not read as an unsupported browser while isolation is still pending', () => {
-      // Isolation has to settle before "the browser lacks OPFS" can be an honest verdict.
+    it('missing OPFS outranks the isolation questions, which only pick a VFS', () => {
+      // Since #255 an un-isolated browser still runs Gubbins, on the opfs-sahpool VFS — so with
+      // the environment causes ruled out, no OPFS really is the browser, and pointing the reader
+      // at COOP/COEP headers would send them after something that would not help.
       expect(
         diagnoseSupport(signals({ ...NOT_ISOLATED, opfs: false, serviceWorkerControlling: false })),
-      ).toBe('isolation-pending');
+      ).toBe('browser-unsupported');
+    });
+
+    it('still blames the environment for missing OPFS when site data is blocked', () => {
+      // The precedence above only holds once the everyday explanations are out of the way.
+      expect(diagnoseSupport(signals({ opfs: false, cookiesEnabled: false }))).toBe('site-data-blocked');
     });
   });
 });

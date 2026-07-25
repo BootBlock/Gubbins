@@ -17,12 +17,12 @@ export function hasCrossOriginIsolation(): boolean {
   return typeof globalThis !== 'undefined' && globalThis.crossOriginIsolated === true;
 }
 
-/** True when `SharedArrayBuffer` is available — required by the synchronous SQLite OPFS VFS (§2.2.6). */
+/** True when `SharedArrayBuffer` is available — needed by the primary SQLite OPFS VFS (§2.2.6). */
 export function hasSharedArrayBuffer(): boolean {
   return typeof SharedArrayBuffer !== 'undefined';
 }
 
-/** True when the Origin Private File System is reachable — the mandated primary VFS (§2.2.1). */
+/** True when the Origin Private File System is reachable — where the database lives (§2.2.1). */
 export function hasOpfs(): boolean {
   return (
     typeof navigator !== 'undefined' &&
@@ -146,10 +146,31 @@ export interface CriticalSupportResult {
   readonly missing: readonly string[];
 }
 
+/**
+ * The one thing Gubbins genuinely cannot run without: somewhere to keep the database.
+ *
+ * Cross-origin isolation used to be listed here too, because the primary SQLite VFS needs it.
+ * It is no longer *critical* (issue #255) — without it the worker opens the database on the
+ * `opfs-sahpool` VFS instead, which needs neither COOP/COEP nor `SharedArrayBuffer` — so an
+ * un-isolated browser gets a working app rather than a blocking screen. See
+ * {@link checkIsolationSupport} for what isolation still buys.
+ */
 export function checkCriticalSupport(): CriticalSupportResult {
+  const missing: string[] = [];
+  if (!hasOpfs()) missing.push('Origin Private File System (OPFS)');
+  return { supported: missing.length === 0, missing };
+}
+
+/**
+ * Whether this document can run the **primary** OPFS VFS (§2.2.6) — preferred, not required.
+ *
+ * Its absence is not a failure: it decides which VFS the database opens on, and on a first
+ * visit it is merely the header-injecting service worker not having taken control yet. The
+ * boot gate uses it to tell those two apart before committing an origin to the fallback.
+ */
+export function checkIsolationSupport(): CriticalSupportResult {
   const missing: string[] = [];
   if (!hasCrossOriginIsolation()) missing.push('Cross-Origin Isolation (COOP/COEP)');
   if (!hasSharedArrayBuffer()) missing.push('SharedArrayBuffer');
-  if (!hasOpfs()) missing.push('Origin Private File System (OPFS)');
   return { supported: missing.length === 0, missing };
 }

@@ -26,6 +26,16 @@ export interface DbDiagnostics {
   readonly filename: string;
 }
 
+/** The outcome of `writeDatabaseFile` — replacing the stored database (issue #255). */
+export interface WriteDatabaseFileResult {
+  /**
+   * The journal sidecar that could not be removed *after* the new bytes committed, if any.
+   * Reported rather than thrown because the write itself succeeded: the caller finishes its
+   * work and then refuses to reload, instead of unwinding a restore that already landed (#203).
+   */
+  readonly staleSidecar: string | null;
+}
+
 /** The request union — every supported worker operation. */
 export type DbRequest =
   | { readonly kind: 'init' }
@@ -35,6 +45,14 @@ export type DbRequest =
   | { readonly kind: 'execute'; readonly sql: string; readonly params?: SqlParams }
   | { readonly kind: 'transaction'; readonly statements: readonly SqlStatement[] }
   | { readonly kind: 'verifyBinary'; readonly bytes: Uint8Array }
+  /**
+   * Issue #255: read, replace or clear the stored database *file* without opening it. Only the
+   * worker can do this on the `opfs-sahpool` fallback VFS, whose files are not reachable by
+   * name through OPFS — and only the worker knows which VFS a fresh install will boot into.
+   */
+  | { readonly kind: 'readDatabaseFile' }
+  | { readonly kind: 'writeDatabaseFile'; readonly bytes: Uint8Array }
+  | { readonly kind: 'wipeDatabaseFiles' }
   /**
    * Issue #173: run a whole sync merge in the worker — read the local snapshot, reconcile it
    * against the remote, apply the plan, and return the merged snapshot to push. A coarser
@@ -62,6 +80,10 @@ export interface DbResultMap {
   readonly transaction: null;
   /** Integrity check of candidate restore bytes, run before they overwrite anything (#198). */
   readonly verifyBinary: VerifyBinaryResult;
+  /** The stored database's raw bytes, or `null` where this origin has none (#255). */
+  readonly readDatabaseFile: Uint8Array | null;
+  readonly writeDatabaseFile: WriteDatabaseFileResult;
+  readonly wipeDatabaseFiles: null;
   /** The merged snapshot plus the merge's counters, ready to push (#173). */
   readonly snapshotMerge: SnapshotMergeResult;
   readonly close: null;

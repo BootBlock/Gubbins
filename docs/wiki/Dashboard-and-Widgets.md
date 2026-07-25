@@ -18,6 +18,12 @@ Drag them to reorder, and arrange the board to suit how you work.
 Widgets are live: they read your current data, and many double as quick links straight to the
 thing they summarise (select the Low stock widget to jump to what's low, for instance).
 
+Two of them report on the app rather than your inventory: **Storage** (how much room your data
+takes, and whether the browser has promised to keep it) and **Platform** (what your browser
+provides, including which **storage engine** holds the database — see
+[[Installing Gubbins|Installing-Gubbins]]). They're worth a glance if you're
+[[diagnosing something|FAQ-and-Troubleshooting]], and easy to hide otherwise.
+
 > **💡 Tip**
 > Put the widgets you act on most at the top. If you manage a busy loan pool, lead with overdue
 > and upcoming; if you run a parts store, lead with low stock and in-transit.

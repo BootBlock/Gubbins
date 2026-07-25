@@ -13,10 +13,9 @@
  * exercised by the smoke).
  */
 import { unzipSync } from 'fflate';
-import { disposeDatabase } from '@/db/client';
 import {
   isSqliteFile,
-  overwriteOpfsDatabase,
+  overwriteDatabaseFile,
   prepareDestructiveRestore,
   StaleJournalError,
   type RestoreOptions,
@@ -81,7 +80,7 @@ export function readArchive(zip: Uint8Array): ArchiveContents {
 /**
  * Restore a full archive (`.zip`) onto this device (§2.7 / §3). **Destructive** — the
  * caller must confirm first. Unzips the archive, checks the archived database is sound and
- * saves a restore point of the current one (issue #198), then overwrites the OPFS database,
+ * saves a restore point of the current one (issue #198), then replaces the stored database,
  * re-hydrates the full-resolution images and reloads so the worker re-opens the restored
  * database. Throws {@link InvalidArchiveError} for a malformed archive, or
  * `DamagedDatabaseError` / `RestorePointError` from the pre-flight — all before any OPFS write.
@@ -91,15 +90,13 @@ export async function restoreArchive(file: File, options: RestoreOptions = {}): 
   const { sqlite, images } = readArchive(zip); // validates before we touch OPFS
   await prepareDestructiveRestore(sqlite, options);
 
-  await disposeDatabase();
-
   // The database bytes commit before the old session's sidecars are cleared, so a
   // `StaleJournalError` means the restore *did* land and only the cleanup failed. Finish
   // re-hydrating the images so both halves match the archive, then surface it instead of
   // reloading — opening the restored file beside a hot journal would roll it back (#203).
   let staleJournal: StaleJournalError | undefined;
   try {
-    await overwriteOpfsDatabase(sqlite);
+    await overwriteDatabaseFile(sqlite);
   } catch (error) {
     if (!(error instanceof StaleJournalError)) throw error;
     staleJournal = error;

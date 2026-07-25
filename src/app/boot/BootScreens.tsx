@@ -105,6 +105,11 @@ interface CausePresentation {
  * environmental, so they lead with what to change and stay at `warning`. `isolation-pending`
  * is not a failure at all — it is the normal first visit, waiting on the service worker that
  * supplies the COOP/COEP headers (§2.2.6) — so it reads as progress, not an error.
+ *
+ * `isolation-blocked` is the one the boot gate no longer shows: since #255 that diagnosis means
+ * "isolation is not coming", which is a reason to open the database on the fallback VFS rather
+ * than to stop the user. Its entry stays so this table remains total over {@link SupportCause} —
+ * a cause with no presentation would render nothing at all if the gate ever changed its mind.
  */
 const CAUSE_PRESENTATION: Record<SupportCause, CausePresentation> = {
   'insecure-context': {

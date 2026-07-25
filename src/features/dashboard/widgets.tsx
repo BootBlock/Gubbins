@@ -202,15 +202,24 @@ function StatusRow({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
-function Pill({ ok, children }: { ok: boolean; children: ReactNode }) {
+/**
+ * `neutral` is for a reading that is merely *not the preferred* one rather than a fault — the
+ * cross-origin-isolation rows, since the database opens on a fallback VFS without it and the app
+ * works either way (issue #255). Red would tell a perfectly healthy install it is broken.
+ */
+function Pill({ ok, neutral = false, children }: { ok: boolean; neutral?: boolean; children: ReactNode }) {
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium [&_svg]:size-3',
-        ok ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive',
+        neutral
+          ? 'bg-muted text-muted-foreground'
+          : ok
+            ? 'bg-success/15 text-success'
+            : 'bg-destructive/15 text-destructive',
       )}
     >
-      {ok ? <SuccessIcon /> : <ErrorIcon />}
+      {neutral ? <InfoIcon /> : ok ? <SuccessIcon /> : <ErrorIcon />}
       {children}
     </span>
   );
@@ -669,14 +678,17 @@ function PlatformWidget() {
   return (
     <WidgetShell icon={<SecureIcon />} title={t('dashboard.widget.platform.title')}>
       <StatusRow label={t('dashboard.widget.platform.isolated')}>
-        <Pill ok={isolated}>
+        <Pill ok={isolated} neutral={!isolated}>
           {isolated ? t('dashboard.widget.platform.isolatedYes') : t('dashboard.widget.platform.isolatedNo')}
         </Pill>
       </StatusRow>
       <StatusRow label={t('dashboard.widget.platform.sab')}>
-        <Pill ok={sab}>
+        <Pill ok={sab} neutral={!sab}>
           {sab ? t('dashboard.widget.platform.sabYes') : t('dashboard.widget.platform.sabNo')}
         </Pill>
+      </StatusRow>
+      <StatusRow label={t('dashboard.widget.platform.storageEngine')}>
+        <span className="font-mono text-[11px]">{diagnostics.vfs}</span>
       </StatusRow>
       <StatusRow label={t('dashboard.widget.platform.dbFile')}>
         <span className="font-mono text-[11px]">{diagnostics.filename}</span>

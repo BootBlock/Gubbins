@@ -1,10 +1,11 @@
 /**
- * Why the critical-support check failed — and whether it is really the *browser's* fault.
+ * Why the support check came up short — and whether it is really the *browser's* fault.
  *
- * `checkCriticalSupport` (feature-detection.ts) answers "can Gubbins run here?"; it deliberately
- * says nothing about *why* not. Answering only that is misleading, because the three things it requires
- * (cross-origin isolation, `SharedArrayBuffer`, OPFS) are withheld by a perfectly capable
- * browser in several everyday situations that have nothing to do with browser support:
+ * `checkCriticalSupport` / `checkIsolationSupport` (feature-detection.ts) answer "can Gubbins run
+ * here?" and "can it use the primary VFS?"; they deliberately say nothing about *why* not.
+ * Answering only that is misleading, because the capabilities they read (OPFS, and cross-origin
+ * isolation with `SharedArrayBuffer`) are withheld by a perfectly capable browser in several
+ * everyday situations that have nothing to do with browser support:
  *
  *   - the page is not a secure context (plain `http://` on anything but localhost);
  *   - a content/script blocker or privacy extension stopped one of our own scripts;
@@ -53,9 +54,9 @@ export const SERVICE_WORKER_PROBE_TIMEOUT_MS = 3_000;
 export interface SupportSignals {
   /** COOP/COEP are in force on this document, so `SharedArrayBuffer` is permitted (§2.2.6). */
   readonly crossOriginIsolated: boolean;
-  /** `SharedArrayBuffer` exists — required by the synchronous SQLite OPFS VFS. */
+  /** `SharedArrayBuffer` exists — needed by the primary (synchronous) SQLite OPFS VFS. */
   readonly sharedArrayBuffer: boolean;
-  /** The Origin Private File System is reachable — the primary VFS (§2.2.1). */
+  /** The Origin Private File System is reachable — where the database lives (§2.2.1). */
   readonly opfs: boolean;
   /** A secure context (`https://`, or `localhost`/`127.0.0.1` over plain http). */
   readonly secureContext: boolean;
@@ -84,7 +85,11 @@ export type SupportCause =
   | 'scripts-blocked'
   /** Cookies/site data are blocked for this origin, so nothing may be stored locally. */
   | 'site-data-blocked'
-  /** The header-injecting service worker is starting up; this resolves itself (first visit). */
+  /**
+   * The header-injecting service worker is starting up; this resolves itself (first visit).
+   * Worth waiting out even though the app *could* boot without isolation: the fallback VFS an
+   * un-isolated boot picks would then keep this origin's database for good (issue #255).
+   */
   | 'isolation-pending'
   /** The service worker cannot start, or its headers are being stripped before they arrive. */
   | 'isolation-blocked'
@@ -104,10 +109,10 @@ export interface SupportDiagnosis {
  *
  * Order is the whole design: each check rules out a *precondition* of the checks below it, so the
  * first match is the root cause rather than a downstream symptom. An insecure context, for
- * instance, withholds all three critical capabilities at once — reporting "OPFS missing" there
+ * instance, withholds every one of these capabilities at once — reporting "OPFS missing" there
  * would be true and useless.
  *
- * Only meaningful once `checkCriticalSupport` has already failed; with everything present it
+ * Only meaningful once a support check has already come up short; with everything present it
  * falls through to `browser-unsupported`, which the caller would never ask about.
  */
 export function diagnoseSupport(signals: SupportSignals): SupportCause {
@@ -122,6 +127,12 @@ export function diagnoseSupport(signals: SupportSignals): SupportCause {
   // Blocked site data disables the service worker *and* the storage the database needs, so it
   // must be ruled out before blaming the worker for not starting.
   if (!signals.localStorageUsable || !signals.cookiesEnabled) return 'site-data-blocked';
+
+  // OPFS is the only capability Gubbins truly requires (issue #255), so with everything above
+  // ruled out its absence really is the browser. This precedes the isolation questions
+  // deliberately: those decide *which* VFS the database opens on, which is moot with nowhere
+  // to open one — reporting them here would send the reader after headers they don't need.
+  if (!signals.opfs) return 'browser-unsupported';
 
   // Isolation is supplied by our service worker on static hosts (§2.2.6), so a failure here is
   // about the worker, not the browser — unless the worker is demonstrably doing its job.
