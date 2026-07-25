@@ -15,8 +15,9 @@ import {
   type LabelTemplate,
 } from '../labels/label-template';
 import { MAX_LABELS, buildLabelSheetHtml, toLabelCells, type LabelItem } from '../labels/label-sheet';
+import { DieCutPrinterNotice } from './DieCutPrinterNotice';
 import { LabelCellPreview } from './LabelCellPreview';
-import { LabelSizeControls } from './LabelSizeControls';
+import { LabelSizeControls, type LabelSizeValue } from './LabelSizeControls';
 
 /**
  * Batch label-sheet preview & print (spec §6 "Printable QR generation"; Phase 73
@@ -76,6 +77,13 @@ export function PrintLabelsDialog({
   );
 
   const cells = useMemo(() => toLabelCells(items, baseUrl, template), [items, baseUrl, template]);
+  // The template's size fields in the shape the size control, the printer notice and the
+  // preview all take, so the three can't disagree about what is being printed.
+  const size: LabelSizeValue = {
+    sizeMode: template.sizeMode,
+    widthMm: template.labelWidthMm,
+    heightMm: template.labelHeightMm,
+  };
   const truncated = items.length > MAX_LABELS;
   // The template asks for QR codes but none encoded — the deep-link is too long, which only the
   // "Link host" setting can cause. Say so here rather than printing a sheet of code-less labels.
@@ -136,14 +144,13 @@ export function PrintLabelsDialog({
           </Banner>
         ) : null}
 
+        {/* An exact-millimetre page needs a printer loaded with that exact label (issue #337). */}
+        <DieCutPrinterNotice size={size} testId="labels-die-cut-printer" />
+
         {/* Template controls */}
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
           <LabelSizeControls
-            value={{
-              sizeMode: template.sizeMode,
-              widthMm: template.labelWidthMm,
-              heightMm: template.labelHeightMm,
-            }}
+            value={size}
             onChange={(v) =>
               setTemplate((t) => ({
                 ...t,
@@ -209,11 +216,7 @@ export function PrintLabelsDialog({
               <LabelCellPreview
                 key={`${cell.id}-${i}`}
                 cell={cell}
-                size={
-                  template.sizeMode === 'die-cut'
-                    ? { widthMm: template.labelWidthMm, heightMm: template.labelHeightMm }
-                    : undefined
-                }
+                size={template.sizeMode === 'die-cut' ? size : undefined}
               />
             ))}
           </div>

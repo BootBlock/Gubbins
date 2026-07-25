@@ -17,8 +17,9 @@ import {
   toLocationLabelCell,
   type LocationLabelInput,
 } from '../labels/location-label';
+import { DieCutPrinterNotice } from './DieCutPrinterNotice';
 import { LabelCellPreview } from './LabelCellPreview';
-import { LabelSizeControls } from './LabelSizeControls';
+import { LabelSizeControls, type LabelSizeValue } from './LabelSizeControls';
 
 const COPY_OPTIONS = [1, 2, 4, 6, 8, 12, 24];
 
@@ -143,6 +144,10 @@ export function PrintLocationLabelDialog({
 
   const cell = useMemo(() => toLocationLabelCell(location, baseUrl, template), [location, baseUrl, template]);
 
+  // The size fields in the shape the size control, the printer notice and the preview all
+  // take, so the three can't disagree about what is being printed.
+  const size: LabelSizeValue = { sizeMode, widthMm: labelWidthMm, heightMm: labelHeightMm };
+
   const print = () => {
     const w = window.open('', '_blank', 'width=900,height=700');
     if (!w) return;
@@ -174,10 +179,13 @@ export function PrintLocationLabelDialog({
           </Banner>
         ) : null}
 
+        {/* An exact-millimetre page needs a printer loaded with that exact label (issue #337). */}
+        <DieCutPrinterNotice size={size} testId="loc-label-die-cut-printer" />
+
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
           <LabelSizeControls
             testId="loc-label-size"
-            value={{ sizeMode, widthMm: labelWidthMm, heightMm: labelHeightMm }}
+            value={size}
             onChange={(v) => {
               setSizeMode(v.sizeMode);
               setLabelWidthMm(v.widthMm);
@@ -236,10 +244,7 @@ export function PrintLocationLabelDialog({
         </div>
 
         <div className="mx-auto w-48">
-          <LabelCellPreview
-            cell={cell}
-            size={sizeMode === 'die-cut' ? { widthMm: labelWidthMm, heightMm: labelHeightMm } : undefined}
-          />
+          <LabelCellPreview cell={cell} size={sizeMode === 'die-cut' ? size : undefined} />
         </div>
 
         <div className="flex justify-end gap-2">
