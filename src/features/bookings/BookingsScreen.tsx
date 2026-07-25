@@ -33,6 +33,7 @@ import { fromDateInputValue } from '@/lib/date-input';
 import { useContacts } from '@/features/contacts/contacts';
 import type { AssetBookingWithNames } from '@/db/repositories';
 import { useErrorMessage } from '@/features/errors';
+import { useT } from '@/features/i18n';
 import {
   BOOKING_STATUS_BADGE,
   BOOKING_STATUS_LABEL,
@@ -365,6 +366,7 @@ function BookingCard({
 // ---------------------------------------------------------------------------
 
 export function BookingsScreen() {
+  const t = useT();
   const { data, isLoading, isError, error, refetch, isFetching } = useBookings();
   const [announcement, setAnnouncement] = useState('');
   const [announcementOk, setAnnouncementOk] = useState(true);
@@ -501,6 +503,16 @@ export function BookingsScreen() {
             ))}
           </div>
         )}
+
+        {/* The read is bounded (§2.1). This list is grouped by derived status with a count on
+            each heading, so a pager would slice those groups and misstate every badge — say the
+            list is cut short instead of implying it is all of it (issue #149). Sits at the foot
+            of the list, where every other truncation notice in the app does. */}
+        {!isLoading && !isError && data?.hasMore ? (
+          <p className="text-xs text-muted-foreground" data-testid="bookings-truncated">
+            {t('bookings.list.truncated', { vars: { shown: bookings.length } })}
+          </p>
+        ) : null}
       </main>
 
       {/* Always-mounted live regions (WCAG 4.1.3) — announce each booking-action outcome. */}

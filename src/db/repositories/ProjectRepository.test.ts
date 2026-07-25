@@ -3,6 +3,7 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
+import { readAllPages } from '@/lib/read-all-pages';
 import { IN_TRANSIT_LOCATION_ID, UNASSIGNED_LOCATION_ID } from './constants';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
@@ -144,6 +145,59 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect((await projects.listLines(p.id)).rows).toHaveLength(2);
     await projects.removeLine(l1.id);
     expect((await projects.listLines(p.id)).rows).toHaveLength(1);
+  });
+
+  it('counts every project, including those past the capped first page (issue #149)', async () => {
+    expect(await projects.count()).toBe(0);
+
+    for (let i = 0; i < 101; i += 1) await projects.create({ name: `P${i}` });
+
+    // The list is clamped to the strict §2.1 ceiling, so the rows in hand undercount the set —
+    // which is why the master list needs a separate total to page against.
+    const firstPage = await projects.list({ limit: 100 });
+    expect(firstPage.rows).toHaveLength(100);
+    expect(firstPage.hasMore).toBe(true);
+    expect(await projects.count()).toBe(101);
+    expect((await projects.list({ limit: 100, offset: 100 })).rows).toHaveLength(1);
+  });
+
+  it('pages a BOM longer than one read, so every line is reachable (issue #149)', async () => {
+    const p = await projects.create({ name: 'Big build' });
+    for (let i = 0; i < 120; i += 1) await projects.addLine(p.id, { description: `R${i}` });
+
+    // A single read stops at the ceiling — the bug behind a bill of materials (and an exported
+    // BOM file) that looked complete while missing every part past the hundredth.
+    const firstPage = await projects.listLines(p.id, { limit: 100 });
+    expect(firstPage.rows).toHaveLength(100);
+    expect(firstPage.hasMore).toBe(true);
+
+    const secondPage = await projects.listLines(p.id, { limit: 100, offset: 100 });
+    expect(secondPage.rows).toHaveLength(20);
+    expect(secondPage.hasMore).toBe(false);
+    // Declared order is preserved across the page boundary.
+    expect(secondPage.rows[0]?.description).toBe('R100');
+
+    // …and the read-everything seam the BOM screen and its export go through walks both pages,
+    // in declared order, so neither is short (issue #149).
+    const whole = await readAllPages((params) => projects.listLines(p.id, params));
+    expect(whole.truncated).toBe(false);
+    expect(whole.rows).toHaveLength(120);
+    expect(whole.rows.map((l) => l.description)).toEqual(Array.from({ length: 120 }, (_, i) => `R${i}`));
+  });
+
+  it('reads a whole expense ledger longer than one page (issue #149)', async () => {
+    const p = await projects.create({ name: 'Long ledger' });
+    for (let i = 0; i < 105; i += 1) {
+      await projects.addExpense(p.id, { amount: 1, description: `E${i}` });
+    }
+
+    // The hook used to ask for 200, which the repository clamped straight back to 100 — so
+    // "fetched whole" quietly stopped being true the moment a ledger passed a hundred entries.
+    expect((await projects.listExpenses(p.id, { limit: 200 })).rows).toHaveLength(100);
+
+    const whole = await readAllPages((params) => projects.listExpenses(p.id, params));
+    expect(whole.truncated).toBe(false);
+    expect(whole.rows).toHaveLength(105);
   });
 
   // --- reservations (spec §4 Tentative vs Actual) --------------------------------

@@ -25,6 +25,7 @@ import {
 import { COSTING_MODES, type CostingMode } from '@/db/repositories';
 import { useInventoryItems } from '@/features/inventory/queries';
 import { useLocations } from '@/features/inventory/queries';
+import { useT } from '@/features/i18n';
 import { useProjectCheckouts } from '@/features/contacts/contacts';
 import { BorrowerLoansSection } from '@/features/contacts/components/BorrowerLoansSection';
 import { useFormatters } from '@/lib/useFormatters';
@@ -64,6 +65,7 @@ export function ProjectDetail({
   const deleteProject = useDeleteProject();
   const { show } = useToast();
   const fmt = useFormatters();
+  const t = useT();
 
   const itemsQuery = useInventoryItems({}, 100);
   const locationsQuery = useLocations();
@@ -212,6 +214,13 @@ export function ProjectDetail({
         <section>
           <h3 className="mb-2 text-sm font-semibold">Bill of materials</h3>
           {lines.isLoading ? <Spinner /> : <BomLineTable projectId={projectId} lines={lineRows} />}
+          {/* The BOM is read whole (issue #149), so this only ever appears at the read-everything
+              safety ceiling — but when it does, the export is short too, and that must be said. */}
+          {lines.data?.truncated ? (
+            <p className="mt-2 text-xs text-muted-foreground" data-testid="bom-truncated">
+              {t('projects.bom.truncated', { vars: { shown: lineRows.length } })}
+            </p>
+          ) : null}
         </section>
 
         {lineRows.length > 0 ? (

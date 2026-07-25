@@ -207,6 +207,16 @@ export class PurchaseOrderRepository extends BaseRepository {
     return this.toPage(withLines, limit, offset);
   }
 
+  /**
+   * How many purchase orders exist in total — the denominator behind the Orders tab's
+   * pagination (issue #149). Orders accumulate for as long as the inventory is used, so the
+   * master list pages server-side rather than showing a capped read as if it were the lot.
+   */
+  async count(): Promise<number> {
+    const row = await this.driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM purchase_orders;');
+    return Number(row?.n ?? 0);
+  }
+
   /** A purchase order with its lines and effective status, or undefined. */
   async getWithLines(id: string): Promise<PurchaseOrderWithLines | undefined> {
     const row = await this.driver.queryOne<PurchaseOrderRow>(`${PURCHASE_ORDER_SELECT} WHERE po.id = ?;`, [

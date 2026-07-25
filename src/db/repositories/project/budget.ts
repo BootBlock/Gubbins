@@ -251,12 +251,19 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
 
     // --- expenses ----------------------------------------------------------------
 
-    /** Paginated expense ledger for a project, most-recently-incurred first. */
+    /**
+     * Paginated expense ledger for a project, most-recently-incurred first.
+     *
+     * The `id` tiebreak makes the ordering **total**: two expenses sharing an incurred date and a
+     * creation instant would otherwise sort in an unspecified order, and the ledger walks every
+     * page of this read — where a row repeated on one page and dropped from another silently
+     * misstates the ledger (issue #149).
+     */
     async listExpenses(projectId: string, params: PageParams = {}): Promise<Page<ProjectExpense>> {
       const { limit, offset } = this.resolvePage(params);
       const rows = await this.driver.query<ProjectExpenseRow>(
         `SELECT * FROM project_expenses WHERE project_id = ?
-         ORDER BY incurred_at DESC, created_at DESC
+         ORDER BY incurred_at DESC, created_at DESC, id ASC
          LIMIT ? OFFSET ?;`,
         [projectId, limit, offset],
       );

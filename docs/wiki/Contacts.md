@@ -18,6 +18,11 @@ A contact is a lightweight record of a person or organisation. Once you have one
 The Contacts screen shows what each person currently holds on loan, so you can see at a glance who
 has what.
 
+If you build up a lot of contacts, the list splits into pages using the same
+[[pagination control|Inventory-Views]] as the rest of the app — turn it on with **Paginate list**
+(or **Settings → Inventory → Lists**), and every contact stays reachable however many you have.
+With it off, the list shows as many as it can read at once and tells you how many are left over.
+
 > **ℹ️ Note**
 > Purchasing doesn't draw on contacts. [[Purchase orders|Purchase-Orders]] and
 > [[supplier parts|Supplier-Parts-and-Price-History]] record a supplier's name directly, so adding

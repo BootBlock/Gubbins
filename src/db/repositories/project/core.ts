@@ -59,7 +59,13 @@ export class ProjectCoreRepository extends BaseRepository {
     return row ? rowToProject(row) : undefined;
   }
 
-  /** Paginated list of projects with their BOM-line counts, newest first. */
+  /**
+   * Paginated list of projects with their BOM-line counts, newest first.
+   *
+   * The `id` tiebreak makes the ordering **total**: two projects sharing a creation instant and a
+   * name would otherwise sort in an unspecified order, and OFFSET paging over a non-total order
+   * can repeat one row on page 2 while dropping another entirely (issue #149).
+   */
   async list(params: PageParams = {}): Promise<Page<ProjectWithCount>> {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<ProjectCountRow>(
@@ -67,7 +73,7 @@ export class ProjectCoreRepository extends BaseRepository {
        FROM projects p
        LEFT JOIN project_bom_lines l ON l.project_id = p.id
        GROUP BY p.id
-       ORDER BY p.created_at DESC, p.name COLLATE NOCASE ASC
+       ORDER BY p.created_at DESC, p.name COLLATE NOCASE ASC, p.id ASC
        LIMIT ? OFFSET ?;`,
       [limit, offset],
     );
@@ -76,6 +82,16 @@ export class ProjectCoreRepository extends BaseRepository {
       limit,
       offset,
     );
+  }
+
+  /**
+   * How many projects exist in total — the denominator behind the Projects master list's
+   * pagination (issue #149). Projects accumulate as builds come and go, so the list pages
+   * server-side rather than showing a capped read as if it were every project.
+   */
+  async count(): Promise<number> {
+    const row = await this.driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM projects;');
+    return Number(row?.n ?? 0);
   }
 
   async create(input: CreateProjectInput): Promise<Project> {

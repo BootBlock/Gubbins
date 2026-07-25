@@ -15,7 +15,11 @@ Each wishlist entry stands alone — it doesn't reference an existing item. Give
 - A **name** for what you want.
 - An optional **note**, **link** (to a product page), **target price**, and **priority**.
 
-The list sorts by priority, so the things you want most sit at the top.
+The list sorts by priority, so the things you want most sit at the top. Whatever its length, the
+whole wishlist is loaded — so the summary line above it (how many wishes, and what they'd cost)
+always covers everything on the list. If it grows long, turn on **Paginate list** (or
+**Settings → Inventory → Lists**) to step through it a page at a time rather than scrolling — see
+the [[pagination control|Inventory-Views]].
 
 > **💡 Tip**
 > Paste the product page **link** and a **target price** so, when you're ready to buy, everything

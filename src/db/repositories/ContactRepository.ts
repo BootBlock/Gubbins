@@ -33,7 +33,13 @@ export class ContactRepository extends BaseRepository {
     return row ? rowToContact(row) : undefined;
   }
 
-  /** Paginated contacts with a live count of still-out (open) checkouts, by name. */
+  /**
+   * Paginated contacts with a live count of still-out (open) checkouts, by name.
+   *
+   * The `id` tiebreak makes the ordering **total**: two contacts sharing a name would otherwise
+   * sort in an unspecified order, and OFFSET paging over a non-total order can repeat one row on
+   * page 2 while dropping another entirely (issue #149).
+   */
   async list(params: PageParams = {}): Promise<Page<ContactWithCount>> {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<ContactCountRow>(
@@ -41,7 +47,7 @@ export class ContactRepository extends BaseRepository {
               (SELECT COUNT(*) FROM checkouts k
                WHERE k.contact_id = c.id AND k.returned_at IS NULL) AS open_count
        FROM contacts c
-       ORDER BY c.name COLLATE NOCASE ASC
+       ORDER BY c.name COLLATE NOCASE ASC, c.id ASC
        LIMIT ? OFFSET ?;`,
       [limit, offset],
     );
@@ -50,6 +56,17 @@ export class ContactRepository extends BaseRepository {
       limit,
       offset,
     );
+  }
+
+  /**
+   * How many contacts exist in total — the denominator behind the Contacts screen's
+   * pagination (issue #149). The dictionary can outgrow one capped read, and that screen is
+   * where the whole set is managed, so it pages server-side rather than slicing a single page
+   * (which would silently hide every contact past the first hundred).
+   */
+  async count(): Promise<number> {
+    const row = await this.driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM contacts;');
+    return Number(row?.n ?? 0);
   }
 
   /** Look a contact up by name (case-insensitive), or `undefined`. */

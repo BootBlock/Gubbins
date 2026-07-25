@@ -22,12 +22,19 @@ import type { ProjectCoreRepository } from './core';
 
 export function withBomLines<TBase extends Constructor<ProjectCoreRepository>>(Base: TBase) {
   return class ProjectBomLinesRepository extends Base {
-    /** Paginated BOM lines for a project, in declared order (spec §2.1). */
+    /**
+     * Paginated BOM lines for a project, in declared order (spec §2.1).
+     *
+     * The `id` tiebreak makes the ordering **total**: two lines sharing a position and a creation
+     * instant would otherwise sort in an unspecified order, and the screen walks every page of
+     * this read to build the BOM and its export — where a row repeated on one page and dropped
+     * from another is a wrong bill of materials, not a cosmetic reshuffle (issue #149).
+     */
     async listLines(projectId: string, params: PageParams = {}): Promise<Page<ProjectBomLine>> {
       const { limit, offset } = this.resolvePage(params);
       const rows = await this.driver.query<ProjectBomLineRow>(
         `SELECT * FROM project_bom_lines WHERE project_id = ?
-         ORDER BY position ASC, created_at ASC
+         ORDER BY position ASC, created_at ASC, id ASC
          LIMIT ? OFFSET ?;`,
         [projectId, limit, offset],
       );
