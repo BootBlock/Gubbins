@@ -20,7 +20,10 @@ export function VisualBuilder({ resultSummary, onClose }: { resultSummary?: stri
   const error = conditionCount > 0 ? astError(ast) : null;
 
   return (
-    <Surface className="space-y-3 p-4">
+    // The panel is a named scope, not just a look: its saved-search controls are now mirrored
+    // on the Inventory quick-search box (issue #136), so both mount points render the same
+    // testids. Anything driving *this* copy has to say which one it means.
+    <Surface className="space-y-3 p-4" data-testid="visual-builder">
       <div className="flex items-center gap-2">
         <span className="grid size-7 place-items-center rounded-lg bg-primary/15 text-primary [&_svg]:size-4">
           <FilterIcon />
