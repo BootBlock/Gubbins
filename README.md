@@ -365,7 +365,16 @@ npm run test       # Vitest
 
 ## AI-assisted development
 
-AI tooling was used in the development of this software.
+AI tooling was used in the development of this software — and it is not merged unexamined.
+
+Every change is audited before it lands, and again by the gates that guard `main`:
+
+- **Multiple independent review passes.** A change is reviewed from several different angles — correctness, security, accessibility, performance, and the project's own conventions — by review passes separate from whatever produced the change, frequently several of them working independently. Findings are validated rather than taken at face value, and every accepted fix is re-verified before it is committed.
+- **Automated gates on every push.** CI runs a credential scan over added lines, a type-check spanning both the app *and* the companion bridge, lint, formatting, wiki link integrity, and the app and bridge unit-test suites. Local pre-commit and pre-push hooks run the same secret scan, plus the bridge's type-check, tests and boot smoke, before anything leaves the machine.
+- **Conventions are enforced by tests, not by review alone.** Drift in the areas easiest to get quietly wrong — schema classification, storage keys, translation coverage, plan-doc status, hover-reveal accessibility — fails the build rather than relying on someone spotting it.
+- **Over 600 test files** back roughly a thousand source files, and a change that touches a runtime surface is driven in a real browser rather than trusted on types alone.
+
+None of this makes the software defect-free — see the [Disclaimer](#disclaimer) — but "written with AI assistance" here does not mean "generated and merged unread".
 
 ## Disclaimer
 
