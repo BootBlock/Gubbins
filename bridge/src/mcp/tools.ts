@@ -181,8 +181,9 @@ const whereIsTool: McpTool = {
 const getItemTool: McpTool = {
   name: 'gubbins_get_item',
   description:
-    'Fetch one inventory item by its stable id, with full detail: per-location placements ' +
-    'and parametric capabilities. Returns { found: false } when no item has that id. Use ' +
+    'Fetch one inventory item by its stable id, with full detail: per-location placements, ' +
+    "parametric capabilities, and the item's tags (an array of tag names — the answer to " +
+    '"is this fragile?"). Returns { found: false } when no item has that id. Use ' +
     '"fields" to project only specific fields, or "include" to add extended fields (e.g. notes, ' +
     'or "fields" for the item\'s custom-field values).',
   inputSchema: {

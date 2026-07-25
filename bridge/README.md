@@ -314,7 +314,7 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
 | `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=&fields=&include=&$orderby=&$filter=` | Paginated item summaries (`ItemSummary`). Supports [field selection](#field-selection--extended-fields) and [OData-style options](#odata-style-query-options) (`$orderby`, `$filter`, …). |
-| `GET /api/v1/items/{id}?fields=&include=` | One item with `placements` and `capabilities` (`ItemDetail`); `404` if unknown. Supports [field selection](#field-selection--extended-fields), including `include=fields` for [custom-field values](#custom-field-values-includefields). |
+| `GET /api/v1/items/{id}?fields=&include=` | One item with `placements`, `capabilities` and `tags` (`ItemDetail`); `404` if unknown. Supports [field selection](#field-selection--extended-fields), including `include=fields` for [custom-field values](#custom-field-values-includefields). |
 | `GET /api/v1/locations?limit=&offset=&fields=&include=` | Paginated locations with live item counts (`Location`). `include=fields` adds each location's [custom-field values](#custom-field-values-includefields). |
 | `GET /api/v1/locations/{id}?fields=&include=` | One location; `404` if unknown. `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
 | `GET /api/v1/categories?limit=&offset=` | Paginated categories with field counts (`CategorySummary`). |
@@ -565,9 +565,12 @@ semantics and has no injection surface — it is **never** bespoke SQL). Support
 - the `contains(field, 'text')` function (free-text, FTS-backed)
 - boolean composition with `and`, `or`, `not`, and parentheses
 - literals: single-quoted strings (`''` escapes a quote), numbers, `true`/`false`
-- filterable fields: **the whole of the app's own search vocabulary**, so nothing you can filter on
-  in Gubbins is unreachable here. Field names are case-insensitive, and each is accepted by the
-  app's short name *and* the camel-cased property name the read model publishes:
+- filterable fields: **every scalar field the app's own search can filter on**, plus tags — so no
+  *column* you can search on in Gubbins is unreachable here. (The app's `cap:<key>` and
+  `field:<name>` predicates, over parametric capabilities and custom fields, have no `$filter`
+  spelling; read those with `include=capabilities` / `include=fields` instead.) Field names are
+  case-insensitive, and each is accepted by the app's short name *and* the camel-cased property
+  name the read model publishes:
 
   | Kind | Fields |
   | --- | --- |
@@ -578,15 +581,19 @@ semantics and has no injection surface — it is **never** bespoke SQL). Support
   | Enums | `condition`, `trackingMode` (`tracking`), `deadStockMode` (`deadstock`) |
   | Dates (quoted `'YYYY-MM-DD'`) | `expiryDate` (`expiry`), `warrantyExpiresAt` (`warranty`) |
   | Money (major units) | `unitCost` (`cost`), `purchasePrice` (`price`), `currentValue` (`value`) |
-  | Tags | `tag` (`tags`) |
+  | Tags | `tags` (`tag`) |
 
   Weight and the dimensions are compared in their canonical units (grams, millimetres), not your
   display units, and money in the base currency's **major** units — `unitCost gt 10` is ten
   pounds/dollars, not ten of the micro-units the column stores. A date must be a *quoted*
   `'YYYY-MM-DD'`: this subset has no unquoted `Edm.Date` literal.
 
-  Every filterable field is also **readable** — each name in the table is a field you can name in
-  `fields`/`$select`, so a query that selects by something can always return it.
+  Every filterable field is also **readable**, so a query can always return what it filtered by —
+  under the spelling that matches its JSON property name (the unparenthesised one above), which is
+  what `fields`/`$select` takes. The parenthesised names are the app's own search aliases and are
+  accepted by `$filter` only: it is `$filter=unitCost gt 10` *or* `$filter=cost gt 10`, but always
+  `$select=unitCost`. A test enforces that pairing, so a filterable field can never be one you
+  cannot read back.
 
   `tag` compares against a tag **name** and matches when **any** of the item's tags does, so
   `tag eq 'fragile'` finds that exact tag (case-insensitively) and `contains(tag,'expo')` any tag
@@ -950,7 +957,7 @@ content and a machine-usable `structuredContent`:
 | --- | --- | --- |
 | `gubbins_search` | `q` (required), `limit?`, `fields?`, `include?` | Relevance-ranked compact matches (top-N, max 25). Accepts a casual phrase or the power-user grammar (`cap:key>n`, `AND`/`OR`, …). `fields`/`include` [shape the result](#field-selection--extended-fields). |
 | `gubbins_where_is` | `q` (required), `limit?` | The top matches with their per-location breakdown plus one spoken British-English sentence. |
-| `gubbins_get_item` | `id` (required), `fields?`, `include?` | One item with `placements` and `capabilities`; `{ found: false }` if unknown. `fields`/`include` [shape the result](#field-selection--extended-fields); `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
+| `gubbins_get_item` | `id` (required), `fields?`, `include?` | One item with `placements`, `capabilities` and `tags`; `{ found: false }` if unknown. `fields`/`include` [shape the result](#field-selection--extended-fields); `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
 | `gubbins_list_locations` | `limit?`, `offset?`, `fields?`, `include?` | Paginated locations with live item counts. `include=fields` adds each location's [custom-field values](#custom-field-values-includefields). |
 | `gubbins_list_categories` | `limit?`, `offset?` | Paginated categories with field counts. |
 | `gubbins_list_capabilities` | `limit?`, `offset?` | The distinct `cap:` vocabulary you can filter on. |
@@ -1765,6 +1772,7 @@ parameter — see their sections):
 | --- | --- | --- | --- |
 | REST API + discovery/OpenAPI | `GET /health`, `/search`, `/where`, `/api/v1/*` | `bridge:read` + the route's subject | Read-only; field-selection + OData-style options. See [what each route requires](#what-each-route-requires). |
 | Custom-field values | `GET /api/v1/{items,locations}…?include=fields` | as the underlying route | Read-only; **opt-in per request** — your custom fields are returned only when a caller asks with `include=fields`, never in a default payload. |
+| Item tags | `GET /api/v1/items/{id}`, and `…/items?include=tags` | as the underlying route (`items:read`) | Read-only tag **names**, gated exactly as the item's `capabilities` and custom-field values are — an item's tags travel with the item, and the app likewise shows them to anyone who can read it. Unlike custom-field values they *are* in the item-detail default payload (a tag is part of what an item is), but they stay opt-in on the list endpoints. |
 | CSV export | `GET /api/v1/items.csv` | `bridge:read` + `items:read` | Refreshable spreadsheet pull. |
 | Calendar subscription | `GET /api/v1/calendar.ics` | `bridge:read` + `bookings:read` | `?token=` accepted (calendar clients can't send headers). |
 | Syndication feeds | `GET /api/v1/activity.{rss,atom,json}` | `bridge:read` + `audit:view` | `?token=` accepted. The feeds publish the audit trail, hence `audit:view`. |
