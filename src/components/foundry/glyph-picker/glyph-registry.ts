@@ -14,15 +14,28 @@
  */
 import { icons, type LucideIcon } from 'lucide-react';
 
-/** All catalogue glyph names (canonical Lucide PascalCase), sorted alphabetically. */
-export const GLYPH_NAMES: readonly string[] = Object.keys(icons).sort((a, b) => a.localeCompare(b));
+/**
+ * A name already known to be in the catalogue — the key type of Lucide's `icons` map.
+ *
+ * A stored glyph name arrives as a plain string (a database column, a component prop), so it
+ * starts out unproven and {@link isGlyphName} is the way in. Carrying that membership in the
+ * type is what lets {@link getGlyphIcon} promise a component rather than `LucideIcon |
+ * undefined`: a caller holding a `GlyphName` never has to branch again on an absence that
+ * cannot happen.
+ */
+export type GlyphName = keyof typeof icons;
 
-/** Resolve a stored glyph name to its Lucide component, or `undefined` if unknown. */
-export function getGlyphIcon(name: string): LucideIcon | undefined {
-  return (icons as Record<string, LucideIcon>)[name];
+/** All catalogue glyph names (canonical Lucide PascalCase), sorted alphabetically. */
+export const GLYPH_NAMES: readonly GlyphName[] = (Object.keys(icons) as GlyphName[]).sort((a, b) =>
+  a.localeCompare(b),
+);
+
+/** Resolve a catalogue glyph name to its Lucide component. */
+export function getGlyphIcon(name: GlyphName): LucideIcon {
+  return icons[name];
 }
 
 /** Whether a name resolves to a real catalogue glyph. */
-export function isGlyphName(name: string | null | undefined): name is string {
+export function isGlyphName(name: string | null | undefined): name is GlyphName {
   return name != null && name in icons;
 }

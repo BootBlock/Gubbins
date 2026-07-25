@@ -33,8 +33,12 @@ export function glyphSearchText(name: string): string {
  * (`@/lib/text-terms`), so `arrow down` narrows to down-arrows while either word
  * order works. An empty query returns the list unchanged (a fresh copy). The query
  * is split once and reused across the ~1,700-name sweep.
+ *
+ * Generic in the name type so filtering a catalogue list preserves whatever the caller
+ * knew about its names — a `GlyphName[]` in, a `GlyphName[]` out — rather than widening
+ * proven catalogue membership back to `string`.
  */
-export function filterGlyphNames(names: readonly string[], query: string): string[] {
+export function filterGlyphNames<T extends string>(names: readonly T[], query: string): T[] {
   const terms = splitSearchTerms(query);
   if (terms.length === 0) return [...names];
   return names.filter((name) => includesAllTerms(glyphSearchText(name), terms));
