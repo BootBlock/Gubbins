@@ -792,6 +792,22 @@ await page.waitForTimeout(700);
 await shot('settings-appearance-dark', page.getByRole('dialog').first(), { settle: 500 });
 // Leave the app on its default Dark theme for any later shots.
 
+// Settings → the cross-tab filter box (issue #133). "stock" is chosen because it matches rows in
+// more than one section, so the shot actually shows the point of it: results from across the
+// whole dialog, each group captioned with the section it came from.
+await page
+  .locator('[data-testid="settings-search"]')
+  .fill('stock')
+  .catch(() => {});
+await page.mouse.move(10, 10);
+await page.waitForTimeout(700);
+await shot('settings-search', page.getByRole('dialog').first(), { settle: 500 });
+await page
+  .locator('[data-testid="settings-search"]')
+  .fill('')
+  .catch(() => {});
+await page.waitForTimeout(300);
+
 // ── Users, roles & sign-in (issue #79) ───────────────────────────────────────
 // Deliberately last. The `users` module is opt-in and switching it on raises the sign-in gate
 // in front of the whole app, so anything captured after this point would have to sign in first.
