@@ -11,6 +11,10 @@ import type { LabelCell } from '../labels/label-sheet';
  * When a physical `size` (die-cut mode) is supplied the card takes that label's exact
  * aspect ratio and the code shrinks to fit its height, so the preview shows the true
  * label shape a thermal printer would produce.
+ *
+ * The name's line clamp below is part of that promise rather than preview-only tidying: both
+ * print stylesheets clamp the name to the same `LABEL_NAME_MAX_LINES` count, so a long name
+ * that reads as truncated here prints truncated too (issue #334).
  */
 export function LabelCellPreview({
   cell,
@@ -53,8 +57,14 @@ export function LabelCellPreview({
           key={i}
           className={cn(
             'break-words',
+            // Tailwind only emits utilities it finds as literal class names, so this cannot be
+            // built from `LABEL_NAME_MAX_LINES`; a guard test in `label-sheet.test.ts` pins the
+            // literal to that constant instead, and fails if either side moves.
             i === 0 ? 'line-clamp-2 font-medium text-foreground' : 'text-muted-foreground',
-            physical ? 'text-[10px] leading-tight' : i === 0 ? 'text-xs' : 'text-[11px]',
+            // Inside the fixed-aspect card the code shrinks for the text, never the other way
+            // round — matching the die-cut stylesheet, where a shrunk name loses its ellipsis
+            // to the label's clipping (#334).
+            physical ? 'max-w-full shrink-0 text-[10px] leading-tight' : i === 0 ? 'text-xs' : 'text-[11px]',
           )}
         >
           {line}

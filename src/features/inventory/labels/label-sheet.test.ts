@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { repoPath } from '@/test/repo-path';
 import { buildItemQrUrl } from '@/features/scanner/scan-payload';
 import {
+  LABEL_NAME_MAX_LINES,
   MAX_LABELS,
   barcodeWidthMm,
   buildLabelSheetHtml,
@@ -263,5 +266,54 @@ describe('buildLabelSheetHtml', () => {
       template({ sizeMode: 'die-cut', labelWidthMm: 4, labelHeightMm: 9999 }),
     );
     expect(html).toContain('@page{size:10mm 300mm;margin:0}');
+  });
+});
+
+/**
+ * The printed name obeys the same line clamp the dialog preview shows (issue #334).
+ *
+ * The preview clamped the name and neither print document did, so an over-long name that
+ * looked truncated on screen printed in full — inflating an A4 grid row, or being hard-clipped
+ * mid-line by a die-cut label's `overflow:hidden` after squeezing the QR out of the way. These
+ * pin the clamp into both stylesheets and hold the preview's Tailwind utility to the same count,
+ * so neither side can drift back.
+ */
+describe('the printed name clamp', () => {
+  const CLAMP = `-webkit-line-clamp:${LABEL_NAME_MAX_LINES}`;
+
+  it('clamps the name — and only the name — in the A4 sheet document', () => {
+    const html = buildLabelSheetHtml([{ id: ID_A, name: 'Resistor 10k' }], BASE, template());
+    expect(html).toContain(
+      `font-weight:600;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;${CLAMP}}`,
+    );
+    // The meta lines wrap freely in the preview, so they must here too.
+    expect(countOccurrences(html, CLAMP)).toBe(1);
+  });
+
+  it('clamps the name in the die-cut document, where the label would otherwise clip it mid-line', () => {
+    const html = buildLabelSheetHtml(
+      [{ id: ID_A, name: 'Resistor 10k' }],
+      BASE,
+      template({ sizeMode: 'die-cut', labelWidthMm: 40, labelHeightMm: 30 }),
+    );
+    expect(html).toContain(
+      `font-weight:600;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;${CLAMP}}`,
+    );
+    expect(countOccurrences(html, CLAMP)).toBe(1);
+    // The clamp alone is not enough here: the label is a fixed-height flex column, so without
+    // this the name shrank below its own two lines and lost the ellipsis to `overflow:hidden`.
+    expect(html).toContain('.label .name,.label .meta{flex:0 0 auto');
+    expect(html).toContain('.label .qr{flex:1 1 auto');
+  });
+
+  it('matches the line count the on-screen preview clamps to', () => {
+    const preview = readFileSync(
+      repoPath(import.meta.dirname, 'src', 'features', 'inventory', 'components', 'LabelCellPreview.tsx'),
+      'utf8',
+    );
+    // Tailwind needs the literal utility, so the preview cannot build it from the constant —
+    // this is what keeps the two honest.
+    expect(preview).toContain(`line-clamp-${LABEL_NAME_MAX_LINES}`);
+    expect(preview).not.toMatch(new RegExp(`line-clamp-(?!${LABEL_NAME_MAX_LINES}\\b)\\d`));
   });
 });
