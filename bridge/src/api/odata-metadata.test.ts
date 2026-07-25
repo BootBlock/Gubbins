@@ -149,6 +149,8 @@ describe('the CSDL and the router agree on what each entity set supports', () =>
     ['sortable', '$orderby'],
     ['countable', '$count'],
     ['searchable', '$search'],
+    ['selectable', '$select'],
+    ['expandable', '$expand'],
   ];
 
   for (const set of ODATA_ENTITY_SETS) {

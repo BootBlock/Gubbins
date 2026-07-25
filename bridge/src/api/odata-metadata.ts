@@ -222,6 +222,10 @@ export interface SetCapabilities {
   readonly sortable: readonly string[] | false;
   readonly countable: boolean;
   readonly searchable: boolean;
+  /** Whether the set can be projected with `$select`. */
+  readonly selectable: boolean;
+  /** Whether the set accepts `$expand` (the bridge's `include` field expansion). */
+  readonly expandable: boolean;
 }
 
 /**
@@ -236,9 +240,27 @@ export const ENTITY_SET_CAPABILITIES: Readonly<Record<string, SetCapabilities>> 
     sortable: ITEM_SORT_FIELDS,
     countable: true,
     searchable: true,
+    selectable: true,
+    expandable: true,
   },
-  locations: { filterable: false, sortable: false, countable: false, searchable: false },
-  categories: { filterable: false, sortable: false, countable: false, searchable: false },
+  locations: {
+    filterable: false,
+    sortable: false,
+    countable: false,
+    searchable: false,
+    selectable: true,
+    expandable: true,
+  },
+  // Categories have no extended fields and no projection vocabulary — a paged read and nothing
+  // else, so a client must not be told it can narrow one.
+  categories: {
+    filterable: false,
+    sortable: false,
+    countable: false,
+    searchable: false,
+    selectable: false,
+    expandable: false,
+  },
 };
 
 /**
@@ -299,6 +321,8 @@ function capabilityAnnotations(caps: SetCapabilities, properties: readonly strin
     ),
     ...restriction('CountRestrictions', 'Countable', caps.countable),
     ...restriction('SearchRestrictions', 'Searchable', caps.searchable),
+    ...restriction('SelectSupport', 'Supported', caps.selectable),
+    ...restriction('ExpandRestrictions', 'Expandable', caps.expandable),
     ...restriction('InsertRestrictions', 'Insertable', false),
     ...restriction('UpdateRestrictions', 'Updatable', false),
     ...restriction('DeleteRestrictions', 'Deletable', false),

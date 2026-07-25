@@ -643,14 +643,25 @@ format.
 **It implements what it says it implements.** The service supports the query subset described
 [above](#odata-style-query-options), no more, and the CSDL declares exactly that in
 `Org.OData.Capabilities.V1` terms — which properties are filterable and sortable, and whether each
-set is countable or searchable. Only `items` is backed by the search index, so only it accepts
-`$filter`/`$orderby`/`$search`/`$count`; `locations` is a paged read with projection
-(`$select`/`$expand`/`$top`/`$skip`) and `categories` a paged read alone (`$top`/`$skip`). A client
-that reads those
-annotations pushes down only what works and evaluates the rest itself, instead of failing
-mid-refresh. Asking anyway is an explicit `400` naming what *is* supported, rather than the option
-being silently ignored (Protocol §11.2.5), and `locations/$count` is a `404` because that set is
-declared non-countable. There is no `$batch` and no `$apply`, and nothing is writable — the
+set is countable, searchable, selectable and expandable. Only `items` is backed by the search
+index, so only it can filter, sort, search or count. In full — and this is exhaustive:
+
+| Resource | Accepts |
+| --- | --- |
+| `items` (collection) | `$select` `$expand` `$filter` `$orderby` `$search` `$top` `$skip` `$count` `$format` |
+| `items('<id>')` | `$select` `$expand` `$format` |
+| `items/$count` | `$filter` `$search` `$format` |
+| `locations` (collection) | `$select` `$expand` `$top` `$skip` `$format` |
+| `locations('<id>')` | `$select` `$expand` `$format` |
+| `categories` (collection) | `$top` `$skip` `$format` |
+| `categories('<id>')` | `$format` |
+
+A client that reads those annotations pushes down only what works and evaluates the rest itself,
+instead of failing mid-refresh. Asking anyway is an explicit `400` naming what *is* supported,
+rather than the option being silently ignored (Protocol §11.2.5), and `locations/$count` is a
+`404` because that set is declared non-countable. The bridge's own non-`$` parameters (`fields`,
+`include`, `location`, `category`, `includeInactive`, `limit`) stay usable alongside — Protocol
+§11.2.2 reserves only the `$` and `@` prefixes, so a custom query option is always allowed. There is no `$batch` and no `$apply`, and nothing is writable — the
 `Insert`/`Update`/`DeleteRestrictions` say so, since the bridge serves a snapshot it cannot modify.
 
 The CSDL's entity types describe the **whole projectable shape**, which is wider than a default
