@@ -1253,9 +1253,17 @@ function InventoryWorkspace() {
           </main>
         </div>
 
-        {/* The compact home of the master pane. Kept inside the drag provider so a location row
-            is still a drop target for a dragged item, and so the add/edit dialogs it opens stack
-            on the drawer via the shared modal stack. */}
+        {/* The compact home of the master pane. Kept inside the drag provider so drag-to-*nest*
+            still works (a location row is dragged onto another, both inside the drawer), and so
+            the add/edit dialogs it opens stack on the drawer via the shared modal stack.
+
+            Drag-to-*move* — an item card onto a location row — is not reachable here, and can't
+            be: with the drawer shut there is no row on screen, and with it open the backdrop
+            covers the very cards you would drag from. `beginDrag` therefore refuses to arm while
+            nothing is registered as a drop target, so the gesture is inert rather than doomed.
+            Nothing is lost that the compact layout didn't already lack: the pointer drag has
+            always been an additive affordance over the keyboard-accessible "Move item" action
+            and the Edit-location Parent field, which stay the complete paths. */}
         {compact && locationsDrawerOpen ? (
           <Drawer open onClose={() => setLocationsDrawerOpen(false)} title={t('inventory.locations.title')}>
             {tree.data && flat.data ? (

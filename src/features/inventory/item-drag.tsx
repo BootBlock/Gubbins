@@ -426,6 +426,14 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
   const beginDrag = useCallback(
     (payload: DragPayload, event: ReactPointerEvent) => {
       if (stateRef.current) return;
+      // A drag with nowhere to land is not a drag. On a compact viewport the location tree lives
+      // in a drawer (issue #147), so while that drawer is closed no row is registered and there
+      // is no drop this gesture could ever resolve to. Arming it anyway would be actively worse
+      // than doing nothing: a 250ms long press would take over the touch, stop the item list
+      // scrolling under the finger (see `suppressTouchScroll`), drag a preview chip around, and
+      // then silently discard the whole thing. Refuse at source — the keyboard-accessible "Move
+      // item" action stays the complete path, exactly as it is for assistive tech.
+      if (dropTargets.current.size === 0) return;
       const listeners = new AbortController();
       const { signal } = listeners;
       stateRef.current = {
