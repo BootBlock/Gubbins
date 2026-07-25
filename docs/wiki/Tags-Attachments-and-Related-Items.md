@@ -20,7 +20,10 @@ The tag box is a **drop-down you can also type into**. Click it to see the tags 
 and pick one from the list, or just type a new name — you are never limited to what's in the
 list. Press **Enter** (or a comma) to add whatever you've typed; as you type, the list narrows to
 matching tags. A brand-new name creates the tag, and existing names are reused
-**case-insensitively**, so `Fragile` and `fragile` are always the same tag.
+**case-insensitively, in any language** — so `Fragile` and `fragile` are always the same tag,
+and so are `Ölkanne` and `ölkanne`, or `Größe` and `GRÖSSE`. Typing a tag you already have
+under different capitalisation joins the one you have rather than quietly making a second one
+beside it.
 
 The **same dictionary is shared** between items and locations: tag an item `waterproof` and a
 location `waterproof`, and they use one tag — so a rename or a merge tidies both at once.

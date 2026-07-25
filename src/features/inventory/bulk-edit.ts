@@ -15,6 +15,7 @@
  * optional `categoryId?: string | null` could not.
  */
 import type { Condition } from '@/db/repositories/constants';
+import { foldName } from '@/lib/name-fold';
 
 // ---------------------------------------------------------------------------
 // Spec
@@ -71,7 +72,9 @@ export function parseTagInput(text: string): string[] {
  * - `add`     — the current names plus the new ones (deduped case-insensitively, current first).
  * - `replace` — exactly the new names (deduped case-insensitively).
  *
- * Deduping keeps the first-seen casing. `TagRepository.setForItem` re-normalises too, but this
+ * Deduping keeps the first-seen casing, and folds names through `lib/name-fold` — the same seam
+ * `TagRepository.setForItem` matches the dictionary with, so the previewed set is the set that
+ * lands even when the names are accented (issue #342). That method re-normalises too, but this
  * is unit-tested in isolation and lets the caller preview the result.
  */
 export function resolveItemTagNames(
@@ -84,7 +87,7 @@ export function resolveItemTagNames(
   for (const raw of source) {
     const name = raw.trim();
     if (name.length === 0) continue;
-    const key = name.toLowerCase();
+    const key = foldName(name);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(name);
