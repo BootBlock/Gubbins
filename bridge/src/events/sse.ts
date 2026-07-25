@@ -23,6 +23,12 @@ export const DEFAULT_MAX_SSE_CLIENTS = 50;
 export const DEFAULT_HEARTBEAT_MS = 25_000;
 /** Default size of the replay ring buffer used for `Last-Event-ID` resumption. */
 export const DEFAULT_REPLAY_BUFFER = 200;
+/**
+ * The stream's media type. Exported because `server.ts` answers a `HEAD` probe of this path itself
+ * — opening a stream for a probe would leak a client — and must report the same type a GET would
+ * (issue #360), so the value lives in one place.
+ */
+export const EVENT_STREAM_CONTENT_TYPE = 'text/event-stream; charset=utf-8';
 
 export interface SseHubOptions {
   readonly maxClients?: number;
@@ -95,7 +101,7 @@ export function createSseHub(options: SseHubOptions = {}): SseHub {
       }
 
       res.writeHead(200, {
-        'content-type': 'text/event-stream; charset=utf-8',
+        'content-type': EVENT_STREAM_CONTENT_TYPE,
         'cache-control': 'no-store',
         connection: 'keep-alive',
         // Ask reverse proxies (nginx) not to buffer the stream.
