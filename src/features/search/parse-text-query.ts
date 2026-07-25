@@ -17,6 +17,7 @@
  *   - `cap:<key>>n`…    → capability compare / EQUALS (numeric or text)
  *   - `field:<name>`    → custom-field CONTAINS (`field:Datasheet:rev2`)
  *   - `field:<name>>n`… → custom-field compare / EQUALS (numeric or text)
+ *   - `tag:<name>`      → tag name CONTAINS (`tag=<name>` for the whole name)
  *   - bare word / "phrase" → name CONTAINS
  *   - `a b`             → AND (juxtaposition, or the explicit `AND` keyword)
  *   - `a OR b` / `a|b`  → OR (case-insensitive keyword, or the `|` operator)
@@ -95,6 +96,12 @@ const FIELD_ALIASES: Readonly<Record<string, { field: string; kind: FieldKind }>
   favourite: { field: 'favourite', kind: 'boolean' },
   favorite: { field: 'favourite', kind: 'boolean' },
   fav: { field: 'favourite', kind: 'boolean' },
+  // Tags (issue #138) — the value is a tag *name*, so `tag:expo` matches any tag containing
+  // "expo" and `tag=fragile` only the tag named exactly "fragile" (both case-insensitive).
+  // The plural reads naturally when a query names one of several tags an item carries.
+  tag: { field: 'tag', kind: 'text' },
+  tags: { field: 'tag', kind: 'text' },
+  tagged: { field: 'tag', kind: 'text' },
 };
 
 const CAPABILITY_ALIASES = new Set(['cap', 'capability']);

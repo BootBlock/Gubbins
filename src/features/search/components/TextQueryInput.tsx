@@ -84,6 +84,7 @@ export function TextQueryInput() {
             '- `field:text` — match a field (e.g. `mfr:acme`, `name:resistor`)',
             '- `qty>10`, `qty<10`, `qty=10` — numeric comparisons',
             '- `cap:voltage>3.3` — compare a capability by key',
+            '- `tag:fragile` — items carrying a tag (use `tag=fragile` for the whole name)',
             '- combine with `OR` and group with `( )`; terms are **AND**-ed by default',
           ].join('\n')}
           placement="top"

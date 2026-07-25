@@ -11,6 +11,7 @@ import {
   fieldSelectValue,
   isCapabilityField,
   isCustomField,
+  isTagField,
   kindOfField,
   operatorsForKind,
   toCapabilityField,
@@ -26,6 +27,8 @@ export function ConditionEditor({ condition, path }: { condition: FilterConditio
   const { dispatch } = useSearchBuilder();
   const isCapability = isCapabilityField(condition.field);
   const isCustom = isCustomField(condition.field);
+  // A tag condition's value is a tag *name* (issue #138), so hint with one rather than "value…".
+  const isTag = isTagField(condition.field);
   const kind = kindOfField(condition.field);
   const isBoolean = kind === 'boolean';
   const operators = operatorsForKind(kind);
@@ -148,7 +151,7 @@ export function ConditionEditor({ condition, path }: { condition: FilterConditio
           value={typeof condition.value === 'boolean' ? '' : String(condition.value)}
           inputMode={numericValue ? 'decimal' : 'text'}
           onChange={(e) => dispatch({ type: 'updateCondition', path, patch: { value: e.target.value } })}
-          placeholder={numericValue ? '0' : 'value…'}
+          placeholder={numericValue ? '0' : isTag ? 'fragile' : 'value…'}
           className="h-9 w-32"
         />
       ) : null}

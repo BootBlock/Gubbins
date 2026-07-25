@@ -21,9 +21,11 @@ all build the same query:
 
 - **Match all / any.** The **AND** / **OR** toggle at the top of a group decides whether items
   must match *all* of its conditions or *any* of them.
-- **Add condition.** Select **Add condition** to add a rule — pick a field (name, quantity,
-  category, a [[capability|Custom-Fields-and-Capabilities]], a custom field…), an operator, and a
-  value.
+- **Add condition.** Select **Add condition** to add a rule — pick a field (name, quantity, a
+  [[tag|Tags-Attachments-and-Related-Items]], a [[capability|Custom-Fields-and-Capabilities]], a
+  custom field…), an operator, and a value.
+- **Tags.** Choose the **Tag** field and type a tag name: *contains* matches part of the name
+  (`expo` finds `expo-2026`), *equals* the whole name. An item matches if any of its tags does.
 - **Add group.** Select **Add group** to nest a sub-group with its own AND/OR — this is how you
   express things like *"(low quantity **OR** on order) **AND** in the garage"*.
 - **Clear.** Remove everything and start over with **Clear**.

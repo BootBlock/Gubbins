@@ -29,6 +29,19 @@ location `waterproof`, and they use one tag — so a rename or a merge tidies bo
 > Tags shine for temporary or overlapping states — tag everything going to a show `expo-2026`,
 > then filter to that tag to pack, and remove it afterwards.
 
+### Finding items by tag
+
+Three routes, depending on how precise you need to be:
+
+- **The tag facet** above the inventory list — tap a tag to narrow to it, the quickest option.
+- **[[Power search|Text-Query-Syntax]]** — `tag:fragile` matches part of a tag's name and
+  `tag=fragile` the whole name, so you can combine tags with anything else:
+  `tag:expo qty<10`.
+- **[[The visual builder|Visual-Query-Builder]]** — pick the **Tag** field and type a name, then
+  AND/OR it with other conditions and **[[save the query|Saved-Searches-and-Favourites]]**.
+
+An item matches if **any** of its tags does. Tag names match whichever case you type.
+
 ### Tagging locations
 
 Open a location's **Edit** dialog to give it tags — `mobile`, `off-site`, `climate-controlled`.

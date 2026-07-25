@@ -54,6 +54,15 @@ const CAPABILITY_PREFIX = 'capability:';
  */
 const CUSTOM_FIELD_PREFIX = 'field:';
 
+/**
+ * The tag field the AST uses, `tag` (issue #138). Unlike a capability or a custom field a
+ * tag has no key/value pair — a tag *is* its name — so the condition's **value** is the tag
+ * name and the field identifier is the bare word. It lowers to an EXISTS over
+ * `item_tags ⋈ tags`, the same shape the capability/custom-field predicates use, so an item
+ * matches when *any* of its tags satisfies the comparison.
+ */
+const TAG_FIELD = 'tag';
+
 type FieldKind = 'fts-text' | 'id-text' | 'numeric' | 'boolean';
 
 /**
@@ -168,6 +177,10 @@ function translateCondition(condition: FilterCondition): Fragment {
 
   if (field.toLowerCase().startsWith(CUSTOM_FIELD_PREFIX)) {
     return translateCustomField(field.slice(CUSTOM_FIELD_PREFIX.length).trim(), condition);
+  }
+
+  if (field.toLowerCase() === TAG_FIELD) {
+    return translateTag(condition);
   }
 
   const meta = ITEM_FIELDS[field];
@@ -321,6 +334,35 @@ function translateCustomField(name: string, condition: FilterCondition): Fragmen
         params: [name, `%${escapeLike(String(value))}%`],
       };
     }
+    default:
+      throw unsupported(operator, condition.field);
+  }
+}
+
+/**
+ * Translate a `tag` condition into an EXISTS subquery over the item↔tag join (issue #138).
+ * Tags are a shared dictionary of names with no value of their own, so the condition's value
+ * is the tag **name**: `CONTAINS` matches it as a substring (so `tag:expo` finds `expo-2026`)
+ * and `EQUALS` matches the whole name. Both are case-insensitive, matching how the tag
+ * dictionary itself de-duplicates names (`Fragile` and `fragile` are one tag).
+ *
+ * An item matches when **any** of its tags satisfies the comparison, and the name is a bound
+ * parameter. Only the item's own tags are considered — a tag on its *location* is a property
+ * of that location, not of the items inside it. As with the other LIKE-based translators an
+ * empty `CONTAINS` value degenerates to "carries any tag at all" rather than matching nothing.
+ */
+function translateTag(condition: FilterCondition): Fragment {
+  const { operator, value } = condition;
+  const base = 'SELECT 1 FROM item_tags it JOIN tags tg ON tg.id = it.tag_id WHERE it.item_id = items.id';
+
+  switch (operator) {
+    case 'CONTAINS':
+      return {
+        sql: `EXISTS (${base} AND tg.name LIKE ? ESCAPE '\\')`,
+        params: [`%${escapeLike(String(value))}%`],
+      };
+    case 'EQUALS':
+      return { sql: `EXISTS (${base} AND tg.name = ? COLLATE NOCASE)`, params: [String(value)] };
     default:
       throw unsupported(operator, condition.field);
   }

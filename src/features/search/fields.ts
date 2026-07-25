@@ -16,6 +16,9 @@ export interface BuilderField {
   readonly kind: BuilderFieldKind;
 }
 
+/** The AST field identifier for a tag condition, whose value is a tag name (issue #138). */
+export const TAG_FIELD = 'tag';
+
 export const BUILDER_FIELDS: readonly BuilderField[] = [
   { value: 'name', label: 'Name', kind: 'text' },
   { value: 'description', label: 'Description', kind: 'text' },
@@ -30,6 +33,9 @@ export const BUILDER_FIELDS: readonly BuilderField[] = [
   { value: 'height', label: 'Height (mm)', kind: 'number' },
   { value: 'depth', label: 'Depth (mm)', kind: 'number' },
   { value: 'favourite', label: 'Favourite', kind: 'boolean' },
+  // A tag is matched by name (issue #138): "contains" finds a partial name, "equals" the
+  // whole one — so it behaves like any other text field, with the tag name as the value.
+  { value: TAG_FIELD, label: 'Tag', kind: 'text' },
   { value: 'capability', label: 'Capability', kind: 'capability' },
   { value: 'customfield', label: 'Custom field', kind: 'customfield' },
 ];
@@ -102,6 +108,11 @@ export function customFieldName(field: string): string {
 /** Compose a `field:<name>` custom-field identifier from a field name. */
 export function toCustomField(name: string): string {
   return `${CUSTOM_FIELD_PREFIX}${name.trim()}`;
+}
+
+/** True when an AST field is the `tag` field, whose value is a tag name (issue #138). */
+export function isTagField(field: string): boolean {
+  return field.toLowerCase() === TAG_FIELD;
 }
 
 /** The dropdown value representing a condition's field (`capability`/`customfield` for those forms). */

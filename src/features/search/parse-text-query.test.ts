@@ -182,6 +182,52 @@ describe('parseTextQuery — boolean field (favourite, issue #23)', () => {
   });
 });
 
+describe('parseTextQuery — tags (issue #138)', () => {
+  it('tag:<name> → a tag CONTAINS on the name', () => {
+    expect(singleCondition('tag:expo')).toEqual({ field: 'tag', operator: 'CONTAINS', value: 'expo' });
+  });
+
+  it('tag=<name> → a whole-name EQUALS', () => {
+    expect(singleCondition('tag=fragile')).toEqual({ field: 'tag', operator: 'EQUALS', value: 'fragile' });
+  });
+
+  it('accepts the tags / tagged aliases and is case-insensitive on the prefix', () => {
+    for (const q of ['tags:expo', 'tagged:expo', 'TAG:expo']) {
+      expect(singleCondition(q)).toMatchObject({ field: 'tag', operator: 'CONTAINS', value: 'expo' });
+    }
+  });
+
+  it('keeps a quoted multi-word tag name intact', () => {
+    expect(singleCondition('tag:"needs a clean"')).toEqual({
+      field: 'tag',
+      operator: 'CONTAINS',
+      value: 'needs a clean',
+    });
+  });
+
+  it('keeps a hyphenated tag name whole', () => {
+    expect(singleCondition('tag=expo-2026')).toEqual({
+      field: 'tag',
+      operator: 'EQUALS',
+      value: 'expo-2026',
+    });
+  });
+
+  it('rejects > / < on a tag name, and a missing name', () => {
+    for (const q of ['tag>3', 'tag:']) {
+      expect(parseTextQuery(q).ok).toBe(false);
+    }
+  });
+
+  it('combines with other terms and with OR groups', () => {
+    const conditions = conditionsOf('tag:fragile qty<10');
+    expect(conditions).toEqual([
+      { field: 'tag', operator: 'CONTAINS', value: 'fragile' },
+      { field: 'quantity', operator: 'LESS_THAN', value: 10 },
+    ]);
+  });
+});
+
 describe('parseTextQuery — capabilities', () => {
   it('cap:<key> with no operator → HAS_CAPABILITY', () => {
     expect(singleCondition('cap:rohs')).toEqual({
@@ -445,6 +491,8 @@ describe('parseTextQuery — every output round-trips through parseASTtoSQL', ()
     'field:Notes:rev2',
     'field:Rating>3.3',
     'field:Notes:rev2 OR cap:rohs',
+    'tag:expo',
+    'tag=expo-2026 (qty<10 OR fav:yes)',
     'blue OR widget',
     'cap:voltage>3.3 (qty<10 OR mfr:acme)',
     '(a OR (b OR (c OR (d OR e))))',
