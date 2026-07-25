@@ -21,8 +21,10 @@
  * leaves as empty margin there, without altering the layout on a standard phone or
  * laptop. See `lib/env/device.ts` for why this exact query (coarse pointer separates a
  * slate from a same-width desktop; the height floor excludes a phone in landscape); this
- * variant and `LARGE_FORMAT_QUERY` are kept identical. Page-level layout switches like
- * this belong in a media query — component-internal reflow stays in container queries.
+ * variant and `LARGE_FORMAT_QUERY` are kept identical — `lib/env/device.test.ts` reads this
+ * file and asserts the condition below matches the constant, so editing one without the other
+ * fails the build. Page-level layout switches like this belong in a media query —
+ * component-internal reflow stays in container queries.
  */
 @custom-variant large-format {
   @media (min-width: 768px) and (min-height: 600px) and (pointer: coarse) {
