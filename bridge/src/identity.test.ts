@@ -127,6 +127,19 @@ describe('requiredPermissions', () => {
       'bridge:write',
       'stock:write',
     ]);
+    // Moving stock between locations is the same subject: how much is where, not what it is.
+    expect(requiredPermissions('POST', '/api/v1/items/abc/transfer-stock')).toEqual([
+      'bridge:write',
+      'stock:write',
+    ]);
+    // Lending, though, is its own subject — the app asks a user for `checkouts:write` to check
+    // something out, so a stock-only token must not be able to open loans through the bridge.
+    for (const action of ['check-out', 'check-in']) {
+      expect(requiredPermissions('POST', `/api/v1/items/abc/${action}`)).toEqual([
+        'bridge:write',
+        'checkouts:write',
+      ]);
+    }
     expect(requiredPermissions('POST', '/api/v1/snapshot')).toEqual(['bridge:write', 'sync:write']);
   });
 });
