@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Button,
+  Drawer,
   Glyph,
   PageContainer,
   PageHeader,
   Spinner,
   Surface,
+  useCompactLayout,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import { AddIcon, ImportIcon, ProjectIcon } from '@/components/icons';
@@ -30,6 +32,16 @@ export function ProjectsScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // Compact viewport (issue #147): the fixed 256px master list would take most of a phone's
+  // width, so below the tablet floor it moves into an off-canvas drawer reached from a trigger
+  // above the detail pane. See `useCompactLayout` for why this is a hook and not a CSS variant.
+  const compact = useCompactLayout();
+  const [listDrawerOpen, setListDrawerOpen] = useState(false);
+  // Widening back past the breakpoint puts the list back on screen; leaving the drawer flagged
+  // open would spring it over the content the next time the viewport narrows.
+  useEffect(() => {
+    if (!compact) setListDrawerOpen(false);
+  }, [compact]);
 
   const rows = useMemo(() => projects.data?.rows ?? [], [projects.data?.rows]);
 
@@ -60,6 +72,59 @@ export function ProjectsScreen() {
     setSelectedId(next?.id ?? null);
   };
 
+  /**
+   * The master list itself, rendered identically whether it sits in the `<aside>` beside the
+   * detail pane or inside the compact drawer — one definition, so the two placements can never
+   * drift. `onPick` is where they differ: in the drawer, choosing a project also closes it.
+   */
+  const masterList = (onPick: (id: string) => void): ReactNode =>
+    projects.isLoading ? (
+      <div className="flex justify-center pt-8">
+        <Spinner />
+      </div>
+    ) : projects.isError ? (
+      // Never fall through to the empty state on failure: "No projects yet" would read
+      // like success and hide a real error behind cheerful copy (issue #306).
+      <Surface className="flex flex-col items-center gap-3 p-6 text-center">
+        <p role="alert" className="text-sm text-destructive">
+          {t('projects.list.error')}
+        </p>
+        <Button variant="outline" onClick={() => void projects.refetch()}>
+          {t('projects.list.retry')}
+        </Button>
+      </Surface>
+    ) : rows.length === 0 ? (
+      <p className="px-2 pt-6 text-sm text-muted-foreground">No projects yet. Create one to plan a build.</p>
+    ) : (
+      <ul className="space-y-1">
+        {rows.map((project) => (
+          <li key={project.id}>
+            <button
+              type="button"
+              onClick={() => onPick(project.id)}
+              className={cn(
+                'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4',
+                project.id === selectedId
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
+              )}
+            >
+              <Glyph name={project.icon} fallback={ProjectIcon} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{project.name}</span>
+                <span className="block text-xs opacity-70">
+                  {project.lineCount} {plural(project.lineCount, 'part')} ·{' '}
+                  {PROJECT_STATUS_LABELS[project.status]}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    );
+
+  const selectedProjectLabel = rows.find((p) => p.id === selectedId)?.name ?? t('projects.list.none');
+
   return (
     <PageContainer fullHeight>
       <PageHeader
@@ -80,56 +145,44 @@ export function ProjectsScreen() {
         }
       />
 
-      <div className="flex min-h-0 flex-1 gap-6">
-        {/* Master list */}
-        <aside className="w-64 shrink-0 overflow-y-auto">
-          {projects.isLoading ? (
-            <div className="flex justify-center pt-8">
-              <Spinner />
-            </div>
-          ) : projects.isError ? (
-            // Never fall through to the empty state on failure: "No projects yet" would read
-            // like success and hide a real error behind cheerful copy (issue #306).
-            <Surface className="flex flex-col items-center gap-3 p-6 text-center">
-              <p role="alert" className="text-sm text-destructive">
-                {t('projects.list.error')}
-              </p>
-              <Button variant="outline" onClick={() => void projects.refetch()}>
-                {t('projects.list.retry')}
-              </Button>
-            </Surface>
-          ) : rows.length === 0 ? (
-            <p className="px-2 pt-6 text-sm text-muted-foreground">
-              No projects yet. Create one to plan a build.
-            </p>
+      {/* Wide: master list beside the detail. Compact: the list is in the drawer below, and the
+          row stacks so its trigger sits directly above the project it opens. */}
+      <div className={cn('flex min-h-0 flex-1', compact ? 'flex-col gap-3' : 'gap-6')}>
+        {compact ? (
+          projects.isError ? (
+            /* A list that failed to load has nothing to browse, so the error goes where the
+               trigger would be rather than behind a drawer no one has a reason to open. Burying
+               it would leave the phone reading like an empty inventory — the exact failure mode
+               issue #306 fixed on the wide layout. */
+            masterList(setSelectedId)
           ) : (
-            <ul className="space-y-1">
-              {rows.map((project) => (
-                <li key={project.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(project.id)}
-                    className={cn(
-                      'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4',
-                      project.id === selectedId
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
-                    )}
-                  >
-                    <Glyph name={project.icon} fallback={ProjectIcon} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{project.name}</span>
-                      <span className="block text-xs opacity-70">
-                        {project.lineCount} {plural(project.lineCount, 'part')} ·{' '}
-                        {PROJECT_STATUS_LABELS[project.status]}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => setListDrawerOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={listDrawerOpen}
+              aria-label={t('projects.list.drawer.trigger', {
+                vars: { project: selectedProjectLabel },
+              })}
+              data-testid="open-projects-drawer"
+            >
+              <ProjectIcon />
+              {t('projects.list.title')}
+              {/* Which project the detail pane is showing, so the trigger doubles as the
+                  breadcrumb the master list would otherwise give you at a glance. */}
+              <span aria-hidden className="min-w-0 truncate font-normal text-muted-foreground">
+                {selectedProjectLabel}
+              </span>
+            </Button>
+          )
+        ) : (
+          /* Master list. Labelled because it carries no visible heading of its own — in the
+             drawer that job falls to the panel's `<h2>`. */
+          <aside aria-label={t('projects.list.title')} className="w-64 shrink-0 overflow-y-auto">
+            {masterList(setSelectedId)}
+          </aside>
+        )}
 
         {/* Detail */}
         <main
@@ -171,6 +224,17 @@ export function ProjectsScreen() {
           )}
         </main>
       </div>
+
+      {/* The compact home of the master list. Picking a project is the drawer's whole purpose,
+          so it closes on choice and hands the screen back to the detail pane. */}
+      {compact && listDrawerOpen ? (
+        <Drawer open onClose={() => setListDrawerOpen(false)} title={t('projects.list.title')}>
+          {masterList((id) => {
+            setSelectedId(id);
+            setListDrawerOpen(false);
+          })}
+        </Drawer>
+      ) : null}
 
       <CreateProjectDialog
         open={createOpen}

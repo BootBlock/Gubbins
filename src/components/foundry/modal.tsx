@@ -1,10 +1,9 @@
-import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
+import { type ReactNode, type RefObject, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { Surface } from './surface';
 import { CloseButton } from './close-button';
-import { FOCUSABLE_SELECTOR, nextTrapIndex } from './focus-trap';
-import { isTopModal, openModalCount, popModal, pushModal } from './modal-stack';
+import { useDialogBehaviour } from './use-dialog-behaviour';
 import { useReducedMotion } from './useReducedMotion';
 
 /**
@@ -61,64 +60,10 @@ export function Modal({
   // dialog's decorative fade/zoom entrance is dropped (the global CSS catch-all does
   // the same, but gating at source means no animation event fires at all).
   const reducedMotion = useReducedMotion();
-  // Latest onClose without re-running the focus effect (call sites pass inline
-  // closures that change every render — see the [open]-only dependency below).
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  // Same treatment for the optional initial-focus target: read it at open time without
-  // making it a dependency of the [open]-only focus effect.
-  const initialFocusRefRef = useRef(initialFocusRef);
-  initialFocusRefRef.current = initialFocusRef;
 
-  // Accessible dialog behaviour (spec §3 — aria-modal contract): on open, move
-  // focus into the dialog; while open, trap Tab within it and close on Escape;
-  // on close/unmount, restore focus to whatever was focused before it opened.
-  useEffect(() => {
-    if (!open) return;
-    // Register on the modal stack: dialogs can open on top of one another (e.g. the
-    // "New location" dialog nested inside "Add item"), and only the topmost may
-    // handle Escape/Tab — otherwise one Escape would close every open dialog at once.
-    const token = pushModal();
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    // Move initial focus to the caller's chosen control (e.g. a Name field) when one is
-    // given, so a type-first dialog is ready to type into; otherwise park focus on the
-    // dialog container so screen readers announce the dialog (via aria-label) and the
-    // first Tab steps into its controls — rather than landing on the Close button.
-    const target = initialFocusRefRef.current?.current;
-    if (target) target.focus();
-    else dialogRef.current?.focus();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (!isTopModal(token)) return;
-      if (e.key === 'Escape') {
-        onCloseRef.current();
-        return;
-      }
-      if (e.key !== 'Tab') return;
-      const container = dialogRef.current;
-      if (!container) return;
-      const focusables = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      const active = document.activeElement as HTMLElement | null;
-      const currentIndex = active ? focusables.indexOf(active) : -1;
-      const next = nextTrapIndex(focusables.length, currentIndex, e.shiftKey);
-      e.preventDefault();
-      if (next === null) container.focus();
-      else focusables[next]?.focus();
-    };
-
-    document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      popModal(token);
-      // The scroll lock is shared: release it only when the *last* open modal
-      // closes, so dismissing a nested dialog keeps its parent's lock in place.
-      if (openModalCount() === 0) document.body.style.overflow = '';
-      // Return focus to the element that opened the dialog, so a keyboard user
-      // never loses their place (the dialog subtree is already detached here).
-      previouslyFocused?.focus?.();
-    };
-  }, [open]);
+  // Accessible dialog behaviour (spec §3 — aria-modal contract): modal-stack registration,
+  // initial focus, Tab trap, Escape, scroll lock and focus restore. Shared with {@link Drawer}.
+  useDialogBehaviour(open, onClose, dialogRef, initialFocusRef);
 
   if (!open) return null;
 

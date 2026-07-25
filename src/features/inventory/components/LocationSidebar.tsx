@@ -85,12 +85,20 @@ export function LocationSidebar({
   selectedId,
   onSelect,
   totalCount,
+  compact = false,
 }: {
   tree: readonly LocationTreeNode[];
   flat: readonly LocationWithCount[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   totalCount: number;
+  /**
+   * Render for the off-canvas {@link Drawer} the Inventory screen moves this pane into on a
+   * compact viewport (issue #147): fill the drawer's width rather than the fixed master-pane
+   * column, and let the drawer's own header carry the visible "Locations" title — the section
+   * heading below stays in the accessibility tree (it labels the `tree`) but is not shown twice.
+   */
+  compact?: boolean;
 }) {
   const archive = useArchiveLocation();
   const moveItem = useMoveItem();
@@ -364,13 +372,25 @@ export function LocationSidebar({
   });
 
   return (
-    <aside className="flex min-h-0 w-64 shrink-0 flex-col gap-2 large-format:w-72">
-      <div className="flex shrink-0 items-center justify-between px-1">
+    <aside
+      className={cn(
+        'flex min-h-0 flex-col gap-2',
+        // In the drawer, fill the panel so the tree keeps its own inner scroll and the search
+        // box and archived toggle stay pinned, rather than scrolling away with it.
+        compact ? 'w-full flex-1' : 'w-64 shrink-0 large-format:w-72',
+      )}
+    >
+      <div className={cn('flex shrink-0 items-center px-1', compact ? 'justify-end' : 'justify-between')}>
         <h2
           id="locations-heading"
-          className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+          className={cn(
+            'text-xs font-semibold uppercase tracking-wide text-muted-foreground',
+            // In the drawer the same word is already the panel's `<h2>`; keep this one for
+            // the tree's `aria-labelledby` rather than printing "Locations" twice.
+            compact && 'sr-only',
+          )}
         >
-          Locations
+          {t('inventory.locations.title')}
         </h2>
         <Tooltip content="Create a new location. Locations can be nested to any depth." triggerTabIndex={-1}>
           <span>
@@ -601,7 +621,7 @@ export function LocationSidebar({
           selected={selectedId === null}
           focused={focusedId === ALL_ITEMS_ID}
           icon={<PackageIcon />}
-          label="All items"
+          label={t('inventory.locations.allItems')}
           count={totalCount}
           onSelect={() => select(ALL_ITEMS_ID)}
           onFocus={() => setFocusedId(ALL_ITEMS_ID)}

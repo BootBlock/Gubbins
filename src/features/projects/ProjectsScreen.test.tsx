@@ -10,7 +10,8 @@
  * so the test stays in happy-dom without extra providers.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { COMPACT_LAYOUT_QUERY } from '@/lib/env/device';
 
 // ─── dependency stubs ─────────────────────────────────────────────────────────
 
@@ -154,5 +155,86 @@ describe('ProjectsScreen — failed load (issue #306)', () => {
     projectsState = { isLoading: false, isError: true };
     render(<ProjectsScreen />);
     expect(screen.getByTestId('projects-count-live').textContent).toBe('');
+  });
+});
+
+describe('ProjectsScreen — compact viewport (issue #147)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Force the compact-layout query on or off for the default `matchMedia` provider. */
+  function setCompact(compact: boolean) {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === COMPACT_LAYOUT_QUERY ? compact : false,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+  }
+
+  it('keeps the master list beside the detail on a wide viewport', () => {
+    setCompact(false);
+    projectsState = { isLoading: false, data: { rows: [makeProject('p1', 'Alpha')] } };
+    render(<ProjectsScreen />);
+    expect(screen.getByRole('complementary', { name: 'Projects' })).toBeTruthy();
+    expect(screen.queryByTestId('open-projects-drawer')).toBeNull();
+  });
+
+  it('replaces the master list with a drawer trigger naming the current project', () => {
+    setCompact(true);
+    projectsState = { isLoading: false, data: { rows: [makeProject('p1', 'Alpha')] } };
+    render(<ProjectsScreen />);
+    // The 256px list is gone from the flow — that room now belongs to the detail pane.
+    expect(screen.queryByRole('complementary')).toBeNull();
+    const trigger = screen.getByTestId('open-projects-drawer');
+    // The first project is auto-selected, so the trigger doubles as the breadcrumb.
+    expect(trigger.getAttribute('aria-label')).toContain('Alpha');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('opens the list in a modal drawer, and picking a project closes it', async () => {
+    setCompact(true);
+    projectsState = {
+      isLoading: false,
+      data: { rows: [makeProject('p1', 'Alpha'), makeProject('p2', 'Beta')] },
+    };
+    render(<ProjectsScreen />);
+    fireEvent.click(screen.getByTestId('open-projects-drawer'));
+
+    const drawer = screen.getByRole('dialog', { name: 'Projects' });
+    expect(drawer.getAttribute('aria-modal')).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: /Beta/ }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Projects' })).toBeNull());
+    // …and the trigger now names the project the detail pane switched to.
+    expect(screen.getByTestId('open-projects-drawer').getAttribute('aria-label')).toContain('Beta');
+  });
+
+  it('reports "no project selected" on the trigger when the list is empty', () => {
+    setCompact(true);
+    projectsState = { isLoading: false, data: { rows: [] } };
+    render(<ProjectsScreen />);
+    expect(screen.getByTestId('open-projects-drawer').getAttribute('aria-label')).toContain(
+      'No project selected',
+    );
+  });
+});
+
+describe('ProjectsScreen — a failed load stays visible on a compact viewport (issue #306 × #147)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('shows the error where the drawer trigger would be, not hidden behind the drawer', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === COMPACT_LAYOUT_QUERY,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    projectsState = { isLoading: false, isError: true };
+    render(<ProjectsScreen />);
+    expect(screen.getByRole('alert').textContent).toContain('couldn’t be loaded');
+    // A trigger for a list that failed to load would only lead to an empty panel.
+    expect(screen.queryByTestId('open-projects-drawer')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(refetch).toHaveBeenCalled();
   });
 });

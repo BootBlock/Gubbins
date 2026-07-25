@@ -3,12 +3,14 @@ import { useNavigate } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import {
   Button,
+  Drawer,
   Input,
   LiveRegion,
   Pagination,
   Spinner,
   Surface,
   pageCount,
+  useCompactLayout,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import {
@@ -27,6 +29,7 @@ import {
   GroupByIcon,
   ImportIcon,
   InfoIcon,
+  LocationTreeIcon,
   MoreIcon,
   PackageIcon,
   PrintIcon,
@@ -174,6 +177,17 @@ function InventoryWorkspace() {
   const reportsEnabled = useFeature('reports');
   const navigate = useNavigate();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  // Compact viewport (issue #147): below the tablet floor the fixed 256px location pane would
+  // eat two thirds of a phone's width, so it moves into an off-canvas drawer opened from a
+  // trigger above the list. A structural swap, not a style — the pane can only exist once
+  // (one heading id, one roving-tabindex tree, one virtualiser), so it is a hook, not a variant.
+  const compact = useCompactLayout();
+  const [locationsDrawerOpen, setLocationsDrawerOpen] = useState(false);
+  // Widening back past the breakpoint puts the pane back on screen; leaving the drawer flagged
+  // open would spring it over the content the next time the viewport narrows.
+  useEffect(() => {
+    if (!compact) setLocationsDrawerOpen(false);
+  }, [compact]);
   const [searchInput, setSearchInput] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
@@ -485,6 +499,10 @@ function InventoryWorkspace() {
     () => (selectedLocationId ? (flat.data?.rows.find((l) => l.id === selectedLocationId) ?? null) : null),
     [flat.data, selectedLocationId],
   );
+  // What the list is currently scoped to, in words — shown on the compact drawer trigger, which
+  // stands in for the master pane's own highlighted row. With no location selected (or its row
+  // not yet loaded) that is the tree's own synthetic "All items" row, so the two always agree.
+  const selectedLocationLabel = selectedLocation?.name ?? t('inventory.locations.allItems');
 
   // Configurable item-card fields (backlog E1): the shared order/catalog/category resolver,
   // plus — only when a custom field is actually shown — the stored custom-field values for the
@@ -887,8 +905,30 @@ function InventoryWorkspace() {
       {/* Drag-to-move (spec §4): the provider owns the unified pointer drag and must wrap both
           the drop targets (the sidebar) and the drag sources (the item list). */}
       <ItemDragProvider>
-        <div className="flex min-h-0 flex-1 gap-6 large-format:gap-8">
-          {tree.data && flat.data ? (
+        {/* Wide: master pane beside the list. Compact: the pane is in the drawer below, and
+            the row stacks so its trigger sits directly above the items it scopes. */}
+        <div className={cn('flex min-h-0 flex-1', compact ? 'flex-col gap-3' : 'gap-6 large-format:gap-8')}>
+          {compact ? (
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => setLocationsDrawerOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={locationsDrawerOpen}
+              aria-label={t('inventory.locations.drawer.trigger', {
+                vars: { location: selectedLocationLabel },
+              })}
+              data-testid="open-locations-drawer"
+            >
+              <LocationTreeIcon />
+              {t('inventory.locations.title')}
+              {/* The scope the list is currently showing, so the trigger doubles as the
+                  breadcrumb the master pane would otherwise give you at a glance. */}
+              <span aria-hidden className="min-w-0 truncate font-normal text-muted-foreground">
+                {selectedLocationLabel}
+              </span>
+            </Button>
+          ) : tree.data && flat.data ? (
             <LocationSidebar
               tree={tree.data}
               flat={flatLocations}
@@ -1212,6 +1252,33 @@ function InventoryWorkspace() {
             </div>
           </main>
         </div>
+
+        {/* The compact home of the master pane. Kept inside the drag provider so a location row
+            is still a drop target for a dragged item, and so the add/edit dialogs it opens stack
+            on the drawer via the shared modal stack. */}
+        {compact && locationsDrawerOpen ? (
+          <Drawer open onClose={() => setLocationsDrawerOpen(false)} title={t('inventory.locations.title')}>
+            {tree.data && flat.data ? (
+              <LocationSidebar
+                compact
+                tree={tree.data}
+                flat={flatLocations}
+                selectedId={selectedLocationId}
+                // Picking a location is the drawer's whole purpose, so it closes on choice and
+                // hands the screen straight back to the items now in scope.
+                onSelect={(id) => {
+                  setSelectedLocationId(id);
+                  setLocationsDrawerOpen(false);
+                }}
+                totalCount={totalCount.data ?? 0}
+              />
+            ) : (
+              <div className="flex justify-center pt-8">
+                <Spinner />
+              </div>
+            )}
+          </Drawer>
+        ) : null}
       </ItemDragProvider>
 
       {/* Mounted only while open so the location default is re-seeded from the current
