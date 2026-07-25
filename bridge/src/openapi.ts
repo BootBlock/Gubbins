@@ -372,15 +372,19 @@ function errorResponsesIn(errorRef: string, codes: readonly number[]): JsonValue
     404: response('Resource not found.', errorRef),
     405: {
       description:
-        'The request method is not allowed for this path. The bridge answers GET and HEAD ' +
-        'everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths; ' +
-        '`Allow` names the methods this path accepts. Declared on every operation because the ' +
-        'method guard runs ahead of routing, so it answers any request to this path — not only ' +
-        'the method documented here.',
+        'The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST ' +
+        'only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every ' +
+        'operation because the method guard runs ahead of routing, so it answers any request to ' +
+        'this path — not only the method documented here. That is also why `Allow` is answered ' +
+        'bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names ' +
+        'POST even for a path that only reads. A POST the versioned router itself refuses is the ' +
+        'one case answered with that resource’s own methods.',
       headers: {
         Allow: {
           schema: { type: 'string' },
-          description: 'The methods this path accepts, e.g. "GET, HEAD, OPTIONS".',
+          description:
+            'The methods the bridge serves, e.g. "GET, HEAD, OPTIONS" — see the description above ' +
+            'for when this is bridge-wide rather than scoped to the path.',
         },
       },
       content: jsonContent(errorRef),
@@ -1314,7 +1318,7 @@ export const openapiDocument: JsonValue = {
             formatVersion: 3,
             generatedAt: 1751004800000,
           }),
-          ...(errorResponses(400, 401, 413, 415, 422, 429) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 413, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1437,7 +1441,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(401, 429) as Record<string, JsonValue>),
+          ...(errorResponses(401, 404, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1517,7 +1521,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1593,7 +1597,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
-          ...(errorResponses(400, 401, 415, 422, 429) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },

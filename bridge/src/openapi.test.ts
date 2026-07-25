@@ -158,6 +158,17 @@ describe('openapiDocument', () => {
     }
   });
 
+  it('declares the 404 that an opt-in operation’s own description promises (#367)', () => {
+    // Every opt-in surface says "returns 404 when disabled" in its description — an operator
+    // reading the document is told the code, so the responses map has to list it too.
+    for (const [path, item] of Object.entries(doc.paths as Record<string, any>)) {
+      for (const op of [item.get, item.post].filter(Boolean)) {
+        if (!/returns 404 when/.test(op.description ?? '')) continue;
+        expect(Object.keys(op.responses), `${path} promises a 404`).toContain('404');
+      }
+    }
+  });
+
   it('describes each path’s errors in the envelope that path actually sends (#367)', () => {
     // `respond.ts` picks the envelope from the path: the structured `{ error: { code, message } }`
     // under /api/v1, and the flat `{ error: "…" }` on an unversioned path. /metrics is the only

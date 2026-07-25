@@ -239,14 +239,17 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
   }
 
   // The scale endpoints read Home Assistant, not the snapshot, so they are routed *before* the
-  // state gate below — a bridge that has not yet loaded a snapshot can still read a scale.
+  // state gate below: nothing they answer with comes out of a snapshot, so this router has no
+  // reason to demand one. That no longer means a snapshotless bridge can read a scale, though —
+  // since tokens became per-user (#79) they arrive in the snapshot, so `server.ts` 503s every
+  // path, this one included, until the first one loads.
   if (segments[0] === 'scale') {
     return void (await handleScale(res, segments, url, ctx.scale));
   }
 
   // The delivery log lives in bridge memory, not the snapshot, so — like the scale reads — it is
-  // routed *before* the state gate. A bridge still waiting for its first snapshot can already have
-  // refused a delivery, and answering `503` would leave the app's Webhooks screen unable to say so.
+  // routed *before* the state gate, and for the same reason (and with the same caveat above about
+  // the outer, pre-routing 503).
   if (segments[0] === 'webhooks') {
     return void handleWebhookDeliveries(res, segments, url, ctx.webhookDeliveries);
   }
