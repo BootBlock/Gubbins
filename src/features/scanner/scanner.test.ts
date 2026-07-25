@@ -19,7 +19,17 @@ import {
   QRCodeReader,
   RGBLuminanceSource,
 } from '@zxing/library';
-import { encodeQr, qrSvg, qrSvgOrNull, fitsInQr, MAX_QR_BYTES, QrError } from './qr-code';
+import {
+  encodeQr,
+  qrSvg,
+  qrSvgOrNull,
+  fitsInQr,
+  qrModuleCount,
+  MAX_QR_BYTES,
+  MAX_QR_MODULE_COUNT,
+  QR_QUIET_ZONE_MODULES,
+  QrError,
+} from './qr-code';
 import { emptyQueue, queueReducer } from './queue-reducer';
 
 const UUID = '00000000-0000-4000-8000-0000000000ab';
@@ -357,6 +367,33 @@ describe('QR encoder (§2.4.3 lean, §5)', () => {
   it('reports a ceiling that exactly matches what the encoder accepts', () => {
     expect(() => encodeQr('x'.repeat(MAX_QR_BYTES))).not.toThrow();
     expect(() => encodeQr('x'.repeat(MAX_QR_BYTES + 1))).toThrow(QrError);
+  });
+
+  // Issue #330: the quiet zone is part of the symbol, not layout padding a call site may trade
+  // away — so it is no longer an option `toSvg` accepts, and every render carries the spec 4.
+  it('always renders the mandatory 4-module quiet zone', () => {
+    expect(QR_QUIET_ZONE_MODULES).toBe(4);
+    const scale = 3;
+    const m = encodeQr(`https://example.com/Gubbins/#/inventory?item=${UUID}`);
+    const svg = qrSvg(`https://example.com/Gubbins/#/inventory?item=${UUID}`, { scale });
+    const side = (m.size + QR_QUIET_ZONE_MODULES * 2) * scale;
+    expect(svg).toContain(`width="${side}" height="${side}"`);
+    // The first dark module is inset by the quiet zone rather than sitting on the edge.
+    expect(svg).toContain(`<path d="M${QR_QUIET_ZONE_MODULES * scale} ${QR_QUIET_ZONE_MODULES * scale}h`);
+  });
+
+  // The module count is what a printed size is divided by to get one module's physical width
+  // (issue #330), so it has to agree exactly with the matrix the encoder would build.
+  it('reports a module count matching the symbol it would encode', () => {
+    for (const payload of [
+      'x',
+      `https://example.com/Gubbins/#/inventory?item=${UUID}`,
+      'x'.repeat(MAX_QR_BYTES),
+    ]) {
+      expect(qrModuleCount(payload)).toBe(encodeQr(payload).size);
+    }
+    expect(qrModuleCount('x'.repeat(MAX_QR_BYTES + 1))).toBeNull();
+    expect(MAX_QR_MODULE_COUNT).toBe(encodeQr('x'.repeat(MAX_QR_BYTES)).size);
   });
 
   it('degrades to null instead of throwing when a payload cannot fit', () => {

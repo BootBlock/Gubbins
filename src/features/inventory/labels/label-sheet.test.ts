@@ -9,10 +9,12 @@ import {
   buildLabelSheetHtml,
   clampLabels,
   itemLabelLines,
+  qrSizeMm,
   toLabelCells,
   type LabelItem,
 } from './label-sheet';
 import {
+  MIN_QR_MODULE_MM,
   PLAIN_PAPER_SHEET_LAYOUT,
   SHEET_STOCK_PRESETS,
   DEFAULT_LABEL_TEMPLATE,
@@ -417,5 +419,82 @@ describe('the printed name clamp', () => {
     // this is what keeps the two honest.
     expect(preview).toContain(`line-clamp-${LABEL_NAME_MAX_LINES}`);
     expect(preview).not.toMatch(new RegExp(`line-clamp-(?!${LABEL_NAME_MAX_LINES}\\b)\\d`));
+  });
+});
+
+describe('printed QR size (issue #330)', () => {
+  /** The deep-link's symbol (37 modules) plus its mandatory 4-module quiet zone either side. */
+  const TOTAL_MODULES = 37 + 8;
+  const item: LabelItem = { id: ID_A, name: 'Widget', mpn: 'MPN-1', locationName: 'Shelf B', quantity: 4 };
+
+  /** The module width, in mm, the one cell this template produces would print at. */
+  const moduleMm = (t: LabelTemplate): number =>
+    qrSizeMm(
+      t,
+      toLabelCells([item], BASE, t)[0].lines.length,
+      toLabelCells([item], BASE, t)[0].barcodeValue,
+    ) / TOTAL_MODULES;
+
+  const fit = (t: LabelTemplate) => toLabelCells([item], BASE, t)[0].qrFit;
+
+  it('flags the small die-cut preset the issue was raised about', () => {
+    // 30 × 15 mm with a name line: ~6 mm of height for 45 modules. The user sticks these on
+    // boxes and finds out later that phones will not read them.
+    const t = template({ sizeMode: 'die-cut', labelWidthMm: 30, labelHeightMm: 15 });
+    expect(moduleMm(t)).toBeLessThan(MIN_QR_MODULE_MM);
+    expect(fit(t)).toBe('tooSmall');
+  });
+
+  it('accepts the sizes with room for a readable code', () => {
+    // The default A4 tiling (60 × 42 mm cells) and a square die-cut label.
+    expect(fit(template())).toBe('ok');
+    expect(fit(template({ sizeMode: 'die-cut', labelWidthMm: 50, labelHeightMm: 50 }))).toBe('ok');
+    // 40 × 30 with nothing but the code — the whole label is the QR's.
+    const bare = template({
+      sizeMode: 'die-cut',
+      labelWidthMm: 40,
+      labelHeightMm: 30,
+      showName: false,
+    });
+    expect(moduleMm(bare)).toBeGreaterThan(MIN_QR_MODULE_MM);
+    expect(fit(bare)).toBe('ok');
+  });
+
+  it('shrinks the QR as text lines and a barcode take the label’s height', () => {
+    const base = { sizeMode: 'die-cut', labelWidthMm: 40, labelHeightMm: 30 } as const;
+    const nameOnly = template(base);
+    const everything = template({ ...base, showMpn: true, showLocation: true, showQuantity: true });
+    const withBarcode = template({ ...base, symbology: 'both' });
+    expect(moduleMm(everything)).toBeLessThan(moduleMm(nameOnly));
+    expect(moduleMm(withBarcode)).toBeLessThan(moduleMm(nameOnly));
+    // Four text lines plus their gaps leave a 40 × 20 label nothing worth printing — and a
+    // shorter one nothing at all. Both must warn: a QR squeezed to zero is the worst case, not
+    // an absent measurement, so the warning must not switch itself off as the label shrinks.
+    const crowded = { ...base, showMpn: true, showLocation: true, showQuantity: true } as const;
+    for (const labelHeightMm of [20, 18, 15, 10]) {
+      const t = template({ ...crowded, labelHeightMm });
+      expect(fit(t), `${labelHeightMm} mm tall`).toBe('tooSmall');
+      // …and the code is still drawn, so the warning is the only thing telling the user.
+      expect(toLabelCells([item], BASE, t)[0]!.qrSvg, `${labelHeightMm} mm tall`).not.toBeNull();
+    }
+    expect(qrSizeMm(template({ ...crowded, labelHeightMm: 10 }), 4, null)).toBe(0);
+  });
+
+  it('reports no fit at all where there is no QR to measure', () => {
+    expect(toLabelCells([item], BASE, template({ symbology: 'barcode' }))[0].qrFit).toBeNull();
+    expect(toLabelCells([item], BASE, template({ symbology: 'none' }))[0].qrFit).toBeNull();
+    // A deep-link past the encoder's ceiling leaves the label without a QR — already surfaced
+    // as "this link is too long", so it is not also reported as too small.
+    const longBase = `https://${'sub.'.repeat(50)}example.test/Gubbins/`;
+    const cell = toLabelCells([item], longBase, template())[0];
+    expect(cell.qrSvg).toBeNull();
+    expect(cell.qrFit).toBeNull();
+  });
+
+  it('measures the label the stylesheet actually lays out', () => {
+    // The die-cut safe area + padding is inset from both edges, so the QR can never be wider
+    // than the content box — the same inset `barcodeWidthMm` measures against.
+    const t = template({ sizeMode: 'die-cut', labelWidthMm: 20, labelHeightMm: 100, showName: false });
+    expect(qrSizeMm(t, 0, null)).toBeCloseTo(20 - 2.5 * 2, 10);
   });
 });

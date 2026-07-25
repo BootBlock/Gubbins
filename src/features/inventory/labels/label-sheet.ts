@@ -15,12 +15,13 @@
  */
 import { buildItemQrUrl } from '@/features/scanner/scan-payload';
 import { qrSvgOrNull } from '@/features/scanner/qr-code';
-import { code128Svg } from './code128';
+import { code128Svg, code128SvgSize } from './code128';
 import {
   BARCODE_QUIET_ZONE_MODULES,
   DEFAULT_LABEL_TEMPLATE,
   clampLabelDimension,
   fitBarcodeValue,
+  fitQrToSize,
   formatMm,
   normaliseSheetLayout,
   sheetCellSizeMm,
@@ -28,6 +29,7 @@ import {
   templateHasQr,
   type BarcodeFit,
   type LabelTemplate,
+  type QrFit,
   type SheetLayout,
 } from './label-template';
 
@@ -58,6 +60,12 @@ export interface LabelCell {
    * warnings (issue #331).
    */
   readonly barcodeFit: BarcodeFit | null;
+  /**
+   * Whether the QR will print big enough to scan at this label's size, or `null` when the
+   * template draws no QR (or the deep-link is too long to encode one at all). Drives the
+   * print dialogs' "too small to scan" warning (issue #330).
+   */
+  readonly qrFit: QrFit | null;
   /** Text lines beneath the code, already filtered by the template's field flags. */
   readonly lines: string[];
 }
@@ -82,6 +90,14 @@ const SHEET_BARCODE_MAX_MM = 40;
 const SHEET_BARCODE_MAX_HEIGHT_MM = 14;
 /** Cell height (mm) below which the A4 cell drops to the smaller die-cut type sizes. */
 const SHEET_SMALL_CELL_MM = 30;
+/** Gap between a label's code(s) and its text lines, in an ordinary A4 cell. */
+const SHEET_CONTENT_GAP_MM = 2;
+/** As {@link SHEET_CONTENT_GAP_MM}, on a cell too short to spare it. */
+const SHEET_SMALL_CONTENT_GAP_MM = 1;
+/** Gap between a die-cut label's code(s) and its text lines. */
+const DIE_CUT_CONTENT_GAP_MM = 1;
+/** Cap on a barcode's printed height on a die-cut label. */
+const DIE_CUT_BARCODE_MAX_HEIGHT_MM = 12;
 /** Padding between a die-cut label's safe area and its content (each side). */
 const DIE_CUT_PADDING_MM = 1.5;
 /**
@@ -126,6 +142,125 @@ export const LABEL_NAME_MAX_LINES = 2;
  */
 function lineClampCss(lines: number): string {
   return `overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${lines}`;
+}
+
+/** Millimetres in one typographic point (1 pt = 1/72 in). */
+const PT_MM = 25.4 / 72;
+
+/** The type a label's text block is set in: the name line, the meta lines, and their leading. */
+interface LabelType {
+  /** Font size (pt) of the first (name) line. */
+  readonly namePt: number;
+  /** Font size (pt) of every line after it. */
+  readonly metaPt: number;
+  /** `line-height` multiplier both are set with. */
+  readonly lineHeight: number;
+}
+
+/** Type for an ordinary A4 cell. */
+const SHEET_TYPE: LabelType = { namePt: 9, metaPt: 8, lineHeight: 1.2 };
+/** Type for an A4 cell shorter than {@link SHEET_SMALL_CELL_MM}. */
+const SHEET_SMALL_TYPE: LabelType = { namePt: 7, metaPt: 6, lineHeight: 1.2 };
+/** Type for a die-cut label. */
+const DIE_CUT_TYPE: LabelType = { namePt: 7, metaPt: 6, lineHeight: 1.15 };
+
+/** The `font-size`/`line-height` declarations one of these types emits. */
+function typeCss(sizePt: number, lineHeight: number): string {
+  return `font-size:${sizePt}pt;line-height:${lineHeight}`;
+}
+
+/**
+ * The area a label's content is actually laid out in, and the metrics of what goes in it —
+ * everything {@link qrSizeMm} needs to work out how much of a fixed-size label is left for
+ * the QR once the text (and any barcode) has taken its share.
+ *
+ * Derived from the very constants both print stylesheets below are built from, exactly as
+ * {@link barcodeWidthMm} is, so the measurement and the CSS producing it cannot drift apart.
+ */
+interface LabelContentBox {
+  readonly widthMm: number;
+  readonly heightMm: number;
+  /** Gap between the flex column's children. */
+  readonly gapMm: number;
+  readonly type: LabelType;
+  /** `max-height` the barcode is capped at. */
+  readonly barcodeMaxHeightMm: number;
+}
+
+function labelContentBox(template: LabelTemplate): LabelContentBox {
+  if (template.sizeMode === 'die-cut') {
+    const { widthMm, heightMm } = dieCutSizeMm(template.labelWidthMm, template.labelHeightMm);
+    return {
+      widthMm: Math.max(0, widthMm - DIE_CUT_CONTENT_INSET_MM * 2),
+      heightMm: Math.max(0, heightMm - DIE_CUT_CONTENT_INSET_MM * 2),
+      gapMm: DIE_CUT_CONTENT_GAP_MM,
+      type: DIE_CUT_TYPE,
+      barcodeMaxHeightMm: DIE_CUT_BARCODE_MAX_HEIGHT_MM,
+    };
+  }
+  const cell = sheetCellSizeMm(template.sheet);
+  const pad = sheetCellPaddingMm(cell);
+  const small = cell.heightMm < SHEET_SMALL_CELL_MM;
+  return {
+    widthMm: Math.max(0, cell.widthMm - pad * 2),
+    heightMm: Math.max(0, cell.heightMm - pad * 2),
+    gapMm: small ? SHEET_SMALL_CONTENT_GAP_MM : SHEET_CONTENT_GAP_MM,
+    type: small ? SHEET_SMALL_TYPE : SHEET_TYPE,
+    barcodeMaxHeightMm: sheetBarcodeMaxHeightMm(cell.heightMm),
+  };
+}
+
+/** The `max-height` an A4 cell of this height gives its barcode. */
+function sheetBarcodeMaxHeightMm(cellHeightMm: number): number {
+  return Math.min(SHEET_BARCODE_MAX_HEIGHT_MM, cellHeightMm * 0.35);
+}
+
+/**
+ * The height `lineCount` text lines claim: the name line, then the rest at the smaller meta
+ * size, each at one line of its own leading.
+ *
+ * One line **per field**, which is the optimistic reading: a name long enough to wrap takes a
+ * second line (up to {@link LABEL_NAME_MAX_LINES}) and squeezes the code further. Wrapping
+ * depends on the typeface the printer resolves and on the value itself, neither of which is
+ * knowable here — so the estimate is deliberately the best case, and a QR this says is too
+ * small is one that certainly will be.
+ */
+function textBlockHeightMm(lineCount: number, type: LabelType): number {
+  if (lineCount <= 0) return 0;
+  return (type.namePt + type.metaPt * (lineCount - 1)) * type.lineHeight * PT_MM;
+}
+
+/** The printed height of the barcode carrying `value`, which draws at its intrinsic aspect
+ * across {@link barcodeWidthMm} until the label's `max-height` cap bites. */
+function barcodeHeightMm(template: LabelTemplate, value: string, box: LabelContentBox): number {
+  const widthMm = barcodeWidthMm(template);
+  if (widthMm <= 0) return 0;
+  try {
+    const svg = code128SvgSize(value, barcodeSvgOptions(template));
+    return Math.min(box.barcodeMaxHeightMm, (widthMm * svg.height) / svg.width);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The square, in mm, a label's QR actually prints at: it is the one elastic item in the flex
+ * column (`flex:1 1 auto`, drawn `height:100%;width:auto`), so it gets whatever height the
+ * text and barcode leave — bounded by the content width, since it stays square.
+ *
+ * This is the measurement issue #330 was about: a QR's module count comes from its payload, so
+ * without checking it against the size it lands at, a 30 × 15 mm label with a name line prints
+ * a deep-link QR at well under the minimum readable module width and the user only finds out
+ * when a phone won't read the sticker they have already stuck on a box.
+ */
+export function qrSizeMm(template: LabelTemplate, lineCount: number, barcodeValue: string | null): number {
+  const box = labelContentBox(template);
+  const barcodeMm = barcodeValue === null ? 0 : barcodeHeightMm(template, barcodeValue, box);
+  // The QR, the barcode (when drawn) and each text line are the flex column's children.
+  const children = 1 + (barcodeValue === null ? 0 : 1) + Math.max(0, lineCount);
+  const spare =
+    box.heightMm - textBlockHeightMm(lineCount, box.type) - barcodeMm - box.gapMm * (children - 1);
+  return Math.max(0, Math.min(spare, box.widthMm));
 }
 
 /**
@@ -209,24 +344,43 @@ function renderCodes(
   barcodeSvg: string | null;
   barcodeValue: string | null;
   barcodeFit: BarcodeFit | null;
+  qrFit: QrFit | null;
 } {
-  const qr = templateHasQr(template) ? qrSvgOrNull(spec.url, { scale: 4, margin: 2 }) : null;
+  const qr = templateHasQr(template) ? qrSvgOrNull(spec.url) : null;
+  // How big the QR prints depends on what else shares the label, so it can only be settled
+  // *after* the barcode is — the calls below differ only in whether a barcode is drawn.
+  const resolveQrFit = (barcodeValue: string | null): QrFit | null =>
+    qr === null ? null : fitQrToSize(spec.url, qrSizeMm(template, spec.lines.length, barcodeValue));
   const none = { qrSvg: qr, barcodeSvg: null, barcodeValue: null };
-  if (!templateHasBarcode(template)) return { ...none, barcodeFit: null };
+  if (!templateHasBarcode(template)) return { ...none, barcodeFit: null, qrFit: resolveQrFit(null) };
   const fitted = fitBarcodeValue(spec.barcodePreferred, spec.id, barcodeWidthMm(template));
   // Too narrow to print anything readable — say so rather than draw an unscannable smear.
-  if (fitted.value === null) return { ...none, barcodeFit: fitted.fit };
+  if (fitted.value === null) return { ...none, barcodeFit: fitted.fit, qrFit: resolveQrFit(null) };
   try {
-    const barcode = code128Svg(fitted.value, {
-      scale: 2,
-      height: 48,
-      margin: BARCODE_QUIET_ZONE_MODULES,
-      showText: template.showText,
-    });
-    return { qrSvg: qr, barcodeSvg: barcode, barcodeValue: fitted.value, barcodeFit: fitted.fit };
+    const barcode = code128Svg(fitted.value, barcodeSvgOptions(template));
+    return {
+      qrSvg: qr,
+      barcodeSvg: barcode,
+      barcodeValue: fitted.value,
+      barcodeFit: fitted.fit,
+      qrFit: resolveQrFit(fitted.value),
+    };
   } catch {
-    return { ...none, barcodeFit: 'unprintable' };
+    return { ...none, barcodeFit: 'unprintable', qrFit: resolveQrFit(null) };
   }
+}
+
+/**
+ * The options a label's Code 128 is rendered with. Shared with {@link code128SvgSize}, so the
+ * height {@link qrSizeMm} budgets for the barcode is the height it actually draws at.
+ */
+function barcodeSvgOptions(template: LabelTemplate) {
+  return {
+    scale: 2,
+    height: 48,
+    margin: BARCODE_QUIET_ZONE_MODULES,
+    showText: template.showText,
+  };
 }
 
 /**
@@ -349,7 +503,8 @@ function a4SheetDocument(cellsHtml: string, layout: SheetLayout): string {
   const cell = sheetCellSizeMm(l);
   const pad = sheetCellPaddingMm(cell);
   const small = cell.heightMm < SHEET_SMALL_CELL_MM;
-  const barcodeHeight = Math.min(SHEET_BARCODE_MAX_HEIGHT_MM, cell.heightMm * 0.35);
+  const type = small ? SHEET_SMALL_TYPE : SHEET_TYPE;
+  const barcodeHeight = sheetBarcodeMaxHeightMm(cell.heightMm);
   const mm = (value: number) => `${formatMm(value)}mm`;
   return (
     '<!doctype html>' +
@@ -362,7 +517,7 @@ function a4SheetDocument(cellsHtml: string, layout: SheetLayout): string {
     `.sheet{display:grid;grid-template-columns:repeat(${l.columns},${mm(cell.widthMm)});` +
     `grid-auto-rows:${mm(cell.heightMm)};column-gap:${mm(l.columnGapMm)};row-gap:${mm(l.rowGapMm)}}` +
     '.label{display:flex;flex-direction:column;align-items:center;justify-content:center;' +
-    `gap:${small ? '1mm' : '2mm'};padding:${mm(pad)};` +
+    `gap:${mm(small ? SHEET_SMALL_CONTENT_GAP_MM : SHEET_CONTENT_GAP_MM)};padding:${mm(pad)};` +
     (l.outline ? 'border:1px solid #ddd;border-radius:2mm;' : '') +
     'overflow:hidden;break-inside:avoid;text-align:center}' +
     '.label .qr{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center}' +
@@ -373,9 +528,9 @@ function a4SheetDocument(cellsHtml: string, layout: SheetLayout): string {
     // shortfall out of something, and the code is the one thing that reads at any size —
     // left to shrink, the clamped name loses the bottom of its own line to the clip the
     // clamp brings with it, and the label reads "Item" with its descenders sliced off.
-    `.name{flex:none;font-size:${small ? '7pt' : '9pt'};line-height:1.2;word-break:break-word;` +
+    `.name{flex:none;${typeCss(type.namePt, type.lineHeight)};word-break:break-word;` +
     `max-width:100%;font-weight:600;${lineClampCss(LABEL_NAME_MAX_LINES)}}` +
-    `.meta{flex:none;font-size:${small ? '6pt' : '8pt'};line-height:1.2;word-break:break-word;` +
+    `.meta{flex:none;${typeCss(type.metaPt, type.lineHeight)};word-break:break-word;` +
     'max-width:100%;color:#444}' +
     '</style></head>' +
     `<body><div class="sheet">${cellsHtml}</div></body></html>`
@@ -405,21 +560,22 @@ function dieCutDocument(cellsHtml: string, template: LabelTemplate): string {
     '*{box-sizing:border-box}' +
     'body{margin:0;font-family:system-ui,-apple-system,sans-serif;color:#000}' +
     `.label{width:${w}mm;height:${h}mm;display:flex;flex-direction:column;align-items:center;` +
-    `justify-content:center;gap:1mm;padding:${DIE_CUT_CONTENT_INSET_MM}mm;overflow:hidden;` +
+    `justify-content:center;gap:${DIE_CUT_CONTENT_GAP_MM}mm;` +
+    `padding:${DIE_CUT_CONTENT_INSET_MM}mm;overflow:hidden;` +
     'overflow:clip;overflow-clip-margin:content-box;text-align:center;' +
     'break-after:page;break-inside:avoid}' +
     '.label:last-child{break-after:auto}' +
     '.label .qr{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center}' +
     '.label .qr svg{height:100%;width:auto;max-width:100%}' +
     '.label .bc{width:100%}' +
-    '.label .bc svg{width:100%;height:auto;max-height:12mm}' +
+    `.label .bc svg{width:100%;height:auto;max-height:${DIE_CUT_BARCODE_MAX_HEIGHT_MM}mm}` +
     // The QR is the one elastic item: a tall stack of text shrinks *it*, never itself. Without
     // this the flex default shrank a clamped name back below its own two lines, and the label's
     // `overflow:hidden` then cut it mid-line with the ellipsis clipped away as well (#334).
     '.label .name,.label .meta{flex:0 0 auto;max-width:100%}' +
-    `.name{font-size:7pt;line-height:1.15;word-break:break-word;font-weight:600;` +
-    `${lineClampCss(LABEL_NAME_MAX_LINES)}}` +
-    '.meta{font-size:6pt;line-height:1.15;word-break:break-word;color:#333}' +
+    `.name{${typeCss(DIE_CUT_TYPE.namePt, DIE_CUT_TYPE.lineHeight)};word-break:break-word;` +
+    `font-weight:600;${lineClampCss(LABEL_NAME_MAX_LINES)}}` +
+    `.meta{${typeCss(DIE_CUT_TYPE.metaPt, DIE_CUT_TYPE.lineHeight)};word-break:break-word;color:#333}` +
     '</style></head>' +
     `<body>${cellsHtml}</body></html>`
   );

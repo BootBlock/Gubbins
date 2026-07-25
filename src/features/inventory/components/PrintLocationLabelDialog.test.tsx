@@ -62,6 +62,22 @@ describe('PrintLocationLabelDialog — barcode readability (issue #331)', () => 
     expect(screen.queryByTestId('loc-label-barcode-shortened')).toBeNull();
     expect(screen.getByTestId('label-cell').querySelector('svg')).toBeNull();
   });
+
+  it('warns when the label is too small for a scannable QR (issue #330)', () => {
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    // The default A4 grid has plenty of room for the deep-link's code.
+    expect(screen.queryByTestId('loc-label-qr-too-small')).toBeNull();
+
+    // 30 × 15 mm with a name line leaves the QR a few millimetres for 45 modules.
+    chooseOption('loc-label-size', /30 .* 15 mm/);
+    expect(screen.getByTestId('loc-label-qr-too-small')).toBeTruthy();
+    // Still drawn: a QR's payload cannot be shortened the way a barcode's value can, and it
+    // is the only code on the label — so the warning is the whole remedy.
+    expect(screen.getByTestId('label-cell').querySelector('svg')).not.toBeNull();
+
+    chooseOption('loc-label-size', /A4 sheet/);
+    expect(screen.queryByTestId('loc-label-qr-too-small')).toBeNull();
+  });
 });
 
 describe('PrintLocationLabelDialog — die-cut print target (issue #337)', () => {

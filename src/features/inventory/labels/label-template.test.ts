@@ -12,6 +12,7 @@ import {
   LABEL_SIZE_PRESETS,
   LABEL_SIZE_SHEET_ID,
   MIN_BARCODE_MODULE_MM,
+  MIN_QR_MODULE_MM,
   MIN_SHEET_CELL_MM,
   PLAIN_PAPER_SHEET_LAYOUT,
   SHEET_GAP_BOUNDS,
@@ -25,10 +26,13 @@ import {
   clampLabelDimension,
   clampRows,
   fitBarcodeValue,
+  fitQrToSize,
   formatSheetCellSize,
   labelSizeSelection,
+  minQrSizeMm,
   normaliseLabelTemplate,
   normaliseSheetLayout,
+  qrModuleSizeMm,
   sheetCellSizeMm,
   sheetLabelCount,
   sheetLayoutSelection,
@@ -453,5 +457,59 @@ describe('fitBarcodeValue', () => {
       value: 'A1B2C3D4',
       fit: 'shortened',
     });
+  });
+});
+
+describe('printed QR module size (issue #330)', () => {
+  const URL = `https://example.test/Gubbins/#/inventory?item=${ID}`;
+  /** The symbol this deep-link encodes, plus its 4-module quiet zone either side. */
+  const TOTAL_MODULES = 37 + 8;
+
+  it('measures a module across the whole drawn symbol, quiet zone included', () => {
+    // The quiet zone is drawn, so it takes printed width like any other module — measuring
+    // only the data area would report a module a fifth wider than the one that lands on paper.
+    expect(qrModuleSizeMm(URL, 45)).toBeCloseTo(45 / TOTAL_MODULES, 10);
+    // No symbol to measure: the link is past the encoder's ceiling. The *only* `null` case.
+    expect(qrModuleSizeMm('x'.repeat(400), 45)).toBeNull();
+    expect(qrModuleSizeMm(URL, Number.NaN)).toBeNull();
+  });
+
+  it('measures a label with no room left for the code, rather than declining to', () => {
+    // A label whose text has taken every millimetre is the worst case, not an absent
+    // measurement — reporting it as "no measurement" turned the warning off exactly there.
+    expect(qrModuleSizeMm(URL, 0)).toBe(0);
+    expect(qrModuleSizeMm(URL, -5)).toBe(0);
+    expect(fitQrToSize(URL, 0)).toBe('tooSmall');
+    expect(fitQrToSize(URL, -5)).toBe('tooSmall');
+  });
+
+  it('never turns the warning back off as the size keeps shrinking', () => {
+    // The property the zero case broke: once too small, always too small.
+    let seenTooSmall = false;
+    for (let mm = 20; mm >= 0; mm -= 0.25) {
+      const fit = fitQrToSize(URL, mm);
+      if (fit === 'tooSmall') seenTooSmall = true;
+      else expect(seenTooSmall, `fit went back to ok at ${mm} mm`).toBe(false);
+    }
+    expect(seenTooSmall).toBe(true);
+  });
+
+  it('reports the smallest square that clears the readable-module floor', () => {
+    const min = minQrSizeMm(URL)!;
+    expect(min).toBeCloseTo(TOTAL_MODULES * MIN_QR_MODULE_MM, 10);
+    expect(fitQrToSize(URL, min)).toBe('ok');
+    expect(fitQrToSize(URL, min - 0.01)).toBe('tooSmall');
+    expect(minQrSizeMm('x'.repeat(400))).toBeNull();
+  });
+
+  it('calls a link too long to encode "ok" rather than warning about it twice', () => {
+    // There is no QR on that label at all — a different problem the caller already surfaces
+    // as "this link is too long"; reporting it as too small as well would double the warning.
+    expect(fitQrToSize('x'.repeat(400), 5)).toBe('ok');
+  });
+
+  it('is a stricter floor than a 1-D barcode module, as a camera needs', () => {
+    // A phone camera autofocusing at arm's length resolves less than a contact imager does.
+    expect(MIN_QR_MODULE_MM).toBeGreaterThan(MIN_BARCODE_MODULE_MM);
   });
 });

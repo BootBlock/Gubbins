@@ -263,7 +263,7 @@ export function CatalogueScreen() {
       for (const line of group.lines) {
         // Guarded: a deep-link too long to encode (an over-long "Link host") leaves that
         // line without a QR rather than throwing out of this render-time memo.
-        const svg = qrSvgOrNull(buildItemQrUrl(line.id, baseUrl), { scale: 3, margin: 1 });
+        const svg = qrSvgOrNull(buildItemQrUrl(line.id, baseUrl), { scale: 3 });
         if (svg) map.set(line.id, svg);
       }
     }
