@@ -2,11 +2,10 @@
 
 The bridge (a separate Node companion service — see ``bridge/`` in the repo) is the
 **only** data path. The client is read-only by default: it issues GET requests to the four
-documented endpoints. The exceptions are :meth:`GubbinsClient.adjust_quantity` and
-:meth:`GubbinsClient.adjust_gauge`, **opt-in** writes that only work when the bridge itself is
-started with ``GUBBINS_BRIDGE_ALLOW_WRITES=on`` (otherwise the paths 404); they round-trip
-through the app's own sync merge, never a bespoke database write. It uses Home Assistant's
-shared aiohttp session, so the integration adds **no** third-party Python dependency.
+documented endpoints. The exceptions are the four **opt-in** writes below, which only work when
+the bridge itself is started with ``GUBBINS_BRIDGE_ALLOW_WRITES=on`` (otherwise the paths 404);
+they round-trip through the app's own sync merge, never a bespoke database write. It uses Home
+Assistant's shared aiohttp session, so the integration adds **no** third-party Python dependency.
 
 Endpoints (all require ``Authorization: Bearer <token>``):
     GET  /health → { ok, itemCount, snapshotGeneratedAt }
@@ -15,6 +14,13 @@ Endpoints (all require ``Authorization: Bearer <token>``):
     GET  /api/v1/status → { statuses: { "low-stock": n, ... }, snapshotGeneratedAt }
     POST /api/v1/items/<id>/adjust-quantity → updated item (opt-in; see above)
     POST /api/v1/items/<id>/adjust-gauge → updated item (opt-in; see above)
+    POST /api/v1/items/<id>/check-out → { item, checkout } (opt-in; see above)
+    POST /api/v1/items/<id>/check-in → { item, checkout } (opt-in; see above)
+
+The bridge's JSON is camelCase; Home Assistant service fields are snake_case. The mapping
+between the two lives in this module (see :meth:`GubbinsClient.check_out`) so nothing above it
+has to know either convention — and the bridge's *responses* are passed through untouched, so a
+field the bridge adds later reaches an automation without a change here.
 """
 
 from __future__ import annotations
@@ -150,10 +156,12 @@ class GubbinsClient:
     async def adjust_quantity(
         self, item_id: str, delta: int, note: str | None = None
     ) -> dict[str, Any]:
-        """POST /api/v1/items/<id>/adjust-quantity — check a DISCRETE item in or out.
+        """POST /api/v1/items/<id>/adjust-quantity — add to or take from a DISCRETE item.
 
-        ``delta`` > 0 checks stock in, < 0 checks it out. See :meth:`_adjust` for how the
-        change reaches the app.
+        ``delta`` > 0 adds stock, < 0 takes it away. This moves a *number* and nothing else —
+        to record that a particular borrower has something, and get it back, use
+        :meth:`check_out` / :meth:`check_in`. See :meth:`_write` for how the change reaches
+        the app.
         """
         return await self._adjust("adjust-quantity", item_id, delta, note)
 
@@ -169,10 +177,77 @@ class GubbinsClient:
         """
         return await self._adjust("adjust-gauge", item_id, delta, note)
 
+    async def check_out(
+        self,
+        item_id: str,
+        *,
+        contact_name: str | None = None,
+        contact_id: str | None = None,
+        project_id: str | None = None,
+        location_id: str | None = None,
+        quantity: int | None = None,
+        due_date: str | None = None,
+        from_location_id: str | None = None,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        """POST /api/v1/items/<id>/check-out — lend an item out.
+
+        Exactly one borrower is supplied: a contact (by id, or by a name that is created if it
+        matches nobody), a project, or a location such as a van. Which combinations are valid is
+        the app's rule, not this client's — supplying none or several comes back as a clear
+        rejection in the app's own words, so the rule is stated in one place rather than drifting
+        between the two.
+
+        ``due_date`` is a plain calendar day (``yyyy-MM-dd``). The app anchors it at the end of
+        that day locally, so a loan due "the 20th" only counts as overdue once the 20th is over.
+
+        Returns ``{ item, checkout }``: the loan's ``id`` is what :meth:`check_in` names later,
+        and is the id the app's calendar feed embeds in that loan's event ``UID``.
+        """
+        body: dict[str, Any] = {
+            key: value
+            for key, value in (
+                ("contactName", contact_name),
+                ("contactId", contact_id),
+                ("projectId", project_id),
+                ("locationId", location_id),
+                ("quantity", quantity),
+                ("dueDate", due_date),
+                ("fromLocationId", from_location_id),
+                ("note", note),
+            )
+            if value is not None
+        }
+        return await self._write("check-out", item_id, body)
+
+    async def check_in(
+        self, item_id: str, checkout_id: str | None = None, note: str | None = None
+    ) -> dict[str, Any]:
+        """POST /api/v1/items/<id>/check-in — take a lent item back.
+
+        ``checkout_id`` picks which loan to close, and is only needed once the item has more
+        than one open at the same time: with a single open loan the item id alone is
+        unambiguous, which is the case an automation reaching for "that's back now" actually
+        has. Returns ``{ item, checkout }``, the checkout now marked returned.
+        """
+        body: dict[str, Any] = {}
+        if checkout_id is not None:
+            body["checkoutId"] = checkout_id
+        if note is not None:
+            body["note"] = note
+        return await self._write("check-in", item_id, body)
+
     async def _adjust(
         self, action: str, item_id: str, delta: float, note: str | None
     ) -> dict[str, Any]:
-        """Issue one of the bridge's two stock writes, mapping failures to typed errors.
+        """Build the ``{ delta, note? }`` body the two adjust endpoints share."""
+        body: dict[str, Any] = {"delta": delta}
+        if note is not None:
+            body["note"] = note
+        return await self._write(action, item_id, body)
+
+    async def _write(self, action: str, item_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Issue one of the bridge's item writes, mapping failures to typed errors.
 
         The bridge applies the change through the app's own mutation and writes it back into
         the synced snapshot, so the PWA merges it conflict-free on its next sync — no bespoke
@@ -180,9 +255,6 @@ class GubbinsClient:
         ``GUBBINS_BRIDGE_ALLOW_WRITES=on``; otherwise the path is a 404 and
         :class:`GubbinsWritesDisabledError` is raised.
         """
-        body: dict[str, Any] = {"delta": delta}
-        if note is not None:
-            body["note"] = note
         try:
             async with self._session.post(
                 f"{self._base_url}/api/v1/items/{item_id}/{action}",
@@ -193,9 +265,12 @@ class GubbinsClient:
                 if response.status == 401:
                     raise GubbinsAuthError("Bridge rejected the access token")
                 if response.status == 404:
-                    # Either writes are disabled at the bridge, or the item id is unknown.
+                    # Writes are disabled at the bridge, the id (item or loan) is unknown, or
+                    # this bridge is older than the write itself — a 404 is deliberately the
+                    # same answer for all of them, since a disabled capability is invisible
+                    # rather than advertised. The service layer words that for the operator.
                     raise GubbinsWritesDisabledError(
-                        "The bridge has writes disabled or the item was not found"
+                        "The bridge has writes disabled, or the record was not found"
                     )
                 if 400 <= response.status < 500:
                     raise GubbinsRejectedError(await _error_message(response))

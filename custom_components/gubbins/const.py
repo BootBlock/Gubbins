@@ -26,15 +26,26 @@ EVENT_ITEM_LOCATED = "gubbins_item_located"
 # Service that exposes a raw search to automations/dashboards.
 SERVICE_SEARCH = "search"
 
-# Optional write service (check-in / check-out). It only works when the bridge itself is
-# started with GUBBINS_BRIDGE_ALLOW_WRITES=on; otherwise the bridge returns 404 and this
-# surfaces a friendly error. Off at the bridge by default — see bridge/README.md.
+# Optional write service: a signed change to a discrete item's count. It only works when the
+# bridge itself is started with GUBBINS_BRIDGE_ALLOW_WRITES=on; otherwise the bridge returns 404
+# and this surfaces a friendly error. Off at the bridge by default — see bridge/README.md.
+# This moves a number only; lending to a named borrower is SERVICE_CHECK_OUT below.
 SERVICE_ADJUST_QUANTITY = "adjust_quantity"
 
 # The same opt-in write, for the other tracking mode: a signed change to a consumable's
 # gauge (its measured contents — grams of filament, millilitres of resin) rather than to a
 # discrete count. Gated on exactly the same GUBBINS_BRIDGE_ALLOW_WRITES=on opt-in.
 SERVICE_ADJUST_GAUGE = "adjust_gauge"
+
+# Lend an item out, and take it back. Distinct from adjust_quantity, which only moves a number:
+# a loan records *who* has the item and when it is due, which is what makes the "on loan" and
+# "overdue" binary sensors mean anything — and what the calendar feed publishes. Without these
+# an automation could be told a loan was overdue and had no way to close it. Same
+# GUBBINS_BRIDGE_ALLOW_WRITES=on opt-in as the two adjust services, and additionally the token's
+# account needs `checkouts:write` (the app draws the same line between adjusting stock and
+# lending it).
+SERVICE_CHECK_OUT = "check_out"
+SERVICE_CHECK_IN = "check_in"
 
 # How often the optional /health sensor polls the bridge.
 HEALTH_SCAN_INTERVAL = timedelta(minutes=5)

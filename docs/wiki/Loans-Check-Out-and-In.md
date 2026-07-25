@@ -56,7 +56,8 @@ and lot**, so a returned item lands exactly where it belongs rather than in a li
 ## Lending from outside the app
 
 If you run the [[bridge|Bridge-Overview]] and switch its **write-back** on, loans can also be
-opened and closed from outside Gubbins — by a home-automation rule, a script, or an
+opened and closed from outside Gubbins — from
+[[Home Assistant|Home-Assistant-Integration]], a script, or an
 [[AI assistant|AI-Assistant-Query-MCP]]. It behaves exactly as it does in the app: stock leaves
 your available count while the item is out, and a return puts it back in its original location and
 lot. Every one of those is recorded in the [[activity log|Activity-Log]] the same way, so an
@@ -75,3 +76,4 @@ an overdue loan *and* close it once the item is back, rather than only telling y
 - **[[Bookings]]** — reserving items ahead of time.
 - **[[Upcoming agenda|Upcoming-Agenda]]** — due-backs and other deadlines.
 - **[[Bridge overview|Bridge-Overview]]** — lending from an automation or assistant.
+- **[[Home Assistant integration|Home-Assistant-Integration]]** — lending from a smart-home rule.
