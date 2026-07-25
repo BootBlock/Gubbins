@@ -37,7 +37,14 @@ With it off, the list shows as many as it can read at once and tells you how man
 > and any [[backups|Backup-and-Restore]] are yours alone — Gubbins never shares them. See
 > [[Privacy & security|Privacy-and-Security]].
 
+> **💡 Tip**
+> Each of the screen's two lists exports on its own: **Export** beside **On loan** saves who has
+> what and when it's due, and **Export** beside **Contacts** saves the address book with each
+> person's open-loan count. Both cover the whole list, not just the page on screen. See
+> [[Export & import|Export-and-Import]].
+
 ## Related pages
 
 - **[[Loans|Loans-Check-Out-and-In]]** — lending items to a contact.
+- **[[Export & import|Export-and-Import]]** — saving contacts or loans to a file.
 - **[[Bookings|Bookings]]** — reserving items for a contact.

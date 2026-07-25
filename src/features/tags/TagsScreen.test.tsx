@@ -13,6 +13,16 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/components/BrandMark', () => ({ BrandMark: () => <span data-testid="brand-mark" /> }));
 
+// The export menu owns its own download + toast machinery (covered by its own tests) and needs a
+// ToastProvider; here we only care that the screen offers it.
+vi.mock('@/features/export/TabularExportMenu', () => ({
+  TabularExportMenu: ({ disabled, testIdPrefix }: { disabled?: boolean; testIdPrefix: string }) => (
+    <button type="button" data-testid={testIdPrefix} disabled={disabled}>
+      Export
+    </button>
+  ),
+}));
+
 // The global nav has its own suite; stub it so this screen needs no router/alerts context.
 vi.mock('@/components/nav/AppNav', () => ({
   AppNav: () => <button type="button" data-testid="app-nav" aria-label="Navigation menu" />,
@@ -48,6 +58,8 @@ const requestedBrowse: { search?: string; sort?: string }[] = [];
 const requestedCountFilters: string[] = [];
 
 vi.mock('../inventory/tags', () => ({
+  // The export's read-everything walk (issue #132); never invoked here, as the menu is stubbed.
+  readTagDictionaryPage: vi.fn(() => vi.fn()),
   useTagDictionary: (page: number, pageSize: number, browse: { search?: string; sort?: string } = {}) => {
     requestedPages.push({ page, pageSize });
     requestedBrowse.push(browse);
@@ -185,6 +197,25 @@ describe('TagsScreen (issue #84)', () => {
     fireEvent.click(picker);
     // "fragile" is on page 2, yet it must still be offered as a merge target.
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toContain('fragile');
+  });
+});
+
+/**
+ * The tag dictionary can be taken away as a file (issue #132). The menu is stubbed (its download +
+ * toast machinery has its own suite), so these assert what this screen owns: that it offers the
+ * control, and gates it on the dictionary having something in it.
+ */
+describe('TagsScreen — export', () => {
+  it('offers an export for the tag dictionary', () => {
+    dictionaryState = { isLoading: false, isError: false, data: { rows: [tag('a', 'fragile')] } };
+    countState = 1;
+    render(<TagsScreen />);
+    expect(screen.getByTestId('export-tags')).not.toBeDisabled();
+  });
+
+  it('disables it while the dictionary is empty', () => {
+    render(<TagsScreen />);
+    expect(screen.getByTestId('export-tags')).toBeDisabled();
   });
 });
 

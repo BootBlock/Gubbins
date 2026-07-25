@@ -66,6 +66,7 @@ beforeEach(() => {
     scopeTargetId: null,
     includeInactive: false,
     reportKind: 'VALUATION',
+    itemFileFormat: 'csv',
   });
 });
 
@@ -219,5 +220,71 @@ describe('ExportWizard — Location scope', () => {
       'JSON',
       expect.objectContaining({ scope: 'LOCATION', targetId: 'loc-workshop' }),
     );
+  });
+});
+
+describe('ExportWizard — items file format (issue #132)', () => {
+  /** Choose the "Items file" format card, which is what reveals the file-format picker. */
+  function chooseItemsFile() {
+    fireEvent.click(screen.getByRole('button', { name: /Items file/ }));
+  }
+
+  it('offers no file-format picker for the formats that produce one specific artefact', () => {
+    renderWizard();
+    // JSON is selected by default — a versioned data extract with no format choice to make.
+    expect(screen.queryByTestId('export-item-file-format')).not.toBeInTheDocument();
+  });
+
+  it('reveals the file-format picker once the items export is chosen', () => {
+    renderWizard();
+    chooseItemsFile();
+    expect(screen.getByTestId('export-item-file-format')).toBeInTheDocument();
+  });
+
+  it('defaults to CSV — what the items export always produced', () => {
+    renderWizard();
+    chooseItemsFile();
+    expect(screen.getByRole('combobox', { name: 'File format' })).toHaveTextContent('CSV (spreadsheet)');
+  });
+
+  it('offers the same seven formats the BOM and reorder list do', async () => {
+    renderWizard();
+    chooseItemsFile();
+    fireEvent.click(screen.getByTestId('export-item-file-format'));
+    for (const label of [
+      'CSV (spreadsheet)',
+      'TSV (tab-separated)',
+      'Excel workbook (.xlsx)',
+      'JSON',
+      'Markdown table',
+      'HTML (printable)',
+      'Plain text',
+    ]) {
+      expect(await screen.findByRole('option', { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it('carries the chosen file format through to the export', async () => {
+    mockRunExport.mockResolvedValue('gubbins-items-2026-07-25.xlsx');
+    renderWizard();
+    chooseItemsFile();
+
+    fireEvent.click(screen.getByTestId('export-item-file-format'));
+    fireEvent.click(await screen.findByRole('option', { name: 'Excel workbook (.xlsx)' }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('run-export'));
+    });
+
+    expect(mockRunExport).toHaveBeenCalledWith('CSV', expect.objectContaining({ itemFileFormat: 'xlsx' }));
+  });
+
+  it('remembers the chosen file format, like every other wizard setting', async () => {
+    renderWizard();
+    chooseItemsFile();
+    fireEvent.click(screen.getByTestId('export-item-file-format'));
+    fireEvent.click(await screen.findByRole('option', { name: 'Markdown table' }));
+
+    expect(useExportStore.getState().itemFileFormat).toBe('markdown');
   });
 });

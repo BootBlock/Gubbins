@@ -140,6 +140,8 @@ Every route requires `bridge:read` or `bridge:write` — the capability of using
 | `POST /api/v1/items/{id}/check-out` \| `/check-in` | `bridge:write` + `checkouts:write` |
 | `POST /api/v1/snapshot` | `bridge:write` + `sync:write` |
 
+A [`HEAD`](#head-requests) requires exactly what the `GET` of the same route requires.
+
 A few of these are deliberate rather than obvious. The **calendar** feed publishes asset
 bookings, so it is gated on `bookings:read`, not `items:read`. The **syndication feeds** publish
 the Activity Ledger — the audit trail — so they need `audit:view`, which is what makes "only
@@ -208,7 +210,7 @@ How the raw `.sqlite` path works (and why it is safe):
 
 ## HTTP API (read-only)
 
-All endpoints are **GET-only** and require an [API token](#identities--permissions). The contract is stable —
+All endpoints are **reads** and require an [API token](#identities--permissions). The contract is stable —
 the Home Assistant integration depends on it.
 
 These three unversioned paths are **permanent, stable aliases** of their `/api/v1`
@@ -224,7 +226,8 @@ byte-for-byte identical success bodies, so existing consumers keep working uncha
 Status codes: `401` (missing/unknown/revoked token), `403` (valid token, but the owner's role
 does not permit that route — see [Identities & permissions](#identities--permissions)), `400`
 (missing or over-long `q`, max 200 chars),
-`404` (unknown path), `405` (non-GET), `429` (rate-limited — see [below](#rate-limiting)),
+`404` (unknown path), `405` (a method other than `GET`, `HEAD` or `OPTIONS` — see
+[HEAD requests](#head-requests)), `429` (rate-limited — see [below](#rate-limiting)),
 `503` (no snapshot loaded yet — so no identity can be resolved either — with a `Retry-After`),
 `500` (generic — never leaks
 internals). A `POST` that declares a `Content-Type` other than `application/json` is
@@ -232,6 +235,25 @@ refused with `415` rather than having its body read as JSON. `q` accepts the
 app's full search grammar (`field:value`, `cap:key>n`, `AND`/`OR`/parentheses) as well as a
 casual phrase like `M3 screws`. The unversioned paths keep a flat `{ "error": "<message>" }`
 body; the versioned API uses the structured envelope described next.
+
+### HEAD requests
+
+Every read answers `HEAD` as well as `GET` (RFC 9110 §9.1). The response is the one the `GET`
+would have produced — same status, same headers, including the `Content-Length` of the content
+that was withheld — with no body. Nothing else differs: the same token, permissions and rate
+limit apply, so a `HEAD` of a route your role cannot reach is still a `403`.
+
+That matters for **subscription clients**: Outlook and several CalDAV/webcal apps `HEAD` a
+[calendar subscription](#calendar-subscription) URL to test it before they will accept a
+subscription, and feed readers probe the [syndication feeds](#feeds--metrics) the same way — the
+`Content-Length` tells them whether anything changed before they spend a download on it. A probe
+may also carry the validators from a previous response and get a `304` back; see
+[Conditional requests](#conditional-requests-etag--304).
+
+The one exception is the [SSE event stream](#sse-event-stream): a `HEAD` of `/api/v1/events`
+reports the media type the stream serves and returns immediately rather than opening a stream. It
+carries no `Content-Length` (the content is unbounded), and never the `429` a `GET` gives when the
+concurrent-stream cap is reached — a probe takes no slot, so it reports the endpoint, not the queue.
 
 ### Snapshot freshness and health
 
@@ -280,7 +302,7 @@ read-only REST API under `/api/v1`. It is **purely additive** — it does not ch
 the three paths above — and is described by a committed [OpenAPI 3 spec](#openapi-spec).
 Same auth ([per-user API token](#identities--permissions)) and same per-IP
 [rate limit](#rate-limiting) as everything else;
-every endpoint is **GET-only** and strictly read-only.
+every endpoint is a **`GET`** (or [`HEAD`](#head-requests)) and strictly read-only.
 
 ### Conventions
 
@@ -319,7 +341,7 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
 | `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=&fields=&include=&$orderby=&$filter=` | Paginated item summaries (`ItemSummary`). Supports [field selection](#field-selection--extended-fields) and [OData-style options](#odata-style-query-options) (`$orderby`, `$filter`, …). |
-| `GET /api/v1/items/{id}?fields=&include=` | One item with `placements` and `capabilities` (`ItemDetail`); `404` if unknown. Supports [field selection](#field-selection--extended-fields), including `include=fields` for [custom-field values](#custom-field-values-includefields). |
+| `GET /api/v1/items/{id}?fields=&include=` | One item with `placements`, `capabilities` and `tags` (`ItemDetail`); `404` if unknown. Supports [field selection](#field-selection--extended-fields), including `include=fields` for [custom-field values](#custom-field-values-includefields). |
 | `GET /api/v1/locations?limit=&offset=&fields=&include=` | Paginated locations with live item counts (`Location`). `include=fields` adds each location's [custom-field values](#custom-field-values-includefields). |
 | `GET /api/v1/locations/{id}?fields=&include=` | One location; `404` if unknown. `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
 | `GET /api/v1/categories?limit=&offset=` | Paginated categories with field counts (`CategorySummary`). |
@@ -412,7 +434,7 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 | --- | --- |
 | `/search` | `id, name, quantity, locationName, mpn, manufacturer` |
 | `/items` | the above + `isUnlimited, locationId, categoryId, trackingMode, isActive` (`ItemSummary`) |
-| `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNumber, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities` (`ItemDetail`) |
+| `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNumber, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities, tags` (`ItemDetail`) |
 
 > **Unlimited supply.** An item marked _unlimited_ (an effectively infinite source — tap water,
 > mains air) reports `isUnlimited: true` and its `quantity` as **`null`** (JSON has no `Infinity`);
@@ -420,23 +442,25 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 
 **Full field vocabulary** (nameable in `fields`, or in `include` when extended): `id`, `name`,
 `quantity`, `isUnlimited`, `locationId`, `locationName`, `categoryId`, `categoryName`, `mpn`, `manufacturer`,
-`trackingMode`, `isActive`, `description`, `notes`, `condition`, `serialNumber`, `serialNo`, `parentId`,
-`unitCost`, `purchasePrice`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
-`warrantyExpiresAt`, `depreciationMonths`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
+`trackingMode`, `isActive`, `description`, `notes`, `condition`, `barcode`, `isFavourite`,
+`serialNumber`, `serialNo`, `parentId`,
+`unitCost`, `purchasePrice`, `currentValue`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
+`warrantyExpiresAt`, `depreciationMonths`, `deadStockMode`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
 `operationalMetadata`, `gauge`, `createdAt`, `updatedAt`, `placements` (nestable:
 `locationId, locationName, quantity`), `capabilities` (nestable: `key, valueNum, valueText, weight`),
-`fieldValues` (nestable: `name, fieldType, value, source, inheritedFrom` — see
+`tags` (a flat array of tag **names**, so not nestable), `fieldValues` (nestable:
+`name, fieldType, value, source, inheritedFrom` — see
 [Custom-field values](#custom-field-values-includefields)).
 
 **Include groups** (aliases usable in `include`): `relations` (placements + capabilities +
-categoryName), `pricing` (unitCost + purchasePrice), `lifecycle` (acquiredAt + warrantyExpiresAt +
-purchasePrice + depreciationMonths), `reorder` (the three reorder fields), `timestamps`
-(createdAt + updatedAt), `fields` (fieldValues), and `all` (every extended field).
+categoryName + tags), `pricing` (unitCost + purchasePrice + currentValue), `lifecycle` (acquiredAt +
+warrantyExpiresAt + purchasePrice + depreciationMonths), `reorder` (the three reorder fields),
+`timestamps` (createdAt + updatedAt), `fields` (fieldValues), and `all` (every extended field).
 
 An unknown field or include name is a `400 bad_request` whose message lists the valid vocabulary;
 an over-long selection is likewise rejected. Relational fields are resolved **lazily** — a
-projection that doesn't select `placements`/`capabilities`/`categoryName` never incurs their extra
-read. The unversioned `/search` and `/where` aliases are deliberately **frozen** (no field
+projection that doesn't select `placements`/`capabilities`/`tags`/`categoryName` never incurs their
+extra read. The unversioned `/search` and `/where` aliases are deliberately **frozen** (no field
 selection) so their long-standing contract never changes; use the `/api/v1` twins for shaping.
 
 ```bash
@@ -444,6 +468,30 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/search?q=M3%20screw&fields=name,un
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items/item-esp32?include=all"
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items?fields=id,name,quantity"
 ```
+
+### Tags (`include=tags`)
+
+Gubbins lets you tag items freely (`fragile`, `workshop`, `expo-2026`). Those tags come back as a
+flat array of **names** on the item endpoints, ordered by name:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items/item-esp32"           # tags are in the detail payload
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?include=tags"         # add them to a list
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$filter=tag eq 'fragile'&\$select=id,name,tags"
+```
+
+```json
+{ "id": "item-esp32", "name": "ESP32 Dev Board", "tags": ["fragile", "workshop"] }
+```
+
+A tag **is** its name — the dictionary is keyed by it, case-insensitively — so a value here can be
+fed straight back into a `$filter` as `tag eq '<name>'`. They are the item's *own* tags: a tag on
+its location is a property of that location, exactly as the app's own search reads it. An untagged
+item reports `[]`, never a missing field.
+
+> **ℹ️ Note** `tags` is part of the `/items/{id}` **default** payload (beside `placements` and
+> `capabilities`) but opt-in on the list endpoints, where reading the join for every row would be a
+> cost you didn't ask for. Use `include=tags` (or `include=relations`) there.
 
 ### Custom-field values (`include=fields`)
 
@@ -544,12 +592,45 @@ semantics and has no injection surface — it is **never** bespoke SQL). Support
 - the `contains(field, 'text')` function (free-text, FTS-backed)
 - boolean composition with `and`, `or`, `not`, and parentheses
 - literals: single-quoted strings (`''` escapes a quote), numbers, `true`/`false`
-- filterable fields: `name`, `description`, `notes`, `mpn`, `manufacturer`, `serialNumber`, `quantity`,
-  `category`(`Id`), `location`(`Id`)
+- filterable fields: **every scalar field the app's own search can filter on**, plus tags — so no
+  *column* you can search on in Gubbins is unreachable here. (The app's `cap:<key>` and
+  `field:<name>` predicates, over parametric capabilities and custom fields, have no `$filter`
+  spelling; read those with `include=capabilities` / `include=fields` instead.) Field names are
+  case-insensitive, and each is accepted by the app's short name *and* the camel-cased property
+  name the read model publishes:
+
+  | Kind | Fields |
+  | --- | --- |
+  | Text (FTS-backed `contains`) | `name`, `description`, `notes`, `mpn`, `manufacturer`, `barcode`, `serialNumber` (`serial`) |
+  | Ids (exact match) | `categoryId` (`category`), `locationId` (`location`) |
+  | Numbers | `quantity`, `weight` (grams), `width`/`height`/`depth` (mm), `reorderPoint` (`reorder`) |
+  | Flags | `isFavourite` (`favourite`), `isActive` (`active`) |
+  | Enums | `condition`, `trackingMode` (`tracking`), `deadStockMode` (`deadstock`) |
+  | Dates (quoted `'YYYY-MM-DD'`) | `expiryDate` (`expiry`), `warrantyExpiresAt` (`warranty`) |
+  | Money (major units) | `unitCost` (`cost`), `purchasePrice` (`price`), `currentValue` (`value`) |
+  | Tags | `tags` (`tag`) |
+
+  Weight and the dimensions are compared in their canonical units (grams, millimetres), not your
+  display units, and money in the base currency's **major** units — `unitCost gt 10` is ten
+  pounds/dollars, not ten of the micro-units the column stores. A date must be a *quoted*
+  `'YYYY-MM-DD'`: this subset has no unquoted `Edm.Date` literal.
+
+  Every filterable field is also **readable**, so a query can always return what it filtered by —
+  under the spelling that matches its JSON property name (the unparenthesised one above), which is
+  what `fields`/`$select` takes. The parenthesised names are the app's own search aliases and are
+  accepted by `$filter` only: it is `$filter=unitCost gt 10` *or* `$filter=cost gt 10`, but always
+  `$select=unitCost`. A test enforces that pairing, so a filterable field can never be one you
+  cannot read back.
+
+  `tag` compares against a tag **name** and matches when **any** of the item's tags does, so
+  `tag eq 'fragile'` finds that exact tag (case-insensitively) and `contains(tag,'expo')` any tag
+  containing "expo". Combine it with `not` for the absence: `not (tag eq 'fragile')`. There are no
+  lambdas here, so `tags/any(…)` is not the spelling.
 
 Anything outside the subset (`ge`/`le`, `startswith`/`endswith`, arithmetic, lambdas, an unknown
-field) is a `400` naming what *is* supported. When `$filter` is present it is the sole row filter,
-so the `location`/`category`/`$search` query params are ignored.
+field) is a `400` naming what *is* supported, as is an operator a field doesn't accept (ordering
+comparisons on a text column, say). When `$filter` is present it is the sole row filter, so the
+`location`/`category`/`$search` query params are ignored.
 
 `not` binds to the single term or bracket that follows it, and `ne` is simply `not … eq …`. Both
 inherit the app's reading of absence on the nullable fields: `manufacturer ne 'Acme'` **includes**
@@ -571,6 +652,11 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$orderby=quantity desc&\$to
 # Everything with more than ten in stock whose name contains "bolt", names only, with the total:
 curl -H "Authorization: Bearer $TOKEN" \
   "$BASE/items?\$filter=quantity gt 10 and contains(name,'bolt')&\$select=name&\$count=true"
+
+# A barcode (GTIN) lookup, and everything tagged "fragile" that isn't a favourite:
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$filter=barcode eq '5012345678900'"
+curl -H "Authorization: Bearer $TOKEN" \
+  "$BASE/items?\$filter=tag eq 'fragile' and isFavourite eq false"
 
 # Just the number of ESP32-ish items, and the metadata document:
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items/\$count?\$search=esp32"
@@ -755,6 +841,8 @@ curl -sD- -o/dev/null -H "Authorization: Bearer $TOKEN" \
   no shared or intermediary cache may keep a copy.
 - Nothing is required of a client: one that sends no conditional header gets the full document
   exactly as before. A Prometheus scrape, for instance, simply ignores the validators.
+- A [`HEAD`](#head-requests) revalidates identically — same `304`, same validators — so a client
+  that probes rather than fetches gets the cheap answer too.
 
 ### OpenAPI spec
 
@@ -898,7 +986,7 @@ content and a machine-usable `structuredContent`:
 | --- | --- | --- |
 | `gubbins_search` | `q` (required), `limit?`, `fields?`, `include?` | Relevance-ranked compact matches (top-N, max 25). Accepts a casual phrase or the power-user grammar (`cap:key>n`, `AND`/`OR`, …). `fields`/`include` [shape the result](#field-selection--extended-fields). |
 | `gubbins_where_is` | `q` (required), `limit?` | The top matches with their per-location breakdown plus one spoken British-English sentence. |
-| `gubbins_get_item` | `id` (required), `fields?`, `include?` | One item with `placements` and `capabilities`; `{ found: false }` if unknown. `fields`/`include` [shape the result](#field-selection--extended-fields); `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
+| `gubbins_get_item` | `id` (required), `fields?`, `include?` | One item with `placements`, `capabilities` and `tags`; `{ found: false }` if unknown. `fields`/`include` [shape the result](#field-selection--extended-fields); `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
 | `gubbins_list_locations` | `limit?`, `offset?`, `fields?`, `include?` | Paginated locations with live item counts. `include=fields` adds each location's [custom-field values](#custom-field-values-includefields). |
 | `gubbins_list_categories` | `limit?`, `offset?` | Paginated categories with field counts. |
 | `gubbins_list_capabilities` | `limit?`, `offset?` | The distinct `cap:` vocabulary you can filter on. |
@@ -1753,6 +1841,7 @@ parameter — see their sections):
 | --- | --- | --- | --- |
 | REST API + discovery/OpenAPI | `GET /health`, `/search`, `/where`, `/api/v1/*` | `bridge:read` + the route's subject | Read-only; field-selection + OData-style options. See [what each route requires](#what-each-route-requires). |
 | Custom-field values | `GET /api/v1/{items,locations}…?include=fields` | as the underlying route | Read-only; **opt-in per request** — your custom fields are returned only when a caller asks with `include=fields`, never in a default payload. |
+| Item tags | `GET /api/v1/items/{id}`, and `…/items?include=tags` | as the underlying route (`items:read`) | Read-only tag **names**, gated exactly as the item's `capabilities` and custom-field values are — an item's tags travel with the item, and the app likewise shows them to anyone who can read it. Unlike custom-field values they *are* in the item-detail default payload (a tag is part of what an item is), but they stay opt-in on the list endpoints. |
 | CSV export | `GET /api/v1/items.csv` | `bridge:read` + `items:read` | Refreshable spreadsheet pull. |
 | Calendar subscription | `GET /api/v1/calendar.ics` | `bridge:read` + `bookings:read` | `?token=` accepted (calendar clients can't send headers). |
 | Syndication feeds | `GET /api/v1/activity.{rss,atom,json}` | `bridge:read` + `audit:view` | `?token=` accepted. The feeds publish the audit trail, hence `audit:view`. |

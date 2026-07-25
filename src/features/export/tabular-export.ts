@@ -260,6 +260,15 @@ export interface TabularExportResult {
   readonly mimeType: string;
   /** File-name extension (no dot). */
   readonly extension: string;
+  /**
+   * A caveat about the file that must reach the user, appended to the success toast — in
+   * practice, "this list was too long to read in full, so the file stops short" (the
+   * `readAllPages` ceiling). The document `caption` can only say so in the formats that have
+   * one (HTML, plain text), and CSV — the most-used format of the set — has nowhere to put it,
+   * so the toast is the one channel every format shares. Omitted when the export is complete,
+   * which is the overwhelmingly common case.
+   */
+  readonly notice?: string;
 }
 
 export interface TabularDocumentMeta {

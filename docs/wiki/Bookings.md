@@ -46,8 +46,14 @@ your calendar via the [[iCal feed|Webhooks-MQTT-and-iCal]].
 > physically out now. A booking typically becomes a loan when the contact actually collects the
 > item.
 
+> **💡 Tip**
+> **Export** saves the whole booking list as a spreadsheet or a table — a reservation schedule to
+> circulate, or to check against a diary. Each row carries the asset, who it's for, the booked days
+> and its status. See [[Export & import|Export-and-Import]].
+
 ## Related pages
 
 - **[[Loans|Loans-Check-Out-and-In]]** — checking a reserved item out when it's collected.
+- **[[Export & import|Export-and-Import]]** — saving the booking list to a file.
 - **[[Contacts]]** — who a booking is for.
 - **[[Upcoming agenda|Upcoming-Agenda]]** — bookings alongside everything else due.

@@ -181,7 +181,7 @@ describe('GET /api/v1/items', () => {
 });
 
 describe('GET /api/v1/items/{id}', () => {
-  it('returns full detail with placements and capabilities', async () => {
+  it('returns full detail with placements, capabilities and tags', async () => {
     const res = await get('/api/v1/items/item-esp32');
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -191,6 +191,8 @@ describe('GET /api/v1/items/{id}', () => {
       locationName: 'Shelf 2',
       categoryName: 'Electronics',
       quantity: 7,
+      // Tag names, ordered by name — part of the default detail payload (issue #143).
+      tags: ['fragile', 'workshop'],
     });
     const byLocation = new Map(body.placements.map((p: any) => [p.locationName, p.quantity]));
     expect(byLocation.get('Shelf 2')).toBe(5);
@@ -339,6 +341,51 @@ describe('OData-style query options', () => {
     const body = await json("/api/v1/items?$filter=contains(name,'M3')&$select=name&$orderby=name");
     expect(body.data.map((i: any) => i.name)).toEqual(['M3 Nylon Washer', 'M3 x 10 Hex Bolt']);
     for (const row of body.data) expect(Object.keys(row)).toEqual(['name']);
+  });
+
+  it('$filter reaches the tag surface the app already had (issue #143)', async () => {
+    const exact = await json("/api/v1/items?$filter=tag eq 'workshop'&$select=id");
+    expect(exact.data).toEqual([{ id: 'item-esp32' }]);
+
+    // Substring, via the plural spelling; and the negated form for "carries no such tag".
+    const partial = await json("/api/v1/items?$filter=contains(tags,'frag')&$select=id");
+    expect(partial.data).toEqual([{ id: 'item-esp32' }]);
+
+    const without = await json("/api/v1/items?$filter=tag ne 'workshop'&$select=id");
+    expect(without.data.map((r: any) => r.id)).not.toContain('item-esp32');
+    expect(without.pagination.count).toBe(3);
+  });
+
+  it('$filter reaches barcode and the favourite flag (the drifted fields)', async () => {
+    // Nothing in the fixture carries either, so these assert the query is *accepted* and
+    // answered — the drift made them a 400 naming them as unfilterable.
+    const barcode = await json("/api/v1/items?$filter=barcode eq '5012345678900'");
+    expect(barcode.pagination.count).toBe(0);
+    const favourite = await json('/api/v1/items?$filter=favourite eq true');
+    expect(favourite.pagination.count).toBe(0);
+    const notFavourite = await json('/api/v1/items?$filter=isFavourite eq false&$select=id');
+    expect(notFavourite.pagination.count).toBe(4);
+  });
+
+  it('$filter reads money in major units and dates as a quoted day', async () => {
+    // unitCost is null throughout the fixture, so the point is that both compile and run
+    // rather than 400 — a money value is scaled to micro-units before it is bound.
+    expect((await get('/api/v1/items?$filter=unitCost gt 10')).status).toBe(200);
+    expect((await get("/api/v1/items?$filter=expiryDate lt '2026-03-01'")).status).toBe(200);
+    // An unquoted date is not an OData literal this subset understands.
+    expect((await get('/api/v1/items?$filter=expiryDate lt 2026-03-01')).status).toBe(400);
+  });
+
+  it('400s (never 500s) a prototype key as a $filter field', async () => {
+    const res = await get("/api/v1/items?$filter=constructor eq 'x'");
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('bad_request');
+  });
+
+  it('400s (never 500s) a prototype key as an include group', async () => {
+    const res = await get('/api/v1/items/item-esp32?include=toString');
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toContain('toString');
   });
 
   it('400s an unsupported $filter operator, unknown field, and bad $orderby', async () => {

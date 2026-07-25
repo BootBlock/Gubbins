@@ -5,8 +5,16 @@ import { ExportIcon, ImportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/co
 import { getItemRepository, getLocationRepository, getProjectRepository } from '@/db/repositories';
 import { buildItemLocationOptions } from '@/features/inventory/parent-options';
 import { useFormatters } from '@/lib/useFormatters';
+import { useT, type MessageKey } from '@/features/i18n';
 import { runExport } from './run-export';
-import { useExportStore, type ExportFormat, type ExportScope, type ReportExportKind } from './useExportStore';
+import type { TabularExportFormat } from './tabular-export';
+import {
+  ITEM_FILE_FORMATS,
+  useExportStore,
+  type ExportFormat,
+  type ExportScope,
+  type ReportExportKind,
+} from './useExportStore';
 import { useErrorMessage } from '@/features/errors';
 
 /**
@@ -28,14 +36,33 @@ import { useErrorMessage } from '@/features/errors';
  * — via `initialLocationId` — is auto-selected when the calling screen has a location in
  * view, so opening Export defaults to what's currently on screen instead of last time's scope.
  */
-const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof ExportIcon }[] = [
+const FORMATS: {
+  value: ExportFormat;
+  label: string;
+  hint: string;
+  /** Catalog keys, where the card's copy has been converted; the literals are the fallback. */
+  labelKey?: MessageKey;
+  hintKey?: MessageKey;
+  icon: typeof ExportIcon;
+}[] = [
   {
     value: 'JSON',
     label: 'JSON data export',
     hint: 'Items, contacts & loans for use in other tools — Gubbins cannot import this file back. For a restorable backup, use Sync → Backup & restore.',
     icon: ExportIcon,
   },
-  { value: 'CSV', label: 'Items CSV', hint: 'Spreadsheet of the selected items.', icon: PackageIcon },
+  {
+    value: 'CSV',
+    // Translated (issue #132), unlike its neighbours: this card's copy changed in the same
+    // change that added the translated file-format picker below it, and an English card sitting
+    // over a German picker — telling the reader to "pick the file format below" — is worse than
+    // either state on its own. The rest of the wizard is still awaiting conversion.
+    label: 'Items file',
+    labelKey: 'export.items.card.label',
+    hint: 'The selected items as a spreadsheet, a table or plain text — pick the file format below.',
+    hintKey: 'export.items.card.hint',
+    icon: PackageIcon,
+  },
   {
     value: 'VAULT',
     label: 'Markdown vault',
@@ -55,6 +82,21 @@ const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof 
     icon: ImportIcon,
   },
 ];
+
+/**
+ * Catalog key per items file format (issue #132). A lookup rather than a template so every key
+ * is a literal the `MessageKey` union checks — a format added to `ITEM_FILE_FORMATS` without a
+ * catalog entry fails to compile rather than rendering a raw key.
+ */
+const ITEM_FILE_FORMAT_LABEL_KEY: Record<TabularExportFormat, MessageKey> = {
+  csv: 'export.items.format.csv',
+  tsv: 'export.items.format.tsv',
+  xlsx: 'export.items.format.xlsx',
+  json: 'export.items.format.json',
+  markdown: 'export.items.format.markdown',
+  html: 'export.items.format.html',
+  txt: 'export.items.format.txt',
+};
 
 const SCOPES: { value: ExportScope; label: string }[] = [
   { value: 'ALL', label: 'Whole inventory' },
@@ -99,12 +141,15 @@ export function ExportWizard({
     scopeTargetId,
     includeInactive,
     reportKind,
+    itemFileFormat,
     setFormat,
     setScope,
     setScopeTargetId,
     setIncludeInactive,
     setReportKind,
+    setItemFileFormat,
   } = useExportStore();
+  const t = useT();
   const formatters = useFormatters();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
@@ -124,6 +169,8 @@ export function ExportWizard({
   // CATALOG_CSV always exports the whole catalogue — no scope picker needed.
   const isCatalogCsv = format === 'CATALOG_CSV';
   const hasScope = !isReport && !isCatalogCsv;
+  // The items export is the one format that also picks a *file* format (issue #132).
+  const isItemsFile = format === 'CSV';
 
   const itemList = useQuery({
     queryKey: ['export', 'item-picker'],
@@ -156,6 +203,7 @@ export function ExportWizard({
         scope,
         targetId: scopeTargetId,
         reportKind,
+        itemFileFormat,
       });
       setDone(filename);
     } catch (e) {
@@ -188,8 +236,10 @@ export function ExportWizard({
               >
                 <Icon className={selected ? 'text-primary' : 'text-muted-foreground'} />
                 <span className="flex-1">
-                  <span className="block text-sm font-medium">{f.label}</span>
-                  <span className="block text-xs text-muted-foreground">{f.hint}</span>
+                  <span className="block text-sm font-medium">{f.labelKey ? t(f.labelKey) : f.label}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {f.hintKey ? t(f.hintKey) : f.hint}
+                  </span>
                 </span>
               </button>
             );
@@ -213,6 +263,35 @@ export function ExportWizard({
               data-testid="export-report-kind"
               options={REPORT_KINDS.map((r) => ({ value: r.value, label: r.label }))}
             />
+          </div>
+        ) : null}
+
+        {/*
+         * File format for the items export (issue #132) — shown only for that format, because it
+         * is the only one of the five with a choice to make. The other four each produce one
+         * specific artefact (a versioned JSON extract, a zipped vault, a report CSV, a
+         * round-trippable catalogue CSV) whose shape is the point of choosing it.
+         */}
+        {isItemsFile ? (
+          <div className="space-y-field-gap-compact">
+            <span
+              id="export-item-file-format-label"
+              className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              {t('export.items.fileFormat.label')}
+            </span>
+            <Select
+              id="export-item-file-format"
+              aria-labelledby="export-item-file-format-label"
+              value={itemFileFormat}
+              onChange={(value) => setItemFileFormat(value as TabularExportFormat)}
+              data-testid="export-item-file-format"
+              options={ITEM_FILE_FORMATS.map((value) => ({
+                value,
+                label: t(ITEM_FILE_FORMAT_LABEL_KEY[value]),
+              }))}
+            />
+            <p className="text-xs text-muted-foreground">{t('export.items.fileFormat.hint')}</p>
           </div>
         ) : null}
 

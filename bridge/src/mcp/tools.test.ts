@@ -122,15 +122,17 @@ describe('gubbins_where_is', () => {
 });
 
 describe('gubbins_get_item', () => {
-  it('returns full detail with placements and capabilities for a known id', async () => {
+  it('returns full detail with placements, capabilities and tags for a known id', async () => {
     const result = (await run('gubbins_get_item', { id: 'item-esp32' })) as {
       found: boolean;
-      item: { id: string; placements: unknown[]; capabilities: unknown[] };
+      item: { id: string; placements: unknown[]; capabilities: unknown[]; tags: string[] };
     };
     expect(result.found).toBe(true);
     expect(result.item.id).toBe('item-esp32');
     expect(result.item.placements.length).toBeGreaterThan(0);
     expect(result.item.capabilities.length).toBeGreaterThan(0);
+    // An assistant asked "is this fragile?" can only answer from the tags (issue #143).
+    expect(result.item.tags).toEqual(['fragile', 'workshop']);
   });
 
   it('reports found:false for an unknown id (not an error)', async () => {

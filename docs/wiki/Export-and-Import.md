@@ -12,6 +12,9 @@ Get your data out in whichever form suits:
 
 - **JSON data export** — your items, contacts and loans as one structured file, for scripts and
   other tools.
+- **Items file** — the selected items as **CSV**, **TSV**, an **Excel workbook (.xlsx)**, **JSON**,
+  a **Markdown** table, a printable **HTML** page or **plain text**. Pick the file format under the
+  format cards; whichever you choose is remembered for next time.
 - **Markdown vault** — a folder of readable Markdown files (one per item), with **full-resolution
   images** extracted alongside. Great for archiving or reading outside Gubbins.
 - **Raw `.sqlite`** — the database file itself, for anyone who wants the data directly.
@@ -28,13 +31,40 @@ defaults to exporting that location, so **Export** starts from whatever you're l
 > [[Backup & restore|Backup-and-Restore]] instead. If you want a round-trip through a
 > spreadsheet, the **Catalogue CSV** re-imports without any manual column mapping.
 
-A [[project's bill of materials|Projects-and-BOM]] and the
-[[reorder / shopping list|Reorder-and-Shopping-List]] each export on their own, straight from
-where you're working — as **CSV**, **TSV**, an **Excel workbook (.xlsx)**, **JSON**, a **Markdown**
-table, a printable **HTML** page, or **plain text** — for sharing, ordering or printing a parts
-list. The BOM adds a grouped **EDA BOM (CSV)** for electronics tools like KiCad. The spreadsheet
-formats load on demand the first time you use them, so they never slow the app down; once you've
-[[installed Gubbins|Installing-Gubbins]], they're cached for offline use too.
+### Exporting a list from where you're working
+
+Most lists export on their own, straight from the screen you're on, without going near the wizard.
+Look for the **Export** button and pick a format — **CSV**, **TSV**, an **Excel workbook (.xlsx)**,
+**JSON**, a **Markdown** table, a printable **HTML** page, or **plain text**:
+
+| List | Where | What the file holds |
+| --- | --- | --- |
+| [[Activity\|Activity-Log]] | Activity | Every change, with the item, what happened and any quantity or value movement |
+| [[Alerts]] | Alert centre | The alerts you can currently see, with their urgency and due date |
+| [[On loan\|Loans-Check-Out-and-In]] | Contacts & borrowing | Who has what, how many, when it went out and when it's due |
+| [[Contacts]] | Contacts & borrowing | Names, contact details and how many items each person has out |
+| [[Bookings]] | Bookings | Which asset is reserved for whom, over which days, and its status |
+| [[Purchase orders\|Purchase-Orders]] | Purchase orders | One row per order — supplier, reference, status, quantities and total |
+| [[Tags\|Tags-Attachments-and-Related-Items]] | Tags | Every tag and how many items and locations use it |
+| [[Bill of materials\|Projects-and-BOM]] | A project | Every BOM line, plus a grouped **EDA BOM (CSV)** for tools like KiCad |
+| [[Reorder list\|Reorder-and-Shopping-List]] | Purchase orders → Reorder | What to buy, grouped by supplier |
+| [[Insurance schedule\|Insurance-and-Estate-Schedule]] | Reports → Insurance schedule | Every asset with its room, condition and replacement value |
+
+The spreadsheet formats load on demand the first time you use them, so they never slow the app
+down; once you've [[installed Gubbins|Installing-Gubbins]], they're cached for offline use too.
+
+> **ℹ️ Note** An export always contains the **whole** list, not the page of it you happen to be
+> looking at — so paging through a long list first is unnecessary, and turning
+> [[pagination|Inventory-Views]] on or off makes no difference to the file. Filters *do* apply: the
+> Activity export covers the kinds you have selected, and the Alerts export leaves out anything
+> you've snoozed or dismissed, so the file matches what's in front of you. If a list is ever too
+> long to read in one go, Gubbins says so when the file saves rather than handing you a short file
+> that looks complete.
+
+> **💡 Tip** Dates and times in an exported file are written in the international
+> `YYYY-MM-DD` form rather than your local format, so a file stays unambiguous whoever opens it
+> and wherever they are. Prices and quantities stay plain numbers for the same reason — your
+> spreadsheet formats them however you prefer.
 
 > **💡 Tip** The **HTML** page opens straight in a browser and follows your system's light or
 > dark appearance on screen, but always prints as black text on white paper — so a printout is

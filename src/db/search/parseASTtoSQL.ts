@@ -67,8 +67,11 @@ const CUSTOM_FIELD_PREFIX = 'field:';
  * name and the field identifier is the bare word. It lowers to an EXISTS over
  * `item_tags ⋈ tags`, the same shape the capability/custom-field predicates use, so an item
  * matches when *any* of its tags satisfies the comparison.
+ *
+ * Exported alongside {@link ITEM_FIELD_NAMES} so a second surface that offers this vocabulary
+ * (the bridge's OData `$filter` map) can be checked against it rather than restating it.
  */
-const TAG_FIELD = 'tag';
+export const TAG_FIELD = 'tag';
 
 /**
  * How a scalar item column is compared.
@@ -162,6 +165,18 @@ const ITEM_FIELDS: Readonly<Record<string, ItemFieldMeta>> = {
   // {@link astFiltersActiveFlag}.
   active: { column: 'items.is_active', kind: 'boolean' },
 };
+
+/**
+ * Every scalar field name {@link ITEM_FIELDS} accepts — the AST's own item vocabulary, as a list.
+ *
+ * Exported because this vocabulary is offered by more than one surface: besides the app's own
+ * search grammar, the bridge maps OData `$filter` property names onto these very names
+ * (`bridge/src/api/odata-filter.ts`). That map is a parallel exhaustive list, and it *had* drifted
+ * — `barcode` and `favourite` were filterable in the app but not over the API (issue #143). A
+ * drift test over this list and that map now fails the build rather than review, so the two can
+ * only be extended together.
+ */
+export const ITEM_FIELD_NAMES: readonly string[] = Object.keys(ITEM_FIELDS);
 
 /** The `active` field name, shared with {@link astFiltersActiveFlag} so the two can't drift. */
 const ACTIVE_FIELD = 'active';

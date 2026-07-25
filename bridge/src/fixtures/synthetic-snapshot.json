@@ -86,10 +86,17 @@
     "capabilities": [
       { "id": "cap-esp32-voltage", "item_id": "item-esp32", "key": "voltage", "value_num": 3.3, "value_text": null, "weight": 2.0, "updated_at": 1751000000000 },
       { "id": "cap-esp32-cores", "item_id": "item-esp32", "key": "cores", "value_num": 2, "value_text": null, "weight": 1.0, "updated_at": 1751000000000 }
+    ],
+    "tags": [
+      { "id": "tag-workshop", "name": "workshop", "updated_at": 1751000000000 },
+      { "id": "tag-fragile", "name": "fragile", "updated_at": 1751000000000 }
     ]
   },
   "tombstones": [],
   "gaugeHistory": [],
-  "itemTags": [],
+  "itemTags": [
+    { "itemId": "item-esp32", "tagId": "tag-workshop" },
+    { "itemId": "item-esp32", "tagId": "tag-fragile" }
+  ],
   "itemHistory": []
 }

@@ -12,6 +12,10 @@
  *   - **Versioned API** under `/api/v1` (see `api/v1.ts`): the same three as aliases, plus
  *       items / locations / categories / capabilities and `openapi.json`.
  *
+ * Every read is answerable by `HEAD` as well as `GET` (RFC 9110 §9.1) — the same handler runs and
+ * its content is withheld, so a calendar or feed client that probes with `HEAD` before subscribing
+ * sees the headers it expects rather than a `405` (see `api/head.ts`).
+ *
  * Strictly read-only: every request runs through the query core / repositories, whose only
  * SQL is the parameterised `parseASTtoSQL` — there is no write path reachable from here.
  * Every request must carry the shared bearer token; anything else is a 401. The current
@@ -32,6 +36,7 @@ import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { searchItems, whereIs, type LookupObserver } from './query.ts';
 import type { RateLimiter } from './rate-limit.ts';
 import { sendError, sendJson, sendMetrics, sendNotModified } from './api/respond.ts';
+import { suppressResponseBody } from './api/head.ts';
 import {
   cacheValidators,
   isNotModified,
@@ -43,6 +48,7 @@ import { readQueryParam, readResultLimit } from './api/params.ts';
 import { API_V1_BASE, handleApiV1, isApiV1Path, pathAllowsUrlToken } from './api/v1.ts';
 import { isPermitted, resolveIdentity } from './identity.ts';
 import { corsAllowOrigin, WILDCARD_ORIGINS, type AllowedOrigins } from './cors.ts';
+import { EVENT_STREAM_CONTENT_TYPE } from './events/sse.ts';
 import { projectMetrics } from './feeds/metrics.ts';
 import { formatMetrics } from './feeds/metrics-format.ts';
 import type { WriteOperation, WriteResult } from './write.ts';
@@ -310,9 +316,20 @@ export async function handleRequest(
 ): Promise<void> {
   const url = new URL(req.url ?? '/', requestBase(req.headers.host));
   const v1 = isApiV1Path(url.pathname);
-  // Allow GET everywhere; POST only for the versioned write/ingest endpoints (and only when one
-  // of those opt-ins is enabled). Anything else is a 405.
-  const allow = options.write || options.push || options.webhookTest ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
+  // Allow GET and HEAD everywhere; POST only for the versioned write/ingest endpoints (and only
+  // when one of those opt-ins is enabled). Anything else is a 405.
+  const allow =
+    options.write || options.push || options.webhookTest ? 'GET, HEAD, POST, OPTIONS' : 'GET, HEAD, OPTIONS';
+
+  // A HEAD is a GET whose content is withheld (RFC 9110 §9.3.2), so it takes the GET path
+  // wholesale — same auth, same permissions, same handler — and `suppressResponseBody` turns
+  // whatever that path writes into headers-only, keeping `Content-Length` accurate. Installed
+  // before any guard can answer, so a bodyless `401`/`405`/`503` is bodyless too. `routedMethod`
+  // is what everything downstream sees, which is what makes the two responses identical by
+  // construction rather than by two code paths agreeing (issue #360).
+  const isHead = req.method === 'HEAD';
+  if (isHead) suppressResponseBody(res);
+  const routedMethod = isHead ? 'GET' : (req.method ?? '');
 
   // CORS: the bridge authenticates with a bearer token (never a cookie), so the token itself
   // — not the browser's same-origin policy — is the security boundary, and letting the PWA (almost
@@ -367,7 +384,7 @@ export async function handleRequest(
       }
     }
 
-    if (req.method !== 'GET' && req.method !== 'POST') {
+    if (routedMethod !== 'GET' && routedMethod !== 'POST') {
       req.resume();
       sendError(res, 405, 'method_not_allowed', 'Method not allowed', { v1, headers: { allow } });
       return;
@@ -399,7 +416,7 @@ export async function handleRequest(
     // Authenticated but not permitted: the token is real and its owner is known, their role
     // simply does not reach this route. The env capability flags are a separate, outer bound —
     // a route the operator disabled is still a 404 for everyone, however permissive the role.
-    if (!isPermitted(identity, req.method, url.pathname)) {
+    if (!isPermitted(identity, routedMethod, url.pathname)) {
       req.resume();
       sendError(res, 403, 'forbidden', 'Forbidden', { v1 });
       return;
@@ -421,7 +438,7 @@ export async function handleRequest(
       res.setHeader('Access-Control-Expose-Headers', 'X-Gubbins-Snapshot-Stale');
     }
 
-    if (req.method === 'POST') {
+    if (routedMethod === 'POST') {
       // Writes/ingest live only under /api/v1; a POST to a legacy path is method-not-allowed.
       if (!v1) {
         req.resume();
@@ -461,13 +478,23 @@ export async function handleRequest(
       return;
     }
 
-    // GET: no body to consume — drain anything sent so the socket closes cleanly.
+    // GET/HEAD: no body to consume — drain anything sent so the socket closes cleanly.
     req.resume();
 
     // The SSE event stream is a long-lived response that needs the raw request (socket + close
     // events), so it is handled here rather than through the res-only v1 router. When events are
     // not enabled this falls through and the router answers 404 (the feature is invisible).
     if (options.events && url.pathname === API_V1_EVENTS_PATH) {
+      // The one read a HEAD cannot simply borrow: opening the stream would register a client and
+      // hold the response open forever, so the probe is answered directly — the media type the
+      // stream serves, and nothing else. No `Content-Length`, because the content is unbounded
+      // (RFC 9110 §9.3.2 excuses a header knowable only while generating it), and no `429` when the
+      // hub is at capacity: a probe takes no slot, so it reports the endpoint, not the queue.
+      if (isHead) {
+        res.writeHead(200, { 'content-type': EVENT_STREAM_CONTENT_TYPE, 'cache-control': 'no-store' });
+        res.end();
+        return;
+      }
       options.events.handleConnection(req, res, url);
       return;
     }
