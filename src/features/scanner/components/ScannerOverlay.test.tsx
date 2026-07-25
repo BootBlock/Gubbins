@@ -21,6 +21,8 @@ const checkoutMutateAsync = vi.fn().mockResolvedValue(undefined);
 
 // getById drives what the scanned code resolves to; each test sets `scanResult` first.
 let scanResult: Item | null = null;
+// What a typed/scanned short code resolves to (issue #338) — empty, one item, or ambiguous.
+let shortCodeMatches: Item[] = [];
 
 vi.mock('../useScanner', () => ({ useScanner: () => {} }));
 vi.mock('../feedback', () => ({
@@ -42,7 +44,15 @@ vi.mock('@/features/inventory/queries', () => ({
   // The card falls back to the scan snapshot until this resolves; leaving it empty keeps the
   // test driving the snapshot from `getById` (below) without a QueryClient.
   useItem: () => ({ data: undefined }),
-  useLocations: () => ({ data: { rows: [{ id: 'loc-2', name: 'Shelf B' }] } }),
+  useLocations: () => ({
+    data: {
+      rows: [
+        { id: 'loc-2', name: 'Shelf B' },
+        // A real-shaped id, so the location arm of the short-code lookup can be exercised.
+        { id: '0000000c-0000-4000-8000-00000000000c', name: 'Bin 7' },
+      ],
+    },
+  }),
 }));
 vi.mock('@/lib/useFormatters', () => ({
   useFormatters: () => ({ quantity: (n: number) => String(n) }),
@@ -52,6 +62,7 @@ vi.mock('@/db/repositories', async (importOriginal) => ({
   getItemRepository: () => ({
     getById: () => Promise.resolve(scanResult),
     getByBarcode: () => Promise.resolve(null),
+    findByShortCode: () => Promise.resolve(shortCodeMatches),
   }),
 }));
 
@@ -140,6 +151,7 @@ async function scan(item: Item, props: Partial<React.ComponentProps<typeof Scann
 
 beforeEach(() => {
   scanResult = null;
+  shortCodeMatches = [];
   adjustMutate.mockReset();
   moveMutateAsync.mockReset().mockResolvedValue(undefined);
   checkoutMutateAsync.mockReset().mockResolvedValue(undefined);
@@ -162,6 +174,60 @@ describe('ScannerOverlay — "What can I scan?" explainer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'What can I scan?' })).toBeNull());
+  });
+});
+
+/**
+ * The printed short code (issue #338) — the fallback identifier a label carries for when its QR
+ * or barcode is too damaged to scan. Typing it must reach the item, or the printed line is
+ * decoration.
+ */
+describe('ScannerOverlay — printed short code', () => {
+  /** Type a value into the manual-entry seam and submit it. */
+  const enter = (value: string) => {
+    fireEvent.change(screen.getByTestId('scanner-manual-input'), { target: { value } });
+    fireEvent.click(screen.getByTestId('scanner-manual-submit'));
+  };
+
+  it('resolves a typed short code to its item', async () => {
+    shortCodeMatches = [baseItem];
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter('A1B2C3D4');
+
+    const card = await screen.findByTestId('scanner-discrete-result');
+    expect(card).toHaveTextContent('NE555 timer');
+  });
+
+  it('says a short code is ambiguous rather than opening whichever came back first', async () => {
+    shortCodeMatches = [baseItem, { ...baseItem, id: 'item-2', name: 'Other' }];
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter('A1B2C3D4');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/More than one item/i),
+    );
+    expect(screen.queryByTestId('scanner-discrete-result')).toBeNull();
+  });
+
+  it('jumps to a location whose label carries that short code', async () => {
+    const onLocationScanned = vi.fn();
+    render(<ScannerOverlay open onClose={vi.fn()} onLocationScanned={onLocationScanned} />);
+
+    enter('0000000C');
+
+    await waitFor(() =>
+      expect(onLocationScanned).toHaveBeenCalledWith('0000000c-0000-4000-8000-00000000000c'),
+    );
+  });
+
+  it('still reports an unrecognised code when no record carries it', async () => {
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter('DEADBEEF');
+
+    await waitFor(() => expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/isn’t a Gubbins/i));
   });
 });
 

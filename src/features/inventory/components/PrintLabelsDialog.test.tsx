@@ -223,3 +223,31 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     expect(screen.getByText('No items selected.')).toBeTruthy();
   });
 });
+
+/** The printed fallback identifier — what still names the item once its code is damaged (#338). */
+describe('PrintLabelsDialog — short-code fallback line', () => {
+  it('prints each item’s short code by default, and drops it when the toggle is cleared', () => {
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    expect(screen.getByText('11111111')).toBeTruthy();
+    expect(screen.getByText('22222222')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('label-show-short-code'));
+
+    expect(screen.queryByText('11111111')).toBeNull();
+    expect(screen.queryByText('22222222')).toBeNull();
+    // The names are still there — only the fallback line went.
+    expect(screen.getByText('Resistor 10k')).toBeTruthy();
+  });
+
+  it('carries the line onto the printed sheet, not just the preview', () => {
+    const fakeDoc = { write: vi.fn(), close: vi.fn() };
+    const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    fireEvent.click(screen.getByTestId('print-labels-confirm'));
+
+    expect(fakeDoc.write.mock.calls[0]![0] as string).toContain('11111111');
+    openSpy.mockRestore();
+  });
+});

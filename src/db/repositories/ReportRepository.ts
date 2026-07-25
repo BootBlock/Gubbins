@@ -794,6 +794,28 @@ export class ReportRepository extends BaseRepository {
   }
 
   /**
+   * How many items a catalogue scope covers — counted, not fetched (issue #338).
+   *
+   * {@link partsCatalogue} reads its whole scope into one document, so "All items" over a large
+   * inventory is unbounded in both the rows it pulls and the pages it would print. The screen
+   * asks this first and only builds the catalogue when the answer is within the printable
+   * ceiling, mirroring how the insurance schedule leads with a bounded summary read (issue
+   * #163). The predicate is character-for-character the one {@link partsCatalogue} filters by,
+   * so the count can never describe a different set from the document.
+   */
+  async partsCatalogueCount(scope: CatalogueScope): Promise<number> {
+    const filter = await this.catalogueScopeFilter(scope);
+    // An empty ad-hoc selection (or a location that no longer exists) covers nothing.
+    if (filter === null) return 0;
+    const row = await this.driver.queryOne<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM items
+        WHERE items.is_active = 1 AND ${notAVariantParent('items.id')}${filter.clause};`,
+      filter.params,
+    );
+    return row?.count ?? 0;
+  }
+
+  /**
    * Resolve a {@link CatalogueScope} to the extra `WHERE` clause (appended to the base active +
    * non-variant-parent predicate) and its bind params. Returns `null` for an empty selection —
    * the one case that must yield no rows rather than an `IN ()`. The location scope resolves

@@ -90,6 +90,14 @@ describe('normaliseLabelTemplate', () => {
     expect(t.showName).toBe(DEFAULT_LABEL_TEMPLATE.showName);
   });
 
+  it('turns the short-code line on for a template saved before it existed (issue #338)', () => {
+    // The fallback identifier is what makes a damaged label identifiable at all, so an install
+    // that never chose either way picks it up rather than keeping the old name-only label.
+    expect(normaliseLabelTemplate({ symbology: 'qr', showName: true }).showShortId).toBe(true);
+    // A device that deliberately turned it off keeps it off.
+    expect(normaliseLabelTemplate({ showShortId: false }).showShortId).toBe(false);
+  });
+
   it('clamps an out-of-range column count', () => {
     expect(normaliseLabelTemplate({ sheet: { columns: 99 } }).sheet.columns).toBe(LABEL_COLUMNS_BOUNDS.max);
   });

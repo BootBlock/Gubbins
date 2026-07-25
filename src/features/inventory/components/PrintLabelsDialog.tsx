@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { plural } from '@/lib/plural';
-import { Banner, Button, Modal, Select, type SelectProps } from '@/components/foundry';
+import { Banner, Button, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
@@ -193,6 +193,15 @@ export function PrintLabelsDialog({
                 checked={template.showQuantity}
                 onChange={(v) => set('showQuantity', v)}
               />
+              {/* The fallback identifier — the one line that still names the record when the
+                  code itself is damaged (issue #338), so it carries its own explanation. */}
+              <FieldToggle
+                label={t('inventory.labels.showShortCode')}
+                hint={t('inventory.labels.showShortCodeHint')}
+                checked={template.showShortId}
+                onChange={(v) => set('showShortId', v)}
+                testId="label-show-short-code"
+              />
               {templateHasBarcode(template) ? (
                 <FieldToggle
                   label="Barcode text"
@@ -250,20 +259,36 @@ function FieldToggle({
   label,
   checked,
   onChange,
+  hint,
+  testId,
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  /** Rich-Markdown help shown in an {@link InfoHint} badge beside the label. */
+  hint?: string;
+  testId?: string;
 }) {
-  return (
+  const toggle = (
     <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         className="size-3.5 accent-primary"
+        data-testid={testId}
       />
       {label}
     </label>
+  );
+  // The badge sits *outside* the label so tapping it opens the tooltip rather than
+  // toggling the checkbox.
+  return hint ? (
+    <span className="flex items-center gap-1.5">
+      {toggle}
+      <InfoHint content={hint} />
+    </span>
+  ) : (
+    toggle
   );
 }

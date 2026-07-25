@@ -21,6 +21,7 @@ import { getItemRepository, type Item } from '@/db/repositories';
 import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
 import { useCheckoutItem } from '@/features/contacts/contacts';
 import { QuantityStepper } from '@/features/inventory/components/QuantityStepper';
+import { shortId } from '@/features/inventory/labels/label-template';
 import { useItem, useLocations } from '@/features/inventory/queries';
 import { useMoveItem } from '@/features/inventory/mutations';
 import { isUnlimited } from '@/features/inventory/unlimited';
@@ -30,7 +31,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { runBatch, summariseBatch } from '../batch-actions';
 import { ScanFeedback } from '../feedback';
 import type { ScannerEngine } from '../barcode-decoder';
-import { isStructuredQrPayload, parseScannedCode } from '../scan-payload';
+import { isShortItemCode, isStructuredQrPayload, parseScannedCode } from '../scan-payload';
 import { initialScannerState, scannerReducer, type ScannerMode } from '../scanner-machine';
 import { ScannerQueueProvider, useScannerQueue } from '../ScannerQueueContext';
 import { useNfcScan } from '../useNfcScan';
@@ -154,17 +155,6 @@ function ScannerOverlayInner({
 
   const handleDecode = useCallback(
     async (raw: string) => {
-      const code = parseScannedCode(raw);
-      if (!code) {
-        // A marketing QR resolves to a website link, not a Gubbins code or a barcode — name
-        // that plainly rather than a generic "unrecognised" (issue #59).
-        setNotice(
-          isStructuredQrPayload(raw)
-            ? 'That’s a website link, not a Gubbins code or a product barcode.'
-            : 'That code isn’t a Gubbins code or a recognised barcode.',
-        );
-        return;
-      }
       const confirmOpts = { beep: beepEnabled, haptics: hapticsEnabled };
 
       // A resolved item (from a Gubbins code, or a retail barcode an item already carries)
@@ -182,6 +172,52 @@ function ScannerOverlayInner({
           setDiscreteResult(item);
         }
       };
+
+      /**
+       * Resolve a printed **short code** — the eight-character fallback identifier every label
+       * carries (issue #338), and the value a label's Code 128 falls back to when the preferred
+       * one is too long to print (issue #331). Returns true when the scan was dealt with here.
+       *
+       * This is what makes that line an identifier rather than an ornament: a torn QR, a
+       * smudged barcode or a name since edited, and the printed code is all that is left to
+       * type into the box below. A prefix can in principle name two records, so an ambiguous
+       * code says so instead of opening whichever came back first.
+       */
+      const resolveShortCode = async (value: string): Promise<boolean> => {
+        if (!isShortItemCode(value)) return false;
+        const matches = await getItemRepository().findByShortCode(value);
+        if (matches.length > 1) {
+          setNotice('More than one item starts with that short code — scan the label’s code instead.');
+          return true;
+        }
+        if (matches.length === 1) {
+          presentItem(matches[0]!);
+          return true;
+        }
+        // Location labels print the same fallback line, and the loaded rows answer for free.
+        const short = value.trim().toUpperCase();
+        const loc = locationRows.find((l) => shortId(l.id) === short);
+        if (!loc) return false;
+        setNotice(null);
+        feedback.current.confirm(confirmOpts);
+        onLocationScanned?.(loc.id);
+        return true;
+      };
+
+      const code = parseScannedCode(raw);
+      if (!code) {
+        // Not a code the pure parser knows — but a short code names nothing on its own, so it
+        // can only be recognised by asking the database. Try that before giving up.
+        if (await resolveShortCode(raw)) return;
+        // A marketing QR resolves to a website link, not a Gubbins code or a barcode — name
+        // that plainly rather than a generic "unrecognised" (issue #59).
+        setNotice(
+          isStructuredQrPayload(raw)
+            ? 'That’s a website link, not a Gubbins code or a product barcode.'
+            : 'That code isn’t a Gubbins code or a recognised barcode.',
+        );
+        return;
+      }
 
       // A scanned location label jumps straight to that location (Phase 73). Validate
       // it against the loaded list, then hand off to the parent to select it + close.
@@ -205,6 +241,10 @@ function ScannerOverlayInner({
           presentItem(existing);
           return;
         }
+        // An eight-digit short code is also a syntactically valid EAN-8, so a label's own
+        // fallback code can arrive here. A retail barcode an item actually carries wins (above);
+        // failing that, try the short code before offering to create a product for it.
+        if (await resolveShortCode(raw)) return;
         setNotice(null);
         feedback.current.confirm(confirmOpts);
         dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view for the prompt
@@ -647,7 +687,7 @@ function ScannerOverlayInner({
             value={manual}
             onChange={(e) => setManual(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && submitManual()}
-            placeholder="Enter or paste a code"
+            placeholder="Enter or paste a code, or a label's short code"
             className="bg-white/10 text-white placeholder:text-white/50"
             data-testid="scanner-manual-input"
           />
@@ -670,6 +710,14 @@ function ScannerOverlayInner({
                 <span className="font-medium">Gubbins labels</span> — the QR codes you print for your items
                 and locations. Scanning an item opens it to adjust, check out or move; scanning a location
                 jumps straight to it.
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <QrCodeIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
+              <span>
+                <span className="font-medium">Short codes</span> — the eight-character code printed on every
+                label, e.g. <code className="font-mono">A1B2C3D4</code>. Type it into the box below when the
+                QR code or barcode is too scuffed or torn to scan.
               </span>
             </li>
             <li className="flex gap-3">

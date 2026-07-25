@@ -83,7 +83,8 @@ describe('toLabelCells', () => {
     expect(cells[0]!.url).toBe(buildItemQrUrl(ID_A, BASE));
     expect(cells[0]!.qrSvg).toContain('<svg');
     expect(cells[0]!.barcodeSvg).toBeNull();
-    expect(cells[0]!.lines).toEqual(['Resistor 10k']);
+    // The default template also prints the short-code fallback line (issue #338).
+    expect(cells[0]!.lines).toEqual(['Resistor 10k', '11111111']);
   });
 
   it('renders a barcode and no QR for the barcode-only symbology', () => {
@@ -155,6 +156,80 @@ describe('toLabelCells', () => {
   it('reports no barcode fit at all when the template draws no barcode', () => {
     const cells = toLabelCells([{ id: ID_A, name: 'Res', mpn: 'RC0805-10K' }], BASE, template());
     expect(cells[0]!.barcodeFit).toBeNull();
+  });
+
+  // The label's fallback identifier (issue #338) — what still names the record once the
+  // printed code is too damaged to scan.
+  describe('the short-code fallback line', () => {
+    it('is appended after the field lines, and is on by default', () => {
+      const cells = toLabelCells(
+        [{ id: ID_C, name: 'Res', mpn: 'RC0805', locationName: 'Drawer A' }],
+        BASE,
+        template({ showMpn: true, showLocation: true }),
+      );
+      expect(cells[0]!.lines).toEqual(['Res', 'MPN: RC0805', 'Drawer A', 'A1B2C3D4']);
+    });
+
+    it('is dropped when the template turns it off', () => {
+      const cells = toLabelCells([{ id: ID_C, name: 'Res' }], BASE, template({ showShortId: false }));
+      expect(cells[0]!.lines).toEqual(['Res']);
+    });
+
+    it('prints even when every field flag is off — a label is never left unidentifiable', () => {
+      const cells = toLabelCells(
+        [{ id: ID_C, name: 'Res' }],
+        BASE,
+        template({ showName: false, symbology: 'none' }),
+      );
+      expect(cells[0]!.lines).toEqual(['A1B2C3D4']);
+    });
+
+    it('is not repeated when the barcode already prints that same code beneath its bars', () => {
+      // A too-long MPN falls back to the short id (issue #331), and `showText` prints it under
+      // the bars — a second identical line below would say nothing and cost a line.
+      const cells = toLabelCells(
+        [{ id: ID_C, name: 'Res', mpn: 'RC0805-10K-0402-VERY-LONG-PART-NUMBER' }],
+        BASE,
+        template({ symbology: 'barcode', showText: true }),
+      );
+      expect(cells[0]!.barcodeValue).toBe('A1B2C3D4');
+      expect(cells[0]!.lines).toEqual(['Res']);
+    });
+
+    it('still prints when the barcode carries that code but its text is turned off', () => {
+      const cells = toLabelCells(
+        [{ id: ID_C, name: 'Res', mpn: 'RC0805-10K-0402-VERY-LONG-PART-NUMBER' }],
+        BASE,
+        template({ symbology: 'barcode', showText: false }),
+      );
+      expect(cells[0]!.barcodeValue).toBe('A1B2C3D4');
+      expect(cells[0]!.lines).toEqual(['Res', 'A1B2C3D4']);
+    });
+
+    it('still prints when the barcode carries a different value', () => {
+      const cells = toLabelCells(
+        [{ id: ID_C, name: 'Res', mpn: 'RC0805' }],
+        BASE,
+        template({ symbology: 'barcode', showText: true }),
+      );
+      expect(cells[0]!.barcodeValue).toBe('RC0805');
+      expect(cells[0]!.lines).toEqual(['Res', 'A1B2C3D4']);
+    });
+
+    it('still prints when the label is too narrow to carry a barcode at all', () => {
+      const cells = toLabelCells(
+        [{ id: ID_C, name: 'Res', mpn: 'RC0805-10K' }],
+        BASE,
+        template({ symbology: 'barcode', sizeMode: 'die-cut', labelWidthMm: 20, labelHeightMm: 15 }),
+      );
+      expect(cells[0]!.barcodeFit).toBe('unprintable');
+      expect(cells[0]!.lines).toEqual(['Res', 'A1B2C3D4']);
+    });
+
+    it('reaches the printed sheet, not just the preview', () => {
+      const html = buildLabelSheetHtml([{ id: ID_C, name: 'Res' }], BASE, template());
+      expect(html).toContain('A1B2C3D4');
+    });
   });
 
   it('caps the set at MAX_LABELS', () => {

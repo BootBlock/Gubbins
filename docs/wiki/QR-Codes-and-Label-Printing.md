@@ -108,6 +108,30 @@ is still printed at the full size you chose.
 > Choose the size first. It sets how much room the code and text have, so it decides how many lines
 > of text fit — and whether a barcode can print at all (see below).
 
+## The short code — the label's fallback identifier
+
+Every label also prints a **short code**: eight characters such as `A1B2C3D4`, on the last line,
+underneath the name and any other fields. It is the same for the life of the item or location, and
+no two records you are likely to hold share one.
+
+It is there for the day the code stops working. A QR gets scuffed against a toolbox, a barcode
+smudges, a corner tears off in a damp shed — and a label carrying only a name identifies nothing in
+particular, especially if two bins hold the same part or the name has been edited since. Type the
+short code into the box at the bottom of the [[scanner|Camera-Scanning]] instead and Gubbins opens
+the item, or jumps to the location, exactly as scanning would have.
+
+Turn it off with the **Short code** tick under **Show on label** if you need the room for something
+else.
+
+> **💡 Tip**
+> The short code is worth reading out too. "Which one have you got — A1B2C3D4?" settles over the
+> phone what a name and a photo often cannot.
+
+> **ℹ️ Note**
+> Where the barcode has already fallen back to that same short code (see *QR code or barcode?*
+> below), it is not printed twice — the characters under the bars are the short code, and the extra
+> line is dropped so the label keeps the space.
+
 ## Long names on a small label
 
 A name only has so much room. Where one is too long for the label, Gubbins keeps it to **two
@@ -118,7 +142,8 @@ QR code gives up a little height to make room, so the name and the code both sta
 > The preview in the print dialog is the label: it shortens the name in exactly the same place the
 > printed one will, so what you approve on screen is what comes out. If the shortened name is
 > ambiguous, choose a larger label size or fewer columns per sheet, or turn on another field —
-> a part number or location — under **Show on label** to tell similar items apart.
+> a part number or location — under **Show on label** to tell similar items apart. The **short
+> code** already on the label tells them apart for certain, if not at a glance.
 
 ## QR code or barcode?
 
@@ -135,7 +160,7 @@ under **Code** in the print dialog.
 > **⚠️ Heads-up**
 > A Code 128 barcode is *wide*: every character adds another group of bars, so a long value on a
 > small label collapses into a grey smear no scanner can read. Gubbins won't print one. If the
-> value is too long for the label, the barcode carries a short code for that item or location
+> value is too long for the label, the barcode carries the item's or location's **short code**
 > instead, and the print dialog says so above the preview. That short code needs a label **a little
 > over 32 mm wide**, so on the smallest sizes — the 30 × 15 mm labels, say — only a genuinely short
 > name or part number prints as a barcode at all; anything longer leaves the barcode off entirely.
@@ -149,8 +174,8 @@ under **Code** in the print dialog.
 > letters in their nearest plain form: a location called **Café Störage** prints a barcode reading
 > `Cafe Storage`, and **Größe** becomes `Grosse`. Curly quotes, dashes and the like are squared off
 > the same way. Where there is no plain equivalent at all — a name in Japanese, Greek or Cyrillic,
-> or one carrying an emoji or a currency sign — the barcode carries the item's or location's short
-> code instead of a half-written name. The QR code is unaffected: it always links to the exact
+> or one carrying an emoji or a currency sign — the barcode carries the item's or location's
+> **short code** instead of a half-written name. The QR code is unaffected: it always links to the exact
 > record, whatever the name is written in, and so does the name printed on the label itself.
 
 ## Choosing the address labels point to

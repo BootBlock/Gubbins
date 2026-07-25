@@ -3,8 +3,13 @@ import {
   buildPartsCatalogue,
   CATALOGUE_FIELDS,
   CATALOGUE_MONEY_FIELDS,
+  CATALOGUE_PRINT_LIMIT,
+  CATALOGUE_PRINT_MEDIA_LIMIT,
   DEFAULT_CATALOGUE_FIELDS,
   UNASSIGNED_GROUP_LABEL,
+  cataloguePrintLimit,
+  estimateCataloguePages,
+  type CatalogueFieldKey,
   type CatalogueItemInput,
   type CatalogueLocationInput,
 } from './parts-catalogue';
@@ -241,5 +246,51 @@ describe('catalogue field metadata', () => {
   it('defaults to a subset of real fields', () => {
     const keys = new Set(CATALOGUE_FIELDS.map((f) => f.key));
     for (const key of DEFAULT_CATALOGUE_FIELDS) expect(keys.has(key)).toBe(true);
+  });
+});
+
+/** The print ceiling and the page estimate that make a catalogue's size knowable (issue #338). */
+describe('catalogue print ceiling', () => {
+  const fields = (...keys: CatalogueFieldKey[]): ReadonlySet<CatalogueFieldKey> => new Set(keys);
+
+  it('drops to the media ceiling as soon as a media column is on', () => {
+    expect(cataloguePrintLimit(fields())).toBe(CATALOGUE_PRINT_LIMIT);
+    expect(cataloguePrintLimit(fields('category', 'quantity', 'mpn'))).toBe(CATALOGUE_PRINT_LIMIT);
+    expect(cataloguePrintLimit(fields('photo'))).toBe(CATALOGUE_PRINT_MEDIA_LIMIT);
+    expect(cataloguePrintLimit(fields('qr'))).toBe(CATALOGUE_PRINT_MEDIA_LIMIT);
+    expect(cataloguePrintLimit(fields('photo', 'qr', 'category'))).toBe(CATALOGUE_PRINT_MEDIA_LIMIT);
+  });
+
+  it('keeps the media ceiling below the text one, so turning a media column on can only lower it', () => {
+    expect(CATALOGUE_PRINT_MEDIA_LIMIT).toBeLessThan(CATALOGUE_PRINT_LIMIT);
+  });
+
+  it('estimates at least one page, even for an empty document', () => {
+    expect(estimateCataloguePages({ lineCount: 0, groupCount: 0, photos: false, qr: false })).toBe(1);
+  });
+
+  it('grows with the line count, and never shrinks as lines are added', () => {
+    const pages = (lineCount: number) =>
+      estimateCataloguePages({ lineCount, groupCount: 1, photos: false, qr: false });
+    expect(pages(10)).toBe(1);
+    expect(pages(2_000)).toBeGreaterThan(pages(200));
+    expect(pages(200)).toBeGreaterThanOrEqual(pages(199));
+  });
+
+  it('estimates more pages once a media column makes each row taller', () => {
+    const input = { lineCount: 500, groupCount: 5 };
+    const text = estimateCataloguePages({ ...input, photos: false, qr: false });
+    const photos = estimateCataloguePages({ ...input, photos: true, qr: false });
+    const qr = estimateCataloguePages({ ...input, photos: false, qr: true });
+    expect(photos).toBeGreaterThan(text);
+    // A QR is the taller of the two, so it wins even where both columns are on.
+    expect(qr).toBeGreaterThan(photos);
+    expect(estimateCataloguePages({ ...input, photos: true, qr: true })).toBe(qr);
+  });
+
+  it('charges each section for its heading and table header', () => {
+    const flat = estimateCataloguePages({ lineCount: 100, groupCount: 1, photos: false, qr: false });
+    const grouped = estimateCataloguePages({ lineCount: 100, groupCount: 60, photos: false, qr: false });
+    expect(grouped).toBeGreaterThan(flat);
   });
 });
