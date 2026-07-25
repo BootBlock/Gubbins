@@ -238,6 +238,69 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/status:
+    get:
+      tags:
+      - "meta"
+      summary: "How many active items currently match each attention status"
+      description: "The same counts the app’s inventory filter chips show — low stock, out of stock, on order, expiring, warranty expiring, on loan, overdue and maintenance due. Every status is always present, so a status matching nothing is a 0 rather than a missing key. Aggregates only: no loan, order or schedule detail is disclosed. Kept apart from /health because it scans items, so liveness stays cheap to poll."
+      responses:
+        "200":
+          description: "The attention counts."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemStatusCounts"
+              example:
+                statuses:
+                  low-stock: 3
+                  out-of-stock: 1
+                  on-order: 0
+                  expiring: 2
+                  warranty: 0
+                  on-loan: 4
+                  overdue: 1
+                  maintenance-due: 0
+                snapshotGeneratedAt: "2025-06-27T06:13:20.000Z"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/search:
     get:
       tags:
@@ -2539,6 +2602,55 @@ components:
           nullable: true
           format: "date-time"
           description: "When the served snapshot was last loaded successfully."
+    ItemStatusCounts:
+      type: "object"
+      required:
+      - "statuses"
+      - "snapshotGeneratedAt"
+      properties:
+        statuses:
+          type: "object"
+          description: "One non-negative count per attention status. Derived from the canonical status list, so it cannot drift from the filters the app itself offers."
+          required:
+          - "low-stock"
+          - "out-of-stock"
+          - "on-order"
+          - "expiring"
+          - "warranty"
+          - "on-loan"
+          - "overdue"
+          - "maintenance-due"
+          properties:
+            low-stock:
+              type: "integer"
+              minimum: 0
+            out-of-stock:
+              type: "integer"
+              minimum: 0
+            on-order:
+              type: "integer"
+              minimum: 0
+            expiring:
+              type: "integer"
+              minimum: 0
+            warranty:
+              type: "integer"
+              minimum: 0
+            on-loan:
+              type: "integer"
+              minimum: 0
+            overdue:
+              type: "integer"
+              minimum: 0
+            maintenance-due:
+              type: "integer"
+              minimum: 0
+          additionalProperties: false
+        snapshotGeneratedAt:
+          type: "string"
+          nullable: true
+          format: "date-time"
+          description: "When the snapshot these counts were read from was generated."
     ItemMatch:
       type: "object"
       required:

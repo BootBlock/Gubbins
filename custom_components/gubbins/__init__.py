@@ -1,21 +1,27 @@
 """The Gubbins inventory bridge integration.
 
-A read-only Home Assistant integration that talks to the local Gubbins **bridge** — a
-companion service that exposes a bearer-token-protected HTTP API over an exported Gubbins
-inventory snapshot. This integration never writes; the bridge is the only data path.
+A Home Assistant integration that talks to the local Gubbins **bridge** — a companion service
+that exposes a bearer-token-protected HTTP API over an exported Gubbins inventory snapshot.
+The bridge is the only data path. Everything here reads, apart from the two opt-in stock-write
+services below, which do nothing unless the bridge itself was started with writes enabled.
 
-Setup wires five things:
+Setup wires six things:
   * a per-entry :class:`GubbinsClient` (read-only HTTP client) into ``hass.data``;
-  * a per-entry :class:`GubbinsHealthCoordinator` into ``entry.runtime_data``, first-refreshed
-    here so an unreachable bridge or a revoked token fails (or reauthenticates) the *entry*;
+  * a per-entry :class:`GubbinsRuntimeData` into ``entry.runtime_data``, holding the health
+    coordinator — first-refreshed here so an unreachable bridge or a revoked token fails (or
+    reauthenticates) the *entry* — and the slower inventory-status coordinator;
   * the conversation intent handler (registered once, see :mod:`.intent`);
   * the read-only ``gubbins.search`` service (registered once, see below);
-  * the opt-in ``gubbins.adjust_quantity`` write service (registered once, see below) —
-    itself a no-op unless the bridge runs with ``GUBBINS_BRIDGE_ALLOW_WRITES=on``;
-and forwards the optional ``/health`` sensor platform.
+  * the opt-in ``gubbins.adjust_quantity`` and ``gubbins.adjust_gauge`` write services
+    (registered once, see below) — themselves no-ops unless the bridge runs with
+    ``GUBBINS_BRIDGE_ALLOW_WRITES=on``;
+and forwards the optional ``/health`` sensor and attention binary-sensor platforms.
 """
 
 from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
@@ -42,14 +48,15 @@ from .const import (
     CONF_PORT,
     CONF_TOKEN,
     DOMAIN,
+    SERVICE_ADJUST_GAUGE,
     SERVICE_ADJUST_QUANTITY,
     SERVICE_SEARCH,
 )
-from .coordinator import GubbinsHealthCoordinator
+from .coordinator import GubbinsHealthCoordinator, GubbinsRuntimeData, GubbinsStatusCoordinator
 from .events import collect_location_ids, normalise_matches
 from .intent import async_register_intent, async_unregister_intent
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 _SEARCH_SCHEMA = vol.Schema(
     {
@@ -62,6 +69,17 @@ _ADJUST_QUANTITY_SCHEMA = vol.Schema(
     {
         vol.Required("item_id"): cv.string,
         vol.Required("delta"): vol.All(vol.Coerce(int), vol.Range(min=-1_000_000, max=1_000_000)),
+        vol.Optional("note"): cv.string,
+    }
+)
+
+# The gauge counterpart. `delta` is coerced to a float, not an int: a gauge measures contents
+# (grams of filament, millilitres of resin), so a fractional draw is entirely ordinary — where
+# a discrete count can only ever move in whole units.
+_ADJUST_GAUGE_SCHEMA = vol.Schema(
+    {
+        vol.Required("item_id"): cv.string,
+        vol.Required("delta"): vol.All(vol.Coerce(float), vol.Range(min=-1_000_000, max=1_000_000)),
         vol.Optional("note"): cv.string,
     }
 )
@@ -82,14 +100,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = GubbinsHealthCoordinator(hass, entry, client)
     await coordinator.async_config_entry_first_refresh()
 
+    # The attention counts are deliberately refreshed *without* the config-entry variant: a
+    # bridge older than the status endpoint must leave those entities unavailable, not stop
+    # the entry (and with it the voice lookups, the services and the health sensor) loading.
+    status = GubbinsStatusCoordinator(hass, entry, client)
+    await status.async_refresh()
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = client
-    entry.runtime_data = coordinator
+    entry.runtime_data = GubbinsRuntimeData(health=coordinator, status=status)
 
     # Intent and services are global (one handler per type / one service per domain);
     # register them once, on the first entry to load.
     async_register_intent(hass)
     _async_register_search_service(hass)
     _async_register_adjust_quantity_service(hass)
+    _async_register_adjust_gauge_service(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -107,6 +132,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # sentences and answer "the bridge isn't set up yet" after the user removed it.
             hass.services.async_remove(DOMAIN, SERVICE_SEARCH)
             hass.services.async_remove(DOMAIN, SERVICE_ADJUST_QUANTITY)
+            hass.services.async_remove(DOMAIN, SERVICE_ADJUST_GAUGE)
             async_unregister_intent(hass)
     return unloaded
 
@@ -158,23 +184,60 @@ def _async_register_search_service(hass: HomeAssistant) -> None:
 def _async_register_adjust_quantity_service(hass: HomeAssistant) -> None:
     """Register the opt-in ``gubbins.adjust_quantity`` write service, once.
 
-    This is the integration's only write. It works only when the bridge is started with
+    Checks a discrete item in or out by a whole number.
+    """
+    _async_register_adjust_service(
+        hass,
+        SERVICE_ADJUST_QUANTITY,
+        _ADJUST_QUANTITY_SCHEMA,
+        lambda client, call: client.adjust_quantity(
+            call.data["item_id"], call.data["delta"], call.data.get("note")
+        ),
+    )
+
+
+def _async_register_adjust_gauge_service(hass: HomeAssistant) -> None:
+    """Register the opt-in ``gubbins.adjust_gauge`` write service, once.
+
+    The gauge counterpart of ``adjust_quantity``: it changes how much is *in* a consumable
+    (grams of filament, millilitres of resin) rather than how many there are of something.
+    That is the item class where automating from Home Assistant is most natural — a
+    consumable sitting on a smart scale — which it could previously only read, never update.
+    """
+    _async_register_adjust_service(
+        hass,
+        SERVICE_ADJUST_GAUGE,
+        _ADJUST_GAUGE_SCHEMA,
+        lambda client, call: client.adjust_gauge(
+            call.data["item_id"], call.data["delta"], call.data.get("note")
+        ),
+    )
+
+
+def _async_register_adjust_service(
+    hass: HomeAssistant,
+    service: str,
+    schema: vol.Schema,
+    adjust: Callable[[GubbinsClient, ServiceCall], Awaitable[dict[str, Any]]],
+) -> None:
+    """Register one of the opt-in stock-write services, once.
+
+    These are the integration's only writes. They work only when the bridge is started with
     ``GUBBINS_BRIDGE_ALLOW_WRITES=on`` (otherwise the bridge 404s and a clear error is raised);
     the change round-trips through the app's sync merge, so the PWA picks it up conflict-free.
+    Both share this registration so the two report a refusal in exactly the same words — an
+    operator who has not opted in must not get a different explanation depending on which they
+    happened to call.
     """
-    if hass.services.has_service(DOMAIN, SERVICE_ADJUST_QUANTITY):
+    if hass.services.has_service(DOMAIN, service):
         return
 
-    async def _handle_adjust_quantity(call: ServiceCall) -> ServiceResponse:
+    async def _handle_adjust(call: ServiceCall) -> ServiceResponse:
         client = _first_client(hass)
         if client is None:
             raise HomeAssistantError("No Gubbins bridge is configured")
         try:
-            return await client.adjust_quantity(
-                call.data["item_id"],
-                call.data["delta"],
-                call.data.get("note"),
-            )
+            return await adjust(client, call)
         except GubbinsWritesDisabledError as err:
             raise HomeAssistantError(
                 "The Gubbins bridge has writes disabled, or the item id was not found. "
@@ -189,8 +252,8 @@ def _async_register_adjust_quantity_service(hass: HomeAssistant) -> None:
 
     hass.services.async_register(
         DOMAIN,
-        SERVICE_ADJUST_QUANTITY,
-        _handle_adjust_quantity,
-        schema=_ADJUST_QUANTITY_SCHEMA,
+        service,
+        _handle_adjust,
+        schema=schema,
         supports_response=SupportsResponse.OPTIONAL,
     )

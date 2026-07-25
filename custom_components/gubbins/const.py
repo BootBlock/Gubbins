@@ -31,5 +31,16 @@ SERVICE_SEARCH = "search"
 # surfaces a friendly error. Off at the bridge by default — see bridge/README.md.
 SERVICE_ADJUST_QUANTITY = "adjust_quantity"
 
+# The same opt-in write, for the other tracking mode: a signed change to a consumable's
+# gauge (its measured contents — grams of filament, millilitres of resin) rather than to a
+# discrete count. Gated on exactly the same GUBBINS_BRIDGE_ALLOW_WRITES=on opt-in.
+SERVICE_ADJUST_GAUGE = "adjust_gauge"
+
 # How often the optional /health sensor polls the bridge.
 HEALTH_SCAN_INTERVAL = timedelta(minutes=5)
+
+# How often the attention binary sensors poll the bridge. Slower than /health: these counts
+# come from a scan of the inventory rather than a liveness check, and "something is low"
+# does not need minute-level freshness — a stock change reaches the bridge on the next sync
+# anyway, so polling faster than that would only re-read the same snapshot.
+STATUS_SCAN_INTERVAL = timedelta(minutes=15)

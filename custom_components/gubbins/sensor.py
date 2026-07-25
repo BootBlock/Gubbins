@@ -3,7 +3,8 @@
 Exposes the bridge's item count as a sensor, with the snapshot timestamp and liveness as
 attributes — handy for a dashboard card or an automation that reacts to the bridge going
 away. Read-only and cheap: it rides the shared :class:`.GubbinsHealthCoordinator`, which
-polls ``GET /health`` on a slow interval.
+polls ``GET /health`` on a slow interval. For "does anything need attention?" rather than
+"how much is there?", see the attention binary sensors in :mod:`.binary_sensor`.
 
 The coordinator is built and first-refreshed by the integration's own ``async_setup_entry``,
 not here — a forwarded platform must not raise ``ConfigEntryNotReady`` /
@@ -21,8 +22,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_HOST, CONF_PORT, DOMAIN
-from .coordinator import GubbinsHealthCoordinator
+from .coordinator import GubbinsHealthCoordinator, GubbinsRuntimeData
+from .entity import gubbins_device_info
 
 
 async def async_setup_entry(
@@ -31,8 +32,8 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the bridge health sensor for a config entry."""
-    coordinator: GubbinsHealthCoordinator = entry.runtime_data
-    async_add_entities([GubbinsItemCountSensor(coordinator, entry)])
+    runtime: GubbinsRuntimeData = entry.runtime_data
+    async_add_entities([GubbinsItemCountSensor(runtime.health, entry)])
 
 
 class GubbinsItemCountSensor(CoordinatorEntity, SensorEntity):
@@ -50,14 +51,7 @@ class GubbinsItemCountSensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_item_count"
-        host = entry.data[CONF_HOST]
-        port = entry.data[CONF_PORT]
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": f"Gubbins bridge ({host}:{port})",
-            "manufacturer": "Gubbins",
-            "model": "Inventory bridge",
-        }
+        self._attr_device_info = gubbins_device_info(entry)
 
     @property
     def native_value(self) -> int | None:

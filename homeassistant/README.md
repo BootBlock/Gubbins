@@ -37,10 +37,12 @@ the only data path; this integration only issues `GET` requests.
 | **Config flow** (UI setup) | Enter host, port and token in the UI. The token is stored by Home Assistant, never in YAML or this repo. A rotated token prompts you to reconnect, and *Reconfigure* moves the entry to a new host/port — neither needs the entry re-added. |
 | **`gubbins.search` service** | A read-only search you can call from scripts/automations; returns the matched items as response data. |
 | **`gubbins.adjust_quantity` service** | **Opt-in** check-in / check-out (negative delta = check out). Only works when the bridge runs with `GUBBINS_BRIDGE_ALLOW_WRITES=on`; the change syncs back to the app conflict-free. |
+| **`gubbins.adjust_gauge` service** | **Opt-in** use / refill of a *measured* consumable — grams of filament, millilitres of resin — by a (possibly fractional) signed amount. Same `GUBBINS_BRIDGE_ALLOW_WRITES=on` opt-in, same conflict-free sync back. |
 | **Inventory-items sensor** | Optional `/health` sensor (item count + snapshot timestamp) for dashboards and "bridge offline" automations. |
+| **Attention binary sensors** | One per inventory status — low stock, out of stock, on order, expiring, warranty expiring, on loan, overdue, maintenance due — on whenever anything matches, with the exact figure as a `count` attribute. |
 
 Three ways to install: the **custom integration** (Option A, recommended — gives you the config
-flow, the voice intent, the service and the sensor); the **no-code YAML recipe** (Option B — no
+flow, the voice intent, the services and the sensors); the **no-code YAML recipe** (Option B — no
 `custom_components/`, just the voice intent); or **MQTT discovery** (Option C — no
 `custom_components/`, auto-created dashboard sensors via your MQTT broker). All three are documented
 below; pick the one that fits your setup.
@@ -168,14 +170,37 @@ empty.
 (item count), with `ok` and `snapshot_generated_at` attributes. Use it on a dashboard, or
 to alert when the bridge stops responding.
 
-### 6. (Optional) Check stock in / out — `gubbins.adjust_quantity`
-
-This is the **only** service that *changes* inventory, and it is **off unless you enable writes
-on the bridge**. Start the bridge with `GUBBINS_BRIDGE_ALLOW_WRITES=on` (see
-[`../bridge/README.md`](../bridge/README.md#limited-writes-opt-in)); otherwise this service
-returns a clear "writes disabled" error and changes nothing.
+**Attention binary sensors** — one per inventory status, alongside the item-count sensor on the
+same device: *Low stock*, *Out of stock*, *On order*, *Expiring soon*, *Warranty expiring*,
+*On loan*, *Overdue loans* and *Maintenance due*. Each is **on** whenever at least one item
+matches, and carries the exact figure as a `count` attribute — so a single entity covers both
+"is anything low?" and "how many?":
 
 ```yaml
+# Notify once more than five things are low.
+triggers:
+  - trigger: numeric_state
+    entity_id: binary_sensor.gubbins_bridge_<host>_<port>_low_stock
+    attribute: count
+    above: 5
+```
+
+The counts are the same ones the app's own inventory filters show. They refresh on a slow poll
+(they only change when the bridge picks up a new snapshot), and a bridge older than this
+integration simply leaves these entities unavailable — everything else keeps working.
+
+### 6. (Optional) Change stock — `gubbins.adjust_quantity` / `gubbins.adjust_gauge`
+
+These are the **only** services that *change* inventory, and both are **off unless you enable
+writes on the bridge**. Start the bridge with `GUBBINS_BRIDGE_ALLOW_WRITES=on` (see
+[`../bridge/README.md`](../bridge/README.md#limited-writes-opt-in)); otherwise they return a clear
+"writes disabled" error and change nothing.
+
+Which one you want depends on how the item is tracked: `adjust_quantity` for something you
+**count**, `adjust_gauge` for something you **measure**.
+
+```yaml
+# Something counted: check one out of the drawer.
 action: gubbins.adjust_quantity
 data:
   item_id: "item-esp32"     # the Gubbins record id (find it via gubbins.search)
@@ -183,10 +208,23 @@ data:
   note: "Taken to the workshop"
 ```
 
-The bridge applies the change through the app's own mutation and writes it back into the synced
+```yaml
+# Something measured: record 45 g of filament used.
+action: gubbins.adjust_gauge
+data:
+  item_id: "item-pla-filament"
+  delta: -45                # negative = used, positive = refilled; fractions are fine
+  note: "Printed the bracket"
+```
+
+`adjust_gauge` is the natural pair for a consumable sitting on a smart scale: read the weight in
+Home Assistant, send the difference. The app clamps the result between empty and the item's
+capacity, and refuses the call if the item isn't gauge-tracked.
+
+The bridge applies either change through the app's own mutation and writes it back into the synced
 `gubbins-sync.json`, so the PWA merges it conflict-free on its next sync — no bespoke database
 write, no drift. (Writes are deliberately **not** wired into the voice intent or MCP; a voice
-"check out" automation can call this service explicitly.)
+"check out" automation can call these services explicitly.)
 
 ### 7. (Optional) React to a lookup — the `gubbins_item_located` event
 
@@ -434,8 +472,9 @@ verify end-to-end against a snapshot of your own:
    - Revoke the token in Gubbins (Users → the account → API tokens), let it sync, and ask
      again → *"Sorry, the Gubbins inventory bridge rejected my access token…"*
 
-7. **(Optional) Writes — `gubbins.adjust_quantity`.** Copy the snapshot somewhere writable and
-   restart the bridge with writes enabled (so the original stays unmodified):
+7. **(Optional) Writes — `gubbins.adjust_quantity` / `gubbins.adjust_gauge`.** Copy the snapshot
+   somewhere writable and restart the bridge with writes enabled (so the original stays
+   unmodified):
 
    ```bash
    cp /path/to/your/gubbins-sync.json /tmp/gubbins-sync.json
@@ -447,9 +486,11 @@ verify end-to-end against a snapshot of your own:
    Then call *Developer Tools → Actions → `gubbins.adjust_quantity`* with the `item_id` of a
    discrete item and `delta: -2`. Its quantity drops by two (re-run the `where` curl to
    confirm), `/tmp/gubbins-sync.json` gains a `QUANTITY_CHANGE` activity-log entry, and that
-   entry is attributed to **the account whose token you used**. With writes **off** (the
-   default), the service errors with *"The Gubbins bridge has writes disabled…"* and nothing
-   changes.
+   entry is attributed to **the account whose token you used**. Repeat with
+   `gubbins.adjust_gauge` against a measured consumable — its gauge drops by the amount you
+   send, and calling it against a *counted* item is refused with a clear message rather than
+   silently doing something else. With writes **off** (the default), both services error with
+   *"The Gubbins bridge has writes disabled…"* and nothing changes.
 
 > Use only synthetic/test values when following this recipe. The example token above is a
 > throwaway for local testing — generate a long random token for real use, and never commit
@@ -487,11 +528,11 @@ To exercise the mDNS / zeroconf path end-to-end (HA isn't unit-testable here):
 
 ## Security & privacy
 
-- **Read-only by default; one opt-in write.** The integration issues `GET` requests for every
-  read. The single exception is `gubbins.adjust_quantity`, which only works when *you* start the
-  bridge with `GUBBINS_BRIDGE_ALLOW_WRITES=on`; even then the bridge applies the change through
-  the app's own mutation and syncs it back conflict-free — no SQL is string-built. With writes
-  off (the default) the service errors and changes nothing.
+- **Read-only by default; two opt-in writes.** The integration issues `GET` requests for every
+  read. The only exceptions are `gubbins.adjust_quantity` and `gubbins.adjust_gauge`, which work
+  only when *you* start the bridge with `GUBBINS_BRIDGE_ALLOW_WRITES=on`; even then the bridge
+  applies the change through the app's own mutation and syncs it back conflict-free — no SQL is
+  string-built. With writes off (the default) both services error and change nothing.
 - **Your token stays yours.** With the custom integration the token is stored in Home
   Assistant's config-entry store (entered in the UI), never in YAML or this repository.
   With the YAML recipe it lives in your local `secrets.yaml`, which you must not commit.
@@ -514,13 +555,15 @@ there; the voice sentences and this guide stay under `homeassistant/`.
   custom_components/gubbins/                 # the integration (must be at the repo root)
     manifest.json                            # integration metadata (HACS-compatible)
     const.py                                 # domain + config keys
-    api.py                                   # thin HTTP client (read-only + the opt-in adjust_quantity write)
-    __init__.py                              # setup: client, coordinator, intent, gubbins.search + gubbins.adjust_quantity services
-    coordinator.py                           # /health polling coordinator (drives reauth when the token is rejected)
+    api.py                                   # thin HTTP client (reads + the opt-in adjust_quantity / adjust_gauge writes)
+    __init__.py                              # setup: client, coordinators, intent, gubbins.search + the two adjust services
+    coordinator.py                           # /health and /api/v1/status polling coordinators (health drives reauth when the token is rejected)
     config_flow.py                           # UI config flow: manual host/port/token, zeroconf discovery, reauth + reconfigure (all verify /health)
     intent.py                                # GubbinsWhereIs conversation intent handler
+    entity.py                                # the shared device descriptor every entity belongs to
     sensor.py                                # optional /health item-count sensor
-    services.yaml                            # gubbins.search + gubbins.adjust_quantity schemas
+    binary_sensor.py                         # one attention binary sensor per inventory status
+    services.yaml                            # gubbins.search + adjust_quantity + adjust_gauge schemas
     strings.json / translations/en.json      # UI text
 
 homeassistant/

@@ -47,6 +47,7 @@ import {
 } from './respond.ts';
 import { buildCalendar, isCalendarSourceType, type CalendarSourceType } from '../ical/feed.ts';
 import { buildActivityFeed } from '../feeds/feed.ts';
+import { projectItemStatuses } from '../feeds/item-status.ts';
 import { emitRss, emitAtom, emitJsonFeed, type FeedChannel } from '../feeds/emitters.ts';
 import { readPage, readQueryParam, readResultLimit, type PageRequest } from './params.ts';
 import {
@@ -239,6 +240,9 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
   switch (segments[0]) {
     case 'health':
       if (segments.length === 1) return void (await handleHealth(res, state, ctx.getSnapshotHealth?.()));
+      break;
+    case 'status':
+      if (segments.length === 1) return void (await handleStatus(res, state));
       break;
     case 'search':
       if (segments.length === 1) return void (await handleSearch(res, driver, url));
@@ -674,6 +678,7 @@ function apiIndex(writable: boolean, pushable: boolean, streamable: boolean, sca
       `${API_V1_BASE}/openapi.json`,
       `${API_V1_BASE}/$metadata`,
       `${API_V1_BASE}/health`,
+      `${API_V1_BASE}/status`,
       `${API_V1_BASE}/search`,
       `${API_V1_BASE}/where`,
       `${API_V1_BASE}/items`,
@@ -706,6 +711,21 @@ async function handleHealth(
 ): Promise<void> {
   const itemCount = await new ItemRepository(state.driver).countByAst(emptyAst('AND'));
   sendJson(res, 200, healthBody(state.snapshotGeneratedAt, itemCount, health));
+}
+
+/**
+ * `GET /api/v1/status` — how many active items currently need attention, per status (issue #146).
+ *
+ * Deliberately *not* folded into `/health`: that is a liveness probe a monitor hits often, and the
+ * status pass is a scan of `items`. Keeping them apart lets a caller poll liveness cheaply and the
+ * counts on a slower interval, which is exactly what the Home Assistant integration does.
+ *
+ * The snapshot's own timestamp rides along so a consumer can tell how fresh the counts are without
+ * a second call to `/health` — the numbers are only ever as current as the snapshot they came from.
+ */
+async function handleStatus(res: ServerResponse, state: BridgeServerState): Promise<void> {
+  const statuses = await projectItemStatuses(state.driver);
+  sendJson(res, 200, { statuses, snapshotGeneratedAt: state.snapshotGeneratedAt });
 }
 
 // --- search / where (aliases of the legacy contract, same bodies) -----------------
