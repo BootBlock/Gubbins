@@ -23,6 +23,11 @@ click away and are **equally binding** — "I only read AGENTS.md" is not a defe
 | Plan docs under `docs/todo/` carry a status banner | [CLAUDE.md](CLAUDE.md#plan-docs-carry-a-status-docstodo) |
 | The GitHub issue workflow, end to end | [CLAUDE.md](CLAUDE.md#actioning-a-github-issue-workflow) |
 
+**Adding a rule to CLAUDE.md? It belongs in that table too.** A unit test
+(`src/lib/agent-guide-parity.test.ts`) fails the build if a CLAUDE.md section is missing from
+this index, if a rule reproduced below drifts from its source, or if the counts above go stale —
+this page fell a month behind once, and drift is not something review reliably catches.
+
 ## 🌳 Every task runs in a git worktree (mandatory)
 
 **This rule gates your first action, which is why it is repeated here rather than only linked.**

@@ -1754,7 +1754,7 @@ What is advertised (service type **`_gubbins._tcp.local`**):
 | Port | the bridge's HTTP port. |
 | TXT | `server=gubbins-bridge`, `api=v1`, `path=/api/v1`, `version=<Gubbins version>`. |
 
-The `version=` value is the **Gubbins release the checkout is on** (e.g. `1.2.0`) — the bridge
+The `version=` value is the **Gubbins release the checkout is on** (e.g. `0.3.0`) — the bridge
 has no version of its own to advertise. See [Updating the bridge](#updating-the-bridge).
 
 > **No secret is ever advertised.** The TXT record carries only the API path/version for
@@ -2177,7 +2177,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8787/api/v1
   "name": "Gubbins Bridge API",
   "version": "1.0.0",          // the API *contract* version — see the note below
   "bridge": {
-    "version": "1.2.0",        // which Gubbins release this bridge's checkout is on
+    "version": "0.3.0",        // which Gubbins release this bridge's checkout is on
     "schemaVersion": 5         // the data-schema generation it expects
   },
   "openapi": "/api/v1/openapi.json"
