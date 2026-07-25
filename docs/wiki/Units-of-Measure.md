@@ -43,8 +43,8 @@ setup gets cubic inches and cubic feet. Pick **Litres**, **Cubic centimetres**, 
 
 > **💡 Tip**
 > Automatic is worth keeping unless you have a reason not to. Pin everything to cubic metres and a
-> small parts drawer rounds away to `0 m³`; pin it to cubic centimetres and a whole storage bay
-> runs into the millions.
+> parts tray of a litre or two rounds away to `0 m³`; pin it to cubic centimetres and a storage bay
+> of a cubic metre runs into the millions.
 
 ## Changing a unit never changes your data
 
