@@ -118,6 +118,19 @@ const REPORT_KINDS: { value: ReportExportKind; label: string }[] = [
   { value: 'SPEND', label: 'Spend analytics' },
 ];
 
+/**
+ * Query keys for the wizard's three scope pickers — the lists of items, projects and locations
+ * the user chooses a target from. Named here rather than spelled inline at each `useQuery` so
+ * the wizard's reads share one prefix a future invalidation can name (issue #379); they are
+ * read-only pickers, so nothing invalidates them today.
+ */
+const exportKeys = {
+  all: ['export'] as const,
+  itemPicker: () => [...exportKeys.all, 'item-picker'] as const,
+  projectPicker: () => [...exportKeys.all, 'project-picker'] as const,
+  locationPicker: () => [...exportKeys.all, 'location-picker'] as const,
+} as const;
+
 export function ExportWizard({
   open,
   onClose,
@@ -173,19 +186,19 @@ export function ExportWizard({
   const isItemsFile = format === 'CSV';
 
   const itemList = useQuery({
-    queryKey: ['export', 'item-picker'],
+    queryKey: exportKeys.itemPicker(),
     queryFn: () => getItemRepository().list({ limit: 100, includeInactive: true }),
     enabled: open && scope === 'ITEM',
   });
   const projectList = useQuery({
-    queryKey: ['export', 'project-picker'],
+    queryKey: exportKeys.projectPicker(),
     queryFn: () => getProjectRepository().list({ limit: 100 }),
     enabled: open && scope === 'PROJECT',
   });
   // Every location, not a page: this picker chooses *which* location to export, so a capped read
   // simply made the ones past the first page impossible to pick (issue #148).
   const locationList = useQuery({
-    queryKey: ['export', 'location-picker'],
+    queryKey: exportKeys.locationPicker(),
     queryFn: () => getLocationRepository().listAll(),
     enabled: open && scope === 'LOCATION',
   });

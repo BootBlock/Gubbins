@@ -19,6 +19,7 @@ import {
 import { maintenanceStatus } from '@/features/lifecycle/maintenance';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { buildAgenda, maintenanceDueAtMs, type AgendaEvent, type AgendaSources } from './agenda';
+import { agendaKeys } from './keys';
 import { nowMs } from '@/lib/clock';
 import { useFormatters } from '@/lib/useFormatters';
 
@@ -72,38 +73,38 @@ export function useAgenda(): {
   const bookingsOn = enabled.has('bookings');
 
   const maintenanceQuery = useQuery({
-    queryKey: ['agenda', 'maintenance'],
+    queryKey: agendaKeys.maintenance(),
     queryFn: () => getMaintenanceRepository().listUpcoming(now, { limit: AGENDA_FETCH_LIMIT }),
     enabled: maintenanceOn,
   });
 
   const warrantyQuery = useQuery({
-    queryKey: ['agenda', 'warranty', AGENDA_LOOKAHEAD_DAYS],
+    queryKey: agendaKeys.warranty(AGENDA_LOOKAHEAD_DAYS),
     queryFn: () =>
       getItemRepository().listWarrantyExpiring(AGENDA_LOOKAHEAD_DAYS, now, { limit: AGENDA_FETCH_LIMIT }),
     enabled: warrantyOn,
   });
 
   const expiryQuery = useQuery({
-    queryKey: ['agenda', 'expiry', AGENDA_LOOKAHEAD_DAYS],
+    queryKey: agendaKeys.expiry(AGENDA_LOOKAHEAD_DAYS),
     queryFn: () =>
       getItemRepository().listExpiringWithin(AGENDA_LOOKAHEAD_DAYS, now, { limit: AGENDA_FETCH_LIMIT }),
     enabled: perishablesOn,
   });
 
   const checkoutsQuery = useQuery({
-    queryKey: ['agenda', 'checkouts'],
+    queryKey: agendaKeys.checkouts(),
     queryFn: () => getCheckoutRepository().listOpen({ limit: AGENDA_FETCH_LIMIT }),
     enabled: contactsOn,
   });
 
   const reorderQuery = useQuery({
-    queryKey: ['agenda', 'reorder'],
+    queryKey: agendaKeys.reorder(),
     queryFn: () => getReportRepository().listReorderShortfall(),
   });
 
   const bookingsQuery = useQuery({
-    queryKey: ['agenda', 'bookings'],
+    queryKey: agendaKeys.bookings(),
     queryFn: () => getAssetBookingRepository().listUpcoming(now, { limit: AGENDA_FETCH_LIMIT }),
     enabled: bookingsOn,
   });

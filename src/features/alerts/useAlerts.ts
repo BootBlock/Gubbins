@@ -27,9 +27,6 @@ import {
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
 import { nowMs } from '@/lib/clock';
 
-/** TanStack Query key for the warranty-expiring feed. */
-const warrantyExpiringKey = () => [...inventoryKeys.all, 'warranty-expiring'] as const;
-
 /**
  * Combines the four alert source feeds into a sorted, dismissal-filtered `Alert[]`.
  *
@@ -73,7 +70,7 @@ export function useAlerts(): {
   const maintenanceDueQuery = useDueMaintenance({ enabled: maintenanceOn });
 
   const warrantyQuery = useQuery({
-    queryKey: warrantyExpiringKey(),
+    queryKey: inventoryKeys.warrantyExpiring(),
     queryFn: () => getItemRepository().listWarrantyExpiring(WARRANTY_EXPIRING_SOON_DAYS, now, { limit: 100 }),
     enabled: warrantyOn,
   });

@@ -24,28 +24,7 @@ import {
 import { inventoryKeys } from '@/features/inventory/queries';
 import { invalidateItems } from '@/features/inventory/invalidate';
 import { useReportWriteFailure } from '@/features/errors';
-
-export const contactKeys = {
-  all: ['contacts'] as const,
-  list: () => [...contactKeys.all, 'list'] as const,
-  /**
-   * One page of the contacts dictionary. Nested **under** {@link contactKeys.list} so every
-   * existing `invalidateQueries` against the list (or `all`) still refreshes every page and
-   * the count.
-   */
-  page: (offset: number, limit: number) => [...contactKeys.list(), { offset, limit }] as const,
-  count: () => [...contactKeys.list(), 'count'] as const,
-  detail: (id: string) => [...contactKeys.all, 'detail', id] as const,
-  checkoutsForContact: (id: string) => [...contactKeys.detail(id), 'checkouts'] as const,
-} as const;
-
-export const checkoutKeys = {
-  all: ['checkouts'] as const,
-  open: () => [...checkoutKeys.all, 'open'] as const,
-  forItem: (itemId: string) => [...checkoutKeys.all, 'item', itemId] as const,
-  forProject: (projectId: string) => [...checkoutKeys.all, 'project', projectId] as const,
-  forLocation: (locationId: string) => [...checkoutKeys.all, 'location', locationId] as const,
-} as const;
+import { checkoutKeys, contactKeys } from './keys';
 
 // --- reads ---------------------------------------------------------------------
 

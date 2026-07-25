@@ -39,7 +39,7 @@ export function useAstSearch(
   pageSize = DEFAULT_PAGE_SIZE,
 ) {
   return useInfiniteQuery({
-    queryKey: [...inventoryKeys.search(), 'ast', ast, sort ?? null] as const,
+    queryKey: inventoryKeys.astSearch(ast, sort ?? null),
     enabled,
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
@@ -67,7 +67,7 @@ export function useAstSearch(
  */
 export function useAstCount(ast: SearchAST, enabled: boolean) {
   return useQuery({
-    queryKey: [...inventoryKeys.search(), 'ast', ast, 'count'] as const,
+    queryKey: inventoryKeys.astCount(ast),
     enabled,
     queryFn: () => getItemRepository().countByAst(ast),
     // Hold the previous count while a refined AST re-counts, so the summary doesn't blink.

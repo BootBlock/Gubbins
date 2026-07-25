@@ -13,6 +13,8 @@ import {
   type ConvertBookingInput,
   type CreateBookingInput,
 } from '@/db/repositories';
+import { agendaKeys } from '@/features/calendar/keys';
+import { checkoutKeys, contactKeys } from '@/features/contacts/keys';
 import { invalidateItems } from '@/features/inventory/invalidate';
 
 export const bookingKeys = {
@@ -24,7 +26,7 @@ export const bookingKeys = {
 /** Invalidate every view a booking write reshapes (the list + the upcoming agenda). */
 function invalidateBookings(client: ReturnType<typeof useQueryClient>): void {
   void client.invalidateQueries({ queryKey: bookingKeys.all });
-  void client.invalidateQueries({ queryKey: ['agenda'] });
+  void client.invalidateQueries({ queryKey: agendaKeys.all });
 }
 
 // --- reads ---------------------------------------------------------------------
@@ -87,8 +89,8 @@ export function useConvertBooking() {
     onSettled: () => {
       invalidateBookings(client);
       // A conversion creates a loan: it decrements on-hand stock and opens a checkout.
-      void client.invalidateQueries({ queryKey: ['checkouts'] });
-      void client.invalidateQueries({ queryKey: ['contacts'] });
+      void client.invalidateQueries({ queryKey: checkoutKeys.all });
+      void client.invalidateQueries({ queryKey: contactKeys.all });
       invalidateItems(client);
     },
   });

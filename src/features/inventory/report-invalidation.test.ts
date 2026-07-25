@@ -65,9 +65,9 @@ describe('the reports prefix', () => {
     // below can't see — which would let it drift off the prefix unnoticed.
     expect(keys).toHaveLength(queries.split('useQuery({').length - 1);
     for (const key of keys) {
-      // Either the bare prefix or a key spread from it — never a re-typed `['reports', …]`,
-      // which could drift out from under the invalidation.
-      expect(key === 'reportKeys.all' || key?.startsWith('[...reportKeys.all,')).toBe(true);
+      // A member of the factory — never a re-typed `['reports', …]` or a key spread together at
+      // the call site, either of which could drift out from under the invalidation (issue #379).
+      expect(key?.startsWith('reportKeys.'), key).toBe(true);
     }
   });
 });

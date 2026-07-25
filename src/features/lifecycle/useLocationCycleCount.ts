@@ -103,7 +103,7 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
   // counted separately; SERIALISED instances (single-placement, qty 1) feed the presence
   // audit and are paged through in full so an audit is never capped (see the helper above).
   const { data, isLoading } = useQuery({
-    queryKey: [...inventoryKeys.itemList({ locationId: location.id }), 'cycle-count'],
+    queryKey: inventoryKeys.locationCycleCount(location.id),
     queryFn: async () => {
       const repo = getItemRepository();
       const [discrete, serialisedItems] = await Promise.all([

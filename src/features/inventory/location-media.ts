@@ -189,7 +189,7 @@ export function useItemPlacements(itemId: string | undefined) {
 
 export function useRegionItemIds(regionId: string | undefined) {
   return useQuery({
-    queryKey: [...inventoryKeys.photoRegions(''), 'items', regionId ?? ''] as const,
+    queryKey: inventoryKeys.regionItems(regionId ?? ''),
     queryFn: () => getLocationPhotoRepository().listRegionItemIds(regionId!),
     enabled: Boolean(regionId),
   });
@@ -210,7 +210,7 @@ export function useLinkItemToRegion(photoId: string) {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemPlacements(itemId) });
       void client.invalidateQueries({ queryKey: inventoryKeys.photoRegions(photoId) });
       void client.invalidateQueries({
-        queryKey: [...inventoryKeys.photoRegions(''), 'items', regionId] as const,
+        queryKey: inventoryKeys.regionItems(regionId),
       });
     },
   });
@@ -255,7 +255,7 @@ export function useSetItemPlacement() {
         if (!end) continue;
         void client.invalidateQueries({ queryKey: inventoryKeys.photoRegions(end.photoId) });
         void client.invalidateQueries({
-          queryKey: [...inventoryKeys.photoRegions(''), 'items', end.regionId] as const,
+          queryKey: inventoryKeys.regionItems(end.regionId),
         });
       }
     },

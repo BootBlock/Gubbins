@@ -44,6 +44,7 @@ import {
   type UpdateSupplierPartInput,
 } from '@/db/repositories';
 import { currentGrossWeight, percentageRemaining, type GaugeConfigChange } from '@/db/repositories/gauge';
+import { checkoutKeys } from '@/features/contacts/keys';
 import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
 import { resolveItemTagNames, type BulkEditSpec } from './bulk-edit';
@@ -60,15 +61,32 @@ type ItemListData = InfiniteData<Page<Item>, number>;
  */
 type UndoContext = { undo: (item: Item) => Item };
 
+/**
+ * The `['inventory','items','list']` prefix an item-list key opens with, taken from the factory
+ * rather than re-typed, so renaming a segment there can't silently stop this predicate matching
+ * (issue #379). Read from a representative key: the filters object is the last segment, so the
+ * prefix is everything before it.
+ *
+ * Read **when the predicate runs**, never at module scope: a couple of dozen component tests
+ * replace `./queries` wholesale with a `vi.mock` factory listing only the hooks they render, so
+ * reaching for the factory at import time would stop this module loading at all in them (the
+ * same hazard `./invalidate` exists to avoid).
+ */
+function itemListPrefix(): readonly unknown[] {
+  return inventoryKeys.itemList({}).slice(0, -1);
+}
+
 const itemListFilter = {
-  // Match only the infinite list queries — exactly ['inventory','items','list',filters].
-  // The count query (…,'list',filters,'count') has length 5 and holds a number,
+  // Match only the infinite list queries — exactly [...itemListPrefix(), filters].
+  // The count query (…,'list',filters,'count') is one segment longer and holds a number,
   // so it must be excluded or the InfiniteData updater would crash on it.
-  predicate: (query: { queryKey: readonly unknown[] }) =>
-    query.queryKey.length === 4 &&
-    query.queryKey[0] === 'inventory' &&
-    query.queryKey[1] === 'items' &&
-    query.queryKey[2] === 'list',
+  predicate: (query: { queryKey: readonly unknown[] }) => {
+    const prefix = itemListPrefix();
+    return (
+      query.queryKey.length === prefix.length + 1 &&
+      prefix.every((segment, i) => query.queryKey[i] === segment)
+    );
+  },
 } as const;
 
 /** Apply a transform to a single item across every cached list page + its detail. */
@@ -792,7 +810,7 @@ export function useDeleteLocation() {
       // A delete re-parents items to Unassigned, so refresh items too.
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
       invalidateItems(client);
-      void client.invalidateQueries({ queryKey: ['checkouts'] });
+      void client.invalidateQueries({ queryKey: checkoutKeys.all });
     },
   });
 }

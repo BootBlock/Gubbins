@@ -23,6 +23,7 @@ import {
   getSupplierPartRepository,
   type ItemListFilters,
   type ItemSeek,
+  type ItemSort,
   type ItemStatusCount,
   type ItemStatusFilter,
   type LocationWithCount,
@@ -31,6 +32,9 @@ import {
   type SuggestionField,
   type TagListParams,
 } from '@/db/repositories';
+// Type-only: the AST search's keys live in the factory below with the rest of the inventory
+// domain's, but nothing here executes any of the search machinery.
+import type { SearchAST } from '@/db/search/ast';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { PRESET_SUGGESTIONS, mergeSuggestions } from './field-suggestions';
@@ -86,6 +90,21 @@ export const inventoryKeys = {
    */
   itemAttention: () => [...inventoryKeys.all, 'item-attention'] as const,
   itemList: (filters: ItemQueryFilters) => [...inventoryKeys.items(), 'list', filters] as const,
+  /** One discrete page of a filtered list (issue #20) — the paginated counterpart to the
+   *  infinite list, whose own cache is {@link inventoryKeys.itemList} unsuffixed. */
+  itemPage: (filters: ItemQueryFilters, page: number, pageSize: number) =>
+    [...inventoryKeys.itemList(filters), 'page', page, pageSize] as const,
+  /** One collapsible **location section**'s pages (issue #171). The suffix keeps a section's
+   *  cache distinct from the flat list's for the same filters — a section pages independently —
+   *  while staying under `items()`, so item mutations invalidate it just the same. */
+  itemSection: (filters: ItemQueryFilters) => [...inventoryKeys.itemList(filters), 'section'] as const,
+  /** How many items match a filter. Callers strip the sort axis first (issue #128): a count is
+   *  order-independent, so re-sorting must not re-run a certain-to-be-equal `COUNT(*)`. */
+  itemListCount: (filters: ItemQueryFilters) => [...inventoryKeys.itemList(filters), 'count'] as const,
+  /** The items physically in one location, as the cycle-count/audit dialogs read them
+   *  (batch lots plus serialised instances) — under `itemList` so a stock write refreshes it. */
+  locationCycleCount: (locationId: string) =>
+    [...inventoryKeys.itemList({ locationId }), 'cycle-count'] as const,
   /** The **stock-derived** status counts (low/out of stock) — under items(), so every item
    *  mutation including a bare quantity change invalidates them by prefix. */
   applicableStatuses: (tuning: ApplicableStatusTuning) =>
@@ -113,12 +132,16 @@ export const inventoryKeys = {
   itemFields: (itemId: string) => [...inventoryKeys.item(itemId), 'fields'] as const,
   /** The global custom-field dictionary (issue #97) — the definitions a location may set. */
   fieldDefs: () => [...inventoryKeys.categories(), 'field-defs'] as const,
+  /** The dictionary definitions nothing references any more — the removable leftovers. */
+  unusedFieldDefs: () => [...inventoryKeys.fieldDefs(), 'unused'] as const,
   /** One location's custom-field values, inheritable or not (issue #97). Under locations()
    *  so a location write refreshes it by prefix. */
   locationFields: (locationId: string) => [...inventoryKeys.locations(), locationId, 'fields'] as const,
+  /** The prefix every on-card custom-field read shares (one query per resident window, so a
+   *  field write invalidates *this* rather than trying to name each window's item ids). */
+  itemFieldValuesAll: () => [...inventoryKeys.items(), 'fieldValues'] as const,
   /** Stored custom-field values for a set of on-screen items (item cards, E1). */
-  itemFieldValues: (itemIds: readonly string[]) =>
-    [...inventoryKeys.items(), 'fieldValues', itemIds] as const,
+  itemFieldValues: (itemIds: readonly string[]) => [...inventoryKeys.itemFieldValuesAll(), itemIds] as const,
   tags: () => [...inventoryKeys.all, 'tags'] as const,
   /** One server-side page of the counted dictionary, for one filter and ordering (#84, #137). */
   tagList: (offset: number, limit: number, browse: TagBrowse = {}) =>
@@ -127,6 +150,8 @@ export const inventoryKeys = {
   tagCount: (search = '') => [...inventoryKeys.tags(), 'count', search] as const,
   /** The dictionary without usage counts — the tag-entry combobox (issue #84). */
   tagNames: () => [...inventoryKeys.tags(), 'names'] as const,
+  /** Prefix autocomplete over the dictionary, keyed by the trimmed term (issue #84). */
+  tagSuggest: (term: string) => [...inventoryKeys.tags(), 'suggest', term] as const,
   itemTags: (itemId: string) => [...inventoryKeys.item(itemId), 'tags'] as const,
   /** Tags for a set of on-screen items in one round-trip (the item-card Tags field, issue #84);
    *  under items() so any item/tag write refreshes it by prefix. */
@@ -142,12 +167,25 @@ export const inventoryKeys = {
   locationPhotos: (locationId: string) => [...inventoryKeys.locations(), locationId, 'photos'] as const,
   /** The regions drawn on one photo (issue #81). */
   photoRegions: (photoId: string) => [...inventoryKeys.locations(), 'photo', photoId, 'regions'] as const,
+  /**
+   * Which items are placed in one region (issue #81). Addressed by region id alone — the item
+   * side of a placement knows the region but not always the photo it was drawn on (issue #392)
+   * — so it hangs off the photo-less `photoRegions('')` prefix rather than a specific photo's.
+   */
+  regionItems: (regionId: string) => [...inventoryKeys.photoRegions(''), 'items', regionId] as const,
   /** Every region an item is placed in, resolved up to its location (issue #81). */
   itemPlacements: (itemId: string) => [...inventoryKeys.item(itemId), 'placements'] as const,
   itemAttachments: (itemId: string) => [...inventoryKeys.item(itemId), 'attachments'] as const,
   // Phase 5 — weighted capabilities & Visual-Builder search.
   itemCapabilities: (itemId: string) => [...inventoryKeys.item(itemId), 'capabilities'] as const,
   search: () => [...inventoryKeys.all, 'search'] as const,
+  /** One Visual-Builder (AST) search. `sort` is part of the key — an explicit ordering replaces
+   *  the search's own relevance ranking, so re-sorting must re-run it (issue #128). */
+  astSearch: (ast: SearchAST, sort: readonly ItemSort[] | null) =>
+    [...inventoryKeys.search(), 'ast', ast, sort] as const,
+  /** How many items an AST matches in total (issue #220). Order-independent, so — unlike
+   *  {@link inventoryKeys.astSearch} — it deliberately omits the sort axis. */
+  astCount: (ast: SearchAST) => [...inventoryKeys.search(), 'ast', ast, 'count'] as const,
   // Phase 8 — Universal Alias Mapping (§4 external scraping).
   itemAliases: (itemId: string) => [...inventoryKeys.item(itemId), 'aliases'] as const,
   // Phase 60 — N suppliers per item (§4 supplier facet); under item() so an `items()`
@@ -182,9 +220,19 @@ export const inventoryKeys = {
   /** One kit item's component definition (Kits v1); under item() so an `items()`
    *  invalidation (a component's stock changing) refreshes its buildable count by prefix. */
   itemKit: (kitId: string) => [...inventoryKeys.item(kitId), 'kit'] as const,
+  /** A kit's nested-kit roll-up availability (Kits v3) — under {@link inventoryKeys.itemKit}
+   *  so an assemble/disassemble or a component edit refreshes it by prefix. */
+  itemKitRollup: (kitId: string) => [...inventoryKeys.itemKit(kitId), 'rollup'] as const,
   expiring: () => [...inventoryKeys.all, 'expiring'] as const,
+  /** Items expiring inside one lookahead window (§3 "Expiring Soon"). */
+  expiringWithin: (withinDays: number) => [...inventoryKeys.expiring(), withinDays] as const,
   /** Active items running low — the §3 "Low Stock Alerts" dashboard widget (Phase 45). */
   lowStock: () => [...inventoryKeys.all, 'low-stock'] as const,
+  /** Low-stock items for one set of thresholds; `null` means the repository defaults. Keyed on
+   *  them so a caller that overrides the defaults gets its own cache entry. */
+  lowStockFor: (thresholds: LowStockThresholds | null) => [...inventoryKeys.lowStock(), thresholds] as const,
+  /** Items whose warranty is expiring — the §3 alerts feed. */
+  warrantyExpiring: () => [...inventoryKeys.all, 'warranty-expiring'] as const,
   inTransit: () => [...inventoryKeys.all, 'in-transit'] as const,
   /** One item's derived incoming In-Transit quantity (Phase 20); under item() so an
    *  `items()` invalidation (fired by procurement mutations) refreshes it by prefix. */
@@ -392,7 +440,7 @@ export function useInventoryItems(
  */
 export function useItemPage(filters: ItemQueryFilters, page: number, pageSize: number, enabled = true) {
   return useQuery({
-    queryKey: [...inventoryKeys.itemList(filters), 'page', page, pageSize],
+    queryKey: inventoryKeys.itemPage(filters, page, pageSize),
     queryFn: () => getItemRepository().list({ ...filters, limit: pageSize, offset: (page - 1) * pageSize }),
     enabled,
     placeholderData: keepPreviousData,
@@ -415,7 +463,7 @@ export function useItemPage(filters: ItemQueryFilters, page: number, pageSize: n
  */
 export function useLocationSectionItems(filters: ItemQueryFilters, pageSize = DEFAULT_PAGE_SIZE) {
   return useInfiniteQuery({
-    queryKey: [...inventoryKeys.itemList(filters), 'section'],
+    queryKey: inventoryKeys.itemSection(filters),
     initialPageParam: 0,
     queryFn: ({ pageParam }) => getItemRepository().list({ ...filters, limit: pageSize, offset: pageParam }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
@@ -436,7 +484,7 @@ export function useItemCount(filters: ItemQueryFilters = {}, enabled = true) {
   // to return the same number, which is real work at 100k+ scale.
   const { sort: _sort, ...counted } = filters;
   return useQuery({
-    queryKey: [...inventoryKeys.itemList(counted), 'count'],
+    queryKey: inventoryKeys.itemListCount(counted),
     queryFn: () => getItemRepository().count(counted),
     enabled,
     // Hold the previous count while a new filter loads (mirrors the list above) so the

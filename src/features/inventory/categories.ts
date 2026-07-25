@@ -213,9 +213,9 @@ export function useSetItemFieldValues(itemId: string) {
     onError: reportFailure,
     onSettled: () => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemFields(itemId) });
-      // Refresh the on-card custom-field values (E1) — their key is `[...items(),
-      // 'fieldValues', ids]`, so the prefix matches every resident-window query.
-      void client.invalidateQueries({ queryKey: [...inventoryKeys.items(), 'fieldValues'] });
+      // Refresh the on-card custom-field values (E1) — each resident window keys its read on
+      // its own item ids, so the shared prefix is what reaches all of them at once.
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemFieldValuesAll() });
     },
   });
 }
@@ -236,7 +236,7 @@ export function useFieldDefs() {
  */
 export function useUnusedFieldDefs() {
   return useQuery({
-    queryKey: [...inventoryKeys.fieldDefs(), 'unused'],
+    queryKey: inventoryKeys.unusedFieldDefs(),
     queryFn: () => getCategoryRepository().listUnusedFieldDefs(),
   });
 }
@@ -316,12 +316,15 @@ function invalidateInheritance(client: QueryClient, locationId: string): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.locationFields(locationId) });
   void client.invalidateQueries({ queryKey: inventoryKeys.fieldDefs() });
   // Every item's resolved fields, and every on-card value: an inheritable change can
-  // reach any descendant item at any depth.
+  // reach any descendant item at any depth. Matched by predicate rather than prefix because
+  // the `'fields'` segment sits *after* the item id — the prefix is taken from the factory
+  // rather than re-typed, so a renamed segment can't silently stop this matching (issue #379).
+  const itemsPrefix = inventoryKeys.items();
   void client.invalidateQueries({
     predicate: (q) => {
       const key = q.queryKey as readonly unknown[];
-      return key[0] === 'inventory' && key[1] === 'items' && key.includes('fields');
+      return itemsPrefix.every((segment, i) => key[i] === segment) && key.includes('fields');
     },
   });
-  void client.invalidateQueries({ queryKey: [...inventoryKeys.items(), 'fieldValues'] });
+  void client.invalidateQueries({ queryKey: inventoryKeys.itemFieldValuesAll() });
 }
