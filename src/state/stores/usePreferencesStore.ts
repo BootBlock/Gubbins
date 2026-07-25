@@ -34,6 +34,7 @@ import {
   guessBaseCurrency,
   normaliseCardClickAction,
   normaliseNavCountMetric,
+  normaliseNavCountMetrics,
   normaliseVisualCardMetric,
   normaliseVisualCardMetricFallback,
   normaliseWindowMonths,
@@ -52,7 +53,11 @@ import {
   normaliseLabelTemplate,
   type LabelTemplate,
 } from '@/features/inventory/labels/label-template';
-import { DEFAULT_CARD_FIELDS, type CardFieldsConfig } from '@/features/inventory/card-fields';
+import {
+  DEFAULT_CARD_FIELDS,
+  type CardFieldSetting,
+  type CardFieldsConfig,
+} from '@/features/inventory/card-fields';
 import {
   DEFAULT_CARD_BADGE_CONTENT,
   DEFAULT_CARD_BADGE_FALLBACK,
@@ -86,6 +91,15 @@ import { DEFAULT_DIMENSION_UNIT, normaliseDimensionUnit, type DimensionUnit } fr
 export type { DimensionUnit };
 import { DEFAULT_VOLUME_UNIT, normaliseVolumeUnit, type VolumeUnitPreference } from '@/lib/volume';
 export type { VolumeUnitPreference };
+import { DEFAULT_LOCALE, normaliseCurrency, normaliseLocale } from '@/lib/format';
+import {
+  isPlainObject,
+  normaliseArray,
+  normaliseBoolean,
+  normaliseNullableInteger,
+  normaliseOneOf,
+  normaliseString,
+} from '@/lib/persisted-state';
 
 /**
  * Appearance preferences (spec §2.1). Two orthogonal axes plus two composable switches, derived
@@ -96,6 +110,8 @@ export type { VolumeUnitPreference };
  * - `highContrast` — accessibility high-contrast mode.
  */
 import {
+  DEFAULT_ACCENT,
+  DEFAULT_MODE,
   normaliseAccent,
   normaliseMode,
   normaliseAnimationLevel,
@@ -120,14 +136,34 @@ export type { Accent, Mode, AnimationLevel, BackgroundEffect, SurfaceStyle };
  * - `HYBRID` (Option B) — external URLs *and* local file-path pointers (the
  *   File System Access path string is stored; the blob is never synced, §4).
  */
-export type AttachmentMode = 'URL_ONLY' | 'HYBRID';
+export const ATTACHMENT_MODES = ['URL_ONLY', 'HYBRID'] as const;
+
+export type AttachmentMode = (typeof ATTACHMENT_MODES)[number];
+
+/** The attachment mode a fresh install starts on — external URLs only (spec §4 Option A). */
+export const DEFAULT_ATTACHMENT_MODE: AttachmentMode = 'URL_ONLY';
+
+/** Reconcile a persisted/unknown attachment mode against the live union — see {@link normaliseMode}. */
+export function normaliseAttachmentMode(value: unknown): AttachmentMode {
+  return normaliseOneOf(value, ATTACHMENT_MODES, DEFAULT_ATTACHMENT_MODE);
+}
 
 /**
  * How the user is told about external-scrape updates (spec §4). The default is a
  * **passive toast** notification; `SILENT` suppresses the toast (the scrape still
  * applies and is logged to the Activity Ledger).
  */
-export type ScrapeNotificationMode = 'TOAST' | 'SILENT';
+export const SCRAPE_NOTIFICATION_MODES = ['TOAST', 'SILENT'] as const;
+
+export type ScrapeNotificationMode = (typeof SCRAPE_NOTIFICATION_MODES)[number];
+
+/** The scrape-notification mode a fresh install starts on — the passive toast. */
+export const DEFAULT_SCRAPE_NOTIFICATIONS: ScrapeNotificationMode = 'TOAST';
+
+/** Reconcile a persisted/unknown scrape-notification mode against the live union. */
+export function normaliseScrapeNotifications(value: unknown): ScrapeNotificationMode {
+  return normaliseOneOf(value, SCRAPE_NOTIFICATION_MODES, DEFAULT_SCRAPE_NOTIFICATIONS);
+}
 
 interface PreferencesStore {
   readonly baseCurrency: string;
@@ -724,13 +760,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
     (set) => ({
       // First-run guess from the browser locale; the persisted value (if any) wins.
       baseCurrency: guessBaseCurrency(),
-      locale: 'en-GB',
+      locale: DEFAULT_LOCALE,
       weightUnit: DEFAULT_WEIGHT_UNIT,
       dimensionUnit: DEFAULT_DIMENSION_UNIT,
       volumeUnit: DEFAULT_VOLUME_UNIT,
       defaultPackingFactor: DEFAULT_PACKING_FACTOR,
-      mode: 'dark',
-      accent: 'violet',
+      mode: DEFAULT_MODE,
+      accent: DEFAULT_ACCENT,
       oledDark: false,
       highContrast: false,
       fullWidth: false,
@@ -744,8 +780,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       customAccentHue: DEFAULT_CUSTOM_ACCENT_HUE,
       brandTagline: '',
       surfaceStyle: DEFAULT_SURFACE_STYLE,
-      attachmentMode: 'URL_ONLY',
-      scrapeNotifications: 'TOAST',
+      attachmentMode: DEFAULT_ATTACHMENT_MODE,
+      scrapeNotifications: DEFAULT_SCRAPE_NOTIFICATIONS,
       allowOnlineProductLookup: false,
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
       labelTemplate: DEFAULT_LABEL_TEMPLATE,
@@ -803,8 +839,10 @@ export const usePreferencesStore = create<PreferencesStore>()(
       reportsMovementWindow: DEFAULT_ANALYTICS_WINDOW,
       reportsSpendWindow: DEFAULT_ANALYTICS_WINDOW,
       reportsSalesWindow: DEFAULT_ANALYTICS_WINDOW,
-      setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
-      setLocale: (locale) => set({ locale }),
+      // Normalise so a code/tag `Intl` would reject can never reach the formatter bundle, which
+      // builds its `Intl.*Format` objects eagerly and would throw on the next render.
+      setBaseCurrency: (currency) => set({ baseCurrency: normaliseCurrency(currency) }),
+      setLocale: (locale) => set({ locale: normaliseLocale(locale) }),
       // Normalise so a stale/unknown persisted value can never reach the formatter/conversions.
       setWeightUnit: (unit) => set({ weightUnit: normaliseWeightUnit(unit) }),
       // Normalise so a stale/unknown persisted value can never reach the formatter/conversions.
@@ -844,8 +882,9 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setBrandTagline: (brandTagline) => set({ brandTagline }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam / CSS gate.
       setSurfaceStyle: (style) => set({ surfaceStyle: normaliseSurfaceStyle(style) }),
-      setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
-      setScrapeNotifications: (scrapeNotifications) => set({ scrapeNotifications }),
+      // Normalise so a stale/unknown persisted value can never reach the attachment picker.
+      setAttachmentMode: (mode) => set({ attachmentMode: normaliseAttachmentMode(mode) }),
+      setScrapeNotifications: (mode) => set({ scrapeNotifications: normaliseScrapeNotifications(mode) }),
       setAllowOnlineProductLookup: (allowOnlineProductLookup) => set({ allowOnlineProductLookup }),
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.
       setScannerSymbology: (symbology) => set({ scannerSymbology: normaliseSymbology(symbology) }),
@@ -960,9 +999,14 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // `off` is the barest floor, with a new `minimal` rung inserted. Installs carrying the interim
       // v2 ids are remapped; installs deriving fresh from `reduceEffects` already produce final ids.
       version: 3,
-      migrate: (persistedState, fromVersion) => {
-        // Copy into a mutable record — the store fields are declared `readonly`.
-        const state = { ...(persistedState as Partial<PreferencesStore>) } as Record<string, unknown>;
+      // Migration only reshapes the *fields a version bump moved*; it deliberately makes no claim
+      // about the rest, which is why it hands back an untyped record rather than asserting the
+      // store's shape. `merge` below is the boundary that actually establishes that shape — it
+      // runs on this return value and reconciles every field — so nothing here needs to pretend.
+      migrate: (persistedState, fromVersion): Record<string, unknown> => {
+        // A copy, so the version blocks below can rewrite fields (the store's are `readonly`);
+        // anything that isn't an object at all starts from empty and lands on the defaults.
+        const state: Record<string, unknown> = isPlainObject(persistedState) ? { ...persistedState } : {};
         if (fromVersion < 1) {
           if (state.lowStockQtyThreshold === 5) state.lowStockQtyThreshold = LOW_STOCK_QTY_THRESHOLD;
           if (state.lowStockGaugePercent === 15) state.lowStockGaugePercent = LOW_STOCK_GAUGE_PERCENT;
@@ -984,7 +1028,122 @@ export const usePreferencesStore = create<PreferencesStore>()(
           const current = state.animationLevel;
           if (typeof current === 'string' && current in REMAP) state.animationLevel = REMAP[current];
         }
-        return state as unknown as PreferencesStore;
+        return state;
+      },
+      // Rehydrated JSON is untyped: zustand's default merge is a shallow spread of the persisted
+      // blob over the defaults, so a `weightUnit` of `"stones"` or a `defaultPageSize` of `-5`
+      // would land in the store typed as its narrow union and flow to consumers that switch on it
+      // exhaustively or use it as a query key. The setters normalise on write; that only covers
+      // freshly-set values, so every persisted field is reconciled here too — the read boundary
+      // this store's "a stale value can never reach the engine" comments actually depend on.
+      //
+      // Every field of the store must appear below, and a new one has to be added here as well as
+      // to the defaults: what this returns *replaces* the state wholesale, so an omitted field is
+      // not passed through — it silently keeps its default and the user's stored value is dropped
+      // on every reload. A unit test seeds each field with its own value over a sentinel store and
+      // names anything that survives unreconciled, so the omission fails the build.
+      //
+      // `cardFields` is only array-checked: its *members* are reconciled against the live
+      // custom-field catalog on render (`normaliseCardFields`), which is where a renamed or
+      // removed field has to be resolved anyway.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<Record<keyof PreferencesStore, unknown>>;
+        return {
+          ...current,
+          baseCurrency: normaliseCurrency(p.baseCurrency, current.baseCurrency),
+          locale: normaliseLocale(p.locale, current.locale),
+          weightUnit: normaliseWeightUnit(p.weightUnit),
+          dimensionUnit: normaliseDimensionUnit(p.dimensionUnit),
+          volumeUnit: normaliseVolumeUnit(p.volumeUnit),
+          defaultPackingFactor: clampPackingFactor(p.defaultPackingFactor),
+          mode: normaliseMode(p.mode),
+          accent: normaliseAccent(p.accent),
+          oledDark: normaliseBoolean(p.oledDark, current.oledDark),
+          highContrast: normaliseBoolean(p.highContrast, current.highContrast),
+          fullWidth: normaliseBoolean(p.fullWidth, current.fullWidth),
+          animationLevel: normaliseAnimationLevel(p.animationLevel),
+          backgroundEffect: normaliseBackgroundEffect(p.backgroundEffect),
+          holographicCards: normaliseBoolean(p.holographicCards, current.holographicCards),
+          gamifyCards: normaliseBoolean(p.gamifyCards, current.gamifyCards),
+          customAccentEnabled: normaliseBoolean(p.customAccentEnabled, current.customAccentEnabled),
+          customAccentHue: clampAccentHue(p.customAccentHue),
+          brandTagline: normaliseString(p.brandTagline, current.brandTagline),
+          surfaceStyle: normaliseSurfaceStyle(p.surfaceStyle),
+          attachmentMode: normaliseAttachmentMode(p.attachmentMode),
+          scrapeNotifications: normaliseScrapeNotifications(p.scrapeNotifications),
+          allowOnlineProductLookup: normaliseBoolean(
+            p.allowOnlineProductLookup,
+            current.allowOnlineProductLookup,
+          ),
+          scannerSymbology: normaliseSymbology(p.scannerSymbology),
+          labelTemplate: normaliseLabelTemplate(p.labelTemplate),
+          labelBaseUrl: normaliseString(p.labelBaseUrl, current.labelBaseUrl),
+          scannerCameraId: normaliseString(p.scannerCameraId, current.scannerCameraId),
+          scannerBeep: normaliseBoolean(p.scannerBeep, current.scannerBeep),
+          scannerHaptics: normaliseBoolean(p.scannerHaptics, current.scannerHaptics),
+          expirySoonWindowDays: clampExpiryWindowDays(p.expirySoonWindowDays),
+          visualCardMetric: normaliseVisualCardMetric(p.visualCardMetric),
+          visualCardMetricFallback: normaliseVisualCardMetricFallback(p.visualCardMetricFallback),
+          cardClickAction: normaliseCardClickAction(p.cardClickAction),
+          cardBadgeContent: normaliseCardBadgeContent(p.cardBadgeContent),
+          cardBadgeFallback: normaliseCardBadgeContent(p.cardBadgeFallback, DEFAULT_CARD_BADGE_FALLBACK),
+          cardFields: normaliseArray<CardFieldSetting>(p.cardFields, current.cardFields),
+          categoryWatermarks: normaliseBoolean(p.categoryWatermarks, current.categoryWatermarks),
+          navCountMetrics: normaliseNavCountMetrics(p.navCountMetrics),
+          lowStockQtyThreshold: clampLowStockQty(p.lowStockQtyThreshold),
+          lowStockGaugePercent: clampLowStockGaugePercent(p.lowStockGaugePercent),
+          deadStockDays: clampDeadStockDays(p.deadStockDays),
+          budgetWarnPercent: clampBudgetWarnPercent(p.budgetWarnPercent),
+          paginateLists: normaliseBoolean(p.paginateLists, current.paginateLists),
+          defaultPageSize: clampPageSize(p.defaultPageSize),
+          pruneWindowMonths: normaliseWindowMonths(p.pruneWindowMonths),
+          downgradeWindowMonths: normaliseWindowMonths(p.downgradeWindowMonths),
+          lastArchivedAt: normaliseNullableInteger(p.lastArchivedAt),
+          archiveNudgeSnoozedUntil: normaliseNullableInteger(p.archiveNudgeSnoozedUntil),
+          kioskMode: normaliseBoolean(p.kioskMode, current.kioskMode),
+          remindersEnabled: normaliseBoolean(p.remindersEnabled, current.remindersEnabled),
+          reminderKinds: normaliseReminderKinds(p.reminderKinds),
+          ocrEnabled: normaliseBoolean(p.ocrEnabled, current.ocrEnabled),
+          ocrModel: normaliseOcrModel(p.ocrModel),
+          dashboardCommandPalette: normaliseBoolean(
+            p.dashboardCommandPalette,
+            current.dashboardCommandPalette,
+          ),
+          hotkeysEnabled: normaliseBoolean(p.hotkeysEnabled, current.hotkeysEnabled),
+          hotkeyBindings: normaliseHotkeyBindings(p.hotkeyBindings),
+          dashboardQuickActions: normaliseBoolean(p.dashboardQuickActions, current.dashboardQuickActions),
+          dashboardGettingStarted: normaliseBoolean(
+            p.dashboardGettingStarted,
+            current.dashboardGettingStarted,
+          ),
+          hideHealthyDashboardCards: normaliseBoolean(
+            p.hideHealthyDashboardCards,
+            current.hideHealthyDashboardCards,
+          ),
+          backupNudgeDismissed: normaliseBoolean(p.backupNudgeDismissed, current.backupNudgeDismissed),
+          wipBannerDismissed: normaliseBoolean(p.wipBannerDismissed, current.wipBannerDismissed),
+          settingsSyncEnabled: normaliseBoolean(p.settingsSyncEnabled, current.settingsSyncEnabled),
+          settingsSyncGroups: normaliseLiveSettingsSelection(p.settingsSyncGroups),
+          bridgeUrl: normaliseString(p.bridgeUrl, current.bridgeUrl),
+          bridgeToken: normaliseString(p.bridgeToken, current.bridgeToken),
+          scaleEntityId: normaliseString(p.scaleEntityId, current.scaleEntityId),
+          catalogueTitle: normaliseString(p.catalogueTitle, current.catalogueTitle),
+          catalogueOrgName: normaliseString(p.catalogueOrgName, current.catalogueOrgName),
+          catalogueOrgDetails: normaliseString(p.catalogueOrgDetails, current.catalogueOrgDetails),
+          catalogueFooter: normaliseString(p.catalogueFooter, current.catalogueFooter),
+          catalogueLogo: normaliseCatalogueLogo(p.catalogueLogo),
+          catalogueShowGeneratedDate: normaliseBoolean(
+            p.catalogueShowGeneratedDate,
+            current.catalogueShowGeneratedDate,
+          ),
+          cataloguePageNumbers: normaliseBoolean(p.cataloguePageNumbers, current.cataloguePageNumbers),
+          catalogueRunningHeader: normaliseBoolean(p.catalogueRunningHeader, current.catalogueRunningHeader),
+          cataloguePaperPreview: normaliseBoolean(p.cataloguePaperPreview, current.cataloguePaperPreview),
+          reportsAnalyticsWindow: normaliseAnalyticsWindow(p.reportsAnalyticsWindow),
+          reportsMovementWindow: normaliseAnalyticsWindow(p.reportsMovementWindow),
+          reportsSpendWindow: normaliseAnalyticsWindow(p.reportsSpendWindow),
+          reportsSalesWindow: normaliseAnalyticsWindow(p.reportsSalesWindow),
+        };
       },
     },
   ),

@@ -13,6 +13,7 @@
  * a circular module reference — exactly the discipline `lib/dimensions.ts` follows.
  */
 import { type DimensionUnit } from './dimensions';
+import { normaliseOneOf } from './persisted-state';
 
 /** The volume units the user may read volumes in. Canonical storage is always mm³. */
 export type VolumeUnit = 'mm3' | 'cm3' | 'l' | 'm3' | 'in3' | 'ft3';
@@ -81,8 +82,8 @@ export const DEFAULT_PACKING_FACTOR = 1;
 export const PACKING_FACTOR_BOUNDS = { min: 0.05, max: 1 } as const;
 
 /** Clamp a packing factor to {@link PACKING_FACTOR_BOUNDS}; non-finite falls back to the default. */
-export function clampPackingFactor(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_PACKING_FACTOR;
+export function clampPackingFactor(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_PACKING_FACTOR;
   return Math.min(PACKING_FACTOR_BOUNDS.max, Math.max(PACKING_FACTOR_BOUNDS.min, value));
 }
 
@@ -102,9 +103,9 @@ export const VOLUME_UNIT_OPTIONS = [
  * `'auto'`). Kept total so a stale localStorage value from an older/newer build can never
  * reach the formatter or a conversion — mirrors `normaliseDimensionUnit`.
  */
-export function normaliseVolumeUnit(value: string): VolumeUnitPreference {
+export function normaliseVolumeUnit(value: unknown): VolumeUnitPreference {
   if (value === 'auto') return 'auto';
-  return (VOLUME_UNITS as readonly string[]).includes(value) ? (value as VolumeUnit) : DEFAULT_VOLUME_UNIT;
+  return normaliseOneOf(value, VOLUME_UNITS, DEFAULT_VOLUME_UNIT);
 }
 
 /** Convert a value expressed in `unit` to canonical cubic millimetres (for storage). */

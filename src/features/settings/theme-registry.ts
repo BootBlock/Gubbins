@@ -17,6 +17,7 @@
  * as the `.dark` class + `data-accent` / `data-oled` / `data-contrast` attributes; the CSS
  * blocks that back the accents/OLED/high-contrast live in `styles/index.css`, keyed to match.
  */
+import { normaliseOneOf } from '@/lib/persisted-state';
 
 /** Light / dark mode, plus the `system` meta-choice (follow the OS, resolved at apply time). */
 export type Mode = 'light' | 'dark' | 'system';
@@ -36,7 +37,7 @@ export const MODE_OPTIONS = [
 export const DEFAULT_MODE: Mode = 'dark';
 
 /** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link Mode} (default dark). */
-export function normaliseMode(value: string): Mode {
+export function normaliseMode(value: unknown): Mode {
   return (MODE_OPTIONS as readonly { value: string }[]).some((o) => o.value === value)
     ? (value as Mode)
     : DEFAULT_MODE;
@@ -88,8 +89,8 @@ export const ACCENT_IDS = ACCENTS.map((a) => a.id) as Accent[];
 export const DEFAULT_ACCENT: Accent = 'violet';
 
 /** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link Accent} (default violet). */
-export function normaliseAccent(value: string): Accent {
-  return (ACCENT_IDS as readonly string[]).includes(value) ? (value as Accent) : DEFAULT_ACCENT;
+export function normaliseAccent(value: unknown): Accent {
+  return normaliseOneOf(value, ACCENT_IDS, DEFAULT_ACCENT);
 }
 
 /**
@@ -202,10 +203,8 @@ export const ANIMATION_LEVEL_IDS = ANIMATION_LEVELS.map((l) => l.id) as Animatio
 export const DEFAULT_ANIMATION_LEVEL: AnimationLevel = 'balanced';
 
 /** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link AnimationLevel}. */
-export function normaliseAnimationLevel(value: string): AnimationLevel {
-  return (ANIMATION_LEVEL_IDS as readonly string[]).includes(value)
-    ? (value as AnimationLevel)
-    : DEFAULT_ANIMATION_LEVEL;
+export function normaliseAnimationLevel(value: unknown): AnimationLevel {
+  return normaliseOneOf(value, ANIMATION_LEVEL_IDS, DEFAULT_ANIMATION_LEVEL);
 }
 
 /**
@@ -281,10 +280,8 @@ export const BACKGROUND_EFFECT_IDS = BACKGROUND_EFFECTS.map((e) => e.id) as Back
 export const DEFAULT_BACKGROUND_EFFECT: BackgroundEffect = 'none';
 
 /** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link BackgroundEffect}. */
-export function normaliseBackgroundEffect(value: string): BackgroundEffect {
-  return (BACKGROUND_EFFECT_IDS as readonly string[]).includes(value)
-    ? (value as BackgroundEffect)
-    : DEFAULT_BACKGROUND_EFFECT;
+export function normaliseBackgroundEffect(value: unknown): BackgroundEffect {
+  return normaliseOneOf(value, BACKGROUND_EFFECT_IDS, DEFAULT_BACKGROUND_EFFECT);
 }
 
 /**
@@ -326,10 +323,8 @@ export const SURFACE_STYLE_IDS = SURFACE_STYLES.map((s) => s.id) as SurfaceStyle
 export const DEFAULT_SURFACE_STYLE: SurfaceStyle = 'solid';
 
 /** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link SurfaceStyle} (default solid). */
-export function normaliseSurfaceStyle(value: string): SurfaceStyle {
-  return (SURFACE_STYLE_IDS as readonly string[]).includes(value)
-    ? (value as SurfaceStyle)
-    : DEFAULT_SURFACE_STYLE;
+export function normaliseSurfaceStyle(value: unknown): SurfaceStyle {
+  return normaliseOneOf(value, SURFACE_STYLE_IDS, DEFAULT_SURFACE_STYLE);
 }
 
 /**
@@ -345,8 +340,8 @@ export const CUSTOM_ACCENT_HUE_BOUNDS = { min: 0, max: 359 } as const;
 export const DEFAULT_CUSTOM_ACCENT_HUE = 277;
 
 /** Clamp + round an arbitrary value to an integer hue within {@link CUSTOM_ACCENT_HUE_BOUNDS} (wraps via modulo). */
-export function clampAccentHue(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_CUSTOM_ACCENT_HUE;
+export function clampAccentHue(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_CUSTOM_ACCENT_HUE;
   // Wrap into [0, 360) so a slider that runs a touch past either end stays a valid hue.
   const wrapped = ((Math.round(value) % 360) + 360) % 360;
   return wrapped;

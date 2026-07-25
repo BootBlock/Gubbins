@@ -13,6 +13,7 @@
  * free of any `./format` import so the reactive `Formatters` bundle can depend on these
  * conversions without a circular module reference. Mirrors `lib/weight.ts` by design.
  */
+import { normaliseOneOf } from './persisted-state';
 
 /** The length units the user may read/enter dimensions in. Canonical storage is always mm. */
 export type DimensionUnit = 'mm' | 'cm' | 'm' | 'in' | 'ft';
@@ -55,10 +56,8 @@ export const DIMENSION_UNIT_OPTIONS = [
  * total so a stale localStorage value from an older/newer build can never reach the formatter
  * or a conversion.
  */
-export function normaliseDimensionUnit(value: string): DimensionUnit {
-  return (DIMENSION_UNITS as readonly string[]).includes(value)
-    ? (value as DimensionUnit)
-    : DEFAULT_DIMENSION_UNIT;
+export function normaliseDimensionUnit(value: unknown): DimensionUnit {
+  return normaliseOneOf(value, DIMENSION_UNITS, DEFAULT_DIMENSION_UNIT);
 }
 
 /** Convert a value expressed in `unit` to canonical millimetres (for storage). */
