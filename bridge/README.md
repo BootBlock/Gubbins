@@ -1017,9 +1017,10 @@ embeds in a loan event's `UID` (`loan-<id>@gubbins.invalid` — strip the prefix
 calendar-driven automation can close the very loan it was reminded about.
 
 > **ℹ️ A check-out by name may create a contact.** `contactName` resolves an existing contact or
-> creates one, exactly as the app's own checkout does for a `checkouts:write` holder. It is the one
-> place a write can add a record rather than only changing an existing one; pass `contactId` instead
-> if you would rather a caller could never do that.
+> creates one, exactly as the app's own checkout does for a `checkouts:write` holder. It is the only
+> place a write creates a record the caller never named — everything else it adds (the loan itself,
+> the history entry) is the operation you asked for. Pass `contactId` instead if you would rather a
+> caller could never do that.
 
 Status codes: `200`, `400` (malformed body, or a field of the wrong JSON type), `401`
 (missing/unknown/revoked token), `403` (the owner's role lacks `bridge:write`, or `stock:write` /
