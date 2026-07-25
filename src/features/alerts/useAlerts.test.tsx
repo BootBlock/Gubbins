@@ -47,7 +47,7 @@ function loaded<T>(rows: T[]) {
 
 beforeEach(() => {
   useModulesStore.setState({ intent: {} });
-  useDismissedAlertsStore.setState({ dismissedIds: new Set() });
+  useDismissedAlertsStore.setState({ dismissals: new Map() });
 
   // Every source returns rows regardless of `enabled`, so a gated-off lane that still produces
   // an alert would prove the gating is broken.
@@ -137,5 +137,50 @@ describe('useAlerts — Warranty off', () => {
     expect(present.has('warranty-due')).toBe(false);
     expect(present.has('expiry')).toBe(true);
     expect(warrantyEnabled()).toBe(false);
+  });
+});
+
+/**
+ * Dismissal housekeeping (issue #134). `pruneDismissals` itself is covered exhaustively in
+ * `alerts.test.ts`; what matters here is the wiring — that the hook actually reconciles the
+ * store against the live feed, and that it holds off while the feed can't be trusted.
+ */
+describe('useAlerts — dismissal pruning', () => {
+  const LONG_AGO = Date.now() - 60 * DAY_MS;
+
+  it('drops a record whose alert stopped firing, keeping the live one', () => {
+    useDismissedAlertsStore.setState({
+      dismissals: new Map([
+        ['low-stock:low-1', { until: null, at: LONG_AGO }],
+        ['low-stock:deleted-item', { until: null, at: LONG_AGO }],
+      ]),
+    });
+
+    renderHook(() => useAlerts());
+
+    expect([...useDismissedAlertsStore.getState().dismissals.keys()]).toEqual(['low-stock:low-1']);
+  });
+
+  it('leaves the records alone while a source is still loading', () => {
+    // Every feed reads empty mid-load, so pruning then would discard the lot.
+    h.useLowStockItems.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+    useDismissedAlertsStore.setState({
+      dismissals: new Map([['low-stock:deleted-item', { until: null, at: LONG_AGO }]]),
+    });
+
+    renderHook(() => useAlerts());
+
+    expect(useDismissedAlertsStore.getState().dismissals.size).toBe(1);
+  });
+
+  it('hides a snoozed alert from the feed but not from the total', () => {
+    useDismissedAlertsStore.setState({
+      dismissals: new Map([['low-stock:low-1', { until: Date.now() + DAY_MS, at: Date.now() }]]),
+    });
+
+    const { result } = renderHook(() => useAlerts());
+
+    expect(result.current.alerts.some((a) => a.id === 'low-stock:low-1')).toBe(false);
+    expect(result.current.allAlerts.some((a) => a.id === 'low-stock:low-1')).toBe(true);
   });
 });

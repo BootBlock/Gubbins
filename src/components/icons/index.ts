@@ -123,6 +123,10 @@ export {
   // Keyboard shortcuts (issue #32) — the Hotkeys settings tab and its key-cap affordances.
   Keyboard as HotkeyIcon,
   Bell as NotificationIcon,
+  // "Remind me later" — an alert put back to sleep for a while rather than dismissed for good
+  // (issue #134). The alarm-clock glyph reads as deferral where a crossed-out bell would read
+  // as "never tell me again", which is what the separate dismiss control already means.
+  AlarmClock as SnoozeIcon,
   MonitorDown as InstallIcon,
 
   // Projects, BOMs & procurement (Phase 4, §4)
