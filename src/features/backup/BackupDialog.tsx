@@ -21,12 +21,10 @@ import {
   DEFAULT_SETTINGS_GROUPS,
   SETTINGS_GROUP_IDS,
   allSettingsGroups,
-  settingsGroup,
   settingsGroupsPresent,
-  type SettingsGroupId,
   type SettingsGroupSelection,
 } from './settings-groups';
-import { useT } from '@/features/i18n';
+import { SettingsGroupPicker } from './SettingsGroupPicker';
 import { useErrorMessage } from '@/features/errors';
 import {
   REPLACE_CONFIRM_WORD,
@@ -581,91 +579,6 @@ function RestorePanel({
         {error ? <p>{error}</p> : null}
       </LiveRegion>
     </div>
-  );
-}
-
-/**
- * The per-group settings picker (issue #175), shared by both tabs: on Create it chooses which
- * groups travel into the file, on Restore which of the groups a file carries are applied here.
- * `ids` is the set of groups on offer — every group when creating, only the ones the backup
- * actually contains when restoring.
- */
-function SettingsGroupPicker({
-  ids,
-  value,
-  onChange,
-  titleKey,
-  hintKey,
-  emptyKey,
-  testIdPrefix,
-}: {
-  ids: readonly SettingsGroupId[];
-  value: SettingsGroupSelection;
-  onChange: (next: SettingsGroupSelection) => void;
-  titleKey: 'backup.settings.chooseTitle' | 'backup.settings.restoreTitle';
-  hintKey: 'backup.settings.chooseHint' | 'backup.settings.restoreHint';
-  /** Note shown when the user has unticked everything on offer. */
-  emptyKey: 'backup.settings.none' | 'backup.settings.noneRestore';
-  testIdPrefix: string;
-}) {
-  const t = useT();
-  // Only the groups on offer change; anything not offered keeps its current value.
-  const setAll = (on: boolean) => onChange({ ...value, ...Object.fromEntries(ids.map((id) => [id, on])) });
-  const noneChosen = ids.every((id) => !value[id]);
-
-  return (
-    <fieldset className="space-y-field-gap-compact rounded-lg border border-border/60 bg-secondary/20 p-3">
-      <legend className="sr-only">{t(titleKey)}</legend>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-xs font-medium text-foreground">{t(titleKey)}</p>
-          <p className="text-xs text-muted-foreground">{t(hintKey)}</p>
-        </div>
-        <div className="flex gap-1">
-          <Button size="sm" variant="ghost" onClick={() => setAll(true)} data-testid={`${testIdPrefix}-all`}>
-            {t('backup.settings.selectAll')}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setAll(false)}
-            data-testid={`${testIdPrefix}-none`}
-          >
-            {t('backup.settings.selectNone')}
-          </Button>
-        </div>
-      </div>
-      <div className="space-y-1">
-        {ids.map((id) => {
-          const group = settingsGroup(id);
-          if (!group) return null;
-          return (
-            // eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested checkbox is correctly associated; the label's text comes from the translated group name, which the linter cannot resolve to a static string.
-            <label
-              key={id}
-              className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-secondary/40"
-            >
-              <input
-                type="checkbox"
-                checked={value[id]}
-                onChange={() => onChange({ ...value, [id]: !value[id] })}
-                className="mt-0.5 size-4 accent-primary"
-                data-testid={`${testIdPrefix}-${id}`}
-              />
-              <span className="flex-1">
-                <span className="block text-xs font-medium">{t(group.labelKey)}</span>
-                <span className="block text-xs text-muted-foreground">{t(group.hintKey)}</span>
-              </span>
-            </label>
-          );
-        })}
-      </div>
-      {noneChosen ? (
-        <p className="text-xs text-muted-foreground" data-testid={`${testIdPrefix}-empty`}>
-          {t(emptyKey)}
-        </p>
-      ) : null}
-    </fieldset>
   );
 }
 

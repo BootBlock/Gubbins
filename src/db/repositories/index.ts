@@ -35,6 +35,7 @@ import { TagRepository } from './TagRepository';
 import { TarePresetRepository } from './TarePresetRepository';
 import { UserRepository } from './UserRepository';
 import { WebhookRepository } from './WebhookRepository';
+import { SettingsRepository } from './SettingsRepository';
 import { WishlistRepository } from './WishlistRepository';
 import type { RepositoryOptions } from './base';
 
@@ -67,6 +68,7 @@ export { SupplierRepository } from './SupplierRepository';
 export { WishlistRepository } from './WishlistRepository';
 export { TarePresetRepository } from './TarePresetRepository';
 export { WebhookRepository } from './WebhookRepository';
+export { SettingsRepository } from './SettingsRepository';
 export {
   TombstoneRepository,
   tombstoneStatement,
@@ -143,6 +145,7 @@ let suggestionRepository: SuggestionRepository | null = null;
 let wishlistRepository: WishlistRepository | null = null;
 let tarePresetRepository: TarePresetRepository | null = null;
 let webhookRepository: WebhookRepository | null = null;
+let settingsRepository: SettingsRepository | null = null;
 let userRepository: UserRepository | null = null;
 let roleRepository: RoleRepository | null = null;
 let apiTokenRepository: ApiTokenRepository | null = null;
@@ -293,4 +296,9 @@ export function getTarePresetRepository(): TarePresetRepository {
 export function getWebhookRepository(): WebhookRepository {
   webhookRepository ??= new WebhookRepository(getDatabaseDriver(), productionOptions);
   return webhookRepository;
+}
+
+export function getSettingsRepository(): SettingsRepository {
+  settingsRepository ??= new SettingsRepository(getDatabaseDriver(), productionOptions);
+  return settingsRepository;
 }

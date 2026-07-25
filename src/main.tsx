@@ -6,6 +6,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { applyAppearance } from '@/features/settings/theme';
 import { startLabClock } from '@/features/lab/lab-clock';
 import { startClockSkew } from '@/features/clock-skew/clock-skew';
+import { startSettingsSync } from '@/features/settings/settings-sync-runtime';
 import { completeGoogleAuthRedirect } from '@/features/sync/providers/google-oauth';
 import { installStaleChunkRecovery } from '@/lib/stale-chunk-reload';
 
@@ -49,6 +50,13 @@ startLabClock();
 // marking unexpired stock expired and firing maintenance early. The persisted correction applies
 // synchronously; a fresh measurement refines it in the background without blocking boot.
 startClockSkew();
+
+// Watch for changes to the preferences the user has chosen to share between devices (#382), so each
+// one is published with the timestamp of the change that made it rather than the time some later
+// sync noticed it. Subscribed here — before the app mounts — for the same reason the recovery hook
+// above is: a preference can be changed from the very first screen. A no-op, and not a single
+// query, until settings sync is switched on.
+startSettingsSync();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

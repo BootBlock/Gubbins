@@ -31,7 +31,7 @@ import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE } from '@/db/repositories';
 import { overwriteDatabaseFile, StaleJournalError } from '@/app/error/safe-mode-actions';
 import { writeImageFiles } from '@/features/images/opfs-images';
 import { BASELINE_REVISION } from '@/db/migrations';
-import { readBackupFile, type ParsedBackup } from './backup-format';
+import { narrowSnapshotSettings, readBackupFile, type ParsedBackup } from './backup-format';
 import { applySettings } from './backup-settings';
 import { DEFAULT_SETTINGS_GROUPS, type SettingsGroupSelection } from './settings-groups';
 
@@ -87,11 +87,19 @@ export async function restoreBackup(
   mode: RestoreMode,
   settingGroups: SettingsGroupSelection = DEFAULT_SETTINGS_GROUPS,
 ): Promise<RestoreOutcome> {
+  // Issue #382: the picker has to narrow the *shared* copy of the settings as well as the
+  // device-local one below, or on a device that shares settings live the unticked groups would land
+  // in the `settings` table anyway and be adopted into those preferences by the next sync.
+  const narrowed: ParsedBackup = {
+    ...parsed,
+    snapshot: narrowSnapshotSettings(parsed.snapshot, settingGroups),
+  };
+
   let reloadRequired = false;
   if (mode === 'replace') {
-    reloadRequired = await restoreReplace(parsed);
+    reloadRequired = await restoreReplace(narrowed);
   } else {
-    await restoreMerge(parsed);
+    await restoreMerge(narrowed);
   }
 
   const settingsRestored = parsed.settings ? applySettings(parsed.settings, settingGroups) : 0;

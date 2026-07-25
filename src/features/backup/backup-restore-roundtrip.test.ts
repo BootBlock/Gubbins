@@ -15,6 +15,10 @@ import { runMigrations } from '@/db/migrations/engine';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import { buildLocalSnapshot, restoreSnapshot } from '@/features/sync/snapshot';
 import { filterSnapshot } from './backup-format';
+import { allSettingsGroups } from './settings-groups';
+
+/** Every settings group ticked — the shape `filterSnapshot` needs for the settings-row narrowing. */
+const ALL_SETTINGS = { includeSettings: true, settingGroups: allSettingsGroups(true) } as const;
 
 async function makeDevice(): Promise<MemoryDriver> {
   const driver = createMemoryDriver();
@@ -49,7 +53,11 @@ describe('backup round-trip with removed items excluded (issue #152)', () => {
 
   it('restores onto a device that has never seen the excluded item', async () => {
     const snapshot = await buildLocalSnapshot(source);
-    const filtered = filterSnapshot(snapshot, { includeHistory: true, includeRemovedItems: false });
+    const filtered = filterSnapshot(snapshot, {
+      includeHistory: true,
+      includeRemovedItems: false,
+      ...ALL_SETTINGS,
+    });
 
     await expect(restoreSnapshot(target, filtered)).resolves.toBeUndefined();
 
@@ -73,7 +81,7 @@ describe('backup round-trip with removed items excluded (issue #152)', () => {
     const snapshot = await buildLocalSnapshot(source);
     await restoreSnapshot(
       target,
-      filterSnapshot(snapshot, { includeHistory: true, includeRemovedItems: true }),
+      filterSnapshot(snapshot, { includeHistory: true, includeRemovedItems: true, ...ALL_SETTINGS }),
     );
 
     const counts = await target.query<{ location_id: string; item_count: number }>(
@@ -92,7 +100,11 @@ describe('backup round-trip with removed items excluded (issue #152)', () => {
 
   it('still carries the relation when removed items are included', async () => {
     const snapshot = await buildLocalSnapshot(source);
-    const filtered = filterSnapshot(snapshot, { includeHistory: true, includeRemovedItems: true });
+    const filtered = filterSnapshot(snapshot, {
+      includeHistory: true,
+      includeRemovedItems: true,
+      ...ALL_SETTINGS,
+    });
 
     await restoreSnapshot(target, filtered);
 

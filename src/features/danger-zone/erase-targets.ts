@@ -556,12 +556,22 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     },
   },
   // --- App & this device -----------------------------------------------------------
+  //
+  // These three hold the settings live settings sharing can carry between devices (issue #382), and
+  // they do NOT behave alike — the tooltips say which is which, because a Danger-Zone tooltip is the
+  // last place to be vague about reach:
+  //
+  //  · `preferences` resets the sharing **opt-in itself** (it is one of these preferences), so by the
+  //    time the reset lands sharing is already off and nothing is published. The reset really is
+  //    local, and it leaves sharing switched off here.
+  //  · `dashboard-layout` / `saved-searches` reset stores that do not hold the opt-in, so with
+  //    sharing on the restored defaults publish and reach the other devices on their next sync.
   {
     id: 'preferences',
     section: 'local',
     label: 'App preferences',
     tooltip:
-      'Resets your app preferences on this device (theme, units, scanner settings and so on) to their defaults.',
+      'Resets your app preferences on this device (theme, units, scanner settings and so on) to their defaults. That includes the settings-sharing choice, so sharing switches off here and your other devices keep their own settings.',
     scope: 'local',
     localKeys: localKeysFor('preferences'),
   },
@@ -569,7 +579,8 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     id: 'dashboard-layout',
     section: 'local',
     label: 'Dashboard layout',
-    tooltip: 'Resets your customised dashboard widget layout on this device.',
+    tooltip:
+      'Resets your customised dashboard widget layout on this device — and on your other devices too, if you share the Dashboard settings group between them.',
     scope: 'local',
     localKeys: localKeysFor('dashboard-layout'),
   },
@@ -577,7 +588,8 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     id: 'saved-searches',
     section: 'local',
     label: 'Saved searches',
-    tooltip: 'Removes the searches you saved on this device.',
+    tooltip:
+      'Removes the searches you saved on this device — and from your other devices too, if you share the Saved searches settings group between them.',
     scope: 'local',
     localKeys: localKeysFor('saved-searches'),
   },

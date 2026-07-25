@@ -1651,5 +1651,14 @@
   "scanner.torch.failedOff": "The torch couldn’t be switched off.",
   "scanner.camera.menuLabel": "Choose a camera",
   "scanner.camera.unnamed": "Camera {position}",
-  "scanner.camera.unavailable": "That camera isn’t available — using the usual one instead."
+  "scanner.camera.unavailable": "That camera isn’t available — using the usual one instead.",
+  "sync.settings.heading": "Shared settings",
+  "sync.settings.enable.label": "Share settings between my devices",
+  "sync.settings.enable.hint": "Off by default. When it is on, the settings you choose below travel with your data, so changing your theme on one device changes it on the others. Each device decides for itself, so a phone and a desktop can share different things — or nothing at all.",
+  "sync.settings.chooseTitle": "Which settings to share",
+  "sync.settings.chooseHint": "Tick the groups this device should share. Settings specific to one device — its bridge address, kiosk mode and dismissed prompts — are never shared.",
+  "sync.settings.none": "No settings are selected, so nothing will be shared from this device.",
+  "sync.settings.publishNote": "Turning sharing on publishes this device’s current settings on its next sync, so start from whichever device already has them the way you want them. After that, whichever device changed a setting most recently wins.",
+  "sync.settings.adopted.one": "Brought in 1 setting from another device.",
+  "sync.settings.adopted.other": "Brought in {count} settings from another device."
 }
