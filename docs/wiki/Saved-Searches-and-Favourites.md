@@ -5,13 +5,31 @@ by name and recall it in one click — and **favourite** the items you reach for
 
 ## Saved searches
 
-**Where to find it:** the **Save search** control beneath the power-search box in the
+**Where to find it:** the **bookmark** button inside the **Search items** box at the top of the
+**Inventory** screen — and the same **Save search** control beneath the power-search box in the
 **Visual search** panel (Inventory → **More** → **Visual search**).
 
 Once you've built a query — by [[typing syntax|Text-Query-Syntax]], [[asking in plain
 English|Natural-Language-Search]], or [[clicking it together|Visual-Query-Builder]] — select
 **Save search**, give it a name, and it's kept for next time. Your saved searches then appear as
 quick chips you can select to re-run instantly, or remove when you no longer need them.
+
+### From the main search box
+
+Select the **bookmark** button at the right-hand end of the **Search items** box and a strip of
+your saved searches opens just below it. It's the same set of controls the **Visual search**
+panel has, so you can save what you've just typed, bring an old search back, or forget one — all
+without leaving the search box you were already using.
+
+Recalling a search puts it wherever it belongs:
+
+- A search made of **plain words** — *"drill bits"* — drops straight back into the **Search
+  items** box and runs.
+- A search that uses the [[power syntax|Text-Query-Syntax]] — `cap:voltage>3.3 qty<10` — can't be
+  expressed in the quick box, so Gubbins loads it into **Visual search** and opens that panel for
+  you. You can see and adjust the whole query there.
+
+Either way only one query drives the list, so you're never looking at a confusing mix.
 
 > **💡 Tip**
 > Saved searches are perfect for recurring questions — *"anything low on stock"*, *"tools out on
