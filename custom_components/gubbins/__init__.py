@@ -2,7 +2,7 @@
 
 A Home Assistant integration that talks to the local Gubbins **bridge** — a companion service
 that exposes a bearer-token-protected HTTP API over an exported Gubbins inventory snapshot.
-The bridge is the only data path. Everything here reads, apart from the four opt-in write
+The bridge is the only data path. Everything here reads, apart from the five opt-in write
 services below, which do nothing unless the bridge itself was started with writes enabled.
 
 Setup wires six things:
@@ -14,8 +14,9 @@ Setup wires six things:
   * the conversation intent handler (registered once, see :mod:`.intent`);
   * the read-only ``gubbins.search`` service (registered once, see below);
   * the opt-in write services (registered once, see below) — ``gubbins.adjust_quantity`` and
-    ``gubbins.adjust_gauge`` for stock, ``gubbins.check_out`` and ``gubbins.check_in`` for
-    loans — themselves no-ops unless the bridge runs with ``GUBBINS_BRIDGE_ALLOW_WRITES=on``;
+    ``gubbins.adjust_gauge`` for how much there is, ``gubbins.transfer_stock`` for where it is,
+    ``gubbins.check_out`` and ``gubbins.check_in`` for who has it — themselves no-ops unless
+    the bridge runs with ``GUBBINS_BRIDGE_ALLOW_WRITES=on``;
 and forwards the optional ``/health`` sensor and attention binary-sensor platforms.
 
 The loan pair is what makes the ``on loan`` / ``overdue`` binary sensors actionable rather than
@@ -59,6 +60,7 @@ from .const import (
     SERVICE_CHECK_IN,
     SERVICE_CHECK_OUT,
     SERVICE_SEARCH,
+    SERVICE_TRANSFER_STOCK,
 )
 from .coordinator import GubbinsHealthCoordinator, GubbinsRuntimeData, GubbinsStatusCoordinator
 from .events import collect_location_ids, normalise_matches
@@ -125,6 +127,18 @@ _CHECK_IN_SCHEMA = vol.Schema(
     }
 )
 
+# Move stock between two locations. Every field is required: there is no sensible default for
+# "somewhere else", and a transfer with a guessed destination is worse than one that asks. The
+# app writes its own ledger note describing the move, so there is no `note` to add here.
+_TRANSFER_STOCK_SCHEMA = vol.Schema(
+    {
+        vol.Required("item_id"): cv.string,
+        vol.Required("from_location_id"): cv.string,
+        vol.Required("to_location_id"): cv.string,
+        vol.Required("quantity"): vol.All(vol.Coerce(int), vol.Range(min=1, max=1_000_000)),
+    }
+)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a Gubbins bridge from a config entry."""
@@ -158,6 +172,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _async_register_adjust_gauge_service(hass)
     _async_register_check_out_service(hass)
     _async_register_check_in_service(hass)
+    _async_register_transfer_stock_service(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -178,6 +193,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.services.async_remove(DOMAIN, SERVICE_ADJUST_GAUGE)
             hass.services.async_remove(DOMAIN, SERVICE_CHECK_OUT)
             hass.services.async_remove(DOMAIN, SERVICE_CHECK_IN)
+            hass.services.async_remove(DOMAIN, SERVICE_TRANSFER_STOCK)
             async_unregister_intent(hass)
     return unloaded
 
@@ -316,6 +332,29 @@ def _async_register_check_in_service(hass: HomeAssistant) -> None:
             call.data["item_id"], call.data.get("checkout_id"), call.data.get("note")
         ),
         not_found="the item or loan was not found (or this bridge predates loan writes)",
+    )
+
+
+def _async_register_transfer_stock_service(hass: HomeAssistant) -> None:
+    """Register the opt-in ``gubbins.transfer_stock`` write service, once.
+
+    Moves units between two locations, leaving the item's total untouched — the *where*, not
+    the *how much*. Two ``adjust_quantity`` calls cannot stand in for it: that service only
+    ever touches the item's home location, so it has no way to name the two ends of a move.
+
+    All of it moves or none does; too little at the source is a rejection rather than a
+    partial transfer, so an automation is never left having moved some of what it asked for.
+    """
+    _async_register_write_service(
+        hass,
+        SERVICE_TRANSFER_STOCK,
+        _TRANSFER_STOCK_SCHEMA,
+        lambda client, call: client.transfer_stock(
+            call.data["item_id"],
+            call.data["from_location_id"],
+            call.data["to_location_id"],
+            call.data["quantity"],
+        ),
     )
 
 

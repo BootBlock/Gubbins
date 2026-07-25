@@ -2,7 +2,7 @@
 
 The bridge (a separate Node companion service — see ``bridge/`` in the repo) is the
 **only** data path. The client reads by default: it issues GET requests to the four documented
-read endpoints. The exceptions are the four **opt-in** writes below, which only work when
+read endpoints. The exceptions are the five **opt-in** writes below, which only work when
 the bridge itself is started with ``GUBBINS_BRIDGE_ALLOW_WRITES=on`` (otherwise the paths 404);
 they round-trip through the app's own sync merge, never a bespoke database write. It uses Home
 Assistant's shared aiohttp session, so the integration adds **no** third-party Python dependency.
@@ -16,6 +16,7 @@ Endpoints (all require ``Authorization: Bearer <token>``):
     POST /api/v1/items/<id>/adjust-gauge → updated item (opt-in; see above)
     POST /api/v1/items/<id>/check-out → { item, checkout } (opt-in; see above)
     POST /api/v1/items/<id>/check-in → { item, checkout } (opt-in; see above)
+    POST /api/v1/items/<id>/transfer-stock → updated item (opt-in; see above)
 
 The bridge's JSON is camelCase; Home Assistant service fields are snake_case. The mapping
 between the two lives in this module (see :meth:`GubbinsClient.check_out`) so nothing above it
@@ -236,6 +237,28 @@ class GubbinsClient:
         if note is not None:
             body["note"] = note
         return await self._write("check-in", item_id, body)
+
+    async def transfer_stock(
+        self, item_id: str, from_location_id: str, to_location_id: str, quantity: int
+    ) -> dict[str, Any]:
+        """POST /api/v1/items/<id>/transfer-stock — move units between two locations.
+
+        Changes *where* stock is, not how much of it there is: the item's total is the same
+        afterwards. This is what :meth:`adjust_quantity` cannot express — that one only ever
+        touches the item's home location.
+
+        All of it moves or none does: too little at the source is a rejection, never a silent
+        partial move. Returns the updated item, whose ``placements`` show the new split.
+        """
+        return await self._write(
+            "transfer-stock",
+            item_id,
+            {
+                "fromLocationId": from_location_id,
+                "toLocationId": to_location_id,
+                "quantity": quantity,
+            },
+        )
 
     async def _adjust(
         self, action: str, item_id: str, delta: float, note: str | None

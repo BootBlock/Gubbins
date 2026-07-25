@@ -47,6 +47,12 @@ SERVICE_ADJUST_GAUGE = "adjust_gauge"
 SERVICE_CHECK_OUT = "check_out"
 SERVICE_CHECK_IN = "check_in"
 
+# Move stock from one location to another, leaving the item's total alone. Distinct from
+# adjust_quantity in the other direction to the loan pair: that one changes HOW MUCH there is
+# (and only ever at the item's home location), this one changes WHERE it is. Same
+# GUBBINS_BRIDGE_ALLOW_WRITES=on opt-in and the same stock permission as adjust_quantity.
+SERVICE_TRANSFER_STOCK = "transfer_stock"
+
 # How often the optional /health sensor polls the bridge.
 HEALTH_SCAN_INTERVAL = timedelta(minutes=5)
 

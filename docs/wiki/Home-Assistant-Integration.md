@@ -140,6 +140,12 @@ automating:
   straight back. Gubbins keeps the result between empty and full, and a request aimed at a
   counted item is refused rather than quietly doing something else.
 
+There's also a **move**: shift some of an item from one [[location|Locations-and-Stock]] to
+another. That's a different statement from the two above — it changes *where* something is, not how
+much of it you have, so the item's total is the same afterwards and each moved batch keeps its
+expiry at the far end. The whole amount moves or none of it does, so a move that asks for more than
+is really there fails cleanly rather than half-completing.
+
 ### Lending things out, and getting them back
 
 Home Assistant can also [[check an item out and back in|Loans-Check-Out-and-In]] — lend it to a
