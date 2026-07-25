@@ -44,6 +44,63 @@ describe('TagRepository', () => {
     expect(esp[0]?.itemCount).toBe(2);
   });
 
+  describe('names are folded past ASCII (issue #342)', () => {
+    // SQLite's `LOWER()` — and the `COLLATE NOCASE` index behind the dictionary — fold ASCII
+    // A–Z and nothing else, so asking the database to compare `Ölkanne` with the JS-lowercased
+    // `ölkanne` used to find nothing and file a second, visually identical tag. Every one of
+    // these is that duplicate, reached by a different door.
+
+    it('reuses an accented tag rather than filing a second spelling of it', async () => {
+      const a = await items.create({ name: 'A' });
+      const b = await items.create({ name: 'B' });
+      await tags.setForItem(a.id, ['Ölkanne']);
+      await tags.setForItem(b.id, ['ölkanne']);
+
+      const dict = await tags.list();
+      expect(dict.rows.map((t) => t.name)).toEqual(['Ölkanne']);
+      expect(dict.rows[0]).toMatchObject({ itemCount: 2 });
+    });
+
+    it('folds the pair fully, so a name capitalised whole still lands on one tag', async () => {
+      // `'Größe'.toLowerCase()` leaves the ß alone; only the full fold meets the GRÖSSE a user
+      // gets by typing the same word in capitals.
+      const created = await tags.create('Größe');
+      expect((await tags.create('GRÖSSE')).id).toBe(created.id);
+      expect((await tags.list()).rows).toHaveLength(1);
+    });
+
+    it('gives one save and two saves the same answer', async () => {
+      // The in-memory dedupe always folded these together, so pasting both at once collapsed
+      // them while typing them a save apart did not — the same input, two outcomes.
+      const together = await items.create({ name: 'Together' });
+      const apart = await items.create({ name: 'Apart' });
+      await tags.setForItem(together.id, ['Ölkanne', 'ölkanne']);
+      await tags.setForItem(apart.id, ['Ölkanne']);
+      await tags.setForItem(apart.id, ['Ölkanne', 'ölkanne']);
+
+      expect(await tags.getForItem(together.id)).toHaveLength(1);
+      expect(await tags.getForItem(apart.id)).toHaveLength(1);
+      expect((await tags.list()).rows).toHaveLength(1);
+    });
+
+    it('still tells genuinely different names apart', async () => {
+      const item = await items.create({ name: 'Widget' });
+      await tags.setForItem(item.id, ['Ölkanne', 'Ölkannen', 'olkanne']);
+      expect((await tags.list()).rows.map((t) => t.name)).toEqual(['olkanne', 'Ölkanne', 'Ölkannen']);
+    });
+
+    it('refuses to rename a tag onto an accented name another tag already holds', async () => {
+      const target = await tags.create('Ölkanne');
+      const other = await tags.create('spare');
+      await expect(tags.rename(other.id, 'ölkanne')).rejects.toBeInstanceOf(TagNameInUseError);
+      await expect(tags.rename(other.id, 'ölkanne')).rejects.toMatchObject({ existingTagId: target.id });
+      // Recasing a tag's *own* name is still a rename, not a clash with itself.
+      await tags.rename(target.id, 'ÖLKANNE');
+      // Name order is the dictionary's own (`COLLATE NOCASE`), which sorts `Ö` past `s`.
+      expect((await tags.list()).rows.map((t) => t.name)).toEqual(['spare', 'ÖLKANNE']);
+    });
+  });
+
   it('diffs the set: adds new, removes dropped, trims and dedupes input', async () => {
     const item = await items.create({ name: 'Widget' });
     await tags.setForItem(item.id, ['a', 'b']);

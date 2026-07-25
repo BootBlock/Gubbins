@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Autocomplete, InfoHint } from '@/components/foundry';
 import { CloseIcon, TagIcon } from '@/components/icons';
+import { namesMatch } from '@/lib/name-fold';
 import {
   useItemTags,
   useLocationTags,
@@ -40,7 +41,10 @@ export function TagEditorControl({
   const { data: dictionary } = useTagNames();
   const { data: matches } = useTagSuggestions(input);
 
-  const has = (name: string) => names.some((n) => n.toLowerCase() === name.toLowerCase());
+  // Through the repository's own fold (`lib/name-fold`), so the chip the editor considers
+  // already applied is the tag the write would reuse — for `Ölkanne` as much as `Fragile`
+  // (issue #342).
+  const has = (name: string) => names.some((n) => namesMatch(n, name));
 
   /**
    * Append every genuinely-new name in one `onChange`. Taking a list (rather than calling a
@@ -57,7 +61,7 @@ export function TagEditorControl({
       const name = raw.trim();
       if (!name) continue;
       // Compare against what is already applied *and* what this batch has added.
-      if (has(name) || additions.some((n) => n.toLowerCase() === name.toLowerCase())) continue;
+      if (has(name) || additions.some((n) => namesMatch(n, name))) continue;
       additions.push(name);
     }
     setInput('');

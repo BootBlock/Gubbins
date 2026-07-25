@@ -4,6 +4,7 @@
  * without a query client.
  */
 import type { Tag } from '@/db/repositories/types/tags';
+import { foldName } from '@/lib/name-fold';
 
 /**
  * Rebuild `names` as the `Tag[]` shape the tag queries serve, reusing the cached row for a
@@ -11,17 +12,19 @@ import type { Tag } from '@/db/repositories/types/tags';
  * genuinely new one.
  *
  * Mirrors what `TagRepository.applyTagSet` will store and read back: names are trimmed,
- * blanks dropped, duplicates collapsed case-insensitively, and the result ordered by name
- * case-insensitively — so the chips don't reorder when the real rows land.
+ * blanks dropped, duplicates collapsed case-insensitively (through the repository's own
+ * `lib/name-fold` seam, so the patch and the stored rows agree about `Ölkanne` too — issue
+ * #342), and the result ordered by name case-insensitively — so the chips don't reorder when
+ * the real rows land.
  */
 export function projectTagSet(cached: readonly Tag[] | undefined, names: readonly string[]): Tag[] {
-  const byName = new Map((cached ?? []).map((tag) => [tag.name.toLowerCase(), tag]));
+  const byName = new Map((cached ?? []).map((tag) => [foldName(tag.name), tag]));
   const seen = new Set<string>();
   const next: Tag[] = [];
   for (const raw of names) {
     const name = raw.trim();
     if (!name) continue;
-    const key = name.toLowerCase();
+    const key = foldName(name);
     if (seen.has(key)) continue;
     seen.add(key);
     // A provisional id only has to be unique within this list and stable for React's key —

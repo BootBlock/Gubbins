@@ -20,6 +20,7 @@ import { AddIcon, DeleteIcon, SearchIcon, TagIcon } from '@/components/icons';
 import { TagNameInUseError, type TagSort, type TagWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
+import { namesMatch } from '@/lib/name-fold';
 import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -374,8 +375,10 @@ function EditTagDialog({ tag, onClose }: { tag: TagWithCount; onClose: () => voi
     return source.filter((x) => x.id !== tag.id);
   }, [query, matches.data, candidates.data, tag.id]);
   // Resolve the typed name back to a tag id; merging needs the id, and only an exact
-  // (case-insensitive) name match counts as a chosen target.
-  const mergeTarget = mergeTargets.find((x) => x.name.toLowerCase() === query.toLowerCase());
+  // (case-insensitive) name match counts as a chosen target. Folded through `lib/name-fold`,
+  // the same seam the repository matches names with, so picking an accented tag out of the
+  // list resolves rather than leaving the merge button inert (issue #342).
+  const mergeTarget = mergeTargets.find((x) => namesMatch(x.name, query));
 
   const trimmed = name.trim();
   const renameDirty = trimmed.length > 0 && trimmed !== tag.name;
