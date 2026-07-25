@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { pickFocusConstraints, applyScannerTrackConstraints } from './camera-constraints';
+import {
+  pickFocusConstraints,
+  applyScannerTrackConstraints,
+  applyScannerTorch,
+  scannerTorchSupported,
+} from './camera-constraints';
 
 /**
  * Best-effort camera-track tuning for the live scanner (issue #59): ask a capable camera for
@@ -74,5 +79,85 @@ describe('applyScannerTrackConstraints — guarded DOM apply', () => {
 
   it('tolerates a stream with no getVideoTracks', async () => {
     await expect(applyScannerTrackConstraints({} as unknown as MediaStream)).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * The torch (issue #135). Inventory lives in badly-lit places, so the camera's own light is the
+ * other half of the "why won't this scan?" problem — but the control must only appear, and only
+ * claim success, where the camera really has one. A toggle showing a lit torch over a dark frame
+ * would be worse than no toggle at all.
+ */
+describe('scannerTorchSupported', () => {
+  it('reports a torch only when the camera advertises one', () => {
+    const withTorch = fakeTrack({ getCapabilities: () => ({ torch: true }), applyConstraints: vi.fn() });
+    expect(scannerTorchSupported(fakeStream([withTorch]))).toBe(true);
+    const without = fakeTrack({
+      getCapabilities: () => ({ focusMode: ['continuous'] }),
+      applyConstraints: vi.fn(),
+    });
+    expect(scannerTorchSupported(fakeStream([without]))).toBe(false);
+  });
+
+  it('reports none for a track that cannot be probed or applied to, and never throws', () => {
+    expect(scannerTorchSupported(fakeStream([fakeTrack({})]))).toBe(false);
+    expect(
+      scannerTorchSupported(
+        fakeStream([
+          fakeTrack({
+            getCapabilities: () => {
+              throw new Error('not supported');
+            },
+            applyConstraints: vi.fn(),
+          }),
+        ]),
+      ),
+    ).toBe(false);
+    expect(scannerTorchSupported({} as unknown as MediaStream)).toBe(false);
+  });
+});
+
+describe('applyScannerTorch', () => {
+  it('switches the torch and re-asserts the focus request alongside it', async () => {
+    // applyConstraints replaces the track's *whole* constraint set, so applying the torch on its
+    // own would silently undo the continuous-autofocus tuning the stream opened with.
+    const applyConstraints = vi.fn().mockResolvedValue(undefined);
+    const track = fakeTrack({
+      getCapabilities: () => ({ torch: true, focusMode: ['continuous'] }),
+      applyConstraints,
+    });
+    await expect(applyScannerTorch(fakeStream([track]), true)).resolves.toBe(true);
+    expect(applyConstraints).toHaveBeenCalledWith({
+      advanced: [{ focusMode: 'continuous' }, { torch: true }],
+    });
+  });
+
+  it('switches it back off', async () => {
+    const applyConstraints = vi.fn().mockResolvedValue(undefined);
+    const track = fakeTrack({ getCapabilities: () => ({ torch: true }), applyConstraints });
+    await expect(applyScannerTorch(fakeStream([track]), false)).resolves.toBe(true);
+    expect(applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: false }] });
+  });
+
+  it('reports failure — never success — for a camera with focus but no torch', async () => {
+    // The give-away bug: applying *something* and calling it a win would light nothing while the
+    // toggle claimed otherwise.
+    const applyConstraints = vi.fn().mockResolvedValue(undefined);
+    const track = fakeTrack({ getCapabilities: () => ({ focusMode: ['continuous'] }), applyConstraints });
+    await expect(applyScannerTorch(fakeStream([track]), true)).resolves.toBe(false);
+    expect(applyConstraints).not.toHaveBeenCalled();
+  });
+
+  it('reports failure when the camera declines, rather than throwing', async () => {
+    const track = fakeTrack({
+      getCapabilities: () => ({ torch: true }),
+      applyConstraints: vi.fn().mockRejectedValue(new Error('busy')),
+    });
+    await expect(applyScannerTorch(fakeStream([track]), true)).resolves.toBe(false);
+  });
+
+  it('reports failure for an unprobeable track and a track-less stream', async () => {
+    await expect(applyScannerTorch(fakeStream([fakeTrack({})]), true)).resolves.toBe(false);
+    await expect(applyScannerTorch({} as unknown as MediaStream, true)).resolves.toBe(false);
   });
 });

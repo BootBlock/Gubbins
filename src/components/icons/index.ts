@@ -198,6 +198,11 @@ export {
   Nfc as NfcIcon,
   Camera as CameraIcon,
   CameraOff as CameraOffIcon,
+  // Live-scanner camera controls (issue #135): the camera's own torch for the badly-lit places
+  // inventory actually lives in, and the lens picker for a phone with several rear cameras.
+  Flashlight as TorchIcon,
+  FlashlightOff as TorchOffIcon,
+  SwitchCamera as SwitchCameraIcon,
   Users as ContactsIcon,
   UserPlus as AddContactIcon,
   // Sign-in and accounts (issue #79). Distinct from ContactsIcon, which is the address book:

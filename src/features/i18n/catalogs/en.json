@@ -1636,5 +1636,13 @@
   "alerts.snooze.week": "Snooze for a week",
   "alerts.snooze.month": "Snooze for a month",
   "alerts.snoozed": "Snoozed: {title}",
-  "alerts.dismissed": "Dismissed: {title}"
+  "alerts.dismissed": "Dismissed: {title}",
+  "scanner.torch.turnOn": "Turn the torch on",
+  "scanner.torch.turnOff": "Turn the torch off",
+  "scanner.torch.tooltip": "**Torch** — light up a dark cupboard, shelf or garage with the camera's own light.\n\nOnly offered where the camera has one.",
+  "scanner.torch.failedOn": "The torch couldn’t be switched on. Another app may be using the camera.",
+  "scanner.torch.failedOff": "The torch couldn’t be switched off.",
+  "scanner.camera.menuLabel": "Choose a camera",
+  "scanner.camera.unnamed": "Camera {position}",
+  "scanner.camera.unavailable": "That camera isn’t available — using the usual one instead."
 }

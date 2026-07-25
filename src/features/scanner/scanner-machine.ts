@@ -10,8 +10,10 @@
  *   (REQUESTING/STREAM failures → ERROR_STATE: denied / unsupported / stream failure)
  *
  * `SUSPEND` (document hidden, §6.1) tears the stream down to IDLE to save battery;
- * the component re-OPENs on return. `mode` (Discrete vs Continuous, §6.3) is part
- * of the state but orthogonal to the lifecycle, so it can change at any time.
+ * the component re-OPENs on return. `REOPEN` re-enters REQUESTING_PERMISSIONS from the
+ * live view so a different camera can be swapped in (issue #135) without a second
+ * acquisition path. `mode` (Discrete vs Continuous, §6.3) is part of the state but
+ * orthogonal to the lifecycle, so it can change at any time.
  */
 
 export type ScannerStatus =
@@ -29,6 +31,12 @@ export interface ScannerState {
 
 export type ScannerAction =
   | { type: 'OPEN' }
+  /**
+   * Re-acquire the camera while the scanner is already up — the user picked a different camera
+   * (issue #135). Routing it back through `REQUESTING_PERMISSIONS` keeps one acquisition path, so
+   * a camera that refuses to open fails in exactly the same place a first open would.
+   */
+  | { type: 'REOPEN' }
   | { type: 'PERMISSION_GRANTED' }
   | { type: 'PERMISSION_DENIED'; message?: string }
   | { type: 'STREAM_ERROR'; message?: string }
@@ -63,6 +71,14 @@ export function scannerReducer(state: ScannerState, action: ScannerAction): Scan
         return { ...state, status: 'REQUESTING_PERMISSIONS', error: null };
       }
       return state;
+
+    case 'REOPEN':
+      // Swap to a different camera without leaving the scanner. Only valid from the live view (the
+      // only state that offers the camera menu): from IDLE/ERROR the way back in is OPEN, and from
+      // PROCESSING_QUEUE it would discard the batch-review pane the user is standing in.
+      return state.status === 'STREAM_ACTIVE'
+        ? { ...state, status: 'REQUESTING_PERMISSIONS', error: null }
+        : state;
 
     case 'PERMISSION_GRANTED':
       return state.status === 'REQUESTING_PERMISSIONS'

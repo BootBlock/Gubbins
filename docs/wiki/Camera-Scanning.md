@@ -36,6 +36,35 @@ Hold the code inside the box; good light and a steady hand still help most.
 > box, steady your hand for a moment, and make sure it's well lit. You can always type or paste the
 > code into the box at the bottom instead.
 
+## Torch and choosing a camera
+
+Two controls sit just below the framing box while the camera is live. Each appears only when your
+camera actually offers it, so you'll never see a switch that does nothing.
+
+- **Torch** — turns on the camera's own light. Inventory tends to live exactly where the light
+  isn't: garages, cupboards, under-stair storage, the back of a deep shelf. Tap it again to turn it
+  off. It's offered on most phones and tablets, and almost never on a laptop.
+- **Choose a camera** — picks which camera to scan with, when your device has more than one. Your
+  choice is remembered for next time, and it's shared with the **Scan** button on an item's
+  **Barcode** field, so you only pick once.
+
+> **💡 Tip**
+> On a phone with two or three rear lenses, the one your browser picks by default is often the
+> **ultra-wide** — and an ultra-wide can't focus at the distance you hold a barcode. If codes
+> stubbornly stay blurry no matter how steady you are, that's the usual culprit: open **Choose a
+> camera** and try another rear camera. Names come from your device, so they read like *Back
+> Camera* or *Back Dual Wide Camera*.
+
+> **ℹ️ Note**
+> Camera names only become available after you've allowed camera access — before that a browser
+> deliberately withholds them. If a camera is listed without a name it's shown as *Camera 2*, and
+> so on.
+
+> **ℹ️ Note**
+> A camera you chose can stop being available — a webcam unplugged, or a browser that reset its
+> permissions. Gubbins falls back to the usual camera and tells you it's done so, rather than
+> refusing to start.
+
 > **💡 Tip**
 > Add a product's barcode to its **Details** (there's a **Scan** button right on the field) so
 > future scans jump straight to it. A barcode Gubbins doesn't recognise can also trigger a

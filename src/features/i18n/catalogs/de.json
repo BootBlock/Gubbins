@@ -1636,5 +1636,13 @@
   "alerts.snooze.week": "Um eine Woche zurückstellen",
   "alerts.snooze.month": "Um einen Monat zurückstellen",
   "alerts.snoozed": "Zurückgestellt: {title}",
-  "alerts.dismissed": "Ausgeblendet: {title}"
+  "alerts.dismissed": "Ausgeblendet: {title}",
+  "scanner.torch.turnOn": "Licht einschalten",
+  "scanner.torch.turnOff": "Licht ausschalten",
+  "scanner.torch.tooltip": "**Licht** — beleuchtet einen dunklen Schrank, ein Regal oder eine Garage mit dem Licht der Kamera.\n\nWird nur angeboten, wenn die Kamera eines hat.",
+  "scanner.torch.failedOn": "Das Licht konnte nicht eingeschaltet werden. Möglicherweise verwendet eine andere App die Kamera.",
+  "scanner.torch.failedOff": "Das Licht konnte nicht ausgeschaltet werden.",
+  "scanner.camera.menuLabel": "Kamera auswählen",
+  "scanner.camera.unnamed": "Kamera {position}",
+  "scanner.camera.unavailable": "Diese Kamera ist nicht verfügbar — es wird die übliche verwendet."
 }
