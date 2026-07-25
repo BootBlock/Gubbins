@@ -556,12 +556,17 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     },
   },
   // --- App & this device -----------------------------------------------------------
+  //
+  // These three are the settings live settings sharing can carry between devices (issue #382), so
+  // each says so: with sharing on, the reset publishes the restored defaults and reaches the other
+  // devices on their next sync. Saying "on this device" alone would be untrue for anyone using it,
+  // and a Danger-Zone tooltip is the last place to understate a reach.
   {
     id: 'preferences',
     section: 'local',
     label: 'App preferences',
     tooltip:
-      'Resets your app preferences on this device (theme, units, scanner settings and so on) to their defaults.',
+      'Resets your app preferences on this device (theme, units, scanner settings and so on) to their defaults. If you share settings between devices, the reset reaches the shared groups on your other devices too.',
     scope: 'local',
     localKeys: localKeysFor('preferences'),
   },
@@ -569,7 +574,8 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     id: 'dashboard-layout',
     section: 'local',
     label: 'Dashboard layout',
-    tooltip: 'Resets your customised dashboard widget layout on this device.',
+    tooltip:
+      'Resets your customised dashboard widget layout on this device — and on your other devices too, if you share the Dashboard settings group between them.',
     scope: 'local',
     localKeys: localKeysFor('dashboard-layout'),
   },
@@ -577,7 +583,8 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     id: 'saved-searches',
     section: 'local',
     label: 'Saved searches',
-    tooltip: 'Removes the searches you saved on this device.',
+    tooltip:
+      'Removes the searches you saved on this device — and from your other devices too, if you share the Saved searches settings group between them.',
     scope: 'local',
     localKeys: localKeysFor('saved-searches'),
   },

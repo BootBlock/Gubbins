@@ -104,6 +104,12 @@ need to reload:
   in-progress [[stock-take|Cycle-Counts-and-Audit-Day]], which location groups are expanded,
   remembered dialog sizes, and which one-off celebrations have already played.
 
+> **⚠️ Heads-up**
+> These three — **App preferences**, **Dashboard layout** and **Saved searches** — are the ones
+> [[settings sharing|Sharing-Settings-Between-Devices]] can carry between devices. If you have that
+> switched on, resetting one here resets it on your other devices too when they next sync, for the
+> groups you're sharing. Turn sharing off first if you only meant to reset *this* device.
+
 ## Erasing on your other devices too
 
 If you use [[cloud sync|Cloud-Sync]], the confirmation step offers a choice:

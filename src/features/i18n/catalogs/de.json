@@ -1627,5 +1627,14 @@
   "contacts.gettingStarted.heading": "Willkommen bei Kontakte — behalten Sie den Überblick, wer was hat",
   "contacts.gettingStarted.bodyPurpose": "Kontakte sind die Personen und Organisationen, mit denen Ihr Inventar in Berührung kommt — diejenigen, an die Sie etwas verleihen und von denen Sie sich etwas leihen. Geben Sie einem Kollegen, einem Kunden oder einem Freund etwas, und ein Kontakt verknüpft diese Ausleihe mit einem Namen, sodass Sie immer wissen, wer gerade was hat.",
   "contacts.gettingStarted.bodyHowTo": "Sie müssen vorher nichts einrichten: Fügen Sie unten einen Kontakt hinzu, oder checken Sie einfach ein Objekt für eine neue Person aus, und Gubbins erstellt den Kontakt automatisch. Von hier aus sehen Sie auf einen Blick alles, was gerade ausgeliehen ist, erhalten eine Benachrichtigung, wenn etwas überfällig ist, und checken Objekte mit einem Klick wieder ein — Kontakte können über Buchungen auch Objekte im Voraus reservieren.",
-  "homeAssistant.install.minVersion": "Die benutzerdefinierte Integration erfordert Home Assistant 2025.2 oder neuer. Für das Rezept ohne Code (YAML) gilt diese Voraussetzung nicht."
+  "homeAssistant.install.minVersion": "Die benutzerdefinierte Integration erfordert Home Assistant 2025.2 oder neuer. Für das Rezept ohne Code (YAML) gilt diese Voraussetzung nicht.",
+  "sync.settings.heading": "Gemeinsame Einstellungen",
+  "sync.settings.enable.label": "Einstellungen zwischen meinen Geräten teilen",
+  "sync.settings.enable.hint": "Standardmäßig aus. Wenn aktiviert, wandern die unten gewählten Einstellungen mit Ihren Daten: Ändern Sie das Design auf einem Gerät, ändert es sich auch auf den anderen. Jedes Gerät entscheidet selbst, sodass Smartphone und Desktop Unterschiedliches teilen können — oder gar nichts.",
+  "sync.settings.chooseTitle": "Welche Einstellungen teilen",
+  "sync.settings.chooseHint": "Wählen Sie die Gruppen aus, die dieses Gerät teilen soll. Gerätespezifische Einstellungen — Bridge-Adresse, Kioskmodus und ausgeblendete Hinweise — werden nie geteilt.",
+  "sync.settings.none": "Es sind keine Einstellungen ausgewählt, daher wird von diesem Gerät nichts geteilt.",
+  "sync.settings.publishNote": "Beim Aktivieren veröffentlicht dieses Gerät bei der nächsten Synchronisierung seine aktuellen Einstellungen. Beginnen Sie daher mit dem Gerät, auf dem sie schon so sind, wie Sie sie möchten. Danach gewinnt jeweils das Gerät, das eine Einstellung zuletzt geändert hat.",
+  "sync.settings.adopted.one": "1 Einstellung von einem anderen Gerät übernommen.",
+  "sync.settings.adopted.other": "{count} Einstellungen von einem anderen Gerät übernommen."
 }

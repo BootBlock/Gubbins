@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Banner,
   Button,
+  Checkbox,
   FormField,
   Input,
   LiveRegion,
@@ -33,6 +34,9 @@ import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { BackupDialog } from '@/features/backup/BackupDialog';
 import { consumeRestoreNotice } from '@/features/backup/restore-backup';
+import { SettingsGroupPicker } from '@/features/backup/SettingsGroupPicker';
+import { LIVE_SYNCABLE_SETTINGS_GROUP_IDS } from '@/features/backup/settings-groups';
+import { applySharedSettings, flushSettingsSync } from '@/features/settings/settings-sync-runtime';
 import { buildPushSnapshotJson, pushSnapshotToBridge } from './push-to-bridge';
 import { checkBridgeBuild, type BridgeBuildCheckResult } from './bridge-build-check';
 import type { BridgeVersionStatus } from './bridge-version';
@@ -91,7 +95,16 @@ export function SyncScreen() {
   const auth = useAuthStore();
   const fmt = useFormatters();
   const t = useT();
-  const { bridgeUrl, bridgeToken, setBridgeUrl, setBridgeToken } = usePreferencesStore();
+  const {
+    bridgeUrl,
+    bridgeToken,
+    setBridgeUrl,
+    setBridgeToken,
+    settingsSyncEnabled,
+    settingsSyncGroups,
+    setSettingsSyncEnabled,
+    setSettingsSyncGroups,
+  } = usePreferencesStore();
   const [connected, setConnected] = useState(getActiveProvider() !== null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
@@ -114,6 +127,10 @@ export function SyncScreen() {
   // auto-update, so a checkout left behind by a `git pull` that never happened is otherwise
   // completely invisible from here.
   const [buildCheck, setBuildCheck] = useState<BridgeBuildCheckResult | null>(null);
+  // Issue #382: how many shared preferences the last sync brought in from another device. Kept
+  // separate from the sync outcome line so an adopted setting is reported where the user chose it.
+  const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
+  const settingsSyncHintId = useId();
 
   // Surface a one-off success message after a backup restore reloaded the app.
   useEffect(() => {
@@ -257,6 +274,7 @@ export function SyncScreen() {
     setBusy(true);
     setError(null);
     setNotice(null);
+    setSettingsNotice(null);
     setRemoteMissing(false);
     try {
       // The engine's missing-remote guard keys off `sync_meta`, which is device-global: it still
@@ -265,6 +283,10 @@ export function SyncScreen() {
       // per-connection answer (cleared when a different remote is connected), and a connection
       // that has never synced has no shared state to lose by publishing.
       const remoteNeverSynced = auth.lastSyncedAt === null;
+      // Issue #382: a shared preference changed a moment ago is still queued for its row write, so
+      // wait for those to land before the snapshot is read. Without this the change would sit out
+      // this sync and travel in the next one — and worse, a peer's older value could win in between.
+      await flushSettingsSync();
       const outcome = await runSync(getSyncDriver(), provider, {
         serverTime: httpTimeSource,
         allowRemoteReset: allowRemoteReset || remoteNeverSynced,
@@ -277,6 +299,15 @@ export function SyncScreen() {
         // Issue #72: record any of the user's edits this sync overwrote, so they can review
         // and recover them from the Conflicts section below rather than losing them silently.
         useSyncConflictsStore.getState().add(outcome.conflicts);
+        // Issue #382: the merge has just resolved every shared preference against the other
+        // devices' timestamps, so adopt whichever values won. A failure here must not turn a
+        // successful data sync into an error — the settings simply stay as they were.
+        try {
+          const adopted = await applySharedSettings();
+          if (adopted > 0) setSettingsNotice(t('sync.settings.adopted', { vars: { count: adopted } }));
+        } catch (settingsError) {
+          console.error('[gubbins] could not apply shared settings', settingsError);
+        }
         await client.invalidateQueries();
       }
     } catch (err) {
@@ -509,6 +540,47 @@ export function SyncScreen() {
               {result && result.status !== 'HARD_STOP' ? describeSyncOutcome(result) : null}
             </LiveRegion>
           </div>
+        </section>
+
+        {/* Shared settings (issue #382) — opt in, per group, on this device. */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            {t('sync.settings.heading')}
+          </h2>
+          <Surface className="space-y-3 p-4">
+            <div className="space-y-field-gap-compact">
+              <label className="flex cursor-pointer items-start gap-3 text-sm font-medium text-foreground">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={settingsSyncEnabled}
+                  onChange={(e) => setSettingsSyncEnabled(e.target.checked)}
+                  aria-describedby={settingsSyncHintId}
+                  data-testid="settings-sync-enabled"
+                />
+                {t('sync.settings.enable.label')}
+              </label>
+              {/* Described-by rather than part of the label: the paragraph explains the consequence,
+                  which a screen reader should hear as a description, not as the control's name. */}
+              <p id={settingsSyncHintId} className="pl-7 text-sm text-muted-foreground">
+                {t('sync.settings.enable.hint')}
+              </p>
+            </div>
+            <SettingsGroupPicker
+              ids={LIVE_SYNCABLE_SETTINGS_GROUP_IDS}
+              value={settingsSyncGroups}
+              onChange={setSettingsSyncGroups}
+              titleKey="sync.settings.chooseTitle"
+              hintKey="sync.settings.chooseHint"
+              emptyKey="sync.settings.none"
+              testIdPrefix="settings-sync-group"
+              disabled={!settingsSyncEnabled}
+            />
+            <p className="text-sm text-muted-foreground">{t('sync.settings.publishNote')}</p>
+            {/* Always mounted so the count of settings a sync brought in is announced (WCAG 4.1.3). */}
+            <LiveRegion className="text-sm text-muted-foreground" data-testid="settings-sync-result">
+              {settingsNotice ? <p>{settingsNotice}</p> : null}
+            </LiveRegion>
+          </Surface>
         </section>
 
         {/* Conflicts — surfaced only when a sync overwrote one of the user's own edits (#72). */}

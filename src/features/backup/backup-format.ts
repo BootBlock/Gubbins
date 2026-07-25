@@ -27,7 +27,14 @@ import type { SqlRow, SqlValue } from '@/db/rpc/driver';
 import type { OpfsImageFile } from '@/features/images/opfs-images';
 import { EXPORTABLE_SETTING_KEYS, sanitiseSettingsRecord } from './backup-settings';
 import { CHECKSUM_ALGORITHM, checksumBytes } from './checksum';
-import { DEFAULT_SETTINGS_GROUPS, type SettingsGroupSelection } from './settings-groups';
+import { DEFAULT_SETTINGS_GROUPS, ownerOfStoreField, type SettingsGroupSelection } from './settings-groups';
+
+/**
+ * The synced table holding the shared copy of the preferences live settings sync exchanges. Named
+ * here rather than imported from the sync-table list so this codec keeps its one-way dependency on
+ * the pure modules (screen tests mock the repository barrel wholesale).
+ */
+const SHARED_SETTINGS_TABLE = 'settings';
 
 /** Bump when the *container* layout changes incompatibly (independent of the snapshot's own version). */
 export const BACKUP_FORMAT_VERSION = 1;
@@ -161,6 +168,12 @@ const ITEM_REF_COLUMNS: ReadonlyMap<string, readonly FkRef[]> = (() => {
 /**
  * Shape the portable snapshot per the user's toggles. **Pure** (returns a new snapshot).
  *
+ *  - the `settings` table is narrowed to the chosen settings groups, exactly as the `settings.json`
+ *    entry is. Those rows are the *shared* copy of the preferences live settings sync exchanges
+ *    (issue #382), so without this a backup would carry the user's letterhead or label template
+ *    however carefully they unticked "Printed catalogue" in the picker — quietly undoing the
+ *    guarantee issue #175 exists to give. Dropping them costs a restore nothing: the values are in
+ *    `settings.json` too, and the shared copy rebuilds itself from whichever device publishes next.
  *  - `includeHistory=false` drops the activity ledger (`itemHistory`) and gauge deltas.
  *  - `includeRemovedItems=false` drops every inactive item **and repairs every row that
  *    references it**, so the result is foreign-key-safe to import. A restore applies the
@@ -174,9 +187,16 @@ const ITEM_REF_COLUMNS: ReadonlyMap<string, readonly FkRef[]> = (() => {
  */
 export function filterSnapshot(
   snapshot: SyncSnapshot,
-  options: { includeHistory: boolean; includeRemovedItems: boolean },
+  options: {
+    includeHistory: boolean;
+    includeRemovedItems: boolean;
+    /** The whole settings surface: `false` drops every shared-settings row. */
+    includeSettings: boolean;
+    /** Which groups' rows survive when `includeSettings` is on. */
+    settingGroups: SettingsGroupSelection;
+  },
 ): SyncSnapshot {
-  let tables = snapshot.tables;
+  let tables = filterSharedSettingRows(snapshot.tables, options);
   let itemHistory = snapshot.itemHistory;
   let gaugeHistory = snapshot.gaugeHistory;
   let stockDeltas = snapshot.stockDeltas;
@@ -211,6 +231,29 @@ export function filterSnapshot(
   }
 
   return { ...snapshot, tables, itemHistory, gaugeHistory, stockDeltas, itemTags, itemRegions };
+}
+
+/**
+ * Narrow the `settings` table to the chosen groups (issue #382), so the shared copy of a preference
+ * obeys the same picker as the device-local copy in `settings.json`.
+ *
+ * A row whose group the registry does not recognise is dropped rather than kept: the picker could
+ * not have offered it, so the user cannot have agreed to send it — the same rule
+ * `filterSettingsByGroups` applies to an unknown field inside the preferences blob.
+ */
+function filterSharedSettingRows(
+  tables: Readonly<Record<string, readonly SqlRow[]>>,
+  options: { includeSettings: boolean; settingGroups: SettingsGroupSelection },
+): Record<string, readonly SqlRow[]> {
+  const rows = tables[SHARED_SETTINGS_TABLE];
+  if (!rows) return { ...tables };
+  const kept = options.includeSettings
+    ? rows.filter((row) => {
+        const owner = ownerOfStoreField(String(row.store_key), String(row.field));
+        return owner !== undefined && options.settingGroups[owner] === true;
+      })
+    : [];
+  return { ...tables, [SHARED_SETTINGS_TABLE]: kept };
 }
 
 /**

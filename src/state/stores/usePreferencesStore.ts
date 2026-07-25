@@ -73,6 +73,11 @@ import {
   type HotkeyActionId,
   type HotkeyBinding,
 } from '@/features/hotkeys/hotkeys';
+import {
+  DEFAULT_LIVE_SETTINGS_SELECTION,
+  normaliseLiveSettingsSelection,
+} from '@/features/settings/settings-sync';
+import type { SettingsGroupSelection } from '@/features/backup/settings-groups';
 import { normaliseCatalogueLogo } from '@/features/reports/catalogue-branding';
 import { DEFAULT_ANALYTICS_WINDOW, normaliseAnalyticsWindow } from '@/features/reports/analytics-windows';
 import { DEFAULT_WEIGHT_UNIT, normaliseWeightUnit, type WeightUnit } from '@/lib/weight';
@@ -249,17 +254,20 @@ interface PreferencesStore {
   readonly scannerSymbology: ScannerSymbology;
   /**
    * Default printable-label template (Phase 73 "Label customisation") — the symbology,
-   * text fields and columns a label sheet uses. Device-local (label layout is a
-   * printer/paper concern, never synced); the Print-labels dialog seeds an editable
-   * working copy from this and can save changes back as the new default.
+   * text fields and columns a label sheet uses. Held here rather than in the database because
+   * label layout is a printer/paper concern; it travels only if the user opts the *Scanning &
+   * labels* group into a backup (issue #175) or into live settings sync (issue #382), which is
+   * exactly the escape hatch for a second device on a different printer. The Print-labels
+   * dialog seeds an editable working copy from this and can save changes back as the new default.
    */
   readonly labelTemplate: LabelTemplate;
   /**
    * Optional base URL that printable QR codes / barcodes should link to (spec §6). Empty
    * means "derive from the address this app is opened from" (`origin` + Vite base path).
    * Set it to a stable name every device can reach — e.g. `http://gubbins.local` — so a
-   * label printed from a `localhost` dev server still resolves from a phone. Device-local
-   * (a printing/network concern, never synced); resolved by `resolveLabelBaseUrl`.
+   * label printed from a `localhost` dev server still resolves from a phone. A printing/network
+   * concern, so it lives here rather than in the database and travels only with the *Scanning &
+   * labels* group; resolved by `resolveLabelBaseUrl`.
    */
   readonly labelBaseUrl: string;
   /** Play a synthesised confirmation beep on a successful scan (§6.5). On by default. */
@@ -470,6 +478,26 @@ interface PreferencesStore {
    */
   readonly wipBannerDismissed: boolean;
   /**
+   * Whether this device shares its eligible preferences live with the others over cloud sync
+   * (issue #382). **Off by default**, and deliberately so: a desktop and a phone may legitimately
+   * want different layouts and densities, and silently overwriting one from the other is worse
+   * than not syncing at all — so this is something the user asks for, never something they get.
+   *
+   * Device-local (it sits in the `device` settings group): syncing the opt-in itself would let one
+   * machine switch sharing on for another, which is precisely the choice it exists to leave local.
+   */
+  readonly settingsSyncEnabled: boolean;
+  /**
+   * Which settings **groups** this device shares while {@link settingsSyncEnabled} is on, keyed by
+   * the group ids issue #175's backup picker already uses — so "share my appearance but not my
+   * dashboard layout" is expressible, at the same granularity the user already understands.
+   *
+   * Only groups marked live-syncable can be ticked; the `device` group (bridge address, kiosk mode,
+   * snooze timestamps) and the bridge access token are never eligible however this reads, and an
+   * unknown id from another build is dropped rather than trusted.
+   */
+  readonly settingsSyncGroups: SettingsGroupSelection;
+  /**
    * "Push to bridge" target (Home Assistant query bridge). The base URL (e.g.
    * `http://127.0.0.1:8787`) of an optional companion bridge the user can push the dataset
    * to over HTTP, for those who don't use FS-Access folder sync. Empty until configured. The
@@ -492,11 +520,13 @@ interface PreferencesStore {
    */
   readonly scaleEntityId: string;
   /**
-   * Printed **parts-catalogue letterhead** (issue #22 follow-up). A device-local set of branding
-   * fields the Catalogue screen stamps onto the printed document, so a company can print an
-   * on-brand catalogue. Persisted (localStorage) so the letterhead is set once and reused on
-   * every print; never synced (a printing/branding concern). All optional — empty fields simply
-   * don't render.
+   * Printed **parts-catalogue letterhead** (issue #22 follow-up). The branding fields the
+   * Catalogue screen stamps onto the printed document, so a company can print an on-brand
+   * catalogue. Persisted (localStorage) so the letterhead is set once and reused on every print;
+   * held outside the database as a printing/branding concern, and travelling only with the
+   * *Catalogue letterhead* group (issues #175, #382) — which is usually wanted, since the
+   * letterhead describes the organisation rather than the machine. All optional — empty fields
+   * simply don't render.
    */
   /** Document title override; empty falls back to "Catalogue". */
   readonly catalogueTitle: string;
@@ -639,6 +669,13 @@ interface PreferencesStore {
   dismissBackupNudge: () => void;
   /** Permanently dismiss the pre-1.0 work-in-progress warning banner (after confirmation). */
   dismissWipBanner: () => void;
+  /** Turn live settings sync (issue #382) on/off for this device. */
+  setSettingsSyncEnabled: (enabled: boolean) => void;
+  /**
+   * Replace which settings groups this device shares. Ineligible and unknown group ids are
+   * dropped on the way in, so a hand-edited store cannot widen what travels.
+   */
+  setSettingsSyncGroups: (groups: SettingsGroupSelection) => void;
   setBridgeUrl: (url: string) => void;
   setBridgeToken: (token: string) => void;
   /** Choose which Home Assistant entity is the scale (empty clears the choice). */
@@ -733,6 +770,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       hideHealthyDashboardCards: false,
       backupNudgeDismissed: false,
       wipBannerDismissed: false,
+      settingsSyncEnabled: false,
+      settingsSyncGroups: DEFAULT_LIVE_SETTINGS_SELECTION,
       bridgeUrl: '',
       bridgeToken: '',
       scaleEntityId: '',
@@ -863,6 +902,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setHideHealthyDashboardCards: (hideHealthyDashboardCards) => set({ hideHealthyDashboardCards }),
       dismissBackupNudge: () => set({ backupNudgeDismissed: true }),
       dismissWipBanner: () => set({ wipBannerDismissed: true }),
+      setSettingsSyncEnabled: (settingsSyncEnabled) => set({ settingsSyncEnabled }),
+      setSettingsSyncGroups: (groups) => set({ settingsSyncGroups: normaliseLiveSettingsSelection(groups) }),
       setBridgeUrl: (bridgeUrl) => set({ bridgeUrl }),
       setBridgeToken: (bridgeToken) => set({ bridgeToken }),
       setScaleEntityId: (scaleEntityId) => set({ scaleEntityId: scaleEntityId.trim() }),

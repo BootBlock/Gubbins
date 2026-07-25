@@ -1627,5 +1627,14 @@
   "contacts.gettingStarted.heading": "Welcome to Contacts — track who has what",
   "contacts.gettingStarted.bodyPurpose": "Contacts are the people and organisations your inventory touches — the folks you lend items to and borrow from. Give something to a colleague, a client or a friend, and a contact is what ties that loan back to a name, so you always know who currently has it.",
   "contacts.gettingStarted.bodyHowTo": "You don't need to set anything up first: add a contact below, or simply check an item out to someone new and Gubbins creates the contact automatically. From here you can see everything out on loan at a glance, get an alert when something's overdue, and check items back in with one tap — contacts can also reserve items ahead of time through bookings.",
-  "homeAssistant.install.minVersion": "The custom integration needs Home Assistant 2025.2 or newer. The no-code YAML recipe has no such requirement."
+  "homeAssistant.install.minVersion": "The custom integration needs Home Assistant 2025.2 or newer. The no-code YAML recipe has no such requirement.",
+  "sync.settings.heading": "Shared settings",
+  "sync.settings.enable.label": "Share settings between my devices",
+  "sync.settings.enable.hint": "Off by default. When it is on, the settings you choose below travel with your data, so changing your theme on one device changes it on the others. Each device decides for itself, so a phone and a desktop can share different things — or nothing at all.",
+  "sync.settings.chooseTitle": "Which settings to share",
+  "sync.settings.chooseHint": "Tick the groups this device should share. Settings specific to one device — its bridge address, kiosk mode and dismissed prompts — are never shared.",
+  "sync.settings.none": "No settings are selected, so nothing will be shared from this device.",
+  "sync.settings.publishNote": "Turning sharing on publishes this device’s current settings on its next sync, so start from whichever device already has them the way you want them. After that, whichever device changed a setting most recently wins.",
+  "sync.settings.adopted.one": "Brought in 1 setting from another device.",
+  "sync.settings.adopted.other": "Brought in {count} settings from another device."
 }

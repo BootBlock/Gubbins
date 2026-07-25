@@ -17,6 +17,10 @@ import {
   type BackupManifest,
 } from './backup-format';
 import { CHECKSUM_ALGORITHM, checksumBytes } from './checksum';
+import { allSettingsGroups } from './settings-groups';
+
+/** Every settings group ticked — the shape `filterSnapshot` needs for the settings-row narrowing. */
+const ALL_SETTINGS = { includeSettings: true, settingGroups: allSettingsGroups(true) } as const;
 
 const SQLITE_HEADER = new Uint8Array([...'SQLite format 3\0'].map((c) => c.charCodeAt(0)));
 function fakeSqlite(): Uint8Array {
@@ -81,9 +85,87 @@ function makeSnapshot(): SyncSnapshot {
   };
 }
 
+describe('filterSnapshot — shared settings rows (issue #382)', () => {
+  /** A snapshot carrying the shared copy of three preferences from three different groups. */
+  function withSettings(): SyncSnapshot {
+    return {
+      ...makeSnapshot(),
+      tables: {
+        ...makeSnapshot().tables,
+        settings: [
+          {
+            id: 'gubbins:preferences#mode',
+            store_key: 'gubbins:preferences',
+            field: 'mode',
+            value: '"dark"',
+          } as unknown as SqlRow,
+          {
+            id: 'gubbins:preferences#catalogueOrgName',
+            store_key: 'gubbins:preferences',
+            field: 'catalogueOrgName',
+            value: '"Example Ltd"',
+          } as unknown as SqlRow,
+          {
+            id: 'gubbins:preferences#somethingNewer',
+            store_key: 'gubbins:preferences',
+            field: 'somethingNewer',
+            value: '1',
+          } as unknown as SqlRow,
+        ],
+      },
+    };
+  }
+
+  const fields = (snapshot: SyncSnapshot) => (snapshot.tables.settings ?? []).map((row) => String(row.field));
+
+  it('carries only the groups the user ticked', () => {
+    // Issue #175's promise is that unticking a group stops it travelling. The shared copy of a
+    // preference has to obey it too, or the letterhead would leave in the file regardless.
+    const out = filterSnapshot(withSettings(), {
+      includeHistory: true,
+      includeRemovedItems: true,
+      includeSettings: true,
+      settingGroups: { ...allSettingsGroups(false), appearance: true },
+    });
+    expect(fields(out)).toEqual(['mode']);
+  });
+
+  it('carries none at all when settings are excluded wholesale', () => {
+    const out = filterSnapshot(withSettings(), {
+      includeHistory: true,
+      includeRemovedItems: true,
+      includeSettings: false,
+      settingGroups: allSettingsGroups(true),
+    });
+    expect(fields(out)).toEqual([]);
+  });
+
+  it('drops a row no group claims — the picker could not have offered it', () => {
+    const out = filterSnapshot(withSettings(), {
+      includeHistory: true,
+      includeRemovedItems: true,
+      ...{ includeSettings: true, settingGroups: allSettingsGroups(true) },
+    });
+    expect(fields(out)).toEqual(['mode', 'catalogueOrgName']);
+  });
+
+  it('leaves a snapshot with no settings table alone', () => {
+    const out = filterSnapshot(makeSnapshot(), {
+      includeHistory: true,
+      includeRemovedItems: true,
+      ...ALL_SETTINGS,
+    });
+    expect(out.tables.settings).toBeUndefined();
+  });
+});
+
 describe('filterSnapshot', () => {
   it('drops history when excluded but leaves everything else intact', () => {
-    const out = filterSnapshot(makeSnapshot(), { includeHistory: false, includeRemovedItems: true });
+    const out = filterSnapshot(makeSnapshot(), {
+      includeHistory: false,
+      includeRemovedItems: true,
+      ...ALL_SETTINGS,
+    });
     expect(out.itemHistory).toEqual([]);
     expect(out.gaugeHistory).toEqual([]);
     expect(out.tables.items).toHaveLength(5);
@@ -91,7 +173,11 @@ describe('filterSnapshot', () => {
   });
 
   it('drops removed items and every row that references them (FK-safe)', () => {
-    const out = filterSnapshot(makeSnapshot(), { includeHistory: true, includeRemovedItems: false });
+    const out = filterSnapshot(makeSnapshot(), {
+      includeHistory: true,
+      includeRemovedItems: false,
+      ...ALL_SETTINGS,
+    });
 
     const itemIds = (out.tables.items ?? []).map((r) => r.id);
     // B removed; C dropped as its variant; E dropped as C's variant (transitive, issue #152).
@@ -126,7 +212,11 @@ describe('filterSnapshot', () => {
   });
 
   it('keeps a row whose item reference is nullable, clearing the link instead', () => {
-    const out = filterSnapshot(makeSnapshot(), { includeHistory: true, includeRemovedItems: false });
+    const out = filterSnapshot(makeSnapshot(), {
+      includeHistory: true,
+      includeRemovedItems: false,
+      ...ALL_SETTINGS,
+    });
 
     // A purchase-order line records money actually spent, so it survives its item's removal
     // with `item_id` cleared (the column is ON DELETE SET NULL) rather than being dropped.
@@ -142,13 +232,17 @@ describe('filterSnapshot', () => {
       tables: { ...base.tables, items: [item('X', 1, 'Y'), item('Y', 1, 'X')] },
     };
 
-    const out = filterSnapshot(snapshot, { includeHistory: true, includeRemovedItems: false });
+    const out = filterSnapshot(snapshot, {
+      includeHistory: true,
+      includeRemovedItems: false,
+      ...ALL_SETTINGS,
+    });
     expect((out.tables.items ?? []).map((r) => r.id)).toEqual(['X', 'Y']);
   });
 
   it('does not mutate the input snapshot', () => {
     const input = makeSnapshot();
-    filterSnapshot(input, { includeHistory: false, includeRemovedItems: false });
+    filterSnapshot(input, { includeHistory: false, includeRemovedItems: false, ...ALL_SETTINGS });
     expect(input.tables.items).toHaveLength(5);
     expect(input.itemHistory).toHaveLength(2);
     expect(input.tables.purchase_order_lines?.[0]?.item_id).toBe('B');
