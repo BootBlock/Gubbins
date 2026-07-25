@@ -208,7 +208,10 @@ function ImageFieldControl({
   // control (a field retyped from TEXT keeps its stored text, and rows arrive from sync peers
   // and restored backups), and putting it in `src` would make the app fetch a string a peer
   // chose. Anything else reads as "no image": the picker shows, the stale value is not loaded.
-  const preview = isImageDataUrl(value) ? value : null;
+  // Trimmed first, and the trimmed form is what's shown, so this accepts exactly what saving
+  // does — validation trims before applying the same test.
+  const trimmed = value.trim();
+  const preview = isImageDataUrl(trimmed) ? trimmed : null;
 
   return (
     <div className="space-y-field-gap-compact">

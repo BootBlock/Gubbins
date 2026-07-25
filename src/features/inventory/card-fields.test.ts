@@ -312,6 +312,20 @@ describe('resolveCardFields — custom fields', () => {
     expect(resolved[0].value).toEqual({ kind: 'image', src: tinyImage });
   });
 
+  it('trims an IMAGE value before showing it, matching what saving accepts', () => {
+    const imageField: CardCustomField = { ...field, fieldType: 'IMAGE' };
+    const tinyImage = 'data:image/webp;base64,UklGRhoAAABXRUJQ';
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({
+        customFields: new Map([['f1', imageField]]),
+        customValues: new Map([['f1', `  ${tinyImage}  `]]),
+      }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'image', src: tinyImage });
+  });
+
   /**
    * The card puts an `image` value straight into an `<img src>`, so only a real image data URL
    * may become one — a value stored before the field was retyped to IMAGE, or one merged from a

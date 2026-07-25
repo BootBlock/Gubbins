@@ -148,6 +148,15 @@ describe('TypedFieldControl — IMAGE', () => {
     expect(document.querySelector('img')).toBeNull();
   });
 
+  /** Saving trims before applying the same test, so displaying must too — or a value that
+   *  saves cleanly would refuse to show. */
+  it('shows a value padded with whitespace, matching what saving accepts', () => {
+    render(
+      <TypedFieldControl fieldType="IMAGE" value={`  ${tinyImage}  `} onChange={vi.fn()} ariaLabel="Cover" />,
+    );
+    expect(screen.getByAltText('Cover preview')).toHaveAttribute('src', tinyImage);
+  });
+
   it('keeps the unshowable value removable rather than stranding it', () => {
     const onChange = vi.fn();
     render(

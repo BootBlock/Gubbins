@@ -333,7 +333,11 @@ function customFieldValue(type: FieldType, raw: string | null): CardFieldValue {
   if (type === 'ON_OFF') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'On' : 'Off' };
   // An IMAGE value is an image `data:` URL — render it as a thumbnail, not its base64 text.
   // Only a value of exactly that shape becomes a `src` (see {@link isImageDataUrl}); anything
-  // else is em-dash, so a stored string can never become a URL the card fetches.
-  if (type === 'IMAGE') return isImageDataUrl(raw) ? { kind: 'image', src: raw } : EMPTY;
+  // else is em-dash, so a stored string can never become a URL the card fetches. Tested (and
+  // shown) trimmed, so this accepts exactly what saving does — validation trims first.
+  if (type === 'IMAGE') {
+    const trimmed = raw.trim();
+    return isImageDataUrl(trimmed) ? { kind: 'image', src: trimmed } : EMPTY;
+  }
   return { kind: 'text', text: raw };
 }
