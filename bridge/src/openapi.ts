@@ -369,7 +369,9 @@ export const openapiDocument: JsonValue = {
     version: '1.0.0',
     description:
       'Read-only HTTP API over a Gubbins inventory snapshot, served by the local companion ' +
-      'bridge. Every endpoint is GET-only and requires a bearer token. The unversioned paths ' +
+      'bridge. Every endpoint is a read and requires a bearer token; each accepts HEAD as well ' +
+      'as GET (same status and headers, no body), so a calendar or feed client can probe a URL ' +
+      'before subscribing to it. The unversioned paths ' +
       '(/health, /search, /where) are permanent, stable aliases of their /api/v1 equivalents, ' +
       'kept so existing consumers (the Home Assistant integration) keep working unchanged.',
     license: { name: 'MIT' },
