@@ -3,14 +3,17 @@ import { CloseIcon } from '@/components/icons';
 import type { FilterCondition, FilterOperator } from '@/db/search/ast';
 import { useSearchBuilder } from '../SearchBuilderContext';
 import type { BuilderPath } from '../builder-reducer';
+import { enumOptionsForField } from '../enum-options';
 import {
   BUILDER_FIELDS,
   operatorLabelFor,
   capabilityKey,
   customFieldName,
+  enumValuesForField,
   fieldSelectValue,
   isCapabilityField,
   isCustomField,
+  isTagField,
   kindOfField,
   operatorsForKind,
   toCapabilityField,
@@ -26,14 +29,21 @@ export function ConditionEditor({ condition, path }: { condition: FilterConditio
   const { dispatch } = useSearchBuilder();
   const isCapability = isCapabilityField(condition.field);
   const isCustom = isCustomField(condition.field);
+  // A tag condition's value is a tag *name* (issue #138), so hint with one rather than "value…".
+  const isTag = isTagField(condition.field);
   const kind = kindOfField(condition.field);
   const isBoolean = kind === 'boolean';
+  const isEnum = kind === 'enum';
+  const isDate = kind === 'date';
   const operators = operatorsForKind(kind);
   const showValue = condition.operator !== 'HAS_CAPABILITY';
   const numericValue =
     kind === 'number' ||
     ((isCapability || isCustom) &&
       (condition.operator === 'GREATER_THAN' || condition.operator === 'LESS_THAN'));
+  // An enum offers only spellings the column's CHECK constraint accepts, under the labels the
+  // rest of the app already shows them by (issue #140).
+  const enumOptions = isEnum ? enumOptionsForField(condition.field) : [];
 
   const onFieldChange = (next: string) => {
     if (next === 'capability') {
@@ -54,8 +64,11 @@ export function ConditionEditor({ condition, path }: { condition: FilterConditio
     }
     const nextKind = kindOfField(next);
     const op = operatorsForKind(nextKind)[0];
-    // A boolean field carries a real boolean value (defaulting to Yes); every other kind starts blank.
-    const value = nextKind === 'boolean' ? true : '';
+    // A boolean field carries a real boolean value (defaulting to Yes), and an enum starts on
+    // its first member — both are pickers, so there is no blank state for the user to fill in
+    // and a blank would translate to an error. Every other kind starts blank.
+    const value =
+      nextKind === 'boolean' ? true : nextKind === 'enum' ? (enumValuesForField(next)[0] ?? '') : '';
     dispatch({ type: 'updateCondition', path, patch: { field: next, operator: op, value } });
   };
 
@@ -142,13 +155,29 @@ export function ConditionEditor({ condition, path }: { condition: FilterConditio
             { value: 'false', label: 'No' },
           ]}
         />
+      ) : showValue && isEnum ? (
+        <Select
+          aria-label="Value"
+          value={String(condition.value)}
+          onChange={(value) => dispatch({ type: 'updateCondition', path, patch: { value } })}
+          className="h-9 w-44"
+          options={enumOptions}
+        />
+      ) : showValue && isDate ? (
+        <Input
+          type="date"
+          aria-label="Value"
+          value={typeof condition.value === 'boolean' ? '' : String(condition.value)}
+          onChange={(e) => dispatch({ type: 'updateCondition', path, patch: { value: e.target.value } })}
+          className="h-9 w-40"
+        />
       ) : showValue ? (
         <Input
           aria-label="Value"
           value={typeof condition.value === 'boolean' ? '' : String(condition.value)}
           inputMode={numericValue ? 'decimal' : 'text'}
           onChange={(e) => dispatch({ type: 'updateCondition', path, patch: { value: e.target.value } })}
-          placeholder={numericValue ? '0' : 'value…'}
+          placeholder={numericValue ? '0' : isTag ? 'fragile' : 'value…'}
           className="h-9 w-32"
         />
       ) : null}

@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getPurchaseOrderRepository,
   getReportRepository,
+  MAX_PAGE_SIZE,
   type CreatePurchaseOrderInput,
   type CreatePurchaseOrderLineInput,
   type LowStockThresholds,
@@ -24,6 +25,13 @@ import type { ReorderPlanGroup } from './reorder-plan';
 export const purchaseOrderKeys = {
   all: ['purchase-orders'] as const,
   list: () => [...purchaseOrderKeys.all, 'list'] as const,
+  /**
+   * One page of the order list. Nested **under** {@link purchaseOrderKeys.list} so every
+   * existing `invalidateQueries` against the list still refreshes every page and the count —
+   * no write has to learn about pagination.
+   */
+  page: (offset: number, limit: number) => [...purchaseOrderKeys.list(), { offset, limit }] as const,
+  count: () => [...purchaseOrderKeys.list(), 'count'] as const,
   detail: (id: string) => [...purchaseOrderKeys.all, 'detail', id] as const,
 };
 
@@ -67,11 +75,30 @@ export function useOnOrderQtys(itemIds: readonly string[]) {
   });
 }
 
-/** Every purchase order (with lines + effective status), newest first. */
-export function usePurchaseOrders() {
+/**
+ * One page of purchase orders (with lines + effective status), newest first (issue #149).
+ *
+ * Defaults to the first full page — what every caller read before — so only the Orders tab,
+ * which passes a page, changes behaviour. Orders accumulate for as long as the inventory is
+ * used, so that list pages rather than pretending the first hundred are all of them.
+ */
+export function usePurchaseOrders(page = 1, pageSize = MAX_PAGE_SIZE) {
+  const limit = Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(pageSize)));
+  const offset = Math.max(0, (Math.max(1, Math.floor(page)) - 1) * limit);
   return useQuery({
-    queryKey: purchaseOrderKeys.list(),
-    queryFn: () => getPurchaseOrderRepository().list({ limit: 100 }),
+    queryKey: purchaseOrderKeys.page(offset, limit),
+    queryFn: () => getPurchaseOrderRepository().list({ limit, offset }),
+    // Hold the previous page on screen while the next one loads, so paging doesn't flash the
+    // empty state (the Tags screen's behaviour).
+    placeholderData: (previous) => previous,
+  });
+}
+
+/** How many purchase orders exist in total — the denominator for the Orders tab's pager. */
+export function usePurchaseOrderCount() {
+  return useQuery({
+    queryKey: purchaseOrderKeys.count(),
+    queryFn: () => getPurchaseOrderRepository().count(),
   });
 }
 

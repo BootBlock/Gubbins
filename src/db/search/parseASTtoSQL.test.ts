@@ -2,9 +2,20 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
-import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
+import {
+  CONDITIONS,
+  DEAD_STOCK_MODES,
+  TRACKING_MODES,
+  UNASSIGNED_LOCATION_ID,
+} from '@/db/repositories/constants';
 import { MAX_AST_GROUP_DEPTH, type ASTGroupNode, type FilterCondition } from './ast';
-import { collectCapabilityKeys, parseASTtoSQL, SearchAstError } from './parseASTtoSQL';
+import {
+  astFiltersActiveFlag,
+  collectCapabilityKeys,
+  itemFieldEnumValues,
+  parseASTtoSQL,
+  SearchAstError,
+} from './parseASTtoSQL';
 
 /** Wrap conditions in a root AND group for brevity. */
 function and(...conditions: Array<ASTGroupNode | FilterCondition>): ASTGroupNode {
@@ -230,6 +241,50 @@ describe('parseASTtoSQL — custom fields (spec §4 Categories & Schema Evolutio
   });
 });
 
+describe('parseASTtoSQL — tags (issue #138)', () => {
+  it('translates a tag CONTAINS to an EXISTS over the item↔tag join', () => {
+    const [sql, params] = parseASTtoSQL(and({ field: 'tag', operator: 'CONTAINS', value: 'expo' }));
+    expect(sql).toBe(
+      '(EXISTS (SELECT 1 FROM item_tags it JOIN tags tg ON tg.id = it.tag_id ' +
+        "WHERE it.item_id = items.id AND tg.name LIKE ? ESCAPE '\\'))",
+    );
+    expect(params).toEqual(['%expo%']);
+  });
+
+  it('translates a tag EQUALS to a case-insensitive whole-name match', () => {
+    const [sql, params] = parseASTtoSQL(and({ field: 'tag', operator: 'EQUALS', value: 'Fragile' }));
+    expect(sql).toContain('AND tg.name = ? COLLATE NOCASE');
+    expect(params).toEqual(['Fragile']);
+  });
+
+  it('escapes LIKE wildcards in a tag CONTAINS value', () => {
+    const [, params] = parseASTtoSQL(and({ field: 'tag', operator: 'CONTAINS', value: '50%_x' }));
+    expect(params).toEqual(['%50\\%\\_x%']);
+  });
+
+  it('accepts the field name case-insensitively', () => {
+    const [sql] = parseASTtoSQL(and({ field: 'Tag', operator: 'CONTAINS', value: 'expo' }));
+    expect(sql).toContain('FROM item_tags it');
+  });
+
+  it('rejects an ordering comparison on a tag name', () => {
+    expect(() => parseASTtoSQL(and({ field: 'tag', operator: 'GREATER_THAN', value: 3 }))).toThrow(
+      /not supported/,
+    );
+    expect(() => parseASTtoSQL(and({ field: 'tag', operator: 'HAS_CAPABILITY', value: '' }))).toThrow(
+      SearchAstError,
+    );
+  });
+
+  it('never concatenates the tag name into the SQL text', () => {
+    const [sql, params] = parseASTtoSQL(
+      and({ field: 'tag', operator: 'EQUALS', value: "x'); DROP TABLE items;--" }),
+    );
+    expect(sql).not.toContain('DROP TABLE');
+    expect(params).toEqual(["x'); DROP TABLE items;--"]);
+  });
+});
+
 describe('parseASTtoSQL — validation & the depth cap (spec §5.1)', () => {
   it('throws on an unknown field', () => {
     expect(() => parseASTtoSQL(and({ field: 'nonsense', operator: 'EQUALS', value: 'x' }))).toThrow(
@@ -334,6 +389,162 @@ describe('parseASTtoSQL — negation & presence (issue #139)', () => {
       '(items.weight IS NOT NULL)',
       [],
     ]);
+  });
+});
+
+describe('parseASTtoSQL — lifecycle, valuation & policy fields (issue #140)', () => {
+  it('canonicalises an enum value to the column vocabulary, whatever the user typed', () => {
+    // Hyphens, spaces and case all fold to the stored `NEEDS_REPAIR`.
+    for (const typed of ['NEEDS_REPAIR', 'needs-repair', 'Needs Repair']) {
+      expect(parseASTtoSQL(and({ field: 'condition', operator: 'EQUALS', value: typed }))).toEqual([
+        '(items.condition = ?)',
+        ['NEEDS_REPAIR'],
+      ]);
+    }
+    // The dead-stock vocabulary is lower-case, so the canonical value must not be upper-cased.
+    expect(parseASTtoSQL(and({ field: 'deadstock', operator: 'EQUALS', value: 'ALWAYS' }))).toEqual([
+      '(items.dead_stock_mode = ?)',
+      ['always'],
+    ]);
+    expect(parseASTtoSQL(and({ field: 'tracking', operator: 'EQUALS', value: 'serialised' }))).toEqual([
+      '(items.tracking_mode = ?)',
+      ['SERIALISED'],
+    ]);
+  });
+
+  it('rejects a value outside an enum vocabulary, naming the accepted values', () => {
+    expect(() => parseASTtoSQL(and({ field: 'condition', operator: 'EQUALS', value: 'shabby' }))).toThrow(
+      /MINT, GOOD, NEEDS_REPAIR, OUT_FOR_CALIBRATION/,
+    );
+  });
+
+  it('rejects an ordering comparison on an enum field', () => {
+    expect(() =>
+      parseASTtoSQL(and({ field: 'tracking', operator: 'GREATER_THAN', value: 'DISCRETE' })),
+    ).toThrow(SearchAstError);
+  });
+
+  it('scales a money value from major units to the stored micro-units (issue #286)', () => {
+    // `cost>10` means ten pounds/dollars — comparing the raw 10 would be out by a millionfold.
+    expect(parseASTtoSQL(and({ field: 'cost', operator: 'GREATER_THAN', value: 10 }))).toEqual([
+      '(items.unit_cost > ?)',
+      [10_000_000],
+    ]);
+    expect(parseASTtoSQL(and({ field: 'price', operator: 'LESS_THAN', value: 2.5 }))).toEqual([
+      '(items.purchase_price < ?)',
+      [2_500_000],
+    ]);
+    expect(parseASTtoSQL(and({ field: 'value', operator: 'EQUALS', value: '99.99' }))).toEqual([
+      '(items.current_value = ?)',
+      [99_990_000],
+    ]);
+  });
+
+  it('compares a day-grained UNIX-ms date on its day boundaries', () => {
+    const mar1 = Date.UTC(2026, 2, 1);
+    const mar2 = Date.UTC(2026, 2, 2);
+    // "before 1 March" excludes the 1st; "after 1 March" starts at the 2nd; "on" is the day itself.
+    expect(parseASTtoSQL(and({ field: 'expiry', operator: 'LESS_THAN', value: '2026-03-01' }))).toEqual([
+      '(items.expiry_date < ?)',
+      [mar1],
+    ]);
+    expect(parseASTtoSQL(and({ field: 'expiry', operator: 'GREATER_THAN', value: '2026-03-01' }))).toEqual([
+      '(items.expiry_date >= ?)',
+      [mar2],
+    ]);
+    expect(parseASTtoSQL(and({ field: 'expiry', operator: 'EQUALS', value: '2026-03-01' }))).toEqual([
+      '((items.expiry_date >= ? AND items.expiry_date < ?))',
+      [mar1, mar2],
+    ]);
+  });
+
+  it('compares a YYYY-MM-DD TEXT date as a plain string, which sorts in date order', () => {
+    expect(parseASTtoSQL(and({ field: 'warranty', operator: 'LESS_THAN', value: '2027-01-01' }))).toEqual([
+      '(items.warranty_expires_at < ?)',
+      ['2027-01-01'],
+    ]);
+    expect(parseASTtoSQL(and({ field: 'warranty', operator: 'EQUALS', value: '2027-01-01' }))).toEqual([
+      '(items.warranty_expires_at = ?)',
+      ['2027-01-01'],
+    ]);
+  });
+
+  it('rejects a date that is not an ISO calendar day', () => {
+    // A locale-shaped date would otherwise be read as the wrong day; an impossible one as a
+    // neighbouring month.
+    for (const bad of ['01/03/2026', '2026-3-1', '2026-02-31', 'March']) {
+      expect(() => parseASTtoSQL(and({ field: 'expiry', operator: 'EQUALS', value: bad }))).toThrow(
+        /YYYY-MM-DD/,
+      );
+    }
+  });
+
+  it('translates the remaining numeric and boolean policy columns', () => {
+    expect(parseASTtoSQL(and({ field: 'reorder', operator: 'GREATER_THAN', value: 0 }))).toEqual([
+      '(items.reorder_point > ?)',
+      [0],
+    ]);
+    expect(parseASTtoSQL(and({ field: 'active', operator: 'EQUALS', value: 'no' }))).toEqual([
+      '(items.is_active = ?)',
+      [0],
+    ]);
+  });
+
+  it("rejects a field name inherited from the field table's prototype", () => {
+    // A bare index would return `Object.prototype.constructor` here — a truthy non-field that
+    // slipped past the "unknown field" guard and compiled to `undefined = ?`.
+    for (const field of ['constructor', 'toString', 'hasOwnProperty']) {
+      expect(() => parseASTtoSQL(and({ field, operator: 'EQUALS', value: 'x' }))).toThrow(
+        /Unknown search field/,
+      );
+      expect(itemFieldEnumValues(field)).toBeNull();
+    }
+  });
+
+  it('exposes an enum field vocabulary for the builder, and nothing for any other kind', () => {
+    // The picker's options are the column's CHECK vocabulary, so the two cannot drift.
+    expect(itemFieldEnumValues('condition')).toEqual([...CONDITIONS]);
+    expect(itemFieldEnumValues('tracking')).toEqual([...TRACKING_MODES]);
+    expect(itemFieldEnumValues('deadstock')).toEqual([...DEAD_STOCK_MODES]);
+    expect(itemFieldEnumValues('quantity')).toBeNull();
+    expect(itemFieldEnumValues('not-a-field')).toBeNull();
+  });
+
+  it('never interpolates a value into the SQL text — every one is a bound parameter', () => {
+    const [sql, params] = parseASTtoSQL(
+      and(
+        { field: 'condition', operator: 'EQUALS', value: 'mint' },
+        { field: 'expiry', operator: 'LESS_THAN', value: '2026-03-01' },
+        { field: 'cost', operator: 'GREATER_THAN', value: 10 },
+      ),
+    );
+    expect(sql).toBe('(items.condition = ? AND items.expiry_date < ? AND items.unit_cost > ?)');
+    expect(params).toEqual(['MINT', Date.UTC(2026, 2, 1), 10_000_000]);
+  });
+});
+
+describe('astFiltersActiveFlag — lifting the implicit active-only scope (issue #140)', () => {
+  it('is false for a tree that never mentions the active flag', () => {
+    expect(astFiltersActiveFlag(and())).toBe(false);
+    expect(astFiltersActiveFlag(and({ field: 'quantity', operator: 'GREATER_THAN', value: 1 }))).toBe(false);
+  });
+
+  it('is true wherever the condition sits in the tree', () => {
+    expect(astFiltersActiveFlag(and({ field: 'active', operator: 'EQUALS', value: false }))).toBe(true);
+    expect(
+      astFiltersActiveFlag(
+        and(
+          { field: 'quantity', operator: 'GREATER_THAN', value: 1 },
+          or({ field: ' active ', operator: 'EQUALS', value: true }),
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('ignores a field the translator would reject as unknown', () => {
+    // Matched exactly as `ITEM_FIELDS` is keyed, so a near-miss never lifts the scope.
+    expect(astFiltersActiveFlag(and({ field: 'Active', operator: 'EQUALS', value: true }))).toBe(false);
+    expect(astFiltersActiveFlag(and({ field: 'inactive', operator: 'EQUALS', value: true }))).toBe(false);
   });
 });
 
@@ -591,6 +802,72 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
     });
   });
 
+  describe('lifecycle, valuation & policy columns (issue #140)', () => {
+    beforeEach(async () => {
+      // The regulator: mint, cheap, expires 1 March 2026, warranty to 2027, no reorder floor.
+      await driver.execute(
+        `UPDATE items
+            SET condition = 'MINT', unit_cost = ?, purchase_price = ?, current_value = ?,
+                expiry_date = ?, warranty_expires_at = '2027-01-01', reorder_point = 5,
+                dead_stock_mode = 'always'
+          WHERE id = 'reg';`,
+        [2_000_000, 3_000_000, 1_500_000, Date.UTC(2026, 2, 1)],
+      );
+      // The MCU: needs repair, dearer, expires later, no warranty at all.
+      await driver.execute(
+        `UPDATE items
+            SET condition = 'NEEDS_REPAIR', unit_cost = ?, tracking_mode = 'SERIALISED',
+                quantity = 1, expiry_date = ?
+          WHERE id = 'mcu';`,
+        [25_000_000, Date.UTC(2026, 5, 15)],
+      );
+    });
+
+    it('matches an enum condition typed in any spelling', async () => {
+      expect(await run(and({ field: 'condition', operator: 'EQUALS', value: 'needs repair' }))).toEqual([
+        'mcu',
+      ]);
+      expect(await run(and({ field: 'tracking', operator: 'EQUALS', value: 'serialised' }))).toEqual(['mcu']);
+      expect(await run(and({ field: 'deadstock', operator: 'EQUALS', value: 'always' }))).toEqual(['reg']);
+    });
+
+    it('compares money in major units against the stored micro-units', async () => {
+      // £2 vs £25 — a comparison against the raw stored integers would match both or neither.
+      expect(await run(and({ field: 'cost', operator: 'GREATER_THAN', value: 10 }))).toEqual(['mcu']);
+      expect(await run(and({ field: 'cost', operator: 'LESS_THAN', value: 10 }))).toEqual(['reg']);
+      expect(await run(and({ field: 'price', operator: 'EQUALS', value: 3 }))).toEqual(['reg']);
+      expect(await run(and({ field: 'value', operator: 'LESS_THAN', value: 2 }))).toEqual(['reg']);
+    });
+
+    it('answers "expiring before March" — the comparison the status chips could not express', async () => {
+      expect(await run(and({ field: 'expiry', operator: 'LESS_THAN', value: '2026-03-02' }))).toEqual([
+        'reg',
+      ]);
+      expect(await run(and({ field: 'expiry', operator: 'GREATER_THAN', value: '2026-03-01' }))).toEqual([
+        'mcu',
+      ]);
+      // The boundary day itself belongs to neither the "before" nor the "after" side.
+      expect(await run(and({ field: 'expiry', operator: 'EQUALS', value: '2026-03-01' }))).toEqual(['reg']);
+    });
+
+    it('compares a TEXT warranty date, and skips rows that have none', async () => {
+      expect(await run(and({ field: 'warranty', operator: 'LESS_THAN', value: '2027-06-01' }))).toEqual([
+        'reg',
+      ]);
+      // NULL compares to nothing, so the MCU never appears on either side.
+      expect(await run(and({ field: 'warranty', operator: 'GREATER_THAN', value: '2027-06-01' }))).toEqual(
+        [],
+      );
+    });
+
+    it('matches the reorder floor and the active flag', async () => {
+      expect(await run(and({ field: 'reorder', operator: 'GREATER_THAN', value: 0 }))).toEqual(['reg']);
+      await driver.execute("UPDATE items SET is_active = 0 WHERE id = 'mcu';");
+      expect(await run(and({ field: 'active', operator: 'EQUALS', value: false }))).toEqual(['mcu']);
+      expect(await run(and({ field: 'active', operator: 'EQUALS', value: true }))).toEqual(['reg']);
+    });
+  });
+
   describe('custom-field predicates join item_field_values ⋈ category_fields (Phase 71)', () => {
     beforeEach(async () => {
       // A category with two custom fields; the two seeded items carry differing values.
@@ -710,6 +987,65 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
       );
       await setFieldInherited('mcu', makerId);
       expect(await run(and({ field: 'field:Maker', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([]);
+    });
+  });
+
+  describe('tag predicates join item_tags ⋈ tags (issue #138)', () => {
+    /** Define a tag in the shared dictionary and attach it to an item. */
+    async function addTag(itemId: string, name: string): Promise<void> {
+      const tagId = crypto.randomUUID();
+      await driver.execute('INSERT INTO tags (id, name) VALUES (?, ?);', [tagId, name]);
+      await driver.execute('INSERT INTO item_tags (item_id, tag_id) VALUES (?, ?);', [itemId, tagId]);
+    }
+
+    beforeEach(async () => {
+      await addTag('reg', 'Fragile');
+      await addTag('reg', 'expo-2026');
+      await addTag('mcu', 'wireless');
+    });
+
+    it('matches a whole tag name case-insensitively', async () => {
+      expect(await run(and({ field: 'tag', operator: 'EQUALS', value: 'fragile' }))).toEqual(['reg']);
+    });
+
+    it('matches a partial tag name with CONTAINS', async () => {
+      expect(await run(and({ field: 'tag', operator: 'CONTAINS', value: 'expo' }))).toEqual(['reg']);
+    });
+
+    it("matches when any of an item's several tags satisfies the predicate", async () => {
+      // `reg` carries two tags; either one must find it.
+      expect(await run(and({ field: 'tag', operator: 'EQUALS', value: 'expo-2026' }))).toEqual(['reg']);
+      expect(await run(and({ field: 'tag', operator: 'EQUALS', value: 'Fragile' }))).toEqual(['reg']);
+    });
+
+    it('matches nothing for a tag no item carries', async () => {
+      expect(await run(and({ field: 'tag', operator: 'EQUALS', value: 'nonexistent' }))).toEqual([]);
+    });
+
+    it('returns each matching item once however many of its tags match', async () => {
+      // Both of `reg`'s tags contain an "e", but EXISTS must not duplicate the row.
+      expect(await run(and({ field: 'tag', operator: 'CONTAINS', value: 'e' }))).toEqual(['mcu', 'reg']);
+    });
+
+    it('ignores a tag that sits on a location rather than the item', async () => {
+      const tagId = crypto.randomUUID();
+      await driver.execute('INSERT INTO tags (id, name) VALUES (?, ?);', [tagId, 'climate-controlled']);
+      await driver.execute('INSERT INTO location_tags (location_id, tag_id) VALUES (?, ?);', [
+        UNASSIGNED_LOCATION_ID,
+        tagId,
+      ]);
+      expect(await run(and({ field: 'tag', operator: 'EQUALS', value: 'climate-controlled' }))).toEqual([]);
+    });
+
+    it('combines a tag predicate with the other field kinds across AND/OR', async () => {
+      // tag:wireless AND quantity < 10 → only the MCU (qty 3); the regulator holds 50.
+      const ids = await run(
+        and(
+          { field: 'tag', operator: 'CONTAINS', value: 'wireless' },
+          { field: 'quantity', operator: 'LESS_THAN', value: 10 },
+        ),
+      );
+      expect(ids).toEqual(['mcu']);
     });
   });
 });

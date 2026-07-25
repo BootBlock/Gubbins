@@ -18,6 +18,17 @@ export interface AutocompleteProps {
   readonly className?: string;
   /** Max suggestions shown at once (the popup scrolls beyond this). */
   readonly maxOptions?: number;
+  /**
+   * The suggestions have **already** been narrowed against the typed text by whoever supplied
+   * them — a server-side search, typically — so the built-in {@link filterSuggestions} ranking
+   * must not narrow them a second time. Without this, a supplier the database matched on its
+   * folded name key (`RS Comp` → `RS-Components`) is dropped by the literal substring test here
+   * and the popup comes up empty for a term that genuinely matched.
+   *
+   * The cap still applies; only the filtering is skipped. Leave it off for the ordinary case,
+   * where the caller hands over a whole candidate list and this control does the narrowing.
+   */
+  readonly prefiltered?: boolean;
   readonly 'aria-label'?: string;
   readonly 'aria-labelledby'?: string;
   readonly 'aria-describedby'?: string;
@@ -68,6 +79,7 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
     disabled = false,
     className,
     maxOptions = 10,
+    prefiltered = false,
     'aria-label': ariaLabel,
     'aria-labelledby': ariaLabelledBy,
     'aria-describedby': ariaDescribedBy,
@@ -94,7 +106,9 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
   const inputRef = useRef<HTMLInputElement | null>(null);
   const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const matches = filterSuggestions(suggestions, value, maxOptions);
+  const matches = prefiltered
+    ? suggestions.slice(0, maxOptions)
+    : filterSuggestions(suggestions, value, maxOptions);
   const isOpen = open && matches.length > 0;
   // The listbox is portalled out of the (clipping) dialog scroll box and positioned
   // against the field — see {@link useAnchoredPopover}.
@@ -312,6 +326,8 @@ export interface AutocompleteFieldProps {
   readonly disabled?: boolean;
   readonly id?: string;
   readonly maxOptions?: number;
+  /** See {@link AutocompleteProps.prefiltered} — for a server-searched suggestion list. */
+  readonly prefiltered?: boolean;
   readonly inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
   readonly maxLength?: number;
   /** Forwarded to the underlying input (mirrors {@link AutocompleteFieldProps.inputRef}). */
@@ -340,6 +356,7 @@ export function AutocompleteField({
   disabled,
   id,
   maxOptions,
+  prefiltered,
   inputMode,
   maxLength,
   inputRef,
@@ -363,6 +380,7 @@ export function AutocompleteField({
         placeholder={placeholder}
         disabled={disabled}
         maxOptions={maxOptions}
+        prefiltered={prefiltered}
         inputMode={inputMode}
         maxLength={maxLength}
         onCommit={onCommit}

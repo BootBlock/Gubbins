@@ -9,6 +9,7 @@
  * Names are canonical: the DB holds a case-insensitive UNIQUE index, and
  * {@link ../../../lib/supplier-name} folds spacing and punctuation on top of that.
  */
+import type { PageParams } from './pagination';
 
 export interface SupplierRow {
   readonly id: string;
@@ -43,6 +44,22 @@ export interface SupplierWithCounts extends Supplier {
   readonly partCount: number;
   readonly orderCount: number;
 }
+
+/**
+ * What narrows a supplier read (issue #386).
+ *
+ * A dictionary is usually small, but nothing stops it growing past a single page — and a
+ * management screen that can only read one page can only manage one page's worth. `search` is a
+ * case-insensitive substring of the supplier's name, matched against both the **display name**
+ * (so the text on screen is searchable as written) and the folded identity key (so spacing and
+ * punctuation stop mattering, exactly as they do everywhere else a supplier name is typed).
+ */
+export interface SupplierFilter {
+  readonly search?: string;
+}
+
+/** {@link SupplierFilter} plus the page to read of the matching suppliers. */
+export interface SupplierListParams extends PageParams, SupplierFilter {}
 
 export interface CreateSupplierInput {
   readonly name: string;

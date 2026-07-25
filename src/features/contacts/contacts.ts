@@ -7,12 +7,15 @@
  * These are deliberately invalidation-based rather than optimistically patched: a
  * single confirmation tap is low-frequency (the *rapid* path is the scanner queue,
  * which batches and commits via these same mutations). Lists are bounded per
- * contact/item and capped at 100 per the strict-pagination mandate (§2.1).
+ * contact/item and capped at 100 per the strict-pagination mandate (§2.1) — so the Contacts
+ * screen pages the dictionary server-side rather than showing that one capped read as if it
+ * were every contact (issue #149).
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getCheckoutRepository,
   getContactRepository,
+  MAX_PAGE_SIZE,
   type CheckInOptions,
   type CheckoutItemInput,
   type CreateContactInput,
@@ -25,6 +28,13 @@ import { useReportWriteFailure } from '@/features/errors';
 export const contactKeys = {
   all: ['contacts'] as const,
   list: () => [...contactKeys.all, 'list'] as const,
+  /**
+   * One page of the contacts dictionary. Nested **under** {@link contactKeys.list} so every
+   * existing `invalidateQueries` against the list (or `all`) still refreshes every page and
+   * the count.
+   */
+  page: (offset: number, limit: number) => [...contactKeys.list(), { offset, limit }] as const,
+  count: () => [...contactKeys.list(), 'count'] as const,
   detail: (id: string) => [...contactKeys.all, 'detail', id] as const,
   checkoutsForContact: (id: string) => [...contactKeys.detail(id), 'checkouts'] as const,
 } as const;
@@ -39,10 +49,31 @@ export const checkoutKeys = {
 
 // --- reads ---------------------------------------------------------------------
 
-export function useContacts() {
+/**
+ * One page of the contacts dictionary (issue #149).
+ *
+ * Defaults to the first full page, which is what every caller read before — only the Contacts
+ * screen passes a page. The name pickers that also use this (checking out, booking an asset)
+ * are suggestion lists over free text: a name past the first page can still simply be typed,
+ * and is resolved or created by name, so the cap costs a suggestion there rather than access.
+ */
+export function useContacts(page = 1, pageSize = MAX_PAGE_SIZE) {
+  const limit = Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(pageSize)));
+  const offset = Math.max(0, (Math.max(1, Math.floor(page)) - 1) * limit);
   return useQuery({
-    queryKey: contactKeys.list(),
-    queryFn: () => getContactRepository().list({ limit: 100 }),
+    queryKey: contactKeys.page(offset, limit),
+    queryFn: () => getContactRepository().list({ limit, offset }),
+    // Hold the previous page on screen while the next one loads, so paging doesn't flash the
+    // empty state (the Tags screen's behaviour).
+    placeholderData: (previous) => previous,
+  });
+}
+
+/** How many contacts exist in total — the denominator for the dictionary's pager. */
+export function useContactCount() {
+  return useQuery({
+    queryKey: contactKeys.count(),
+    queryFn: () => getContactRepository().count(),
   });
 }
 

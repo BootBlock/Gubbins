@@ -14,6 +14,11 @@ Create a booking for an item, choose the contact, and set a **start and end date
 now spoken for over that window — a plan for the future, distinct from a
 [[loan|Loans-Check-Out-and-In]] (which is stock that's *out right now*).
 
+Bookings are grouped by status — upcoming, active, overdue and so on — with a count beside each
+heading. The screen reads as many bookings as it can at once; if you have more than that, it says
+so beneath the form rather than quietly showing you part of the picture. Cancelling or deleting
+bookings you've finished with keeps the list to a useful length.
+
 ## Overlap detection
 
 Gubbins checks for **clashes**: if you try to book an item that's already reserved for an

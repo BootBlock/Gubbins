@@ -65,6 +65,26 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     expect(await pos.listLines(po.id)).toHaveLength(0);
   });
 
+  it('counts every order, including those past the capped first page (issue #149)', async () => {
+    expect(await pos.count()).toBe(0);
+
+    for (let i = 0; i < 102; i += 1) {
+      await pos.create({ supplier: { supplierName: 'Mouser' }, reference: `PO-${i}` });
+    }
+
+    // The list is clamped to the strict §2.1 ceiling, so the rows in hand undercount the set —
+    // which is exactly why the Orders tab needs a separate total to page against.
+    const firstPage = await pos.list({ limit: 100 });
+    expect(firstPage.rows).toHaveLength(100);
+    expect(firstPage.hasMore).toBe(true);
+    expect(await pos.count()).toBe(102);
+
+    // The second page reaches the orders the old single-read screen could never show.
+    const secondPage = await pos.list({ limit: 100, offset: 100 });
+    expect(secondPage.rows).toHaveLength(2);
+    expect(secondPage.hasMore).toBe(false);
+  });
+
   // --- derived status ------------------------------------------------------------
 
   it('keeps a DRAFT order DRAFT even with fully-received lines', async () => {

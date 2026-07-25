@@ -6,9 +6,21 @@
  * target price and priority), added/edited via {@link WishlistEntryDialog} and removed inline.
  * All ordering/summarising lives in the pure `wishlist.ts` seam; this is glue. Design tokens +
  * Foundry primitives + WCAG 4.1.3 live regions throughout (CLAUDE.md).
+ *
+ * The list is read **whole** and paged client-side (issue #149) — the summary above it totals
+ * every wish, so a capped read would have understated that estimate as well as hiding entries.
  */
-import { useMemo, useState } from 'react';
-import { Button, LiveRegion, Money, Spinner, Surface } from '@/components/foundry';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Button,
+  LiveRegion,
+  Money,
+  Pagination,
+  Spinner,
+  Surface,
+  pageCount,
+  pageSliceBounds,
+} from '@/components/foundry';
 import {
   AddIcon,
   DeleteIcon,
@@ -20,6 +32,8 @@ import {
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { useT } from '@/features/i18n';
+import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { WishlistEntry } from '@/db/repositories';
 import { WISHLIST_PRIORITY_LABELS, summariseWishlist, type WishlistPriority } from './wishlist';
 import {
@@ -52,6 +66,20 @@ export function WishlistTab() {
 
   const entries = useMemo(() => listQuery.data?.rows ?? [], [listQuery.data]);
   const summary = useMemo(() => summariseWishlist(entries), [entries]);
+
+  // App-wide list pagination (issue #20), sliced client-side: the whole list is already in
+  // hand, so paging it costs no extra round trip.
+  const paginated = usePreferencesStore((s) => s.paginateLists);
+  const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
+  const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
+  const [page, setPage] = useState(1);
+  const pages = pageCount(entries.length, defaultPageSize);
+  const { start, end } = pageSliceBounds(page, defaultPageSize, entries.length);
+  const visibleEntries = paginated ? entries.slice(start, end) : entries;
+  // Removing the last wish on the final page leaves the page out of range.
+  useEffect(() => {
+    if (paginated && pages > 0 && page > pages) setPage(pages);
+  }, [paginated, pages, page]);
 
   const openAdd = () => {
     setEditing(null);
@@ -126,21 +154,44 @@ export function WishlistTab() {
           </p>
         </Surface>
       ) : (
-        <Surface className="overflow-hidden p-0">
-          {/* eslint-disable-next-line jsx-a11y/no-redundant-roles -- flex layout drops the <ul>'s implicit list semantics in Safari/VoiceOver, so role="list" is restored deliberately. */}
-          <ul className="flex flex-col divide-y divide-border" role="list">
-            {entries.map((entry) => (
-              <WishlistRow
-                key={entry.id}
-                entry={entry}
-                formatters={f}
-                onEdit={() => openEdit(entry)}
-                onDelete={() => deleteEntry.mutate(entry.id)}
-                isDeleting={deleteEntry.isPending}
-              />
-            ))}
-          </ul>
-        </Surface>
+        <>
+          <Surface className="overflow-hidden p-0">
+            {/* eslint-disable-next-line jsx-a11y/no-redundant-roles -- flex layout drops the <ul>'s implicit list semantics in Safari/VoiceOver, so role="list" is restored deliberately. */}
+            <ul className="flex flex-col divide-y divide-border" role="list">
+              {visibleEntries.map((entry) => (
+                <WishlistRow
+                  key={entry.id}
+                  entry={entry}
+                  formatters={f}
+                  onEdit={() => openEdit(entry)}
+                  onDelete={() => deleteEntry.mutate(entry.id)}
+                  isDeleting={deleteEntry.isPending}
+                />
+              ))}
+            </ul>
+          </Surface>
+          {paginated ? (
+            <Pagination
+              page={page}
+              pageCount={pages}
+              onPageChange={setPage}
+              pageSize={defaultPageSize}
+              onPageSizeChange={setDefaultPageSize}
+              pageSizeOptions={PAGE_SIZE_PRESETS}
+              minPageSize={PAGE_SIZE_BOUNDS.min}
+              maxPageSize={PAGE_SIZE_BOUNDS.max}
+              totalItems={entries.length}
+              data-testid="wishlist-pagination"
+            />
+          ) : null}
+          {/* The list is read whole, so this only ever appears at the read-everything safety
+              ceiling — where the summary above covers only what was read, and must say so. */}
+          {listQuery.data?.truncated ? (
+            <p className="text-xs text-muted-foreground" data-testid="wishlist-truncated">
+              {t('purchasing.wishlist.truncated', { vars: { shown: entries.length } })}
+            </p>
+          ) : null}
+        </>
       )}
 
       <WishlistEntryDialog

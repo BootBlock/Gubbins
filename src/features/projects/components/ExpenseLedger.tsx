@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Button, Money, Spinner } from '@/components/foundry';
 import { AddIcon, DeleteIcon, EditIcon, ExpenseIcon } from '@/components/icons';
 import type { ProjectBudgetCategory, ProjectExpense } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
 import { useExpenses, useRemoveExpense } from '../projects';
 import { ExpenseDialog } from './ExpenseDialog';
@@ -20,6 +21,7 @@ export function ExpenseLedger({
   const expensesQuery = useExpenses(projectId);
   const removeExpense = useRemoveExpense(projectId);
   const fmt = useFormatters();
+  const t = useT();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ProjectExpense | null>(null);
@@ -111,6 +113,14 @@ export function ExpenseLedger({
           </table>
         </div>
       )}
+
+      {/* The ledger is read whole (issue #149), so this only ever appears at the read-everything
+          safety ceiling — but a ledger the screen has stopped short of must not look complete. */}
+      {expensesQuery.data?.truncated ? (
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="expenses-truncated">
+          {t('projects.expenses.truncated', { vars: { shown: rows.length } })}
+        </p>
+      ) : null}
 
       <ExpenseDialog
         open={dialogOpen}

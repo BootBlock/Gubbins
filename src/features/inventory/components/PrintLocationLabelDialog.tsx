@@ -5,20 +5,24 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { useT } from '@/features/i18n';
 import {
-  LABEL_COLUMNS_BOUNDS,
   LABEL_SYMBOLOGY_OPTIONS,
+  PLAIN_PAPER_SHEET_LAYOUT,
   normaliseLabelTemplate,
+  sheetCellSizeMm,
   type LabelSizeMode,
   type LabelSymbology,
   type LabelTemplate,
+  type SheetLayout,
 } from '../labels/label-template';
 import {
   buildLocationLabelHtml,
   toLocationLabelCell,
   type LocationLabelInput,
 } from '../labels/location-label';
+import { DieCutPrinterNotice } from './DieCutPrinterNotice';
 import { LabelCellPreview } from './LabelCellPreview';
-import { LabelSizeControls } from './LabelSizeControls';
+import { LabelSizeControls, type LabelSizeValue } from './LabelSizeControls';
+import { SheetLayoutControls } from './SheetLayoutControls';
 
 const COPY_OPTIONS = [1, 2, 4, 6, 8, 12, 24];
 
@@ -28,17 +32,6 @@ const COPIES_HINT = [
   '',
   'Raise it to run off a strip of duplicates for the same bin — one per shelf face,',
   'or a few spares to replace labels that wear off.',
-].join('\n');
-
-/** Rich-Markdown help for the **Columns per sheet** picker. */
-const COLUMNS_HINT = [
-  'How many labels sit **across a row** when tiling onto an **A4 sheet** of ordinary',
-  'paper. This sets the printed label size: **more columns → smaller labels**, fewer',
-  'columns → larger ones.',
-  '',
-  'Match it to your sticker sheet, or pick a count that gives a comfortable size for',
-  'the QR/barcode to scan reliably. (Hidden for die-cut / thermal label sizes, which',
-  'print one label per page.)',
 ].join('\n');
 
 /** Rich-Markdown help for the **Show full path** toggle. */
@@ -76,8 +69,8 @@ function CompactSelect({
 /**
  * Print a customisable label for a single **location** (Phase 73). The QR/Code-128
  * encodes the location deep-link so a phone camera — or the in-app scanner — jumps to
- * that bin/shelf; the user picks the symbology, whether to show the ancestor path, the
- * columns, and how many copies to print. Seeds its symbology/columns from the
+ * that bin/shelf; the user picks the symbology, whether to show the ancestor path, how
+ * the A4 sheet tiles, and how many copies to print. Seeds its symbology/sheet layout from the
  * device-local default template (`usePreferencesStore.labelTemplate`); the preview and
  * the printed sheet share `toLocationLabelCell`, so what you see is what prints.
  */
@@ -94,10 +87,10 @@ export function PrintLocationLabelDialog({
   const storedTemplate = usePreferencesStore((s) => s.labelTemplate);
   const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
 
-  // A location label only uses symbology / columns / showName / showLocation(path);
+  // A location label only uses symbology / sheet layout / showName / showLocation(path);
   // the item-only field flags are forced on/off so the shared renderer behaves.
   const [symbology, setSymbology] = useState<LabelSymbology>('qr');
-  const [columns, setColumns] = useState(1);
+  const [sheet, setSheet] = useState<SheetLayout>(PLAIN_PAPER_SHEET_LAYOUT);
   const [showPath, setShowPath] = useState(true);
   const [copies, setCopies] = useState(1);
   const [sizeMode, setSizeMode] = useState<LabelSizeMode>('sheet');
@@ -107,7 +100,7 @@ export function PrintLocationLabelDialog({
     if (!open) return;
     const seed = normaliseLabelTemplate(storedTemplate);
     setSymbology(seed.symbology === 'none' ? 'qr' : seed.symbology);
-    setColumns(seed.columns);
+    setSheet(seed.sheet);
     setShowPath(true);
     setCopies(1);
     setSizeMode(seed.sizeMode);
@@ -128,7 +121,7 @@ export function PrintLocationLabelDialog({
   const template: LabelTemplate = useMemo(
     () => ({
       symbology,
-      columns,
+      sheet,
       showName: true,
       showLocation: showPath,
       showMpn: false,
@@ -138,10 +131,14 @@ export function PrintLocationLabelDialog({
       labelWidthMm,
       labelHeightMm,
     }),
-    [symbology, columns, showPath, sizeMode, labelWidthMm, labelHeightMm],
+    [symbology, sheet, showPath, sizeMode, labelWidthMm, labelHeightMm],
   );
 
   const cell = useMemo(() => toLocationLabelCell(location, baseUrl, template), [location, baseUrl, template]);
+
+  // The size fields in the shape the size control, the printer notice and the preview all
+  // take, so the three can't disagree about what is being printed.
+  const size: LabelSizeValue = { sizeMode, widthMm: labelWidthMm, heightMm: labelHeightMm };
 
   const print = () => {
     const w = window.open('', '_blank', 'width=900,height=700');
@@ -174,10 +171,13 @@ export function PrintLocationLabelDialog({
           </Banner>
         ) : null}
 
+        {/* An exact-millimetre page needs a printer loaded with that exact label (issue #337). */}
+        <DieCutPrinterNotice size={size} testId="loc-label-die-cut-printer" />
+
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
           <LabelSizeControls
             testId="loc-label-size"
-            value={{ sizeMode, widthMm: labelWidthMm, heightMm: labelHeightMm }}
+            value={size}
             onChange={(v) => {
               setSizeMode(v.sizeMode);
               setLabelWidthMm(v.widthMm);
@@ -207,16 +207,7 @@ export function PrintLocationLabelDialog({
           />
 
           {sizeMode === 'sheet' ? (
-            <CompactSelect
-              label="Columns per sheet"
-              hint={COLUMNS_HINT}
-              value={String(columns)}
-              onChange={(value) => setColumns(Number(value))}
-              options={Array.from(
-                { length: LABEL_COLUMNS_BOUNDS.max - LABEL_COLUMNS_BOUNDS.min + 1 },
-                (_, i) => LABEL_COLUMNS_BOUNDS.min + i,
-              ).map((n) => ({ value: String(n), label: String(n) }))}
-            />
+            <SheetLayoutControls testId="loc-label-sheet-layout" value={sheet} onChange={setSheet} />
           ) : null}
 
           {location.path && location.path.trim().length > 0 ? (
@@ -238,7 +229,9 @@ export function PrintLocationLabelDialog({
         <div className="mx-auto w-48">
           <LabelCellPreview
             cell={cell}
-            size={sizeMode === 'die-cut' ? { widthMm: labelWidthMm, heightMm: labelHeightMm } : undefined}
+            // A sheet label has a definite printed size too now that its row height is
+            // fixed, so the preview shows that shape rather than a generic card.
+            size={sizeMode === 'die-cut' ? size : sheetCellSizeMm(sheet)}
           />
         </div>
 

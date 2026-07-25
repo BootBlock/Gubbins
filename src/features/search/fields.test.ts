@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { CONDITIONS, DEAD_STOCK_MODES } from '@/db/repositories/constants';
 import {
+  BUILDER_FIELDS,
   customFieldName,
+  enumValuesForField,
   fieldSelectValue,
+  isCapabilityField,
   isCustomField,
+  isTagField,
   kindOfField,
   operatorLabelFor,
   operatorsForKind,
+  TAG_FIELD,
   toCustomField,
 } from './fields';
 
@@ -83,5 +89,71 @@ describe('custom-field helpers (Phase 71)', () => {
     expect(operatorsForKind('boolean')).toEqual(['EQUALS']);
     expect(operatorLabelFor('EQUALS', 'boolean')).toBe('is');
     expect(operatorLabelFor('EQUALS', 'number')).toBe('equals');
+  });
+});
+
+describe('lifecycle, valuation & policy fields (issue #140)', () => {
+  it('maps each new field to the kind that decides its input control', () => {
+    expect(kindOfField('condition')).toBe('enum');
+    expect(kindOfField('tracking')).toBe('enum');
+    expect(kindOfField('deadstock')).toBe('enum');
+    expect(kindOfField('expiry')).toBe('date');
+    expect(kindOfField('warranty')).toBe('date');
+    expect(kindOfField('cost')).toBe('number');
+    expect(kindOfField('active')).toBe('boolean');
+  });
+
+  it('offers a date field before/after/on rather than the numeric operator wording', () => {
+    expect(operatorsForKind('date')).toEqual(['LESS_THAN', 'GREATER_THAN', 'EQUALS']);
+    expect(operatorLabelFor('LESS_THAN', 'date')).toBe('before');
+    expect(operatorLabelFor('GREATER_THAN', 'date')).toBe('after');
+    expect(operatorLabelFor('EQUALS', 'date')).toBe('on');
+    // The same operators keep their numeric wording elsewhere.
+    expect(operatorLabelFor('LESS_THAN', 'number')).toBe('less than');
+  });
+
+  it('offers only EQUALS (read as "is") for an enum field', () => {
+    expect(operatorsForKind('enum')).toEqual(['EQUALS']);
+    expect(operatorLabelFor('EQUALS', 'enum')).toBe('is');
+  });
+
+  it("takes an enum picker's options from the column vocabulary, not a second list", () => {
+    expect(enumValuesForField('condition')).toEqual([...CONDITIONS]);
+    expect(enumValuesForField('deadstock')).toEqual([...DEAD_STOCK_MODES]);
+    // Any other kind has no vocabulary to offer.
+    expect(enumValuesForField('quantity')).toEqual([]);
+  });
+
+  it('gives every new field a label, so the builder dropdown never shows a blank', () => {
+    for (const field of ['condition', 'tracking', 'deadstock', 'expiry', 'warranty', 'cost', 'active']) {
+      expect(BUILDER_FIELDS.find((f) => f.value === field)?.label).toBeTruthy();
+    }
+  });
+});
+
+describe('the tag field (issue #138)', () => {
+  it('is offered by the builder, matched by name like any other text field', () => {
+    expect(BUILDER_FIELDS.find((f) => f.value === TAG_FIELD)).toEqual({
+      value: 'tag',
+      label: 'Tag',
+      kind: 'text',
+    });
+    expect(kindOfField(TAG_FIELD)).toBe('text');
+    expect(fieldSelectValue(TAG_FIELD)).toBe('tag');
+    // Contains leads, then equals — the two a tag name is matched with. The rest of the text
+    // list is asserted where it is defined, so a later addition to it isn't a tag change.
+    expect(operatorsForKind('text').slice(0, 2)).toEqual(['CONTAINS', 'EQUALS']);
+  });
+
+  it('is recognised by isTagField, case-insensitively', () => {
+    expect(isTagField('tag')).toBe(true);
+    expect(isTagField('TAG')).toBe(true);
+    expect(isTagField('name')).toBe(false);
+    expect(isTagField('field:Tag')).toBe(false);
+  });
+
+  it('is not mistaken for a capability or custom-field reference', () => {
+    expect(isCustomField(TAG_FIELD)).toBe(false);
+    expect(isCapabilityField(TAG_FIELD)).toBe(false);
   });
 });

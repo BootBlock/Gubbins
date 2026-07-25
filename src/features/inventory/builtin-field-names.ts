@@ -31,13 +31,7 @@ import { BUILTIN_CARD_FIELDS } from './card-fields';
  * automatically. These few are user-visible item fields that neither registry happens to
  * list, so they are named here rather than left as gaps in the warning.
  */
-const EXTRA_BUILT_IN_NAMES: readonly string[] = [
-  'Unit cost',
-  'Acquired date',
-  'Supplier',
-  'Model',
-  'Warranty expiry',
-];
+const EXTRA_BUILT_IN_NAMES: readonly string[] = ['Acquired date', 'Supplier', 'Model'];
 
 /**
  * Every name the app already uses for a built-in item attribute, de-duplicated and sorted.

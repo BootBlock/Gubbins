@@ -24,9 +24,18 @@ all build the same query:
 - **NOT.** The **NOT** button beside it flips the whole group, keeping the items that *don't*
   match — *"not in the attic"*, *"nothing from this manufacturer"*. The wording next to the toggle
   updates to say what the group now does.
-- **Add condition.** Select **Add condition** to add a rule — pick a field (name, quantity,
-  category, a [[capability|Custom-Fields-and-Capabilities]], a custom field…), an operator, and a
-  value.
+- **Add condition.** Select **Add condition** to add a rule — pick a field, an operator, and a
+  value. Alongside the text and number fields you'll find dates ([[expiry|Batches-and-Lots]],
+  [[warranty|Warranty-and-Depreciation]]), money ([[unit cost, purchase price and current
+  value|Valuation-and-Spend]]), and fixed choices ([[condition|Condition-Grading]],
+  [[tracking mode|Tracking-Modes]], dead-stock reporting) — plus
+  [[tags|Tags-Attachments-and-Related-Items]],
+  [[capabilities|Custom-Fields-and-Capabilities]] and your own custom fields.
+- **The value box matches the field.** A date field gives you a date picker, a choice field a
+  drop-down of exactly the values it accepts, and a yes/no field a Yes/No toggle — so there is
+  nothing to spell correctly.
+- **Tags.** Choose the **Tag** field and type a tag name: *contains* matches part of the name
+  (`expo` finds `expo-2026`), *equals* the whole name. An item matches if any of its tags does.
 - **Has any value.** Most fields offer a **has any value** operator, which asks only whether the
   field is filled in. Pair it with **NOT** on the group for questions like *"items with no part
   number"* or *"anything without a category"*.

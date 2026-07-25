@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Button, FormField, Modal, Select, Surface } from '@/components/foundry';
+import { useEffect, useState } from 'react';
+import { Button, Modal, Surface } from '@/components/foundry';
 import { MergeIcon, WarningIcon } from '@/components/icons';
 import type { SupplierWithCounts } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useMergeSuppliers } from '../mutations';
 import { useErrorMessage } from '@/features/errors';
+import { NO_SUPPLIER_CHOICE, type SupplierChoice } from '../supplier-choice';
+import { SupplierSearchField } from './SupplierSearchField';
 
 export interface MergeSuppliersDialogProps {
-  readonly suppliers: readonly SupplierWithCounts[];
   /** Pre-selected source (the supplier the user was looking at), if any. */
-  readonly initialSourceId?: string;
+  readonly initialSource?: SupplierWithCounts;
   readonly onClose: () => void;
   readonly onAnnounce: (message: string) => void;
 }
@@ -26,42 +27,37 @@ export interface MergeSuppliersDialogProps {
  * source, in one transaction. That is irreversible, and the counts involved are not visible from
  * a name alone, so the dialog states exactly what will move before the confirm is offered — the
  * user should never have to guess how much history is riding on the choice.
+ *
+ * Both sides are chosen by **searching the dictionary** rather than from a dropdown built out of
+ * whatever page the screen happened to load (issue #386). A duplicate pair that both sort late
+ * is precisely the case merge exists for, so neither side may depend on how long the list is.
  */
-export function MergeSuppliersDialog({
-  suppliers,
-  initialSourceId,
-  onClose,
-  onAnnounce,
-}: MergeSuppliersDialogProps) {
+export function MergeSuppliersDialog({ initialSource, onClose, onAnnounce }: MergeSuppliersDialogProps) {
   const t = useT();
   const merge = useMergeSuppliers();
 
-  const [sourceId, setSourceId] = useState(initialSourceId ?? '');
-  const [targetId, setTargetId] = useState('');
+  const [sourceChoice, setSourceChoice] = useState<SupplierChoice>(
+    initialSource ? { text: initialSource.name, supplier: initialSource } : NO_SUPPLIER_CHOICE,
+  );
+  const [targetChoice, setTargetChoice] = useState<SupplierChoice>(NO_SUPPLIER_CHOICE);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
 
-  const source = suppliers.find((s) => s.id === sourceId);
-  const target = suppliers.find((s) => s.id === targetId);
-
-  // A supplier can never be merged into itself, so it is simply not offered as its own target.
-  const sourceOptions = useMemo(() => suppliers.map((s) => ({ value: s.id, label: s.name })), [suppliers]);
-  const targetOptions = useMemo(
-    () => suppliers.filter((s) => s.id !== sourceId).map((s) => ({ value: s.id, label: s.name })),
-    [suppliers, sourceId],
-  );
+  const source = sourceChoice.supplier;
+  const target = targetChoice.supplier;
 
   // Changing either side invalidates a confirm the user already gave — they would otherwise be
   // one click from merging a pair they never read the preview for.
   useEffect(() => {
     setConfirming(false);
-  }, [sourceId, targetId]);
+  }, [source?.id, target?.id]);
 
-  // Picking the current target as the source would leave the two equal; drop the stale target.
+  // Picking the current target as the source would leave the two equal; drop the stale target
+  // outright — text and all — rather than leaving a name in a field that no longer selects it.
   useEffect(() => {
-    if (sourceId.length > 0 && sourceId === targetId) setTargetId('');
-  }, [sourceId, targetId]);
+    if (source && source.id === target?.id) setTargetChoice(NO_SUPPLIER_CHOICE);
+  }, [source, target?.id]);
 
   const ready = Boolean(source && target && source.id !== target.id);
 
@@ -105,26 +101,27 @@ export function MergeSuppliersDialog({
       description={t('suppliers.merge.description')}
     >
       <div className="space-y-5">
-        <FormField label={t('suppliers.merge.source')} hint={t('suppliers.merge.source.hint')}>
-          <Select
-            value={sourceId}
-            onChange={setSourceId}
-            options={sourceOptions}
-            placeholder={t('suppliers.merge.choose')}
-            data-testid="merge-source"
-          />
-        </FormField>
+        <SupplierSearchField
+          label={t('suppliers.merge.source')}
+          hint={t('suppliers.merge.source.hint')}
+          value={sourceChoice}
+          onChange={setSourceChoice}
+          placeholder={t('suppliers.merge.choose')}
+          data-testid="merge-source"
+        />
 
-        <FormField label={t('suppliers.merge.target')} hint={t('suppliers.merge.target.hint')}>
-          <Select
-            value={targetId}
-            onChange={setTargetId}
-            options={targetOptions}
-            placeholder={t('suppliers.merge.choose')}
-            disabled={sourceId.length === 0}
-            data-testid="merge-target"
-          />
-        </FormField>
+        {/* A supplier can never be merged into itself, so it is simply not offered as its own
+            target. Picking it as the *source* instead is handled above, by clearing the target. */}
+        <SupplierSearchField
+          label={t('suppliers.merge.target')}
+          hint={t('suppliers.merge.target.hint')}
+          value={targetChoice}
+          onChange={setTargetChoice}
+          excludeId={source?.id}
+          placeholder={t('suppliers.merge.choose')}
+          disabled={source === null}
+          data-testid="merge-target"
+        />
 
         {ready && preview ? (
           <Surface className="space-y-field-gap-compact p-4" data-testid="merge-preview">
@@ -149,12 +146,21 @@ export function MergeSuppliersDialog({
             {t('suppliers.merge.cancel')}
           </Button>
           {confirming ? (
-            <Button variant="destructive" onClick={doMerge} disabled={!ready || merge.isPending}>
+            <Button
+              variant="destructive"
+              onClick={doMerge}
+              disabled={!ready || merge.isPending}
+              data-testid="merge-confirm"
+            >
               <MergeIcon aria-hidden />
               {t('suppliers.merge.confirm')}
             </Button>
           ) : (
-            <Button onClick={() => setConfirming(true)} disabled={!ready || merge.isPending}>
+            <Button
+              onClick={() => setConfirming(true)}
+              disabled={!ready || merge.isPending}
+              data-testid="merge-start"
+            >
               <MergeIcon aria-hidden />
               {t('suppliers.merge.action')}
             </Button>

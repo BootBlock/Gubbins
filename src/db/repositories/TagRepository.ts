@@ -12,6 +12,7 @@
  */
 import type { SqlStatement } from '../rpc/driver';
 import { BaseRepository } from './base';
+import { escapeLike } from './like';
 import { rowToTag } from './mappers';
 import {
   clearItemTagTombstoneStatement,
@@ -386,8 +387,3 @@ const LOCATION_BINDING: TagOwnerBinding = {
   tombstone: locationTagTombstoneStatement,
   clearTombstone: clearLocationTagTombstoneStatement,
 };
-
-/** Escape LIKE wildcards so user input is matched literally (ESCAPE '\\'). */
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}

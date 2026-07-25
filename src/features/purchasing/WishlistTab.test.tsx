@@ -9,11 +9,13 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { WishlistEntry } from '@/db/repositories';
 
 let rows: WishlistEntry[];
+/** Whether the read-everything walk hit its safety ceiling (issue #149). */
+let truncated: boolean;
 let createSpy: ReturnType<typeof vi.fn>;
 let deleteSpy: ReturnType<typeof vi.fn>;
 
 vi.mock('./wishlist-queries', () => ({
-  useWishlist: () => ({ isLoading: false, data: { rows } }),
+  useWishlist: () => ({ isLoading: false, data: { rows, truncated } }),
   useCreateWishlistEntry: () => ({ mutate: createSpy, isPending: false, isSuccess: false }),
   useUpdateWishlistEntry: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteWishlistEntry: () => ({ mutate: deleteSpy, isPending: false, isSuccess: false }),
@@ -43,6 +45,7 @@ vi.mock('@/lib/useFormatters', () => ({
 
 // Imported after the mocks are registered.
 import { WishlistTab } from './WishlistTab';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 const entry = (over: Partial<WishlistEntry>): WishlistEntry => ({
   id: 'w1',
@@ -59,6 +62,7 @@ const entry = (over: Partial<WishlistEntry>): WishlistEntry => ({
 describe('WishlistTab (feature-gap G8)', () => {
   beforeEach(() => {
     rows = [];
+    truncated = false;
     createSpy = vi.fn();
     deleteSpy = vi.fn();
   });
@@ -117,5 +121,56 @@ describe('WishlistTab (feature-gap G8)', () => {
     render(<WishlistTab />);
     fireEvent.click(screen.getByTestId('wishlist-delete'));
     expect(deleteSpy).toHaveBeenCalledWith('w-del');
+  });
+});
+
+describe('WishlistTab — a wishlist longer than one read (issue #149)', () => {
+  beforeEach(() => {
+    rows = [];
+    truncated = false;
+    createSpy = vi.fn();
+    deleteSpy = vi.fn();
+  });
+
+  afterEach(() => {
+    cleanup();
+    usePreferencesStore.setState({ paginateLists: false, defaultPageSize: 50 });
+  });
+
+  /** 140 wishes — more than one capped repository read would return. */
+  const manyWishes = () =>
+    Array.from({ length: 140 }, (_, i) =>
+      entry({ id: `w${i}`, name: `Wish ${String(i + 1).padStart(3, '0')}`, targetPrice: 1 }),
+    );
+
+  it('shows every wish and totals all of them, not just the first read', () => {
+    rows = manyWishes();
+    render(<WishlistTab />);
+
+    // The list is read whole, so the hundred-and-first wish is on screen…
+    expect(screen.getByText('Wish 101')).toBeInTheDocument();
+    // …and the estimate above it covers all 140, not a capped 100.
+    expect(screen.getByTestId('wishlist-summary').textContent).toContain('140');
+    expect(screen.getByTestId('wishlist-summary').textContent).toContain('£140.00');
+    expect(screen.queryByTestId('wishlist-truncated')).toBeNull();
+  });
+
+  it('pages the loaded list when the preference is on', () => {
+    usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 50 });
+    rows = manyWishes();
+    render(<WishlistTab />);
+
+    expect(screen.getByTestId('wishlist-pagination-summary')).toHaveTextContent('1–50 of 140');
+    expect(screen.queryByText('Wish 051')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByText('Wish 051')).toBeInTheDocument();
+  });
+
+  it('says the summary is partial when the read-everything ceiling is hit', () => {
+    rows = manyWishes();
+    truncated = true;
+    render(<WishlistTab />);
+    expect(screen.getByTestId('wishlist-truncated').textContent).toContain('140');
   });
 });

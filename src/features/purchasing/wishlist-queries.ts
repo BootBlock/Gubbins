@@ -8,17 +8,25 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getWishlistRepository, type CreateWishlistInput, type UpdateWishlistInput } from '@/db/repositories';
 import { useReportWriteFailure } from '@/features/errors';
+import { readAllPages } from '@/lib/read-all-pages';
 
 export const wishlistKeys = {
   all: ['wishlist'] as const,
   list: () => [...wishlistKeys.all, 'list'] as const,
 };
 
-/** The full wishlist, already ordered for display (priority → name → oldest). */
+/**
+ * The **whole** wishlist, already ordered for display (priority → name → oldest) — issue #149.
+ *
+ * Genuinely all of it, not the first hundred. The tab totals what it holds ("12 items · est.
+ * £340"), so a capped read didn't just hide the tail of a hand-typed list — it understated the
+ * estimate above it. The list is hand-curated, so reading it whole is cheap; the tab pages it
+ * client-side for browsing and reports the {@link readAllPages} ceiling if one ever hits it.
+ */
 export function useWishlist() {
   return useQuery({
     queryKey: wishlistKeys.list(),
-    queryFn: () => getWishlistRepository().list({ limit: 100 }),
+    queryFn: () => readAllPages((params) => getWishlistRepository().list(params)),
   });
 }
 

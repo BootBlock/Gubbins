@@ -16,7 +16,13 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { repoPath } from '../test/repo-path';
-import { addCalendarDays, startOfLocalDay, startOfUtcDay, utcDayToLocalDay } from './calendar-days';
+import {
+  addCalendarDays,
+  nextUtcDay,
+  startOfLocalDay,
+  startOfUtcDay,
+  utcDayToLocalDay,
+} from './calendar-days';
 
 // ---------------------------------------------------------------------------
 // Structural cases — true in any time zone (the worker runs in UTC).
@@ -54,6 +60,28 @@ describe('startOfUtcDay', () => {
 
   it('keeps different UTC days distinct', () => {
     expect(startOfUtcDay(Date.UTC(2026, 0, 15, 3))).not.toBe(startOfUtcDay(Date.UTC(2026, 0, 16, 3)));
+  });
+});
+
+describe('nextUtcDay', () => {
+  it('is the next midnight UTC, from any instant within the day', () => {
+    expect(nextUtcDay(Date.UTC(2026, 0, 15))).toBe(Date.UTC(2026, 0, 16));
+    expect(nextUtcDay(Date.UTC(2026, 0, 15, 12, 30, 45, 123))).toBe(Date.UTC(2026, 0, 16));
+    expect(nextUtcDay(Date.UTC(2026, 0, 15, 23, 59, 59, 999))).toBe(Date.UTC(2026, 0, 16));
+  });
+
+  it('rolls month, year and leap-day boundaries over', () => {
+    expect(nextUtcDay(Date.UTC(2026, 0, 31))).toBe(Date.UTC(2026, 1, 1));
+    expect(nextUtcDay(Date.UTC(2026, 11, 31))).toBe(Date.UTC(2027, 0, 1));
+    // 2028 is a leap year, so 28 February is followed by the 29th, not 1 March.
+    expect(nextUtcDay(Date.UTC(2028, 1, 28))).toBe(Date.UTC(2028, 1, 29));
+  });
+
+  it('brackets exactly one calendar day with startOfUtcDay', () => {
+    // The half-open `[startOfUtcDay, nextUtcDay)` window a single-day search filter compares on.
+    const noon = Date.UTC(2026, 0, 15, 12);
+    expect(nextUtcDay(noon) - startOfUtcDay(noon)).toBe(86_400_000);
+    expect(startOfUtcDay(nextUtcDay(noon))).toBe(nextUtcDay(noon));
   });
 });
 

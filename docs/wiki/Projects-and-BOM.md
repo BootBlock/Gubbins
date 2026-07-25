@@ -8,6 +8,12 @@ need, and can I afford it?"*
 
 ![A project showing its bill of materials, budget and shopping list](images/projects.png)
 
+Projects accumulate as builds come and go, so the list splits into pages once you have more than
+one screenful. Turn it on with **Paginate list** (or **Settings → Inventory → Lists**) and every
+project stays reachable however many you have — see the [[pagination control|Inventory-Views]].
+With it off, the list shows as many projects as it can read at once and tells you how many are
+left over.
+
 ## Choosing a project on a phone
 
 The Projects screen normally shows your list of projects down the left and the selected project's
@@ -29,6 +35,9 @@ out:
 - An automatic **shopping list** of the missing pieces.
 
 So starting a project immediately tells you whether you can proceed or need to buy first.
+
+However long the bill of materials is, the whole of it is shown — and the whole of it is what gets
+[[exported|Export-and-Import]] when you use **Export BOM**.
 
 ### Missing prerequisites
 

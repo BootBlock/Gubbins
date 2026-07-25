@@ -76,6 +76,20 @@ export function utcDayToLocalDay(ms: number): number {
 }
 
 /**
+ * Midnight UTC of the day **after** the one containing `ms` — the open end of a half-open
+ * single-day window over a day-grained UTC column (`items.expiry_date` and friends, issue #320).
+ *
+ * A UTC day is always exactly 24 hours, so this needs no {@link addCalendarDays} equivalent; it
+ * exists so callers that need "the next stored day boundary" reach into this seam rather than
+ * writing `+ 86_400_000` at the call site, where the reader cannot tell a sanctioned UTC step from
+ * the DST-unsafe local one this module exists to prevent. `[startOfUtcDay(x), nextUtcDay(x))` is
+ * the exact set of instants naming that calendar day, whatever time of day `ms` carries.
+ */
+export function nextUtcDay(ms: number): number {
+  return startOfUtcDay(ms) + 86_400_000;
+}
+
+/**
  * `ms` shifted by `days` whole calendar days, preserving the local wall-clock time of day across
  * any DST transition in the span (issue #325). `days` may be negative to step backwards.
  *
