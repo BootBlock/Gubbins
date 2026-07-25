@@ -6,9 +6,9 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { useT } from '@/features/i18n';
 import {
-  LABEL_COLUMNS_BOUNDS,
   LABEL_SYMBOLOGY_OPTIONS,
   normaliseLabelTemplate,
+  sheetCellSizeMm,
   templateHasBarcode,
   templateHasQr,
   type LabelSymbology,
@@ -18,6 +18,7 @@ import { MAX_LABELS, buildLabelSheetHtml, toLabelCells, type LabelItem } from '.
 import { DieCutPrinterNotice } from './DieCutPrinterNotice';
 import { LabelCellPreview } from './LabelCellPreview';
 import { LabelSizeControls, type LabelSizeValue } from './LabelSizeControls';
+import { SheetLayoutControls } from './SheetLayoutControls';
 
 /**
  * Batch label-sheet preview & print (spec §6 "Printable QR generation"; Phase 73
@@ -170,12 +171,10 @@ export function PrintLabelsDialog({
           />
 
           {template.sizeMode === 'sheet' ? (
-            <CompactSelect
-              label="Columns per sheet"
-              value={String(template.columns)}
-              onChange={(value) => set('columns', Number(value))}
-              data-testid="label-columns"
-              options={columnOptions().map((n) => ({ value: String(n), label: String(n) }))}
+            <SheetLayoutControls
+              testId="label-sheet-layout"
+              value={template.sheet}
+              onChange={(sheet) => set('sheet', sheet)}
             />
           ) : null}
 
@@ -216,7 +215,10 @@ export function PrintLabelsDialog({
               <LabelCellPreview
                 key={`${cell.id}-${i}`}
                 cell={cell}
-                size={template.sizeMode === 'die-cut' ? size : undefined}
+                // A sheet label now has a definite printed size too (its row height is fixed,
+                // so the grid can't stretch to fit its contents), and the preview shows that
+                // same shape — otherwise it would flatter a label the stock has no room for.
+                size={template.sizeMode === 'die-cut' ? size : sheetCellSizeMm(template.sheet)}
               />
             ))}
           </div>
@@ -242,12 +244,6 @@ export function PrintLabelsDialog({
       </div>
     </Modal>
   );
-}
-
-function columnOptions(): number[] {
-  const out: number[] = [];
-  for (let n = LABEL_COLUMNS_BOUNDS.min; n <= LABEL_COLUMNS_BOUNDS.max; n += 1) out.push(n);
-  return out;
 }
 
 function FieldToggle({
