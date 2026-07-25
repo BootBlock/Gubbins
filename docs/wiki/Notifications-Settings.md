@@ -9,8 +9,8 @@ notifications — and how it handles file attachments.
 
 On an [[installed|Installing-Gubbins]] app, Gubbins can raise your [[alerts|Alerts]] as OS
 notifications. Here you turn them on (granting your device's permission) and choose which lanes to
-receive — **low stock**, **expiring**, **maintenance due**, **warranty due**. If your browser won't
-allow the background check that delivers reminders while Gubbins is closed, a note here says so.
+receive — **low stock**, **expiring**, **maintenance due**, **warranty due**. If your browser holds
+back the background check that delivers reminders while Gubbins is closed, a note here says so.
 The full behaviour is covered on the [[Reminder notifications|Reminder-Notifications]] page.
 
 You can also set how in-app confirmations behave — for example, whether an action shows a **toast**

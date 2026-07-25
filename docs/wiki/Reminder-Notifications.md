@@ -28,13 +28,13 @@ notification opens Gubbins straight to what it's about.
 ## Background checks
 
 The periodic check that lets a reminder arrive while Gubbins is **closed** is a separate,
-best-effort thing your browser grants — some browsers don't offer it at all, and some hold it back
-for a site they consider too little used.
+best-effort thing your browser grants. Not every browser offers it — and one that does may still
+hold it back from a site it considers too little used.
 
-Where your browser won't set it up, Settings says so beneath the reminders switch
-(**Background checks unavailable**). Reminders still work — they simply arrive while Gubbins is
-open rather than in the background. Using Gubbins regularly can be enough for a browser to allow
-the background check later; nothing needs turning on again.
+Where your browser offers the check but holds it back, Settings says so beneath the reminders
+switch (**Background checks unavailable**). Either way reminders keep working; they simply arrive
+while Gubbins is open rather than in the background. Using Gubbins regularly can be enough for a
+browser to grant the check later — nothing needs turning on again.
 
 > **⚠️ Heads-up**
 > Notifications need Gubbins **installed** and permission granted, and support varies by device
