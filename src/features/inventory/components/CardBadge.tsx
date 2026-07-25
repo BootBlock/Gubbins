@@ -1,3 +1,4 @@
+import { assertExhaustive } from '@/lib/exhaustive';
 import { cn } from '@/lib/utils';
 import { Money, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
@@ -49,6 +50,12 @@ export function CardBadge({ item, className }: { item: Item; className?: string 
         </span>
       );
     case 'none':
+      return null;
+    default:
+      // Exhaustiveness guard (#355): a new ResolvedCardBadge kind must extend this switch
+      // or this stops compiling. A component has no return-type annotation to fall back on,
+      // so without it an unhandled kind would just render nothing.
+      assertExhaustive(badge);
       return null;
   }
 }

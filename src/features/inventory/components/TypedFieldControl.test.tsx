@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { FIELD_TYPES, type FieldType } from '@/db/repositories/constants';
 import { TypedFieldControl } from './TypedFieldControl';
 
 /**
@@ -120,6 +121,52 @@ describe('TypedFieldControl — SELECT', () => {
     );
     fireEvent.click(screen.getByRole('combobox', { name: 'Colour' }));
     expect(screen.getAllByRole('option')).toHaveLength(1);
+  });
+});
+
+/**
+ * The runtime half of the issue-#355 exhaustiveness guard: the `default:` branch now fails
+ * to compile when a `FieldType` is added without a case, and this asserts the *other* half —
+ * that every type in the SSOT actually draws its own control rather than degrading to a
+ * plain text box. Adding a `FIELD_TYPES` entry without a matching expectation here fails the
+ * suite (the lookup yields `undefined`), so the two lists cannot drift apart unnoticed.
+ */
+const EXPECTED_CONTROL: Record<FieldType, (label: string) => void> = {
+  TEXT: (label) => {
+    const input = screen.getByLabelText(label);
+    expect(input).toHaveAttribute('type', 'text');
+    expect(input).not.toHaveAttribute('inputmode');
+    expect(input).not.toHaveAttribute('placeholder');
+  },
+  LONG_TEXT: (label) => expect(screen.getByLabelText(label).tagName).toBe('TEXTAREA'),
+  URL: (label) => expect(screen.getByLabelText(label)).toHaveAttribute('type', 'url'),
+  NUMBER: (label) => {
+    const input = screen.getByLabelText(label);
+    expect(input).toHaveAttribute('inputmode', 'decimal');
+    expect(input).not.toHaveAttribute('min');
+  },
+  RATING: (label) => {
+    const input = screen.getByLabelText(label);
+    expect(input).toHaveAttribute('inputmode', 'decimal');
+    expect(input).toHaveAttribute('min', '1');
+    expect(input).toHaveAttribute('max', '5');
+  },
+  BOOLEAN: (label) => expect(screen.getByRole('radiogroup', { name: label })).toBeInTheDocument(),
+  ON_OFF: (label) => expect(screen.getByRole('checkbox', { name: label })).toBeInTheDocument(),
+  DATE: (label) => expect(screen.getByLabelText(label)).toHaveAttribute('type', 'date'),
+  SELECT: (label) => expect(screen.getByRole('combobox', { name: label })).toBeInTheDocument(),
+  FILE: (label) => {
+    const input = screen.getByLabelText(label);
+    expect(input).toHaveAttribute('type', 'text');
+    expect(input).toHaveAttribute('placeholder');
+  },
+  IMAGE: (label) => expect(screen.getByRole('button', { name: label })).toHaveTextContent('Choose image'),
+};
+
+describe('TypedFieldControl — every declared FieldType has its own control', () => {
+  it.each(FIELD_TYPES)('renders the %s control, not the plain-text fallback', (fieldType) => {
+    render(<TypedFieldControl fieldType={fieldType} value="" onChange={vi.fn()} ariaLabel="Field" />);
+    EXPECTED_CONTROL[fieldType]('Field');
   });
 });
 

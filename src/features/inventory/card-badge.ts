@@ -13,6 +13,7 @@
  * item into the token-agnostic descriptor the {@link import('./components/CardBadge').CardBadge}
  * component draws. No React, no DB — exhaustively unit-testable.
  */
+import { assertExhaustive } from '@/lib/exhaustive';
 import type { Item, TrackingMode } from '@/db/repositories';
 import type { Condition } from '@/db/repositories/constants';
 
@@ -107,6 +108,12 @@ function badgeFor(content: CardBadgeContent, item: Item): ResolvedCardBadge | nu
     case 'condition':
       return item.condition != null ? { kind: 'condition', condition: item.condition } : null;
     case 'none':
+      return null;
+    default:
+      // Exhaustiveness guard (#355): a new CardBadgeContent must extend this switch or this
+      // stops compiling. `normaliseCardBadgeContent` keeps a stale persisted id out of here,
+      // so falling through to "nothing to show" is the right degradation.
+      assertExhaustive(content);
       return null;
   }
 }

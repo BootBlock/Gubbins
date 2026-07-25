@@ -13,6 +13,7 @@
  * resolves them against one item into the metric id the {@link DiscreteCardMetric} draws. No
  * React, no DB — exhaustively unit-testable.
  */
+import { assertExhaustive } from '@/lib/exhaustive';
 import type { Item } from '@/db/repositories';
 import type { VisualCardMetric, VisualCardMetricFallback } from '@/features/settings/settings';
 
@@ -45,6 +46,12 @@ export function metricHasContent(metric: VisualCardMetric, item: Item): boolean 
       return item.condition != null;
     case 'manufacturer':
       return hasText(item.manufacturer);
+    default:
+      // Exhaustiveness guard (#355): a new VisualCardMetric must extend this switch or this
+      // stops compiling. Reporting "no content" for an unknown metric hands the card over to
+      // the fallback rather than claiming a signal it cannot draw.
+      assertExhaustive(metric);
+      return false;
   }
 }
 

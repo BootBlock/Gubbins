@@ -3,6 +3,7 @@ import { Checkbox, Input, Select, Spinner, Textarea, useRovingRadioGroup } from 
 import { CloseIcon, UploadIcon } from '@/components/icons';
 import { encodeFieldImage } from '@/features/images/compression';
 import { useErrorMessage } from '@/features/errors';
+import { assertExhaustive } from '@/lib/exhaustive';
 import { cn } from '@/lib/utils';
 import type { FieldType } from '@/db/repositories';
 
@@ -55,7 +56,15 @@ export function TypedFieldControl({
 }: TypedFieldControlProps) {
   const naming = { 'aria-label': ariaLabel, 'aria-labelledby': labelId, onBlur };
 
+  // TEXT's control, and the graceful degradation for a value that reaches us out of band —
+  // shared so the two branches below can never drift apart.
+  const plainTextInput = (
+    <Input value={value} onChange={(e) => onChange(e.target.value)} {...naming} {...controlProps} />
+  );
+
   switch (fieldType) {
+    case 'TEXT':
+      return plainTextInput;
     case 'NUMBER':
       return (
         <Input
@@ -154,7 +163,13 @@ export function TypedFieldControl({
         />
       );
     default:
-      return <Input value={value} onChange={(e) => onChange(e.target.value)} {...naming} {...controlProps} />;
+      // Exhaustiveness guard, mirroring `validateFieldValue`: a new FieldType must
+      // extend this switch explicitly or this stops compiling — otherwise the validator
+      // would loudly demand attention while the editor quietly rendered a text box (#355).
+      // The runtime fallback stays, so a value arriving out of band still degrades to a
+      // usable control rather than blanking the field editor.
+      assertExhaustive(fieldType);
+      return plainTextInput;
   }
 }
 
