@@ -313,7 +313,9 @@ const BARCODE_TRANSLITERATIONS: Readonly<Record<string, string>> = {
   Ŧ: 'T',
   ı: 'i',
   // Typographic punctuation a word processor or phone keyboard substitutes automatically:
-  // curly quotes, the dash family, and the prime and multiplication signs a size is written with.
+  // curly quotes, the dash family, and the prime, multiplication and fraction-slash signs a
+  // size is written with. Only the forms decomposition *leaves* need an entry — a double prime
+  // arrives here as two single primes, and `½` as `1`, a fraction slash and `2`.
   '‘': "'",
   '’': "'",
   '‚': "'",
@@ -323,15 +325,14 @@ const BARCODE_TRANSLITERATIONS: Readonly<Record<string, string>> = {
   '”': '"',
   '„': '"',
   '‟': '"',
-  '″': '"',
   '‐': '-',
-  '‑': '-',
   '‒': '-',
   '–': '-',
   '—': '-',
   '―': '-',
   '−': '-',
   '×': 'x',
+  '⁄': '/',
 };
 
 /**

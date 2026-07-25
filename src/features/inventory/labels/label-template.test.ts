@@ -162,6 +162,8 @@ describe('toBarcodeText', () => {
   it('folds typographic punctuation to its ASCII form', () => {
     expect(toBarcodeText('Dave’s bin — no. 3')).toBe("Dave's bin - no. 3");
     expect(toBarcodeText('40×30 “spare”')).toBe('40x30 "spare"');
+    // A vulgar fraction decomposes to digits around a fraction slash, which maps to '/'.
+    expect(toBarcodeText('½" pipe')).toBe('1/2" pipe');
     // A non-breaking space becomes an ordinary one, via NFKD.
     expect(toBarcodeText('Bay 1')).toBe('Bay 1');
   });
