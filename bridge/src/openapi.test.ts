@@ -195,7 +195,9 @@ describe('openapiDocument', () => {
 
     it('lists exactly the selectable names in the `fields` parameter’s own prose', () => {
       // The parameter description names the vocabulary a caller may pass; a name missing from it
-      // is a valid request the document calls a 400, and a name it invents is the reverse.
+      // is a valid request the document calls a 400, and a name it invents is the reverse. The
+      // item list is generated from the registry, so its half of this checks the derivation still
+      // targets the right vocabulary; the location list is written by hand, and this is its guard.
       const validFields = (path: string): string[] => {
         const param = (doc.paths[path].get.parameters as { name: string; description: string }[]).find(
           (p) => p.name === 'fields',
@@ -262,7 +264,10 @@ describe('openapiDocument', () => {
       // The guarantee is not simply dropped: the shapes behind the SSE stream and the write
       // endpoints are still published in full, because nothing can project those.
       expect(doc.components.schemas.ItemSummary.required.length).toBeGreaterThan(0);
-      expect(doc.components.schemas.ItemDetail.allOf[1].required).toEqual(['placements', 'capabilities']);
+      const detailExtra = doc.components.schemas.ItemDetail.allOf[1];
+      expect(detailExtra.required.length).toBeGreaterThan(0);
+      // Whatever it guarantees must be a property of the schema doing the guaranteeing.
+      for (const name of detailExtra.required) expect(detailExtra.properties).toHaveProperty(name);
       for (const name of ['Placement', 'Capability', 'ItemFieldValue', 'ItemMatch']) {
         expect(doc.components.schemas[name].required.length, name).toBeGreaterThan(0);
       }

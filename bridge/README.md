@@ -31,7 +31,7 @@ you need Node **≥ 24** (or the **22.16+ LTS** line).
 >   core is also offered over an [MCP stdio server](#mcp-server-for-llmagent-tools) for LLM/agent
 >   tools (read-only unless writes are opted in).
 > - **Opt-in, off by default (each its own `GUBBINS_BRIDGE_*` flag):**
->   [limited stock writes](#limited-writes-opt-in), [snapshot push](#snapshot-push-opt-in),
+>   [limited stock and loan writes](#limited-writes-opt-in), [snapshot push](#snapshot-push-opt-in),
 >   [outbound webhooks + an SSE event stream](#events-webhooks--sse-opt-in),
 >   [outbound MQTT publishing + Home Assistant MQTT discovery](#mqtt-publishing-opt-in), and
 >   [mDNS/zeroconf advertising](#mdns--zeroconf-discovery). Every one is a deliberate,
@@ -136,7 +136,8 @@ Every route requires `bridge:read` or `bridge:write` — the capability of using
 | `GET /api/v1/activity.{rss,atom,json}` | `bridge:read` + `audit:view` |
 | `GET /api/v1/webhooks/deliveries` | `bridge:read` + `settings:read` |
 | `POST /api/v1/webhooks/test` | `bridge:write` + `settings:write` |
-| `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` | `bridge:write` + `stock:write` |
+| `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` \| `/transfer-stock` | `bridge:write` + `stock:write` |
+| `POST /api/v1/items/{id}/check-out` \| `/check-in` | `bridge:write` + `checkouts:write` |
 | `POST /api/v1/snapshot` | `bridge:write` + `sync:write` |
 
 A [`HEAD`](#head-requests) requires exactly what the `GET` of the same route requires.
@@ -144,14 +145,18 @@ A [`HEAD`](#head-requests) requires exactly what the `GET` of the same route req
 A few of these are deliberate rather than obvious. The **calendar** feed publishes asset
 bookings, so it is gated on `bookings:read`, not `items:read`. The **syndication feeds** publish
 the Activity Ledger — the audit trail — so they need `audit:view`, which is what makes "only
-some people may read the history" expressible at all. The **stock adjust** endpoints need
-`stock:write` rather than `items:write`, because changing how much there is of something is not
-editing the item record.
+some people may read the history" expressible at all. The **stock** endpoints need
+`stock:write` rather than `items:write`, because changing how much there is of something — or
+where it is — is not editing the item record. **Lending** is a subject of its own: the app asks a
+user for `checkouts:write` to check something out, so the bridge asks the same rather than letting
+a stock-only token open loans. (Checking out to a *name* creates the contact if there is no match,
+exactly as the app does for a `checkouts:write` holder, so no extra `contacts:write` is demanded —
+that would lock the built-in Stocker role out of lending entirely.)
 
 > **ℹ️ The MCP stdio server carries no credential at all.** Its trust boundary is the OS process
 > (see [MCP server](#mcp-server-for-llmagent-tools)), so there is no token to resolve and no
 > identity to enforce; its writes are attributed to the **System** user. Anything able to launch
-> it with the write flag set can adjust stock — configure it accordingly.
+> it with the write flag set can adjust stock and lend items out — configure it accordingly.
 
 ---
 
@@ -340,7 +345,7 @@ every endpoint is a **`GET`** (or [`HEAD`](#head-requests)) and strictly read-on
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
 | `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=&fields=&include=&$orderby=&$filter=` | Paginated item summaries (`ItemSummary`). Supports [field selection](#field-selection--extended-fields) and [OData-style options](#odata-style-query-options) (`$orderby`, `$filter`, …). |
-| `GET /api/v1/items/{id}?fields=&include=` | One item with `placements` and `capabilities` (`ItemDetail`); `404` if unknown. Supports [field selection](#field-selection--extended-fields), including `include=fields` for [custom-field values](#custom-field-values-includefields). |
+| `GET /api/v1/items/{id}?fields=&include=` | One item with `placements`, `capabilities` and `tags` (`ItemDetail`); `404` if unknown. Supports [field selection](#field-selection--extended-fields), including `include=fields` for [custom-field values](#custom-field-values-includefields). |
 | `GET /api/v1/locations?limit=&offset=&fields=&include=` | Paginated locations with live item counts (`Location`). `include=fields` adds each location's [custom-field values](#custom-field-values-includefields). |
 | `GET /api/v1/locations/{id}?fields=&include=` | One location; `404` if unknown. `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
 | `GET /api/v1/categories?limit=&offset=` | Paginated categories with field counts (`CategorySummary`). |
@@ -433,7 +438,7 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 | --- | --- |
 | `/search` | `id, name, quantity, locationId, locationName, mpn, manufacturer` (`ItemMatch`) |
 | `/items` | the above + `isUnlimited, categoryId, trackingMode, isActive` (`ItemSummary`) |
-| `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNumber, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities` (`ItemDetail`) |
+| `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNumber, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities, tags` (`ItemDetail`) |
 
 > **Unlimited supply.** An item marked _unlimited_ (an effectively infinite source — tap water,
 > mains air) reports `isUnlimited: true` and its `quantity` as **`null`** (JSON has no `Infinity`);
@@ -441,23 +446,25 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 
 **Full field vocabulary** (nameable in `fields`, or in `include` when extended): `id`, `name`,
 `quantity`, `isUnlimited`, `locationId`, `locationName`, `categoryId`, `categoryName`, `mpn`, `manufacturer`,
-`trackingMode`, `isActive`, `description`, `notes`, `condition`, `serialNumber`, `serialNo`, `parentId`,
-`unitCost`, `purchasePrice`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
-`warrantyExpiresAt`, `depreciationMonths`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
+`trackingMode`, `isActive`, `description`, `notes`, `condition`, `barcode`, `isFavourite`,
+`serialNumber`, `serialNo`, `parentId`,
+`unitCost`, `purchasePrice`, `currentValue`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
+`warrantyExpiresAt`, `depreciationMonths`, `deadStockMode`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
 `operationalMetadata`, `gauge`, `createdAt`, `updatedAt`, `placements` (nestable:
 `locationId, locationName, quantity`), `capabilities` (nestable: `key, valueNum, valueText, weight`),
-`fieldValues` (nestable: `name, fieldType, value, source, inheritedFrom` — see
+`tags` (a flat array of tag **names**, so not nestable), `fieldValues` (nestable:
+`name, fieldType, value, source, inheritedFrom` — see
 [Custom-field values](#custom-field-values-includefields)).
 
 **Include groups** (aliases usable in `include`): `relations` (placements + capabilities +
-categoryName), `pricing` (unitCost + purchasePrice), `lifecycle` (acquiredAt + warrantyExpiresAt +
-purchasePrice + depreciationMonths), `reorder` (the three reorder fields), `timestamps`
-(createdAt + updatedAt), `fields` (fieldValues), and `all` (every extended field).
+categoryName + tags), `pricing` (unitCost + purchasePrice + currentValue), `lifecycle` (acquiredAt +
+warrantyExpiresAt + purchasePrice + depreciationMonths), `reorder` (the three reorder fields),
+`timestamps` (createdAt + updatedAt), `fields` (fieldValues), and `all` (every extended field).
 
 An unknown field or include name is a `400 bad_request` whose message lists the valid vocabulary;
 an over-long selection is likewise rejected. Relational fields are resolved **lazily** — a
-projection that doesn't select `placements`/`capabilities`/`categoryName` never incurs their extra
-read. The unversioned `/search` and `/where` aliases are deliberately **frozen** (no field
+projection that doesn't select `placements`/`capabilities`/`tags`/`categoryName` never incurs their
+extra read. The unversioned `/search` and `/where` aliases are deliberately **frozen** (no field
 selection) so their long-standing contract never changes; use the `/api/v1` twins for shaping.
 
 ```bash
@@ -465,6 +472,30 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/search?q=M3%20screw&fields=name,un
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items/item-esp32?include=all"
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items?fields=id,name,quantity"
 ```
+
+### Tags (`include=tags`)
+
+Gubbins lets you tag items freely (`fragile`, `workshop`, `expo-2026`). Those tags come back as a
+flat array of **names** on the item endpoints, ordered by name:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items/item-esp32"           # tags are in the detail payload
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?include=tags"         # add them to a list
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$filter=tag eq 'fragile'&\$select=id,name,tags"
+```
+
+```json
+{ "id": "item-esp32", "name": "ESP32 Dev Board", "tags": ["fragile", "workshop"] }
+```
+
+A tag **is** its name — the dictionary is keyed by it, case-insensitively — so a value here can be
+fed straight back into a `$filter` as `tag eq '<name>'`. They are the item's *own* tags: a tag on
+its location is a property of that location, exactly as the app's own search reads it. An untagged
+item reports `[]`, never a missing field.
+
+> **ℹ️ Note** `tags` is part of the `/items/{id}` **default** payload (beside `placements` and
+> `capabilities`) but opt-in on the list endpoints, where reading the join for every row would be a
+> cost you didn't ask for. Use `include=tags` (or `include=relations`) there.
 
 ### Custom-field values (`include=fields`)
 
@@ -565,12 +596,45 @@ semantics and has no injection surface — it is **never** bespoke SQL). Support
 - the `contains(field, 'text')` function (free-text, FTS-backed)
 - boolean composition with `and`, `or`, `not`, and parentheses
 - literals: single-quoted strings (`''` escapes a quote), numbers, `true`/`false`
-- filterable fields: `name`, `description`, `notes`, `mpn`, `manufacturer`, `serialNumber`, `quantity`,
-  `category`(`Id`), `location`(`Id`)
+- filterable fields: **every scalar field the app's own search can filter on**, plus tags — so no
+  *column* you can search on in Gubbins is unreachable here. (The app's `cap:<key>` and
+  `field:<name>` predicates, over parametric capabilities and custom fields, have no `$filter`
+  spelling; read those with `include=capabilities` / `include=fields` instead.) Field names are
+  case-insensitive, and each is accepted by the app's short name *and* the camel-cased property
+  name the read model publishes:
+
+  | Kind | Fields |
+  | --- | --- |
+  | Text (FTS-backed `contains`) | `name`, `description`, `notes`, `mpn`, `manufacturer`, `barcode`, `serialNumber` (`serial`) |
+  | Ids (exact match) | `categoryId` (`category`), `locationId` (`location`) |
+  | Numbers | `quantity`, `weight` (grams), `width`/`height`/`depth` (mm), `reorderPoint` (`reorder`) |
+  | Flags | `isFavourite` (`favourite`), `isActive` (`active`) |
+  | Enums | `condition`, `trackingMode` (`tracking`), `deadStockMode` (`deadstock`) |
+  | Dates (quoted `'YYYY-MM-DD'`) | `expiryDate` (`expiry`), `warrantyExpiresAt` (`warranty`) |
+  | Money (major units) | `unitCost` (`cost`), `purchasePrice` (`price`), `currentValue` (`value`) |
+  | Tags | `tags` (`tag`) |
+
+  Weight and the dimensions are compared in their canonical units (grams, millimetres), not your
+  display units, and money in the base currency's **major** units — `unitCost gt 10` is ten
+  pounds/dollars, not ten of the micro-units the column stores. A date must be a *quoted*
+  `'YYYY-MM-DD'`: this subset has no unquoted `Edm.Date` literal.
+
+  Every filterable field is also **readable**, so a query can always return what it filtered by —
+  under the spelling that matches its JSON property name (the unparenthesised one above), which is
+  what `fields`/`$select` takes. The parenthesised names are the app's own search aliases and are
+  accepted by `$filter` only: it is `$filter=unitCost gt 10` *or* `$filter=cost gt 10`, but always
+  `$select=unitCost`. A test enforces that pairing, so a filterable field can never be one you
+  cannot read back.
+
+  `tag` compares against a tag **name** and matches when **any** of the item's tags does, so
+  `tag eq 'fragile'` finds that exact tag (case-insensitively) and `contains(tag,'expo')` any tag
+  containing "expo". Combine it with `not` for the absence: `not (tag eq 'fragile')`. There are no
+  lambdas here, so `tags/any(…)` is not the spelling.
 
 Anything outside the subset (`ge`/`le`, `startswith`/`endswith`, arithmetic, lambdas, an unknown
-field) is a `400` naming what *is* supported. When `$filter` is present it is the sole row filter,
-so the `location`/`category`/`$search` query params are ignored.
+field) is a `400` naming what *is* supported, as is an operator a field doesn't accept (ordering
+comparisons on a text column, say). When `$filter` is present it is the sole row filter, so the
+`location`/`category`/`$search` query params are ignored.
 
 `not` binds to the single term or bracket that follows it, and `ne` is simply `not … eq …`. Both
 inherit the app's reading of absence on the nullable fields: `manufacturer ne 'Acme'` **includes**
@@ -592,6 +656,11 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$orderby=quantity desc&\$to
 # Everything with more than ten in stock whose name contains "bolt", names only, with the total:
 curl -H "Authorization: Bearer $TOKEN" \
   "$BASE/items?\$filter=quantity gt 10 and contains(name,'bolt')&\$select=name&\$count=true"
+
+# A barcode (GTIN) lookup, and everything tagged "fragile" that isn't a favourite:
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$filter=barcode eq '5012345678900'"
+curl -H "Authorization: Bearer $TOKEN" \
+  "$BASE/items?\$filter=tag eq 'fragile' and isFavourite eq false"
 
 # Just the number of ESP32-ish items, and the metadata document:
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items/\$count?\$search=esp32"
@@ -819,7 +888,7 @@ the app's repositories), so an agent gets exactly the answers the HTTP API and t
 
 It is **read-only by default**: an agent can only read unless you opt in. Setting
 **`GUBBINS_BRIDGE_ALLOW_WRITES=on`** — the *same* flag the HTTP endpoints use — additionally
-exposes the two [stock-adjustment tools](#write-tools-opt-in), which round-trip through the
+exposes the five [stock and loan tools](#write-tools-opt-in), which round-trip through the
 identical sync merge. With the flag off those tools are not built at all, so they are absent
 from `tools/list` **and** uncallable.
 
@@ -942,7 +1011,7 @@ content and a machine-usable `structuredContent`:
 | --- | --- | --- |
 | `gubbins_search` | `q` (required), `limit?`, `fields?`, `include?` | Relevance-ranked compact matches (top-N, max 25). Accepts a casual phrase or the power-user grammar (`cap:key>n`, `AND`/`OR`, …). `fields`/`include` [shape the result](#field-selection--extended-fields). |
 | `gubbins_where_is` | `q` (required), `limit?` | The top matches with their per-location breakdown plus one spoken British-English sentence. |
-| `gubbins_get_item` | `id` (required), `fields?`, `include?` | One item with `placements` and `capabilities`; `{ found: false }` if unknown. `fields`/`include` [shape the result](#field-selection--extended-fields); `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
+| `gubbins_get_item` | `id` (required), `fields?`, `include?` | One item with `placements`, `capabilities` and `tags`; `{ found: false }` if unknown. `fields`/`include` [shape the result](#field-selection--extended-fields); `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
 | `gubbins_list_locations` | `limit?`, `offset?`, `fields?`, `include?` | Paginated locations with live item counts. `include=fields` adds each location's [custom-field values](#custom-field-values-includefields). |
 | `gubbins_list_categories` | `limit?`, `offset?` | Paginated categories with field counts. |
 | `gubbins_list_capabilities` | `limit?`, `offset?` | The distinct `cap:` vocabulary you can filter on. |
@@ -965,21 +1034,26 @@ never annotated. The threshold is the shared `GUBBINS_BRIDGE_STALE_AFTER_FAILURE
 
 ### Write tools (opt-in)
 
-Set **`GUBBINS_BRIDGE_ALLOW_WRITES=on`** and two more tools join the six above, letting an
-agent adjust stock as well as read it ("I've used two of those" → the count drops):
+Set **`GUBBINS_BRIDGE_ALLOW_WRITES=on`** and five more tools join the six above, letting an
+agent change the inventory as well as read it ("I've used two of those" → the count drops;
+"Sam's borrowed the multimeter" → it goes out on loan):
 
 | Tool | Arguments | Effect |
 | --- | --- | --- |
-| `gubbins_adjust_quantity` | `id`, `delta` (required), `note?` | Adjust a **DISCRETE** item's home-location stock by a signed whole number (negative = check out). |
+| `gubbins_adjust_quantity` | `id`, `delta` (required), `note?` | Adjust a **DISCRETE** item's home-location stock by a signed whole number (negative = take some out). |
 | `gubbins_adjust_gauge` | `id`, `delta` (required), `note?` | Adjust a **CONSUMABLE_GAUGE** item's net value by a signed amount (clamped to `[0, capacity]`). |
+| `gubbins_check_out` | `id` (required), one of `contactId` / `contactName` / `projectId` / `locationId`, `quantity?`, `dueDate?`, `fromLocationId?`, `note?` | Lend the item out. An unmatched `contactName` creates the contact; `dueDate` is a calendar day, `yyyy-MM-dd`. Returns the loan. |
+| `gubbins_check_in` | `id` (required), `checkoutId?`, `note?` | Take the item back. `checkoutId` is only needed once the item has more than one open loan. |
+| `gubbins_transfer_stock` | `id`, `fromLocationId`, `toLocationId`, `quantity` (all required) | Move units between two locations, leaving the item's total unchanged. |
 
 Each maps 1:1 to the HTTP [write endpoints](#limited-writes-opt-in) and shares their machinery
 exactly — the same single-flight executor, the same round-trip through the app's own mutation
 code and the §7.3 sync merge, the same `note` bound (500 chars). There is no separate write
-path here. A rejection (unknown id, wrong tracking mode, quantity below zero) comes back as a
-tool result flagged `isError` carrying the reason, so the model can correct itself rather than
-just failing. A `delta` of `0` is refused — a no-op still writes a history entry, so it is far
-more likely a mistake than an intent.
+path here. A rejection (unknown id, wrong tracking mode, quantity below zero, an item with
+several open loans and no `checkoutId` to say which is back) comes back as a tool result flagged
+`isError` carrying the reason, so the model can correct itself rather than just failing. A
+`delta` of `0` is refused — a no-op still writes a history entry, so it is far more likely a
+mistake than an intent.
 
 The same source restriction applies: writes need a **JSON snapshot** source and are refused for
 a raw `.sqlite` one (no sync channel to round-trip through), in which case the server logs why
@@ -988,7 +1062,7 @@ and stays read-only.
 > **⚠️ Understand the trust boundary before enabling this.** Unlike the HTTP API — where a
 > request is a *user* whose role is enforced and whose writes are attributed to them — stdio has
 > **no credential at all**: the boundary is the OS process, so *anything able to launch this
-> server with the flag set can adjust your stock*, with no second credential and no permission
+> server with the flag set can adjust your stock and lend items out*, with no second credential and no permission
 > check, and the adjustment is recorded against the System user. That is fine for an MCP
 > client you configured yourself and reasonable for a local agent you trust; it is not a
 > permission system. Leave the flag off in the client config unless you actively want an agent
@@ -1002,9 +1076,10 @@ and stays read-only.
 ## Limited writes (opt-in)
 
 By default the bridge is **strictly read-only** — everything above only ever reads. It can
-optionally expose a **small, fixed set of stock mutations** (check-in / check-out, quantity
-adjust) so an automation or voice command can *change* stock, not just query it. This is **off
-by default** and must be deliberately enabled.
+optionally expose a **small, fixed set of mutations** — adjust a quantity or a gauge, lend an item
+out and take it back, move stock between locations — so an automation or voice command can
+*change* the inventory, not just query it. This is **off by default** and must be deliberately
+enabled.
 
 > **Why it's safe under sync.** The bridge does **not** own the database — the PWA does, and the
 > two reconcile through the synced `gubbins-sync.json` using the app's §7.3 Last-Write-Wins /
@@ -1025,9 +1100,10 @@ logs a clear "Writes ENABLED" line at startup. Keeping the bridge on the `127.0.
 the safest posture; enabling writes **and** binding `0.0.0.0` is a deliberate double opt-in.
 
 The flag is the **outer** bound, not the whole gate: with it on, a caller still needs
-`bridge:write` + `stock:write` to adjust stock, and the adjustment is attributed to that token's
-owner in the Activity Ledger. A read-only role holding a token gets a `403` here and carries on
-reading. See [Identities & permissions](#identities--permissions).
+`bridge:write` + `stock:write` to move or adjust stock (or `bridge:write` + `checkouts:write` to
+lend), and the change is attributed to that token's owner in the Activity Ledger. A read-only role
+holding a token gets a `403` here and carries on reading. See
+[Identities & permissions](#identities--permissions).
 
 Writes require a **JSON snapshot** source — they are **refused for a raw `.sqlite` source** (which
 has no sync channel to round-trip through), so the write paths stay `404` there even with this set.
@@ -1035,31 +1111,64 @@ See [Data sources](#data-sources-json-snapshot-or-raw-sqlite).
 
 ### Endpoints
 
-Both are **POST**, under `/api/v1`, GET-everything-else unchanged. The body is a tiny JSON
-object `{ "delta": <number>, "note"?: "<string>" }`; the response is the updated item (the same
-`ItemDetail` shape as `GET /api/v1/items/{id}`).
+All are **POST**, under `/api/v1`, GET-everything-else unchanged. Every body is a small, flat JSON
+object.
 
 | Endpoint | Body | Effect |
 | --- | --- | --- |
-| `POST /api/v1/items/{id}/adjust-quantity` | `{ delta, note? }` | Adjust a **DISCRETE** item's home-location stock by a signed whole number (negative = check out). |
+| `POST /api/v1/items/{id}/adjust-quantity` | `{ delta, note? }` | Adjust a **DISCRETE** item's home-location stock by a signed whole number (negative = take some out). |
 | `POST /api/v1/items/{id}/adjust-gauge` | `{ delta, note? }` | Adjust a **CONSUMABLE_GAUGE** item's net value by a signed amount (clamped to `[0, capacity]`). |
+| `POST /api/v1/items/{id}/check-out` | `{ contactId \| contactName \| projectId \| locationId, quantity?, dueDate?, fromLocationId?, note? }` | Lend the item out. Exactly one borrower; an unmatched `contactName` creates the contact. `dueDate` is a calendar day, `yyyy-MM-dd`. |
+| `POST /api/v1/items/{id}/check-in` | `{ checkoutId?, note? }` | Take the item back, restoring stock to the placement (and lot) it was lent from. `checkoutId` is optional while there is exactly one open loan. |
+| `POST /api/v1/items/{id}/transfer-stock` | `{ fromLocationId, toLocationId, quantity }` | Move units between two locations, leaving the item's total unchanged. All of it moves or none does. |
 
-Status codes: `200` (updated item), `400` (malformed body / non-numeric `delta`), `401`
-(missing/unknown/revoked token), `403` (the owner's role lacks `bridge:write` or `stock:write`),
-`404` (writes disabled, or no such item), `422` (`unprocessable` — the
-change was rejected, e.g. quantity below zero or the wrong tracking mode), `429` (rate-limited),
-`503` (snapshot briefly unavailable). The `/api/v1` index reports `"writable": true|false`.
+The **stock** endpoints answer with the updated item — the same `ItemDetail` shape as
+`GET /api/v1/items/{id}`. The **loan** endpoints answer with
+`{ "item": ItemDetail, "checkout": Checkout }`: a caller that has just lent something out needs the
+loan's `id` to check it back in later. It is the same id the [calendar feed](#calendar-subscription)
+embeds in a loan event's `UID` (`loan-<id>@gubbins.invalid` — strip the prefix and the suffix), so a
+calendar-driven automation can close the very loan it was reminded about.
+
+> **ℹ️ A check-out by name may create a contact.** `contactName` resolves an existing contact or
+> creates one, exactly as the app's own checkout does for a `checkouts:write` holder. It is the only
+> place a write creates a record the caller never named — everything else it adds (the loan itself,
+> the history entry) is the operation you asked for. Pass `contactId` instead if you would rather a
+> caller could never do that.
+
+Status codes: `200`, `400` (malformed body, or a field of the wrong JSON type), `401`
+(missing/unknown/revoked token), `403` (the owner's role lacks `bridge:write`, or `stock:write` /
+`checkouts:write` for that endpoint), `404` (writes disabled, no such item, or a `checkoutId` that
+is not this item's), `422` (`unprocessable` — the change was rejected: quantity below zero, the
+wrong tracking mode, no borrower, not enough stock at the source, or an item with several open
+loans and no `checkoutId` naming which one is back), `429` (rate-limited), `503` (snapshot briefly
+unavailable). The `/api/v1` index reports `"writable": true|false` and lists the enabled write
+paths.
 
 ### Example
 
 ```bash
-TOKEN=<YOUR_TOKEN>          # its owner needs bridge:write + stock:write
+TOKEN=<YOUR_TOKEN>          # its owner needs bridge:write + stock:write (+ checkouts:write to lend)
 BASE=http://127.0.0.1:8787/api/v1
 
-# Check out two of an item (synthetic fixture id):
+# Use two of an item (synthetic fixture id):
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"delta":-2,"note":"Taken to the workshop"}' \
   "$BASE/items/item-m3-bolt/adjust-quantity"
+
+# Lend one out, due back on a given day — the response carries the loan id:
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"contactName":"Sam Okafor","quantity":1,"dueDate":"2026-08-14"}' \
+  "$BASE/items/item-m3-bolt/check-out"
+
+# ...and take it back (the loan id is only needed if the item has more than one loan open):
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"note":"Back on the shelf"}' \
+  "$BASE/items/item-m3-bolt/check-in"
+
+# Move five between two locations:
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"fromLocationId":"loc-shelf-2","toLocationId":"loc-bin-4","quantity":5}' \
+  "$BASE/items/item-esp32/transfer-stock"
 ```
 
 The change lands in the synced `gubbins-sync.json`; the PWA applies it on its next sync. The same
@@ -1757,6 +1866,7 @@ parameter — see their sections):
 | --- | --- | --- | --- |
 | REST API + discovery/OpenAPI | `GET /health`, `/search`, `/where`, `/api/v1/*` | `bridge:read` + the route's subject | Read-only; field-selection + OData-style options. See [what each route requires](#what-each-route-requires). |
 | Custom-field values | `GET /api/v1/{items,locations}…?include=fields` | as the underlying route | Read-only; **opt-in per request** — your custom fields are returned only when a caller asks with `include=fields`, never in a default payload. |
+| Item tags | `GET /api/v1/items/{id}`, and `…/items?include=tags` | as the underlying route (`items:read`) | Read-only tag **names**, gated exactly as the item's `capabilities` and custom-field values are — an item's tags travel with the item, and the app likewise shows them to anyone who can read it. Unlike custom-field values they *are* in the item-detail default payload (a tag is part of what an item is), but they stay opt-in on the list endpoints. |
 | CSV export | `GET /api/v1/items.csv` | `bridge:read` + `items:read` | Refreshable spreadsheet pull. |
 | Calendar subscription | `GET /api/v1/calendar.ics` | `bridge:read` + `bookings:read` | `?token=` accepted (calendar clients can't send headers). |
 | Syndication feeds | `GET /api/v1/activity.{rss,atom,json}` | `bridge:read` + `audit:view` | `?token=` accepted. The feeds publish the audit trail, hence `audit:view`. |
@@ -1769,7 +1879,7 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 
 | Flag (`GUBBINS_BRIDGE_…`) | Turns on | Direction | Writes inventory? | Caller must also hold / secrets |
 | --- | --- | --- | --- | --- |
-| `ALLOW_WRITES` | [Limited stock writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge`, plus the matching [MCP write tools](#write-tools-opt-in) (JSON source only). | inbound (HTTP + MCP stdio) | **Yes** — check-in/out & gauge adjust, round-tripped through the sync merge, attributed over HTTP to the token's owner. | `bridge:write` + `stock:write` over HTTP — the flag opens the route, the role decides who may use it. The MCP tools have **no credential and no permission check** (stdio's boundary is the OS process), so enabling this trusts whoever can launch the server. No new operator secret. |
+| `ALLOW_WRITES` | [Limited stock and loan writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` \| `/check-out` \| `/check-in` \| `/transfer-stock`, plus the matching [MCP write tools](#write-tools-opt-in) (JSON source only). | inbound (HTTP + MCP stdio) | **Yes** — quantity/gauge adjust, lend & return, and moving stock between locations, round-tripped through the sync merge, attributed over HTTP to the token's owner. A check-out naming an unknown contact also creates that contact. | `bridge:write` + `stock:write` over HTTP (`checkouts:write` instead, for `check-out` / `check-in`) — the flag opens the route, the role decides who may use it. The MCP tools have **no credential and no permission check** (stdio's boundary is the OS process), so enabling this trusts whoever can launch the server. No new operator secret. |
 | `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | **Yes — wider than `ALLOW_WRITES`.** Merges a caller-supplied snapshot into the **whole** served dataset through the app's §7.3 reconcile (no *bespoke* SQL), so it can reshape **any** row — not just a bounded stock delta. | `bridge:write` + `sync:write`. No new operator secret. |
 | `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | `bridge:read`. No new operator secret. |
 | `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled; with MQTT on, also to the transient [`gubbins/locate`](#the-locate-topic-where-is-x-for-automations) topic. | outbound (push) | No — it is a read; nothing is written. | Nothing beyond the lookup itself — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
@@ -1819,7 +1929,7 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_ALLOWED_ORIGINS` | no | *(hosted app)* | Comma-separated list of **browser origins** allowed to read a bridge response cross-origin (CORS). Defaults to the hosted app origin `https://bootblock.github.io`; **loopback origins (a dev server) are always allowed on top**. Add your own PWA origin here if you self-host the app on another domain and use "push to bridge" from the browser. Set to `*` to restore the old permissive wildcard. Only browsers are affected — a non-browser client (Home Assistant, `curl`, a scrape) sends no `Origin` and is unaffected. See [Cross-origin (CORS) policy](#cross-origin-cors-policy). |
 | `GUBBINS_BRIDGE_MDNS` | no | `off` | Advertise over mDNS so Home Assistant can auto-discover the bridge. `on` to enable. Carries **no secret**; only meaningful when LAN-exposed (auto-skipped on the loopback default). See [mDNS / zeroconf discovery](#mdns--zeroconf-discovery). |
 | `GUBBINS_BRIDGE_MDNS_NAME` | no | `Gubbins Bridge` | Service instance name shown in a discovery browser. |
-| `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this (or `GUBBINS_BRIDGE_ALLOW_PUSH`) is `on`.** HTTP writes additionally need the caller to hold `bridge:write` + `stock:write`; the MCP tools are gated by process launch alone (stdio carries no credential). |
+| `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (quantity/gauge adjust, check out & in, move stock between locations) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this (or `GUBBINS_BRIDGE_ALLOW_PUSH`) is `on`.** HTTP writes additionally need the caller to hold `bridge:write` + `stock:write` (or `checkouts:write` for the two loan endpoints); the MCP tools are gated by process launch alone (stdio carries no credential). |
 | `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**; a **separate** opt-in from writes but a **strictly wider privilege** — a push merges caller-supplied content into the **whole** dataset, not a bounded stock delta, so treat it as at least as sensitive as writes. JSON source only. Same rate limit; the caller needs `bridge:write` + `sync:write`. |
 | `GUBBINS_BRIDGE_MAX_PUSH_BYTES` | no | `67108864` | Hard cap (bytes) on a pushed snapshot; default 64 MiB. An over-large push is rejected with `413`. Lower it on a constrained host. |
 | `GUBBINS_BRIDGE_STALE_AFTER_FAILURES` | no | `3` | Consecutive failed snapshot reloads before [`/health`](#snapshot-freshness-and-health) reports the served data as stale (`ok: false`). `0` keeps the counters but never flips `ok`. |
@@ -2148,7 +2258,7 @@ bridge/
       publisher.ts      # orchestrator: EventSink + per-generation retained state + availability
       packet.test.ts / topics.test.ts / discovery.test.ts / state.test.ts / client.test.ts / publisher.test.ts
     mcp/
-      tools.ts          # the six read-only gubbins_* MCP tools + the two opt-in write tools
+      tools.ts          # the six read-only gubbins_* MCP tools + the five opt-in write tools
       dispatcher.ts     # stdlib JSON-RPC dispatcher (initialize/tools.list/tools.call/ping)
       stdio.ts          # newline-delimited JSON-RPC over stdin/stdout
       serve.ts          # MCP composition root: watcher → stdio server (logs to stderr)

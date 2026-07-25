@@ -175,11 +175,18 @@ function postPermissions(pathname: string): readonly PermissionKey[] {
     // the operator's behalf using their configured subscriptions — a settings-level action.
     case 'webhooks':
       return ['bridge:write', 'settings:write'];
-    // The only inventory writes: the stock adjust endpoints. `stock:write` and not `items:write`
-    // is the phase-2 distinction — changing how much there is of something is not editing the
-    // item record, and the Stocker role exists to draw exactly that line.
+    // The inventory writes, all of them `items/{id}/{action}`. `stock:write` and not
+    // `items:write` is the phase-2 distinction — changing how much there is of something, or
+    // where it is, is not editing the item record, and the Stocker role exists to draw exactly
+    // that line. Lending is its own subject: `checkouts:write` is what the app asks of a user
+    // who checks something out, so the bridge asks the same rather than letting a stock-only
+    // token open loans. (Auto-creating a contact by name is part of that permission in the app
+    // too — `CheckoutRepository` resolves the borrower as an unrestricted collaborator — so the
+    // bridge does not additionally demand `contacts:write` and lock the Stocker role out.)
     case 'items':
-      return ['bridge:write', 'stock:write'];
+      return segments[2] === 'check-out' || segments[2] === 'check-in'
+        ? ['bridge:write', 'checkouts:write']
+        : ['bridge:write', 'stock:write'];
     default:
       return ['bridge:write'];
   }

@@ -13,6 +13,8 @@
 
 import { KNOWN_EVENT_TYPES } from '@/features/events/event-types.ts';
 import { ITEM_STATUS_FILTERS } from '@/db/repositories/item/status-filter.ts';
+import { ITEM_FIELD_REGISTRY } from './api/item-view.ts';
+import { FILTERABLE_FIELD_NAMES } from './api/odata-filter.ts';
 import { API_ERROR_CODES } from './api/respond.ts';
 
 /** A plain JSON value — the spec is pure data, serialisable to JSON and YAML alike. */
@@ -111,6 +113,13 @@ const qParam: JsonValue = {
  * default payload. Naming an extended field opts it in; one level of nesting is supported for
  * the array fields via a dotted path (e.g. `placements.quantity`).
  */
+/**
+ * The item field vocabulary, read straight off the registry that serves the requests rather than
+ * restated here. A hand-kept copy of a field list is how the API's filterable set silently drifted
+ * from the app's (issue #143), so both lists in this document are generated from their source.
+ */
+const ITEM_FIELD_LIST = [...ITEM_FIELD_REGISTRY.keys()].join(', ');
+
 const fieldsParam: JsonValue = {
   name: 'fields',
   in: 'query',
@@ -118,13 +127,8 @@ const fieldsParam: JsonValue = {
   description:
     'Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default ' +
     'set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so ' +
-    '`fields=name,unitCost` returns just those two. Nest an array field with a dot: ' +
-    '`placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, ' +
-    'isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, ' +
-    'trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, ' +
-    'weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, ' +
-    'reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, ' +
-    'updatedAt, placements, capabilities, fieldValues.',
+    '`fields=name,unitCost` returns just those two. Nest an array-of-object field with a dot: ' +
+    `\`placements.quantity\`. An unknown field is a 400. Valid fields: ${ITEM_FIELD_LIST}.`,
   schema: { type: 'string' },
   example: 'name,unitCost',
 };
@@ -139,8 +143,8 @@ const includeParam: JsonValue = {
   required: false,
   description:
     'Field expansion: a comma-separated list of extended fields, or named groups, to ADD on ' +
-    'top of the default payload. Groups: relations (placements, capabilities, categoryName), ' +
-    'pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, ' +
+    'top of the default payload. Groups: relations (placements, capabilities, categoryName, ' +
+    'tags), pricing (unitCost, purchasePrice, currentValue), lifecycle (acquiredAt, warrantyExpiresAt, ' +
     'purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, ' +
     'reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field ' +
     'values, with location inheritance resolved), and all (every extended field). An ' +
@@ -237,10 +241,14 @@ const filterParam: JsonValue = {
   required: false,
   description:
     'A constrained OData-style boolean filter compiled to the app search AST (never bespoke ' +
-    'SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with ' +
-    'parentheses. Filterable fields: name, description, notes, mpn, manufacturer, serialNumber, quantity, ' +
-    'weight, width, height, depth, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, ' +
-    'lambdas) are a 400. When present it is the sole row filter (location/category are ignored).',
+    'SQL). Supported: comparisons eq/ne/gt/lt, the contains(field, string) function, and/or/not ' +
+    'with parentheses, and single-quoted string / numeric / boolean literals. Dates are quoted ' +
+    "'YYYY-MM-DD' and money is in the base currency's major units. `tag` compares against a tag " +
+    "name and matches when ANY of the item's tags does. Field names are case-insensitive. " +
+    `Filterable fields: ${FILTERABLE_FIELD_NAMES.join(', ')}. Anything outside the subset ` +
+    '(ge/le, startswith/endswith, arithmetic, lambdas, an unknown field) is a 400, as is an ' +
+    'operator a field does not accept. When present it is the sole row filter ' +
+    '(location/category/$search are ignored).',
   schema: { type: 'string' },
   example: "quantity gt 10 and contains(name,'bolt')",
 };
@@ -625,6 +633,19 @@ const itemFieldSchemas: Readonly<Record<string, JsonValue>> = {
     nullable: true,
     description: 'Operational condition; null when untracked.',
   },
+  barcode: {
+    type: 'string',
+    nullable: true,
+    example: '5012345678900',
+    description:
+      'The retail barcode (GTIN — EAN/UPC) printed on the article; null if none. Distinct from ' +
+      '`mpn`, which is the maker’s own code.',
+  },
+  isFavourite: {
+    type: 'boolean',
+    example: false,
+    description: 'True when the user has starred this item.',
+  },
   serialNumber: {
     type: 'string',
     nullable: true,
@@ -650,6 +671,13 @@ const itemFieldSchemas: Readonly<Record<string, JsonValue>> = {
     type: 'number',
     nullable: true,
     description: 'Original acquisition cost, in the base currency; null if unpriced.',
+  },
+  currentValue: {
+    type: 'number',
+    nullable: true,
+    description:
+      'Manual current/market value per unit, in the base currency; null when none is set. When ' +
+      'present it wins over the depreciated replacement cost in valuation.',
   },
   weight: {
     type: 'number',
@@ -697,6 +725,14 @@ const itemFieldSchemas: Readonly<Record<string, JsonValue>> = {
     nullable: true,
     description: 'Useful life for straight-line depreciation; null when it does not depreciate.',
   },
+  deadStockMode: {
+    type: 'string',
+    enum: ['inherit', 'always', 'never'],
+    example: 'inherit',
+    description:
+      'Whether this item is reported as dead stock. `inherit` — the default — defers to the ' +
+      'item’s location chain; the other two override it.',
+  },
   reorderPoint: {
     type: 'integer',
     nullable: true,
@@ -742,6 +778,15 @@ const itemFieldSchemas: Readonly<Record<string, JsonValue>> = {
     description: 'The item’s queryable capability values.',
     items: { $ref: '#/components/schemas/CapabilityProjection' },
   },
+  tags: {
+    type: 'array',
+    description:
+      'The names of the tags this item carries, ordered by name. A tag *is* its name, so these ' +
+      "values can be fed straight back into a `$filter` as `tag eq '<name>'`. Only the item's " +
+      'own tags — a tag on its location belongs to that location.',
+    items: { type: 'string' },
+    example: ['fragile', 'workshop'],
+  },
   fieldValues: {
     type: 'array',
     description: 'The item’s custom-field values, with location inheritance resolved.',
@@ -780,6 +825,7 @@ const ITEM_DETAIL_EXTRA_FIELDS: readonly string[] = [
   'updatedAt',
   'placements',
   'capabilities',
+  'tags',
 ];
 
 /**
@@ -844,9 +890,10 @@ export const openapiDocument: JsonValue = {
     {
       name: 'writes',
       description:
-        'Opt-in stock mutations (off by default; enabled with GUBBINS_BRIDGE_ALLOW_WRITES=on). ' +
-        'Each write round-trips through the same sync merge the PWA uses, so it is applied without ' +
-        'drift on the next sync. When writes are disabled these paths return 404.',
+        'Opt-in stock and loan mutations (off by default; enabled with ' +
+        'GUBBINS_BRIDGE_ALLOW_WRITES=on). Each write round-trips through the same sync merge the ' +
+        'PWA uses, so it is applied without drift on the next sync. When writes are disabled ' +
+        'these paths return 404.',
     },
     {
       name: 'push',
@@ -1232,7 +1279,7 @@ export const openapiDocument: JsonValue = {
     '/api/v1/items/{id}': {
       get: {
         tags: ['items'],
-        summary: 'Look up one item by id (with placements and capabilities)',
+        summary: 'Look up one item by id (with placements, capabilities and tags)',
         description:
           'One item with its full detail. Use `fields`/`$select` to project a sparse fieldset ' +
           '(e.g. just the price) or `include`/`$expand` to add extended fields beyond the ' +
@@ -1251,13 +1298,15 @@ export const openapiDocument: JsonValue = {
     '/api/v1/items/{id}/adjust-quantity': {
       post: {
         tags: ['writes'],
-        summary: 'Adjust a DISCRETE item’s quantity by a signed delta (check-in / check-out)',
+        summary: 'Adjust a DISCRETE item’s quantity by a signed delta',
         description:
           'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Applies ' +
           'a signed delta to the item’s home-location stock and logs it, exactly as the app does, ' +
-          'then writes the merged snapshot back so the PWA reconciles it (LWW) on its next sync.',
+          'then writes the merged snapshot back so the PWA reconciles it (LWW) on its next sync. ' +
+          'This is stock going in or out, not a loan — to lend an item to someone and get it back, ' +
+          'use check-out / check-in, which track who has it.',
         parameters: [idParam('item')],
-        requestBody: adjustRequestBody('Whole-number change; negative to check out.'),
+        requestBody: adjustRequestBody('Whole-number change; negative to take stock out.'),
         responses: {
           200: response('The updated item.', '#/components/schemas/ItemDetail'),
           ...(errorResponses(400, 401, 404, 415, 422, 429) as Record<string, JsonValue>),
@@ -1277,6 +1326,159 @@ export const openapiDocument: JsonValue = {
         responses: {
           200: response('The updated item.', '#/components/schemas/ItemDetail'),
           ...(errorResponses(400, 401, 404, 415, 422, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/items/{id}/check-out': {
+      post: {
+        tags: ['writes'],
+        summary: 'Lend an item out to a contact, project or location',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Opens a ' +
+          'loan exactly as the app does — a discrete item’s stock is drawn down from the source ' +
+          'placement while the loan is open, a serialised item goes out as a whole and cannot be ' +
+          'lent twice. Supply exactly one borrower; naming a contact that does not exist creates ' +
+          'it, as the app does. The response carries the loan, whose id names it at check-in and ' +
+          'is the id the calendar feed embeds in that loan’s UID (loan-<id>@gubbins.invalid). ' +
+          'Needs checkouts:write (not stock:write).',
+        parameters: [idParam('item')],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                description:
+                  'Exactly one of contactId / contactName / projectId / locationId identifies the ' +
+                  'borrower; supplying none or several is a 422.',
+                properties: {
+                  contactId: { type: 'string', description: 'Lend to this existing contact.' },
+                  contactName: {
+                    type: 'string',
+                    maxLength: 500,
+                    description: 'Lend to a contact by name, creating it when there is no match.',
+                  },
+                  projectId: { type: 'string', description: 'Lend to this existing project.' },
+                  locationId: {
+                    type: 'string',
+                    description: 'Lend to this existing location ("in the van").',
+                  },
+                  quantity: {
+                    type: 'integer',
+                    minimum: 1,
+                    description: 'Units to lend; defaults to 1. A serialised item always lends as 1.',
+                  },
+                  dueDate: {
+                    type: 'string',
+                    format: 'date',
+                    nullable: true,
+                    description:
+                      'Due date as a calendar day (yyyy-MM-dd), anchored at local end-of-day so a ' +
+                      'loan due "the 20th" only reads overdue once the 20th is over. Null or absent ' +
+                      'for an open-ended loan.',
+                    example: '2026-08-14',
+                  },
+                  fromLocationId: {
+                    type: 'string',
+                    description:
+                      'Draw the units from this placement (the return restores them there); ' +
+                      'defaults to the item’s own location.',
+                  },
+                  note: {
+                    type: 'string',
+                    nullable: true,
+                    maxLength: 500,
+                    description: 'Optional note recorded on the loan and in the activity log.',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: response('The updated item and the loan that was opened.', '#/components/schemas/LoanResult'),
+          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/items/{id}/check-in': {
+      post: {
+        tags: ['writes'],
+        summary: 'Return a lent item, closing its loan',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Restores ' +
+          'the units to the placement (and lot) they were lent from and stamps the loan returned, ' +
+          'exactly as the app does. `checkoutId` is optional when the item has exactly one open ' +
+          'loan, and required (422) once it has more than one. Needs checkouts:write (not ' +
+          'stock:write).',
+        parameters: [idParam('item')],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  checkoutId: {
+                    type: 'string',
+                    description:
+                      'Which loan to close. Only needed when the item has more than one open loan; ' +
+                      'it must belong to this item and still be open.',
+                  },
+                  note: {
+                    type: 'string',
+                    nullable: true,
+                    maxLength: 500,
+                    description:
+                      'Optional remark recorded on the return (kept separate from the loan’s own note).',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: response('The updated item and the loan that was closed.', '#/components/schemas/LoanResult'),
+          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/items/{id}/transfer-stock': {
+      post: {
+        tags: ['writes'],
+        summary: 'Move units of a DISCRETE item between two locations',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Moves ' +
+          'stock between placements in the per-location ledger, leaving the item’s total ' +
+          'unchanged — what adjust-quantity cannot do, since it only ever touches the item’s home ' +
+          'location. Each moved lot keeps its batch and expiry at the destination. The whole ' +
+          'amount moves or none of it does: too little on hand at the source is a 422, never a ' +
+          'silent partial move.',
+        parameters: [idParam('item')],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['fromLocationId', 'toLocationId', 'quantity'],
+                properties: {
+                  fromLocationId: { type: 'string', description: 'The location the units move out of.' },
+                  toLocationId: { type: 'string', description: 'The location the units move into.' },
+                  quantity: {
+                    type: 'integer',
+                    minimum: 1,
+                    description: 'How many units to move.',
+                    example: 5,
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: response('The updated item.', '#/components/schemas/ItemDetail'),
+          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
         },
       },
     },
@@ -1966,7 +2168,7 @@ export const openapiDocument: JsonValue = {
           { $ref: '#/components/schemas/ItemSummary' },
           {
             type: 'object',
-            required: ['placements', 'capabilities'],
+            required: ['placements', 'capabilities', 'tags'],
             properties: {
               ...(itemProps([...ITEM_DETAIL_EXTRA_FIELDS, 'fieldValues']) as Record<string, JsonValue>),
               // Restated with the strict element shapes: nothing that answers with `ItemDetail`
@@ -1989,6 +2191,57 @@ export const openapiDocument: JsonValue = {
             },
           },
         ],
+      },
+      Checkout: {
+        type: 'object',
+        description:
+          'One loan. The borrower is a tagged union: `borrowerType` says which kind of target ' +
+          'holds it and `borrowerId` is that target’s id. `status` is derived from `returnedAt`.',
+        required: [
+          'id',
+          'itemId',
+          'borrowerType',
+          'borrowerId',
+          'quantity',
+          'dueDate',
+          'checkedOutAt',
+          'returnedAt',
+          'status',
+          'note',
+          'returnNote',
+          'sourceLocationId',
+        ],
+        properties: {
+          id: { type: 'string', example: 'a3f1c0de-0000-4000-8000-000000000000' },
+          itemId: { type: 'string', example: 'item-m3-bolt' },
+          borrowerType: { type: 'string', enum: ['contact', 'project', 'location'], example: 'contact' },
+          borrowerId: { type: 'string', example: 'contact-sam' },
+          quantity: { type: 'integer', example: 1 },
+          dueDate: {
+            type: 'integer',
+            nullable: true,
+            description: 'UNIX-ms; null for an open-ended loan.',
+          },
+          checkedOutAt: { type: 'integer' },
+          returnedAt: { type: 'integer', nullable: true, description: 'UNIX-ms; null while still out.' },
+          status: { type: 'string', enum: ['OPEN', 'RETURNED'], example: 'OPEN' },
+          note: { type: 'string', nullable: true },
+          returnNote: { type: 'string', nullable: true, description: 'Null while the loan is open.' },
+          sourceLocationId: {
+            type: 'string',
+            nullable: true,
+            description: 'The placement the units were drawn from; stock is restored there on return.',
+          },
+        },
+      },
+      LoanResult: {
+        type: 'object',
+        description: 'What the loan endpoints return: the affected item plus the loan itself.',
+        required: ['item', 'checkout'],
+        properties: {
+          item: { $ref: '#/components/schemas/ItemDetail' },
+          checkout: { $ref: '#/components/schemas/Checkout' },
+        },
       },
       ItemProjection: {
         type: 'object',

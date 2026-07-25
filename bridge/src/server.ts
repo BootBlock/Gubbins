@@ -51,9 +51,8 @@ import { corsAllowOrigin, WILDCARD_ORIGINS, type AllowedOrigins } from './cors.t
 import { EVENT_STREAM_CONTENT_TYPE } from './events/sse.ts';
 import { projectMetrics } from './feeds/metrics.ts';
 import { formatMetrics } from './feeds/metrics-format.ts';
-import type { WriteOperation } from './write.ts';
+import type { WriteOperation, WriteResult } from './write.ts';
 import { PushError, type PushSummary } from './push.ts';
-import type { ItemDetailDto } from './api/dto.ts';
 import type { HaClient } from './homeassistant/client.ts';
 import type { WebhookDeliveryLog, WebhookDeliveryRecord } from './events/webhook-log.ts';
 import type { WebhookDeliveryTarget, WebhookSecrets } from './events/webhook-targets.ts';
@@ -64,7 +63,7 @@ import { healthBody, type SnapshotHealthReport } from './snapshot-health.ts';
 export const REQUEST_TIMEOUT_MS = 10_000;
 /** Headers must arrive within this window (slow-loris guard). */
 export const HEADERS_TIMEOUT_MS = 5_000;
-/** Hard cap on a POST body (the write endpoints take a tiny `{ delta, note? }` object). */
+/** Hard cap on a POST body (the write endpoints take a small, flat JSON object). */
 export const MAX_BODY_BYTES = 8 * 1024;
 
 /**
@@ -80,7 +79,7 @@ export interface WriteCapability {
    * fail to compile rather than quietly write everything as System, which is what the bridge
    * did when it had only a shared token to go on.
    */
-  readonly execute: (op: WriteOperation, actorUserId: string) => Promise<ItemDetailDto>;
+  readonly execute: (op: WriteOperation, actorUserId: string) => Promise<WriteResult>;
 }
 
 /** The versioned snapshot-ingest path (the PWA "push to bridge"); POST-only, opt-in. */

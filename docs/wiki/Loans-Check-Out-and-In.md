@@ -53,8 +53,25 @@ and lot**, so a returned item lands exactly where it belongs rather than in a li
 > range, use a **[[booking|Bookings]]**; to record something leaving for good, use
 > **[[sales & disposals|Sales-and-Disposals]]**.
 
+## Lending from outside the app
+
+If you run the [[bridge|Bridge-Overview]] and switch its **write-back** on, loans can also be
+opened and closed from outside Gubbins — by a home-automation rule, a script, or an
+[[AI assistant|AI-Assistant-Query-MCP]]. It behaves exactly as it does in the app: stock leaves
+your available count while the item is out, and a return puts it back in its original location and
+lot. Every one of those is recorded in the [[activity log|Activity-Log]] the same way, so an
+automated return is as traceable as one you tapped yourself.
+
+Loan due-backs already appear in the [[calendar feed|Webhooks-MQTT-and-iCal]], so a rule can spot
+an overdue loan *and* close it once the item is back, rather than only telling you about it.
+
+> **⚠️ Heads-up**
+> Write-back is off by default and turning it on is a deliberate choice — see
+> [[running the bridge|Running-the-Bridge]] for what it does and doesn't allow.
+
 ## Related pages
 
 - **[[Contacts]]** — the people you lend to.
 - **[[Bookings]]** — reserving items ahead of time.
 - **[[Upcoming agenda|Upcoming-Agenda]]** — due-backs and other deadlines.
+- **[[Bridge overview|Bridge-Overview]]** — lending from an automation or assistant.

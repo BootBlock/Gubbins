@@ -8,11 +8,12 @@
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
+import { TagRepository } from '@/db/repositories/TagRepository.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { toCapability, toItemSummary, type ItemDetailDto } from './api/dto.ts';
 
 /**
- * Load one item by id with its per-location `placements` and `capabilities`, mapped to the
+ * Load one item by id with its per-location `placements`, `capabilities` and `tags`, mapped to the
  * stable {@link ItemDetailDto}. Returns `null` when no item has that id (the caller decides
  * how to surface "not found" for its transport).
  */
@@ -23,10 +24,12 @@ export async function loadItemDetail(driver: IDatabaseDriver, id: string): Promi
 
   const locations = new LocationRepository(driver);
   const categories = new CategoryRepository(driver);
-  const [location, placements, capabilities] = await Promise.all([
+  const tags = new TagRepository(driver);
+  const [location, placements, capabilities, itemTags] = await Promise.all([
     locations.getById(item.locationId),
     items.listStock(item.id),
     items.listCapabilities(item.id),
+    tags.getForItem(item.id),
   ]);
   const category = item.categoryId ? await categories.getById(item.categoryId) : undefined;
 
@@ -50,5 +53,7 @@ export async function loadItemDetail(driver: IDatabaseDriver, id: string): Promi
       quantity: p.quantity,
     })),
     capabilities: capabilities.map(toCapability),
+    // Tag *names*, already ordered by name by the repository — see `ItemDetailDto.tags`.
+    tags: itemTags.map((tag) => tag.name),
   };
 }

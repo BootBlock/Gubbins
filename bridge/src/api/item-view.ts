@@ -8,19 +8,20 @@
  * Two tiers of field:
  *   - **default** — the fields already in each endpoint's baseline payload (search / list /
  *     detail). Naming these keeps today's shapes byte-identical.
- *   - **extended** — everything else the app already stores (owner's notes, pricing, lifecycle,
- *     reorder policy, operational metadata, the gauge, timestamps, the relational
- *     `placements`/`capabilities`/`categoryName`, and the custom-field `fieldValues`). These
- *     are the "more information, if available" a caller opts into with `include` (or by
+ *   - **extended** — everything else the app already stores (owner's notes, the barcode, pricing,
+ *     lifecycle, reorder policy, operational metadata, the gauge, timestamps, the relational
+ *     `placements`/`capabilities`/`tags`/`categoryName`, and the custom-field `fieldValues`).
+ *     These are the "more information, if available" a caller opts into with `include` (or by
  *     naming in `fields`).
  *
- * Relational fields (`locationName`, `categoryName`, `placements`, `capabilities`) are resolved
- * **lazily and once** through the context, so a projection that doesn't select them never
+ * Relational fields (`locationName`, `categoryName`, `placements`, `capabilities`, `tags`) are
+ * resolved **lazily and once** through the context, so a projection that doesn't select them never
  * incurs their extra read — and one that selects several sharing a source reads it a single time.
  */
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
+import { TagRepository } from '@/db/repositories/TagRepository.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import type { Item } from '@/db/repositories/types';
 import {
@@ -50,6 +51,7 @@ export interface ItemViewContext {
   categoryName(): Promise<string | null>;
   placements(): Promise<readonly PlacementDto[]>;
   capabilities(): Promise<readonly CapabilityDto[]>;
+  tags(): Promise<readonly string[]>;
   fieldValues(): Promise<readonly ItemFieldValueDto[]>;
 }
 
@@ -70,6 +72,7 @@ export function createItemViewContext(
   let categoryNameP: Promise<string | null> | undefined;
   let placementsP: Promise<readonly PlacementDto[]> | undefined;
   let capabilitiesP: Promise<readonly CapabilityDto[]> | undefined;
+  let tagsP: Promise<readonly string[]> | undefined;
   let fieldValuesP: Promise<readonly ItemFieldValueDto[]> | undefined;
 
   return {
@@ -94,6 +97,12 @@ export function createItemViewContext(
     },
     capabilities() {
       return (capabilitiesP ??= (async () => (await items.listCapabilities(item.id)).map(toCapability))());
+    },
+    // Tag *names*, ordered by name by the repository — a tag is its name, and that name is what a
+    // `$filter` compares against, so a consumer can feed one straight back into `tag eq '…'`.
+    tags() {
+      return (tagsP ??= (async () =>
+        (await new TagRepository(driver).getForItem(item.id)).map((tag) => tag.name))());
     },
     // Custom-field values go through the app's own resolver, so location inheritance and
     // lenient defaulting land exactly as they do in the app — never a second implementation.
@@ -134,6 +143,11 @@ const ITEM_FIELDS: readonly (readonly [string, FieldNode<ItemViewContext>])[] = 
   ['description', { resolve: (c) => c.item.description }],
   ['notes', { resolve: (c) => c.item.notes }],
   ['condition', { resolve: (c) => c.item.condition }],
+  // The scanned identifier (GTIN/UPC/EAN) and the "favourite" pin — both filterable over
+  // `$filter`, so both are readable here too: a scanner integration that can look an item up by
+  // its barcode should be able to read the barcode back off it (issue #143).
+  ['barcode', { resolve: (c) => c.item.barcode }],
+  ['isFavourite', { resolve: (c) => c.item.isFavourite }],
   // Intrinsic serial number — the maker's per-unit identifier (issue #90); null when unset.
   ['serialNumber', { resolve: (c) => c.item.serialNumber }],
   ['serialNo', { resolve: (c) => c.item.serialNo }],
@@ -141,6 +155,7 @@ const ITEM_FIELDS: readonly (readonly [string, FieldNode<ItemViewContext>])[] = 
   // Pricing.
   ['unitCost', { resolve: (c) => c.item.unitCost }],
   ['purchasePrice', { resolve: (c) => c.item.purchasePrice }],
+  ['currentValue', { resolve: (c) => c.item.currentValue }],
   // Physical. Intrinsic weight in canonical grams (issue #25); null when unset.
   ['weight', { resolve: (c) => c.item.weight }],
   // Intrinsic bounding-box dimensions in canonical millimetres (issue #30); null when unset.
@@ -155,6 +170,10 @@ const ITEM_FIELDS: readonly (readonly [string, FieldNode<ItemViewContext>])[] = 
   ['acquiredAt', { resolve: (c) => c.item.acquiredAt }],
   ['warrantyExpiresAt', { resolve: (c) => c.item.warrantyExpiresAt }],
   ['depreciationMonths', { resolve: (c) => c.item.depreciationMonths }],
+  // Stock policy: the item's own dead-stock opt-in, *before* location inheritance is resolved
+  // (that resolution is a pure seam over the location ancestry, not a column) — exactly the value
+  // `$filter=deadStockMode eq '…'` compares against.
+  ['deadStockMode', { resolve: (c) => c.item.deadStockMode }],
   // Reorder policy.
   ['reorderPoint', { resolve: (c) => c.item.reorderPoint }],
   ['reorderGaugePercent', { resolve: (c) => c.item.reorderGaugePercent }],
@@ -168,6 +187,10 @@ const ITEM_FIELDS: readonly (readonly [string, FieldNode<ItemViewContext>])[] = 
   // Relations (nested, array-of-object).
   ['placements', { resolve: (c) => c.placements(), elementKeys: PLACEMENT_KEYS }],
   ['capabilities', { resolve: (c) => c.capabilities(), elementKeys: CAPABILITY_KEYS }],
+  // The item's tag names (issue #143). A flat array of strings, so — unlike the two above — it
+  // carries no `elementKeys`: there is nothing to pick out of a name, and `tags.name` is
+  // rightly rejected as "not a nested field".
+  ['tags', { resolve: (c) => c.tags() }],
   // The item's custom-field values (the field dictionary), location inheritance resolved.
   // Extended-only: an integration opts in with `include=fields`.
   ['fieldValues', { resolve: (c) => c.fieldValues(), elementKeys: ITEM_FIELD_VALUE_KEYS }],
@@ -225,6 +248,9 @@ export const ITEM_DETAIL_DEFAULT_FIELDS: readonly string[] = [
   'updatedAt',
   'placements',
   'capabilities',
+  // Tags sit in the default detail payload beside the other relations (issue #143): "what is this
+  // item?" is not fully answered without them, and an integration should not have to know to ask.
+  'tags',
 ];
 
 /**
@@ -233,11 +259,11 @@ export const ITEM_DETAIL_DEFAULT_FIELDS: readonly string[] = [
  * entire vocabulary.
  */
 export const ITEM_INCLUDE_ALIASES: Readonly<Record<string, readonly string[]>> = {
-  relations: ['placements', 'capabilities', 'categoryName'],
+  relations: ['placements', 'capabilities', 'categoryName', 'tags'],
   // `include=fields` reads naturally for the custom-field values and is the name the
   // location endpoints use for the same thing, so both resources say it the same way.
   fields: ['fieldValues'],
-  pricing: ['unitCost', 'purchasePrice'],
+  pricing: ['unitCost', 'purchasePrice', 'currentValue'],
   lifecycle: ['acquiredAt', 'warrantyExpiresAt', 'purchasePrice', 'depreciationMonths'],
   reorder: ['reorderPoint', 'reorderGaugePercent', 'reorderQty'],
   timestamps: ['createdAt', 'updatedAt'],
