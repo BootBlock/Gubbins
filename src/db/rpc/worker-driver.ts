@@ -69,6 +69,13 @@ export const RPC_TIMEOUT_MS: Readonly<Record<DbRequest['kind'], number>> = {
   close: 5_000,
 };
 
+/** The `id` of a message that failed the envelope guard, where it carries a usable one. */
+function correlationIdOf(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const id = (value as { id?: unknown }).id;
+  return typeof id === 'string' ? id : undefined;
+}
+
 interface PendingCall {
   readonly resolve: (value: unknown) => void;
   readonly reject: (reason: unknown) => void;
@@ -228,15 +235,22 @@ export class WorkerDatabaseDriver implements IDatabaseDriver {
   }
 
   #handleMessage = (event: MessageEvent): void => {
-    if (!isRpcResponseEnvelope(event.data)) return;
-    const response = event.data;
-    const pending = this.#pending.get(response.id);
+    const data: unknown = event.data;
+    const response = isRpcResponseEnvelope(data) ? data : null;
+    // A malformed reply is still read for its correlation id: it answered a real call, and
+    // dropping it outright would park that caller until its budget expires for a reply that has
+    // already arrived. Rejecting it below is both truthful and immediate.
+    const id = response?.id ?? correlationIdOf(data);
+    if (id === undefined) return;
+    const pending = this.#pending.get(id);
     // Either a reply to something we never sent, or one that arrived after its own timeout
     // fired — both are already settled, so dropping it is correct.
     if (!pending) return;
-    this.#pending.delete(response.id);
+    this.#pending.delete(id);
     clearTimeout(pending.timer);
-    if (response.ok) {
+    if (!response) {
+      pending.reject(new DbError('UNKNOWN', 'The database worker sent a response that could not be read.'));
+    } else if (response.ok) {
       pending.resolve(response.result);
     } else {
       pending.reject(DbError.fromSerialized(response.error));

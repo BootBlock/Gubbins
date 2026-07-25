@@ -104,16 +104,57 @@ export class DbError extends Error {
 }
 
 /**
- * Type guard for the serialised wire form.
+ * Every {@link DbErrorCode}, as a lookup.
  *
- * @internal Exported for unit tests only.
+ * Typed as an exhaustive record so a code added to the union without being added here fails the
+ * build: the guard below is only ever as good as this list.
+ */
+const DB_ERROR_CODES: Readonly<Record<DbErrorCode, true>> = {
+  SQLITE_BUSY: true,
+  SQLITE_LOCKED: true,
+  SQLITE_CONSTRAINT: true,
+  SQLITE_CONSTRAINT_FOREIGNKEY: true,
+  SQLITE_FULL: true,
+  SQLITE_READONLY: true,
+  SQLITE_ERROR: true,
+  FTS5_UNAVAILABLE: true,
+  OPFS_UNAVAILABLE: true,
+  NOT_CROSS_ORIGIN_ISOLATED: true,
+  MULTI_TAB_LOCKED: true,
+  SCHEMA_TOO_NEW: true,
+  SCHEMA_STALE: true,
+  INIT_FAILED: true,
+  TRANSACTION_FAILED: true,
+  WORKER_UNAVAILABLE: true,
+  WORKER_TIMEOUT: true,
+  WRITE_SUSPENDED: true,
+  PERMISSION_DENIED: true,
+  UNKNOWN: true,
+};
+
+/**
+ * Type guard for a code arriving from outside the type system (the worker bridge).
+ *
+ * `Object.hasOwn`, not `in`: `'constructor'` is on every object's prototype, and an inherited
+ * key would let an arbitrary string pass as a `DbErrorCode`.
+ */
+export function isDbErrorCode(value: unknown): value is DbErrorCode {
+  return typeof value === 'string' && Object.hasOwn(DB_ERROR_CODES, value);
+}
+
+/**
+ * Type guard for the serialised wire form — every field it claims, including the optionals,
+ * because {@link DbError.fromSerialized} reads them all straight into a typed `DbError`.
  */
 export function isSerializedDbError(value: unknown): value is SerializedDbError {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<Record<keyof SerializedDbError, unknown>>;
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as { name?: unknown }).name === 'DbError' &&
-    typeof (value as { code?: unknown }).code === 'string'
+    candidate.name === 'DbError' &&
+    isDbErrorCode(candidate.code) &&
+    typeof candidate.message === 'string' &&
+    (candidate.resultCode === undefined || typeof candidate.resultCode === 'number') &&
+    (candidate.sql === undefined || typeof candidate.sql === 'string')
   );
 }
 

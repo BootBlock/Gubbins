@@ -83,10 +83,23 @@ Gubbins has some gentle visual polish that you can dial up or down:
 > Want a calmer app in one move? Turning **Animation** down (or enabling your device's
 > reduce-motion setting) quiets every decorative effect at once.
 
+## Also in this panel
+
+The Appearance panel ends with a handful of settings that aren't about the *look* of the app:
+your **base currency** and **[[language & region|Language-and-Region]]**, and the
+**[[weight, dimension and volume units|Units-of-Measure]]** every measurement is shown and
+entered in — along with the **default packing efficiency** a
+[[location's fullness gauge|Locations-and-Stock]] falls back to. Each has a page of its own.
+
+> **💡 Tip**
+> Rather than hunting through the panel, type what you're after into the
+> [[settings search box|Finding-a-Setting]] — `unit` brings all three unit settings straight up.
+
 ## Related pages
 
 - **[[Branding|Branding]]** — a custom accent hue, your own tagline, and surface translucency.
 - **[[Dashboard & widgets|Dashboard-and-Widgets]]** — arranging your landing screen.
 - **[[Language & region|Language-and-Region]]** — language, currency and date formats.
+- **[[Units of measure|Units-of-Measure]]** — weight, dimension and volume units.
 - **[[Kiosk & tablet mode|Kiosk-and-Tablet-Mode]]** — a locked-down, always-awake display.
 - **[[Modular UI|Modular-UI]]** — hiding features you don't use.

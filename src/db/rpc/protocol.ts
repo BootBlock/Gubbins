@@ -7,8 +7,8 @@
  * chosen over Comlink to keep the bundle lean (§2.4.3) and the test-time mock
  * trivial (§8.5.3). Messages are structured-clone-safe (no functions/classes).
  */
+import { isSerializedDbError, type SerializedDbError } from '../errors';
 import type { SqlParams, SqlStatement, SqlRow, SqlExecuteResult } from './driver';
-import type { SerializedDbError } from '../errors';
 import type { SnapshotMergeRequest, SnapshotMergeResult } from '@/features/sync/merge';
 
 /** Snapshot of the live database/VFS state, returned by `init` and `diagnostics`. */
@@ -102,12 +102,20 @@ export type RpcResponseEnvelope =
   | { readonly id: string; readonly ok: true; readonly result: unknown }
   | { readonly id: string; readonly ok: false; readonly error: SerializedDbError };
 
-/** Type guard for inbound response envelopes on the main thread. */
+/**
+ * Type guard for inbound response envelopes on the main thread.
+ *
+ * Checks the payload of whichever arm `ok` selects, not just `ok`'s type: the driver hands
+ * `error` straight to `DbError.fromSerialized`, so an `ok: false` envelope without a well-formed
+ * error would fail *inside* the rejection path rather than surfacing as a database error.
+ */
 export function isRpcResponseEnvelope(value: unknown): value is RpcResponseEnvelope {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as { id?: unknown }).id === 'string' &&
-    typeof (value as { ok?: unknown }).ok === 'boolean'
-  );
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as { id?: unknown; ok?: unknown; error?: unknown };
+  if (typeof candidate.id !== 'string') return false;
+  // `result` is `unknown`, so its presence is all there is to prove — and `undefined` is a
+  // legitimate result, which is why this is `in` rather than a value check.
+  if (candidate.ok === true) return 'result' in candidate;
+  if (candidate.ok === false) return isSerializedDbError(candidate.error);
+  return false;
 }
