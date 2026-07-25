@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { repoPath } from '@/test/repo-path';
 import { buildItemQrUrl } from '@/features/scanner/scan-payload';
 import {
+  LABEL_NAME_MAX_LINES,
   MAX_LABELS,
   barcodeWidthMm,
   buildLabelSheetHtml,
@@ -38,11 +41,12 @@ describe('barcodeWidthMm', () => {
     expect(barcodeWidthMm(template({ columns: 4 }))).toBe(37);
   });
 
-  it('is the die-cut label less its padding', () => {
+  it('is the die-cut label less its safe area and padding', () => {
     const dieCut = (widthMm: number) =>
       barcodeWidthMm(template({ sizeMode: 'die-cut', labelWidthMm: widthMm, labelHeightMm: 30 }));
-    expect(dieCut(40)).toBe(37);
-    expect(dieCut(100)).toBe(97);
+    // 2 × (1mm safe area + 1.5mm padding) comes off the physical width (issue #337).
+    expect(dieCut(40)).toBe(35);
+    expect(dieCut(100)).toBe(95);
   });
 });
 
@@ -110,7 +114,7 @@ describe('toLabelCells', () => {
   });
 
   it('treats every label on a too-narrow size alike, whatever its id (issue #331)', () => {
-    // The 30 x 15 mm preset leaves 27 mm — under the width a fallback code needs. `ID_A`'s
+    // The 30 x 15 mm preset leaves 25 mm — under the width a fallback code needs. `ID_A`'s
     // short id is all digits and `ID_C`'s is not; measured as encoded, Code Set C would let
     // the first through and not the second. The sheet must not be arbitrary like that.
     const cells = toLabelCells(
@@ -263,5 +267,79 @@ describe('buildLabelSheetHtml', () => {
       template({ sizeMode: 'die-cut', labelWidthMm: 4, labelHeightMm: 9999 }),
     );
     expect(html).toContain('@page{size:10mm 300mm;margin:0}');
+  });
+
+  it('insets die-cut content behind a safe area and clips overflow at it (issue #337)', () => {
+    const html = buildLabelSheetHtml(
+      [{ id: ID_A, name: 'Resistor 10k' }],
+      BASE,
+      template({ sizeMode: 'die-cut', labelWidthMm: 40, labelHeightMm: 30 }),
+    );
+    // The page is still the label's exact size — the tolerance is taken out of the content,
+    // never out of the page, or the printer would receive the wrong media size.
+    expect(html).toContain('@page{size:40mm 30mm;margin:0}');
+    expect(html).toContain('width:40mm;height:30mm');
+    // 1mm safe area + 1.5mm padding, so nothing is laid out within 1mm of the die edge.
+    expect(html).toContain('padding:2.5mm');
+    // Surplus content is cut at the safe boundary rather than bleeding to the physical edge.
+    expect(html).toContain('overflow-clip-margin:content-box');
+  });
+
+  it('keeps the A4 sheet page margin and cell padding unchanged', () => {
+    // The safe-area inset is a die-cut concern: an A4 page already carries a 10mm margin,
+    // wider than any printer's unprintable edge.
+    const html = buildLabelSheetHtml([{ id: ID_A, name: 'X' }], BASE, template());
+    expect(html).toContain('@page{size:A4;margin:10mm}');
+    expect(html).toContain('padding:3mm');
+    expect(html).not.toContain('overflow-clip-margin');
+  });
+});
+
+/**
+ * The printed name obeys the same line clamp the dialog preview shows (issue #334).
+ *
+ * The preview clamped the name and neither print document did, so an over-long name that
+ * looked truncated on screen printed in full — inflating an A4 grid row, or being hard-clipped
+ * mid-line by a die-cut label's `overflow:hidden` after squeezing the QR out of the way. These
+ * pin the clamp into both stylesheets and hold the preview's Tailwind utility to the same count,
+ * so neither side can drift back.
+ */
+describe('the printed name clamp', () => {
+  const CLAMP = `-webkit-line-clamp:${LABEL_NAME_MAX_LINES}`;
+
+  it('clamps the name — and only the name — in the A4 sheet document', () => {
+    const html = buildLabelSheetHtml([{ id: ID_A, name: 'Resistor 10k' }], BASE, template());
+    expect(html).toContain(
+      `font-weight:600;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;${CLAMP}}`,
+    );
+    // The meta lines wrap freely in the preview, so they must here too.
+    expect(countOccurrences(html, CLAMP)).toBe(1);
+  });
+
+  it('clamps the name in the die-cut document, where the label would otherwise clip it mid-line', () => {
+    const html = buildLabelSheetHtml(
+      [{ id: ID_A, name: 'Resistor 10k' }],
+      BASE,
+      template({ sizeMode: 'die-cut', labelWidthMm: 40, labelHeightMm: 30 }),
+    );
+    expect(html).toContain(
+      `font-weight:600;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;${CLAMP}}`,
+    );
+    expect(countOccurrences(html, CLAMP)).toBe(1);
+    // The clamp alone is not enough here: the label is a fixed-height flex column, so without
+    // this the name shrank below its own two lines and lost the ellipsis to `overflow:hidden`.
+    expect(html).toContain('.label .name,.label .meta{flex:0 0 auto');
+    expect(html).toContain('.label .qr{flex:1 1 auto');
+  });
+
+  it('matches the line count the on-screen preview clamps to', () => {
+    const preview = readFileSync(
+      repoPath(import.meta.dirname, 'src', 'features', 'inventory', 'components', 'LabelCellPreview.tsx'),
+      'utf8',
+    );
+    // Tailwind needs the literal utility, so the preview cannot build it from the constant —
+    // this is what keeps the two honest.
+    expect(preview).toContain(`line-clamp-${LABEL_NAME_MAX_LINES}`);
+    expect(preview).not.toMatch(new RegExp(`line-clamp-(?!${LABEL_NAME_MAX_LINES}\\b)\\d`));
   });
 });

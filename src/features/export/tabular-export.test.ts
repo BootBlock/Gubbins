@@ -177,6 +177,26 @@ describe('toHtmlTable', () => {
     expect(html).toContain('<title>Export</title>');
     expect(html).not.toContain('class="caption"');
   });
+
+  it('states the body ink and page colour rather than leaving them to the user agent', () => {
+    // Without an explicit pair, a dark-mode reader gets user-agent light-on-dark text —
+    // and prints it onto white paper, because browsers drop backgrounds (issue #335).
+    const html = toHtmlTable(columns, rows);
+    expect(html).toMatch(/body \{[^}]*color: var\(--ink\)[^}]*background: var\(--page\)/);
+    expect(html).toContain('@media (prefers-color-scheme: dark)');
+  });
+
+  it('pins print to black ink on white, after the dark-scheme block so it wins', () => {
+    const html = toHtmlTable(columns, rows);
+    const dark = html.indexOf('@media (prefers-color-scheme: dark)');
+    const print = html.indexOf('@media print');
+    expect(dark).toBeGreaterThan(-1);
+    expect(print).toBeGreaterThan(dark);
+    const printBlock = html.slice(print);
+    expect(printBlock).toContain('--ink: #000');
+    expect(printBlock).toContain('--page: #fff');
+    expect(printBlock).toContain('color-scheme: light');
+  });
 });
 
 describe('buildTabularExport', () => {

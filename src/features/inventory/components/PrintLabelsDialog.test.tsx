@@ -99,6 +99,22 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     openSpy.mockRestore();
   });
 
+  it('cautions about the print target for a die-cut size, naming it (issue #337)', () => {
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    // The A4 grid prints on ordinary paper, so there is nothing to caution about.
+    expect(screen.queryByTestId('labels-die-cut-printer')).toBeNull();
+
+    chooseOption('label-size', /50 .* 80 mm/);
+
+    const notice = screen.getByTestId('labels-die-cut-printer');
+    expect(notice.textContent).toContain('50 × 80 mm');
+    expect(notice.textContent).toContain('A4 sheet (grid)');
+
+    // ...and it goes away again when the A4 grid is chosen back.
+    chooseOption('label-size', /A4 sheet/);
+    expect(screen.queryByTestId('labels-die-cut-printer')).toBeNull();
+  });
+
   it('reveals width/height inputs for a custom die-cut size', () => {
     render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
     expect(screen.queryByTestId('label-size-width')).toBeNull();

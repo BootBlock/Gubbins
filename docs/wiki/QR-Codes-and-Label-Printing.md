@@ -46,6 +46,47 @@ off in one go — perfect for labelling a new storage system or a batch of asset
 > whether or not the camera capability is enabled, and any phone camera app can open the deep
 > link.
 
+## Label size: A4 sheet or die-cut labels
+
+**Label size** in the print dialog decides the shape of the whole job.
+
+- **A4 sheet (grid)** tiles labels across an ordinary sheet of paper, as many per row as
+  **Columns per sheet** says. Each one gets a light border to cut or guillotine along. This is the
+  right choice for ordinary printers and for blank sticker sheets.
+- A **die-cut size** — one of the common roll sizes, from 30 × 15 mm up to a 100 × 150 mm shipping
+  label, or **Custom…** for an exact width × height you type — prints **one label per page at that
+  exact physical size**, for a thermal or die-cut label printer of the kind that feeds pre-cut
+  labels off a roll.
+
+Gubbins keeps a small **safe margin** clear at every edge of a die-cut label, and nothing is
+printed into it. Labels drift a fraction of a millimetre as the roll feeds, and the die itself is
+cut to a tolerance, so a design laid out right to the edge loses whatever the drift happens to be —
+a clipped corner off the QR code, or the last letter of a name. The margin absorbs that; the label
+is still printed at the full size you chose.
+
+> **⚠️ Heads-up**
+> A die-cut size only comes out right on a printer loaded with **that** label. Choose one and the
+> print dialog reminds you of the exact size to set as the printer's paper size. Send the same job
+> to an ordinary A4 printer and there is nothing Gubbins can do about it: the browser either blows
+> the tiny page up to fill the sheet or crops it against the printer's own unprintable border, with
+> no warning of its own. Print on ordinary paper with **A4 sheet (grid)** instead.
+
+> **💡 Tip**
+> Choose the size first. It sets how much room the code and text have, so it decides how many lines
+> of text fit — and whether a barcode can print at all (see below).
+
+## Long names on a small label
+
+A name only has so much room. Where one is too long for the label, Gubbins keeps it to **two
+lines** and finishes it with an ellipsis (…) rather than letting it run on. On a die-cut label the
+QR code gives up a little height to make room, so the name and the code both stay whole.
+
+> **💡 Tip**
+> The preview in the print dialog is the label: it shortens the name in exactly the same place the
+> printed one will, so what you approve on screen is what comes out. If the shortened name is
+> ambiguous, choose a larger label size or fewer columns per sheet, or turn on another field —
+> a part number or location — under **Show on label** to tell similar items apart.
+
 ## QR code or barcode?
 
 Each label can carry a **QR code**, a **Code 128 barcode**, **both**, or **no code at all** — pick
@@ -63,7 +104,7 @@ under **Code** in the print dialog.
 > small label collapses into a grey smear no scanner can read. Gubbins won't print one. If the
 > value is too long for the label, the barcode carries a short code for that item or location
 > instead, and the print dialog says so above the preview. That short code needs a label **a little
-> over 30 mm wide**, so on the smallest sizes — the 30 × 15 mm labels, say — only a genuinely short
+> over 32 mm wide**, so on the smallest sizes — the 30 × 15 mm labels, say — only a genuinely short
 > name or part number prints as a barcode at all; anything longer leaves the barcode off entirely.
 > Choose a wider label size, use fewer columns per sheet, or switch to a QR code. Either
 > way the barcode prints its own value underneath in plain

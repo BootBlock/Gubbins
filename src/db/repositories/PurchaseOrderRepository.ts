@@ -12,7 +12,9 @@
  * lines' receipt totals via {@link derivePoStatus}. The repository persists a snapshot of the
  * derived value (so a peer on a stale schema still reads a sensible status) but every read
  * recomputes it, and {@link onOrderQtyForItem} is a derived projection like the Phase-20
- * In-Transit one — never a stored counter.
+ * In-Transit one — never a stored counter. That snapshot is written *inside* the same transaction
+ * as the receipt it follows from (issue #298), so a failure can never leave a fully-received order
+ * still reading ORDERED.
  *
  * The supplier is a first-class row (issue #384): the header carries `supplier_id`, and every
  * read joins `suppliers` to project the canonical name, so a consumer still reads
@@ -116,6 +118,65 @@ function cleanOrderedQty(value: number): number {
     throw new DbError('SQLITE_CONSTRAINT', 'An ordered quantity must be a positive whole number.');
   }
   return value;
+}
+
+/**
+ * The user-facing sentence for a receipt or return that lost a race — see
+ * {@link receivedQtyDeltaStatement}. An authored sentence under a constraint code is kept
+ * verbatim by the error-copy seam (issue #311), exactly as `STOCK_DRAW_RACE_MESSAGE` is.
+ */
+export const PO_RECEIPT_RACE_MESSAGE =
+  'This purchase-order line changed while the receipt was being saved. ' +
+  'Check the received quantity and try again.';
+
+/**
+ * The compare-and-swap write of a line's cumulative `received_qty` (issue #298).
+ *
+ * A receipt is planned from a read of the line taken *before* the transaction, but the stock
+ * statement it pairs with is **relative** (`addBatchStatement` adds units to the ledger). Writing
+ * the plan's absolute total back therefore let two overlapping receipts each add their units while
+ * the second's write silently replaced the first's total — the order reading 10 received against 20
+ * units on the shelf, permanently and invisibly.
+ *
+ * So the write is relative *and* gated on the line still holding the value the plan was built from.
+ * When it doesn't, the guard writes the sentinel `-1`, which trips the line's
+ * `CHECK (received_qty >= 0)` and rolls the whole transaction back — the stock, the ledger entry and
+ * the status snapshot with it, so nothing is half-applied. That constraint is the same backstop
+ * `runStockDraw` leans on for an overlapping stock draw (issue #302), and {@link runReceiptWrite}
+ * translates it the same way so the loser reads a plain sentence rather than constraint text.
+ *
+ * `delta` is signed: a receipt adds, a return subtracts.
+ */
+function receivedQtyDeltaStatement(lineId: string, expectedQty: number, delta: number): SqlStatement {
+  return {
+    sql: `UPDATE purchase_order_lines
+             SET received_qty = CASE WHEN received_qty = ? THEN received_qty + ? ELSE -1 END
+           WHERE id = ?;`,
+    params: [expectedQty, delta, lineId],
+  };
+}
+
+/**
+ * True when the {@link receivedQtyDeltaStatement} guard's sentinel tripped the line's
+ * `CHECK (received_qty >= 0)`. Keyed on the message alone rather than the code, for the reason
+ * `isQuantityFloorViolation` documents: the three drivers report the very same failure under
+ * different codes, so a code set would silently miss in the browser.
+ */
+export function isReceivedQtyGuardViolation(error: unknown): boolean {
+  if (!(error instanceof DbError)) return false;
+  return /CHECK constraint failed:\s*received_qty >= 0/i.test(error.message);
+}
+
+/** Run a receipt/return write, translating the guard's abort into plain validation copy. */
+async function runReceiptWrite(run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    if (isReceivedQtyGuardViolation(error)) {
+      throw new DbError('SQLITE_CONSTRAINT', PO_RECEIPT_RACE_MESSAGE, { cause: error });
+    }
+    throw error;
+  }
 }
 
 export class PurchaseOrderRepository extends BaseRepository {
@@ -346,7 +407,8 @@ export class PurchaseOrderRepository extends BaseRepository {
    * line's `received_qty`. For a matched DISCRETE item the received delta lands into the
    * per-location / per-batch ledger via the shared `addStockStatement` / `addBatchStatement`
    * builders and a `RECEIVED` history entry is logged — the same machinery BOM receipts use,
-   * never a second path. The PO's persisted status snapshot is then re-derived.
+   * never a second path. The PO's persisted status snapshot is re-derived in the *same*
+   * transaction, so the line, the stock and the status can never be left disagreeing.
    */
   async receiveLine(
     lineId: string,
@@ -359,12 +421,11 @@ export class PurchaseOrderRepository extends BaseRepository {
 
     const plan = planPoReceipt(line.orderedQty, line.receivedQty, opts.quantity);
 
-    const statements: SqlStatement[] = [
-      {
-        sql: 'UPDATE purchase_order_lines SET received_qty = ? WHERE id = ?;',
-        params: [plan.nextReceivedQty, lineId],
-      },
-    ];
+    // Receiving nothing (an already-complete line) touches no quantity at all, so it skips the
+    // guarded write rather than racing over a value it is not changing; the status snapshot below
+    // still gets its chance to catch up.
+    const statements: SqlStatement[] =
+      plan.receivedDelta > 0 ? [receivedQtyDeltaStatement(lineId, line.receivedQty, plan.receivedDelta)] : [];
 
     if (line.itemId && plan.receivedDelta > 0) {
       const item = await this.driver.queryOne<{
@@ -403,10 +464,9 @@ export class PurchaseOrderRepository extends BaseRepository {
       }
     }
 
-    await this.driver.transaction(statements);
+    statements.push(await this.statusSnapshotStatement(line.poId, lineId, plan.nextReceivedQty));
 
-    // Re-derive and persist the PO status snapshot from the (now updated) line totals.
-    await this.refreshStatus(line.poId);
+    await runReceiptWrite(() => this.driver.transaction(statements));
 
     return (await this.getLine(lineId))!;
   }
@@ -417,7 +477,8 @@ export class PurchaseOrderRepository extends BaseRepository {
    * subtracted from the line's `received_qty`, so the PO status re-derives back towards PARTIAL /
    * ORDERED. For a matched DISCRETE item the returned units are drawn out of the per-location
    * ledger (FEFO at the target location) via the shared `placementDeltaStatements` builder and a
-   * `RETURNED_TO_SUPPLIER` history entry is logged — never a second stock-mutation path.
+   * `RETURNED_TO_SUPPLIER` history entry is logged — never a second stock-mutation path. Like a
+   * receipt, the line write is guarded and the status snapshot re-derived in the same transaction.
    */
   async returnLine(
     lineId: string,
@@ -434,10 +495,7 @@ export class PurchaseOrderRepository extends BaseRepository {
     }
 
     const statements: SqlStatement[] = [
-      {
-        sql: 'UPDATE purchase_order_lines SET received_qty = ? WHERE id = ?;',
-        params: [plan.nextReceivedQty, lineId],
-      },
+      receivedQtyDeltaStatement(lineId, line.receivedQty, -plan.returnedDelta),
     ];
 
     if (line.itemId) {
@@ -482,10 +540,9 @@ export class PurchaseOrderRepository extends BaseRepository {
       }
     }
 
-    await runStockDraw(this.driver, statements);
+    statements.push(await this.statusSnapshotStatement(line.poId, lineId, plan.nextReceivedQty));
 
-    // Re-derive and persist the PO status snapshot from the (now reduced) line totals.
-    await this.refreshStatus(line.poId);
+    await runReceiptWrite(() => runStockDraw(this.driver, statements));
 
     return (await this.getLine(lineId))!;
   }
@@ -606,26 +663,55 @@ export class PurchaseOrderRepository extends BaseRepository {
     return row ? row.supplier_name : null;
   }
 
-  /** Read just the (orderedQty, receivedQty) of a PO's lines for status derivation. */
-  private async readLineProgress(poId: string): Promise<PoStatusLine[]> {
-    const rows = await this.driver.query<{ ordered_qty: number; received_qty: number }>(
-      'SELECT ordered_qty, received_qty FROM purchase_order_lines WHERE po_id = ?;',
+  /** Read just the (id, orderedQty, receivedQty) of a PO's lines for status derivation. */
+  private async readLineProgress(poId: string): Promise<(PoStatusLine & { id: string })[]> {
+    const rows = await this.driver.query<{ id: string; ordered_qty: number; received_qty: number }>(
+      'SELECT id, ordered_qty, received_qty FROM purchase_order_lines WHERE po_id = ?;',
       [poId],
     );
-    return rows.map((r) => ({ orderedQty: Number(r.ordered_qty), receivedQty: Number(r.received_qty) }));
+    return rows.map((r) => ({
+      id: r.id,
+      orderedQty: Number(r.ordered_qty),
+      receivedQty: Number(r.received_qty),
+    }));
   }
 
   /**
-   * Recompute and persist a PO's status snapshot from its line totals — unless the PO is in a
-   * user-authoritative state (DRAFT / CANCELLED), which {@link derivePoStatus} leaves alone.
+   * The statement that recomputes and persists a PO's status snapshot **inside the caller's own
+   * transaction**, given the post-write `received_qty` of the single line that transaction is
+   * changing (issue #298). Running the refresh afterwards as its own call left a window in which a
+   * failure — or an interleaved edit — stranded a fully-received order still reading ORDERED.
+   *
+   * The derivation itself stays in the pure {@link derivePoStatus} seam, applied to the PO's line
+   * progress with the changing line's about-to-be-committed total substituted in, so the snapshot
+   * matches what the transaction is committing. `derivePoStatus` is asked for the lines' verdict
+   * alone (by naming a non-authoritative persisted status, as {@link setStatus} does); the WHERE
+   * clause is what preserves the user-authoritative DRAFT / CANCELLED states, and `status <> ?`
+   * keeps an unchanged snapshot a genuine no-op rather than a needless `updated_at` bump for sync
+   * to carry.
+   *
+   * The *sibling* lines' totals still come from a read, so two receipts against two different lines
+   * of one order can each write a snapshot that ignores the other's progress. That is the property
+   * a snapshot has by construction, not a discrepancy: `effectiveStatus` is recomputed on every
+   * read (see {@link attachLines}), and the on-order projection filters per line rather than on the
+   * snapshot, so neither reads the stale value. What this fixes is the *line's own* progress being
+   * missing from it, and the window in which nothing had written it at all.
    */
-  private async refreshStatus(poId: string): Promise<void> {
-    const po = await this.getById(poId);
-    if (!po) return;
-    const next: PurchaseOrderStatus = derivePoStatus(po.status, await this.readLineProgress(poId));
-    if (next !== po.status) {
-      await this.driver.execute('UPDATE purchase_orders SET status = ? WHERE id = ?;', [next, poId]);
-    }
+  private async statusSnapshotStatement(
+    poId: string,
+    lineId: string,
+    receivedQty: number,
+  ): Promise<SqlStatement> {
+    const progress = await this.readLineProgress(poId);
+    const next: PurchaseOrderStatus = derivePoStatus(
+      'ORDERED',
+      progress.map((l) => (l.id === lineId ? { ...l, receivedQty } : l)),
+    );
+    return {
+      sql: `UPDATE purchase_orders SET status = ?
+             WHERE id = ? AND status NOT IN ('DRAFT', 'CANCELLED') AND status <> ?;`,
+      params: [next, poId, next],
+    };
   }
 
   private async require(id: string): Promise<PurchaseOrder> {
