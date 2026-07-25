@@ -190,6 +190,10 @@ export {
   Filter as FilterIcon,
   SlidersHorizontal as BuilderIcon,
   FolderPlus as AddGroupIcon,
+  // Saved searches (issue #136) — "keep this query for next time", offered on the quick-search
+  // box as well as under the power-search field. Shares the Bookmark glyph with the untracked
+  // tracking mode above: a distinct semantic role, the same visual vocabulary.
+  Bookmark as SavedSearchIcon,
 
   // QR, scanner, contacts & checkout (Phase 6, §4 Borrowing, §5, §6)
   QrCode as QrCodeIcon,

@@ -88,6 +88,22 @@ If you collect a lot of tags, the list splits into pages using the same
 [[pagination control|Inventory-Views]] as the rest of the app — turn it on with **Paginate list**
 (or **Settings → Inventory → Lists**), and every tag stays reachable however many you have.
 
+#### Filtering and sorting the list
+
+Above the list sit a **filter box** and a **sort** picker, which appear as soon as you have a tag
+to look through:
+
+- **Filter** narrows the list to tags whose name contains what you type — anywhere in the name,
+  so typing `x` finds `project-x`. Press `Escape` (or the **✕**) to clear it. The filter searches
+  your **whole** dictionary, not just the page on screen, so it reaches a tag however far down the
+  alphabet it sits.
+- **Sort** offers **Name A–Z** (the default), **Name Z–A**, **Most used first** and **Least used
+  first**. "Used" counts items *and* locations together.
+
+> **💡 Tip**
+> **Least used first** brings the tags on nothing to the top — the quickest way to spot the
+> one-offs and typos worth deleting or merging.
+
 ## Attachments & datasheets
 
 **Where to find it:** the **Media & docs** tab of an item's details.

@@ -26,6 +26,10 @@ details as you type, powered by a fast full-text index:
 > match a shorter one (`drills` does not find *drill*). Trim back to the shortest beginning you're
 > sure of — `dril` finds both.
 
+The **bookmark** button at the right-hand end of the box opens your
+**[[saved searches|Saved-Searches-and-Favourites]]** — keep the search you've just typed, or bring
+back one you saved earlier, without opening any other panel.
+
 ## Four ways to search
 
 | Way | Best for | Page |
@@ -37,7 +41,8 @@ details as you type, powered by a fast full-text index:
 
 The last three all live in the **Visual search** panel (open it from the **More** menu on the
 Inventory screen) and all do the same thing under the hood — they build up a filter you can
-refine, re-run and **[[save|Saved-Searches-and-Favourites]]**.
+refine, re-run and **[[save|Saved-Searches-and-Favourites]]**. Saved searches are reachable from
+both places: the **Visual search** panel and the quick-search box's bookmark button.
 
 ## Filtering alongside search
 

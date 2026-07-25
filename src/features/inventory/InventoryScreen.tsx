@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import {
   Button,
+  CloseButton,
   Drawer,
   Input,
   LiveRegion,
@@ -33,6 +34,7 @@ import {
   MoreIcon,
   PackageIcon,
   PrintIcon,
+  SavedSearchIcon,
   ScanIcon,
   SearchIcon,
   SelectIcon,
@@ -65,6 +67,8 @@ import { useFeature } from '@/features/modules/useFeature';
 import { useT } from '@/features/i18n';
 import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
 import { VisualBuilder } from '@/features/search/components/VisualBuilder';
+import { SavedSearchMenu } from '@/features/search/components/SavedSearchMenu';
+import { planSavedSearchRecall } from '@/features/search/saved-searches';
 import { astError, useAstCount, useAstSearch } from '@/features/search/queries';
 import {
   useApplicableStatuses,
@@ -192,6 +196,11 @@ function InventoryWorkspace() {
   const [searchInput, setSearchInput] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
+  // Saved searches, surfaced on the quick-search box itself rather than only two levels down
+  // inside the Visual search panel (issue #136). The strip below the header holds the same
+  // save/recall/forget controls the power box has, revealed by the bookmark toggle in the box.
+  const [savedSearchesOpen, setSavedSearchesOpen] = useState(false);
+  const savedSearchesId = useId();
   const [includeInactive, setIncludeInactive] = useState(false);
   // The active §3/§4 "attention" status filters (low stock / expiring / overdue / maintenance
   // due). Additive to the location scope + search; OR-combined server-side. Session-local.
@@ -235,7 +244,7 @@ function InventoryWorkspace() {
   const [actionAnnouncement, setActionAnnouncement] = useState('');
   const cloneItem = useCloneItem();
 
-  const { ast, conditionCount } = useSearchBuilder();
+  const { ast, conditionCount, dispatch: builderDispatch } = useSearchBuilder();
   // The Visual Builder supersedes the quick search/location filters when it is open
   // and holds at least one valid condition (spec §5.1).
   const astActive = builderOpen && conditionCount > 0 && astError(ast) === null;
@@ -257,6 +266,33 @@ function InventoryWorkspace() {
     const t = setTimeout(() => setSearch(searchInput.trim()), 250);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // Recall a saved search from the quick-search box (issue #136). A saved query made only of
+  // bare words means exactly what it would mean typed here, so it simply fills this box; one
+  // that carries syntax the quick box can't express (`cap:voltage>3.3`, an OR group, a negation)
+  // loads into the Visual Builder and reveals that panel. Either way the *other* surface stands
+  // aside, so exactly one query drives the results — the same supersede rule the panel already
+  // follows. A query that no longer parses changes nothing and says so.
+  const recallSavedSearch = useCallback(
+    (query: string) => {
+      const plan = planSavedSearchRecall(query);
+      if (plan.kind === 'error') {
+        setActionAnnouncement(t('inventory.savedSearches.failed', { vars: { reason: plan.error } }));
+        return;
+      }
+      if (plan.kind === 'text') {
+        setBuilderOpen(false);
+        setSearchInput(plan.text);
+        setActionAnnouncement(t('inventory.savedSearches.recalled'));
+        return;
+      }
+      setSearchInput('');
+      builderDispatch({ type: 'load', ast: plan.ast });
+      setBuilderOpen(true);
+      setActionAnnouncement(t('inventory.savedSearches.recalledBuilder'));
+    },
+    [builderDispatch, t],
+  );
 
   // Consume a one-shot intent handed over from the dashboard (command palette "jump to
   // item", or the hero's Add/Scan quick actions): seed the search or open the relevant
@@ -658,24 +694,45 @@ function InventoryWorkspace() {
                   }
                 }}
                 placeholder="Search items…"
-                className={`pl-9 ${searchInput ? 'pr-9' : ''}`}
+                className={`pl-9 ${searchInput && !astActive ? 'pr-16' : 'pr-9'}`}
                 aria-label="Search items"
                 disabled={astActive}
               />
-              {searchInput && !astActive ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchInput('');
-                    searchRef.current?.focus();
-                  }}
-                  aria-label="Clear search"
-                  data-testid="inventory-search-clear"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-4"
-                >
-                  <CloseIcon />
-                </button>
-              ) : null}
+              {/* In-box adornments: the usual clear "✕" (only with text to clear) and the saved-
+                  searches toggle, which is always offered — it *is* the discovery point for the
+                  feature (issue #136), so hiding it until there's something saved would defeat it. */}
+              <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                {searchInput && !astActive ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchInput('');
+                      searchRef.current?.focus();
+                    }}
+                    aria-label="Clear search"
+                    data-testid="inventory-search-clear"
+                    className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-4"
+                  >
+                    <CloseIcon />
+                  </button>
+                ) : null}
+                <Tooltip content={t('inventory.savedSearches.tooltip')} triggerTabIndex={-1}>
+                  <button
+                    type="button"
+                    onClick={() => setSavedSearchesOpen((open) => !open)}
+                    aria-label={t('inventory.savedSearches.toggle')}
+                    aria-expanded={savedSearchesOpen}
+                    aria-controls={savedSearchesId}
+                    data-testid="inventory-saved-searches-toggle"
+                    className={cn(
+                      'rounded p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-4',
+                      savedSearchesOpen ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <SavedSearchIcon aria-hidden />
+                  </button>
+                </Tooltip>
+              </div>
             </div>
 
             {/* Add item is a split button: the primary half opens the create dialog, and the
@@ -880,6 +937,45 @@ function InventoryWorkspace() {
           </>
         }
       />
+
+      {/* Saved-searches reveal (issue #136) — the same collapsing-grid disclosure the Visual
+          search panel below uses, so the two behave identically. It hosts the *same*
+          SavedSearchMenu the power box does, so saving, recalling and forgetting a search work
+          identically whichever box you came from — there is one saved-search UI, not two.
+          Recall routes through `recallSavedSearch`, which decides between this box and the
+          builder. */}
+      <div
+        className="grid transition-[grid-template-rows,opacity] duration-1000 ease-emphasized"
+        style={{
+          gridTemplateRows: savedSearchesOpen ? '1fr' : '0fr',
+          opacity: savedSearchesOpen ? 1 : 0,
+        }}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div
+            id={savedSearchesId}
+            className="pb-4"
+            inert={!savedSearchesOpen}
+            data-testid="inventory-saved-searches"
+          >
+            <Surface className="space-y-2 p-4">
+              <div className="flex items-center gap-2">
+                <span className="grid size-7 place-items-center rounded-lg bg-primary/15 text-primary [&_svg]:size-4">
+                  <SavedSearchIcon aria-hidden />
+                </span>
+                <h2 className="text-sm font-semibold">{t('inventory.savedSearches.toggle')}</h2>
+                <CloseButton
+                  className="ml-auto"
+                  onClick={() => setSavedSearchesOpen(false)}
+                  label={t('inventory.savedSearches.close')}
+                />
+              </div>
+              <SavedSearchMenu currentQuery={searchInput} onRecall={recallSavedSearch} />
+              <p className="text-[11px] text-muted-foreground">{t('inventory.savedSearches.hint')}</p>
+            </Surface>
+          </div>
+        </div>
+      </div>
 
       {/* Visual-search reveal: the panel stays mounted and animates open/closed both ways
           by transitioning a collapsing CSS grid row (0fr ↔ 1fr) plus opacity over 1s with

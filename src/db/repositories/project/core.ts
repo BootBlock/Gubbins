@@ -12,16 +12,19 @@ import type { SqlValue } from '../../rpc/driver';
 import { BaseRepository } from '../base';
 import { planCheckInAllForTarget } from '../checkout-plan';
 import type { CostingMode } from '../constants';
+import { escapeLike } from '../like';
 import { rowToBomLine, rowToProject } from '../mappers';
 import { tombstoneStatement } from '../tombstone';
 import type {
   CreateProjectInput,
   Page,
-  PageParams,
   Project,
   ProjectBomLine,
   ProjectBomLineRow,
+  ProjectFilter,
+  ProjectListParams,
   ProjectRow,
+  ProjectSort,
   ProjectWithCount,
   UpdateProjectInput,
 } from '../types';
@@ -29,6 +32,46 @@ import type {
 interface ProjectCountRow extends ProjectRow {
   readonly line_count: number;
 }
+
+/**
+ * The `WHERE` clause (and its bound parameters) for a {@link ProjectFilter} — written once so
+ * {@link ProjectCoreRepository.list} and {@link ProjectCoreRepository.count} can never disagree
+ * about what matches, which would size the page strip for a different result set than the rows.
+ *
+ * `LIKE` is case-insensitive for ASCII in SQLite, which is what a name search wants, and the term
+ * is escaped so a typed `%` or `_` matches itself rather than acting as a wildcard. The status is
+ * bound as a parameter like any other value: an unrecognised one simply matches nothing.
+ */
+function projectFilter(filter: ProjectFilter): { where: string; params: SqlValue[] } {
+  const clauses: string[] = [];
+  const params: SqlValue[] = [];
+  const term = filter.search?.trim() ?? '';
+  if (term.length > 0) {
+    clauses.push(`p.name LIKE ? ESCAPE '\\'`);
+    params.push(`%${escapeLike(term)}%`);
+  }
+  if (filter.status) {
+    clauses.push('p.status = ?');
+    params.push(filter.status);
+  }
+  return { where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '', params };
+}
+
+/**
+ * The `ORDER BY` for each {@link ProjectSort}, allow-listed rather than composed from the
+ * caller's string — the ordering is the one part of the query a filter can't parameterise, so it
+ * is chosen from a fixed table and never interpolated from input.
+ *
+ * Every entry ends in `p.id ASC`, which makes the ordering **total**: two projects sharing a
+ * creation instant and a name would otherwise sort in an unspecified order, and OFFSET paging
+ * over a non-total order can repeat one row on page 2 while dropping another entirely (#149).
+ */
+const PROJECT_ORDER_BY: Record<ProjectSort, string> = {
+  NEWEST: 'p.created_at DESC, p.name COLLATE NOCASE ASC, p.id ASC',
+  OLDEST: 'p.created_at ASC, p.name COLLATE NOCASE ASC, p.id ASC',
+  NAME_ASC: 'p.name COLLATE NOCASE ASC, p.created_at DESC, p.id ASC',
+  NAME_DESC: 'p.name COLLATE NOCASE DESC, p.created_at DESC, p.id ASC',
+};
 
 /**
  * Coerce a budget input to a stored value: a non-negative finite number in integer micro-units
@@ -60,22 +103,26 @@ export class ProjectCoreRepository extends BaseRepository {
   }
 
   /**
-   * Paginated list of projects with their BOM-line counts, newest first.
+   * Paginated list of projects with their BOM-line counts, newest first by default.
    *
-   * The `id` tiebreak makes the ordering **total**: two projects sharing a creation instant and a
-   * name would otherwise sort in an unspecified order, and OFFSET paging over a non-total order
-   * can repeat one row on page 2 while dropping another entirely (issue #149).
+   * `search`, `status` and `sort` are all resolved **here** rather than by the caller filtering
+   * a page it has already read (issue #137): a filter applied to one page of a paged list can
+   * only ever narrow that page, so the project you were looking for stays exactly as unreachable
+   * as it was. Pair it with {@link count} — given the same filter — to size the pages.
    */
-  async list(params: PageParams = {}): Promise<Page<ProjectWithCount>> {
+  async list(params: ProjectListParams = {}): Promise<Page<ProjectWithCount>> {
     const { limit, offset } = this.resolvePage(params);
+    const { where, params: filterParams } = projectFilter(params);
+    const orderBy = PROJECT_ORDER_BY[params.sort ?? 'NEWEST'] ?? PROJECT_ORDER_BY.NEWEST;
     const rows = await this.driver.query<ProjectCountRow>(
       `SELECT p.*, COUNT(l.id) AS line_count
        FROM projects p
        LEFT JOIN project_bom_lines l ON l.project_id = p.id
+       ${where}
        GROUP BY p.id
-       ORDER BY p.created_at DESC, p.name COLLATE NOCASE ASC, p.id ASC
+       ORDER BY ${orderBy}
        LIMIT ? OFFSET ?;`,
-      [limit, offset],
+      [...filterParams, limit, offset],
     );
     return this.toPage(
       rows.map((r) => ({ ...rowToProject(r), lineCount: Number(r.line_count) })),
@@ -85,12 +132,17 @@ export class ProjectCoreRepository extends BaseRepository {
   }
 
   /**
-   * How many projects exist in total — the denominator behind the Projects master list's
-   * pagination (issue #149). Projects accumulate as builds come and go, so the list pages
+   * How many projects match the same filter {@link list} would apply — the denominator behind the
+   * Projects master list's pagination (issue #149), and behind "how many of these did I just
+   * narrow to" (issue #137). Projects accumulate as builds come and go, so the list pages
    * server-side rather than showing a capped read as if it were every project.
    */
-  async count(): Promise<number> {
-    const row = await this.driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM projects;');
+  async count(filter: ProjectFilter = {}): Promise<number> {
+    const { where, params } = projectFilter(filter);
+    const row = await this.driver.queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM projects p ${where};`,
+      params,
+    );
     return Number(row?.n ?? 0);
   }
 

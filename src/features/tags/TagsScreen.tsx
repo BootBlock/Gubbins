@@ -4,18 +4,23 @@ import {
   Button,
   FormField,
   Input,
+  InputClearButton,
+  LiveRegion,
   Modal,
   PageContainer,
   PageHeader,
   Pagination,
+  Select,
   Surface,
   pageCount,
+  useSearchEscapeToClear,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
-import { AddIcon, DeleteIcon, TagIcon } from '@/components/icons';
-import { TagNameInUseError, type TagWithCount } from '@/db/repositories';
+import { AddIcon, DeleteIcon, SearchIcon, TagIcon } from '@/components/icons';
+import { TagNameInUseError, type TagSort, type TagWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
+import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useErrorMessage } from '@/features/errors';
@@ -35,6 +40,10 @@ import {
  *
  * The list pages **server-side** (the dictionary can outgrow one read, and every tag has to be
  * reachable from the screen that manages them), following the app-wide opt-in `Pagination` seam.
+ * It is also **filterable and sortable** (issue #137): a hundred tags is a lot to page through to
+ * fix one typo, and the tags worth deleting are exactly the ones on nothing — which name order
+ * scatters through the whole dictionary. Both are resolved by the database rather than applied to
+ * the page in hand, so a filter reaches tags that sort past the page on screen.
  */
 export function TagsScreen() {
   const t = useT();
@@ -48,8 +57,19 @@ export function TagsScreen() {
   // asking for more than it allows would silently clamp anyway.
   const pageSize = paginated ? defaultPageSize : PAGE_SIZE_BOUNDS.max;
 
-  const dictionary = useTagDictionary(page, pageSize);
-  const total = useTagCount();
+  const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searching = search.trim().length > 0;
+  // Escape clears the box before it means anything else, via the shared searchable-surface seam.
+  useSearchEscapeToClear(searching, searchRef, () => setSearch(''));
+  const [sort, setSort] = useState<TagSort>('NAME_ASC');
+  const query = searching ? search.trim() : '';
+  // Keyed on the filter alone, not the sort: re-ordering the same set doesn't change how many
+  // tags there are, so changing the sort must not refetch the count behind the page strip.
+  const browse = useMemo(() => ({ search: query || undefined, sort }), [query, sort]);
+
+  const dictionary = useTagDictionary(page, pageSize, browse);
+  const total = useTagCount(query);
   const { create } = useTagManagement();
 
   const [newName, setNewName] = useState('');
@@ -65,10 +85,17 @@ export function TagsScreen() {
   // Unpaginated the read is capped at one page; how many tags that leaves unreachable.
   const hiddenTags = paginated ? 0 : Math.max(0, totalTags - tags.length);
 
-  // Deleting or merging the last tag on the final page leaves the page out of range.
+  // Narrowing the filter (or shrinking the page size) can strand the user past the last page.
+  // Declared before the clamp below so the clamp sees this reset queued and can only narrow it.
   useEffect(() => {
-    if (paginated && pages > 0 && page > pages) setPage(pages);
-  }, [paginated, pages, page]);
+    setPage(1);
+  }, [query, pageSize]);
+  // Deleting or merging the last tag on the final page leaves the page out of range. Updated
+  // functionally so it clamps whatever page is *pending* — the reset above can run in the same
+  // commit, and an absolute `setPage(pages)` here would overwrite the 1 it just queued.
+  useEffect(() => {
+    if (paginated && pages > 0) setPage((current) => Math.min(current, pages));
+  }, [paginated, pages]);
 
   const addTag = () => {
     const name = newName.trim();
@@ -77,13 +104,27 @@ export function TagsScreen() {
     create.mutate(name, {
       onSuccess: () => {
         setNewName('');
-        // A new tag sorts by name, so it may land on any page — go back to the first so the
-        // list the user is looking at is the one their tag joined.
+        // A new tag sorts wherever the current order puts it, so it may land on any page — go
+        // back to the first so the list the user is looking at is the one their tag joined.
         setPage(1);
       },
       onError: (e) => setAddError(describeError(e, t('tags.add.error'))),
     });
   };
+
+  const sortOptions = useMemo(
+    () => [
+      { value: 'NAME_ASC', label: t('tags.sort.nameAsc') },
+      { value: 'NAME_DESC', label: t('tags.sort.nameDesc') },
+      { value: 'USAGE_DESC', label: t('tags.sort.mostUsed') },
+      { value: 'USAGE_ASC', label: t('tags.sort.leastUsed') },
+    ],
+    [t],
+  );
+
+  // Nothing to filter and nothing filtered: an empty dictionary gets the empty state on its own,
+  // rather than a filter box offering to narrow a list that has no rows.
+  const showControls = searching || tags.length > 0;
 
   return (
     <PageContainer>
@@ -132,6 +173,60 @@ export function TagsScreen() {
             {t('tags.list.heading')}
           </h2>
 
+          {/* The filter and the ordering sit outside the loading/error/empty branches below: a
+              filter you cannot see is a filter you cannot undo, and the moment you most need to
+              clear it is the moment it has emptied the list. */}
+          {showControls ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* `pr-9` reserves the clear button's lane so the two never overlap. */}
+              <div className="relative max-w-sm flex-1">
+                <SearchIcon
+                  aria-hidden
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
+                  ref={searchRef}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('tags.search.placeholder')}
+                  aria-label={t('tags.search.label')}
+                  className={cn('pl-9', searching && 'pr-9')}
+                  data-testid="tags-search"
+                />
+                {searching ? (
+                  <InputClearButton
+                    label={t('tags.search.clear')}
+                    onClick={() => {
+                      setSearch('');
+                      searchRef.current?.focus();
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2"
+                  />
+                ) : null}
+              </div>
+              <Select
+                value={sort}
+                onChange={(value) => setSort(value as TagSort)}
+                options={sortOptions}
+                aria-label={t('tags.sort.label')}
+                className="w-56"
+                data-testid="tags-sort"
+              />
+            </div>
+          ) : null}
+
+          {/*
+           * WCAG 4.1.3 — always-mounted polite status region. Filtering rewrites the list in
+           * place, so without this the only feedback that typing did anything is visual.
+           */}
+          <LiveRegion visuallyHidden data-testid="tags-count-live">
+            {dictionary.isLoading || dictionary.isError || !searching
+              ? // The visible error carries its own role="alert", and an unfiltered list has
+                // nothing to announce that the page itself doesn't already say.
+                ''
+              : t('tags.list.live.matches', { vars: { count: totalTags, n: totalTags } })}
+          </LiveRegion>
+
           {dictionary.isLoading ? (
             <p className="text-sm text-muted-foreground">{t('tags.list.loading')}</p>
           ) : dictionary.isError ? (
@@ -146,9 +241,13 @@ export function TagsScreen() {
               </Button>
             </Surface>
           ) : tags.length === 0 ? (
+            // "No tags yet" would be wrong when a filter is what emptied the list, and it would
+            // send the user to add a tag they may well already have.
             <Surface className="flex flex-col items-center gap-2 p-8 text-center">
               <TagIcon aria-hidden className="size-8 text-muted-foreground/60" />
-              <p className="text-sm text-muted-foreground">{t('tags.list.empty')}</p>
+              <p className="text-sm text-muted-foreground" data-testid="tags-empty">
+                {searching ? t('tags.search.empty', { vars: { query } }) : t('tags.list.empty')}
+              </p>
             </Surface>
           ) : (
             <>

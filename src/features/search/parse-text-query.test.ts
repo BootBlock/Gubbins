@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseASTtoSQL } from '@/db/search/parseASTtoSQL';
 import type { FilterCondition, SearchAST } from '@/db/search/ast';
-import { parseTextQuery } from './parse-text-query';
+import { isPlainTextQuery, parseTextQuery } from './parse-text-query';
 
 /**
  * Phase 47 — the §3 "hybrid text-based syntax" (e.g. `cap:voltage>3.3`). The parser
@@ -761,4 +761,55 @@ describe('parseTextQuery — every output round-trips through parseASTtoSQL', ()
       }
     });
   }
+});
+
+/**
+ * `isPlainTextQuery` — "does this query mean the same thing typed into the quick-search
+ * box?" (issue #136). It decides where a recalled saved search lands, so the cases that
+ * matter are the ones the quick box *can't* express.
+ */
+describe('isPlainTextQuery', () => {
+  const plain = ['esp32', 'blue widget', 'M3 hex bolt 10mm', "it's fine", 'ABC-123'];
+  for (const q of plain) {
+    it(`treats "${q}" as plain text`, () => {
+      expect(isPlainTextQuery(q)).toBe(true);
+    });
+  }
+
+  const structured = [
+    'mfr:acme',
+    'qty>10',
+    'mpn=ABC-123',
+    'cap:voltage>3.3',
+    'has:mpn',
+    'blue OR widget',
+    'blue AND widget',
+    'NOT mfr:acme',
+    '-mfr:acme',
+    '(blue widget)',
+    'blue|widget',
+    '"blue widget"',
+    'expiry<2026-03-01',
+  ];
+  for (const q of structured) {
+    it(`treats "${q}" as a builder query`, () => {
+      expect(isPlainTextQuery(q)).toBe(false);
+    });
+  }
+
+  it('treats a blank query as neither — there is nothing to put in the box', () => {
+    expect(isPlainTextQuery('')).toBe(false);
+    expect(isPlainTextQuery('   ')).toBe(false);
+  });
+
+  it('agrees with the parser: every plain query parses to name CONTAINS leaves only', () => {
+    for (const q of plain) {
+      const result = parseTextQuery(q);
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      for (const node of result.ast.conditions) {
+        expect(node).toMatchObject({ field: 'name', operator: 'CONTAINS' });
+      }
+    }
+  });
 });
