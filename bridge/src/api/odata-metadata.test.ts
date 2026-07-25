@@ -5,7 +5,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ITEM_SORT_FIELDS } from '@/db/repositories/item/sql.ts';
-import { ITEM_PROPERTIES, odataMetadataXml } from './odata-metadata.ts';
+import {
+  ENTITY_SET_CAPABILITIES,
+  ITEM_PROPERTIES,
+  odataMetadataXml,
+  type SetCapabilities,
+} from './odata-metadata.ts';
+import { ODATA_ENTITY_SETS, SUPPORTED_OPTIONS } from './odata-service.ts';
 import { ITEM_FIELD_REGISTRY, ITEM_SUMMARY_DEFAULT_FIELDS } from './item-view.ts';
 import { FILTERABLE_PROPERTIES } from './odata-filter.ts';
 
@@ -131,4 +137,32 @@ describe('odataMetadataXml', () => {
     for (const name of registryNames) expect(metadataNames).toContain(name);
     for (const name of metadataNames) expect(registryNames).toContain(name);
   });
+});
+
+describe('the CSDL and the router agree on what each entity set supports', () => {
+  // The whole point of issue #361 was a document that advertised more than the service delivered.
+  // The metadata states capabilities in vocabulary terms and the router enforces them as an
+  // option allow-list; nothing but this test stops the two tables drifting back apart, and a
+  // client that trusts the CSDL over the behaviour would then fail exactly as it used to.
+  const CLAIM: readonly [keyof SetCapabilities, string][] = [
+    ['filterable', '$filter'],
+    ['sortable', '$orderby'],
+    ['countable', '$count'],
+    ['searchable', '$search'],
+  ];
+
+  for (const set of ODATA_ENTITY_SETS) {
+    it(`${set}: every declared capability is an option the router accepts, and vice versa`, () => {
+      const caps = ENTITY_SET_CAPABILITIES[set]!;
+      const { collection, count } = SUPPORTED_OPTIONS[set];
+      for (const [capability, option] of CLAIM) {
+        expect({ capability, declared: caps[capability] !== false }).toEqual({
+          capability,
+          declared: collection.includes(option),
+        });
+      }
+      // `Countable` also governs whether `/$count` is an addressable resource at all.
+      expect(caps.countable).toBe(count !== null);
+    });
+  }
 });

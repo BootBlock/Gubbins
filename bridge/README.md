@@ -627,17 +627,26 @@ A collection response is the protocol's envelope, and every response — includi
 ```
 
 A single entity is the same object with a context URL ending in `/$entity`. `@odata.count` appears
-only with `$count=true`; `@odata.nextLink` only when more rows remain. Because a page is capped at
-100 rows, a `$top` larger than that becomes **server-driven paging**: the link's `$top` is reduced
-by the rows already delivered, so following the chain returns exactly the number you asked for.
-Errors use the same `{ "error": { "code", "message" } }` body as the rest of the API — which is
-also OData's error format.
+only with `$count=true`. Because a page is capped at 100 rows, a `$top` larger than that becomes
+**server-driven paging**: the link's `$top` is reduced by the rows already delivered, so following
+the chain returns exactly the number you asked for. Errors use the same
+`{ "error": { "code", "message" } }` body as the rest of the API — which is also OData's error
+format.
+
+> **`@odata.nextLink` means "there may be more", not "there is more."** It is emitted whenever a
+> *full* page came back, so on an exact-boundary last page (a result count that is a multiple of
+> the page size) the link is present and leads to an empty collection. Follow it until a page
+> carries no link — don't assume every linked page is non-empty. This is the same honest
+> `hasMore` caveat the [REST envelope](#conventions) carries, for the same reason: knowing for
+> certain would cost a count query on every page.
 
 **It implements what it says it implements.** The service supports the query subset described
 [above](#odata-style-query-options), no more, and the CSDL declares exactly that in
 `Org.OData.Capabilities.V1` terms — which properties are filterable and sortable, and whether each
-set is countable or searchable. Only `items` is backed by the search index; `locations` and
-`categories` are plain paged reads (`$select`/`$expand`/`$top`/`$skip`). A client that reads those
+set is countable or searchable. Only `items` is backed by the search index, so only it accepts
+`$filter`/`$orderby`/`$search`/`$count`; `locations` is a paged read with projection
+(`$select`/`$expand`/`$top`/`$skip`) and `categories` a paged read alone (`$top`/`$skip`). A client
+that reads those
 annotations pushes down only what works and evaluates the rest itself, instead of failing
 mid-refresh. Asking anyway is an explicit `400` naming what *is* supported, rather than the option
 being silently ignored (Protocol §11.2.5), and `locations/$count` is a `404` because that set is

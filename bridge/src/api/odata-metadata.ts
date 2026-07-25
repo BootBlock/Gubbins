@@ -217,7 +217,7 @@ const LOCATION_DEFAULTS: ReadonlySet<string> = new Set(LOCATION_DEFAULT_FIELDS);
  * What one entity set can actually be asked to do. `filterable`/`sortable` list the properties
  * the service will accept for that option; `false` means the option is not supported at all.
  */
-interface SetCapabilities {
+export interface SetCapabilities {
   readonly filterable: readonly string[] | false;
   readonly sortable: readonly string[] | false;
   readonly countable: boolean;
@@ -230,7 +230,7 @@ interface SetCapabilities {
  * countable and searchable; the other two are plain paged reads that support `$top`/`$skip` and
  * nothing more.
  */
-const ENTITY_SET_CAPABILITIES: Readonly<Record<string, SetCapabilities>> = {
+export const ENTITY_SET_CAPABILITIES: Readonly<Record<string, SetCapabilities>> = {
   items: {
     filterable: FILTERABLE_PROPERTIES,
     sortable: ITEM_SORT_FIELDS,

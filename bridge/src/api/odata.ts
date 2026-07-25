@@ -1,10 +1,10 @@
 /**
  * A thin, dependency-free **OData-style query-option layer** for the item read endpoints.
  *
- * This is a *convenience subset* of the OData v4 URL conventions — **not** a compliant OData
- * service (no `$batch`, no `$apply`, no navigation-property semantics; a CSDL `$metadata`
- * document *is* served, by `odata-metadata.ts`). It exists purely so callers already fluent in
- * OData get familiar spellings that map 1:1 onto machinery the bridge already has:
+ * This is a *convenience subset* of the OData v4 URL **conventions**, not the protocol: the
+ * endpoints it serves keep the plain `{ data, pagination }` envelope, so `$top` here is just a
+ * friendlier spelling of `limit`. It exists so callers already fluent in OData get familiar
+ * spellings that map 1:1 onto machinery the bridge already has:
  *
  *   - `$select`  → the `fields` sparse fieldset (see `field-select.ts`)
  *   - `$expand`  → the `include` field expansion
@@ -16,6 +16,10 @@
  * Each `$`-prefixed option is accepted as an *alias* of the plain REST name; when both are
  * present the OData spelling wins. Anything outside the supported subset is a `400` with a
  * message naming what *is* supported, so the boundary is explicit rather than silently wrong.
+ *
+ * An OData **client** wants the protocol, not the spellings — a service document, the
+ * `{ "@odata.context", "value" }` envelope and the `OData-Version` header. That lives in
+ * `odata-service.ts`, mounted at `/api/v1/odata`, and reuses everything below.
  */
 import { ITEM_SORT_FIELDS, type ItemSort, type ItemSortField } from '@/db/repositories/item/sql.ts';
 import { MAX_ORDERBY_TERMS } from './limits.ts';

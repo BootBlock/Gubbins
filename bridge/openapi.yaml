@@ -293,7 +293,7 @@ paths:
       tags:
       - "odata"
       summary: "The items entity set, in the OData JSON envelope"
-      description: "The same rows as GET /api/v1/items — same paging, same $filter/$orderby/$search/$select/$expand — wrapped as { \"@odata.context\", \"@odata.count\"?, \"value\", \"@odata.nextLink\"? }. $count=true reports the grand total as @odata.count. A page capped by the server carries @odata.nextLink; when $top was given, the link’s $top is reduced by the rows already delivered, so following the chain returns exactly that many rows. A system query option this set does not support is a 400."
+      description: "The same rows as GET /api/v1/items — same paging, same $filter/$orderby/$search/$select/$expand — wrapped as { \"@odata.context\", \"@odata.count\"?, \"value\", \"@odata.nextLink\"? }. $count=true reports the grand total as @odata.count. A page capped by the server carries @odata.nextLink; when $top was given, the link’s $top is reduced by the rows already delivered, so following the chain returns exactly that many rows. This is the only entity set that accepts $filter, $orderby, $search or $count; a system query option a set does not support is a 400, not silently ignored."
       parameters:
       -
         name: "$select"
@@ -387,7 +387,7 @@ paths:
                       $ref: "#/components/schemas/ItemSummary"
                   "@odata.nextLink":
                     type: "string"
-                    description: "The absolute URL of the next page — absent on the last one."
+                    description: "The absolute URL of the next page. Emitted whenever a full page came back, so on an exact-boundary last page it is present and leads to an empty collection — follow it until a page carries no link, rather than assuming every linked page has rows."
         "400":
           description: "Bad request — missing or invalid parameter."
           content:
@@ -664,7 +664,7 @@ paths:
                       $ref: "#/components/schemas/Location"
                   "@odata.nextLink":
                     type: "string"
-                    description: "The absolute URL of the next page — absent on the last one."
+                    description: "The absolute URL of the next page. Emitted whenever a full page came back, so on an exact-boundary last page it is present and leads to an empty collection — follow it until a page carries no link, rather than assuming every linked page has rows."
         "400":
           description: "Bad request — missing or invalid parameter."
           content:
@@ -848,7 +848,7 @@ paths:
                       $ref: "#/components/schemas/CategorySummary"
                   "@odata.nextLink":
                     type: "string"
-                    description: "The absolute URL of the next page — absent on the last one."
+                    description: "The absolute URL of the next page. Emitted whenever a full page came back, so on an exact-boundary last page it is present and leads to an empty collection — follow it until a page carries no link, rather than assuming every linked page has rows."
         "400":
           description: "Bad request — missing or invalid parameter."
           content:

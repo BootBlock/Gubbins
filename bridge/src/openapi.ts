@@ -438,7 +438,11 @@ function okODataCollection(itemRef: string): JsonValue {
             value: { type: 'array', items: { $ref: itemRef } },
             '@odata.nextLink': {
               type: 'string',
-              description: 'The absolute URL of the next page — absent on the last one.',
+              description:
+                'The absolute URL of the next page. Emitted whenever a full page came back, so ' +
+                'on an exact-boundary last page it is present and leads to an empty collection — ' +
+                'follow it until a page carries no link, rather than assuming every linked page ' +
+                'has rows.',
             },
           },
         },
@@ -680,7 +684,8 @@ export const openapiDocument: JsonValue = {
           '"@odata.nextLink"? }. $count=true reports the grand total as @odata.count. A page ' +
           'capped by the server carries @odata.nextLink; when $top was given, the link’s $top is ' +
           'reduced by the rows already delivered, so following the chain returns exactly that ' +
-          'many rows. A system query option this set does not support is a 400.',
+          'many rows. This is the only entity set that accepts $filter, $orderby, $search or ' +
+          '$count; a system query option a set does not support is a 400, not silently ignored.',
         parameters: [
           selectParam,
           expandParam,

@@ -55,7 +55,9 @@ export const ODATA_VERSION = '4.0';
 /** The entity sets the service document advertises — the names the CSDL container declares. */
 export const ODATA_ENTITY_SETS = ['items', 'locations', 'categories'] as const;
 
-type EntitySetName = (typeof ODATA_ENTITY_SETS)[number];
+export type ODataEntitySet = (typeof ODATA_ENTITY_SETS)[number];
+
+type EntitySetName = ODataEntitySet;
 
 /**
  * The system query options each entity set genuinely supports, per addressed resource kind.
@@ -66,7 +68,7 @@ type EntitySetName = (typeof ODATA_ENTITY_SETS)[number];
  * whose `ENTITY_SET_CAPABILITIES` says the same thing in vocabulary terms. A client that trusts
  * the metadata and a client that just tries it get the same answer.
  */
-const SUPPORTED_OPTIONS: Readonly<
+export const SUPPORTED_OPTIONS: Readonly<
   Record<
     EntitySetName,
     {
@@ -337,7 +339,9 @@ function parseResourcePath(segments: readonly string[]): ResourceRef | null {
   const match = /^([A-Za-z][A-Za-z0-9_]*)(?:\((.*)\))?$/.exec(decodeSegment(segments[0]!));
   if (match === null) return null;
   const [, name, rawKey] = match as unknown as [string, string, string | undefined];
-  if (!isEntitySet(name)) return null;
+  // The set is resolved through the shared {@link entitySetOfSegment}, so the reading of the
+  // path that decides *permissions* and the one that decides *what is served* are the same one.
+  if (entitySetOfSegment(segments[0]) !== name) return null;
 
   const key = rawKey === undefined ? null : parseKey(rawKey);
   if (rawKey !== undefined && key === null) return null; // `items()` — a key was promised, none given
@@ -348,6 +352,24 @@ function parseResourcePath(segments: readonly string[]): ResourceRef | null {
     return { set: name, key: null, count: true };
   }
   return { set: name, key, count: false };
+}
+
+/**
+ * The entity set a path segment below the service root addresses (`items`, `items('abc')`,
+ * `items/$count` → `items`), or `null` when it addresses none.
+ *
+ * **Exported because `identity.ts` must decide permissions from the very same reading of the
+ * path that the router serves from.** The two used to read it differently — this decodes the
+ * segment, and the permission map matched `url.pathname` raw, which WHATWG `URL` leaves
+ * percent-encoded — so `/api/v1/odata/%69tems` resolved to `items` for the router but to nothing
+ * for the permission map, and a caller holding only `bridge:read` was served the whole item
+ * collection. A segment the router resolves to an entity set must never be one the permission
+ * map shrugs at, so there is now exactly one function that decides.
+ */
+export function entitySetOfSegment(segment: string | undefined): ODataEntitySet | null {
+  if (segment === undefined) return null;
+  const name = decodeSegment(segment).split('(')[0]!;
+  return isEntitySet(name) ? name : null;
 }
 
 function isEntitySet(name: string): name is EntitySetName {
