@@ -105,6 +105,7 @@
 - [[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]
 
 **Settings & customisation**
+- [[Finding a setting|Finding-a-Setting]]
 - [[Appearance & theming|Appearance-and-Theming]]
 - [[Branding|Branding]]
 - [[Dashboard & widgets|Dashboard-and-Widgets]]

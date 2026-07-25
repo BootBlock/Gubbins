@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Button, Input, LiveRegion, Surface } from '@/components/foundry';
-import { FOCUSABLE_SELECTOR, nextTrapIndex } from '@/components/foundry/focus-trap';
+import { nextTrapIndex, trapFocusables } from '@/components/foundry/focus-trap';
 import { isTopModal, popModal, pushModal } from '@/components/foundry/modal-stack';
 import { CloseIcon, ExternalLinkIcon, LinkIcon, ScanIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -128,7 +128,7 @@ function BarcodeScanDialogInner({
       // `document.body`, after whatever held it unmounted — is the trap's recovery case, and the
       // wrap-around below must still pull it back in.
       if (active?.closest('[role="menu"]')) return;
-      const focusables = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+      const focusables = trapFocusables(container);
       const currentIndex = active ? focusables.indexOf(active) : -1;
       const next = nextTrapIndex(focusables.length, currentIndex, e.shiftKey);
       e.preventDefault();
