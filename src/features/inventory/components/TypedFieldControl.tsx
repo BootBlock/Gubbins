@@ -3,7 +3,9 @@ import { Checkbox, Input, Select, Spinner, Textarea, useRovingRadioGroup } from 
 import { CloseIcon, UploadIcon } from '@/components/icons';
 import { encodeFieldImage } from '@/features/images/compression';
 import { useErrorMessage } from '@/features/errors';
+import { useT } from '@/features/i18n';
 import { cn } from '@/lib/utils';
+import { isImageDataUrl } from '../custom-fields';
 import type { FieldType } from '@/db/repositories';
 
 /** ARIA validation wiring (aria-invalid/describedby) to spread onto the primary control. */
@@ -180,6 +182,7 @@ function ImageFieldControl({
   labelId?: string;
   controlProps: TypedFieldControlAria;
 }) {
+  const t = useT();
   const describeError = useErrorMessage();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -200,15 +203,31 @@ function ImageFieldControl({
     }
   };
 
+  // Only a genuine image `data:` URL is ever pointed at — the same shape `validateFieldValue`
+  // enforces on save (see {@link isImageDataUrl}). A value that isn't one can still reach this
+  // control (a field retyped from TEXT keeps its stored text, and rows arrive from sync peers
+  // and restored backups), and putting it in `src` would make the app fetch a string a peer
+  // chose. Anything else reads as "no image": the picker shows, the stale value is not loaded.
+  const preview = isImageDataUrl(value) ? value : null;
+
   return (
     <div className="space-y-field-gap-compact">
       {value ? (
         <div className="relative inline-block">
-          <img
-            src={value}
-            alt={ariaLabel ? `${ariaLabel} preview` : 'Selected image'}
-            className="max-h-32 rounded-lg border border-border object-contain"
-          />
+          {preview ? (
+            <img
+              src={preview}
+              alt={ariaLabel ? `${ariaLabel} preview` : 'Selected image'}
+              className="max-h-32 rounded-lg border border-border object-contain"
+            />
+          ) : (
+            // Say the stored value isn't an image rather than silently showing an empty
+            // picker — and keep the remove control reachable, since a value this control
+            // can't display is also one `validateFieldValue` will refuse to save.
+            <span className="block max-w-xs rounded-lg border border-dashed border-border py-2 pl-3 pr-9 text-xs text-muted-foreground">
+              {t('inventory.fields.image.notAnImage')}
+            </span>
+          )}
           <button
             type="button"
             aria-label="Remove image"

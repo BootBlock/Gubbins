@@ -68,6 +68,13 @@ Each custom field has a **type** that decides how you enter and how Gubbins show
 > Use **Image** for a cover you want to keep with the item everywhere; use **File link** to
 > point at a large file (a disc rip, a hi-res scan) that's better left where it already lives.
 
+> **⚠️ Heads-up**
+> Only a picture added through the **Choose image** button is shown. If you switch an existing
+> field over to **Image**, whatever was already saved against it — a web address, or plain
+> text — isn't a picture, so Gubbins tells you it can't be shown and offers to replace it
+> rather than trying to load it. On the item's card that field simply reads `—` until you
+> choose a picture.
+
 ### Inheriting a value from a location
 
 Instead of typing the same value onto every item in a drawer, you can set it **once on the

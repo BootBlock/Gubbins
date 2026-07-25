@@ -13,6 +13,7 @@
  */
 import type { Item } from '@/db/repositories';
 import type { Condition, FieldType } from '@/db/repositories/constants';
+import { isImageDataUrl } from './custom-fields';
 import { UNLIMITED_GLYPH } from './unlimited';
 
 /** The built-in (always-available) card fields — those derivable from the item row itself. */
@@ -330,7 +331,9 @@ function customFieldValue(type: FieldType, raw: string | null): CardFieldValue {
   if (raw === null || raw.trim() === '') return EMPTY;
   if (type === 'BOOLEAN') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'Yes' : 'No' };
   if (type === 'ON_OFF') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'On' : 'Off' };
-  // An IMAGE value is a `data:` URL — render it as a thumbnail, not its base64 text.
-  if (type === 'IMAGE') return raw.startsWith('data:') ? { kind: 'image', src: raw } : EMPTY;
+  // An IMAGE value is an image `data:` URL — render it as a thumbnail, not its base64 text.
+  // Only a value of exactly that shape becomes a `src` (see {@link isImageDataUrl}); anything
+  // else is em-dash, so a stored string can never become a URL the card fetches.
+  if (type === 'IMAGE') return isImageDataUrl(raw) ? { kind: 'image', src: raw } : EMPTY;
   return { kind: 'text', text: raw };
 }
