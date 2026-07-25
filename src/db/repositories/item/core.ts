@@ -108,10 +108,9 @@ export interface ItemListFilters extends PageParams {
 
 export class ItemCoreRepository extends BaseRepository {
   async getById(id: string): Promise<Item | undefined> {
-    const row = await this.driver.queryOne<ItemRow>(
-      `SELECT ${ITEM_READ_COLUMNS} FROM items WHERE id = ?;`,
-      [id],
-    );
+    const row = await this.driver.queryOne<ItemRow>(`SELECT ${ITEM_READ_COLUMNS} FROM items WHERE id = ?;`, [
+      id,
+    ]);
     return row ? rowToItem(row) : undefined;
   }
 

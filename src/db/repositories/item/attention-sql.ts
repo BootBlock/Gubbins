@@ -34,7 +34,7 @@
  *
  * This is the SSOT for the concept, in both polarities: {@link notAVariantParentSql} negates it
  * for the attention predicates, and `HAS_VARIANTS_SUBQUERY` (see `./sql.ts`) projects it onto
- * every item read as `Item.hasVariants`, so the pure {@link isLow} seam can apply the *same*
+ * every item read as `Item.hasVariants`, so the pure `isLow` seam can apply the *same*
  * exclusion the SQL does (issue #156).
  */
 export function variantParentSql(col: string): string {

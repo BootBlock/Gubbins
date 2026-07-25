@@ -160,6 +160,7 @@ describe('Item.hasVariants — derived on every item read', () => {
   let items: ItemRepository;
   let parentId: string;
   let childId: string;
+  let nestedId: string;
   let loneId: string;
 
   beforeEach(async () => {
@@ -169,9 +170,15 @@ describe('Item.hasVariants — derived on every item read', () => {
 
     const parent = await items.create({ name: 'Resistor kit', quantity: 0 });
     const child = await items.createVariant(parent.id, { name: 'Resistor kit 10k', quantity: 100 });
+    // A second child that is itself a parent (nesting is unbounded), so a read of the *variant
+    // list* has both answers in it — an assertion of all-false there would pass even if the
+    // read stopped projecting the column at all.
+    const nested = await items.createVariant(parent.id, { name: 'Resistor kit SMD', quantity: 5 });
+    await items.createVariant(nested.id, { name: 'Resistor kit SMD 0603', quantity: 20 });
     const lone = await items.create({ name: 'Solder', quantity: 3 });
     parentId = parent.id;
     childId = child.id;
+    nestedId = nested.id;
     loneId = lone.id;
   });
 
@@ -199,7 +206,12 @@ describe('Item.hasVariants — derived on every item read', () => {
 
   it('is set by listVariants and by an AST search', async () => {
     const variants = await items.listVariants(parentId);
-    expect(variants.rows.map((r) => r.hasVariants)).toEqual([false]);
+    expect(new Map(variants.rows.map((r) => [r.name, r.hasVariants]))).toEqual(
+      new Map([
+        ['Resistor kit 10k', false],
+        ['Resistor kit SMD', true], // itself a parent — so this read must project the column
+      ]),
+    );
 
     const found = await items.searchByAst({
       type: 'GROUP',
@@ -213,6 +225,9 @@ describe('Item.hasVariants — derived on every item read', () => {
 
   it('follows the parentage rather than a stored flag — detaching the last child clears it', async () => {
     await items.setParent(childId, null);
+    expect((await items.getById(parentId))?.hasVariants).toBe(true); // `nested` is still attached
+
+    await items.setParent(nestedId, null);
     expect((await items.getById(parentId))?.hasVariants).toBe(false);
 
     await items.setParent(childId, parentId);

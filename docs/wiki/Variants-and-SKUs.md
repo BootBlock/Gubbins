@@ -21,9 +21,10 @@ whole family together.
 
 > **ℹ️ Note**
 > The stock lives on the **variants**, not the parent — so a parent never shows as low or out of
-> stock, and never appears in the [[alerts|Alerts]], the
-> [[shopping list|Reorder-and-Shopping-List]] or your inventory's total value on its own account.
-> Set [[low-stock thresholds|Low-Stock-and-Gauges]] on the variants you actually reorder.
+> stock, never joins the [[shopping list|Reorder-and-Shopping-List]], and doesn't count towards
+> your inventory's total value on its own account. Set
+> [[low-stock thresholds|Low-Stock-and-Gauges]] on the variants you actually reorder. (Its other
+> [[alerts|Alerts]] — an expiry date, an overdue loan, servicing due — still apply as normal.)
 
 > **ℹ️ Note**
 > Variants are for the **same product**. That's different from:
