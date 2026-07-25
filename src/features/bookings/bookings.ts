@@ -13,6 +13,7 @@ import {
   type ConvertBookingInput,
   type CreateBookingInput,
 } from '@/db/repositories';
+import { agendaKeys } from '@/features/calendar/keys';
 import { invalidateItems } from '@/features/inventory/invalidate';
 
 export const bookingKeys = {
@@ -24,7 +25,7 @@ export const bookingKeys = {
 /** Invalidate every view a booking write reshapes (the list + the upcoming agenda). */
 function invalidateBookings(client: ReturnType<typeof useQueryClient>): void {
   void client.invalidateQueries({ queryKey: bookingKeys.all });
-  void client.invalidateQueries({ queryKey: ['agenda'] });
+  void client.invalidateQueries({ queryKey: agendaKeys.all });
 }
 
 // --- reads ---------------------------------------------------------------------

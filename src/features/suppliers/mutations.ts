@@ -15,7 +15,7 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getSupplierRepository, type CreateSupplierInput, type UpdateSupplierInput } from '@/db/repositories';
 import { invalidateItems } from '@/features/inventory/invalidate';
-import { onOrderKeys, purchaseOrderKeys, reorderKeys } from '@/features/purchasing/queries';
+import { invalidateOnOrder, purchaseOrderKeys, reorderKeys } from '@/features/purchasing/queries';
 import { supplierKeys } from './queries';
 
 /**
@@ -28,14 +28,15 @@ import { supplierKeys } from './queries';
  * - **The reorder plan** groups shortfall items by their preferred supplier, so a rename or a
  *   merge changes its grouping even though no stock moved.
  * - **On-order quantities** are derived per supplier part, so a merge that folds two suppliers
- *   together folds their outstanding lines together too.
+ *   together folds their outstanding lines together too — swept through `invalidateOnOrder`,
+ *   which carries the "Upcoming" agenda's reorder lane with it (issue #374).
  */
 function invalidateSupplierConsumers(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: supplierKeys.all });
   invalidateItems(client);
   void client.invalidateQueries({ queryKey: purchaseOrderKeys.all });
   void client.invalidateQueries({ queryKey: reorderKeys.all });
-  void client.invalidateQueries({ queryKey: onOrderKeys.all });
+  invalidateOnOrder(client);
 }
 
 /** Add a supplier to the dictionary. */

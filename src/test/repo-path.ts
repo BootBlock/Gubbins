@@ -21,7 +21,7 @@
  *    listing — the exact failure mode this helper exists to kill — so the resolved root is
  *    asserted to exist and throws loudly if it does not.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -49,4 +49,24 @@ export function repoPath(testDirname: string, ...segments: string[]): string {
     );
   }
   return resolved;
+}
+
+/**
+ * Every source file below `dir`, recursively, excluding tests — the corpus a guard that asserts
+ * "no call site does X" has to sweep.
+ *
+ * Shared rather than copied per guard: the exclusions *are* the guard's scope, so two guards with
+ * their own walkers can silently drift into sweeping different file sets, and the one with the
+ * narrower set passes over exactly the file it was written to catch. Pair it with {@link repoPath}
+ * so the sweep is rooted in the checkout under test rather than the cwd.
+ *
+ * @param dir the directory to walk, normally `repoPath(import.meta.dirname, 'src')`.
+ */
+export function sourceFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) sourceFiles(path, out);
+    else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) out.push(path);
+  }
+  return out;
 }
