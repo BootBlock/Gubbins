@@ -72,16 +72,19 @@ export function TabularExportMenu({
     nameFor: (extension: string) => string,
   ) => {
     try {
-      const { content, mimeType, extension } = await produce();
+      const { content, mimeType, extension, notice } = await produce();
       const name = nameFor(extension);
       // Both a string and a Uint8Array are valid Blob parts at runtime; the cast sidesteps the
       // lib.dom `ArrayBufferLike`-vs-`ArrayBuffer` mismatch on the typed-array branch.
       download(new Blob([content as BlobPart], { type: mimeType }), name);
       show({
-        tone: 'success',
+        // A file that stopped short still saved, so this stays a success — but it is a warning
+        // tone and carries the caveat, because a short file that reports itself as a clean
+        // success is exactly the silent truncation the export seam exists to prevent.
+        tone: notice ? 'warning' : 'success',
         icon: <DownloadIcon />,
         heading: toastHeading,
-        message: `${name} saved to your downloads.`,
+        message: notice ? `${name} saved to your downloads. ${notice}` : `${name} saved to your downloads.`,
       });
     } catch {
       // Serialising can fail — e.g. the lazily-loaded spreadsheet module can't be fetched

@@ -19,7 +19,11 @@ import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/setting
 import { useFormatters } from '@/lib/useFormatters';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useErrorMessage } from '@/features/errors';
+import { TabularExportMenu } from '@/features/export/TabularExportMenu';
+import { exportEveryPage } from '@/features/export/export-every-page';
+import { buildTagsExport, tagsExportFilename } from './tags-export';
 import {
+  readTagDictionaryPage,
   useTagCount,
   useTagDictionary,
   useTagManagement,
@@ -87,7 +91,32 @@ export function TagsScreen() {
 
   return (
     <PageContainer>
-      <PageHeader icon={<TagIcon />} title={t('tags.title')} />
+      <PageHeader
+        icon={<TagIcon />}
+        title={t('tags.title')}
+        actions={
+          /*
+           * Re-reads every page rather than serialising the page on screen: this is the screen
+           * for tidying the *whole* vocabulary, so a file holding only the page in view would be
+           * the least useful version of it.
+           */
+          <TabularExportMenu
+            build={(format) =>
+              exportEveryPage(
+                readTagDictionaryPage,
+                (rows) => buildTagsExport(format, rows),
+                t('export.list.truncated'),
+              )
+            }
+            filename={tagsExportFilename}
+            triggerLabel={t('export.list.trigger')}
+            menuLabel={t('export.tags.menuLabel')}
+            toastHeading={t('export.tags.toast')}
+            disabled={dictionary.isLoading || totalTags === 0}
+            testIdPrefix="export-tags"
+          />
+        }
+      />
 
       <main
         id={MAIN_CONTENT_ID}

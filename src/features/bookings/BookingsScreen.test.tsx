@@ -18,8 +18,19 @@ let bookingsState: {
   data?: { rows: AssetBookingWithNames[]; hasMore: boolean };
 };
 
+// The export menu owns its own download + toast machinery (covered by its own tests) and needs a
+// ToastProvider; here we only care that the screen offers it.
+vi.mock('@/features/export/TabularExportMenu', () => ({
+  TabularExportMenu: ({ disabled, testIdPrefix }: { disabled?: boolean; testIdPrefix: string }) => (
+    <button type="button" data-testid={testIdPrefix} disabled={disabled}>
+      Export
+    </button>
+  ),
+}));
+
 vi.mock('./bookings', () => ({
   useBookings: () => ({ ...bookingsState, refetch: vi.fn(), isFetching: false }),
+  readBookingsPage: vi.fn(),
   useBookableAssets: () => ({ data: [] }),
   useCreateBooking: () => ({ mutate: vi.fn(), isPending: false }),
   useCancelBooking: () => ({ mutate: vi.fn(), isPending: false }),

@@ -59,8 +59,15 @@ everything — snoozed and dismissed alike.
 On an **installed** app, alerts can also arrive as **[[OS notifications|Reminder-Notifications]]**,
 so you hear about them without opening Gubbins.
 
+## Taking the list with you
+
+**Export** saves the alerts as a spreadsheet or a table — a to-do list to work through away from
+the app, or to hand to whoever does the ordering. It contains the alerts you can currently see, so
+anything you've snoozed or dismissed stays out of it. See [[Export & import|Export-and-Import]].
+
 ## Related pages
 
 - **[[Upcoming agenda|Upcoming-Agenda]]** — the forward view.
+- **[[Export & import|Export-and-Import]]** — saving the alert list to a file.
 - **[[Reminder notifications|Reminder-Notifications]]** — alerts as OS notifications.
 - **[[Low stock & gauges|Low-Stock-and-Gauges]]** — the thresholds behind stock alerts.

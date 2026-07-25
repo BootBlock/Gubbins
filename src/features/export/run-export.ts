@@ -55,7 +55,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { getFormatters } from '@/lib/format';
 import {
   buildCatalogCsv,
-  buildItemsCsv,
+  buildItemsExport,
   buildJsonExport,
   buildProjectVault,
   buildVault,
@@ -64,6 +64,7 @@ import {
   type VaultBuild,
   type VaultItem,
 } from './export-data';
+import type { TabularExportFormat } from './tabular-export';
 import type { ExportFormat, ExportScope, ReportExportKind } from './useExportStore';
 import type { VaultZipRequest, VaultZipResponse } from './export-vault.worker';
 
@@ -77,6 +78,11 @@ export interface ExportOptions {
   readonly targetId?: string | null;
   /** Which §3 aggregate report to serialise for the `REPORTS` format (Phase 61). */
   readonly reportKind?: ReportExportKind;
+  /**
+   * Which file format the items (`CSV`) export is written in (issue #132). Defaults to `csv`,
+   * which is what that export produced before the other tabular formats were offered.
+   */
+  readonly itemFileFormat?: TabularExportFormat;
 }
 
 /** Slug + label suffix for a report-CSV download name. */
@@ -365,8 +371,13 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   const suffix = scopeSuffix(scope, items);
 
   if (format === 'CSV') {
-    const name = `gubbins-items${suffix}-${stamp()}.csv`;
-    download(new Blob([buildItemsCsv(items)], { type: 'text/csv;charset=utf-8' }), name);
+    // The extension and MIME type come from the serialiser rather than being hard-coded here:
+    // the items list is no longer CSV-only (issue #132), and `content` is bytes for the XLSX
+    // branch. The `BlobPart` cast is the same one `TabularExportMenu` uses — both a string and a
+    // Uint8Array are valid Blob parts at runtime.
+    const { content, mimeType, extension } = await buildItemsExport(items, options.itemFileFormat ?? 'csv');
+    const name = `gubbins-items${suffix}-${stamp()}.${extension}`;
+    download(new Blob([content as BlobPart], { type: mimeType }), name);
     return name;
   }
 

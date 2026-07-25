@@ -88,6 +88,12 @@ If you collect a lot of tags, the list splits into pages using the same
 [[pagination control|Inventory-Views]] as the rest of the app — turn it on with **Paginate list**
 (or **Settings → Inventory → Lists**), and every tag stays reachable however many you have.
 
+> **💡 Tip**
+> **Export** saves the whole dictionary as a spreadsheet or a table, with each tag's item and
+> location counts — a quick way to see which tags are pulling their weight and which are one-offs
+> worth merging away. It covers every tag, not just the page on screen. See
+> [[Export & import|Export-and-Import]].
+
 ## Attachments & datasheets
 
 **Where to find it:** the **Media & docs** tab of an item's details.

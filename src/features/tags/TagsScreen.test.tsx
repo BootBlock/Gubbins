@@ -13,6 +13,16 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/components/BrandMark', () => ({ BrandMark: () => <span data-testid="brand-mark" /> }));
 
+// The export menu owns its own download + toast machinery (covered by its own tests) and needs a
+// ToastProvider; here we only care that the screen offers it.
+vi.mock('@/features/export/TabularExportMenu', () => ({
+  TabularExportMenu: ({ disabled, testIdPrefix }: { disabled?: boolean; testIdPrefix: string }) => (
+    <button type="button" data-testid={testIdPrefix} disabled={disabled}>
+      Export
+    </button>
+  ),
+}));
+
 // The global nav has its own suite; stub it so this screen needs no router/alerts context.
 vi.mock('@/components/nav/AppNav', () => ({
   AppNav: () => <button type="button" data-testid="app-nav" aria-label="Navigation menu" />,
@@ -44,6 +54,8 @@ const refetch = vi.fn();
 const requestedPages: { page: number; pageSize: number }[] = [];
 
 vi.mock('../inventory/tags', () => ({
+  // The export's read-everything walk (issue #132); never invoked here, as the menu is stubbed.
+  readTagDictionaryPage: vi.fn(),
   useTagDictionary: (page: number, pageSize: number) => {
     requestedPages.push({ page, pageSize });
     return { ...dictionaryState, refetch };

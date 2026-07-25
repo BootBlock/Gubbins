@@ -32,6 +32,16 @@ export function useTagDictionary(page = 1, pageSize = 100) {
   });
 }
 
+/**
+ * One page of the tag dictionary, for the export's read-everything walk (issue #132). The screen
+ * holds a single page, so serialising the rows in hand would export that page rather than the
+ * dictionary; the export re-reads from the start through `exportEveryPage`. Not a hook — it is
+ * called from the export's `build` callback, outside React's render.
+ */
+export function readTagDictionaryPage(params: { limit: number; offset: number }) {
+  return getTagRepository().list(params);
+}
+
 /** Total number of tags — the denominator for the Tags screen's pagination (issue #84). */
 export function useTagCount() {
   return useQuery({

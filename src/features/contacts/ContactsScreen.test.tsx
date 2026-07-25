@@ -29,6 +29,16 @@ vi.mock('@/components/BrandMark', () => ({
   BrandMark: () => <span data-testid="brand-mark" />,
 }));
 
+// The export menu owns its own download + toast machinery (covered by its own tests) and needs a
+// ToastProvider; here we only care that the screen offers one per list.
+vi.mock('@/features/export/TabularExportMenu', () => ({
+  TabularExportMenu: ({ disabled, testIdPrefix }: { disabled?: boolean; testIdPrefix: string }) => (
+    <button type="button" data-testid={testIdPrefix} disabled={disabled}>
+      Export
+    </button>
+  ),
+}));
+
 // The global nav menu has its own suite; stub it so this screen test needs no
 // router/alerts context for the header.
 vi.mock('@/components/nav/AppNav', () => ({
@@ -65,6 +75,9 @@ const refetchContacts = vi.fn();
 
 vi.mock('./contacts', () => ({
   useOpenCheckouts: () => ({ ...openCheckoutsState, refetch: refetchOpen }),
+  // The export's read-everything walk (issue #132); never invoked here, as the menu is stubbed.
+  readOpenCheckoutsPage: vi.fn(),
+  readContactsPage: vi.fn(),
   /**
    * The dictionary now pages **server-side** (issue #149), so the stub serves pages the way the
    * repository does: `contactsState.data.rows` is the whole dictionary, and the hook returns

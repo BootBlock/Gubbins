@@ -22,6 +22,16 @@ const ALERT: Alert = {
   target: { route: '/inventory', itemId: 'widget-1', itemName: 'Brass widget' },
 };
 
+// The export menu owns its own download + toast machinery (covered by its own tests) and needs a
+// ToastProvider; here we only care that the screen offers it.
+vi.mock('@/features/export/TabularExportMenu', () => ({
+  TabularExportMenu: ({ disabled, testIdPrefix }: { disabled?: boolean; testIdPrefix: string }) => (
+    <button type="button" data-testid={testIdPrefix} disabled={disabled}>
+      Export
+    </button>
+  ),
+}));
+
 // The feed is stubbed, but its dismissal filtering is not: the mock runs the real seam against
 // the real store, so what the screen shows reflects what the card's controls actually recorded.
 vi.mock('./useAlerts', () => ({

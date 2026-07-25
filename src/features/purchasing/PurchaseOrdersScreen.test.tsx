@@ -47,7 +47,19 @@ let ordersState: {
   },
 };
 
+// The export menu owns its own download + toast machinery (covered by its own tests) and needs a
+// ToastProvider; here we only care that the screen offers it.
+vi.mock('@/features/export/TabularExportMenu', () => ({
+  TabularExportMenu: ({ disabled, testIdPrefix }: { disabled?: boolean; testIdPrefix: string }) => (
+    <button type="button" data-testid={testIdPrefix} disabled={disabled}>
+      Export
+    </button>
+  ),
+}));
+
 vi.mock('./queries', () => ({
+  // The export's read-everything walk (issue #132); never invoked here, as the menu is stubbed.
+  readPurchaseOrdersPage: vi.fn(),
   /**
    * The order list pages **server-side** (issue #149), so the stub serves pages the way the
    * repository does: `ordersState.data.rows` is every order, and the hook returns only the

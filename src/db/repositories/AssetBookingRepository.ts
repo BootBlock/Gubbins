@@ -192,13 +192,21 @@ export class AssetBookingRepository extends BaseRepository {
     );
   }
 
-  /** All bookings, open (non-terminal) first then by soonest start — the bookings screen feed. */
+  /**
+   * All bookings, open (non-terminal) first then by soonest start — the bookings screen feed.
+   *
+   * The `b.id` tiebreak makes the order **total** (issue #132). Bookings frequently share a start
+   * date (a whole week booked out on the Monday), so without it the sort is only partially
+   * determined, and the export's offset walk over this read could return one booking on two
+   * consecutive pages while dropping another. The screen's own single-page read is unaffected;
+   * the tiebreak costs nothing and makes paging correct.
+   */
   async list(params: PageParams = {}): Promise<Page<AssetBookingWithNames>> {
     return this.listJoined(
       '',
       [],
       params,
-      '(b.cancelled_at IS NULL AND b.converted_checkout_id IS NULL) DESC, b.start_date ASC',
+      '(b.cancelled_at IS NULL AND b.converted_checkout_id IS NULL) DESC, b.start_date ASC, b.id ASC',
     );
   }
 
