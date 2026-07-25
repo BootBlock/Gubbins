@@ -30,7 +30,7 @@ start with the three pages below; otherwise jump straight to a section from the 
 | **Reports** | [[Reports overview\|Reports-Overview]], [[Valuation & spend\|Valuation-and-Spend]], [[Sales & margin\|Sales-and-Margin]] |
 | **Data & sync** | [[How your data is stored\|How-Your-Data-Is-Stored]], [[Cloud sync\|Cloud-Sync]], [[Backup & restore\|Backup-and-Restore]], [[Import\|Export-and-Import]] |
 | **Integrations** | [[Bridge overview\|Bridge-Overview]], [[Home Assistant\|Home-Assistant-Integration]], [[AI assistant\|AI-Assistant-Query-MCP]] |
-| **Customising** | [[Appearance\|Appearance-and-Theming]], [[Dashboard\|Dashboard-and-Widgets]], [[Modular UI\|Modular-UI]], [[Language\|Language-and-Region]] |
+| **Customising** | [[Appearance\|Appearance-and-Theming]], [[Dashboard\|Dashboard-and-Widgets]], [[Modular UI\|Modular-UI]], [[Language\|Language-and-Region]], [[Units\|Units-of-Measure]] |
 
 > **💡 Tip**
 > Gubbins only shows the features you use. Any page or capability in this wiki can be hidden

@@ -164,11 +164,11 @@ works out the **volume** for you, shown right below the fields.
 
 ![The Dimensions fields on a location's Edit dialog — width, height and depth in millimetres with a derived volume of about 30 litres shown underneath](images/location-dimensions.png)
 
-Sizes are entered and shown in your chosen **dimension unit** (change it in **Settings →
-Measurements**), and the volume in your **volume unit** — left on **Automatic**, that picks a
-readable scale for you, so a drawer reads in litres and a whole storage bay in cubic metres.
-Measurements are optional: leave them blank for anything you don't measure, and the location
-behaves exactly as before.
+Sizes are entered and shown in your chosen **[[dimension unit|Units-of-Measure]]** (change it in
+**Settings → Appearance**), and the volume in your **volume unit** — left on **Automatic**, that
+picks a readable scale for you, so a drawer reads in litres and a whole storage bay in cubic
+metres. Measurements are optional: leave them blank for anything you don't measure, and the
+location behaves exactly as before.
 
 > **ℹ️ Note**
 > The width, height and depth are the **inside** of the container — the space you can actually
@@ -214,7 +214,7 @@ Real containers rarely fill to 100%, and few are perfect boxes. Two optional set
   for space used instead of the box calculation.
 - **Packing efficiency** is the share of the volume that's realistically fillable, since rigid
   items leave gaps. Set it below 100% for a more conservative reading, or leave it blank to use the
-  global default from **Settings → Measurements** — where **Default packing efficiency** sets the
+  global default from **Settings → Appearance** — where **Default packing efficiency** sets the
   fallback for every location that doesn't specify its own.
 
 > **💡 Tip**
@@ -317,6 +317,7 @@ oldest first.
 ## Related pages
 
 - **[[Core concepts|Core-Concepts]]** — how items, stock and locations relate.
+- **[[Units of measure|Units-of-Measure]]** — the dimension and volume units sizes are shown in.
 - **[[Batches & lots|Batches-and-Lots]]** — expiry tracking and first-expiry-first-out.
 - **[[Cycle counts & audit day|Cycle-Counts-and-Audit-Day]]** — checking that on-hand counts
   match reality, location by location.

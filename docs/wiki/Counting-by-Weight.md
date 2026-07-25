@@ -17,9 +17,9 @@ or a hundred units on a kitchen scale and divide, rather than trusting a single 
 scale that only resolves to the nearest gram.
 
 > **💡 Tip**
-> Weights are entered and shown in whatever unit you've chosen under
-> [[language & region|Language-and-Region]] — grams, kilograms, ounces or pounds. Gubbins stores
-> them in one canonical unit behind the scenes, so changing the setting never alters your data.
+> Weights are entered and shown in whatever [[weight unit|Units-of-Measure]] you've chosen —
+> grams, kilograms, ounces or pounds. Gubbins stores them in one canonical unit behind the
+> scenes, so changing the setting never alters your data.
 
 ## Counting a handful
 
@@ -108,6 +108,7 @@ are tracked individually rather than counted, and
 ## Related pages
 
 - **[[Container weights|Container-Weights]]** — saving the empty weight of trays, jars and spools.
+- **[[Units of measure|Units-of-Measure]]** — choosing the weight unit you read and type in.
 - **[[Items]]** — where a unit weight is recorded.
 - **[[Tracking modes|Tracking-Modes]]** — which items can be counted by weight.
 - **[[Low stock & gauges|Low-Stock-and-Gauges]]** — weighing a consumable to gauge what's left.

@@ -112,6 +112,7 @@
 - [[Dashboard & widgets|Dashboard-and-Widgets]]
 - [[Modular UI|Modular-UI]]
 - [[Language & region|Language-and-Region]]
+- [[Units of measure|Units-of-Measure]]
 - [[Notifications|Notifications-Settings]]
 - [[Kiosk & tablet mode|Kiosk-and-Tablet-Mode]]
 

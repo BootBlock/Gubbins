@@ -40,7 +40,15 @@ currency prices are shown and totalled in across [[items|Items]], [[projects|Pro
 > Changing your base currency changes how amounts are **displayed and totalled** — it doesn't
 > convert historical values at an exchange rate. Set it to the currency you actually work in.
 
+## Units are chosen separately
+
+Your locale doesn't decide whether you read weights in grams or pounds, or sizes in millimetres
+or inches. Those are their own settings — a metric locale with imperial weights is a perfectly
+valid combination, and plenty of workshops work that way. See
+**[[units of measure|Units-of-Measure]]**.
+
 ## Related pages
 
+- **[[Units of measure|Units-of-Measure]]** — weight, dimension and volume units.
 - **[[Appearance & theming|Appearance-and-Theming]]** — the rest of the look-and-feel settings.
 - **[[Reports overview|Reports-Overview]]** — where currency formatting shows up most.

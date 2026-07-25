@@ -38,8 +38,8 @@ Field names are **case-insensitive** and accept short aliases.
 | Barcode | `barcode`, `gtin`, `upc`, `ean` | A scanned/entered barcode |
 | Serial number | `serial`, `serialnumber`, `sn` | The unit's serial number |
 | Quantity | `quantity`, `qty` | On-hand count *(numeric)* |
-| Weight | `weight` | Item weight *(numeric)* |
-| Dimensions | `width`, `height`, `depth` | Bounding size *(numeric)* |
+| Weight | `weight` | Item weight, in grams *(numeric)* |
+| Dimensions | `width`, `height`, `depth` | Bounding size, in millimetres *(numeric)* |
 | Reorder point | `reorder`, `reorderpoint` | The item's own low-stock floor *(numeric)* |
 | Unit cost | `cost`, `unitcost` | What a unit costs *(money)* |
 | Purchase price | `price`, `purchaseprice`, `paid` | What you paid *(money)* |
@@ -62,6 +62,11 @@ qty<10            fewer than 10 in stock
 qty=0             out of stock
 weight>500        heavier than 500 g
 ```
+
+> **ℹ️ Note**
+> A weight is always written in **grams** and a dimension in **millimetres**, whatever
+> [[units you read them in|Units-of-Measure]] — so `weight>500` finds anything over half a
+> kilo even with the app set to pounds.
 
 Money is typed in your base currency's normal units — `cost>10` means over ten, not ten pence:
 
