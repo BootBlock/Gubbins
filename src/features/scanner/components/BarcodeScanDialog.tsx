@@ -121,11 +121,13 @@ function BarcodeScanDialogInner({
       const container = containerRef.current;
       if (!container) return;
       const active = document.activeElement as HTMLElement | null;
-      // Focus can legitimately sit in a pop-up this dialog opened but that portals *outside* it —
-      // the viewfinder's camera menu (issue #135). Such a panel owns its own keyboard contract
+      // Focus can legitimately sit in a menu this dialog opened but that portals *outside* it —
+      // the viewfinder's camera picker (issue #135). A menu panel owns its own keyboard contract
       // (arrow keys to roam, Escape to dismiss), so yanking focus back into the trap would fight
-      // it. The trap still governs everything inside the dialog itself.
-      if (active && !container.contains(active)) return;
+      // it. Deliberately narrow: focus merely having *fallen out* of the dialog — onto
+      // `document.body`, after whatever held it unmounted — is the trap's recovery case, and the
+      // wrap-around below must still pull it back in.
+      if (active?.closest('[role="menu"]')) return;
       const focusables = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
       const currentIndex = active ? focusables.indexOf(active) : -1;
       const next = nextTrapIndex(focusables.length, currentIndex, e.shiftKey);

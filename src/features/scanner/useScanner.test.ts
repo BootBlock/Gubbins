@@ -262,13 +262,14 @@ describe('useScanner — which camera opens', () => {
   it('does not re-request when the live camera already is the chosen one', async () => {
     const dispatch = vi.fn();
     const getUserMedia = mockCamera();
-    const { rerender } = renderScanner('REQUESTING_PERMISSIONS', vi.fn(), null, { cameraId: 'cam-tele' });
+    const { rerender } = renderScanner('REQUESTING_PERMISSIONS', dispatch, null, { cameraId: 'cam-tele' });
     await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
     rerender({ status: 'STREAM_ACTIVE', cameraId: 'cam-tele' });
 
     // A status flip into the live view is not a camera change; re-acquiring here would restart the
     // camera on every review ⇄ scanning toggle.
     expect(dispatch).not.toHaveBeenCalledWith({ type: 'REOPEN' });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
   });
 });
 
