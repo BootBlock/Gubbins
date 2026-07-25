@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { SupplierWithCounts } from '@/db/repositories';
 
 vi.mock('@tanstack/react-router', () => ({
@@ -264,6 +264,37 @@ describe('SuppliersScreen reach (issue #386)', () => {
     expect(screen.getByTestId('suppliers-truncated').textContent).toContain(
       'Showing the first 100 of 120 suppliers',
     );
+  });
+
+  it('returns to the top of the list when pagination is switched off', () => {
+    // Without the page control there is no way off a tail page, and the truncation note would
+    // claim a slice from the middle of the dictionary was its first hundred.
+    allSuppliers = manySuppliers(250);
+    usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 100 });
+    render(<SuppliersScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Page 3' }));
+    expect(screen.getByRole('button', { name: /Supplier 250/ })).toBeTruthy();
+
+    act(() => usePreferencesStore.setState({ paginateLists: false }));
+
+    expect(screen.getByRole('button', { name: /Supplier 001/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Supplier 250/ })).toBeNull();
+    expect(screen.getByTestId('suppliers-truncated').textContent).toContain(
+      'Showing the first 100 of 250 suppliers',
+    );
+  });
+
+  it('offers a supplier the search matched on its folded name', () => {
+    // The database folds spacing and punctuation, so the combobox must not narrow its results a
+    // second time on the literal text — the match would vanish from the list it came from.
+    allSuppliers = [supplier('a', 'RS-Components', 3, 1), supplier('b', 'Farnell')];
+    render(<SuppliersScreen />);
+
+    fireEvent.click(screen.getByTestId('suppliers-merge'));
+    fireEvent.change(screen.getByTestId('merge-source'), { target: { value: 'RS Comp' } });
+
+    expect(screen.getByRole('option', { name: 'RS-Components' })).toBeTruthy();
   });
 
   it('reports a filtered-to-nothing list as no match, not an empty dictionary', () => {

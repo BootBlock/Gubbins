@@ -64,9 +64,13 @@ export function SuppliersScreen() {
   const [announcement, setAnnouncement] = useState('');
 
   // Unpaginated, the screen shows as much as one strict-pagination page holds — the same single
-  // bounded read it has always done, and the case the truncation note below covers.
+  // bounded read it has always done, and the case the truncation note below covers. There is
+  // then only ever one page to be on, so the read is pinned to the first: switching the
+  // preference off with a page number left over would otherwise strand the user on a tail slice
+  // with no control to get back, under a note claiming it was the *first* N suppliers.
   const pageSize = paginated ? defaultPageSize : MAX_PAGE_SIZE;
-  const suppliersQuery = useSupplierPage(search.trim(), page, pageSize);
+  const currentPage = paginated ? page : 1;
+  const suppliersQuery = useSupplierPage(search.trim(), currentPage, pageSize);
   const matchCountQuery = useSupplierCount(search.trim());
   // The size of the whole dictionary, independent of the filter — what "is there anything to
   // merge" is judged on. Resolves to the same query as the one above whenever nothing is typed.
@@ -83,9 +87,11 @@ export function SuppliersScreen() {
     setPage(1);
   }, [search, pageSize]);
   // Merging or deleting the last supplier on the final page leaves the page out of range.
+  // Updated functionally so it clamps whatever page is *pending* — the reset above runs in the
+  // same commit, and an absolute `setPage(pages)` here would overwrite the 1 it just queued.
   useEffect(() => {
-    if (pages > 0 && page > pages) setPage(pages);
-  }, [pages, page]);
+    if (pages > 0) setPage((current) => Math.min(current, pages));
+  }, [pages]);
 
   const openMerge = (source?: SupplierWithCounts) => {
     setMergeSource(source);

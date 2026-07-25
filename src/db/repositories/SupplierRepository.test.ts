@@ -152,8 +152,8 @@ describe('SupplierRepository (issue #384)', () => {
     };
 
     it('reaches suppliers past the first page by offset', async () => {
-      // The gap this closes: anything sorting past one bounded read used to be unreachable, so
-      // it could not be edited, merged or deleted.
+      // Offset paging already worked here — it was the screen that only ever asked for page one.
+      // Pinned all the same, because that is now the seam every supplier's reachability rests on.
       await seed(120);
 
       const second = await repo.list({ limit: 100, offset: 100 });

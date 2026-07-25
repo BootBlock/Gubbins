@@ -82,6 +82,11 @@ export function SupplierSearchField({
         value={value.text}
         onChange={(next) => onChange({ text: next, supplier: resolveSupplier(matches, next) })}
         suggestions={names}
+        // The database has already narrowed these against the typed text, folding case, spacing
+        // and punctuation as it went. Letting the combobox re-filter them literally would throw
+        // away every match that only came back on the folded key — typing `RS Comp` would show
+        // an empty list even though `RS-Components` matched.
+        prefiltered
         // A supplier dictionary is a browsable list: opening an empty field should show what
         // you actually have, not the type-ahead default of ten.
         maxOptions={SUPPLIER_SEARCH_LIMIT}
