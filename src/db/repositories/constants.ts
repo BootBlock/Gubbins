@@ -152,10 +152,11 @@ export const HISTORY_ACTIONS = [
   'REVALUED', // the item's manual current value was (re)set, independent of depreciation
   // Feature-gap G7 — a per-instance test / calibration / service record was logged (QA audit trail).
   'TESTED', // a structured pass/fail + reading record was added against a serialised unit
-  // Webhooks W10 — an edit to one of the item's notifiable attributes (price, barcode, serial
-  // number, category, reorder thresholds, expiry). Deliberately **one** generic action rather
-  // than one per field: which fields moved rides the entry's note/metadata, so the public event
-  // vocabulary stays as it is (`item.changed`) instead of growing a type per column.
+  // An edit to the item's structured attributes — price, identity, classification, reordering,
+  // perishability, provenance, lifecycle dates and measurements (webhooks W10, issue #144).
+  // Deliberately **one** generic action rather than one per field: which fields moved, and what
+  // each held before and after, rides the entry's note/metadata, so the public event vocabulary
+  // stays as it is (`item.changed`) instead of growing a type per column.
   'ATTRIBUTES_CHANGED',
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];

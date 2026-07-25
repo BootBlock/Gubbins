@@ -81,7 +81,9 @@ Webhooks currently cover **changes to items**:
 - moves between locations;
 - loans and reservations (checked out, checked in, reserved, reservation cleared);
 - condition changes and logged maintenance;
-- edits to price, barcode, serial number, category, reorder levels and expiry.
+- edits to an item's recorded details — price, barcode, serial number, manufacturer and part
+  number, category, batch and lot numbers, reorder levels, expiry, acquisition and warranty dates,
+  depreciation period, weight and dimensions.
 
 These **cannot** raise a webhook at all: changes to [[locations|Locations-and-Stock]],
 [[purchase-order status|Purchase-Orders]], [[suppliers|Suppliers]], [[projects|Projects-and-BOM]],
