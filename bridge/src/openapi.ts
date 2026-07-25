@@ -14,6 +14,7 @@
 import { KNOWN_EVENT_TYPES } from '@/features/events/event-types.ts';
 import { ITEM_STATUS_FILTERS } from '@/db/repositories/item/status-filter.ts';
 import { ITEM_FIELD_REGISTRY } from './api/item-view.ts';
+import { LOCATION_FIELD_REGISTRY } from './api/location-view.ts';
 import { FILTERABLE_FIELD_NAMES } from './api/odata-filter.ts';
 import { API_ERROR_CODES } from './api/respond.ts';
 
@@ -108,18 +109,21 @@ const qParam: JsonValue = {
 };
 
 /**
+ * The item and location field vocabularies, read straight off the registries that serve the
+ * requests rather than restated here. A hand-kept copy of a field list is how the API's filterable
+ * set silently drifted from the app's (issue #143), so every list in this document is generated
+ * from its source. `field-vocabulary.test.ts` re-asserts that from the emitted document, so a
+ * future hand-written copy is caught the moment a registry moves (issue #250).
+ */
+const ITEM_FIELD_LIST = [...ITEM_FIELD_REGISTRY.keys()].join(', ');
+const LOCATION_FIELD_LIST = [...LOCATION_FIELD_REGISTRY.keys()].join(', ');
+
+/**
  * The `fields` (sparse fieldset / projection) parameter shared by the item read endpoints.
  * Present it and the response contains ONLY the named fields; omit it for the endpoint's
  * default payload. Naming an extended field opts it in; one level of nesting is supported for
  * the array fields via a dotted path (e.g. `placements.quantity`).
  */
-/**
- * The item field vocabulary, read straight off the registry that serves the requests rather than
- * restated here. A hand-kept copy of a field list is how the API's filterable set silently drifted
- * from the app's (issue #143), so both lists in this document are generated from their source.
- */
-const ITEM_FIELD_LIST = [...ITEM_FIELD_REGISTRY.keys()].join(', ');
-
 const fieldsParam: JsonValue = {
   name: 'fields',
   in: 'query',
@@ -176,8 +180,8 @@ const locationFieldsParam: JsonValue = {
   required: false,
   description:
     'Sparse fieldset: a comma-separated list of location fields to return INSTEAD of the ' +
-    'default set. Valid fields: id, name, parentId, isSystem, description, color, itemCount, ' +
-    'fieldValues. Nest the array field with a dot: `fieldValues.value`. An unknown field is a 400.',
+    `default set. Valid fields: ${LOCATION_FIELD_LIST}. Nest the array field with a dot: ` +
+    '`fieldValues.value`. An unknown field is a 400.',
   schema: { type: 'string' },
   example: 'id,name,fieldValues',
 };
