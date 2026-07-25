@@ -1256,7 +1256,7 @@ export const openapiDocument: JsonValue = {
             description:
               'Which build of Gubbins this bridge is. The bridge ships as source with no separate release, so it reports the repository version it was taken from; a client that knows its own can spot a bridge left behind.',
             properties: {
-              version: { type: 'string', example: '1.2.0' },
+              version: { type: 'string', example: '0.3.0' },
               schemaVersion: {
                 type: 'integer',
                 description:
