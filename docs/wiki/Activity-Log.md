@@ -31,11 +31,12 @@ period, weight and dimensions — alongside the renames, tracking-mode switches 
 that have always been logged.
 
 > **ℹ️ Note**
-> A few fields change quietly: the free-text description, notes and
-> [[custom fields|Custom-Fields-and-Capabilities]], where keeping a copy of long text on every edit
-> would bloat a log that syncs to your other devices; and the **favourite** pin and the dead-stock
-> and unlimited-supply toggles, which are display and reporting preferences rather than changes to
-> what the item is. Saving a form without actually changing anything records nothing at all.
+> A few things change quietly. The free-text description, notes and **operational parameters** do,
+> because keeping a copy of long text on every edit would bloat a log that syncs to your other
+> devices — as do [[custom-field values|Custom-Fields-and-Capabilities]]. So do the **favourite**
+> pin and the dead-stock and unlimited-supply toggles, which are display and reporting preferences
+> rather than changes to what the item is. Saving a form without actually changing anything records
+> nothing at all.
 
 > **💡 Tip**
 > The Activity log is the fastest way to answer *"what changed, and when did that happen?"* — if a
