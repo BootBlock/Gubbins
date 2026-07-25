@@ -135,9 +135,11 @@ export function ExportWizard({
     queryFn: () => getProjectRepository().list({ limit: 100 }),
     enabled: open && scope === 'PROJECT',
   });
+  // Every location, not a page: this picker chooses *which* location to export, so a capped read
+  // simply made the ones past the first page impossible to pick (issue #148).
   const locationList = useQuery({
     queryKey: ['export', 'location-picker'],
-    queryFn: () => getLocationRepository().list({ limit: 100 }),
+    queryFn: () => getLocationRepository().listAll(),
     enabled: open && scope === 'LOCATION',
   });
 
@@ -266,7 +268,7 @@ export function ExportWizard({
                 aria-label="Location to export"
                 options={[
                   { value: '', label: 'Choose a location…' },
-                  ...buildItemLocationOptions(locationList.data?.rows ?? [], formatters.quantity),
+                  ...buildItemLocationOptions(locationList.data ?? [], formatters.quantity),
                 ]}
               />
             ) : null}

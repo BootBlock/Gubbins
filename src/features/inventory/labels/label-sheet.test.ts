@@ -14,6 +14,8 @@ import { DEFAULT_LABEL_TEMPLATE, type LabelTemplate } from './label-template';
 const BASE = 'https://example.test/Gubbins/';
 const ID_A = '11111111-1111-4111-8111-111111111111';
 const ID_B = '22222222-2222-4222-8222-222222222222';
+/** An id whose short form carries letters, so Code 128 cannot compress it. */
+const ID_C = 'a1b2c3d4-3333-4333-8333-333333333333';
 
 const template = (over: Partial<LabelTemplate> = {}): LabelTemplate => ({
   ...DEFAULT_LABEL_TEMPLATE,
@@ -105,6 +107,23 @@ describe('toLabelCells', () => {
     expect(cells[0]!.barcodeSvg).toBeNull();
     expect(cells[0]!.barcodeValue).toBeNull();
     expect(cells[0]!.barcodeFit).toBe('unprintable');
+  });
+
+  it('treats every label on a too-narrow size alike, whatever its id (issue #331)', () => {
+    // The 30 x 15 mm preset leaves 27 mm — under the width a fallback code needs. `ID_A`'s
+    // short id is all digits and `ID_C`'s is not; measured as encoded, Code Set C would let
+    // the first through and not the second. The sheet must not be arbitrary like that.
+    const cells = toLabelCells(
+      [
+        { id: ID_A, name: 'Digits', mpn: 'RC0805-10K' },
+        { id: ID_C, name: 'Hex', mpn: 'RC0805-10K' },
+        { id: ID_A, name: 'No MPN' },
+      ],
+      BASE,
+      template({ symbology: 'barcode', sizeMode: 'die-cut', labelWidthMm: 30, labelHeightMm: 15 }),
+    );
+    expect(cells.map((c) => c.barcodeFit)).toEqual(['unprintable', 'unprintable', 'unprintable']);
+    expect(cells.every((c) => c.barcodeSvg === null)).toBe(true);
   });
 
   it('reports no barcode fit at all when the template draws no barcode', () => {

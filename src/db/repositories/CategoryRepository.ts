@@ -99,6 +99,21 @@ interface ResolvedFieldRow extends CategoryFieldRow {
   readonly stored_mode: FieldValueMode | null;
 }
 
+/**
+ * The projection behind both category list reads, so the paged and whole-set reads can never
+ * disagree about the columns or the ordering they return. Callers append their own `LIMIT`.
+ */
+const SELECT_WITH_FIELD_COUNT = `
+  SELECT c.id, c.name, c.glyph, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
+         c.default_maintenance_basis, c.default_maintenance_interval_days,
+         c.default_maintenance_interval_usage,
+         c.updated_at, COUNT(f.id) AS field_count
+  FROM categories c
+  LEFT JOIN category_fields f ON f.category_id = c.id
+  GROUP BY c.id
+  ORDER BY c.name COLLATE NOCASE ASC
+`;
+
 export class CategoryRepository extends BaseRepository {
   async getById(id: string): Promise<Category | undefined> {
     const row = await this.driver.queryOne<CategoryRow>('SELECT * FROM categories WHERE id = ?;', [id]);
@@ -109,22 +124,27 @@ export class CategoryRepository extends BaseRepository {
   async list(params: PageParams = {}): Promise<Page<CategoryWithFieldCount>> {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<CategoryCountRow>(
-      `SELECT c.id, c.name, c.glyph, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
-              c.default_maintenance_basis, c.default_maintenance_interval_days,
-              c.default_maintenance_interval_usage,
-              c.updated_at, COUNT(f.id) AS field_count
-       FROM categories c
-       LEFT JOIN category_fields f ON f.category_id = c.id
-       GROUP BY c.id
-       ORDER BY c.name COLLATE NOCASE ASC
+      `${SELECT_WITH_FIELD_COUNT}
        LIMIT ? OFFSET ?;`,
       [limit, offset],
     );
-    return this.toPage(
-      rows.map((r) => ({ ...rowToCategory(r), fieldCount: Number(r.field_count) })),
-      limit,
-      offset,
-    );
+    return this.toPage(rows.map(toWithFieldCount), limit, offset);
+  }
+
+  /**
+   * Every category as a flat list — the unpaginated counterpart to {@link list}, justified by
+   * the same reasoning as `LocationRepository.listAll` (issue #148): a catalogue's categories
+   * are a bounded classification set, not the 100k+ item set the pagination mandate (§2.1)
+   * targets, and everything the UI does with them is a *lookup* rather than a scrollable list.
+   *
+   * Capped, this read gave **wrong** answers rather than short ones once a catalogue held more
+   * than a page of categories: an item in the 101st category showed no category name at all, the
+   * category facet and the create/edit/bulk-edit pickers could not offer it, and a vault export
+   * wrote the item out with its category missing. Use {@link list} where a genuine page is wanted.
+   */
+  async listAll(): Promise<CategoryWithFieldCount[]> {
+    const rows = await this.driver.query<CategoryCountRow>(`${SELECT_WITH_FIELD_COUNT};`);
+    return rows.map(toWithFieldCount);
   }
 
   async create(input: CreateCategoryInput): Promise<Category> {
@@ -989,4 +1009,8 @@ export class CategoryRepository extends BaseRepository {
     }
     return { name, fieldType: input.fieldType, options: null };
   }
+}
+
+function toWithFieldCount(row: CategoryCountRow): CategoryWithFieldCount {
+  return { ...rowToCategory(row), fieldCount: Number(row.field_count) };
 }

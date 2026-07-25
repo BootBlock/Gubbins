@@ -54,6 +54,31 @@ back exactly as you left it — searching never changes which branches you had o
 > quick no matter how many locations you have. Search and the keyboard still reach every one of
 > them.
 
+## On a phone
+
+On a narrow screen there isn't room for the tree and your items side by side, so the tree moves
+into a **panel that slides in from the left**. In its place, directly above the item list, sits a
+**Locations** button showing what you're currently looking at — *All items*, or the location you
+picked.
+
+Tap it and the tree slides in, complete with its search box, tag filter and the buttons to add or
+edit a location — nothing is left out. Choose a location and the panel closes, dropping you
+straight back on the items it holds. To leave without changing anything, tap the dimmed area
+beside the panel, press `Escape`, or use the **✕**.
+
+Widen the window (or turn a tablet to landscape) and the tree simply returns to its usual place
+down the side.
+
+> **ℹ️ Note**
+> This isn't a phone-only feature — the layout follows the **width of the window**, so a narrow
+> browser window or a zoomed-in page gets the same treatment. Nothing is hidden either way; the
+> tree is always a tap away.
+
+The one thing this layout can't offer is **dragging an item card onto a location** — the two are
+never on screen together, so there's nothing to drag onto. Use **Move item** on the card's menu,
+which does the same job at any width. Re-nesting a location by dragging it onto another still
+works inside the panel.
+
 ## Photos of a location
 
 A location can also carry **photos**, with named regions drawn on them, so an item can point at
@@ -72,6 +97,12 @@ exactly where on a shelf it sits. See [[Location photos & regions|Location-Photo
 > You can **drag an item card onto a location** to move its stock there — a fast way to tidy up
 > after a reorganise. On a touchscreen, **press and hold** the card briefly until it lifts, then
 > drag it onto the location; a quick swipe still scrolls the list as usual.
+
+> **ℹ️ Note**
+> Dragging needs the tree and your items on screen together, so it isn't available on a narrow
+> screen where the tree lives in a slide-in panel (see [On a phone](#on-a-phone) above) — nothing
+> happens if you press and hold, and the list keeps scrolling as normal. Use **Move item** on the
+> card's menu instead; it works at any width, and it's the keyboard-friendly route on a desktop too.
 
 ## Stock is tracked per location
 

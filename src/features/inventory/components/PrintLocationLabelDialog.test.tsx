@@ -45,12 +45,18 @@ describe('PrintLocationLabelDialog — barcode readability (issue #331)', () => 
   });
 
   it('warns and drops the barcode entirely on a label too narrow to carry one', () => {
-    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    // A short name still fits the smallest preset; it is the long one that has nowhere to
+    // go, because the fallback short code needs more width than 30 mm leaves.
+    render(
+      <PrintLocationLabelDialog
+        open
+        onClose={() => {}}
+        location={{ ...BIN, name: 'Workshop shelf B third drawer' }}
+      />,
+    );
     chooseOption('loc-label-symbology', 'Barcode (Code 128)');
-    chooseOption('loc-label-size', /Custom/);
-    const width = screen.getByTestId('loc-label-size-width');
-    fireEvent.change(width, { target: { value: '15' } });
-    fireEvent.blur(width);
+    // The smallest shipped preset has no room for the fallback short code.
+    chooseOption('loc-label-size', /30 .* 15 mm/);
 
     expect(screen.getByTestId('loc-label-barcode-too-narrow')).toBeTruthy();
     expect(screen.queryByTestId('loc-label-barcode-shortened')).toBeNull();

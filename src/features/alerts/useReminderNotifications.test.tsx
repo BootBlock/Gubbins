@@ -6,6 +6,7 @@ import type { ReminderPermission } from './reminders';
 import { useReminderFiring, useReminderPeriodicSync } from './useReminderNotifications';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useNotifiedRemindersStore } from './useNotifiedRemindersStore';
+import { useReminderWakeStore } from './useReminderWakeStore';
 
 // The hook reads the live alert feed via useAlerts; mock it so tests drive the input directly
 // without a database / react-query.
@@ -35,7 +36,7 @@ function fakeApi(over: Partial<ReminderApi> = {}): ReminderApi {
     requestPermission: vi.fn(async () => permission),
     show: vi.fn(async () => {}),
     isPeriodicSyncRegistered: vi.fn(async () => false),
-    registerPeriodicSync: vi.fn(async () => {}),
+    registerPeriodicSync: vi.fn(async () => true),
     unregisterPeriodicSync: vi.fn(async () => {}),
     ...over,
   };
@@ -50,6 +51,7 @@ async function flush() {
 beforeEach(() => {
   mockAlerts = [];
   useNotifiedRemindersStore.setState({ notifiedIds: new Set() });
+  useReminderWakeStore.setState({ status: 'unknown' });
   usePreferencesStore.setState({ remindersEnabled: true });
 });
 afterEach(cleanup);
@@ -108,6 +110,7 @@ describe('useReminderNotifications', () => {
     await flush();
     expect(api.registerPeriodicSync).toHaveBeenCalled();
     expect(api.unregisterPeriodicSync).not.toHaveBeenCalled();
+    expect(useReminderWakeStore.getState().status).toBe('registered');
   });
 
   it('unregisters periodic sync when disabled but still registered', async () => {
@@ -116,5 +119,36 @@ describe('useReminderNotifications', () => {
     await flush();
     expect(api.unregisterPeriodicSync).toHaveBeenCalled();
     expect(api.registerPeriodicSync).not.toHaveBeenCalled();
+    expect(useReminderWakeStore.getState().status).toBe('unknown');
+  });
+
+  // A browser may simply refuse the background wake (Chrome declines it for a site it considers
+  // too little used). Reminders still fire while the app is open, so the registration stays
+  // best-effort — but the refusal is reported rather than left looking like an unqualified "on".
+  it('reports the background wake unavailable when the browser refuses the registration', async () => {
+    const api = fakeApi({ periodicSyncSupported: true, registerPeriodicSync: vi.fn(async () => false) });
+    renderHook(() => useReminderPeriodicSync(api, true));
+    await flush();
+    expect(useReminderWakeStore.getState().status).toBe('unavailable');
+  });
+
+  it('observes a rejecting seam rather than leaving an unhandled rejection', async () => {
+    const api = fakeApi({
+      periodicSyncSupported: true,
+      registerPeriodicSync: vi.fn(async () => {
+        throw new Error('registration failed');
+      }),
+    });
+    renderHook(() => useReminderPeriodicSync(api, true));
+    await flush();
+    expect(useReminderWakeStore.getState().status).toBe('unavailable');
+  });
+
+  it('leaves the reported status alone once the effect is torn down', async () => {
+    const api = fakeApi({ periodicSyncSupported: true });
+    const { unmount } = renderHook(() => useReminderPeriodicSync(api, true));
+    unmount();
+    await flush();
+    expect(useReminderWakeStore.getState().status).toBe('unknown');
   });
 });

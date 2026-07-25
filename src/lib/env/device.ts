@@ -36,6 +36,26 @@
 export const LARGE_FORMAT_QUERY = '(min-width: 768px) and (min-height: 600px) and (pointer: coarse)';
 
 /**
+ * The media query for a **compact** viewport — anything narrower than the tablet floor
+ * {@link LARGE_FORMAT_QUERY} starts at, i.e. Tailwind's `md` breakpoint (48rem = 768px).
+ * It is the exact complement of `md:`, so a screen either lays out its master-detail panes
+ * side by side or it doesn't; there is no width at which both or neither apply.
+ *
+ * ## Why width alone — and why that isn't the `handset:` mistake
+ *
+ * The sibling `handset:` variant deliberately pairs its width test with `(pointer: coarse)`,
+ * because a bare `max-width` cannot tell a phone from a desktop zoomed to 200% (both report
+ * ~640 CSS px) and *hiding* content there would take it away from exactly the low-vision user
+ * who zoomed in to read it (WCAG 1.4.4 Resize Text).
+ *
+ * This query is the other case: nothing is hidden. A master pane that doesn't fit beside the
+ * detail pane moves into a drawer, one tap away and fully intact. That is **reflow**, which
+ * WCAG 1.4.10 asks for at 320 CSS px on *every* device — so a zoomed desktop should get it too,
+ * and adding `(pointer: coarse)` here would wrongly withhold it. Width is the whole question.
+ */
+export const COMPACT_LAYOUT_QUERY = '(width < 48rem)';
+
+/**
  * A foldable held open like a book — two side-by-side viewport segments with the hinge
  * between them (the Viewport Segments media feature; Edge stable, Chrome origin trial).
  * Used only as a progressive enhancement to keep content clear of the hinge; layout must

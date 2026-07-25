@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { ImportIcon } from '@/components/icons';
 import { ImportDataDialog } from '@/features/inventory/components/ImportDataDialog';
+import { readImportFile, type ImportFileRead } from '@/features/import/file-source';
 import { LandingScaffold } from './LandingScaffold';
 
 /**
@@ -25,7 +26,7 @@ interface LaunchQueue {
  */
 export function ImportLaunchScreen() {
   const navigate = useNavigate();
-  const [seed, setSeed] = useState<{ text: string; filename: string } | null>(null);
+  const [seed, setSeed] = useState<{ read: ImportFileRead; filename: string } | null>(null);
 
   useEffect(() => {
     const queue = (window as unknown as { launchQueue?: LaunchQueue }).launchQueue;
@@ -36,7 +37,10 @@ export function ImportLaunchScreen() {
       void (async () => {
         try {
           const file = await handle.getFile();
-          setSeed({ text: await file.text(), filename: file.name });
+          // The OS hands over whatever the user chose "open with Gubbins" on, so a launched file
+          // goes through the same size cap, binary sniff and strict decode as a picked one; a
+          // refused one seeds no text and the dialog's File tab explains why (issue #347).
+          setSeed({ read: await readImportFile(file), filename: file.name });
         } catch {
           // A read failure leaves the empty dialog open; the user can pick a file manually.
         }
@@ -54,8 +58,9 @@ export function ImportLaunchScreen() {
         key={seed ? 'seeded' : 'empty'}
         open
         onClose={close}
-        initialText={seed?.text}
-        initialFilename={seed?.filename}
+        initialText={seed?.read.ok ? seed.read.text : undefined}
+        initialFilename={seed?.read.ok ? seed.filename : undefined}
+        initialFileRead={seed?.read}
       />
     </LandingScaffold>
   );

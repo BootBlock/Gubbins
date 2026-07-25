@@ -9,6 +9,7 @@ import {
   LABEL_SIZE_SHEET_ID,
   MIN_BARCODE_MODULE_MM,
   barcodeFitsWidth,
+  barcodeFitsWidthUncompressed,
   barcodeModuleWidth,
   clampColumns,
   clampLabelDimension,
@@ -18,10 +19,13 @@ import {
   shortId,
   templateHasBarcode,
   templateHasQr,
+  toBarcodeText,
   type LabelTemplate,
 } from './label-template';
 
 const ID = 'a1b2c3d4-1111-4111-8111-111111111111';
+/** An id whose short form is all digits — the case Code 128 can compress. */
+const DIGIT_ID = '12345678-1111-4111-8111-111111111111';
 
 describe('clampColumns', () => {
   it('clamps to the inclusive bounds and rounds', () => {
@@ -135,8 +139,66 @@ describe('shortId', () => {
   });
 });
 
+describe('toBarcodeText', () => {
+  it('passes plain ASCII through, trimmed and with whitespace collapsed', () => {
+    expect(toBarcodeText('RC0805-10K')).toBe('RC0805-10K');
+    expect(toBarcodeText('  Bin 3 \n B  ')).toBe('Bin 3 B');
+  });
+
+  it('transliterates accented Latin rather than deleting the accents (issue #332)', () => {
+    // The bug: `Café Störage` used to encode as `Caf Strage`, sitting beneath a name
+    // line that still read `Café Störage`.
+    expect(toBarcodeText('Café Störage')).toBe('Cafe Storage');
+    expect(toBarcodeText('Zaÿçon')).toBe('Zaycon');
+    // A decomposed `é` (e + combining acute) reaches the same value as a precomposed one.
+    expect(toBarcodeText('Café')).toBe('Cafe');
+  });
+
+  it('spells out the letters decomposition leaves alone', () => {
+    expect(toBarcodeText('Größe')).toBe('Grosse');
+    expect(toBarcodeText('Ærø Þing Łódź')).toBe('AEro THing Lodz');
+  });
+
+  it('folds typographic punctuation to its ASCII form', () => {
+    expect(toBarcodeText('Dave’s bin — no. 3')).toBe("Dave's bin - no. 3");
+    expect(toBarcodeText('40×30 “spare”')).toBe('40x30 "spare"');
+    // A vulgar fraction decomposes to digits around a fraction slash, which maps to '/'.
+    expect(toBarcodeText('½" pipe')).toBe('1/2" pipe');
+    // A non-breaking space becomes an ordinary one, via NFKD.
+    expect(toBarcodeText('Bay 1')).toBe('Bay 1');
+  });
+
+  it('rejects a value with any character that has no ASCII form', () => {
+    // Partly-representable is the case the old code mangled: it must reject, not truncate.
+    expect(toBarcodeText('AB£é')).toBeNull();
+    expect(toBarcodeText('Bin 3 鈴木')).toBeNull();
+    expect(toBarcodeText('Полка 4')).toBeNull();
+    // An astral character is examined whole, not as the lone surrogate `charCodeAt` saw.
+    expect(toBarcodeText('Shelf \u{1f9f0}')).toBeNull();
+    // A ZWJ family sequence: the joiners go, but the emoji themselves still reject it.
+    expect(toBarcodeText('\u{1f468}‍\u{1f469}‍\u{1f467}')).toBeNull();
+  });
+
+  it('is null for a value that is blank or only whitespace', () => {
+    expect(toBarcodeText('')).toBeNull();
+    expect(toBarcodeText('   ')).toBeNull();
+  });
+
+  it('strips invisible formatting characters rather than failing over them', () => {
+    // A zero-width space or bidi mark pasted into a name prints nothing either way, so it
+    // must not cost the label its barcode.
+    expect(toBarcodeText('Bin​ 3')).toBe('Bin 3');
+    expect(toBarcodeText('‎Shelf B')).toBe('Shelf B');
+  });
+});
+
 /** The widest a barcode prints in an A4 label cell — a comfortable, realistic width. */
 const WIDE_MM = 40;
+/**
+ * A width that a compressible eight-character value clears and an uncompressible one does
+ * not, so the two measurements can be told apart.
+ */
+const BETWEEN_MM = 20;
 
 describe('barcodeModuleWidth', () => {
   it('counts 11 modules per character plus start/check/stop and both quiet zones', () => {
@@ -164,6 +226,35 @@ describe('barcodeFitsWidth', () => {
   it('rejects a value that cannot be encoded at all, however wide the label', () => {
     expect(barcodeFitsWidth('', 1000)).toBe(false);
   });
+
+  it('lets a compressible value use the room its real encoding saves', () => {
+    // Eight digits pack into Code Set C (99 modules), so they genuinely need less width
+    // than eight mixed characters (143) — the exact measurement allows for that. 20 mm
+    // sits between the two thresholds.
+    expect(barcodeFitsWidth('12345678', BETWEEN_MM)).toBe(true);
+    expect(barcodeFitsWidth('A1B2C3D4', BETWEEN_MM)).toBe(false);
+  });
+});
+
+describe('barcodeFitsWidthUncompressed', () => {
+  it('gives the same answer for every value of the same length (issue #331)', () => {
+    // At the width where the exact measurement disagrees between these values, judging
+    // them uncompressed makes them agree — the label size decides, not the characters.
+    for (const value of ['12345678', 'A1B2C3D4', 'ABCDEFGH', '1234ABCD']) {
+      expect(barcodeFitsWidthUncompressed(value, BETWEEN_MM)).toBe(false);
+    }
+  });
+
+  it('agrees with the exact measurement for a value that cannot compress anyway', () => {
+    const width = barcodeModuleWidth('A1B2C3D4')! * MIN_BARCODE_MODULE_MM;
+    expect(barcodeFitsWidthUncompressed('A1B2C3D4', width + 0.01)).toBe(true);
+    expect(barcodeFitsWidthUncompressed('A1B2C3D4', width - 0.01)).toBe(false);
+  });
+
+  it('still rejects a value Code 128 cannot encode at all', () => {
+    expect(barcodeFitsWidthUncompressed('', 1000)).toBe(false);
+    expect(barcodeFitsWidthUncompressed('é', 1000)).toBe(false);
+  });
 });
 
 describe('fitBarcodeValue', () => {
@@ -176,10 +267,19 @@ describe('fitBarcodeValue', () => {
     expect(fitBarcodeValue('   ', ID, WIDE_MM)).toEqual({ value: 'A1B2C3D4', fit: 'ok' });
   });
 
-  it('strips characters Code 128 Code-B cannot encode, falling back if nothing remains', () => {
-    // The "£" (163) and "é" (233) are outside 32..126 and are stripped.
-    expect(fitBarcodeValue('AB£é', ID, WIDE_MM)).toEqual({ value: 'AB', fit: 'ok' });
-    expect(fitBarcodeValue('é', ID, WIDE_MM)).toEqual({ value: 'A1B2C3D4', fit: 'ok' });
+  it('transliterates a value Code 128 cannot encode verbatim (issue #332)', () => {
+    // `Café Störage` prints `Cafe Storage` — legible, and the same value the human-readable
+    // line under the bars shows. It never prints the old `Caf Strage`.
+    expect(fitBarcodeValue('Café Störage', ID, WIDE_MM)).toEqual({
+      value: 'Cafe Storage',
+      fit: 'ok',
+    });
+  });
+
+  it('falls back rather than printing a value it can only partly represent (issue #332)', () => {
+    // The "£" has no ASCII spelling, so `AB£é` is rejected whole instead of printing `ABe`.
+    expect(fitBarcodeValue('AB£é', ID, WIDE_MM)).toEqual({ value: 'A1B2C3D4', fit: 'ok' });
+    expect(fitBarcodeValue('鈴木電子', ID, WIDE_MM)).toEqual({ value: 'A1B2C3D4', fit: 'ok' });
   });
 
   it('shortens a value too long to print readably (issue #331)', () => {
@@ -199,5 +299,30 @@ describe('fitBarcodeValue', () => {
     // An unreadable symbol is worse than none — it looks like it ought to work.
     expect(fitBarcodeValue('BIN3', ID, 10)).toEqual({ value: null, fit: 'unprintable' });
     expect(fitBarcodeValue('', ID, 10)).toEqual({ value: null, fit: 'unprintable' });
+  });
+
+  it('decides "unprintable" from the label size alone, not the shape of the id (issue #331)', () => {
+    // 27 mm is the usable width of the 30 x 15 mm die-cut label. `DIGIT_ID`'s short id is
+    // all digits, so Code Set C would squeeze it into two-thirds the width of `ID`'s — but
+    // the fallback is measured uncompressed, so both labels behave the same way.
+    const NARROW_MM = 27;
+    expect(fitBarcodeValue('A very long location name', DIGIT_ID, NARROW_MM).fit).toBe('unprintable');
+    expect(fitBarcodeValue('A very long location name', ID, NARROW_MM).fit).toBe('unprintable');
+    // …and with no preferred value to lose, still nothing to print.
+    expect(fitBarcodeValue('', DIGIT_ID, NARROW_MM).fit).toBe('unprintable');
+    expect(fitBarcodeValue('', ID, NARROW_MM).fit).toBe('unprintable');
+  });
+
+  it('still prints a fallback on a label with room for one', () => {
+    // 37 mm is the usable width of the 40 x 30 mm die-cut label and of a 4-column A4 cell.
+    const ROOMY_MM = 37;
+    expect(fitBarcodeValue('A very long location name', DIGIT_ID, ROOMY_MM)).toEqual({
+      value: '12345678',
+      fit: 'shortened',
+    });
+    expect(fitBarcodeValue('A very long location name', ID, ROOMY_MM)).toEqual({
+      value: 'A1B2C3D4',
+      fit: 'shortened',
+    });
   });
 });

@@ -163,6 +163,37 @@ const PATTERNS: readonly string[] = [
   '1100011101011',
 ];
 
+/**
+ * Modules in one Code 128 symbol — every {@link PATTERNS} entry but the stop.
+ *
+ * @internal Exported for the label layer's width maths and for unit tests.
+ */
+export const CODE128_SYMBOL_MODULES = 11;
+
+/**
+ * Modules in the stop symbol: its 11-module pattern plus the 2-module termination bar.
+ *
+ * @internal Exported for the label layer's width maths and for unit tests.
+ */
+export const CODE128_STOP_MODULES = 13;
+
+/**
+ * The module count of the **widest** Code 128 encoding of `length` characters: Code Set B
+ * throughout, with none of the Code-Set-C digit-pair compression {@link encodeCode128}
+ * applies where it can. That is one symbol per character, plus the start and checksum
+ * symbols, plus the stop. The quiet zone is excluded — callers add their own.
+ *
+ * Useful when a decision must not depend on *which* characters a value happens to hold:
+ * the same length always yields the same answer, an upper bound the real encoding can only
+ * come in under.
+ *
+ * @internal Exported for the label layer's width maths and for unit tests.
+ */
+export function code128WidestModules(length: number): number {
+  // start + `length` data symbols + checksum, each 11 modules; then the wider stop.
+  return (length + 2) * CODE128_SYMBOL_MODULES + CODE128_STOP_MODULES;
+}
+
 /** True if `code` is a single ASCII digit ("0".."9"). */
 function isDigit(code: number): boolean {
   return code >= 48 && code <= 57;
