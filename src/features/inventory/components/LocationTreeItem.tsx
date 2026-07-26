@@ -239,10 +239,10 @@ export function LocationTreeItem({
           every other row's count (issue #478). */}
       {!editing && (onEdit || onPrintLabel) ? (
         <LocationRowActions
-          onPrintLabel={onPrintLabel}
-          printLabelLabel={printLabelLabel}
           onEdit={onEdit}
           editLabel={editLabel}
+          onPrintLabel={onPrintLabel}
+          printLabelLabel={printLabelLabel}
         />
       ) : null}
       {!editing ? (

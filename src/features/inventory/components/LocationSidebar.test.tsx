@@ -268,6 +268,18 @@ describe('LocationSidebar — accessible APG tree', () => {
     expect(screen.queryByRole('button', { name: 'Delete Unassigned' })).toBeNull();
   });
 
+  it('puts Print label last on an editable row so it lines up with the print-only rows (issue #613)', () => {
+    renderSidebar();
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+    const edit = within(workshop).getByRole('button', { name: 'Edit Workshop' });
+    const print = within(workshop).getByRole('button', { name: 'Print label for Workshop' });
+    // Print is the row's *last* action, so it occupies the same column as the lone Print
+    // button of a system row — which can be printed but not edited.
+    expect(edit.compareDocumentPosition(print) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const unassigned = screen.getByRole('treeitem', { name: 'Unassigned' });
+    expect(within(unassigned).getByRole('button', { name: 'Print label for Unassigned' })).toBeTruthy();
+  });
+
   it('deletes an empty location immediately, with no confirmation prompt', () => {
     renderSidebar();
     // Reveal the empty Drawer (itemCount 0), open its Edit dialog, and delete from there.

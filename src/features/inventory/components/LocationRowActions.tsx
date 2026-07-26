@@ -3,14 +3,14 @@ import { Tooltip } from '@/components/foundry';
 import { EditIcon, QrCodeIcon } from '@/components/icons';
 
 interface LocationRowActionsProps {
-  readonly onPrintLabel?: () => void;
-  readonly printLabelLabel?: string;
   readonly onEdit?: () => void;
   readonly editLabel?: string;
+  readonly onPrintLabel?: () => void;
+  readonly printLabelLabel?: string;
 }
 
 /**
- * The per-row Print / Edit affordances of a {@link LocationTreeItem}. They reserve
+ * The per-row Edit / Print affordances of a {@link LocationTreeItem}. They reserve
  * *no* layout space until the row is hovered or holds keyboard focus — so a long location name
  * is never truncated by buttons that aren't even visible. On reveal, the container eases its
  * width (and fades) open with the house cubic-bezier; the reduced-motion catch-all in index.css
@@ -22,6 +22,11 @@ interface LocationRowActionsProps {
  * and each carries a Foundry {@link Tooltip} so the icon-only control's purpose is discoverable
  * on hover (its `aria-label` already names it for assistive tech).
  *
+ * Print sits **last**, after Edit (issue #613). A system row (Unassigned, In Transit) can only be
+ * printed, not edited, so it shows a single button; ordering Print last is what keeps that lone
+ * button in the same column as the Print button of every editable row below it, rather than
+ * landing under their Edit pencils.
+ *
  * Deletion and archiving are deliberately **not** here: they act on the location's lifecycle
  * rather than its everyday use, out of place in a cramped hover row, so they live in the
  * Edit-location dialog's footer (a considered, spacious context) — delete alongside the single
@@ -29,10 +34,10 @@ interface LocationRowActionsProps {
  * {@link EditLocationDialog}.
  */
 export function LocationRowActions({
-  onPrintLabel,
-  printLabelLabel,
   onEdit,
   editLabel,
+  onPrintLabel,
+  printLabelLabel,
 }: LocationRowActionsProps) {
   return (
     <div
@@ -45,22 +50,6 @@ export function LocationRowActions({
         'touch:max-w-[7.5rem] touch:opacity-100',
       )}
     >
-      {onPrintLabel ? (
-        <Tooltip content="Print a label for this location" triggerTabIndex={-1}>
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label={printLabelLabel}
-            onClick={(e) => {
-              e.stopPropagation();
-              onPrintLabel();
-            }}
-            className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
-          >
-            <QrCodeIcon className="text-glyph-scan" />
-          </button>
-        </Tooltip>
-      ) : null}
       {onEdit ? (
         <Tooltip
           content="Edit this location — rename it, move it, change its type, colour or capacity"
@@ -77,6 +66,22 @@ export function LocationRowActions({
             className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
           >
             <EditIcon className="text-glyph-edit" />
+          </button>
+        </Tooltip>
+      ) : null}
+      {onPrintLabel ? (
+        <Tooltip content="Print a label for this location" triggerTabIndex={-1}>
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={printLabelLabel}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPrintLabel();
+            }}
+            className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
+          >
+            <QrCodeIcon className="text-glyph-scan" />
           </button>
         </Tooltip>
       ) : null}
