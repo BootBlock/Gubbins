@@ -14,6 +14,7 @@ const spies = vi.hoisted(() => ({
   del: vi.fn(),
   archive: vi.fn(),
   move: vi.fn(),
+  create: vi.fn(),
 }));
 // Mutable so a test can simulate an in-flight drag-to-nest re-parent / item move (isPending +
 // variables) and drive the receiving-row spinner.
@@ -52,6 +53,7 @@ vi.mock('../mutations', () => ({
     variables: updateState.variables,
   }),
   useArchiveLocation: () => ({ mutate: spies.archive, isPending: false }),
+  useCreateLocationPath: () => ({ mutate: spies.create, isPending: false }),
   useMoveItem: () => ({ mutate: spies.move, isPending: moveState.isPending, variables: moveState.variables }),
 }));
 
@@ -60,6 +62,7 @@ beforeEach(() => {
   spies.update.mockClear();
   spies.del.mockClear();
   spies.archive.mockClear();
+  spies.create.mockReset();
   // Default: the move mutation resolves synchronously as a success, so `onSuccess` (toast +
   // announcement) fires. A test that needs a pending move sets `moveState.isPending` instead.
   spies.move.mockReset();
@@ -708,6 +711,11 @@ describe('LocationSidebar — drag-to-move item feedback', () => {
   afterEach(() => {
     // @ts-expect-error restore jsdom's default hit-test (returns null).
     delete document.elementFromPoint;
+    // Ending a drag arms a one-shot capture listener on `window` that swallows the click the
+    // release synthesises (see `item-drag`), disarming itself on a timer ~350ms later — long
+    // after the next test has started. Spend it here with a throwaway click so it can't eat the
+    // first click of whichever test runs next.
+    window.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
 
   // An inventory item drag source (as ItemCard/ItemRow provide) plus the sidebar, both under the
@@ -811,5 +819,75 @@ describe('LocationSidebar — compact placement in the drawer (issue #147)', () 
   it('still offers "Add location" — the drawer must not cost the user an action', () => {
     renderCompact();
     expect(screen.getByRole('button', { name: 'Add location' })).toBeTruthy();
+  });
+});
+
+describe('LocationSidebar — a newly created location is selected (issue #612)', () => {
+  /** Drive the "+" dialog through to a successful create of `created`. */
+  function createLocation(created: { id: string; name: string; parentId: string | null }) {
+    fireEvent.click(screen.getByRole('button', { name: 'Add location' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: created.name } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    // The repository resolves each leaf of the (possibly nested) name; a plain name is one.
+    const onSuccess = spies.create.mock.calls[0][1].onSuccess as (rows: unknown[]) => void;
+    act(() => onSuccess([created]));
+  }
+
+  it('selects the location the Add dialog just created', () => {
+    const onSelect = renderSidebar();
+    createLocation({ id: 'bin3', name: 'Bin 3', parentId: 'cabinet' });
+    expect(onSelect).toHaveBeenCalledWith('bin3');
+  });
+
+  it('opens the branch it landed in, so its row is not buried in a collapsed ancestor', () => {
+    renderSidebar();
+    // Cabinet sits at level 2 and so starts collapsed — its child Drawer is out of sight.
+    expect(screen.queryByRole('treeitem', { name: 'Drawer' })).toBeNull();
+    createLocation({ id: 'bin3', name: 'Bin 3', parentId: 'cabinet' });
+    // Creating inside Cabinet opens it (and everything above it), revealing its contents.
+    expect(screen.getByRole('treeitem', { name: 'Drawer' })).toBeTruthy();
+    const overrides = useLocationExpansionStore.getState().overrides;
+    expect(overrides.cabinet).toBe(true);
+    expect(overrides.workshop).toBe(true);
+  });
+
+  it('keeps the tree in the tab order while the new row is still on its way', () => {
+    renderSidebar();
+    createLocation({ id: 'bin3', name: 'Bin 3', parentId: 'cabinet' });
+    // The selected location has no row until the refetched tree carries it, so the tab stop
+    // parks on "All items" — a tree with no `tabindex="0"` row would be unreachable by Tab.
+    const tabStops = document.querySelectorAll('[role="treeitem"][tabindex="0"]');
+    expect(tabStops).toHaveLength(1);
+    expect(tabStops[0]!.textContent).toContain('All items');
+  });
+
+  it('waits for the refetched tree when the create also added the levels above it', () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(
+      <ToastProvider>
+        <LocationSidebar tree={tree} flat={flat} selectedId={null} onSelect={onSelect} totalCount={7} />
+      </ToastProvider>,
+    );
+    // "Cabinet/Shelf B/Bin 3" creates Shelf B on the way through, so at this point nothing in
+    // `flat` knows where Bin 3 sits — the branch cannot be opened yet.
+    createLocation({ id: 'bin3', name: 'Cabinet/Shelf B/Bin 3', parentId: 'shelfb' });
+    expect(onSelect).toHaveBeenCalledWith('bin3');
+    expect(useLocationExpansionStore.getState().overrides.cabinet).toBeUndefined();
+
+    // The invalidated locations query lands, bringing both new levels with it.
+    const grown = [
+      ...flat,
+      { ...flat[1]!, id: 'shelfb', name: 'Shelf B', parentId: 'cabinet', itemCount: 0 },
+      { ...flat[1]!, id: 'bin3', name: 'Bin 3', parentId: 'shelfb', itemCount: 0 },
+    ];
+    rerender(
+      <ToastProvider>
+        <LocationSidebar tree={tree} flat={grown} selectedId="bin3" onSelect={onSelect} totalCount={7} />
+      </ToastProvider>,
+    );
+    const overrides = useLocationExpansionStore.getState().overrides;
+    expect(overrides.shelfb).toBe(true);
+    expect(overrides.cabinet).toBe(true);
+    expect(overrides.workshop).toBe(true);
   });
 });

@@ -36,6 +36,7 @@ import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
 import {
   collectDescendantIds,
+  locationAncestry,
   locationsMatchingQuery,
   matchingWithAncestors,
   pruneArchivedTree,
@@ -240,6 +241,32 @@ export function LocationSidebar({
     scrollRowIntoView,
   });
 
+  // Read straight off the store rather than through the hook's `toggle`, which is a fresh closure
+  // each render and would re-run the effect below continuously.
+  const setExpanded = useLocationExpansionStore((s) => s.setExpanded);
+  // Open `id` and every branch above it, so a row buried under collapsed ancestors is actually on
+  // screen. Walked over the *full* flat list (not the filtered view) so it still opens the branch
+  // while a search or tag filter is narrowing the tree.
+  const expandBranch = useCallback(
+    (id: string, nodes: readonly LocationWithCount[]) => {
+      for (const ancestorId of locationAncestry(id, nodes)) setExpanded(ancestorId, true);
+    },
+    [setExpanded],
+  );
+
+  // A location just created from the "+" dialog whose parent `flat` doesn't know about yet (issue
+  // #612). Creating under an *existing* parent opens the branch on the spot; but the create
+  // shortcut can add whole levels at once ("Garage/Shelf A/Bin 3"), and those intermediate
+  // locations only become walkable once the invalidated locations query has refetched.
+  const [pendingRevealId, setPendingRevealId] = useState<string | null>(null);
+  useEffect(() => {
+    if (pendingRevealId === null) return;
+    const created = flat.find((l) => l.id === pendingRevealId);
+    if (!created) return;
+    if (created.parentId) expandBranch(created.parentId, flat);
+    setPendingRevealId(null);
+  }, [flat, pendingRevealId, expandBranch]);
+
   // Printable location-label dialog (Phase 73) — co-located like Edit/Delete above. Gated on
   // the Label printing module (Modular UI): with it off, the per-location action disappears.
   const labelsEnabled = useFeature('labels');
@@ -335,6 +362,12 @@ export function LocationSidebar({
   const rowIds = [ALL_ITEMS_ID, ...visibleRows.map((row) => row.node.id)];
   // "All items" sits alongside the top-level locations, so it counts towards their ARIA set.
   const topLevelSetSize = shownTree.length + 1;
+  // The whole tree is a single tab stop, carried by whichever row is `focused`. `focusedId` can
+  // name a row the tree isn't currently showing — a location selected the moment it was created,
+  // before the refetched tree carries its row; or a focused row a search/tag filter has since
+  // hidden — and with no row claiming `tabIndex=0` the tree drops out of the tab order entirely.
+  // Park the tab stop on "All items" (always rendered) until the intended row is back.
+  const tabStopId = rowIds.includes(focusedId) ? focusedId : ALL_ITEMS_ID;
 
   // Windowing kicks in only once the tree is genuinely long. Below the threshold every row stays
   // in the DOM exactly as before — no absolute positioning, no measurement, and drag-to-nest and
@@ -532,6 +565,18 @@ export function LocationSidebar({
           onClose={() => setAddOpen(false)}
           locations={flat}
           defaultParentId={addParentId}
+          onCreated={(created) => {
+            // Adding a location is almost always followed by working in it, so select it rather
+            // than leaving the user to pick it out of the tree by hand (issue #612). `select` only
+            // moves the roving-tabindex target — it doesn't pull DOM focus away from wherever the
+            // closing dialog restores it to.
+            select(created.id);
+            // Open the branch it landed in. For the common case the parent is already in `flat`,
+            // so the row is revealed the moment the refetched tree renders it; a create that added
+            // new intermediate levels finds nothing to walk here and is caught by the effect above.
+            if (created.parentId) expandBranch(created.parentId, flat);
+            setPendingRevealId(created.id);
+          }}
         />
       ) : null}
       {editLocation ? (
@@ -619,7 +664,7 @@ export function LocationSidebar({
           posInSet={1}
           setSize={topLevelSetSize}
           selected={selectedId === null}
-          focused={focusedId === ALL_ITEMS_ID}
+          focused={tabStopId === ALL_ITEMS_ID}
           icon={<PackageIcon />}
           label={t('inventory.locations.allItems')}
           count={totalCount}
@@ -647,7 +692,7 @@ export function LocationSidebar({
         posInSet={atTopLevel ? posInSet + 1 : posInSet}
         setSize={atTopLevel ? topLevelSetSize : setSize}
         selected={selectedId === node.id}
-        focused={focusedId === node.id}
+        focused={tabStopId === node.id}
         icon={<LocationKindIcon kind={node.kind} expanded={isExpanded && hasChildren} />}
         label={node.name}
         colorClass={locationColorTextClass(node.color)}
