@@ -362,6 +362,12 @@ export function LocationSidebar({
   const rowIds = [ALL_ITEMS_ID, ...visibleRows.map((row) => row.node.id)];
   // "All items" sits alongside the top-level locations, so it counts towards their ARIA set.
   const topLevelSetSize = shownTree.length + 1;
+  // The whole tree is a single tab stop, carried by whichever row is `focused`. `focusedId` can
+  // name a row the tree isn't currently showing — a location selected the moment it was created,
+  // before the refetched tree carries its row; or a focused row a search/tag filter has since
+  // hidden — and with no row claiming `tabIndex=0` the tree drops out of the tab order entirely.
+  // Park the tab stop on "All items" (always rendered) until the intended row is back.
+  const tabStopId = rowIds.includes(focusedId) ? focusedId : ALL_ITEMS_ID;
 
   // Windowing kicks in only once the tree is genuinely long. Below the threshold every row stays
   // in the DOM exactly as before — no absolute positioning, no measurement, and drag-to-nest and
@@ -658,7 +664,7 @@ export function LocationSidebar({
           posInSet={1}
           setSize={topLevelSetSize}
           selected={selectedId === null}
-          focused={focusedId === ALL_ITEMS_ID}
+          focused={tabStopId === ALL_ITEMS_ID}
           icon={<PackageIcon />}
           label={t('inventory.locations.allItems')}
           count={totalCount}
@@ -686,7 +692,7 @@ export function LocationSidebar({
         posInSet={atTopLevel ? posInSet + 1 : posInSet}
         setSize={atTopLevel ? topLevelSetSize : setSize}
         selected={selectedId === node.id}
-        focused={focusedId === node.id}
+        focused={tabStopId === node.id}
         icon={<LocationKindIcon kind={node.kind} expanded={isExpanded && hasChildren} />}
         label={node.name}
         colorClass={locationColorTextClass(node.color)}

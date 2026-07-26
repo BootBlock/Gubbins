@@ -839,6 +839,16 @@ describe('LocationSidebar — a newly created location is selected (issue #612)'
     expect(overrides.workshop).toBe(true);
   });
 
+  it('keeps the tree in the tab order while the new row is still on its way', () => {
+    renderSidebar();
+    createLocation({ id: 'bin3', name: 'Bin 3', parentId: 'cabinet' });
+    // The selected location has no row until the refetched tree carries it, so the tab stop
+    // parks on "All items" — a tree with no `tabindex="0"` row would be unreachable by Tab.
+    const tabStops = document.querySelectorAll('[role="treeitem"][tabindex="0"]');
+    expect(tabStops).toHaveLength(1);
+    expect(tabStops[0]!.textContent).toContain('All items');
+  });
+
   it('waits for the refetched tree when the create also added the levels above it', () => {
     const onSelect = vi.fn();
     const { rerender } = render(
