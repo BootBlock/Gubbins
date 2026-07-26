@@ -32,6 +32,22 @@ Each row also carries two small buttons — **print a label** for the location, 
 With a mouse they slide into view when you hover the row (so long names have the full width to
 themselves); on a touch screen, where there is no hover, they are always shown.
 
+## Adding a location
+
+The **+** button above the tree opens **Add location**. Give it a name — and, if you want them, a
+colour, a type, a description, a capacity and its internal size — then select **Create**.
+
+- **It nests where you are.** With a location selected, the new one is created *inside* it; from
+  **All items** it starts at the top level. Either way you can pick a different parent in the
+  dialog.
+- **It becomes the selection.** The new location is selected as soon as it is created, and the
+  branch it landed in is opened up — so the inventory is already filtered to it and you can start
+  putting things in straight away.
+- **You can build a whole branch in one go.** Separate levels with `/` — `Garage/Shelf A/Bin 3`
+  creates all three, reusing any level that already exists — and separate siblings with `,`, so
+  `Garage/Box 1, Box 2, Box 3` adds three boxes at once. The dialog previews what a name will
+  create before you commit to it; where a name fans out into siblings, the first one is selected.
+
 ## Finding a location
 
 Above the tree is a **search box**. Type into it and the tree narrows to the locations that
