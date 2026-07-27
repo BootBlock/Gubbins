@@ -85,7 +85,14 @@ file back and run into the same problem, so Gubbins refuses that combination and
 
 > **ℹ️ Note**
 > Because the database is in an unexpected shape, a part of it occasionally can't be read. The
-> screen names anything left out, so you know what the file holds before you rely on it.
+> screen names anything left out, so you know what the file holds before you rely on it. If
+> *nothing* at all can be read, it says so and no file is saved — a backup you can't rely on is
+> worse than none, because the next step this screen offers clears your data.
+
+> **💡 Tip**
+> If the backup can't be made, try **Download raw .sqlite binary** underneath it. That one only has
+> to open your database rather than read through it, so it often works when the backup doesn't —
+> and it's worth having before you reset, even though it can't be restored into Gubbins afterwards.
 
 ## Only restore files you trust
 

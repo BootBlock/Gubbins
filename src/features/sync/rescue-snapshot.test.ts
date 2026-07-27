@@ -6,10 +6,11 @@
  * that makes that possible, and that the ordinary path is left strict.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { buildLocalSnapshot } from './snapshot';
+import { buildLocalSnapshot, UnreadableDatabaseError } from './snapshot';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { IDatabaseDriver, SqlParams, SqlRow } from '@/db/rpc/driver';
 import { pageOf } from '@/test/drivers/keyset-page';
+import { CRASHED_WORKER_MESSAGE, crashedDriver } from '@/test/drivers/crashed-driver';
 
 /** The table a `SELECT … FROM <table>` reads, for the fake driver's routing. */
 function tableOf(sql: string): string {
@@ -78,5 +79,27 @@ describe('buildLocalSnapshot — skipUnreadable (issue #197)', () => {
     // Recovered the real rows without smuggling the system-locked one into the backup — a
     // restore would trip its protect trigger and abort the whole transaction.
     expect(snapshot.tables.locations).toEqual([{ id: 'l1', name: 'Shelf' }]);
+  });
+});
+
+describe('buildLocalSnapshot — nothing readable at all (issue #503)', () => {
+  it('refuses rather than returning a structurally valid snapshot holding nothing', async () => {
+    await expect(buildLocalSnapshot(crashedDriver(), 1, { skipUnreadable: true })).rejects.toBeInstanceOf(
+      UnreadableDatabaseError,
+    );
+  });
+
+  it('keeps the underlying failure as the cause, so the console still shows what went wrong', async () => {
+    await expect(buildLocalSnapshot(crashedDriver(), 1, { skipUnreadable: true })).rejects.toMatchObject({
+      cause: expect.objectContaining({ message: CRASHED_WORKER_MESSAGE }),
+    });
+  });
+
+  it('still degrades when even one part reads — a partial snapshot is the whole point', async () => {
+    // Only `tombstones` answers. That is a poor backup, but it is a real one, and the caller
+    // reports what is missing; failing here would take away a rescue that can still work.
+    const snapshot = await buildLocalSnapshot(fakeDriver({ tombstones: [] }), 1, { skipUnreadable: true });
+
+    expect(snapshot.tables.items).toEqual([]);
   });
 });

@@ -8,7 +8,7 @@
  */
 import { downloadBlob, fileTimestamp } from '@/lib/download';
 import { resetAppShell } from '@/lib/app-shell-reset';
-import { getDatabaseDriver, disposeDatabase } from '@/db/client';
+import { getRescueDatabaseDriver, disposeDatabase } from '@/db/client';
 // From the leaf storage module, never `db/worker/sqlite-bootstrap` — that would pull the
 // whole SQLite WASM glue into this chunk for the sake of a path (issue #165).
 import {
@@ -26,7 +26,7 @@ import { removeImagesDirectory } from '@/features/images/opfs-images';
 
 /** Download the live database as a raw .sqlite binary (spec §3 — the key rescue). */
 export async function downloadRawSqlite(): Promise<void> {
-  const bytes = await getDatabaseDriver().exportBinary();
+  const bytes = await (await getRescueDatabaseDriver()).exportBinary();
   // Copy into a standalone ArrayBuffer so the Blob is independent of WASM memory.
   const copy = bytes.slice();
   downloadBlob(`gubbins-${fileTimestamp()}.sqlite`, new Blob([copy], { type: 'application/x-sqlite3' }));
@@ -35,20 +35,6 @@ export async function downloadRawSqlite(): Promise<void> {
 // Re-exported so the long-standing `@/app/error/safe-mode-actions` import site keeps working;
 // the guard itself now lives beside the structural header checks it belongs with (#198).
 export { isSqliteFile } from '@/db/sqlite-header';
-
-/**
- * The database driver, replacing the worker first if the one it holds is already dead.
- *
- * A crashed worker latches the driver permanently unusable (issue #299) — sound for ordinary
- * calls, but these rescues run on the crash screen, and under the `opfs-sahpool` VFS the
- * database can *only* be reached through a worker. Refusing here would make the recovery
- * unavailable in exactly the state it exists for. The dead worker has already been terminated,
- * so the file handles it held are released and a fresh one can take them.
- */
-async function rescueDriver(): Promise<ReturnType<typeof getDatabaseDriver>> {
-  if (getDatabaseDriver().isUnavailable) await disposeDatabase();
-  return getDatabaseDriver();
-}
 
 /**
  * Replace the stored database with raw SQLite bytes (the shared write step behind both
@@ -79,7 +65,7 @@ export async function overwriteDatabaseFile(bytes: Uint8Array): Promise<void> {
     return;
   }
 
-  const { staleSidecar } = await (await rescueDriver()).writeDatabaseFile(bytes);
+  const { staleSidecar } = await (await getRescueDatabaseDriver()).writeDatabaseFile(bytes);
   acknowledgeDbLoss();
   await disposeDatabase();
   if (staleSidecar) throw new StaleJournalError(staleSidecar, undefined);
@@ -151,7 +137,7 @@ export async function captureRestorePoint(): Promise<boolean> {
   }
   if (!(await hasSahPoolStore())) return false;
 
-  const bytes = await (await rescueDriver()).readDatabaseFile();
+  const bytes = await (await getRescueDatabaseDriver()).readDatabaseFile();
   if (!bytes || bytes.length === 0) return false;
   // Copy into a standalone ArrayBuffer: bytes crossing from the worker can be
   // SharedArrayBuffer-backed, which `Blob` rejects.
@@ -259,7 +245,7 @@ export class RestorePointError extends Error {
 
 /** Best-effort JSON dump of every table (full versioned backup arrives in Phase 7). */
 export async function downloadJsonDump(): Promise<void> {
-  const db = getDatabaseDriver();
+  const db = await getRescueDatabaseDriver();
   const tables = await db.query<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name;",
   );
@@ -299,7 +285,7 @@ export async function hardResetLocalData(): Promise<void> {
   // ask the VFS to blank its own files *first*, while it still owns them (issue #255).
   if (await hasSahPoolStore()) {
     try {
-      await (await rescueDriver()).wipeDatabaseFiles();
+      await (await getRescueDatabaseDriver()).wipeDatabaseFiles();
     } catch {
       // A wedged or dead worker is exactly why a user reaches for this; the directory removal
       // below is the second pass at it.

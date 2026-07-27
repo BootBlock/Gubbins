@@ -97,21 +97,12 @@ export async function runMigrations(
  * still never inferred by inspecting `sqlite_master` (§2.3.1). `expected` is passed in rather
  * than imported so this engine stays independent of any one concrete baseline, exactly as the
  * rest of it is.
+ *
+ * A read that fails for any reason *other* than the schema being absent propagates unchanged
+ * (issue #500) — see {@link readBaselineStamp}.
  */
 export async function assertBaselineCurrent(driver: IDatabaseDriver, expected: string): Promise<void> {
-  // A database old enough to predate `app_meta` itself makes this read throw "no such table".
-  // That is the *most* stale case there is, so treat it as unstamped rather than letting a raw
-  // SQLITE_ERROR through — a generic "failed to initialise" screen offers no way forward, which
-  // is exactly the cryptic outcome this guard exists to replace.
-  let stamped: string | null = null;
-  try {
-    const row = await driver.queryOne<{ value: string | null }>('SELECT value FROM app_meta WHERE key = ?;', [
-      BASELINE_REVISION_KEY,
-    ]);
-    stamped = row?.value ?? null;
-  } catch {
-    stamped = null;
-  }
+  const stamped = await readBaselineStamp(driver);
 
   // Exact match, not a comparison: the stamp is a fingerprint, so "different" is the only
   // meaningful relation — a database built from any other revision of the baseline is
@@ -125,6 +116,73 @@ export async function assertBaselineCurrent(driver: IDatabaseDriver, expected: s
         'rebuild it from scratch.',
     );
   }
+}
+
+/**
+ * How many times the stamp read is attempted before its failure is reported, and how long to
+ * wait between attempts. Only *retryable* lock contention is retried, so in practice this costs
+ * nothing: every other outcome — a hit, a missing table, a dead worker — settles on attempt one.
+ */
+const STAMP_READ_ATTEMPTS = 2;
+const STAMP_RETRY_DELAY_MS = 50;
+
+/**
+ * SQLite's phrasings for "that schema object does not exist". These, and only these, mean the
+ * database predates the thing being read rather than that the read itself went wrong.
+ */
+const MISSING_SCHEMA_MARKERS: readonly string[] = ['no such table', 'no such column'];
+
+/**
+ * Read the baseline stamp, distinguishing *unstamped* from *unknown* (issue #500).
+ *
+ * The distinction is the whole point. `SCHEMA_STALE` is the one boot error that actively *tells the
+ * user to purge their inventory*: its screen explains that pre-1.0 data cannot be carried forward
+ * and walks them through backup-then-reset. Concluding it from a read that merely *failed* — a
+ * worker timeout, a worker that died between the migration and this call, lock contention — hands
+ * that advice to someone whose database is perfectly healthy, and a user who follows it loses
+ * everything since their last backup for no reason. Only a database old enough to predate
+ * `app_meta` (or the columns this reads) is genuinely unstamped, and SQLite says so in as many
+ * words; anything else is a transient fault and propagates as itself, so the boot screen names the
+ * real failure and points at a reload instead.
+ *
+ * Retryable lock contention gets one more go before it is reported, since a `SQLITE_BUSY` here is
+ * transient by definition and stopping the boot for it helps nobody.
+ */
+async function readBaselineStamp(driver: IDatabaseDriver): Promise<string | null> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const row = await driver.queryOne<{ value: string | null }>(
+        'SELECT value FROM app_meta WHERE key = ?;',
+        [BASELINE_REVISION_KEY],
+      );
+      return row?.value ?? null;
+    } catch (error) {
+      if (isMissingSchemaError(error)) return null;
+      if (attempt >= STAMP_READ_ATTEMPTS || !(error instanceof DbError && error.isRetryable)) throw error;
+      await delay(STAMP_RETRY_DELAY_MS);
+    }
+  }
+}
+
+/**
+ * True when `error` reports an absent table or column — the "this database predates the stamp"
+ * case — rather than a failure to read at all.
+ *
+ * The code is checked as well as the text: a missing table reaches us as SQLite's own generic
+ * error (or, from a driver that surfaces no result code, as `UNKNOWN`), never as one of the
+ * transport or environment codes, so a `WORKER_TIMEOUT` cannot be talked into looking like a
+ * stale schema by whatever its message happens to contain. Erring towards "not missing" is the
+ * safe direction: it costs a genuinely ancient database the tailored explainer, not the rescue
+ * actions, which the boot-failure screen offers either way.
+ */
+function isMissingSchemaError(error: unknown): boolean {
+  if (error instanceof DbError && error.code !== 'SQLITE_ERROR' && error.code !== 'UNKNOWN') return false;
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return MISSING_SCHEMA_MARKERS.some((marker) => message.includes(marker));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Guard against authoring mistakes: versions must be contiguous starting at 1. */
