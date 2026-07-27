@@ -19,7 +19,7 @@ import {
   readPlainDatabaseFile,
   writePlainDatabaseFile,
 } from '@/db/db-storage';
-import { clearDbPresence } from '@/db/db-presence';
+import { acknowledgeDbLoss, clearDbPresence } from '@/db/db-presence';
 import { inspectRestoreCandidate } from '@/db/restore-candidate';
 import { isSqliteFile } from '@/db/sqlite-header';
 import { removeImagesDirectory } from '@/features/images/opfs-images';
@@ -63,16 +63,24 @@ async function rescueDriver(): Promise<ReturnType<typeof getDatabaseDriver>> {
  * cases go through the worker, which owns that decision. Disposal is deliberately part of this
  * function rather than the caller's job, because the two orders are opposites: the direct write
  * needs the worker *gone* first, the delegated one needs it alive.
+ *
+ * A pending "your data was cleared by the browser" notice is settled here too (issue #505). It is
+ * raised on every boot until the user answers it, and restoring *is* the answer — without this,
+ * the reload into freshly-restored data would open on a screen announcing that the data is gone.
+ * Only once the bytes have committed: a restore that failed leaves the loss genuinely unresolved,
+ * and one that landed beside a stale journal ({@link StaleJournalError}) still landed.
  */
 export async function overwriteDatabaseFile(bytes: Uint8Array): Promise<void> {
   if ((await detectDbStorageLayout()) === 'opfs') {
     await disposeDatabase();
     const { staleSidecar, cause } = await writePlainDatabaseFile(bytes);
+    acknowledgeDbLoss();
     if (staleSidecar) throw new StaleJournalError(staleSidecar, cause);
     return;
   }
 
   const { staleSidecar } = await (await rescueDriver()).writeDatabaseFile(bytes);
+  acknowledgeDbLoss();
   await disposeDatabase();
   if (staleSidecar) throw new StaleJournalError(staleSidecar, undefined);
 }
