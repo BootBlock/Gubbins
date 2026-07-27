@@ -18,9 +18,11 @@
  * the uncommittable work — which is the correct outcome, and the one the user already believes
  * happened.
  *
- * The original failure is still what gets reported, so nothing is masked: it keeps its code (a
- * disk-full stays `SQLITE_FULL`, and so still humanises into the sentence that tells the user
- * what to do about it), and the rollback failure rides along as the `cause`.
+ * The original failure is still what gets reported, so nothing is masked: it is passed through
+ * untouched — code, message and result code — so a disk-full stays `SQLITE_FULL` and still
+ * humanises into the sentence that tells the user what to do about it, with the rollback failure
+ * riding along as the `cause`. The reset itself needs no telling: a failed batch already means the
+ * change did not happen, which is exactly what discarding the connection makes true.
  *
  * This lives apart from the worker so it can be driven directly in tests: a failing `ROLLBACK` is
  * the one path that cannot be reached through a real connection.
@@ -37,10 +39,6 @@ export interface TransactionConnection {
   /** Release the connection, so the next request opens a fresh one. */
   discard(): void;
 }
-
-/** Appended to the reported failure when the connection had to be thrown away to escape it. */
-const CONNECTION_RESET_NOTE =
-  'Rolling the change back failed, so the database connection was reset and the change was discarded.';
 
 /**
  * Execute `statements` atomically: BEGIN, run all, COMMIT; unwind on any error.
@@ -81,7 +79,10 @@ function unwind(connection: TransactionConnection, failure: unknown): DbError {
   if (!stillInTransaction(connection)) return reported;
 
   connection.discard();
-  return new DbError(reported.code, `${reported.message} ${CONNECTION_RESET_NOTE}`, {
+  // Rebuilt rather than rethrown so the rollback failure can ride along as the `cause`. Every
+  // other field is copied verbatim: the message is SQLite's own text, which the humanising layer
+  // parses for the offending column, so annotating it would degrade the sentence the user reads.
+  return new DbError(reported.code, reported.message, {
     resultCode: reported.resultCode,
     sql: reported.sql,
     cause: rollbackFailure ?? failure,

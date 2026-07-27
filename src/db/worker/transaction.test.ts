@@ -135,13 +135,13 @@ describe('executeTransaction', () => {
     const failure = catchError(() => executeTransaction(connection, STATEMENTS)) as DbError;
 
     expect(connection.discards).toBe(1);
-    // The original failure is still the one reported — its code is what tells the user their
-    // storage is full — with the rollback failure attached rather than swallowed.
+    // The original failure is still the one reported, verbatim — its code is what tells the user
+    // their storage is full, and the humanising layer parses the message SQLite wrote — with the
+    // rollback failure attached rather than swallowed.
     expect(failure).toBeInstanceOf(DbError);
     expect(failure.code).toBe('SQLITE_FULL');
     expect(failure.resultCode).toBe(13);
-    expect(failure.message).toContain('database or disk is full');
-    expect(failure.message).toMatch(/connection was reset/i);
+    expect(failure.message).toBe('database or disk is full');
     expect(failure.cause).toBe(rollbackError);
   });
 
@@ -176,7 +176,7 @@ describe('executeTransaction', () => {
     const failure = catchError(() => executeTransaction(unreadable, STATEMENTS)) as DbError;
 
     // The guard's own fault must never become the error the user is shown.
-    expect(failure.message).toContain('database or disk is full');
+    expect(failure.message).toBe('database or disk is full');
     expect(connection.discards).toBe(1);
   });
 
