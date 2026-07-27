@@ -43,6 +43,25 @@ export async function bootDatabase(): Promise<DbBootResult> {
   return { diagnostics, migration };
 }
 
+/**
+ * The database driver, replacing the worker first if the one it holds is already dead.
+ *
+ * A crashed worker latches the driver permanently unusable (issue #299) — sound for ordinary
+ * calls, but the Safe Mode rescues run on the crash screen, and under the `opfs-sahpool` VFS the
+ * database can *only* be reached through a worker. Refusing there would make the recovery
+ * unavailable in exactly the state it exists for. The dead worker has already been terminated,
+ * so the file handles it held are released and a fresh one can take them.
+ *
+ * **Every** rescue action goes through this, not just the destructive ones (issue #503): a
+ * crashed worker is one of the main reasons a user is looking at Safe Mode, and it used to be
+ * the "get your data out" half — the backup, the `.sqlite` copy, the JSON dump — that failed
+ * against it while the irreversible purge self-healed and succeeded.
+ */
+export async function getRescueDatabaseDriver(): Promise<WorkerDatabaseDriver> {
+  if (getDatabaseDriver().isUnavailable) await disposeDatabase();
+  return getDatabaseDriver();
+}
+
 /** Tear down the database client (used by the Safe Mode hard-reset, spec §3). */
 export async function disposeDatabase(): Promise<void> {
   const current = driver;
