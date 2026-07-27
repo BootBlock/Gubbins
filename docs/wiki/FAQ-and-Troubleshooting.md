@@ -96,8 +96,11 @@ address returns to normal on its own.
 > inventory; `?recover=1` deliberately doesn't.
 
 **My data disappeared / the app is empty.**
-The most common cause is the browser clearing its storage for Gubbins. Restore from a
-[[backup|Backup-and-Restore]] or re-[[sync|Cloud-Sync]]. To prevent it, [[install the
+The most common cause is the browser clearing its storage for Gubbins. Where Gubbins can tell this
+has happened it says so on startup, on a **“Your Gubbins data is gone”** screen — see [[How your
+data is stored|How-Your-Data-Is-Stored#if-your-data-disappears]]. Restore from a
+[[backup|Backup-and-Restore]] or re-[[sync|Cloud-Sync]] **before** adding anything new, so your
+records come back cleanly rather than mixing with new ones. To prevent it, [[install the
 app|Installing-Gubbins]] and grant **persistent storage**.
 
 > **ℹ️ Note**

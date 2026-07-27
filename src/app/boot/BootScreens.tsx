@@ -6,9 +6,11 @@ import { BrandMark } from '@/components/BrandMark';
 import { RescueActions } from '@/app/error/RescueActions';
 import { labFlag } from '@/state/stores/useLabStore';
 import { useT, type MessageKey } from '@/features/i18n';
+import { useFormatters } from '@/lib/useFormatters';
 import type { SupportCause, SupportDiagnosis } from '@/lib/env/support-diagnosis';
 import { setTabLockOverride, type TabLockDenial } from '@/db/tab-lock';
 import type { DbError, DbErrorCode } from '@/db/errors';
+import type { DbLossRecord } from '@/db/db-presence';
 
 /** The public project home, linked from the boot-screen footer. */
 const REPO_URL = 'https://github.com/BootBlock/Gubbins';
@@ -291,6 +293,70 @@ export function MultiTabScreen({
           {t('boot.multiTab.openAnyway')}
         </Button>
       ) : null}
+    </BootShell>
+  );
+}
+
+/**
+ * Shown when this boot had to *create* the database on a device that already had one (issue #505).
+ *
+ * The app underneath is perfectly usable — that is exactly the problem this screen exists for. A
+ * browser storage wipe leaves the settings behind, so Gubbins comes back past the first-run
+ * wizard, in the user's own theme, with an empty inventory and no explanation; the natural
+ * reading is that Gubbins lost the data, and the natural response is to start re-entering it,
+ * which turns a clean restore into a merge. So the notice blocks the way in *once*, says what
+ * happened, and puts a restore one click away — then lets the user carry on. The choice is
+ * recorded (see `db-presence.ts`), so closing the tab on it does not quietly bury the news.
+ */
+export function DataLossScreen({ loss, onContinue }: { loss: DbLossRecord; onContinue: () => void }) {
+  const t = useT();
+  const formatters = useFormatters();
+
+  // Say only what was actually recorded. A device whose marker predates the count — or could not
+  // be read at all — still gets the fact that a database was here, without inventing a figure.
+  //
+  // A recorded *zero* is dropped too, and deliberately. The count is taken at each boot, so a
+  // session that added two hundred items and never restarted still reads as zero — quoting it
+  // would tell the user nothing was lost at the one moment they most need to be believed.
+  const items = loss.lastKnownItems;
+  const lastSeen =
+    loss.lastSeenAt === null
+      ? t('boot.dataLoss.lastSeenUnknown')
+      : items === null || items <= 0
+        ? t('boot.dataLoss.lastSeen', { vars: { when: formatters.dateTime(loss.lastSeenAt) } })
+        : t('boot.dataLoss.lastSeenWithItems', {
+            vars: { when: formatters.dateTime(loss.lastSeenAt), count: items },
+          });
+
+  return (
+    <BootShell
+      accent="danger"
+      icon={<StorageIcon />}
+      title={t('boot.dataLoss.title')}
+      subtitle={t('boot.dataLoss.lede')}
+      testId="boot-data-lost"
+    >
+      <div className="rounded-xl border border-border bg-secondary/40 p-4 text-left text-sm">
+        <p className="font-medium text-foreground">{lastSeen}</p>
+        <p className="mt-2 text-muted-foreground">{t('boot.dataLoss.cause')}</p>
+        <p className="mt-2 text-muted-foreground">{t('boot.dataLoss.actNow')}</p>
+      </div>
+
+      <p className="mt-4 text-sm text-muted-foreground">{t('boot.dataLoss.restoreHeading')}</p>
+      <div className="mt-3">
+        {/*
+         * Restores only. Everything else this action set offers assumes a database worth saving
+         * or a build worth reinstalling: a backup of the empty one that just replaced the user's
+         * data would be worse than useless, and the purge is the very thing that has already
+         * happened.
+         */}
+        <RescueActions restoreOnly />
+      </div>
+
+      <Button variant="ghost" className="mt-4 w-full" onClick={onContinue}>
+        {t('boot.dataLoss.continue')}
+      </Button>
+      <p className="mt-2 text-center text-xs text-muted-foreground">{t('boot.dataLoss.continueNote')}</p>
     </BootShell>
   );
 }

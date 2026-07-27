@@ -33,6 +33,16 @@ export interface RescueActionsProps {
    * stay available.
    */
   readonly allowHardReset?: boolean;
+  /**
+   * Show *only* the two restores (and, once a file is chosen, the confirmation and damage
+   * report). For the one caller whose database is not in trouble but empty: the data-loss notice
+   * (issue #505), where the browser has already cleared the user's data and this fresh, healthy
+   * database replaced it. There, every other action is worse than absent — a backup would
+   * capture the empty database, the two diagnostic copies would hand the user a file of nothing,
+   * and the reinstall and the purge both address a fault that is not the one they have. Implies
+   * {@link allowHardReset} off.
+   */
+  readonly restoreOnly?: boolean;
 }
 
 /**
@@ -42,7 +52,7 @@ export interface RescueActionsProps {
  * full-archive restore (Phase 17 — re-hydrates OPFS images too) likewise confirm
  * before overwriting the live database.
  */
-export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}) {
+export function RescueActions({ allowHardReset = true, restoreOnly = false }: RescueActionsProps = {}) {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [pending, setPending] = useState<PendingRestore | null>(null);
@@ -143,45 +153,51 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
 
   return (
     <div className="flex flex-col gap-2">
-      {/*
-       * The restorable rescue (issue #197), first and solid because it is the only one of these
-       * downloads the app can read back in. The two below it are diagnostic copies: after the
-       * hard reset this screen recommends, a `.sqlite` from the old schema is refused by the
-       * restore guard and the JSON dump has no importer at all — so leading with either would
-       * send the user into a purge holding a file that cannot bring their data back.
-       */}
-      <Button variant="primary" onClick={takeBackup} disabled={busy !== null}>
-        <ArchiveIcon /> Back up everything (.zip)
-      </Button>
-      <p className="text-xs text-muted-foreground">
-        The copy to take before resetting: restore it afterwards from Sync → Backup &amp; restore, using{' '}
-        <span className="font-medium">Merge</span>, which brings your records across a schema change.
-      </p>
-      {/*
-       * Always mounted, contents swapped: a live region inserted at the moment its message
-       * appears is frequently never announced. What the backup captured — and anything it had
-       * to leave out — is precisely what a screen-reader user must hear before the reset.
-       */}
-      <LiveRegion>{backupNote ? <p className="text-sm text-foreground">{backupNote}</p> : null}</LiveRegion>
+      {restoreOnly ? null : (
+        <>
+          {/*
+           * The restorable rescue (issue #197), first and solid because it is the only one of these
+           * downloads the app can read back in. The two below it are diagnostic copies: after the
+           * hard reset this screen recommends, a `.sqlite` from the old schema is refused by the
+           * restore guard and the JSON dump has no importer at all — so leading with either would
+           * send the user into a purge holding a file that cannot bring their data back.
+           */}
+          <Button variant="primary" onClick={takeBackup} disabled={busy !== null}>
+            <ArchiveIcon /> Back up everything (.zip)
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            The copy to take before resetting: restore it afterwards from Sync → Backup &amp; restore, using{' '}
+            <span className="font-medium">Merge</span>, which brings your records across a schema change.
+          </p>
+          {/*
+           * Always mounted, contents swapped: a live region inserted at the moment its message
+           * appears is frequently never announced. What the backup captured — and anything it had
+           * to leave out — is precisely what a screen-reader user must hear before the reset.
+           */}
+          <LiveRegion>
+            {backupNote ? <p className="text-sm text-foreground">{backupNote}</p> : null}
+          </LiveRegion>
 
-      <Button
-        variant="outline"
-        onClick={run('sqlite', downloadRawSqlite, 'Could not download the database file.')}
-        disabled={busy !== null}
-      >
-        <DatabaseIcon /> Download raw .sqlite binary
-      </Button>
-      <Button
-        variant="outline"
-        onClick={run('json', downloadJsonDump, 'Could not export your data.')}
-        disabled={busy !== null}
-      >
-        <DownloadIcon /> Export data (JSON)
-      </Button>
-      <p className="text-xs text-muted-foreground">
-        Those two are copies to keep or inspect elsewhere — a database file for a SQLite browser, and a plain
-        data dump. Neither can be restored into Gubbins after a reset.
-      </p>
+          <Button
+            variant="outline"
+            onClick={run('sqlite', downloadRawSqlite, 'Could not download the database file.')}
+            disabled={busy !== null}
+          >
+            <DatabaseIcon /> Download raw .sqlite binary
+          </Button>
+          <Button
+            variant="outline"
+            onClick={run('json', downloadJsonDump, 'Could not export your data.')}
+            disabled={busy !== null}
+          >
+            <DownloadIcon /> Export data (JSON)
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Those two are copies to keep or inspect elsewhere — a database file for a SQLite browser, and a
+            plain data dump. Neither can be restored into Gubbins after a reset.
+          </p>
+        </>
+      )}
 
       <input
         ref={sqliteRef}
@@ -275,13 +291,15 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
        * state to answer. (The same action in Settings — where the app is healthy — does go
        * through `t()`.)
        */}
-      <Button
-        variant="outline"
-        onClick={run('sw-reset', resetServiceWorkerOnly, 'Could not clear the cached app files.')}
-        disabled={busy !== null}
-      >
-        <RefreshIcon /> Reinstall app files (keeps your data)
-      </Button>
+      {restoreOnly ? null : (
+        <Button
+          variant="outline"
+          onClick={run('sw-reset', resetServiceWorkerOnly, 'Could not clear the cached app files.')}
+          disabled={busy !== null}
+        >
+          <RefreshIcon /> Reinstall app files (keeps your data)
+        </Button>
+      )}
 
       {/*
        * Above the hard reset, deliberately: this is the failure the user must read *before*
@@ -295,7 +313,7 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
         </p>
       ) : null}
 
-      {!allowHardReset ? null : confirmingReset ? (
+      {restoreOnly || !allowHardReset ? null : confirmingReset ? (
         <div className="flex gap-2">
           <Button
             variant="destructive"

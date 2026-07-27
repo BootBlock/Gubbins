@@ -93,6 +93,14 @@ export const TAB_LOCK_OVERRIDE_KEY = 'gubbins:tab-lock-override';
 export const LAST_ORPHAN_SWEEP_KEY = 'gubbins:last-orphan-sweep';
 
 /**
+ * The record that this device has held a database before, so a boot that has to create an empty
+ * one can tell a browser storage wipe from a first run (issue #505). Defined here for the same
+ * reason as the keys above — `db/db-presence.ts` reads and writes it directly, not via a
+ * Zustand `persist` name.
+ */
+export const DB_PRESENCE_KEY = 'gubbins:db-presence';
+
+/**
  * Every `gubbins:` key, in rough order of how user-visible it is. Keep this list exhaustive:
  * the coverage test compares it against the literals in `src/`.
  *
@@ -263,6 +271,14 @@ export const STORAGE_KEYS = [
     eraseGroup: null,
     backupIncluded: false,
     note: "This device's stable identity. Clearing it would orphan every locally-linked attachment (their stored origin device would stop matching), so it survives every selective erase and only goes in a full reset.",
+  },
+  {
+    key: DB_PRESENCE_KEY,
+    store: 'db/db-presence',
+    storage: 'local',
+    eraseGroup: null,
+    backupIncluded: false,
+    note: 'Proof that this device has held a database (issue #505). Kept out of every selective erase deliberately: clearing it would make the next genuine storage wipe indistinguishable from a first run, which is the silence this marker exists to break. It is device-specific, so it never travels in a backup, and the Safe-Mode reset clears it before deleting the database it describes.',
   },
   {
     key: 'gubbins:lab',

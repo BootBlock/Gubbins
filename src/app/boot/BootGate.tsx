@@ -1,7 +1,14 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useDatabaseBoot } from './useDatabaseBoot';
 import { BootResultProvider } from './boot-context';
-import { StartingScreen, UnsupportedScreen, MultiTabScreen, BootErrorScreen } from './BootScreens';
+import { acknowledgeDbLoss } from '@/db/db-presence';
+import {
+  StartingScreen,
+  UnsupportedScreen,
+  MultiTabScreen,
+  BootErrorScreen,
+  DataLossScreen,
+} from './BootScreens';
 
 /**
  * Gates the application behind a successful database boot (spec §2.2, §2.2.7, §3).
@@ -10,6 +17,12 @@ import { StartingScreen, UnsupportedScreen, MultiTabScreen, BootErrorScreen } fr
  */
 export function BootGate({ children }: { children: ReactNode }) {
   const state = useDatabaseBoot();
+  /**
+   * Whether the user has read the "your data is gone" notice and chosen to carry on (issue #505).
+   * Held here rather than folded back into the boot state machine: the database *is* ready in
+   * that state, so this is only about whether the notice still stands in front of it.
+   */
+  const [lossAcknowledged, setLossAcknowledged] = useState(false);
 
   switch (state.status) {
     case 'starting':
@@ -20,6 +33,20 @@ export function BootGate({ children }: { children: ReactNode }) {
       return <MultiTabScreen reason={state.reason} whenReleased={state.whenReleased} />;
     case 'error':
       return <BootErrorScreen error={state.error} />;
+    case 'data-lost':
+      return lossAcknowledged ? (
+        <BootResultProvider value={state.result}>{children}</BootResultProvider>
+      ) : (
+        <DataLossScreen
+          loss={state.loss}
+          onContinue={() => {
+            // Persist the acknowledgement first — the point of recording it is that the notice
+            // survives a tab closed on it, so it must not depend on this render happening.
+            acknowledgeDbLoss();
+            setLossAcknowledged(true);
+          }}
+        />
+      );
     case 'ready':
       return <BootResultProvider value={state.result}>{children}</BootResultProvider>;
   }

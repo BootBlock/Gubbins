@@ -152,3 +152,5 @@ reminder stays put until a backup has actually been taken.
   groups, kept in step continuously rather than copied into a file.
 - **[[Export & import|Export-and-Import]]** — open-format exports.
 - **[[Storage triage|Storage-Triage]]** — reclaiming space.
+- **[[How your data is stored|How-Your-Data-Is-Stored]]** — why a browser can clear your data, and
+  what Gubbins shows if it does.

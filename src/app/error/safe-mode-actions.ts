@@ -19,6 +19,7 @@ import {
   readPlainDatabaseFile,
   writePlainDatabaseFile,
 } from '@/db/db-storage';
+import { clearDbPresence } from '@/db/db-presence';
 import { inspectRestoreCandidate } from '@/db/restore-candidate';
 import { isSqliteFile } from '@/db/sqlite-header';
 import { removeImagesDirectory } from '@/features/images/opfs-images';
@@ -277,6 +278,13 @@ export async function downloadJsonDump(): Promise<void> {
  * the database file(s), and clears caches/service workers.
  */
 export async function hardResetLocalData(): Promise<void> {
+  // First, before anything is deleted: forget that this device ever held a database (issue #505).
+  // A deliberate purge is not a loss, and this reset deletes the database files well before
+  // `clearLocalAppState` sweeps `localStorage` — so a run interrupted in between (a closed tab, a
+  // failed OPFS call) would otherwise leave the marker behind and greet the next boot with "your
+  // data was cleared by the browser" for a wipe the user asked for.
+  clearDbPresence();
+
   // The `opfs-sahpool` fallback keeps the database inside its own store, and the worker holds
   // a sync access handle on every file in it — a directory removal can fail outright while
   // those are live, which would leave a "purge everything" quietly not purging the data. So

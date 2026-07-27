@@ -43,6 +43,19 @@ export async function bootDatabase(): Promise<DbBootResult> {
   return { diagnostics, migration };
 }
 
+/**
+ * How many items the database currently holds (issue #505).
+ *
+ * Recorded outside the database on each boot so that, if the browser later evicts the database,
+ * the notice can say how much was here rather than only that something was. Goes straight to the
+ * driver rather than through `ItemRepository` because it runs during boot, before any actor or
+ * permission context exists — and it is a whole-table count, not a filtered read.
+ */
+export async function countStoredItems(): Promise<number> {
+  const row = await getDatabaseDriver().queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM items;');
+  return Number(row?.n ?? 0);
+}
+
 /** Tear down the database client (used by the Safe Mode hard-reset, spec §3). */
 export async function disposeDatabase(): Promise<void> {
   const current = driver;
