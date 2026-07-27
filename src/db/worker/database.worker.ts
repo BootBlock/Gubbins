@@ -13,6 +13,7 @@
  * next begins.
  */
 import { createLocalDriver } from './local-driver';
+import { executeTransaction, type TransactionConnection } from './transaction';
 import { bootstrapDatabase, readDiagnostics, type BootstrapResult } from './sqlite-bootstrap';
 import { readDatabaseFile, wipeDatabaseFiles, writeDatabaseFile } from './db-file-store';
 import { verifySqliteBinary } from './verify-binary';
@@ -138,24 +139,32 @@ function runExecute(active: BootstrapResult, sql: string, params?: SqlParams): S
   };
 }
 
-/** Execute a batch atomically (spec §2.3.2): BEGIN, run all, COMMIT; ROLLBACK on any error. */
+/**
+ * Execute a batch atomically (spec §2.3.2): BEGIN, run all, COMMIT; ROLLBACK on any error.
+ *
+ * The unwind lives in ./transaction, which owns the rule that matters here — a connection that
+ * cannot be proven out of its transaction is discarded rather than served (issue #555).
+ */
 function runTransaction(active: BootstrapResult, statements: readonly SqlStatement[]): null {
-  const { db } = active;
-  db.exec('BEGIN;');
-  try {
-    for (const statement of statements) {
-      db.exec(statement.sql, { bind: bindOf(statement.params) });
-    }
-    db.exec('COMMIT;');
-  } catch (err) {
-    try {
-      db.exec('ROLLBACK;');
-    } catch {
-      // A failed rollback must not mask the original error.
-    }
-    throw err;
-  }
+  executeTransaction(connectionFor(active), statements);
   return null;
+}
+
+/** Bind the live connection to the tiny port {@link executeTransaction} works against. */
+function connectionFor(active: BootstrapResult): TransactionConnection {
+  return {
+    exec: (sql, params) => {
+      active.db.exec(sql, { bind: bindOf(params) });
+    },
+    // SQLite's autocommit flag, which is the only trustworthy answer: `ROLLBACK` throwing does not
+    // mean the transaction survived, and it succeeding is not the only way one ends. A connection
+    // with no pointer is closed, so it holds nothing.
+    inTransaction: () => {
+      const pointer = active.db.pointer;
+      return pointer ? active.sqlite3.capi.sqlite3_get_autocommit(pointer) === 0 : false;
+    },
+    discard: closeConnection,
+  };
 }
 
 /**
