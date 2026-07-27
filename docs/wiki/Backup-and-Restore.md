@@ -85,7 +85,14 @@ file back and run into the same problem, so Gubbins refuses that combination and
 
 > **ℹ️ Note**
 > Because the database is in an unexpected shape, a part of it occasionally can't be read. The
-> screen names anything left out, so you know what the file holds before you rely on it.
+> screen names anything left out, so you know what the file holds before you rely on it. If
+> *nothing* at all can be read, it says so and no file is saved — a backup you can't rely on is
+> worse than none, because the next step this screen offers clears your data.
+
+> **💡 Tip**
+> A backup that fails here is worth retrying: Gubbins reconnects to your database on each attempt,
+> so a second try often succeeds where the first didn't. The same goes for the `.sqlite` copy and
+> the JSON export beneath it.
 
 ## Only restore files you trust
 

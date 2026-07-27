@@ -6,7 +6,7 @@
  * pure {@link assembleBackup} codec, zips off-thread in the shared fflate worker, and triggers
  * the download. All format decisions live in `backup-format.ts`; this file only does IO.
  */
-import { getDatabaseDriver } from '@/db/client';
+import { getDatabaseDriver, getRescueDatabaseDriver } from '@/db/client';
 import { buildLocalSnapshot } from '@/features/sync/snapshot';
 import { readAllImages } from '@/features/images/opfs-images';
 import { downloadBlob, fileTimestamp } from '@/lib/download';
@@ -63,8 +63,11 @@ export async function createBackup(
   selection: BackupSelection,
   options: CreateBackupOptions = {},
 ): Promise<BackupResult> {
-  const driver = getDatabaseDriver();
   const rescue = options.rescue === true;
+  // A rescue runs on the crash screen, where a dead worker latches the driver unusable and every
+  // read would be rejected without one being replaced first (issue #503). An ordinary backup runs
+  // in a healthy app and must not quietly rebuild the worker under a live session.
+  const driver = rescue ? await getRescueDatabaseDriver() : getDatabaseDriver();
   const skipped: string[] = [];
 
   /** In rescue mode, an optional extra that fails is recorded and dropped, not fatal. */

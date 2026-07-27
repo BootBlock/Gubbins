@@ -15,12 +15,14 @@ const downloadBlob = vi.hoisted(() => vi.fn());
 const readDatabaseFile = vi.hoisted(() => vi.fn());
 const writeDatabaseFile = vi.hoisted(() => vi.fn());
 const wipeDatabaseFiles = vi.hoisted(() => vi.fn());
-const getDatabaseDriver = vi.hoisted(() =>
-  vi.fn(() => ({ readDatabaseFile, writeDatabaseFile, wipeDatabaseFiles })),
+const exportBinary = vi.hoisted(() => vi.fn());
+const query = vi.hoisted(() => vi.fn());
+const getRescueDatabaseDriver = vi.hoisted(() =>
+  vi.fn(async () => ({ readDatabaseFile, writeDatabaseFile, wipeDatabaseFiles, exportBinary, query })),
 );
 
 vi.mock('@/db/restore-candidate', () => ({ inspectRestoreCandidate }));
-vi.mock('@/db/client', () => ({ disposeDatabase, getDatabaseDriver }));
+vi.mock('@/db/client', () => ({ disposeDatabase, getRescueDatabaseDriver }));
 vi.mock('@/lib/download', () => ({ downloadBlob, fileTimestamp: () => '20260719-120000' }));
 vi.mock('@/features/images/opfs-images', () => ({ removeImagesDirectory: vi.fn() }));
 vi.mock('@/lib/app-shell-reset', () => ({ resetAppShell: vi.fn() }));
@@ -29,6 +31,8 @@ import {
   DamagedDatabaseError,
   RestorePointError,
   captureRestorePoint,
+  downloadJsonDump,
+  downloadRawSqlite,
   hardResetLocalData,
   isSqliteFile,
   overwriteDatabaseFile,
@@ -129,6 +133,8 @@ beforeEach(() => {
   writeDatabaseFile.mockResolvedValue({ staleSidecar: null });
   readDatabaseFile.mockResolvedValue(null);
   wipeDatabaseFiles.mockResolvedValue(undefined);
+  exportBinary.mockResolvedValue(sqliteBytes());
+  query.mockResolvedValue([]);
   mockOpfs(4096);
 });
 
@@ -349,6 +355,29 @@ describe('the opfs-sahpool fallback VFS (issue #255)', () => {
     await hardResetLocalData();
 
     expect(events).toContain(`remove:${SAHPOOL_DIRECTORY}`);
+  });
+});
+
+describe('the extraction rescues after a worker crash (issue #503)', () => {
+  // These are the "get your data out" half of the screen. They used to take the driver as-is,
+  // so a crashed worker — one of the main reasons a user is on this screen at all — failed
+  // every one of them while the irreversible purge below replaced the worker and succeeded.
+
+  it('downloads the .sqlite copy through a driver whose dead worker has been replaced', async () => {
+    await downloadRawSqlite();
+
+    expect(getRescueDatabaseDriver).toHaveBeenCalled();
+    expect(downloadBlob).toHaveBeenCalledWith(expect.stringContaining('.sqlite'), expect.any(Blob));
+  });
+
+  it('exports the JSON dump through a driver whose dead worker has been replaced', async () => {
+    await downloadJsonDump();
+
+    expect(getRescueDatabaseDriver).toHaveBeenCalled();
+    expect(downloadBlob).toHaveBeenCalledWith(
+      expect.stringContaining('gubbins-safe-export-'),
+      expect.any(Blob),
+    );
   });
 });
 

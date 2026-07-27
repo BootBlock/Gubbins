@@ -230,6 +230,31 @@ export interface BuildSnapshotOptions {
   readonly onSkipped?: (part: string, error: unknown) => void;
 }
 
+/**
+ * Thrown by {@link buildLocalSnapshot} in `skipUnreadable` mode when **no** part of the database
+ * could be read (issue #503).
+ *
+ * The mode's whole premise is that some parts read and some do not. When every one fails — most
+ * often a crashed database worker, which rejects each call without ever posting it — degrading
+ * quietly would hand the caller a structurally valid snapshot holding nothing, and the rescue
+ * screen would report a saved backup over an empty file. The user then takes the reset that
+ * screen recommends, carrying an archive with none of their data in it. Failing is the only
+ * honest answer, and it is a *retryable* one: the worker is rebuilt before each rescue attempt.
+ *
+ * The message is written for that screen — the only caller that turns the mode on — so it says
+ * the thing that actually matters there: do not reset on the strength of this.
+ */
+export class UnreadableDatabaseError extends Error {
+  constructor(cause: unknown) {
+    super(
+      'None of your data could be read from the database, so nothing was saved. Try again before ' +
+        'resetting anything.',
+      { cause },
+    );
+    this.name = 'UnreadableDatabaseError';
+  }
+}
+
 /** Build the full local snapshot for diffing/pushing/back-up (§7.3, §2). */
 export async function buildLocalSnapshot(
   driver: IDatabaseDriver,
@@ -239,13 +264,20 @@ export async function buildLocalSnapshot(
   // Parts that could not be read at all (rescue mode only). An empty table here means "unknown",
   // not "no rows", and the §405 repair below must not mistake the two — see `RepairOptions`.
   const unreadableTables = new Set<string>();
+  // Every failure in order, against the number of parts attempted — counted rather than read off
+  // `unreadableTables`, whose names need not be one per attempt. The two together tell a *partial*
+  // read from one that got nothing at all, which is not a snapshot (issue #503).
+  const failures: unknown[] = [];
+  let attempted = 0;
 
   /** Read one part of the snapshot, degrading to `empty` when the caller asked us to. */
   const attempt = async <T>(part: string, read: () => Promise<T>, empty: T): Promise<T> => {
     if (!options.skipUnreadable) return read();
+    attempted += 1;
     try {
       return await read();
     } catch (error) {
+      failures.push(error);
       unreadableTables.add(part);
       options.onSkipped?.(part, error);
       return empty;
@@ -288,6 +320,13 @@ export async function buildLocalSnapshot(
   const itemRegions = await attempt(ITEM_REGIONS_TABLE, () => readItemRegions(driver), []);
   const itemHistory = await attempt(ITEM_HISTORY_TABLE, () => readItemHistory(driver), []);
   const stockDeltas = await attempt(STOCK_DELTAS_TABLE, () => readStockDeltas(driver), []);
+
+  // Nothing at all came back (issue #503). `skipUnreadable` degrades to whatever the database
+  // *will* give up, because a partial snapshot the user can restore beats none at all — but when
+  // it gives up nothing there is no snapshot, only an empty shell that would be reported as one.
+  if (attempted > 0 && failures.length === attempted) {
+    throw new UnreadableDatabaseError(failures[0]);
+  }
 
   // Issue #405: the reads above are not one point-in-time view — each is its own unisolated
   // query, so a concurrent write can land a child row whose parent was read a moment too early.

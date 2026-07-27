@@ -7,14 +7,23 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createRescueBackup } from './build-backup';
+import { UnreadableDatabaseError } from '@/features/sync/snapshot';
 import { MANIFEST_ENTRY, SNAPSHOT_ENTRY, type BackupManifest } from './backup-format';
 import { BASELINE_REVISION, BASELINE_REVISION_KEY } from '@/db/migrations';
 import type { IDatabaseDriver, SqlParams, SqlRow } from '@/db/rpc/driver';
 import { pageOf } from '@/test/drivers/keyset-page';
+import { crashedDriver } from '@/test/drivers/crashed-driver';
 
 const mockGetDriver = vi.fn<() => IDatabaseDriver>();
+/**
+ * The two ways to reach the driver, kept apart so a test can assert *which* one the rescue took
+ * (issue #503): only `getRescueDatabaseDriver` replaces a worker that has already crashed.
+ */
+const getDatabaseDriver = vi.fn(() => mockGetDriver());
+const getRescueDatabaseDriver = vi.fn(async () => mockGetDriver());
 vi.mock('@/db/client', () => ({
-  getDatabaseDriver: () => mockGetDriver(),
+  getDatabaseDriver: () => getDatabaseDriver(),
+  getRescueDatabaseDriver: () => getRescueDatabaseDriver(),
   disposeDatabase: vi.fn(),
 }));
 vi.mock('@/features/images/opfs-images', () => ({ readAllImages: vi.fn(async () => []) }));
@@ -63,6 +72,8 @@ function writtenManifest(): BackupManifest {
 beforeEach(() => {
   lastZipRequest = null;
   downloadBlob.mockClear();
+  getDatabaseDriver.mockClear();
+  getRescueDatabaseDriver.mockClear();
   vi.stubGlobal('Worker', FakeZipWorker);
 });
 
@@ -118,5 +129,32 @@ describe('createRescueBackup (issue #197)', () => {
     await createRescueBackup();
 
     expect(writtenManifest().baselineRevision).toBe('abc123');
+  });
+});
+
+describe('createRescueBackup against a crashed worker (issue #503)', () => {
+  it('takes the driver that replaces a dead worker, never the latched one', async () => {
+    mockGetDriver.mockReturnValue(fakeDriver({ items: [{ id: 'i1', name: 'Widget', is_active: 1 }] }));
+
+    await createRescueBackup();
+
+    expect(getRescueDatabaseDriver).toHaveBeenCalled();
+    expect(getDatabaseDriver).not.toHaveBeenCalled();
+  });
+
+  it('fails instead of reporting a saved backup over an empty file', async () => {
+    // The failure this exists to prevent: a "Saved …" summary sends the user on to the purge
+    // the same screen recommends, carrying a zip with none of their data in it.
+    mockGetDriver.mockReturnValue(crashedDriver());
+
+    await expect(createRescueBackup()).rejects.toBeInstanceOf(UnreadableDatabaseError);
+  });
+
+  it('downloads nothing when there was nothing to put in the file', async () => {
+    mockGetDriver.mockReturnValue(crashedDriver());
+
+    await expect(createRescueBackup()).rejects.toThrow();
+
+    expect(downloadBlob).not.toHaveBeenCalled();
   });
 });
