@@ -1,7 +1,43 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
-import { ARCHIVE_DB_ENTRY, ARCHIVE_IMAGES_PREFIX } from './auto-archive';
-import { InvalidArchiveError, parseArchive, readArchive } from './restore-archive';
+import { BASELINE_REVISION } from '@/db/migrations';
+import {
+  ARCHIVE_DB_ENTRY,
+  ARCHIVE_IMAGES_PREFIX,
+  ARCHIVE_MANIFEST_ENTRY,
+  ARCHIVE_MANIFEST_KIND,
+  ARCHIVE_MANIFEST_VERSION,
+  buildArchiveManifest,
+  type ArchiveManifest,
+} from './auto-archive';
+
+const prepareDestructiveRestore = vi.hoisted(() => vi.fn());
+const overwriteDatabaseFile = vi.hoisted(() => vi.fn());
+const writeImageFiles = vi.hoisted(() => vi.fn());
+
+/**
+ * Only the two OPFS-touching steps are stubbed; `isSqliteFile` comes from the pure header module
+ * it is re-exported from, so the file guard the parse tests rely on stays the real one.
+ */
+vi.mock('@/app/error/safe-mode-actions', async () => {
+  const { isSqliteFile } = await import('@/db/sqlite-header');
+  return {
+    isSqliteFile,
+    prepareDestructiveRestore,
+    overwriteDatabaseFile,
+    StaleJournalError: class StaleJournalError extends Error {},
+    IncompatibleDatabaseError: class IncompatibleDatabaseError extends Error {
+      constructor() {
+        super('That database was made by a different version of Gubbins.');
+        this.name = 'IncompatibleDatabaseError';
+      }
+    },
+  };
+});
+vi.mock('@/features/images/opfs-images', () => ({ writeImageFiles }));
+
+import { IncompatibleDatabaseError } from '@/app/error/safe-mode-actions';
+import { InvalidArchiveError, parseArchive, readArchive, restoreArchive } from './restore-archive';
 
 /** Bytes that begin with the SQLite 3 magic header, so they pass the file guard. */
 function fakeSqlite(tail = 'payload'): Uint8Array {
@@ -68,5 +104,123 @@ describe('readArchive', () => {
 
   it('throws InvalidArchiveError on bytes that are not a valid zip', () => {
     expect(() => readArchive(strToU8('definitely not a zip'))).toThrow(InvalidArchiveError);
+  });
+});
+
+/** The archive's `manifest.json`, as JSON bytes ready to place in a zip. */
+function manifestEntry(overrides: Partial<ArchiveManifest> = {}): Uint8Array {
+  const base = buildArchiveManifest({
+    appVersion: '0.9.1',
+    baselineRevision: BASELINE_REVISION,
+    createdAt: new Date('2026-07-27T09:30:00.000Z'),
+    imageCount: 0,
+  });
+  return strToU8(JSON.stringify({ ...base, ...overrides }));
+}
+
+describe('parseArchive — manifest (issue #501)', () => {
+  it('reads back a manifest this build wrote', () => {
+    const { manifest } = parseArchive({
+      [ARCHIVE_DB_ENTRY]: fakeSqlite(),
+      [ARCHIVE_MANIFEST_ENTRY]: manifestEntry(),
+    });
+    expect(manifest).toEqual({
+      kind: ARCHIVE_MANIFEST_KIND,
+      formatVersion: ARCHIVE_MANIFEST_VERSION,
+      appVersion: '0.9.1',
+      baselineRevision: BASELINE_REVISION,
+      createdAt: '2026-07-27T09:30:00.000Z',
+      counts: { images: 0 },
+    });
+  });
+
+  it('reports no manifest for an archive written before manifests existed', () => {
+    expect(parseArchive({ [ARCHIVE_DB_ENTRY]: fakeSqlite() }).manifest).toBeNull();
+  });
+
+  it.each([
+    ['not JSON at all', strToU8('{{{')],
+    ['a JSON array', strToU8('[]')],
+    ['some other file that happens to be named manifest.json', strToU8('{"kind":"something-else"}')],
+    ['a manifest missing its baseline stamp', strToU8('{"kind":"gubbins-full-archive"}')],
+  ])('treats %s as no manifest rather than a malformed one', (_label, bytes) => {
+    // Forgiving on purpose, unlike a backup's manifest: this one can only *add* a refusal the
+    // database bytes would earn anyway, so refusing the whole archive over it would strand a
+    // user whose data is perfectly fine.
+    expect(
+      parseArchive({ [ARCHIVE_DB_ENTRY]: fakeSqlite(), [ARCHIVE_MANIFEST_ENTRY]: bytes }).manifest,
+    ).toBeNull();
+  });
+
+  it('does not mistake the manifest for an image', () => {
+    const { images } = parseArchive({
+      [ARCHIVE_DB_ENTRY]: fakeSqlite(),
+      [ARCHIVE_MANIFEST_ENTRY]: manifestEntry(),
+    });
+    expect(images).toEqual([]);
+  });
+});
+
+describe('restoreArchive — schema baseline (issue #501)', () => {
+  /** An archive `.zip` as a chosen `File`, so the real read/unzip/parse path runs. */
+  function archiveFile(entries: Record<string, Uint8Array>): File {
+    return new File([zipSync(entries) as unknown as BlobPart], 'gubbins-archive.zip', {
+      type: 'application/zip',
+    });
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('location', { reload: vi.fn() });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('refuses an archive whose manifest names another baseline, before any OPFS write', async () => {
+    // The archive is the *automatic weekly* net for mobile users, so the one being restored is
+    // often several releases old — and this refusal needs no worker, which is the case the
+    // bytes-level check cannot cover on a crash screen.
+    const file = archiveFile({
+      [ARCHIVE_DB_ENTRY]: fakeSqlite(),
+      [ARCHIVE_MANIFEST_ENTRY]: manifestEntry({ baselineRevision: 'deadbeef' }),
+    });
+
+    await expect(restoreArchive(file)).rejects.toBeInstanceOf(IncompatibleDatabaseError);
+
+    expect(prepareDestructiveRestore).not.toHaveBeenCalled();
+    expect(overwriteDatabaseFile).not.toHaveBeenCalled();
+    expect(writeImageFiles).not.toHaveBeenCalled();
+  });
+
+  it('restores an archive whose manifest matches this build', async () => {
+    const file = archiveFile({
+      [ARCHIVE_DB_ENTRY]: fakeSqlite(),
+      [ARCHIVE_MANIFEST_ENTRY]: manifestEntry(),
+    });
+
+    await restoreArchive(file);
+
+    expect(prepareDestructiveRestore).toHaveBeenCalledOnce();
+    expect(overwriteDatabaseFile).toHaveBeenCalledOnce();
+  });
+
+  it('leaves a manifest-less archive to the pre-flight, which reads the database itself', async () => {
+    await restoreArchive(archiveFile({ [ARCHIVE_DB_ENTRY]: fakeSqlite() }));
+
+    expect(prepareDestructiveRestore).toHaveBeenCalledOnce();
+    expect(overwriteDatabaseFile).toHaveBeenCalledOnce();
+  });
+
+  it('honours the override so a user who means it is not dead-ended', async () => {
+    const file = archiveFile({
+      [ARCHIVE_DB_ENTRY]: fakeSqlite(),
+      [ARCHIVE_MANIFEST_ENTRY]: manifestEntry({ baselineRevision: 'deadbeef' }),
+    });
+
+    await restoreArchive(file, { force: true });
+
+    expect(overwriteDatabaseFile).toHaveBeenCalledOnce();
   });
 });

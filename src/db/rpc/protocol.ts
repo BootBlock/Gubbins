@@ -63,10 +63,34 @@ export type DbRequest =
   | { readonly kind: 'snapshotMerge'; readonly request: SnapshotMergeRequest }
   | { readonly kind: 'close' };
 
+/**
+ * Which schema a candidate database was built by, read from the candidate itself (issue #501).
+ *
+ * The two values the boot sequence judges a database on — `PRAGMA user_version` and the baseline
+ * fingerprint the schema stamps into `app_meta`. Reported so a destructive restore can refuse a
+ * structurally perfect database that this build could not open, *before* it overwrites the live one.
+ */
+export interface CandidateSchemaIdentity {
+  /** `PRAGMA user_version` — the migration version the file records (spec §2.3.1). */
+  readonly userVersion: number;
+  /**
+   * The `app_meta` baseline fingerprint, or `null` where the database is old enough to predate
+   * stamping. Both are refusable; `null` is not "unknown" (see `schema` on
+   * {@link VerifyBinaryResult}).
+   */
+  readonly baselineRevision: string | null;
+}
+
 /** The outcome of `verifyBinary` — an integrity check of candidate database bytes (issue #198). */
 export interface VerifyBinaryResult {
   readonly ok: boolean;
   readonly problems: readonly string[];
+  /**
+   * What schema built the candidate (issue #501), or `null` where that could not be read at all —
+   * a distinction kept for the reason issue #500 established: concluding "incompatible" from a
+   * read that merely *failed* would refuse a database that is in fact perfectly restorable.
+   */
+  readonly schema: CandidateSchemaIdentity | null;
 }
 
 /** Maps each request kind to its successful result type (documentation + driver casts). */

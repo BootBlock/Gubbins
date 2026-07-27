@@ -171,6 +171,8 @@ wouldn't give up.
 > The other two downloads on that screen — the raw `.sqlite` copy and the JSON export — are for
 > keeping or inspecting elsewhere (a SQLite browser, a text editor). Neither can be restored into
 > Gubbins after a schema reset, because both are in the shape of the old database. Take the `.zip`.
+> If you do try the `.sqlite` afterwards, Gubbins recognises that it came from the old shape and
+> refuses it rather than restoring something that wouldn't start.
 
 > **💡 Tip**
 > Take a [[backup|Backup-and-Restore]] regularly while Gubbins is pre-1.0, so a schema reset never
@@ -178,10 +180,11 @@ wouldn't give up.
 
 **What if the file I restore turns out to be broken?**
 Gubbins checks a raw `.sqlite` database or `.zip` archive before restoring it — that it arrived
-complete, and that the data inside is intact — so a half-finished download or a copy from a failing
-drive is caught and explained rather than quietly replacing good data. If you want to go ahead with a
-damaged file anyway, you can, after a second confirmation. And whichever you choose, a copy of your
-current database is downloaded first, so you can always get back to where you started. See
+complete, that the data inside is intact, and that it came from a version of Gubbins this one can
+open — so a half-finished download, a copy from a failing drive, or a copy from before an update
+changed the database's shape is caught and explained rather than quietly replacing good data. If you
+want to go ahead anyway, you can, after a second confirmation. And whichever you choose, a copy of
+your current database is downloaded first, so you can always get back to where you started. See
 [[Backup & restore|Backup-and-Restore]].
 
 **Gubbins says "Device clock is wrong". What does that mean?**

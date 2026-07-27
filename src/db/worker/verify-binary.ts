@@ -13,9 +13,14 @@
  * not go through {@link bootstrapDatabase}: the live database may be unopenable — that is the
  * state Safe Mode exists for — and a verification that needs it would be unavailable exactly
  * when it is needed most.
+ *
+ * Since it has the candidate open anyway, it also reads *which schema built it* (issue #501) —
+ * `PRAGMA user_version` and the `app_meta` baseline stamp — so a caller can refuse a database
+ * that is structurally sound but that this build could not boot.
  */
 import { loadSqlite3 } from './sqlite-bootstrap';
-import type { VerifyBinaryResult } from '../rpc/protocol';
+import { BASELINE_REVISION_KEY } from '../migrations/migration';
+import type { CandidateSchemaIdentity, VerifyBinaryResult } from '../rpc/protocol';
 
 /**
  * How many `integrity_check` rows to ask for. The pragma reports one row per problem (up to
@@ -24,7 +29,14 @@ import type { VerifyBinaryResult } from '../rpc/protocol';
  */
 const MAX_PROBLEMS = 20;
 
-/** Run `PRAGMA integrity_check` over `bytes` without touching the live database. */
+/** The loaded WASM module, and a connection opened from it — named so helpers can be top-level. */
+type Sqlite3 = Awaited<ReturnType<typeof loadSqlite3>>;
+type CandidateDb = InstanceType<Sqlite3['oo1']['DB']>;
+
+/**
+ * Run `PRAGMA integrity_check` over `bytes`, and read which schema built them, without touching
+ * the live database.
+ */
 export async function verifySqliteBinary(bytes: Uint8Array): Promise<VerifyBinaryResult> {
   const sqlite3 = await loadSqlite3();
   // A unique name per call: a previous verification's file may still be resident, and
@@ -41,11 +53,11 @@ export async function verifySqliteBinary(bytes: Uint8Array): Promise<VerifyBinar
     const problems = rows
       .map((row) => String(row))
       .filter((message) => message.length > 0 && message !== 'ok');
-    return { ok: problems.length === 0, problems };
+    return { ok: problems.length === 0, problems, schema: readSchemaIdentity(db) };
   } catch (err) {
     // A file SQLite cannot even open is as damaged as one that fails the pragma; report it
     // the same way rather than throwing, so the caller has one shape to reason about.
-    return { ok: false, problems: [messageOf(err)] };
+    return { ok: false, problems: [messageOf(err)], schema: null };
   } finally {
     try {
       db?.close();
@@ -57,11 +69,54 @@ export async function verifySqliteBinary(bytes: Uint8Array): Promise<VerifyBinar
 }
 
 /**
+ * SQLite's phrasings for "that schema object does not exist" — the one outcome that means the
+ * candidate genuinely *predates* the thing being read rather than that the read went wrong. Kept
+ * in step with the same distinction the boot-time stamp read draws (see `assertBaselineCurrent`
+ * and issue #500): a database old enough to have no `app_meta` is unstamped, which is a refusable
+ * answer; anything else is no answer at all.
+ */
+const MISSING_SCHEMA_MARKERS: readonly string[] = ['no such table', 'no such column'];
+
+/**
+ * Read which schema built the candidate (issue #501), or `null` where that could not be
+ * established.
+ *
+ * `null` is deliberately *not* folded into "unstamped": a caller refuses an unstamped database,
+ * so a read that merely failed must not be able to masquerade as one. This runs after
+ * `integrity_check` on a database SQLite has already opened, so the only expected failure is the
+ * absent `app_meta` — everything else means we cannot say, and the caller should not pretend
+ * otherwise.
+ */
+function readSchemaIdentity(db: CandidateDb): CandidateSchemaIdentity | null {
+  let userVersion: number;
+  try {
+    userVersion = Number(db.selectValue('PRAGMA user_version;') ?? 0);
+  } catch {
+    return null;
+  }
+
+  try {
+    const stamp = db.selectValue('SELECT value FROM app_meta WHERE key = ?;', [BASELINE_REVISION_KEY]);
+    return { userVersion, baselineRevision: stamp == null ? null : String(stamp) };
+  } catch (err) {
+    // An absent `app_meta` (or an absent column in an ancient one) *is* the answer: unstamped.
+    if (isMissingSchemaError(err)) return { userVersion, baselineRevision: null };
+    return null;
+  }
+}
+
+/** True when `err` reports an absent table or column rather than a failure to read at all. */
+function isMissingSchemaError(err: unknown): boolean {
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return MISSING_SCHEMA_MARKERS.some((marker) => message.includes(marker));
+}
+
+/**
  * Best-effort removal of the temporary in-memory file. The WASM file system is not part of
  * sqlite-wasm's supported surface, so this is probed rather than assumed; failing to reclaim
  * it merely holds the bytes until the page unloads (a restore reloads moments later anyway).
  */
-function unlink(sqlite3: Awaited<ReturnType<typeof loadSqlite3>>, path: string): void {
+function unlink(sqlite3: Sqlite3, path: string): void {
   try {
     const fs = (sqlite3.wasm as unknown as { FS?: { unlink?: (p: string) => void } }).FS;
     fs?.unlink?.(path);
