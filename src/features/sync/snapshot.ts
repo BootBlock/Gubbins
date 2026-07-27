@@ -238,17 +238,25 @@ export interface BuildSnapshotOptions {
  * often a crashed database worker, which rejects each call without ever posting it — degrading
  * quietly would hand the caller a structurally valid snapshot holding nothing, and the rescue
  * screen would report a saved backup over an empty file. The user then takes the reset that
- * screen recommends, carrying an archive with none of their data in it. Failing is the only
- * honest answer, and it is a *retryable* one: the worker is rebuilt before each rescue attempt.
+ * screen recommends, carrying an archive with none of their data in it.
+ *
+ * Nothing of value is thrown away by refusing. The archive that would otherwise be written is not
+ * restorable by either mode: its snapshot is empty, so a merge applies nothing, and a rescue
+ * manifest stamps the baseline it could not read as `unknown`, which the exact-copy restore
+ * refuses outright (`restore-backup.ts`). Failing is therefore the only honest answer.
  *
  * The message is written for that screen — the only caller that turns the mode on — so it says
- * the thing that actually matters there: do not reset on the strength of this.
+ * the two things that actually matter there. It points at the raw `.sqlite` copy, which needs
+ * only to *open* the database rather than read a single row and so survives failures this does
+ * not; and it says not to reset on the strength of this. It deliberately does **not** promise
+ * that retrying reconnects: the driver is replaced only when the previous worker actually died,
+ * so a wedged or unopenable database fails a second attempt exactly as it failed the first.
  */
 export class UnreadableDatabaseError extends Error {
   constructor(cause: unknown) {
     super(
-      'None of your data could be read from the database, so nothing was saved. Try again before ' +
-        'resetting anything.',
+      'None of your data could be read from the database, so nothing was saved. Try the raw ' +
+        '.sqlite copy instead, and do not reset until something has saved.',
       { cause },
     );
     this.name = 'UnreadableDatabaseError';

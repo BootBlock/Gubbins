@@ -8,15 +8,20 @@
  * what "dead" means to keep in step with the driver.
  */
 import { vi } from 'vitest';
+import { DbError } from '@/db/errors';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 
-/** The message a real latched driver rejects with, for tests asserting on the cause. */
+/**
+ * The rejection a real latched driver produces, down to the code and the message shape: `#fatal`
+ * is built as `Database worker error: ${detail}` under `WORKER_UNAVAILABLE`, and every later call
+ * is rejected with a copy of it (`db/rpc/worker-driver.ts`).
+ */
 export const CRASHED_WORKER_MESSAGE = 'Database worker error: the worker has gone away.';
 
 /** A driver that rejects every call, as a crashed worker's latched one does. */
 export function crashedDriver(): IDatabaseDriver {
   const fail = async (): Promise<never> => {
-    throw new Error(CRASHED_WORKER_MESSAGE);
+    throw new DbError('WORKER_UNAVAILABLE', CRASHED_WORKER_MESSAGE);
   };
   return {
     query: fail as IDatabaseDriver['query'],

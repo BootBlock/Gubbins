@@ -90,9 +90,9 @@ file back and run into the same problem, so Gubbins refuses that combination and
 > worse than none, because the next step this screen offers clears your data.
 
 > **💡 Tip**
-> A backup that fails here is worth retrying: Gubbins reconnects to your database on each attempt,
-> so a second try often succeeds where the first didn't. The same goes for the `.sqlite` copy and
-> the JSON export beneath it.
+> If the backup can't be made, try **Download raw .sqlite binary** underneath it. That one only has
+> to open your database rather than read through it, so it often works when the backup doesn't —
+> and it's worth having before you reset, even though it can't be restored into Gubbins afterwards.
 
 ## Only restore files you trust
 
