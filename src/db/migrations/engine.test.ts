@@ -6,6 +6,23 @@ import { v1Initial } from './v1-initial';
 import { BASELINE_REVISION_KEY, baselineFingerprint, type Migration } from './migration';
 import { BASELINE_REVISION } from './v1-initial';
 import { DbError } from '@/db/errors';
+import type { IDatabaseDriver, SqlParams, SqlRow } from '@/db/rpc/driver';
+
+/**
+ * A healthy database whose *stamp read* fails a fixed number of times first — one queued error
+ * per attempt, then SQLite answers normally. Models the issue #500 case: nothing is wrong with
+ * the data, only with the round-trip that reads it.
+ */
+function withStampReadFailures(base: MemoryDriver, ...failures: readonly unknown[]): IDatabaseDriver {
+  const pending = [...failures];
+  return {
+    ...base,
+    async queryOne<TRow = SqlRow>(sql: string, params?: SqlParams): Promise<TRow | undefined> {
+      if (sql.includes('app_meta') && pending.length > 0) throw pending.shift();
+      return base.queryOne<TRow>(sql, params);
+    },
+  };
+}
 
 describe('migration engine', () => {
   let driver: MemoryDriver;
@@ -168,6 +185,64 @@ describe('migration engine', () => {
       await expect(assertBaselineCurrent(driver, BASELINE_REVISION)).rejects.toMatchObject({
         name: 'DbError',
         code: 'SCHEMA_STALE',
+      });
+    });
+
+    it('reports SCHEMA_STALE when the row is there but the column predates this build', async () => {
+      // The other half of "predates the stamp": an `app_meta` too old to have the column being
+      // read. SQLite says so in the same breath as a missing table, and it means the same thing.
+      await runMigrations(driver, migrations);
+      const flaky = withStampReadFailures(driver, new DbError('SQLITE_ERROR', 'no such column: value'));
+      await expect(assertBaselineCurrent(flaky, BASELINE_REVISION)).rejects.toMatchObject({
+        name: 'DbError',
+        code: 'SCHEMA_STALE',
+      });
+    });
+
+    it('propagates a transient read failure instead of calling the schema stale (issue #500)', async () => {
+      // The database is stamped and healthy — only the round-trip failed. Reporting SCHEMA_STALE
+      // here would put a two-click purge in front of a user with nothing wrong with their data.
+      await runMigrations(driver, migrations);
+      const flaky = withStampReadFailures(
+        driver,
+        new DbError('WORKER_TIMEOUT', 'The database did not answer a "query" request within 30000ms.'),
+      );
+      await expect(assertBaselineCurrent(flaky, BASELINE_REVISION)).rejects.toMatchObject({
+        name: 'DbError',
+        code: 'WORKER_TIMEOUT',
+      });
+    });
+
+    it('does not read a worker failure as an unstamped database, whatever its message says', async () => {
+      // A dead worker can quote anything — including SQLite text it relayed from somewhere else.
+      // The code, not just the wording, is what rules a missing table in.
+      await runMigrations(driver, migrations);
+      const flaky = withStampReadFailures(
+        driver,
+        new DbError('WORKER_UNAVAILABLE', 'Database worker error: no such table: app_meta'),
+      );
+      await expect(assertBaselineCurrent(flaky, BASELINE_REVISION)).rejects.toMatchObject({
+        name: 'DbError',
+        code: 'WORKER_UNAVAILABLE',
+      });
+    });
+
+    it('retries lock contention rather than concluding anything from it', async () => {
+      await runMigrations(driver, migrations);
+      const flaky = withStampReadFailures(driver, new DbError('SQLITE_BUSY', 'database is locked'));
+      await expect(assertBaselineCurrent(flaky, BASELINE_REVISION)).resolves.toBeUndefined();
+    });
+
+    it('reports lock contention that outlasts the retry as itself, not as a stale schema', async () => {
+      await runMigrations(driver, migrations);
+      const flaky = withStampReadFailures(
+        driver,
+        new DbError('SQLITE_BUSY', 'database is locked'),
+        new DbError('SQLITE_BUSY', 'database is locked'),
+      );
+      await expect(assertBaselineCurrent(flaky, BASELINE_REVISION)).rejects.toMatchObject({
+        name: 'DbError',
+        code: 'SQLITE_BUSY',
       });
     });
 
