@@ -6,6 +6,8 @@
  *      which VFS the database opens on (issue #255).
  *   2. Single-tab ownership via the Web Lock guard (§2.2.7).
  *   3. Open the OPFS database, verify FTS5, and run migrations (§2.2, §2.3).
+ *   3a. Check what opened against what this device recorded last time, so a browser storage wipe
+ *      cannot pass for a first run (issue #505 — see `db-presence.ts`).
  *   4. Request persistent storage and begin quota telemetry (§2, §7.6.1).
  *
  * StrictMode-safe: the boot runs a single time even though effects double-invoke
@@ -19,11 +21,18 @@ import {
   type SupportDiagnosis,
 } from '@/lib/env/support-diagnosis';
 import { acquireDatabaseTabLock, type TabLockDenial } from '@/db/tab-lock';
-import { bootDatabase, type DbBootResult } from '@/db/client';
+import { bootDatabase, countStoredItems, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
 import { storageWriteGate, useStorageStore } from '@/state/stores/useStorageStore';
 import { setStorageWriteGate } from '@/features/storage/write-gate';
 import { labFlag } from '@/state/stores/useLabStore';
+import {
+  evaluateDbPresence,
+  readDbPresence,
+  recordKnownItemCount,
+  writeDbPresence,
+  type DbLossRecord,
+} from '@/db/db-presence';
 
 export type BootState =
   | { readonly status: 'starting' }
@@ -33,6 +42,12 @@ export type BootState =
       readonly reason: TabLockDenial;
       readonly whenReleased: Promise<void> | null;
     }
+  /**
+   * The database opened fine — because this boot *created* it, on a device that had one before
+   * (issue #505). Carries the boot result alongside the loss, since the app underneath is
+   * perfectly usable and the user is free to carry on into it once they have been told.
+   */
+  | { readonly status: 'data-lost'; readonly loss: DbLossRecord; readonly result: DbBootResult }
   | { readonly status: 'ready'; readonly result: DbBootResult }
   | { readonly status: 'error'; readonly error: DbError };
 
@@ -114,6 +129,12 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
   try {
     const result = await bootDatabase();
 
+    // 3a. Was there a database here before this one? Read the marker *before* re-stamping it, and
+    // stamp it either way: a device that has booted once is a device whose next disappearance is
+    // detectable. `Date.now()`, never `nowMs()` — this is a record, not a judgement (lib/clock.ts).
+    const presence = evaluateDbPresence(readDbPresence(), result.migration.from === 0, Date.now());
+    writeDbPresence(presence.marker);
+
     // 4. Persistence + telemetry — non-blocking; the UI surfaces the outcome.
     const storage = useStorageStore.getState();
     void storage.requestPersistence();
@@ -130,6 +151,23 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
     // otherwise only reachable under genuine OPFS pressure.
     if (import.meta.env.DEV) {
       (window as unknown as { __storageStore?: typeof useStorageStore }).__storageStore = useStorageStore;
+    }
+
+    // Refresh the figure a *later* boot's loss notice would quote. Deliberately off the boot
+    // path and best-effort: it is only ever read if the database subsequently disappears, so
+    // nothing the user is waiting for should hang on a table scan, and a failure to count is
+    // not a failure to start.
+    void countStoredItems()
+      .then(recordKnownItemCount)
+      .catch((error: unknown) => {
+        // Logged rather than swallowed silently: the only symptom otherwise is a loss notice,
+        // months later, that cannot say how much was here.
+        console.warn('[gubbins] could not record the item count for the data-loss notice', error);
+      });
+
+    if (presence.verdict.kind === 'lost') {
+      commit({ status: 'data-lost', loss: presence.verdict.loss, result });
+      return;
     }
 
     commit({ status: 'ready', result });

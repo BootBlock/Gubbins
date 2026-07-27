@@ -30,8 +30,10 @@ vi.mock('@/db/tab-lock', () => ({
 }));
 
 const bootDatabase = vi.fn(() => Promise.resolve({ driver: {}, migration: { from: 0, to: 1, applied: [] } }));
+const countStoredItems = vi.fn(() => Promise.resolve(0));
 vi.mock('@/db/client', () => ({
   bootDatabase: () => bootDatabase(),
+  countStoredItems: () => countStoredItems(),
 }));
 
 vi.mock('@/state/stores/useStorageStore', () => ({
@@ -46,9 +48,11 @@ vi.mock('@/state/stores/useStorageStore', () => ({
 }));
 
 import { useDatabaseBoot } from './useDatabaseBoot';
+import { readDbPresence, writeDbPresence } from '@/db/db-presence';
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   useLabStore.getState().resetLab();
   checkCriticalSupport.mockClear().mockReturnValue({ supported: true, missing: [] });
   checkIsolationSupport.mockClear().mockReturnValue({ supported: true, missing: [] });
@@ -56,7 +60,8 @@ afterEach(() => {
     .mockClear()
     .mockResolvedValue({ cause: 'browser-unsupported', missing: [], signals: {} });
   acquireDatabaseTabLock.mockClear();
-  bootDatabase.mockClear();
+  bootDatabase.mockClear().mockResolvedValue({ driver: {}, migration: { from: 0, to: 1, applied: [] } });
+  countStoredItems.mockClear().mockResolvedValue(0);
 });
 
 /**
@@ -140,6 +145,74 @@ describe('useDatabaseBoot — cross-origin isolation is preferred, not required'
 
     await waitFor(() => expect(result.current.status).toBe('unsupported'));
     expect(bootDatabase).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A database that has vanished must not boot as a silent fresh install (issue #505). The two
+ * cases reach this hook identically — nothing was on disk, so a clean v1 was built — and only
+ * the marker outside the database can tell them apart.
+ */
+describe('useDatabaseBoot — a vanished database', () => {
+  const SEEN_BEFORE = { version: 1, lastSeenAt: 1, lastKnownItems: 42, unacknowledgedLoss: null } as const;
+
+  it('starts normally on a device that has never held a database', async () => {
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    // …and records the boot, so a *later* disappearance is detectable at all.
+    expect(readDbPresence()?.lastSeenAt).toBeGreaterThan(0);
+  });
+
+  it('stops on the loss notice when a device that had a database had to build a new one', async () => {
+    writeDbPresence(SEEN_BEFORE);
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('data-lost'));
+    expect(result.current.status === 'data-lost' && result.current.loss).toMatchObject({
+      lastSeenAt: 1,
+      lastKnownItems: 42,
+    });
+  });
+
+  it('keeps raising the notice until it is acknowledged, not just on the boot that found it', async () => {
+    // The boot after the loss opens the empty database the previous one created, so nothing in
+    // the migration report says anything is wrong any more.
+    bootDatabase.mockResolvedValue({ driver: {}, migration: { from: 1, to: 1, applied: [] } });
+    writeDbPresence({
+      ...SEEN_BEFORE,
+      unacknowledgedLoss: { detectedAt: 2, lastSeenAt: 1, lastKnownItems: 42 },
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('data-lost'));
+  });
+
+  it('says nothing when the database was simply already there', async () => {
+    bootDatabase.mockResolvedValue({ driver: {}, migration: { from: 1, to: 1, applied: [] } });
+    writeDbPresence(SEEN_BEFORE);
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+  });
+
+  it('records how much is here, for the notice a later boot might have to show', async () => {
+    countStoredItems.mockResolvedValue(248);
+
+    renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(readDbPresence()?.lastKnownItems).toBe(248));
+  });
+
+  it('still starts when the count fails — a figure for next time is not worth a failed boot', async () => {
+    countStoredItems.mockRejectedValue(new Error('no such table: items'));
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
   });
 });
 

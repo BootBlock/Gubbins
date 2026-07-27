@@ -32,6 +32,37 @@ Because it's all local:
 > and [[install the app|Installing-Gubbins]] and grant *persistent storage* so the browser won't
 > evict it.
 
+## If your data disappears
+
+Because the database belongs to your browser, the browser can remove it — and it doesn't ask
+first. That happens when storage is reclaimed under pressure, when a device goes a long stretch
+without opening Gubbins (iOS clears storage for web apps after **seven days** unless they're
+[[installed|Installing-Gubbins]]), or when a "clear browsing data" sweep includes site storage.
+
+Your *settings* live separately, so an empty Gubbins can otherwise look exactly like a brand-new
+one — your theme, your dashboard, past the first-run wizard, and nothing in it. To stop that
+passing unnoticed, Gubbins remembers on each device that it has held a database before. If it ever
+starts and finds it has to create a new one, it says so before letting you in:
+
+> **Your Gubbins data is gone** — Gubbins has run on this device before, but the database it kept
+> here is no longer there.
+
+The screen tells you when this device last opened Gubbins and roughly how much it held, and offers
+to **restore a backup** — either a full `.zip` archive or a raw `.sqlite` file — straight away. You
+can also **continue with an empty inventory**; the notice reappears on the next start until you do
+one or the other, so it can't be lost by closing the tab.
+
+> **⚠️ Heads-up**
+> If you have a backup, restore it **before** adding anything. Restoring into an inventory you've
+> started re-typing merges the two, which is far messier to untangle than a clean restore.
+
+> **ℹ️ Note**
+> This can only be reported when *something* survived to report it. A browser clear-out that
+> removes everything for the site — settings included — takes that record with it, and Gubbins
+> then genuinely cannot tell your device apart from a new one, so it starts as a first run. That
+> is another reason to keep a [[backup|Backup-and-Restore]] or [[cloud sync|Cloud-Sync]] rather
+> than relying on any single device.
+
 ## Getting data in and out
 
 Local-first doesn't mean locked-in. You can move your data freely:

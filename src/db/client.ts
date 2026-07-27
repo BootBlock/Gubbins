@@ -44,6 +44,19 @@ export async function bootDatabase(): Promise<DbBootResult> {
 }
 
 /**
+ * How many items the database currently holds (issue #505).
+ *
+ * Recorded outside the database on each boot so that, if the browser later evicts the database,
+ * the notice can say how much was here rather than only that something was. Goes straight to the
+ * driver rather than through `ItemRepository` because it runs during boot, before any actor or
+ * permission context exists — and it is a whole-table count, not a filtered read.
+ */
+export async function countStoredItems(): Promise<number> {
+  const row = await getDatabaseDriver().queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM items;');
+  return Number(row?.n ?? 0);
+}
+
+/**
  * The database driver, replacing the worker first if the one it holds is already dead.
  *
  * A crashed worker latches the driver permanently unusable (issue #299) — sound for ordinary

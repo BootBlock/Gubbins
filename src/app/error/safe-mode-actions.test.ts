@@ -40,6 +40,7 @@ import {
   StaleJournalError,
 } from './safe-mode-actions';
 import { SAHPOOL_DIRECTORY } from '@/db/db-storage';
+import { readDbPresence, writeDbPresence } from '@/db/db-presence';
 import { SQLITE_MAGIC } from '@/db/sqlite-header';
 
 /** A file whose first 16 bytes are the SQLite magic — all the pre-#198 guard ever checked. */
@@ -135,6 +136,9 @@ beforeEach(() => {
   wipeDatabaseFiles.mockResolvedValue(undefined);
   exportBinary.mockResolvedValue(sqliteBytes());
   query.mockResolvedValue([]);
+  // The data-loss marker (issue #505) is real `localStorage`, which these tests both read and
+  // write — start each from a device that has recorded nothing.
+  localStorage.clear();
   mockOpfs(4096);
 });
 
@@ -281,6 +285,49 @@ describe('overwriteDatabaseFile (issue #203)', () => {
       sidecar: 'gubbins.sqlite3-journal',
       cause: expect.objectContaining({ name: 'NoModificationAllowedError' }),
     });
+  });
+
+  /**
+   * A restore is the answer to "your data was cleared by the browser" (issue #505), and that
+   * notice is re-raised on every boot until it is answered. Leaving it pending would greet the
+   * user's reload into their freshly-restored inventory with a screen saying it is gone.
+   */
+  it('settles a pending data-loss notice once the restored bytes have committed', async () => {
+    mockOpfs(4096);
+    writeDbPresence({
+      version: 1,
+      lastSeenAt: 1,
+      lastKnownItems: 42,
+      unacknowledgedLoss: { detectedAt: 2, lastSeenAt: 1, lastKnownItems: 42 },
+    });
+
+    await overwriteDatabaseFile(sqliteBytes());
+
+    expect(readDbPresence()?.unacknowledgedLoss).toBeNull();
+  });
+
+  it('settles it even when a stale journal survives — the restore still landed', async () => {
+    mockOpfs(4096, { failAt: 'remove' });
+    writeDbPresence({
+      version: 1,
+      lastSeenAt: 1,
+      lastKnownItems: 42,
+      unacknowledgedLoss: { detectedAt: 2, lastSeenAt: 1, lastKnownItems: 42 },
+    });
+
+    await expect(overwriteDatabaseFile(sqliteBytes())).rejects.toBeInstanceOf(StaleJournalError);
+
+    expect(readDbPresence()?.unacknowledgedLoss).toBeNull();
+  });
+
+  it('leaves it pending when the write failed — nothing has answered the loss', async () => {
+    mockOpfs(4096, { failAt: 'close' });
+    const loss = { detectedAt: 2, lastSeenAt: 1, lastKnownItems: 42 };
+    writeDbPresence({ version: 1, lastSeenAt: 1, lastKnownItems: 42, unacknowledgedLoss: loss });
+
+    await expect(overwriteDatabaseFile(sqliteBytes())).rejects.toThrow(/quota/i);
+
+    expect(readDbPresence()?.unacknowledgedLoss).toEqual(loss);
   });
 });
 

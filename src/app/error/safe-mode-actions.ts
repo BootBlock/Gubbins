@@ -19,6 +19,7 @@ import {
   readPlainDatabaseFile,
   writePlainDatabaseFile,
 } from '@/db/db-storage';
+import { acknowledgeDbLoss, clearDbPresence } from '@/db/db-presence';
 import { inspectRestoreCandidate } from '@/db/restore-candidate';
 import { isSqliteFile } from '@/db/sqlite-header';
 import { removeImagesDirectory } from '@/features/images/opfs-images';
@@ -48,16 +49,24 @@ export { isSqliteFile } from '@/db/sqlite-header';
  * cases go through the worker, which owns that decision. Disposal is deliberately part of this
  * function rather than the caller's job, because the two orders are opposites: the direct write
  * needs the worker *gone* first, the delegated one needs it alive.
+ *
+ * A pending "your data was cleared by the browser" notice is settled here too (issue #505). It is
+ * raised on every boot until the user answers it, and restoring *is* the answer — without this,
+ * the reload into freshly-restored data would open on a screen announcing that the data is gone.
+ * Only once the bytes have committed: a restore that failed leaves the loss genuinely unresolved,
+ * and one that landed beside a stale journal ({@link StaleJournalError}) still landed.
  */
 export async function overwriteDatabaseFile(bytes: Uint8Array): Promise<void> {
   if ((await detectDbStorageLayout()) === 'opfs') {
     await disposeDatabase();
     const { staleSidecar, cause } = await writePlainDatabaseFile(bytes);
+    acknowledgeDbLoss();
     if (staleSidecar) throw new StaleJournalError(staleSidecar, cause);
     return;
   }
 
   const { staleSidecar } = await (await getRescueDatabaseDriver()).writeDatabaseFile(bytes);
+  acknowledgeDbLoss();
   await disposeDatabase();
   if (staleSidecar) throw new StaleJournalError(staleSidecar, undefined);
 }
@@ -263,6 +272,13 @@ export async function downloadJsonDump(): Promise<void> {
  * the database file(s), and clears caches/service workers.
  */
 export async function hardResetLocalData(): Promise<void> {
+  // First, before anything is deleted: forget that this device ever held a database (issue #505).
+  // A deliberate purge is not a loss, and this reset deletes the database files well before
+  // `clearLocalAppState` sweeps `localStorage` — so a run interrupted in between (a closed tab, a
+  // failed OPFS call) would otherwise leave the marker behind and greet the next boot with "your
+  // data was cleared by the browser" for a wipe the user asked for.
+  clearDbPresence();
+
   // The `opfs-sahpool` fallback keeps the database inside its own store, and the worker holds
   // a sync access handle on every file in it — a directory removal can fail outright while
   // those are live, which would leave a "purge everything" quietly not purging the data. So

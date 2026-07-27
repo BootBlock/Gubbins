@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MultiTabScreen, UnsupportedScreen } from './BootScreens';
+import { DataLossScreen, MultiTabScreen, UnsupportedScreen } from './BootScreens';
 import { TAB_LOCK_OVERRIDE_KEY } from '@/lib/storage-keys';
 import type { SupportCause, SupportDiagnosis } from '@/lib/env/support-diagnosis';
 
@@ -134,5 +134,70 @@ describe('MultiTabScreen', () => {
     // The choice must be persisted *before* the reload, or the fresh boot denies again.
     expect(sessionStorage.getItem(TAB_LOCK_OVERRIDE_KEY)).toBe('1');
     expect(reload).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The notice a vanished database gets (issue #505). Its whole job is to stop an empty inventory
+ * reading as a fresh install: it must say what actually happened, quote only what was really
+ * recorded, and put a restore in front of the user *before* they start re-typing their data.
+ */
+describe('DataLossScreen', () => {
+  const loss = { detectedAt: 1_760_000_000_000, lastSeenAt: 1_759_900_000_000, lastKnownItems: 248 };
+
+  it('says the data is gone, and that Gubbins did not delete it', () => {
+    render(<DataLossScreen loss={loss} onContinue={() => {}} />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Your Gubbins data is gone' })).toBeInTheDocument();
+    expect(screen.getByText(/Gubbins did not delete it/)).toBeInTheDocument();
+    // The line that stops a restore turning into a merge.
+    expect(screen.getByText(/before adding anything/)).toBeInTheDocument();
+  });
+
+  it('quotes what the device last held, so the user can judge whether a backup is current', () => {
+    render(<DataLossScreen loss={loss} onContinue={() => {}} />);
+    expect(screen.getByText(/holding 248 items/)).toBeInTheDocument();
+  });
+
+  it('invents no figure it never recorded', () => {
+    render(<DataLossScreen loss={{ ...loss, lastKnownItems: null }} onContinue={() => {}} />);
+    expect(screen.getByText(/This device last opened Gubbins on/)).toBeInTheDocument();
+    expect(screen.queryByText(/holding/)).not.toBeInTheDocument();
+  });
+
+  it('does not quote a zero it took at the last boot', () => {
+    // The count is taken when Gubbins starts, so a session that added two hundred items and never
+    // restarted still records zero — "holding 0 items" would read as "nothing was lost".
+    render(<DataLossScreen loss={{ ...loss, lastKnownItems: 0 }} onContinue={() => {}} />);
+    expect(screen.queryByText(/holding/)).not.toBeInTheDocument();
+  });
+
+  it('admits when it cannot even date the loss', () => {
+    render(
+      <DataLossScreen loss={{ ...loss, lastSeenAt: null, lastKnownItems: null }} onContinue={() => {}} />,
+    );
+    expect(screen.getByText(/no record of when this device last opened Gubbins/)).toBeInTheDocument();
+  });
+
+  it('offers the restores and nothing that would make the situation worse', () => {
+    render(<DataLossScreen loss={loss} onContinue={() => {}} />);
+
+    expect(screen.getByRole('button', { name: /Restore full archive/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Restore raw \.sqlite/i })).toBeInTheDocument();
+    // A backup here would capture the empty database that replaced the user's data, and the purge
+    // is the very thing that has already happened.
+    expect(screen.queryByRole('button', { name: /Back up everything/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /hard reset|purge/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reinstall app files/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Export data/i })).not.toBeInTheDocument();
+  });
+
+  it('lets the user carry on once they have read it', async () => {
+    const onContinue = vi.fn();
+    render(<DataLossScreen loss={loss} onContinue={onContinue} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with an empty inventory' }));
+
+    expect(onContinue).toHaveBeenCalledTimes(1);
   });
 });
