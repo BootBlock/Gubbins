@@ -62,7 +62,6 @@ describe('prepareSave — where the platform can report', () => {
 
     const saver = await prepareSave('gubbins-backup.zip', KIND);
 
-    expect(saver?.verifiable).toBe(true);
     expect(await saver!.save(new Blob(['data']))).toBe('saved');
     expect(written).toHaveLength(1);
     // Closing is what commits the staged bytes, so "saved" must not be claimed before it.
@@ -108,7 +107,6 @@ describe('prepareSave — where the platform can report', () => {
 
     const saver = await prepareSave('gubbins-backup.zip', KIND);
 
-    expect(saver?.verifiable).toBe(false);
     expect(await saver!.save(new Blob(['data']))).toBe('unverified');
   });
 });
@@ -117,7 +115,6 @@ describe('prepareSave — where it cannot', () => {
   it('falls back to the anchor download and admits it proved nothing', async () => {
     const saver = await prepareSave('gubbins-backup.zip', KIND);
 
-    expect(saver?.verifiable).toBe(false);
     expect(await saver!.save(new Blob(['data']))).toBe('unverified');
     expect(downloadBlob).toHaveBeenCalledWith('gubbins-backup.zip', expect.any(Blob));
   });
@@ -128,7 +125,7 @@ describe('saveBeforeDestroying', () => {
   function save(outcome: 'saved' | 'unverified', confirm: boolean): SafeSave & { asked: () => boolean } {
     let asked = false;
     return {
-      saver: { filename: 'copy.zip', verifiable: outcome === 'saved', save: async () => outcome },
+      saver: { filename: 'copy.zip', save: async () => outcome },
       confirmUnverified: async () => {
         asked = true;
         return confirm;
@@ -156,7 +153,7 @@ describe('saveBeforeDestroying', () => {
   it('passes the filename to the question, so it names the file to look for', async () => {
     const seen: string[] = [];
     await saveBeforeDestroying(new Blob(['x']), {
-      saver: { filename: 'gubbins-restore-point.sqlite', verifiable: false, save: async () => 'unverified' },
+      saver: { filename: 'gubbins-restore-point.sqlite', save: async () => 'unverified' },
       confirmUnverified: async (filename) => {
         seen.push(filename);
         return true;

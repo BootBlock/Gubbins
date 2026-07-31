@@ -217,11 +217,12 @@ export async function prepareDestructiveRestore(sqlite: Uint8Array, options: Res
 /**
  * Restore the database from a raw `.sqlite` binary (spec §3 — the inverse of
  * {@link downloadRawSqlite}). **Destructive** — the caller must confirm first. Checks the
- * incoming database is sound and downloads a restore point of the current one, then replaces
+ * incoming database is sound and saves a restore point of the current one, then replaces
  * the stored database and reloads so the worker re-opens the new one. Throws
  * `InvalidRawSqliteError` for a non-SQLite file, `DamagedDatabaseError` for one that fails the
- * pre-flight checks, or `IncompatibleDatabaseError` for one built by another schema baseline — in
- * every failure case, before anything is overwritten.
+ * pre-flight checks, `IncompatibleDatabaseError` for one built by another schema baseline, or
+ * `RestorePointNotSavedError` when the restore point did not reach the user — in every failure
+ * case, before anything is overwritten.
  */
 export async function restoreRawSqlite(file: File, options: RestoreOptions): Promise<void> {
   const bytes = new Uint8Array(await file.arrayBuffer());

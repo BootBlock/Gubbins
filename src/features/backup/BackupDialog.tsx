@@ -483,8 +483,7 @@ function RestorePanel({
                     <p>
                       This erases all current data on this device and restores the backup exactly, then
                       reloads. <strong>A safety copy of your current data is saved first</strong> so this can
-                      be undone — you will be asked where to put it, and nothing is erased until it is safely
-                      there.
+                      be undone, and nothing is erased until that copy is confirmed.
                     </p>
                     {impact ? (
                       <p data-testid="restore-impact">

@@ -42,7 +42,6 @@ function save(
     asked: () => asked,
     saver: {
       filename: 'inventory_history_archive_test.json',
-      verifiable: outcome === 'saved',
       save: async (blob: Blob) => {
         written.push(blob);
         return outcome;

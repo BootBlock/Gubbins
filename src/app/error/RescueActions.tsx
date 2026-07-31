@@ -286,8 +286,13 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
             {pending.kind === 'archive'
               ? ' This overwrites all local data and re-imports the full-resolution images.'
               : ' This overwrites all local data.'}{' '}
-            <strong>A copy of your current database is saved first</strong> so this can be undone — you will
-            be asked where to put it, and the restore only runs once it is safely there.
+            {/*
+             * Deliberately says nothing about *how* the copy is saved: only browsers with the
+             * File System Access API ask where to put it, and this screen is reached on every
+             * one of them. "Once that copy is confirmed" is true on both routes (issue #502).
+             */}
+            <strong>A copy of your current database is saved first</strong> so this can be undone, and the
+            restore only runs once that copy is confirmed.
           </p>
           {/*
            * The refusal report (issues #198, #501). Shown only after the checks have rejected the

@@ -44,9 +44,13 @@ export interface SaveFileKind {
 /** A destination that has already been chosen, waiting for the bytes it will hold. */
 export interface FileSaver {
   readonly filename: string;
-  /** True when {@link save} can actually tell whether the bytes landed. */
-  readonly verifiable: boolean;
-  /** Write `blob`, reporting what could be established. Throws if a chosen write failed. */
+  /**
+   * Write `blob`, reporting what could be established. Throws if a chosen write failed.
+   *
+   * Whether this destination *can* report is deliberately not exposed separately: the outcome
+   * says so after the fact, and a caller that branched on it beforehand would be guessing at
+   * something it is about to be told.
+   */
   save(blob: Blob): Promise<SaveOutcome>;
 }
 
@@ -147,7 +151,6 @@ function isAbort(error: unknown): boolean {
 function writableSaver(handle: FsSaveHandle, filename: string): FileSaver {
   return {
     filename,
-    verifiable: true,
     async save(blob: Blob): Promise<SaveOutcome> {
       const writable = await handle.createWritable();
       try {
@@ -172,7 +175,6 @@ function writableSaver(handle: FsSaveHandle, filename: string): FileSaver {
 function anchorSaver(filename: string): FileSaver {
   return {
     filename,
-    verifiable: false,
     async save(blob: Blob): Promise<SaveOutcome> {
       downloadBlob(filename, blob);
       return 'unverified';

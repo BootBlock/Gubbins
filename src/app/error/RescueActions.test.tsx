@@ -68,7 +68,6 @@ const { createRescueBackup } = await import('@/features/backup/build-backup');
 const RESTORE_POINT_SAVE = {
   saver: {
     filename: 'gubbins-restore-point-20260101-000000.sqlite',
-    verifiable: false,
     save: expect.any(Function),
   },
   confirmUnverified: expect.any(Function),

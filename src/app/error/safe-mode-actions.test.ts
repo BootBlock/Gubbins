@@ -58,7 +58,6 @@ function anchorSave(confirm: () => Promise<boolean> = async () => true): SafeSav
   return {
     saver: {
       filename: RESTORE_POINT_NAME,
-      verifiable: false,
       save: async (blob: Blob) => {
         downloadBlob(RESTORE_POINT_NAME, blob);
         return 'unverified';
@@ -73,7 +72,6 @@ function verifiedSave(onSave: (blob: Blob) => void = () => {}): SafeSave {
   return {
     saver: {
       filename: RESTORE_POINT_NAME,
-      verifiable: true,
       save: async (blob: Blob) => {
         onSave(blob);
         return 'saved';

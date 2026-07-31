@@ -46,7 +46,7 @@ import type { SafeSave } from '@/lib/save-file';
  * pass one rather than pretending a destructive restore can start without a destination.
  */
 const SAVE: SafeSave = {
-  saver: { filename: 'gubbins-restore-point.sqlite', verifiable: true, save: async () => 'saved' },
+  saver: { filename: 'gubbins-restore-point.sqlite', save: async () => 'saved' },
   confirmUnverified: async () => true,
 };
 
