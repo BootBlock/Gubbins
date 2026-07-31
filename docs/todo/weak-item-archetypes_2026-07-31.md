@@ -339,17 +339,21 @@ are open.
   - **`W1f` — a `URL`/`FILE` value that can be acted on.** Open, and split out of the `N4`
     reassessment (§11.7 of [non-items on a Location](location-non-items_2026-07-31.md)), which
     refused a `location_attachments` table partly *because* this is the cheaper fix and covers both
-    subjects at once. `C1`'s "readable but never actionable" in its smallest form:
-    `customFieldValue` maps every field type but `IMAGE` to `{ kind: 'text' }`
-    ([card-fields.ts:352-371](../../src/features/inventory/card-fields.ts#L352-L371)) and
-    `CardFieldValue`'s union has no link arm, so a `URL` field — and the `FILE` pointer beside it —
-    renders as unclickable text on the item card and on the location detail panel alike. Two parts,
-    one change over both subjects: **(i)** a `link` arm on `CardFieldValue` plus its renderer case
-    in `ItemCardFields`, and **(ii)** the origin attribution a `FILE` value lacks —
-    `item_attachments` stamps `origin_device_id` and degrades another device's pointer to an
-    "Unlinked Local File" placeholder offering Re-link or Use URL
-    ([attachment-link.ts:41-52](../../src/features/inventory/attachment-link.ts#L41-L52)), whereas a
-    synced `FILE` value shows a foreign path as a dead string with no explanation. Note **(i)** is
+    subjects at once. `C1`'s "readable but never actionable" in its smallest form: `CardFieldValue`
+    has no link arm — `text`, `measure`, `money`, `condition`, `tags`, `image`, `empty` — and
+    `customFieldValue` falls both a `URL` and a `FILE` value through to `{ kind: 'text' }`
+    ([card-fields.ts:352-371](../../src/features/inventory/card-fields.ts#L352-L371)), so each
+    renders as unclickable text on the item card and on the location detail panel alike, and on no
+    surface as a link. Two parts, one change over both subjects: **(i)** a `link` arm on
+    `CardFieldValue` plus its renderer case in `ItemCardFields`, and **(ii)** the origin attribution
+    a `FILE` value lacks — `item_attachments` stamps `origin_device_id`
+    ([AttachmentRepository.ts:49-56](../../src/db/repositories/AttachmentRepository.ts#L49-L56)) and
+    degrades another device's pointer to an "Unlinked Local File" placeholder offering Re-link or
+    Use URL ([AttachmentManager.tsx:186-232](../../src/features/inventory/components/AttachmentManager.tsx#L186-L232)),
+    resolved by the pure
+    [attachment-link.ts:41-52](../../src/features/inventory/attachment-link.ts#L41-L52) seam,
+    whereas a synced `FILE` value shows a foreign path as a dead string with no explanation. Note
+    **(i)** is
     not purely presentational for a `FILE`: a `file://`, UNC or bare-path string is not safe to hand
     to an `<a href>`, so the arm must decide what is openable — the same judgement
     `resolveAttachmentLink` already encodes, so reuse that seam rather than restating it.

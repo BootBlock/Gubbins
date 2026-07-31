@@ -563,21 +563,28 @@ location-shaped. **Don't build `location_attachments`.**
      was refused for. `W2` in the [archetypes audit](weak-item-archetypes_2026-07-31.md), whose
      scope §11.4 already widened to both subjects.
    - **A link that can be opened.** A real gap, and the reason this reassessment is worth more than
-     its verdict: `customFieldValue` — shared verbatim by the item card and the location detail
-     panel, as its own doc comment says — maps every field type except `IMAGE` to `{ kind: 'text' }`
-     ([card-fields.ts:352-371](../../src/features/inventory/card-fields.ts#L352-L371)), and
-     `CardFieldValue`'s union has **no link arm at all** — its `text` case only takes care that a
-     long URL *wraps* ([ItemCardFields.tsx:77-89](../../src/features/inventory/components/ItemCardFields.tsx#L77-L89)).
+     its verdict: `CardFieldValue`'s union has **no link arm at all** — `text`, `measure`, `money`,
+     `condition`, `tags`, `image`, `empty` — and `customFieldValue`, shared verbatim by the item
+     card and the location detail panel as its own doc comment says, falls a `URL` and a `FILE`
+     value through to `{ kind: 'text' }`
+     ([card-fields.ts:352-371](../../src/features/inventory/card-fields.ts#L352-L371)); the `text`
+     case then only takes care that a long URL *wraps*
+     ([ItemCardFields.tsx:77-89](../../src/features/inventory/components/ItemCardFields.tsx#L77-L89)).
      So on the panel `N1` shipped — whose doc comment offers *"a link to the boiler manual"* as its
-     worked example — the boiler manual is **unclickable text**, exactly as it is on an item card.
-     That is `C1`'s "readable but never actionable" charge in miniature, it is one union arm plus
-     one `switch` case, and it fixes both subjects at once. Filed as `W1f`.
-   - **A foreign pointer that degrades honestly.** `item_attachments` stamps `origin_device_id` and
-     resolves another device's pointer to an *"Unlinked Local File"* placeholder offering **Re-link**
-     or **Use URL**, never a fetch
-     ([attachment-link.ts:41-52](../../src/features/inventory/attachment-link.ts#L41-L52)). A `FILE`
-     field value carries no origin at all, so a synced path is shown as a dead string with no
-     explanation — on an item exactly as much as on a location. A `FILE`-field gap, not a
+     worked example — the boiler manual is **unclickable text**, exactly as it is on an item card,
+     and no other surface renders one as a link either. That is `C1`'s "readable but never
+     actionable" charge in miniature, it is one union arm plus one `switch` case, and it fixes both
+     subjects at once. Filed as `W1f`.
+   - **A foreign pointer that degrades honestly.** `item_attachments` stamps `origin_device_id` on
+     the way in ([AttachmentRepository.ts:49-56](../../src/db/repositories/AttachmentRepository.ts#L49-L56)),
+     resolves a pointer against the current device through a pure seam
+     ([attachment-link.ts:41-52](../../src/features/inventory/attachment-link.ts#L41-L52)), and
+     renders a foreign one as an *"Unlinked Local File"* placeholder offering **Re-link** or
+     **Use URL**, never a fetch
+     ([AttachmentManager.tsx:186-232](../../src/features/inventory/components/AttachmentManager.tsx#L186-L232)).
+     A `FILE` field value carries no origin at all — neither `item_field_values` nor
+     `location_field_values` has such a column — so a synced path is shown as a dead string with no
+     explanation, on an item exactly as much as on a location. A `FILE`-field gap, not a
      missing-table gap; carried by `W1f` with the point above.
 
 3. **#466 does not *subsume* `N4`, but it does make building it now premature.** #466 asks for
@@ -591,13 +598,28 @@ location-shaped. **Don't build `location_attachments`.**
    carry through that restructure, in exchange for a capability the field dictionary already
    provides.
 
-4. **The cost is the §7 checklist, and it is the same one that ruled out the polymorphic table.** A
-   new synced table is never the `CREATE TABLE`: it is `SYNC_TABLES` classification and its drift
-   test, tombstones, `FK_REFS`, snapshot and restore, a Danger-Zone erase target, the permission
-   registry, module gating (the existing `tags-attachments` capability is worded for items), the
-   bridge DTO, the exports `N7` has just built, `t()` in both catalogues, and a wiki page. Set that
-   against the residue in point 2 — one union arm, one renderer case, one nullable column — and the
-   table is the expensive way to get less.
+4. **The cost is the §7 checklist — smaller than that non-goal implies, and still the wrong
+   trade.** §7 rejected a *polymorphic* child table partly on this list, so it is worth being exact
+   about which of it a **narrow** table actually pays, measured against what `item_attachments`
+   itself pays today. It genuinely costs: `SYNC_TABLES` classification, which the drift test forces
+   ([tombstone.ts:83](../../src/db/repositories/tombstone.ts#L83)) and which brings snapshot,
+   restore and merge with it rather than as extra work, since those all iterate `SYNC_TABLES`
+   generically; a tombstone on delete; an `FK_REFS` entry
+   ([fk-refs.ts:136](../../src/features/sync/fk-refs.ts#L136)); a repository, a manager component,
+   `t()` in both catalogues and a wiki page; and the exports `N7` has just built. Three costs it
+   does **not** pay, and the §8 entry would have been wrong to assume it did: there is no
+   permission subject — `AttachmentRepository` asserts `items:write`, so a location table would
+   assert `locations:write` and add nothing to the registry; there is no separate Danger-Zone
+   target — `item_attachments` is one `tombstoneSelect` line inside the existing **All items**
+   target ([erase-targets.ts:180](../../src/features/danger-zone/erase-targets.ts#L180)); and there
+   is **no bridge surface at all**, because `item_attachments` has never had one. That last absence
+   is the interesting one, and it cuts the other way from the rest: the bridge's own DTO comment
+   describes custom fields as *"a supplier reference, a datasheet URL, the entity id of the lamp
+   above a shelf — recorded against an item **or a location**"*
+   ([dto.ts:84-92](../../bridge/src/api/dto.ts#L84-L92)). A location's datasheet URL already reaches
+   Home Assistant *because* it is a field value; an item's actual attachment never has. Set the
+   honest cost against the residue in point 2 — one union arm, one renderer case, one nullable
+   column, over both subjects — and the table is still the expensive way to get less.
 
 So `N4` is refused, for a reason adjacent to but not the same as `N3`'s. `N3` was refused because the
 existing mechanism was already **sufficient**; `N4` is refused because the existing mechanism is
