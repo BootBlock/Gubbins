@@ -5,8 +5,9 @@
 > [#690](https://github.com/BootBlock/Gubbins/issues/690) — both closed). `N6`
 > ([#691](https://github.com/BootBlock/Gubbins/issues/691)) shipped 2026-07-31 — see §11.5, and the
 > limitation it left ([#693](https://github.com/BootBlock/Gubbins/issues/693)) shipped the same day.
-> `N7` shipped 2026-07-31 — see §11.6. `N3` is **resolved without building it** — see §11.4. `N4` and
-> `N5` remain open and unstarted, as does the deferred `locations_fts` table.
+> `N7` shipped 2026-07-31 — see §11.6. `N3` and `N4` are both **resolved without building them** —
+> see §11.4 and §11.7. `N5` remains open (and belongs to `W1`), as does the deferred `locations_fts`
+> table.
 
 Answers issue [#617](https://github.com/BootBlock/Gubbins/issues/617): *is there a valid use for
 attaching an "item" to a `Location` that isn't an actual `Item` — a Note, say — and what else can be
@@ -221,7 +222,7 @@ Ranked by *(what it unlocks) ÷ (cost)*, and deliberately weighted toward **surf
 because §5 is the finding: the mechanism is built and nobody can see it. `N1` and `N2` shipped
 together on 2026-07-31 (see §11 for what building them proved wrong); `N6`
 ([#691](https://github.com/BootBlock/Gubbins/issues/691)) and `N7` shipped the same day (§11.5,
-§11.6); `N3` is resolved without being built (§11.4); `N4` and `N5` are unstarted.
+§11.6); `N3` and `N4` are each resolved without being built (§11.4, §11.7); `N5` is unstarted.
 
 - **`N1` — Give a location's own detail somewhere to appear. ✅ SHIPPED.** Render a location's
   non-inheritable field values, alongside its description, where a location is actually looked
@@ -278,11 +279,17 @@ together on 2026-07-31 (see §11 for what building them proved wrong); `N6`
   records (a deleted location's entries having no in-app reader) no longer holds. The lanes are
   switched between rather than interleaved; a genuine chronological merge of the two ledgers stays
   deliberately unbuilt.
-- **`N4` — Location attachments (links and local pointers).** Mirror `item_attachments` on a
-  location: the boiler manual, the wiring diagram, the certificate. Be honest about the case — a
-  `URL` custom field already does most of this, so what a table buys is **several of them, ordered
-  and labelled**, not a new capability. Must not drift into storing bytes (`W6`), and should be
-  scoped against [#466](https://github.com/BootBlock/Gubbins/issues/466) before starting.
+- **`N4` — Location attachments (links and local pointers). ⛔ RESOLVED WITHOUT BUILDING IT — the
+  scoping came back "no".** The proposal was to mirror `item_attachments` on a location: the boiler
+  manual, the wiring diagram, the certificate. It was written to be honest about the case — a `URL`
+  custom field already does most of this, so what a table buys is **several of them, ordered and
+  labelled**, not a new capability — and to be scoped against
+  [#466](https://github.com/BootBlock/Gubbins/issues/466) before starting. Scoped, it fails on
+  exactly that honesty: the parity is not "most of it" but **both kinds**, `URL` and `FILE`, and the
+  three things a table would genuinely add are each a two-subject change already owned elsewhere —
+  ordering and repeats by `W2`, an openable value and a pointer's device attribution by the new
+  `W1f`. §11.7 has the evidence, including why #466 does not *subsume* this but does make building it
+  now premature.
 - **`N7` — A location list export. ✅ SHIPPED (2026-07-31).** Add locations to the tabular-export
   seam, and carry the description (and kind/capacity/dimensions/walk order) in the JSON export and
   as a folder-level page in the Markdown vault. Mechanical, and it closes §4's third weakness.
@@ -349,8 +356,9 @@ happens to the rest of this document.
 Recorded because the research above is otherwise a snapshot of `d4d8d385` and would keep reading as
 live guidance. First the three `N1`/`N2` corrections, one of which changed the design — then §11.4,
 which is not a correction but the verdict `N1` was built to make possible, §11.5, what building
-`N6` corrected in turn, and §11.6, what building `N7` settled about its neighbour
-[#596](https://github.com/BootBlock/Gubbins/issues/596).
+`N6` corrected in turn, §11.6, what building `N7` settled about its neighbour
+[#596](https://github.com/BootBlock/Gubbins/issues/596), and §11.7 — the second verdict, `N4` scoped
+against [#466](https://github.com/BootBlock/Gubbins/issues/466) and refused.
 
 1. **"Non-inheritable field values" was the wrong scope for the panel — it now shows them all.**
    §5's asymmetry argument is sound as far as it goes, but it misses that `LocationFieldsEditor`
@@ -522,3 +530,80 @@ payload, the vault's folder-level page — all landed as scoped. Four things it 
    hardening it once means the vault's folder note and the location list agree about what happens,
    and every other list export (loans, contacts, bookings, purchase orders, activity) stops sharing
    the defect too. That is the only change here that reaches past `N7`'s three parts.
+
+### 11.7 `N4` scoped against #466 — the answer is "don't build it" (2026-07-31)
+
+`N4`'s §8 entry required it to be *"scoped against
+[#466](https://github.com/BootBlock/Gubbins/issues/466) before starting"*, and wrote its own case
+honestly: a `URL` custom field *"already does most of this, so what a table buys is several of them,
+ordered and labelled, not a new capability"*. Scoped, it fails on exactly that sentence. The parity
+is better than it claimed, the residue is smaller than it claimed, and none of the residue is
+location-shaped. **Don't build `location_attachments`.**
+
+1. **A location does not have "most of" `item_attachments`. It has both of its kinds.**
+   `item_attachments.kind` is `URL | LOCAL_POINTER`
+   ([constants.ts:405](../../src/db/repositories/constants.ts#L405)) — an http(s) link, or a literal
+   local path string that never travels. A location's field dictionary offers **both**: a `URL`
+   value is validated as a parseable http(s) link
+   ([custom-fields.ts:134-144](../../src/features/inventory/custom-fields.ts#L134-L144)), and a
+   `FILE` value is defined as *"a local path, a UNC share (`\\server\share\…`), or a `file://` /
+   `http(s)` URI… Only the string travels… the file itself is never copied"*
+   ([constants.ts:318-321](../../src/db/repositories/constants.ts#L318-L321)). `FILE` is
+   `LOCAL_POINTER` under another name, adopted for the same Strict-Sync-Isolation reason. So the
+   boiler manual, the wiring diagram and the fire certificate are each recordable on a location
+   today, each under its own name, in whichever of the two kinds fits — and since `N1`, each is
+   rendered on the detail panel. The remaining difference between the two mechanisms is not *what
+   can be stored*.
+
+2. **What a dedicated table would genuinely add is three things, and each is a two-subject change
+   already owned elsewhere.**
+   - **Several under one label, ordered** — `position`, and repeats of the same name. This is the
+     identical `UNIQUE (location_id, def_id)` ceiling §11.4 already ruled on, and `N4`'s own
+     phrasing ("several of them, ordered and labelled") is almost word-for-word the sentence `N3`
+     was refused for. `W2` in the [archetypes audit](weak-item-archetypes_2026-07-31.md), whose
+     scope §11.4 already widened to both subjects.
+   - **A link that can be opened.** A real gap, and the reason this reassessment is worth more than
+     its verdict: `customFieldValue` — shared verbatim by the item card and the location detail
+     panel, as its own doc comment says — maps every field type except `IMAGE` to `{ kind: 'text' }`
+     ([card-fields.ts:352-371](../../src/features/inventory/card-fields.ts#L352-L371)), and
+     `CardFieldValue`'s union has **no link arm at all** — its `text` case only takes care that a
+     long URL *wraps* ([ItemCardFields.tsx:77-89](../../src/features/inventory/components/ItemCardFields.tsx#L77-L89)).
+     So on the panel `N1` shipped — whose doc comment offers *"a link to the boiler manual"* as its
+     worked example — the boiler manual is **unclickable text**, exactly as it is on an item card.
+     That is `C1`'s "readable but never actionable" charge in miniature, it is one union arm plus
+     one `switch` case, and it fixes both subjects at once. Filed as `W1f`.
+   - **A foreign pointer that degrades honestly.** `item_attachments` stamps `origin_device_id` and
+     resolves another device's pointer to an *"Unlinked Local File"* placeholder offering **Re-link**
+     or **Use URL**, never a fetch
+     ([attachment-link.ts:41-52](../../src/features/inventory/attachment-link.ts#L41-L52)). A `FILE`
+     field value carries no origin at all, so a synced path is shown as a dead string with no
+     explanation — on an item exactly as much as on a location. A `FILE`-field gap, not a
+     missing-table gap; carried by `W1f` with the point above.
+
+3. **#466 does not *subsume* `N4`, but it does make building it now premature.** #466 asks for
+   *categorised* asset documentation — dedicated tabs for Manuals, Warranties, Receipts and
+   Schematics — with the PDF **embedded** and readable on the device. It never mentions locations,
+   so it cannot honestly be said to cover them, and the §8 entry was right to make this a scoping
+   question rather than a duplicate check. But both of its halves land on `item_attachments`: the
+   embedding half is storing a document's bytes, which is `W6` and a standing §7 non-goal here, and
+   the categorising half is a new dimension on the table. Whichever way #466 lands, it restructures
+   the very shape `N4` proposed to mirror — so building the mirror first buys a second table to
+   carry through that restructure, in exchange for a capability the field dictionary already
+   provides.
+
+4. **The cost is the §7 checklist, and it is the same one that ruled out the polymorphic table.** A
+   new synced table is never the `CREATE TABLE`: it is `SYNC_TABLES` classification and its drift
+   test, tombstones, `FK_REFS`, snapshot and restore, a Danger-Zone erase target, the permission
+   registry, module gating (the existing `tags-attachments` capability is worded for items), the
+   bridge DTO, the exports `N7` has just built, `t()` in both catalogues, and a wiki page. Set that
+   against the residue in point 2 — one union arm, one renderer case, one nullable column — and the
+   table is the expensive way to get less.
+
+So `N4` is refused, for a reason adjacent to but not the same as `N3`'s. `N3` was refused because the
+existing mechanism was already **sufficient**; `N4` is refused because the existing mechanism is
+already **equivalent in kind**, and because what it is genuinely missing is missing on items too.
+§7's rule stands unchanged and settles it: *add a table per thing, or add nothing* — and there is no
+thing here that a table is the answer to.
+
+That leaves `N5` (which belongs to `W1`) and the deferred `locations_fts` as the only open work in
+this document.

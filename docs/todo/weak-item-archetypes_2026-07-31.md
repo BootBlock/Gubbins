@@ -1,8 +1,8 @@
 # What Gubbins is weakest at tracking — archetype audit (2026-07-31)
 
 > **Status:** 🟢 ACTIVE — research complete. `W1a` (custom-field due dates), `W1b`/`W1c` (a
-> number's unit and range) and `W1d` (the key-field rank) have shipped; the deferred `W1e` and
-> `W2`–`W10` remain open.
+> number's unit and range) and `W1d` (the key-field rank) have shipped; the deferred `W1e`, the
+> newly-split `W1f` (an actionable `URL`/`FILE` value) and `W2`–`W10` remain open.
 
 Answers issue [#621](https://github.com/BootBlock/Gubbins/issues/621): *which items, or types of
 item, is Gubbins weakest at tracking or managing?*
@@ -309,7 +309,8 @@ says so), so it belongs here as context, not as a gap.
 
 Ranked by *(breadth of archetypes unlocked) ÷ (cost)*. Deliberately weighted toward fixing a **cause**
 rather than adding a domain's fields, because the preset library already proves that adding fields
-does not make the app track anything better. `W1a`–`W1d` have shipped; `W1e` and `W2`–`W10` are open.
+does not make the app track anything better. `W1a`–`W1d` have shipped; `W1e`, `W1f` and `W2`–`W10`
+are open.
 
 - **`W1` — Make custom fields live.** The single highest-leverage change in the list: give
   `field_defs` a unit, a min/max, and a "surface this" flag, and teach the alert/agenda feeds to
@@ -318,7 +319,7 @@ does not make the app track anything better. `W1a`–`W1d` have shipped; `W1e` a
   from decoration into behaviour. Addresses C1. Note the split: the "surface this" half is adjacent
   to issue [#619](https://github.com/BootBlock/Gubbins/issues/619) (which is purely presentational),
   but the load-bearing half — feeds reading `DATE` fields — is untouched by it. All four have now
-  shipped; only `W1e` (precision) remains.
+  shipped; `W1e` (precision) and the newly-split `W1f` (an actionable link) remain.
   - **`W1a` — DATE fields as due dates. ✅ Shipped** (see [§4.1](#41-w1a--the-due-date-opt-in-shipped)).
   - **`W1b` — a per-definition unit** on `field_defs`, so a `NUMBER` field carries one.
     ✅ **Shipped** (see [§4.2](#42-w1bw1c--a-numbers-unit-and-range-shipped)).
@@ -335,16 +336,34 @@ does not make the app track anything better. `W1a`–`W1d` have shipped; `W1e` a
     one is per *definition* and chooses **which member leads** the set. §4.3 records why they cannot
     fight, and why an ordering rank belongs on `field_defs` even though ordering is otherwise
     category policy.
+  - **`W1f` — a `URL`/`FILE` value that can be acted on.** Open, and split out of the `N4`
+    reassessment (§11.7 of [non-items on a Location](location-non-items_2026-07-31.md)), which
+    refused a `location_attachments` table partly *because* this is the cheaper fix and covers both
+    subjects at once. `C1`'s "readable but never actionable" in its smallest form:
+    `customFieldValue` maps every field type but `IMAGE` to `{ kind: 'text' }`
+    ([card-fields.ts:352-371](../../src/features/inventory/card-fields.ts#L352-L371)) and
+    `CardFieldValue`'s union has no link arm, so a `URL` field — and the `FILE` pointer beside it —
+    renders as unclickable text on the item card and on the location detail panel alike. Two parts,
+    one change over both subjects: **(i)** a `link` arm on `CardFieldValue` plus its renderer case
+    in `ItemCardFields`, and **(ii)** the origin attribution a `FILE` value lacks —
+    `item_attachments` stamps `origin_device_id` and degrades another device's pointer to an
+    "Unlinked Local File" placeholder offering Re-link or Use URL
+    ([attachment-link.ts:41-52](../../src/features/inventory/attachment-link.ts#L41-L52)), whereas a
+    synced `FILE` value shows a foreign path as a dead string with no explanation. Note **(i)** is
+    not purely presentational for a `FILE`: a `file://`, UNC or bare-path string is not safe to hand
+    to an `<a href>`, so the arm must decide what is openable — the same judgement
+    `resolveAttachmentLink` already encodes, so reuse that seam rather than restating it.
 - **`W2` — A repeating (table-valued) field.** Removes the `UNIQUE (item_id, def_id)` ceiling for
   opted-in definitions. Unlocks telemetry logs, per-position measurements, prior owners, lineage
   notes — every archetype whose data is a *series*. Addresses C1. Larger and schema-visible; do
   after `W1`. **Scope it over two subjects:** `location_field_values` carries the identical
   `UNIQUE (location_id, def_id)` ceiling, and now that
-  [`N1`/`N2`](location-non-items_2026-07-31.md#11-what-building-n1n2-proved-wrong-2026-07-31) have
-  shipped it is the only limit left on what a location's notes can *hold* — so a location-only
-  `location_notes` table was rejected in favour of this. (A location's *other* gaps — export, a
-  date that raises something, an activity record — are `N4`/`N5`/`N7` there, and are not this.)
-  One change over both, the same way `N5` folds into `W1`.
+  [`N1`/`N2`](location-non-items_2026-07-31.md#11-what-building-n1n2n6n7-proved-wrong-2026-07-31)
+  have shipped it is the only limit left on what a location's notes can *hold* — so a location-only
+  `location_notes` table was rejected in favour of this (`N3`), and so was a location-only
+  attachments table (`N4`, §11.7 there): "several of them, ordered and labelled" is this item, on
+  whichever subject asks for it. (A location's remaining gap — a date that raises something — is
+  `N5` there, and folds into `W1`; its export and activity record are built.) One change over both.
 - **`W3` — An item can be a container.** Let a location be backed by an item (or an item declare
   itself a place). Unlocks §3.7 outright and improves §3.1 and kits. Addresses C4. Adjacent to
   [#617](https://github.com/BootBlock/Gubbins/issues/617) — same table boundary, opposite direction
@@ -359,7 +378,10 @@ does not make the app track anything better. `W1a`–`W1d` have shipped; `W1e` a
   the best value-per-effort item after `W1`. Addresses C5.
 - **`W6` — File attachments held in the app.** Store bytes in OPFS beside the full-res images, with
   the same storage-tier policy. Unlocks §3.2. Note the deliberate constraint it must respect: sync
-  and backup must stay honest about what travels.
+  and backup must stay honest about what travels. This is the *embedding* half of open issue
+  [#466](https://github.com/BootBlock/Gubbins/issues/466) ("Interactive Document & Manual Attachment
+  Hub"); the other half it asks for is a **category** dimension on `item_attachments` (Manuals,
+  Warranties, Receipts, Schematics), which is a column rather than bytes and could land first.
 - **`W7` — Test definitions with limits.** Promote a test to an entity with a unit, nominal and
   tolerance, a due interval, and a session grouping; compute the verdict. Unlocks §3.6 and makes the
   existing `test_records` chartable.
