@@ -305,6 +305,18 @@ busiest-first order.
 > measure, no map to draw — just the order you'd walk. It's enough to turn a scattered parts list
 > into a single, sensible lap of the room.
 
+## A location's history
+
+Beside **Statistics** sits a **History** tab: the record of what has been done to this location
+itself — when it was created, renamed, moved under a different parent, archived or restored, and by
+whom. It answers *"why is this shelf suddenly under a different room?"*, which nothing else in
+Gubbins could.
+
+It records the changes that reshape your storage, not every edit: colour, type, capacity,
+dimensions, walk order and the settings below describe the place rather than move anything, so they
+aren't logged. See [[Activity log|Activity-Log]] for the full rules, and for the separate ledger
+that covers the items *inside* a location.
+
 ## Statistics for a location
 
 Every location's **Edit** dialog has a **Statistics** tab that adds up what's stored there, so

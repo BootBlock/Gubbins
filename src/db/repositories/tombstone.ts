@@ -57,6 +57,15 @@ export const SYNC_TABLES = [
   'field_defs', // independent dictionary (issue #97 — the global custom-field vocabulary; ordered before every table that references a definition)
   'category_fields', // FK → categories, field_defs
   'location_field_values', // FK → locations, field_defs (issue #97 — the values a location offers for inheritance)
+  // FK → locations (SET NULL), users (SET DEFAULT) — the location activity record (issue #691).
+  // An LWW leaf like `revaluations` / `test_records` / `supplier_part_price_history`, NOT one of
+  // the bespoke union-by-id sections below: it carries its own `updated_at` + auto-stamp trigger,
+  // and because the repository only ever appends, an id we already hold always presents an
+  // identical row — so the shared LWW upsert resolves it to a no-op, which *is* union-by-id, with
+  // none of the bespoke snapshot plumbing `item_history` needs. `location_id` is nullable, so an
+  // entry whose location was removed on a peer survives the merge with the link cleared (see
+  // FK_REFS) rather than being dropped — deleting a place must not erase the record of it.
+  'location_history',
   'tags', // independent dictionary
   'items', // FK → categories
   'suppliers', // independent dictionary (issue #384 — the canonical supplier list; ordered before supplier_parts and purchase_orders, which both reference it, so their FKs never trip on an UPSERT batch)

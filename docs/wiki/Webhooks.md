@@ -29,8 +29,9 @@ Press **Add webhook** and fill in:
 - **Name** — how you'll recognise it in the list. Purely for you.
 - **URL** — the address the bridge calls. Must start with `http://` or `https://`.
 - **Method** — `POST`, `GET`, `PUT` or `PATCH`. `POST` is what most receivers expect.
-- **Events** — tick the changes you care about, grouped by kind (lifecycle, stock, movement,
-  custody, upkeep). **Every event** also picks up any events added by future versions of Gubbins.
+- **Events** — tick the changes you care about, grouped by kind (items, stock levels, location,
+  storage locations, loans & reservations, condition & upkeep). **Every event** also picks up any
+  events added by future versions of Gubbins.
 - **Filter** *(optional)* — narrow it further to a particular location, category, tag, specific
   items, or a quantity threshold.
 - **Payload** *(optional)* — send Gubbins' standard event, a preset shaped for Discord, Slack or
@@ -74,7 +75,7 @@ for anything reachable from the internet.
 
 ## What can — and can't — fire a webhook
 
-Webhooks currently cover **changes to items**:
+Webhooks cover **changes to items**:
 
 - creating, renaming, archiving and restoring an item;
 - every stock movement, including running low and running out;
@@ -85,8 +86,22 @@ Webhooks currently cover **changes to items**:
   number, category, batch and lot numbers, reorder levels, expiry, acquisition and warranty dates,
   depreciation period, weight and dimensions.
 
-These **cannot** raise a webhook at all: changes to [[locations|Locations-and-Stock]],
-[[purchase-order status|Purchase-Orders]], [[suppliers|Suppliers]], [[projects|Projects-and-BOM]],
+…and **changes to the [[storage locations|Locations-and-Stock]] themselves**, under their own
+**Storage locations** heading in the event list: a location being created, renamed, moved under a
+different parent, archived, restored or deleted. These are about the *place*, not what is in it —
+renaming a shelf raises one of these and moves nothing.
+
+> **ℹ️ Note**
+> A location event carries the location's id, its name and what happened, but no item. So a filter
+> that narrows by item, category or tag will not match one, and an `{{item.name}}`-style
+> placeholder renders empty in a custom payload. Subscribe to them on their own, or send Gubbins'
+> standard event and read the fields you need.
+
+The rest of a location — its colour, type, capacity, dimensions, walk order and settings — is a
+description of the place rather than the shape of your storage, and raises nothing.
+
+These **cannot** raise a webhook at all: [[purchase-order status|Purchase-Orders]],
+[[suppliers|Suppliers]], [[projects|Projects-and-BOM]],
 [[tags|Tags-Attachments-and-Related-Items]] and
 [[custom-field values|Custom-Fields-and-Capabilities]] — and neither can permanently deleting an
 item.

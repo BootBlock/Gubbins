@@ -32,6 +32,8 @@ import type {
   GaugeState,
   LocationFieldValue,
   LocationFieldValueRow,
+  LocationHistoryEntry,
+  LocationHistoryRow,
   Item,
   ItemAlias,
   ItemAliasRow,
@@ -480,6 +482,20 @@ export function rowToHistoryEntry(row: ItemHistoryRow): ItemHistoryEntry {
     netValueDelta: row.net_value_delta,
     note: row.note,
     metadata: parseJson(row.metadata),
+    createdAt: row.created_at,
+  };
+}
+
+/** Map a raw `location_history` row to its DTO (issue #691). */
+export function rowToLocationHistoryEntry(row: LocationHistoryRow): LocationHistoryEntry {
+  return {
+    id: row.id,
+    locationId: row.location_id,
+    locationName: row.location_name,
+    action: row.action,
+    note: row.note,
+    metadata: parseJson(row.metadata),
+    actorUserId: row.actor_user_id,
     createdAt: row.created_at,
   };
 }

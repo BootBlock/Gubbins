@@ -82,6 +82,11 @@ interface SnapshotFkRef extends FkRef {
 const EXTRA_REFS: Partial<Record<SyncTable, readonly SnapshotFkRef[]>> = {
   items: [{ col: 'location_id', parent: 'locations', nullable: false, fallback: UNASSIGNED_LOCATION_ID }],
   locations: [{ col: 'parent_id', parent: 'locations', nullable: true }],
+  // The location activity record's actor (issue #691) — NOT NULL `ON DELETE SET DEFAULT`, so its
+  // repair is the schema's own: re-attribute to System. `FK_REFS` cannot express that, and the
+  // `nullable: false` it *can* express would drop the entry over an account created mid-read. The
+  // same reasoning, and the same fallback, as {@link HISTORY_REFS} below.
+  location_history: [{ col: 'actor_user_id', parent: 'users', nullable: false, fallback: SYSTEM_USER_ID }],
 };
 
 /** Every reference the repair checks for a given table. */

@@ -35,6 +35,7 @@ import type { MessageKey } from '@/features/i18n/messages';
 import {
   EVENTS_TRUNCATED_TYPE,
   ITEM_CHANGED_TYPE,
+  LOCATION_CHANGED_TYPE,
   LOOKUP_RESOLVED_TYPE,
   LOW_STOCK_TYPE,
   OUT_OF_STOCK_TYPE,
@@ -45,13 +46,18 @@ import {
  * How the picker groups the catalogue. Purely presentational — the groups carry no behaviour, and
  * an event's group has no bearing on whether it fires.
  */
-export type EventGroup = 'lifecycle' | 'stock' | 'movement' | 'custody' | 'upkeep' | 'system';
+export type EventGroup = 'lifecycle' | 'stock' | 'movement' | 'places' | 'custody' | 'upkeep' | 'system';
 
 /** The order groups appear in the picker: the everyday ones first, plumbing last. */
 export const EVENT_GROUP_ORDER: readonly EventGroup[] = [
   'lifecycle',
   'stock',
   'movement',
+  // `places` is about the *location*, where `movement` is about an item's location changing
+  // (issue #691). They sit next to each other because that is the distinction a reader needs to
+  // see, and they are separate groups because folding a shelf being renamed in among the item
+  // events is exactly the confusion that made a location's history feel like it did not exist.
+  'places',
   'custody',
   'upkeep',
   'system',
@@ -168,6 +174,68 @@ export const EVENT_CATALOGUE: readonly EventCatalogueEntry[] = [
     description: 'An item was moved to a different location, or its location was re-parented.',
     descriptionKey: 'events.itemMoved.description',
     group: 'movement',
+  },
+
+  // --- Places: the storage location itself, not what is in it ------------------------
+  {
+    type: 'location.created',
+    label: 'Location created',
+    labelKey: 'events.locationCreated.label',
+    description: 'A new storage location was added — a room, a shelf, a drawer, a box.',
+    descriptionKey: 'events.locationCreated.description',
+    group: 'places',
+  },
+  {
+    type: 'location.renamed',
+    label: 'Location renamed',
+    labelKey: 'events.locationRenamed.label',
+    description: 'A storage location was given a different name. Nothing stored in it moved.',
+    descriptionKey: 'events.locationRenamed.description',
+    group: 'places',
+  },
+  {
+    type: 'location.moved',
+    label: 'Location moved',
+    labelKey: 'events.locationMoved.label',
+    description:
+      'A storage location was moved under a different parent, or out to the top level. Everything nested inside it went with it.',
+    descriptionKey: 'events.locationMoved.description',
+    group: 'places',
+  },
+  {
+    type: 'location.archived',
+    label: 'Location archived',
+    labelKey: 'events.locationArchived.label',
+    description:
+      'A storage location was hidden from the tree and the pickers. Nothing stored in it moved, and it can be restored.',
+    descriptionKey: 'events.locationArchived.description',
+    group: 'places',
+  },
+  {
+    type: 'location.restored',
+    label: 'Location restored',
+    labelKey: 'events.locationRestored.label',
+    description: 'An archived storage location was brought back into the hierarchy.',
+    descriptionKey: 'events.locationRestored.description',
+    group: 'places',
+  },
+  {
+    type: 'location.removed',
+    label: 'Location deleted',
+    labelKey: 'events.locationRemoved.label',
+    description:
+      'A storage location was deleted. Anything stored in it moved to Unassigned and any sub-locations were promoted to its parent.',
+    descriptionKey: 'events.locationRemoved.description',
+    group: 'places',
+  },
+  {
+    type: LOCATION_CHANGED_TYPE,
+    label: 'Location changed',
+    labelKey: 'events.locationChanged.label',
+    description:
+      'A change to a storage location with no more specific event of its own — including changes made by a newer version of Gubbins that this one does not recognise.',
+    descriptionKey: 'events.locationChanged.description',
+    group: 'places',
   },
 
   // --- Custody: who has it right now -------------------------------------------------

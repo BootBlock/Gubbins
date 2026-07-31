@@ -14,14 +14,17 @@ import { historyStatement } from './item/history';
 import { BaseRepository } from './base';
 import { planCheckInAllForTarget } from './checkout-plan';
 import { markCountedStatement } from './location-count';
-import { UNASSIGNED_LOCATION_ID, clampDeadStockDays } from './constants';
-import { rowToLocation } from './mappers';
+import { locationHistoryStatement, type LocationHistoryFields } from './location-history';
+import { UNASSIGNED_LOCATION_ID, clampDeadStockDays, type LocationHistoryAction } from './constants';
+import { rowToLocation, rowToLocationHistoryEntry } from './mappers';
 import { parseLocationBranch } from '@/features/inventory/location-path';
 import { PACKING_FACTOR_BOUNDS } from '@/lib/volume';
 import { tombstoneStatement } from './tombstone';
 import type {
   CreateLocationInput,
   Location,
+  LocationHistoryEntry,
+  LocationHistoryRow,
   LocationRow,
   LocationTreeNode,
   LocationWithCount,
@@ -229,6 +232,14 @@ export class LocationRepository extends BaseRepository {
         normaliseWalkOrder(input.walkOrder),
       ],
     });
+    // The activity record starts where the location does (issue #691), in the same transaction
+    // as the INSERT — a trail that begins mid-life leaves "when did this appear?" unanswerable.
+    statements.push(
+      locationHistoryStatement(id, name, 'CREATED', this.actorId(), {
+        note: `Created "${name}".`,
+        metadata: { parentId },
+      }),
+    );
     await this.driver.transaction(statements);
     return (await this.getById(id))!;
   }
@@ -287,7 +298,9 @@ export class LocationRepository extends BaseRepository {
   async update(id: string, input: UpdateLocationInput): Promise<Location> {
     this.assertPermission('locations:write');
     this.assertWritable();
-    await this.assertMutable(id);
+    // Kept, rather than discarded as a mere existence check: the activity record (issue #691) is
+    // a diff, so it needs the row as it stands *before* the write. One read serves both.
+    const before = await this.assertMutable(id);
 
     if (input.parentId !== undefined) {
       await this.assertParentMoveValid(id, input.parentId);
@@ -375,6 +388,9 @@ export class LocationRepository extends BaseRepository {
 
     // Only guard when nesting under a real parent — a move to the root (null) can never cycle.
     const guardCycle = input.parentId != null;
+    // The activity entries this edit records (issue #691), resolved before the transaction is
+    // assembled because naming the parents either side of a move costs a read each.
+    const history = sets.length > 0 ? await this.updateHistoryStatements(id, before, input, guardCycle) : [];
     if (sets.length > 0) {
       const statements: SqlStatement[] = [];
       // Promoting this row to the default demotes any other default in the same
@@ -388,6 +404,10 @@ export class LocationRepository extends BaseRepository {
           params: guardCycle ? [id, input.parentId, id] : [id],
         });
       }
+      // Emitted *before* the UPDATE, the same way a gauge's ledger entry is (see
+      // `gaugeDeltaHistoryStatement`), so each entry's guard is evaluated against exactly the
+      // pre-write state the UPDATE's own guard sees.
+      statements.push(...history);
       // The cycle guard rides in the WHERE so the check is atomic with the write (see
       // PARENT_MOVE_CYCLE_GUARD): a concurrent re-parent cannot slip a loop past it. When it
       // vetoes the move the whole UPDATE matches zero rows — detected via the re-read below.
@@ -541,6 +561,22 @@ export class LocationRepository extends BaseRepository {
       params: [location.parentId, id],
     });
 
+    // Record the deletion *before* the row goes (issue #691). The entry is written against the
+    // location, and the DELETE below then clears that link via `ON DELETE SET NULL` rather than
+    // cascading the entry away — so this location's whole trail, this entry included, survives it
+    // carrying the name it had. That is the whole point of the nullable subject column: a place
+    // that was removed is exactly the case where "what happened to it?" is worth answering, and a
+    // CASCADE would answer it by destroying the evidence.
+    statements.push(
+      locationHistoryStatement(id, location.name, 'DELETED', this.actorId(), {
+        note:
+          `Deleted "${location.name}". ` +
+          `${orphanedItems.length === 1 ? '1 item was' : `${orphanedItems.length} items were`} ` +
+          'moved to Unassigned; any sub-locations were promoted.',
+        metadata: { parentId: location.parentId, itemsReHomed: orphanedItems.length },
+      }),
+    );
+
     statements.push({ sql: 'DELETE FROM locations WHERE id = ?;', params: [id] });
     // Propagate the hard delete on the next sync (§7.2). Re-parented items keep
     // their own (live) rows; only the removed location is tombstoned.
@@ -549,7 +585,126 @@ export class LocationRepository extends BaseRepository {
     await this.driver.transaction(statements);
   }
 
+  /**
+   * One page of a location's activity record, newest first (issue #691) — what the location
+   * editor's History tab reads.
+   *
+   * Paged rather than read whole for the same reason the item Activity Log is: a location that is
+   * re-parented and archived repeatedly across a shared vault accumulates entries without bound,
+   * and a capped read that looked like the whole set would be a lie about an audit trail.
+   *
+   * `rowid` is the deterministic insertion-order tiebreaker when several entries share a
+   * `created_at` millisecond — a single edit that renames *and* moves writes two.
+   */
+  async getHistory(locationId: string, params: PageParams = {}): Promise<Page<LocationHistoryEntry>> {
+    const { limit, offset } = this.resolvePage(params);
+    const rows = await this.driver.query<LocationHistoryRow>(
+      `SELECT * FROM location_history WHERE location_id = ?
+       ORDER BY created_at DESC, rowid DESC
+       LIMIT ? OFFSET ?;`,
+      [locationId, limit, offset],
+    );
+    return this.toPage(rows.map(rowToLocationHistoryEntry), limit, offset);
+  }
+
+  /**
+   * One page of the activity record across **every** location, newest first — the cross-location
+   * counterpart of {@link getHistory}, and the read the bridge's event generation diffs to decide
+   * what is new since the last hydration (issue #691).
+   *
+   * Entries whose location has since been deleted are deliberately included: a `DELETED` entry is
+   * precisely the one an automation most wants, and it carries `location_id = NULL` the moment the
+   * row it named went (see the table's schema note). `location_name` is what keeps it readable.
+   */
+  async getHistoryFeed(params: PageParams = {}): Promise<Page<LocationHistoryEntry>> {
+    const { limit, offset } = this.resolvePage(params);
+    const rows = await this.driver.query<LocationHistoryRow>(
+      `SELECT * FROM location_history
+       ORDER BY created_at DESC, rowid DESC
+       LIMIT ? OFFSET ?;`,
+      [limit, offset],
+    );
+    return this.toPage(rows.map(rowToLocationHistoryEntry), limit, offset);
+  }
+
   // --- internals -----------------------------------------------------------------
+
+  /**
+   * The activity entries an {@link update} records (issue #691) — one per hierarchy-reshaping
+   * change it actually makes, and none for the rest.
+   *
+   * Only the changes a user cannot otherwise reconstruct are recorded: a rename, a move, and the
+   * archive/restore toggle. Colour, capacity, dimensions, walk order, the default flag and the
+   * dead-stock policy write nothing, deliberately — see {@link LOCATION_HISTORY_ACTIONS}. Nor does
+   * an edit that sets a column to the value it already held: a save with no net change is not an
+   * event, and recording it would bury the ones that are.
+   *
+   * When `guardCycle` is set, every entry carries the same atomic cycle guard the `UPDATE` does,
+   * so a move a concurrent re-parent has made illegal records nothing at all — including the
+   * rename that would have ridden the same vetoed statement.
+   */
+  private async updateHistoryStatements(
+    id: string,
+    before: Location,
+    input: UpdateLocationInput,
+    guardCycle: boolean,
+  ): Promise<SqlStatement[]> {
+    const guard: LocationHistoryFields['guard'] = guardCycle
+      ? { sql: PARENT_MOVE_CYCLE_GUARD, params: [input.parentId!, id] }
+      : undefined;
+    // The name the location carries *after* this edit, so every entry reads as the location the
+    // user is now looking at; the previous name lives in the rename entry's note and metadata.
+    const name = input.name !== undefined ? input.name.trim() : before.name;
+    const statements: SqlStatement[] = [];
+    const entry = (action: LocationHistoryAction, fields: LocationHistoryFields = {}) =>
+      statements.push(locationHistoryStatement(id, name, action, this.actorId(), { ...fields, guard }));
+
+    if (input.name !== undefined && name !== before.name) {
+      entry('RENAMED', {
+        note: `Renamed from "${before.name}" to "${name}".`,
+        metadata: { fromName: before.name, toName: name },
+      });
+    }
+
+    if (input.parentId !== undefined && (input.parentId ?? null) !== before.parentId) {
+      const toId = input.parentId ?? null;
+      const [fromName, toName] = await Promise.all([
+        this.parentLabel(before.parentId),
+        this.parentLabel(toId),
+      ]);
+      entry('RE_PARENTED', {
+        note: `Moved from ${fromName} to ${toName}.`,
+        metadata: { fromParentId: before.parentId, toParentId: toId },
+      });
+    }
+
+    // Archive and restore are the two directions of one nullable column, so the transition — not
+    // the value — is what decides which action (if either) is recorded.
+    if (input.archivedAt !== undefined) {
+      const wasArchived = before.archivedAt != null;
+      const nowArchived = input.archivedAt != null;
+      if (wasArchived !== nowArchived) {
+        entry(nowArchived ? 'ARCHIVED' : 'RESTORED', {
+          note: nowArchived
+            ? `Archived "${name}". It is hidden from the tree and the pickers; nothing stored here moved.`
+            : `Restored "${name}" to the active hierarchy.`,
+        });
+      }
+    }
+
+    return statements;
+  }
+
+  /**
+   * A parent's display name for an activity note, or "the top level" for the root. Quoted here
+   * rather than by the caller so the two arms read as one sentence either way, and falling back to
+   * the bare id keeps a note honest when the parent cannot be read.
+   */
+  private async parentLabel(parentId: string | null): Promise<string> {
+    if (parentId === null) return 'the top level';
+    const parent = await this.getById(parentId);
+    return `"${parent?.name ?? parentId}"`;
+  }
 
   /**
    * Find a direct child of `parentId` (or a root, when null) whose name matches `name`
@@ -575,7 +730,8 @@ export class LocationRepository extends BaseRepository {
     }
   }
 
-  private async assertMutable(id: string): Promise<void> {
+  /** Assert the location exists and is not system-locked, returning it so callers reuse the read. */
+  private async assertMutable(id: string): Promise<Location> {
     const location = await this.getById(id);
     if (!location) {
       throw new DbError('SQLITE_CONSTRAINT', `Location "${id}" does not exist.`);
@@ -586,6 +742,7 @@ export class LocationRepository extends BaseRepository {
         'The Unassigned location is system-locked and cannot be modified.',
       );
     }
+    return location;
   }
 
   /**

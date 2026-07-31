@@ -285,6 +285,24 @@
     },
     {
       "type": "index",
+      "name": "idx_location_history_actor_user_id",
+      "tbl_name": "location_history",
+      "sql": "CREATE INDEX idx_location_history_actor_user_id ON location_history(actor_user_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_location_history_created_at",
+      "tbl_name": "location_history",
+      "sql": "CREATE INDEX idx_location_history_created_at ON location_history(created_at)"
+    },
+    {
+      "type": "index",
+      "name": "idx_location_history_location_id",
+      "tbl_name": "location_history",
+      "sql": "CREATE INDEX idx_location_history_location_id ON location_history(location_id, created_at)"
+    },
+    {
+      "type": "index",
       "name": "idx_location_photos_location_id",
       "tbl_name": "location_photos",
       "sql": "CREATE INDEX idx_location_photos_location_id ON location_photos(location_id, position)"
@@ -645,6 +663,12 @@
     },
     {
       "type": "table",
+      "name": "location_history",
+      "tbl_name": "location_history",
+      "sql": "CREATE TABLE location_history (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          location_id   TEXT    REFERENCES locations(id) ON DELETE SET NULL,\n          location_name TEXT    NOT NULL,\n          action        TEXT    NOT NULL,\n          note          TEXT,\n          metadata      TEXT,\n          actor_user_id TEXT    NOT NULL DEFAULT '00000000-0000-4000-8000-000000000010'\n                                REFERENCES users(id) ON DELETE SET DEFAULT,\n          created_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
+    },
+    {
+      "type": "table",
       "name": "location_item_counts",
       "tbl_name": "location_item_counts",
       "sql": "CREATE TABLE location_item_counts (\n          location_id TEXT    PRIMARY KEY NOT NULL,\n          item_count  INTEGER NOT NULL DEFAULT 0,\n          CHECK (item_count >= 0)\n        ) STRICT"
@@ -966,6 +990,12 @@
       "name": "trg_location_field_values_updated_at",
       "tbl_name": "location_field_values",
       "sql": "CREATE TRIGGER trg_location_field_values_updated_at\n    AFTER UPDATE ON location_field_values\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_field_values SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_location_history_updated_at",
+      "tbl_name": "location_history",
+      "sql": "CREATE TRIGGER trg_location_history_updated_at\n    AFTER UPDATE ON location_history\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_history SET updated_at = CASE\n        WHEN OLD.updated_at - (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) > 300000 THEN (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ELSE MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1)\n      END WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -3904,6 +3934,134 @@
           "name": "sqlite_autoindex_location_field_values_2",
           "unique": 1,
           "origin": "u",
+          "partial": 0
+        }
+      ]
+    },
+    "location_history": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "location_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "location_name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "action",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "note",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "metadata",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "actor_user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'00000000-0000-4000-8000-000000000010'",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "actor_user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET DEFAULT",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "locations",
+          "from": "location_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET NULL",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 1,
+          "name": "idx_location_history_actor_user_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 0,
+          "name": "idx_location_history_created_at",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 2,
+          "name": "idx_location_history_location_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 3,
+          "name": "sqlite_autoindex_location_history_1",
+          "unique": 1,
+          "origin": "pk",
           "partial": 0
         }
       ]

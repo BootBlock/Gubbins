@@ -1390,9 +1390,25 @@ Every event is `{ id, type, occurredAt, data }`:
   `item.changed` (forward-compat fallback), and `events.truncated` (a burst exceeded the fan-out
   cap). A stock movement that leaves an item at/below its low-stock floor additionally raises an
   `item.low_stock` (or `item.out_of_stock` when empty) event.
+
+  The `location.*` slice describes a change to a **place** rather than to an item:
+  `location.created`, `location.renamed`, `location.moved`, `location.archived`,
+  `location.restored`, `location.removed`, and `location.changed` (forward-compat fallback). It is
+  derived from the `location_history` ledger, through its own window on the same cursor and under
+  the same cold-start rule — the first generation after a (re)start baselines it and emits nothing.
+  Only hierarchy-reshaping changes are recorded; a location's colour, capacity, dimensions, walk
+  order and settings raise nothing.
 - **`occurredAt`** — the ledger row's timestamp, ISO-8601.
-- **`data`** — the change plus the item's current summary (the same `ItemSummary` shape the REST
-  API uses).
+- **`data`** — for an item event, the change plus the item's current summary (the same
+  `ItemSummary` shape the REST API uses). For a `location.*` event, a flat
+  `{ locationId, locationName, action, label, detail }` — `locationId` is `null` when the location
+  was already deleted (the ledger keeps the entry and its `locationName`), and no live location
+  state is resolved, because `location.removed` has none left to read.
+
+> **Discriminate a location event on its payload, not its `type`.** `events.truncated` is the one
+> type that arrives with either shape — the location pass emits its own summary when a generation's
+> location changes exceed the fan-out cap. `isLocationEvent` tests for `data.locationName`, which
+> is present on every location payload and on neither of the others.
 
 A bulk import is coalesced per generation and **capped** (a `events.truncated` summary is appended
 if the cap is exceeded), so a downstream sink can't be flooded.

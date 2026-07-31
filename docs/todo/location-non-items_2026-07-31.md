@@ -2,10 +2,10 @@
 
 > **Status:** 🟢 ACTIVE — research complete. `N1` and `N2` shipped together (2026-07-31), along with
 > both §9 defects ([#689](https://github.com/BootBlock/Gubbins/issues/689),
-> [#690](https://github.com/BootBlock/Gubbins/issues/690) — both closed). `N6` is filed as
-> [#691](https://github.com/BootBlock/Gubbins/issues/691) and not started. `N3` is **resolved
-> without building it** — see §11.4. `N4`, `N5` and `N7` remain open and unstarted, as does the
-> deferred `locations_fts` table.
+> [#690](https://github.com/BootBlock/Gubbins/issues/690) — both closed). `N6`
+> ([#691](https://github.com/BootBlock/Gubbins/issues/691)) shipped 2026-07-31 — see §11.5. `N3` is
+> **resolved without building it** — see §11.4. `N4`, `N5` and `N7` remain open and unstarted, as
+> does the deferred `locations_fts` table.
 
 Answers issue [#617](https://github.com/BootBlock/Gubbins/issues/617): *is there a valid use for
 attaching an "item" to a `Location` that isn't an actual `Item` — a Note, say — and what else can be
@@ -218,9 +218,9 @@ Recorded so they aren't folded in and used to inflate the scope.
 
 Ranked by *(what it unlocks) ÷ (cost)*, and deliberately weighted toward **surfacing what exists**,
 because §5 is the finding: the mechanism is built and nobody can see it. `N1` and `N2` shipped
-together on 2026-07-31 (see §11 for what building them proved wrong); `N6` is filed as
-[#691](https://github.com/BootBlock/Gubbins/issues/691); `N3` is resolved without being built
-(§11.4); `N4`, `N5` and `N7` are unstarted.
+together on 2026-07-31 (see §11 for what building them proved wrong); `N6`
+([#691](https://github.com/BootBlock/Gubbins/issues/691)) shipped the same day (§11.5); `N3` is
+resolved without being built (§11.4); `N4`, `N5` and `N7` are unstarted.
 
 - **`N1` — Give a location's own detail somewhere to appear. ✅ SHIPPED.** Render a location's
   non-inheritable field values, alongside its description, where a location is actually looked
@@ -248,8 +248,8 @@ together on 2026-07-31 (see §11 for what building them proved wrong); `N6` is f
   `item_field_values`, which is the identical gap `W1` records for items. **Do it with `W1`, as one
   change over two subjects**, not as a location-only special case. Unlocks use case D (inspections,
   PAT tests, seasonal checks).
-- **`N6` — A location activity record. 📋 FILED as
-  [#691](https://github.com/BootBlock/Gubbins/issues/691), not started.** Renaming, re-parenting,
+- **`N6` — A location activity record. ✅ SHIPPED
+  ([#691](https://github.com/BootBlock/Gubbins/issues/691), 2026-07-31).** Renaming, re-parenting,
   archiving, resizing or re-colouring
   a location records **nothing** beyond bumping its own `updated_at` — `LocationRepository.update`
   writes a bare `UPDATE` and no ledger row. Only *deleting* a location leaves a readable trace, and
@@ -263,6 +263,11 @@ together on 2026-07-31 (see §11 for what building them proved wrong); `N6` is f
   `NOT NULL` by construction, so this is a sibling table or a nullable subject column, not a tweak.
   This is the strongest answer to the issue's "what else can be improved", and it is what would make
   [#565](https://github.com/BootBlock/Gubbins/issues/565) diagnosable.
+  *As built:* a `location_history` sibling table, appended from `LocationRepository` for create,
+  rename, re-parent, archive/restore and delete; a `location.*` event slice reaching the feed, the
+  webhook picker and the bridge; and a **History** tab on the location editor. Geometry, colour,
+  capacity, walk order and policy edits deliberately record nothing. §11.5 records the three places
+  the entry above turned out to be wrong about the shape of it.
 - **`N4` — Location attachments (links and local pointers).** Mirror `item_attachments` on a
   location: the boiler manual, the wiring diagram, the certificate. Be honest about the case — a
   `URL` custom field already does most of this, so what a table buys is **several of them, ordered
@@ -324,7 +329,7 @@ the existing field mechanism was sufficient all along and simply invisible. `N5`
 into `W1` when that is picked up, and `N6` is worth filing on its own merits regardless of what
 happens to the rest of this document.
 
-## 11. What building `N1`/`N2` proved wrong (2026-07-31)
+## 11. What building `N1`/`N2`/`N6` proved wrong (2026-07-31)
 
 Recorded because the research above is otherwise a snapshot of `d4d8d385` and would keep reading as
 live guidance. Three corrections, one of which changed the design — then §11.4, which is not a
@@ -386,5 +391,50 @@ exactly as `N5` folds into `W1`. **One change over two subjects, not a location-
 So §5's diagnosis holds and is now complete: the mechanism was built, sufficient, and invisible.
 `N1` and `N2` made it visible and findable, and nothing about a location's own text needs new schema.
 The remaining location gaps are the other §8 entries — a document with ordering and labels (`N4`), a
-date that raises something (`N5`), an activity record
-(`N6`/[#691](https://github.com/BootBlock/Gubbins/issues/691)) and an export (`N7`).
+date that raises something (`N5`) and an export (`N7`); the activity record
+(`N6`/[#691](https://github.com/BootBlock/Gubbins/issues/691)) is now built, and §11.5 records what
+building it corrected.
+
+### 11.5 What building `N6` proved wrong (2026-07-31)
+
+`N6`'s §8 entry and [#691](https://github.com/BootBlock/Gubbins/issues/691) both framed the answer
+as *"a sibling table shaped like `item_history`, same immutability trigger"*. The sibling table was
+right — the fork is a judgement call, and Gubbins' narrow-typed-table-per-need precedent settles it
+against relaxing `item_history.item_id`'s `NOT NULL`. Three details of the *shape* were not.
+
+1. **The immutability trigger had to go, because the sync classification came out differently.**
+   `item_history` is a bespoke **union-by-id** snapshot section, which is what lets it be strictly
+   immutable — a merge only ever `INSERT OR IGNORE`s into it, so no `UPDATE` is ever attempted.
+   `location_history` did not need that plumbing: it is an ordinary **LWW leaf** in `SYNC_TABLES`,
+   like the project's other synced append-only logs (`revaluations`, `test_records`,
+   `supplier_part_price_history`). Because the repository only appends, an id a peer already holds
+   always presents an identical row, so the shared `ON CONFLICT(id) DO UPDATE … WHERE
+   excluded.updated_at > updated_at` upsert resolves to a no-op — union-by-id in effect, with none
+   of the bespoke snapshot, reconcile, clone, restore and backup code the ledger needs. Adding the
+   trigger on top would have turned a *corrupt or hostile* snapshot claiming a newer timestamp for
+   a known id from a silent no-op into an **ABORT of the whole restore transaction**. Append-only
+   is therefore enforced where it is written, not by a trigger.
+2. **"Re-attribute rather than erase" applies to the *subject*, not only the actor.** The issue
+   read `item_history`'s deleted-user handling (`ON DELETE SET DEFAULT` → System) as the precedent
+   to copy for the cascade, and that was copied verbatim for `actor_user_id`. But `item_history`'s
+   *subject* column is `ON DELETE CASCADE`: hard-deleting an item destroys its ledger. Copying that
+   would have made `location.removed` the one event whose own record is deleted in the same
+   transaction that raises it. So `location_id` is **nullable, `ON DELETE SET NULL`**, with a
+   `location_name` snapshot column that is what keeps an unattached entry readable. A deleted
+   location's trail survives in the ledger, in a backup and across a sync. The honest limitation:
+   the shipped History tab reads one *live* location, so those entries have no in-app reader yet —
+   the deletion reaches a person through the `location.removed` event (which is what
+   [#565](https://github.com/BootBlock/Gubbins/issues/565) needed) and through the ledger's durable
+   copy. A cross-location activity view would close it; it is not this issue.
+3. **A location write can legitimately not happen, which an item write never does.** A parent move
+   rides an atomic cycle guard in the `UPDATE`'s `WHERE` (`PARENT_MOVE_CYCLE_GUARD`), so a
+   concurrent re-parent can make the whole statement match zero rows *after* the pre-check passed.
+   An unconditional `INSERT` beside it would then record a move that never happened — the one
+   failure mode an audit trail must not have. Every entry an edit emits therefore carries the same
+   guard, via `INSERT … SELECT … WHERE <guard>`; the vetoed edit records neither the move nor the
+   rename that would have ridden the same statement.
+
+One thing the §8 entry understated rather than got wrong: the `location.*` slice is **not** purely
+additive on the bridge. `BridgeEventData` is item-shaped, so the event union gained a third arm, and
+`events.truncated` became the one type that can arrive with either payload — which is why
+`isLocationEvent` discriminates on `data.locationName` rather than on the dotted type name.

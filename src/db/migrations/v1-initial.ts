@@ -508,6 +508,61 @@ const baselineStatements: SqlStatement[] = [
     params: [UNASSIGNED_LOCATION_ID, UNASSIGNED_LOCATION_NAME],
   },
   {
+    // The location activity record (issue #691) — the `item_history` counterpart for the one
+    // structure in the app several people can reshape and nobody could audit. Renaming a
+    // location, moving it under a different parent or archiving it used to leave nothing behind
+    // but a bumped `updated_at`, so "why is this shelf under a different room?" was unanswerable.
+    //
+    // A **sibling table**, not a nullable subject column on `item_history`: that ledger's
+    // `item_id` is NOT NULL by construction and its immutability trigger, cascade and union-by-id
+    // sync all lean on it. Gubbins' precedent is a narrow typed table per need
+    // (`location_tags`, `location_field_values`, `location_photos`), and this follows it.
+    //
+    // Three column choices carry the design:
+    //
+    //  - `location_id` is **nullable, ON DELETE SET NULL** rather than the CASCADE `item_history`
+    //    uses. Deleting a location must not silently destroy the record that it existed and what
+    //    was done to it — the entries survive the delete unattached, which is the same
+    //    "re-attribute rather than erase" answer `actor_user_id` gives for a deleted user.
+    //  - `location_name` is the snapshot of the name the location carried **when the entry was
+    //    written**. It is what keeps an entry readable once its location is gone (and what lets a
+    //    rename read as a rename), so it is NOT NULL and never back-filled.
+    //  - `actor_user_id` mirrors `item_history` exactly, including the DEFAULT that exists for the
+    //    FK action rather than for callers (see that table for the full reasoning).
+    //
+    // Deliberately **no immutability trigger**, unlike `item_history`. This table is an ordinary
+    // LWW leaf in `SYNC_TABLES` (see `tombstone.ts`) rather than a bespoke union-by-id section, so
+    // the merge engine reaches it through the shared `ON CONFLICT(id) DO UPDATE … WHERE
+    // excluded.updated_at > updated_at` upsert. For an append-only row that predicate is always
+    // false and nothing is written — but a corrupt or hostile snapshot claiming a newer timestamp
+    // for an id we already hold would make a trigger ABORT the whole restore rather than no-op it.
+    // Append-only is enforced where it is actually written (the repository has no UPDATE path),
+    // matching the project's other synced append-only logs — `revaluations`, `test_records` and
+    // `supplier_part_price_history` all take this shape.
+    sql: `
+        CREATE TABLE location_history (
+          id            TEXT    PRIMARY KEY NOT NULL,
+          location_id   TEXT    REFERENCES locations(id) ON DELETE SET NULL,
+          location_name TEXT    NOT NULL,
+          action        TEXT    NOT NULL,
+          note          TEXT,
+          metadata      TEXT,
+          actor_user_id TEXT    NOT NULL DEFAULT '${SYSTEM_USER_ID}'
+                                REFERENCES users(id) ON DELETE SET DEFAULT,
+          created_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+  },
+  // The per-location read (the editor's History tab) and the actor repoint, mirroring
+  // `item_history`'s pair.
+  { sql: `CREATE INDEX idx_location_history_location_id ON location_history(location_id, created_at);` },
+  { sql: `CREATE INDEX idx_location_history_actor_user_id ON location_history(actor_user_id);` },
+  // The cross-location newest-first scan the bridge's event generation pages through. Without it
+  // that read sorts the whole table on every hydration generation.
+  { sql: `CREATE INDEX idx_location_history_created_at ON location_history(created_at);` },
+  { sql: updatedAtTrigger('location_history') },
+  {
     sql: `
         CREATE TABLE items (
           id                   TEXT    PRIMARY KEY NOT NULL,

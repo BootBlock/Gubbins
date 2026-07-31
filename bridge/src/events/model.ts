@@ -21,15 +21,17 @@ import { activityKindForAction, type ActivityKind } from '@/features/activity/ac
 import { describeHistoryEntry } from '@/features/inventory/history-format.ts';
 import { isLow, isOutOfStock, type ReorderDefaults } from '@/features/inventory/reorder-policy.ts';
 import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD } from '@/db/repositories/constants.ts';
-import type { HistoryAction } from '@/db/repositories/constants.ts';
-import type { ActivityFeedEntry, Item } from '@/db/repositories/types';
+import type { HistoryAction, LocationHistoryAction } from '@/db/repositories/constants.ts';
+import type { ActivityFeedEntry, Item, LocationHistoryEntry } from '@/db/repositories/types';
 import {
   EVENTS_TRUNCATED_TYPE,
   eventTypeForAction,
+  eventTypeForLocationAction,
   LOW_STOCK_TYPE,
   OUT_OF_STOCK_TYPE,
   STOCK_ADJUSTED_TYPE,
 } from '@/features/events/event-types.ts';
+import { locationHistoryActionLabel } from '@/features/inventory/location-history-format.ts';
 import type { ItemSummaryDto } from '../api/dto.ts';
 // Type-only (erased at runtime), so the mutual reference with `lookup.ts` creates no import cycle.
 import type { LookupEvent } from './lookup.ts';
@@ -54,12 +56,56 @@ export interface BridgeEventBase<TData> {
 export type LedgerEvent = BridgeEventBase<BridgeEventData>;
 
 /**
- * Any event a sink may be handed. Today: a {@link LedgerEvent} (an inventory *change*) or a
- * {@link LookupEvent} (the opt-in, read-triggered `lookup.resolved`). Sinks serialise the whole
- * envelope and never introspect `data`, so the union costs them nothing; code that specifically
- * builds or reads ledger payloads should say {@link LedgerEvent}.
+ * The payload of a location activity event (issue #691) — the first event class that is about a
+ * *place* rather than an item.
+ *
+ * Deliberately flat and small. It carries what an automation acts on (which location, what
+ * happened) and what a person reads (the label and the note), and nothing else: resolving the
+ * location's live state here would mean a read per event for a change that is usually a rename,
+ * and `location.removed` has no live state left to read at all.
+ *
+ * `locationId` is `null` for exactly one case — an entry whose location was deleted before this
+ * generation ran, so the ledger's `ON DELETE SET NULL` has already cleared the link. `locationName`
+ * is always the name the place carried when the change happened, which is why it is never null.
  */
-export type BridgeEvent = LedgerEvent | LookupEvent;
+export interface LocationEventData {
+  readonly locationId: string | null;
+  readonly locationName: string;
+  /** The raw location activity action (e.g. `RE_PARENTED`). */
+  readonly action: LocationHistoryAction;
+  /** Short British-English action title (e.g. "Moved"). */
+  readonly label: string;
+  /** The stored human-readable note, or null. */
+  readonly detail: string | null;
+}
+
+/** A location activity event. Shares the `{ id, type, occurredAt, data }` envelope. */
+export type LocationEvent = BridgeEventBase<LocationEventData>;
+
+/**
+ * Any event a sink may be handed. Today: a {@link LedgerEvent} (an inventory *change*), a
+ * {@link LocationEvent} (a change to a *place*) or a {@link LookupEvent} (the opt-in,
+ * read-triggered `lookup.resolved`). Sinks serialise the whole envelope and never introspect
+ * `data`, so the union costs them nothing; code that specifically builds or reads ledger payloads
+ * should say {@link LedgerEvent}.
+ */
+export type BridgeEvent = LedgerEvent | LocationEvent | LookupEvent;
+
+/**
+ * Is this event about a *place*? A hand-written predicate for the same reason
+ * {@link import('./lookup').isLookupEvent} is one: the ledger arm of the union types its `type` as
+ * an open `string`, so TypeScript cannot discriminate on it.
+ *
+ * It tests the **payload**, not the dotted name, and that is deliberate. A `location.` prefix would
+ * read more obviously, but it would misclassify the one type that can carry either shape —
+ * `events.truncated`, which {@link buildLocationEvents} emits with a location payload when a
+ * generation's location changes overflow the fan-out cap. `locationName` is present on every
+ * {@link LocationEventData} and on neither of the other two arms, so this narrowing stays sound
+ * even for a forward-compat action synced from a newer peer.
+ */
+export function isLocationEvent(event: BridgeEvent): event is LocationEvent {
+  return typeof (event.data as Partial<LocationEventData>).locationName === 'string';
+}
 
 /** The payload of a ledger-derived event: the change plus the item's current summary. */
 export interface BridgeEventData {
@@ -88,8 +134,11 @@ export {
   ACTION_EVENT_TYPE,
   EVENTS_TRUNCATED_TYPE,
   eventTypeForAction,
+  eventTypeForLocationAction,
   ITEM_CHANGED_TYPE,
   KNOWN_EVENT_TYPES,
+  LOCATION_ACTION_EVENT_TYPE,
+  LOCATION_CHANGED_TYPE,
   LOW_STOCK_TYPE,
   OUT_OF_STOCK_TYPE,
   STOCK_ADJUSTED_TYPE,
@@ -119,6 +168,13 @@ export interface ResolvedEntry {
  */
 export interface EventCursor {
   readonly seenIds: readonly string[];
+  /**
+   * The same thing for the `location_history` scan window (issue #691). Its own set, because the
+   * two ledgers are paged independently and a burst in one must not evict the other's baseline.
+   * Optional so a cursor persisted by an older build (or a test) still resumes rather than
+   * replaying every location change as new — an absent set is read as "no baseline yet".
+   */
+  readonly locationSeenIds?: readonly string[];
 }
 
 /** Default page size when scanning the recent ledger for new rows (== the repo page ceiling). */
@@ -156,15 +212,96 @@ export function diffNewEntries(
   previous: EventCursor | null,
   recent: readonly ActivityFeedEntry[],
 ): { newEntries: ActivityFeedEntry[]; cursor: EventCursor; baseline: boolean } {
-  const cursor: EventCursor = {
-    seenIds: recent.length > 0 ? recent.map((e) => e.id) : (previous?.seenIds ?? []),
-  };
-  if (previous === null) {
-    return { newEntries: [], cursor, baseline: true };
-  }
-  const seen = new Set(previous.seenIds);
-  const newEntries = recent.filter((e) => !seen.has(e.id)).reverse(); // newest-first → oldest-first
-  return { newEntries, cursor, baseline: false };
+  const { newRows, seenIds, baseline } = diffNewRows(previous?.seenIds ?? null, recent);
+  // Spread `previous` first so the *other* ledger's baseline survives this diff untouched — a
+  // burst of item changes must not make the next generation replay every location change as new.
+  return { newEntries: newRows, cursor: { ...previous, seenIds }, baseline };
+}
+
+/**
+ * The `location_history` twin of {@link diffNewEntries} (issue #691), against the cursor's own
+ * {@link EventCursor.locationSeenIds} window. Returns the advanced set rather than a whole cursor,
+ * because the caller composes both halves into one.
+ *
+ * The cold-start rule applies independently: an existing cursor with no location window yet — the
+ * shape an older build persisted — establishes its baseline here and emits nothing, rather than
+ * replaying the whole location record as a burst of "new" events.
+ */
+export function diffNewLocationEntries(
+  previous: EventCursor | null,
+  recent: readonly LocationHistoryEntry[],
+): { newEntries: LocationHistoryEntry[]; locationSeenIds: readonly string[]; baseline: boolean } {
+  const { newRows, seenIds, baseline } = diffNewRows(previous?.locationSeenIds ?? null, recent);
+  return { newEntries: newRows, locationSeenIds: seenIds, baseline };
+}
+
+/**
+ * The id-set diff both ledgers share: rows in `recent` (newest-first) whose ids were not in
+ * `previousSeenIds`, returned **oldest-first**, plus the advanced window.
+ *
+ * `previousSeenIds === null` means "no baseline yet" — establish one and emit nothing. An empty
+ * `recent` (everything pruned) holds the previous window rather than forgetting it, which would
+ * otherwise make the next generation re-emit whatever came back.
+ */
+function diffNewRows<T extends { readonly id: string }>(
+  previousSeenIds: readonly string[] | null,
+  recent: readonly T[],
+): { newRows: T[]; seenIds: readonly string[]; baseline: boolean } {
+  const seenIds = recent.length > 0 ? recent.map((e) => e.id) : (previousSeenIds ?? []);
+  if (previousSeenIds === null) return { newRows: [], seenIds, baseline: true };
+  const seen = new Set(previousSeenIds);
+  return { newRows: recent.filter((e) => !seen.has(e.id)).reverse(), seenIds, baseline: false };
+}
+
+/**
+ * Map new location activity entries (oldest-first) to their events, applying the same fan-out cap
+ * {@link buildEvents} applies — importing a branch of a hierarchy writes a `CREATED` entry per
+ * level, which is exactly the burst the cap exists for. No status events are derived: a place has
+ * no stock level to fall below.
+ *
+ * Truncation is summarised rather than silent, and reuses {@link EVENTS_TRUNCATED_TYPE} rather
+ * than minting a location-specific twin of it — a consumer already subscribed to "some events were
+ * not sent" should hear about this too. The summary carries a {@link LocationEventData} payload, so
+ * `events.truncated` is the one type that can arrive with either shape; {@link isLocationEvent}
+ * discriminates on the payload rather than the type name precisely so that stays sound.
+ */
+export function buildLocationEvents(
+  entries: readonly LocationHistoryEntry[],
+  options: BuildEventsOptions = {},
+): LocationEvent[] {
+  const cap = Math.max(1, options.fanOutCap ?? DEFAULT_FAN_OUT_CAP);
+  const all: LocationEvent[] = entries.map((entry) => ({
+    id: entry.id,
+    type: eventTypeForLocationAction(entry.action),
+    occurredAt: new Date(entry.createdAt).toISOString(),
+    data: {
+      locationId: entry.locationId,
+      locationName: entry.locationName,
+      action: entry.action,
+      label: locationHistoryActionLabel(entry.action),
+      detail: entry.note?.trim() ? entry.note.trim() : null,
+    },
+  }));
+
+  if (all.length <= cap) return all;
+  const kept = all.slice(0, cap);
+  const omitted = all.length - cap;
+  const last = kept[kept.length - 1]!;
+  kept.push({
+    id: `${last.id}:truncated:${omitted}`,
+    type: EVENTS_TRUNCATED_TYPE,
+    occurredAt: last.occurredAt,
+    data: {
+      locationId: last.data.locationId,
+      locationName: last.data.locationName,
+      action: last.data.action,
+      label: `${omitted} more location change${omitted === 1 ? '' : 's'} not delivered`,
+      detail: `This generation exceeded the fan-out cap; ${omitted} further location event${
+        omitted === 1 ? ' was' : 's were'
+      } omitted.`,
+    },
+  });
+  return kept;
 }
 
 /** Options for {@link buildEvents}. */

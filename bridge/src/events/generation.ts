@@ -7,6 +7,11 @@
  * and hands the lot to the pure {@link buildEvents}. All impurity (the reads) lives here; the
  * mapping rules live in `model.ts` so they test without a database.
  *
+ * Since issue #691 it does the same for the `location_history` ledger, through its own window on
+ * the same cursor. The two are kept as separate reads and separate diffs rather than one merged
+ * feed: they are different subjects with different payloads, and a burst in one must not evict the
+ * other's baseline and make the next generation replay it.
+ *
  * Strictly read-only: it only ever reads through the repositories.
  */
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
@@ -16,9 +21,11 @@ import type { Item } from '@/db/repositories/types';
 import { toItemSummary, type ItemSummaryDto } from '../api/dto.ts';
 import {
   buildEvents,
+  buildLocationEvents,
   diffNewEntries,
+  diffNewLocationEntries,
   DEFAULT_EVENT_SCAN_LIMIT,
-  type LedgerEvent,
+  type BridgeEvent,
   type BuildEventsOptions,
   type EventCursor,
   type ResolvedEntry,
@@ -39,18 +46,31 @@ export async function computeGenerationEvents(
   driver: IDatabaseDriver,
   previous: EventCursor | null,
   options: GenerationOptions = {},
-): Promise<{ events: LedgerEvent[]; cursor: EventCursor }> {
+): Promise<{ events: BridgeEvent[]; cursor: EventCursor }> {
   const items = new ItemRepository(driver);
+  const locations = new LocationRepository(driver);
   const scanLimit = options.scanLimit ?? DEFAULT_EVENT_SCAN_LIMIT;
-  // One bounded page of the newest ledger rows — the diff and the cursor both live inside this
-  // window (see EventCursor). Between two debounced snapshot syncs the delta is small; a rare
-  // burst larger than the window surfaces its newest slice plus a truncation summary.
+  // One bounded page of the newest rows from each ledger — the diff and the cursor both live inside
+  // these windows (see EventCursor). Between two debounced snapshot syncs the delta is small; a rare
+  // burst larger than a window surfaces its newest slice plus a truncation summary.
   const recent = (await items.getHistoryFeed({ limit: scanLimit })).rows;
+  const recentLocations = (await locations.getHistoryFeed({ limit: scanLimit })).rows;
 
   const { newEntries, cursor, baseline } = diffNewEntries(previous, recent);
-  if (baseline || newEntries.length === 0) return { events: [], cursor };
+  const locationDiff = diffNewLocationEntries(previous, recentLocations);
+  // Both windows advance together, whichever of them actually moved — a generation that only
+  // renamed a shelf must still carry the item ledger's baseline forward, and vice versa.
+  const next: EventCursor = { ...cursor, locationSeenIds: locationDiff.locationSeenIds };
 
-  const locations = new LocationRepository(driver);
+  // Each ledger observes the cold-start rule independently: a first generation (or the first one
+  // after an older build's cursor is resumed) establishes that window's baseline and emits nothing.
+  const locationEvents =
+    locationDiff.baseline || locationDiff.newEntries.length === 0
+      ? []
+      : buildLocationEvents(locationDiff.newEntries, options);
+
+  if (baseline || newEntries.length === 0) return { events: locationEvents, cursor: next };
+
   const locationNames = new Map<string, string | null>();
   const resolved: ResolvedEntry[] = [];
   for (const entry of newEntries) {
@@ -58,7 +78,7 @@ export async function computeGenerationEvents(
     resolved.push({ entry, item, summary: await toSummary(item, locations, locationNames) });
   }
 
-  return { events: buildEvents(resolved, options), cursor };
+  return { events: [...buildEvents(resolved, options), ...locationEvents], cursor: next };
 }
 
 /** Project an item to its summary DTO, resolving (and caching) its home-location name. */
