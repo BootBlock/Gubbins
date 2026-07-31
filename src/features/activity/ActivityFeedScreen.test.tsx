@@ -292,14 +292,23 @@ describe('ActivityFeedScreen lanes (issue #693)', () => {
   });
 
   it('resets to page 1 when the lane changes, so a shorter ledger can’t strand the reader', () => {
-    // Enough item events for a second page; the location ledger has one page only.
+    // **Both** ledgers are long enough for several pages, deliberately. With the location ledger
+    // one page long the out-of-range clamp would pull the page back to 1 on its own, and this
+    // would pass with the lane reset deleted — the test has to fail when the thing it names is
+    // removed, not when a different safety net happens to catch it.
     itemCount = 120;
+    locationCount = 120;
     render(<ActivityFeedScreen />);
     fireEvent.click(screen.getByTestId('activity-feed-pagination-next'));
     expect(pagesRequested.filter((p) => p.lane === 'items').at(-1)?.page).toBe(2);
 
     switchToLocations();
-    expect(pagesRequested.filter((p) => p.lane === 'locations').at(-1)?.page).toBe(1);
+    // Never asks the new lane for page 2 at all — not even for the one render an effect-based
+    // reset would leave it on. Asserted as the *set* of pages requested rather than the call
+    // list, which is render-count-sensitive and would break on an unrelated re-render.
+    const locationPages = pagesRequested.filter((p) => p.lane === 'locations').map((p) => p.page);
+    expect(locationPages.length).toBeGreaterThan(0);
+    expect(new Set(locationPages)).toEqual(new Set([1]));
   });
 
   it('re-announces the count for the lane now on screen', () => {

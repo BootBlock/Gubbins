@@ -414,6 +414,18 @@ export function ActivityFeedScreen() {
   const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
   const [page, setPage] = useState(1);
 
+  /**
+   * Switch subject, resetting the page in the **same** update rather than in an effect.
+   *
+   * An effect would run a render too late: the lane would have already flipped with the old page
+   * number still set, so a reader on page 3 of the item ledger would fire a throwaway read for
+   * page 3 of the location one — and watch its empty state flash if that ledger is shorter.
+   */
+  const changeLane = (next: ActivityLane) => {
+    setLane(next);
+    setPage(1);
+  };
+
   // Every filter enabled by default; toggling a chip narrows the lane. Each lane keeps its own
   // selection, so switching subject and coming back doesn't silently reset what you were looking
   // at. When everything is enabled the resolved list covers all actions, so `undefined` is passed
@@ -487,11 +499,12 @@ export function ActivityFeedScreen() {
     totalItems,
   };
 
-  // Reset to page 1 whenever the lane, the filter or the page size changes, so a narrowing filter
-  // — or a switch to a shorter ledger — can't strand the user on an out-of-range page.
+  // Reset to page 1 whenever the filter or the page size changes, so a narrowing filter can't
+  // strand the user on an out-of-range page. (The lane switch resets in its own handler rather
+  // than here — see `changeLane`.)
   useEffect(() => {
     setPage(1);
-  }, [lane, itemActions, locationActions, defaultPageSize]);
+  }, [itemActions, locationActions, defaultPageSize]);
   // Clamp back into range if the feed shrinks below the current page.
   useEffect(() => {
     if (paginated && totalPages > 0 && page > totalPages) setPage(totalPages);
@@ -572,7 +585,7 @@ export function ActivityFeedScreen() {
             { value: 'locations', label: t('activity.lane.locations') },
           ]}
           value={lane}
-          onChange={setLane}
+          onChange={changeLane}
           label={t('activity.lane.label')}
           testIdPrefix="activity-lane"
         />
@@ -620,13 +633,14 @@ export function ActivityFeedScreen() {
         )}
 
         {/*
-         * One list body per lane, keyed by lane so switching subject remounts it — the virtualiser
-         * would otherwise carry the previous lane's scroll offset into a stream of a different
-         * length.
+         * One list body per lane, each in its own JSX slot rather than one slot switching between
+         * two element types. React reconciles children positionally, so a lane change unmounts one
+         * slot and mounts the other — which is what discards the virtualiser's scroll offset. Left
+         * in one slot it would persist, scrolling a stream of a different length to wherever the
+         * previous lane happened to be.
          */}
         {!isLoading && !isError && entryCount > 0 && showItems && (
           <ActivityLaneList
-            key="items"
             entries={itemEntries}
             renderRow={(entry) => <ActivityRow entry={entry} fmt={fmt} />}
             ariaLabel={t('activity.feed.label')}
@@ -639,7 +653,6 @@ export function ActivityFeedScreen() {
 
         {!isLoading && !isError && entryCount > 0 && !showItems && (
           <ActivityLaneList
-            key="locations"
             entries={locationEntries}
             renderRow={(entry) => <LocationActivityRow entry={entry} fmt={fmt} />}
             ariaLabel={t('activity.locations.feed.label')}

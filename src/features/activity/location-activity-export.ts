@@ -23,6 +23,7 @@ import {
 import { isoTimestamp, listExportFilename } from '@/features/export/export-every-page';
 import { describeLocationHistoryEntry } from '@/features/inventory/location-history-format';
 import type { LocationHistoryEntry } from '@/db/repositories';
+import { eventCaption } from './activity-export';
 
 /**
  * The lane's columns.
@@ -54,7 +55,7 @@ export function buildLocationActivityExport(
 ): Promise<TabularExportResult> {
   return buildTabularExport(format, locationActivityExportColumns(), entries, {
     title: 'Location activity',
-    caption: `${entries.length} event${entries.length === 1 ? '' : 's'}`,
+    caption: eventCaption(entries.length),
   });
 }
 
