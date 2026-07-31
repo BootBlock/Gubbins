@@ -66,7 +66,8 @@ const ROW_FIELD_CHIP_LIMIT = 5;
  * custom fields it adds. On narrow screens the rail collapses to a horizontal chip row
  * above the list. Importing drives the ordinary create / add-field mutations; a preset
  * whose category already exists (case-insensitive) is marked "Added" and disabled, so
- * importing is idempotent and never makes a duplicate.
+ * importing is idempotent and never makes a duplicate; a row whose own import is still
+ * running holds on "Adding…" until the last of its fields has landed.
  *
  * Search matches across the whole library ({@link categoryPresetMatches}), so typing
  * hops the scope to "All presets" and the rail shows live per-section match counts.
@@ -376,17 +377,25 @@ function PresetRows({
 }) {
   return (
     <ul className="space-y-2">
-      {presets.map((preset) => (
-        <li key={preset.id}>
-          <PresetRow
-            preset={preset}
-            added={hasCategoryNamed(existingNames, preset.name)}
-            importing={importingId === preset.id}
-            disabled={importingId !== null}
-            onImport={() => onImport(preset)}
-          />
-        </li>
-      ))}
+      {presets.map((preset) => {
+        const importing = importingId === preset.id;
+        return (
+          <li key={preset.id}>
+            <PresetRow
+              preset={preset}
+              // A row in mid-import holds "Adding…" until its seed finishes. The seed writes
+              // the category first and its fields one at a time afterwards, so `existingNames`
+              // carries the name while those writes are still going; badging the row "Added"
+              // on the name alone would claim the preset was in place against a category that
+              // is only partly built.
+              added={!importing && hasCategoryNamed(existingNames, preset.name)}
+              importing={importing}
+              disabled={importingId !== null}
+              onImport={() => onImport(preset)}
+            />
+          </li>
+        );
+      })}
     </ul>
   );
 }

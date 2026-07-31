@@ -157,6 +157,38 @@ describe('CategoryPresetPickerDialog — importing', () => {
     await waitFor(() => expect(onImported).toHaveBeenCalledWith('cat-new'));
   });
 
+  it('keeps a row on Adding… until every field has landed, not just its category', async () => {
+    const user = userEvent.setup();
+    h.createCategoryAsync.mockReset().mockResolvedValue({ id: 'cat-new' });
+    // One gate every add-field call awaits, so the seed can be held open mid-import.
+    let releaseFields = () => {};
+    const fieldsLanded = new Promise<void>((resolve) => {
+      releaseFields = resolve;
+    });
+    h.addFieldAsync.mockReset().mockImplementation(() => fieldsLanded);
+    const onImported = vi.fn();
+    const props = { open: true, onClose: vi.fn(), onImported };
+    const { rerender } = render(<CategoryPresetPickerDialog {...props} existingNames={[]} />);
+
+    await user.click(screen.getByRole('button', { name: 'Add Tools preset' }));
+    await waitFor(() => expect(h.addFieldAsync).toHaveBeenCalled());
+    // The category row has landed, so the manager's list already carries its name — while the
+    // preset's fields are still being written.
+    rerender(<CategoryPresetPickerDialog {...props} existingNames={['Tools']} />);
+
+    // Located by a name both states share, so each assertion below stands on its own.
+    const toolsRow = () => screen.getByRole('button', { name: /Tools preset/ });
+    await waitFor(() => expect(within(toolsRow()).getByText('Adding…')).toBeInTheDocument());
+    expect(within(toolsRow()).queryByText('Added')).not.toBeInTheDocument();
+    expect(toolsRow()).toHaveAccessibleName('Add Tools preset');
+
+    releaseFields();
+
+    // Only once the last field has landed does the row settle on Added.
+    await waitFor(() => expect(within(toolsRow()).getByText('Added')).toBeInTheDocument());
+    expect(onImported).toHaveBeenCalledWith('cat-new');
+  });
+
   it('marks an already-imported preset as Added and disables it (idempotent — no duplicate)', () => {
     setup({ existingNames: ['  tools  '] });
     expect(screen.getByRole('button', { name: 'Tools preset already added' })).toBeDisabled();
