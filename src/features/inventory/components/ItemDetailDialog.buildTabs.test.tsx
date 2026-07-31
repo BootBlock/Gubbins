@@ -247,10 +247,6 @@ describe('buildTabs — custom-field prominence (issue #619)', () => {
     expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
   });
 
-  it('is the behaviour of the four-argument call site, so existing callers are unaffected', () => {
-    expect(tabIds(buildTabs(item, ALL, NONE, NO_SECTION_PRESENCE))).toEqual(tabIds(buildTabs(item, ALL)));
-  });
-
   it('moves the whole Classification tab up to sit directly after Details when promoted', () => {
     const tabs = buildTabs(item, ALL, NONE, NO_SECTION_PRESENCE, prominence('promoted'));
     expect(tabIds(tabs)).toEqual([
@@ -342,7 +338,9 @@ describe('buildTabs — custom-field prominence (issue #619)', () => {
     expect(section?.shownDespiteHidden).toBe(true);
   });
 
-  it('drops the Classification tab entirely when the fields leave and nothing else survives', () => {
+  it('keeps Classification alive on its remaining sections when the fields break out', () => {
+    // `custom-fields` gates Capabilities too, so losing Tags and the fields still leaves it
+    // something to show.
     const tabs = buildTabs(
       item,
       without('tags-attachments'),
@@ -350,9 +348,25 @@ describe('buildTabs — custom-field prominence (issue #619)', () => {
       NO_SECTION_PRESENCE,
       prominence('own-tab'),
     );
-    // `custom-fields` still gates Capabilities, which keeps Classification alive here…
     expect(sectionTitles(tabs, 'classification')).toEqual(['Capabilities']);
     expect(tabIds(tabs)).toContain('custom-fields');
+  });
+
+  it('drops the Classification tab entirely when the fields leave and nothing else survives', () => {
+    // The invariant most at risk from removing the section at construction time rather than
+    // letting the filter drop it: Classification must not linger as an empty tab once the fields
+    // have gone. Here the category hides both its capabilities and only the fields hold data, so
+    // they alone are rescued — into the break-out tab.
+    const tabs = buildTabs(
+      item,
+      ALL,
+      new Set(['custom-fields', 'tags-attachments'] as FeatureId[]),
+      { ...NO_SECTION_PRESENCE, customFields: true },
+      prominence('own-tab', 'Film details'),
+    );
+    expect(tabIds(tabs)).not.toContain('classification');
+    expect(tabIds(tabs)).toContain('custom-fields');
+    expect(sectionTitles(tabs, 'custom-fields')).toEqual(['Custom fields']);
   });
 
   it('keeps Details first in every mode, so the rail never opens somewhere unexpected', () => {

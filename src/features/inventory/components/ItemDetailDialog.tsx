@@ -105,6 +105,12 @@ export function ItemDetailDialog({
 
   // Third axis (issue #619): where the category's *custom fields* sit. Position, unlike the two
   // axes above, is not about what exists — every tab here is still reachable in every mode.
+  //
+  // Note the break-out tab's fallback label is the one translated string in this rail: the rest of
+  // this screen is not converted yet, so its labels are still English literals. Routing a *new*
+  // string through `t()` is what the conventions ask for even on an unconverted screen, and the
+  // key is needed by the category manager regardless — so the mixed rail is a transitional
+  // artefact of this screen's conversion, not a decision to leave the label untranslated.
   const t = useT();
   const prominence: FieldProminence = {
     mode: toFieldProminenceMode(category?.fieldProminence),

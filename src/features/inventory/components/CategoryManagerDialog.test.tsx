@@ -865,4 +865,39 @@ describe('CategoryManagerDialog — where the custom fields go', () => {
       input: { hiddenCapabilities: ['kits'] },
     });
   });
+
+  /**
+   * Both this panel and the hidden-sections panel write `hiddenCapabilities`, and the write is not
+   * optimistic. They therefore share one draft: two independent buffers would let each recompute
+   * from a base the other had already moved, dropping a change on a synced LWW column.
+   */
+  it('computes the conflict fix from a tick made moments earlier, not from the stale cache', () => {
+    h.categoryRows = [category({ hiddenCapabilities: ['custom-fields'], fieldProminence: 'own-tab' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    // Hide another section. `h.categoryRows` is deliberately NOT updated — this is the window
+    // where the query cache still holds the pre-click value.
+    fireEvent.click(screen.getByTestId('category-hide-kits'));
+    fireEvent.click(screen.getByTestId('category-field-prominence-conflict-clear'));
+
+    expect(h.updateCategory).toHaveBeenLastCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['kits'] },
+    });
+  });
+
+  it('clears the sibling panel’s tick and its own banner when the fix is applied', () => {
+    // The other direction: with separate drafts the checkbox above would stay ticked for the rest
+    // of the session and write `custom-fields` straight back on the next unrelated toggle.
+    h.categoryRows = [category({ hiddenCapabilities: ['custom-fields'], fieldProminence: 'promoted' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByTestId('category-hide-custom-fields')).toBeChecked();
+
+    fireEvent.click(screen.getByTestId('category-field-prominence-conflict-clear'));
+
+    expect(screen.getByTestId('category-hide-custom-fields')).not.toBeChecked();
+    expect(screen.queryByTestId('category-field-prominence-conflict-clear')).toBeNull();
+  });
 });

@@ -54,9 +54,10 @@ const MODE_SET: ReadonlySet<string> = new Set<string>(FIELD_PROMINENCE_MODES);
  * The upper bound on a break-out tab's label.
  *
  * The tab rail is a fixed-width column beside the dialog body, so a long label wraps and pushes
- * the rail's other tabs out of alignment rather than truncating gracefully. 24 characters
- * comfortably fits the longest built-in label ("Substitutions") plus room to be descriptive,
- * while staying short enough that the rail keeps its shape at the narrowest supported width.
+ * the rail's other tabs out of alignment rather than truncating gracefully. 24 characters leaves
+ * comfortable room past the longest built-in labels ("Classification" and "Supplier & ops", both
+ * 14) to be descriptive, while staying short enough that the rail keeps its shape at the
+ * narrowest supported width.
  */
 export const MAX_FIELD_TAB_LABEL_LENGTH = 24;
 
@@ -77,10 +78,14 @@ export function toFieldProminenceMode(value: string | null | undefined): FieldPr
  * Trimmed, length-capped, and empty-as-null so the column has exactly one spelling of "no label
  * of my own" — an editor that stored `''` beside another device's `null` would look like an edit
  * to LWW sync and churn the row for nothing.
+ *
+ * The cap counts **code points**, not UTF-16 code units: a label is free text and an emoji in one
+ * is entirely plausible ("🎬 Film details"), and `String.slice` at the boundary of an astral
+ * character leaves a lone surrogate — which renders as `` and would then be persisted verbatim.
  */
 export function normaliseFieldTabLabel(label: string | null | undefined): string | null {
   if (label == null) return null;
-  const trimmed = label.trim().slice(0, MAX_FIELD_TAB_LABEL_LENGTH).trim();
+  const trimmed = [...label.trim()].slice(0, MAX_FIELD_TAB_LABEL_LENGTH).join('').trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 

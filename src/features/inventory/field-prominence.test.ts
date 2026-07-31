@@ -56,6 +56,17 @@ describe('normaliseFieldTabLabel', () => {
     expect(normaliseFieldTabLabel(long)).toHaveLength(MAX_FIELD_TAB_LABEL_LENGTH);
   });
 
+  it('caps by code point, so the cut cannot split an emoji into a lone surrogate', () => {
+    // A label is free text and "🎬 Film details" is entirely plausible. Slicing UTF-16 code units
+    // at the boundary of an astral character leaves half a surrogate pair, which renders as the
+    // replacement glyph on the tab rail and is then persisted verbatim.
+    const label = `A${'😀'.repeat(MAX_FIELD_TAB_LABEL_LENGTH)}`;
+    const capped = normaliseFieldTabLabel(label)!;
+    expect([...capped]).toHaveLength(MAX_FIELD_TAB_LABEL_LENGTH);
+    expect(capped).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+    expect(capped).toBe(`A${'😀'.repeat(MAX_FIELD_TAB_LABEL_LENGTH - 1)}`);
+  });
+
   it('re-trims after capping, so a cut mid-space cannot leave a trailing blank', () => {
     const cutAtSpace = `${'A'.repeat(MAX_FIELD_TAB_LABEL_LENGTH - 1)} B`;
     expect(normaliseFieldTabLabel(cutAtSpace)).toBe('A'.repeat(MAX_FIELD_TAB_LABEL_LENGTH - 1));

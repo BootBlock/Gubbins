@@ -291,6 +291,9 @@ function CategoryDetail({
   const { data: fields } = useCategoryFields(category.id);
   const deleteField = useDeleteCategoryField();
   const updateCategory = useUpdateCategory();
+  // One draft for the hidden-capability set, shared by the two panels that write it. See
+  // {@link useHiddenCapabilitiesDraft} for why it cannot live inside either of them.
+  const hiddenCapabilities = useHiddenCapabilitiesDraft(category);
 
   return (
     <div className="space-y-3">
@@ -371,11 +374,55 @@ function CategoryDetail({
 
       <CategoryDefaultsSection category={category} />
 
-      <CategoryHiddenSectionsPanel category={category} />
+      <CategoryHiddenSectionsPanel category={category} hiddenCapabilities={hiddenCapabilities} />
 
-      <CategoryFieldProminencePanel category={category} />
+      <CategoryFieldProminencePanel category={category} hiddenCapabilities={hiddenCapabilities} />
     </div>
   );
+}
+
+/**
+ * The category's hidden-capability set as a single **shared draft** — the base every panel that
+ * writes that column computes from.
+ *
+ * The column holds a *set*, so each change is a read-modify-write of the whole value, and
+ * `useUpdateCategory` is not optimistic (it only invalidates on settle). Computing the next value
+ * from the query cache therefore loses changes: a second edit made before the refetch lands
+ * recomputes from the pre-first-edit array and silently drops it — and because the column syncs
+ * LWW, that discard reaches other devices.
+ *
+ * A per-panel draft fixes that only while one panel writes the column. Two do — the hidden-sections
+ * checkboxes and the prominence panel's "show the custom fields again" fix (issue #619) — and a
+ * second, independent draft reintroduces the same bug across panels *and* adds a worse one: the
+ * drafts only reseed when a different category is selected, so after one panel writes, the other
+ * renders stale state for the rest of the session and writes its own value back over the change.
+ * Hence one draft, owned by the parent that renders both.
+ */
+function useHiddenCapabilitiesDraft(category: CategoryWithFieldCount): HiddenCapabilitiesDraft {
+  const updateCategory = useUpdateCategory();
+  const [draft, setDraft] = useState<readonly string[]>(category.hiddenCapabilities);
+  const seededFor = useRef(category.id);
+  useEffect(() => {
+    if (seededFor.current !== category.id) {
+      seededFor.current = category.id;
+      setDraft(category.hiddenCapabilities);
+    }
+  }, [category.id, category.hiddenCapabilities]);
+
+  return {
+    hidden: new Set(draft),
+    setCapabilityHidden: (id: FeatureId, hide: boolean) => {
+      const next = toggleHiddenCapability(draft, id, hide);
+      setDraft(next);
+      updateCategory.mutate({ id: category.id, input: { hiddenCapabilities: next } });
+    },
+  };
+}
+
+/** The shared draft's public shape: what is hidden right now, and the one way to change it. */
+interface HiddenCapabilitiesDraft {
+  readonly hidden: ReadonlySet<string>;
+  readonly setCapabilityHidden: (id: FeatureId, hide: boolean) => void;
 }
 
 /**
@@ -390,7 +437,13 @@ function CategoryDetail({
  * a mode is never transiently invalid — but the tab label is free text, so it keeps one, reset
  * when a different category is selected.
  */
-function CategoryFieldProminencePanel({ category }: { category: CategoryWithFieldCount }) {
+function CategoryFieldProminencePanel({
+  category,
+  hiddenCapabilities,
+}: {
+  category: CategoryWithFieldCount;
+  hiddenCapabilities: HiddenCapabilitiesDraft;
+}) {
   const t = useT();
   const updateCategory = useUpdateCategory();
   const mode = toFieldProminenceMode(category.fieldProminence);
@@ -406,9 +459,9 @@ function CategoryFieldProminencePanel({ category }: { category: CategoryWithFiel
 
   // Promoting the fields while the category also hides them is a contradiction the user can
   // reach from two directions, so say so and offer the fix rather than silently letting one
-  // decision win. Mirrors the maintenance conflict above.
-  const hidesFields = new Set(category.hiddenCapabilities).has('custom-fields');
-  const conflict = hidesFields && mode !== 'default';
+  // decision win. Mirrors the maintenance conflict above. Read through the shared draft, not the
+  // query cache, so the banner agrees with the checkbox above it the moment either is changed.
+  const conflict = hiddenCapabilities.hidden.has('custom-fields') && mode !== 'default';
 
   // `name` is scoped to the category so two rendered panels could never share a radio group —
   // the browser's mutual exclusion is keyed on the name, not on the DOM subtree.
@@ -458,6 +511,10 @@ function CategoryFieldProminencePanel({ category }: { category: CategoryWithFiel
         >
           <Input
             value={labelText}
+            // HTML `maxLength` counts UTF-16 code units where the seam caps by code point, so the
+            // browser stops an emoji-heavy label slightly sooner than storage would. Deliberate:
+            // for all but a label of a dozen-plus emoji the two agree, and a cap the user can feel
+            // while typing beats one that silently truncates what they typed on save.
             maxLength={MAX_FIELD_TAB_LABEL_LENGTH}
             placeholder={t('item.tab.customFields')}
             data-testid="category-field-tab-label"
@@ -478,18 +535,11 @@ function CategoryFieldProminencePanel({ category }: { category: CategoryWithFiel
               size="sm"
               variant="ghost"
               data-testid="category-field-prominence-conflict-clear"
-              onClick={() =>
-                updateCategory.mutate({
-                  id: category.id,
-                  input: {
-                    hiddenCapabilities: toggleHiddenCapability(
-                      category.hiddenCapabilities,
-                      'custom-fields',
-                      false,
-                    ),
-                  },
-                })
-              }
+              // Un-hide rather than drop the position: asking for the fields to come forward is
+              // the choice the user made in *this* panel, so the other half of the contradiction
+              // is the one to give way. Goes through the shared draft so the checkbox above
+              // follows, and so a tick made moments earlier is not recomputed away.
+              onClick={() => hiddenCapabilities.setCapabilityHidden('custom-fields', false)}
             >
               {t('category.fieldProminence.conflictAction')}
             </Button>
@@ -525,36 +575,21 @@ const FIELD_PROMINENCE_DESCRIPTION_KEYS = {
  *
  * Ticking hides — the question is "what doesn't this kind of thing have?", which is the way
  * round a user thinks about a Movie having no service schedule. Saving is immediate, matching
- * every other control in this dialog; a set toggle is never transiently invalid, so unlike the
- * warranty and interval fields it needs no local buffer.
+ * every other control in this dialog.
+ *
+ * The set itself is **not** owned here: it lives in the shared {@link useHiddenCapabilitiesDraft}
+ * one level up, because the prominence panel below writes the same column.
  */
-function CategoryHiddenSectionsPanel({ category }: { category: CategoryWithFieldCount }) {
+function CategoryHiddenSectionsPanel({
+  category,
+  hiddenCapabilities,
+}: {
+  category: CategoryWithFieldCount;
+  hiddenCapabilities: HiddenCapabilitiesDraft;
+}) {
   const t = useT();
   const updateCategory = useUpdateCategory();
-
-  // Unlike every other control in this dialog, this one writes a *set* held in a single column,
-  // so each toggle is a read-modify-write of the whole value. Reading the base from the query
-  // cache would lose ticks: the write is not optimistic, so a second toggle made before the
-  // refetch lands would compute from the pre-first-toggle array and silently drop it — and
-  // since the column is synced LWW, that discard would propagate to other devices. Ticking
-  // several boxes in a row is exactly how this control gets used, so the local draft is the
-  // base, reseeded when a different category is selected (the buffer idiom used above).
-  const [draft, setDraft] = useState<readonly string[]>(category.hiddenCapabilities);
-  const seededFor = useRef(category.id);
-  useEffect(() => {
-    if (seededFor.current !== category.id) {
-      seededFor.current = category.id;
-      setDraft(category.hiddenCapabilities);
-    }
-  }, [category.id, category.hiddenCapabilities]);
-
-  const hidden = new Set(draft);
-
-  const toggle = (id: FeatureId, hide: boolean) => {
-    const next = toggleHiddenCapability(draft, id, hide);
-    setDraft(next);
-    updateCategory.mutate({ id: category.id, input: { hiddenCapabilities: next } });
-  };
+  const { hidden, setCapabilityHidden: toggle } = hiddenCapabilities;
 
   // A category that both *applies* a maintenance schedule to every new item and hides the
   // section showing it would be quietly contradictory — the schedule would be created and then

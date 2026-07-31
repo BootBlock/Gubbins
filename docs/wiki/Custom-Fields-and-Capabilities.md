@@ -218,10 +218,12 @@ give their fields a tab of their own with a fitting name. Everything else starts
 a preset is only a starting point, so change it to suit.
 
 > **⚠️ Heads-up**
-> If a category also hides its custom fields (below), there is nothing left to bring forward, and
-> Gubbins points out the contradiction and offers to show the fields again. The same applies if
-> the **Custom fields & capabilities** capability is switched off under
-> [[Modules|Modular-UI]] — the tabs then simply stay where they always were.
+> If a category also hides its custom fields (below), the two settings contradict each other, so
+> Gubbins says so and offers to show the fields again. Until you do, items with nothing recorded
+> keep the ordinary tab order — but an item that *does* have values still shows them, with the
+> usual note explaining why, so nothing is ever buried. The same goes for turning the **Custom
+> fields & capabilities** capability off under [[Modules|Modular-UI]]: the tabs then simply stay
+> where they always were.
 
 ### Hiding the sections a category doesn't need
 
