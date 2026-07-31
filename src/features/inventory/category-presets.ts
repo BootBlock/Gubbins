@@ -78,6 +78,17 @@ export const TOOLS_STARTER_CATEGORY_NAME = 'Tools';
  * The curated preset library. Each entry is broadly useful and domain-generic; the field
  * sets cover the handful of attributes each kind of item most often needs beyond the
  * built-in facets. Ordering here is the order shown in the picker.
+ *
+ * **On `fieldProminence` (issue #619):** only the **media** presets seed it, and every one of
+ * them seeds `own-tab`. The test is not "are these fields useful?" — they all are — but "would a
+ * user consider the item under-described until they were filled in?" A film without its Format
+ * and Director is barely catalogued, so its fields earn a tab of their own with a name that says
+ * what they collectively are. A fastener with no `Thread pitch` recorded is still an entirely
+ * usable inventory row, so its fields stay where they are.
+ *
+ * The rest of the library is deliberately left at the default. A preset is a starting point, and
+ * an unrequested tab appearing on every collectible would be a worse first impression than the
+ * status quo — the setting is one control away in the category manager for anyone who wants it.
  */
 export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   {
@@ -170,6 +181,8 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         name: 'Book',
         glyph: '📖',
         hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+        fieldProminence: 'own-tab',
+        fieldTabLabel: 'Book details',
       },
       fields: ordered([
         { name: 'Author', fieldType: 'TEXT' },
@@ -195,6 +208,8 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         glyph: '🎬',
         defaultTrackingMode: 'SERIALISED',
         hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+        fieldProminence: 'own-tab',
+        fieldTabLabel: 'Film details',
       },
       fields: ordered([
         { name: 'Cover art', fieldType: 'IMAGE' },
@@ -541,6 +556,8 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         name: 'Vinyl record',
         glyph: '💿',
         hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+        fieldProminence: 'own-tab',
+        fieldTabLabel: 'Pressing',
       },
       fields: ordered([
         { name: 'Artist', fieldType: 'TEXT' },
@@ -741,6 +758,8 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         name: 'Blu-rays',
         glyph: '🎬',
         hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+        fieldProminence: 'own-tab',
+        fieldTabLabel: 'Disc details',
       },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },
@@ -889,6 +908,8 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         name: 'DVDs',
         glyph: '📀',
         hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+        fieldProminence: 'own-tab',
+        fieldTabLabel: 'Disc details',
       },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },
@@ -1590,6 +1611,8 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         name: 'Video games (physical)',
         glyph: '👾',
         hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+        fieldProminence: 'own-tab',
+        fieldTabLabel: 'Game details',
       },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },
@@ -1715,6 +1738,8 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         name: 'Vintage movie posters',
         glyph: '🖼️',
         hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+        fieldProminence: 'own-tab',
+        fieldTabLabel: 'Poster details',
       },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },

@@ -66,6 +66,12 @@ The tabs you see depend on which [[modules|Modular-UI]] you have enabled:
 > described here, the relevant module may be switched off on the [[Modular UI|Modular-UI]]
 > screen — turning it back on restores the tab and any data it held.
 
+The order above is the default. An item's **category** can bring its
+[[custom fields|Custom-Fields-and-Capabilities]] much further forward — moving **Classification**
+up to sit directly after **Details**, or giving the fields a tab of their own there under a name
+the category chooses. That is why a `Movie` opens with a **Film details** tab where a `Fastener`
+has none.
+
 Also set on an item: **Condition** — a structured grade (Mint / Good / Needs Repair / Out for
 Calibration); see [[Condition grading|Condition-Grading]].
 

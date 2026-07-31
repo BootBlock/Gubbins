@@ -415,6 +415,24 @@ const baselineStatements: SqlStatement[] = [
           -- strings, so a malformed value from a peer costs this one field instead of
           -- failing the whole sync apply. Nullable (nothing hidden).
           hidden_capabilities                TEXT,
+          -- Where this category's custom fields sit in the item dialog (issue #619). A Movie
+          -- exists *because* of its Format, Director and Year; a Fastener's custom fields are a
+          -- footnote to its built-in ones. One position cannot be right for both, and the
+          -- category is the only thing that knows which fields an item even has.
+          --
+          -- 'default' (or NULL) leaves them in the Classification tab; 'promoted' moves that
+          -- whole tab up to sit directly after Details; 'own-tab' breaks the Custom fields
+          -- section out into a tab of its own there, labelled by field_tab_label.
+          --
+          -- No CHECK, and no NOT NULL: an unrecognised mode written by a peer on a newer version
+          -- is kept verbatim and simply reads as 'default' here, exactly as an unknown id in
+          -- hidden_capabilities does. A CHECK would instead fail that peer's whole sync apply
+          -- over a presentational preference.
+          field_prominence                   TEXT,
+          -- The label for the 'own-tab' break-out tab; NULL falls back to the built-in
+          -- "Custom fields". Kept even while another mode is selected, so switching modes back
+          -- and forth doesn't discard the wording the user chose.
+          field_tab_label                    TEXT,
           updated_at              INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (default_tracking_mode IS NULL OR default_tracking_mode IN (${trackingModeList})),
           CHECK (default_condition IS NULL OR default_condition IN (${conditionList})),

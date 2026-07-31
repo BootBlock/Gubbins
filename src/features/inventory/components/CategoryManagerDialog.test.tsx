@@ -89,6 +89,8 @@ const category = (overrides: Partial<CategoryWithFieldCount> = {}): CategoryWith
   defaultMaintenanceIntervalDays: null,
   defaultMaintenanceIntervalUsage: null,
   hiddenCapabilities: [],
+  fieldProminence: null,
+  fieldTabLabel: null,
   updatedAt: 0,
   fieldCount: 1,
   ...overrides,
@@ -924,5 +926,148 @@ describe('CategoryManagerDialog — opting an existing DATE field in', () => {
 
     fireEvent.blur(screen.getByTestId('field-due-days-f-1'));
     expect(h.updateField).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Custom-field prominence (issue #619) — where the category's fields sit on an item. Unlike the
+ * hidden-sections panel above this changes nothing about *what* exists, so the panel's whole job
+ * is to write one of three modes plus an optional tab name, and to surface the one contradiction
+ * a user can construct (promoting fields the same category also hides).
+ */
+describe('CategoryManagerDialog — where the custom fields go', () => {
+  const radio = (mode: string) => screen.getByTestId(`category-field-prominence-${mode}`);
+  const tabNameInput = () => screen.queryByTestId('category-field-tab-label');
+
+  it('offers the three positions, with the default selected when nothing is stored', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByText('Where the custom fields go')).toBeInTheDocument();
+    expect(radio('default')).toBeChecked();
+    expect(radio('promoted')).not.toBeChecked();
+    expect(radio('own-tab')).not.toBeChecked();
+  });
+
+  it('reads an unrecognised stored mode as the default rather than leaving nothing selected', () => {
+    // A peer on a newer version may store a fourth position; the panel must still be usable.
+    h.categoryRows = [category({ fieldProminence: 'floating-panel' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(radio('default')).toBeChecked();
+  });
+
+  it('saves the chosen mode immediately', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    fireEvent.click(radio('promoted'));
+    expect(h.updateCategory).toHaveBeenCalledWith({ id: 'cat-1', input: { fieldProminence: 'promoted' } });
+  });
+
+  it('offers a tab name only for the mode that creates a tab', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(tabNameInput()).toBeNull();
+
+    // The radio is driven from the persisted value, so the panel only shows the field once the
+    // category actually reads back as `own-tab` — mirror that rather than faking local state.
+    h.categoryRows = [category({ fieldProminence: 'promoted' })];
+    cleanup();
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(tabNameInput()).toBeNull();
+
+    h.categoryRows = [category({ fieldProminence: 'own-tab' })];
+    cleanup();
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(tabNameInput()).toBeInTheDocument();
+  });
+
+  it('saves the tab name as it is typed, and shows the built-in label as the placeholder', () => {
+    h.categoryRows = [category({ fieldProminence: 'own-tab' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const input = tabNameInput()!;
+    expect(input).toHaveAttribute('placeholder', 'Custom fields');
+    fireEvent.change(input, { target: { value: 'Film details' } });
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { fieldTabLabel: 'Film details' },
+    });
+  });
+
+  it('shows the stored tab name, and reseeds it when a different category is selected', () => {
+    h.categoryRows = [
+      category({ fieldProminence: 'own-tab', fieldTabLabel: 'Film details' }),
+      category({ id: 'cat-2', name: 'Vinyl', fieldProminence: 'own-tab', fieldTabLabel: 'Pressing' }),
+    ];
+    renderDialog();
+
+    selectCategory(/Resistors/);
+    expect(tabNameInput()).toHaveValue('Film details');
+
+    selectCategory(/Vinyl/);
+    expect(tabNameInput()).toHaveValue('Pressing');
+  });
+
+  it('says nothing about a conflict while the fields stay where they are', () => {
+    h.categoryRows = [category({ hiddenCapabilities: ['custom-fields'] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.queryByTestId('category-field-prominence-conflict-clear')).toBeNull();
+  });
+
+  it('flags the contradiction when the category both promotes and hides its custom fields', () => {
+    h.categoryRows = [
+      category({ hiddenCapabilities: ['custom-fields', 'kits'], fieldProminence: 'own-tab' }),
+    ];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.getByText(/also hides its custom fields/)).toBeInTheDocument();
+
+    // The offered fix un-hides the fields rather than dropping the position, because asking for a
+    // tab of their own is the choice the user just made explicitly. Other hidden sections stay.
+    fireEvent.click(screen.getByTestId('category-field-prominence-conflict-clear'));
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['kits'] },
+    });
+  });
+
+  /**
+   * Both this panel and the hidden-sections panel write `hiddenCapabilities`, and the write is not
+   * optimistic. They therefore share one draft: two independent buffers would let each recompute
+   * from a base the other had already moved, dropping a change on a synced LWW column.
+   */
+  it('computes the conflict fix from a tick made moments earlier, not from the stale cache', () => {
+    h.categoryRows = [category({ hiddenCapabilities: ['custom-fields'], fieldProminence: 'own-tab' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    // Hide another section. `h.categoryRows` is deliberately NOT updated — this is the window
+    // where the query cache still holds the pre-click value.
+    fireEvent.click(screen.getByTestId('category-hide-kits'));
+    fireEvent.click(screen.getByTestId('category-field-prominence-conflict-clear'));
+
+    expect(h.updateCategory).toHaveBeenLastCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['kits'] },
+    });
+  });
+
+  it('clears the sibling panel’s tick and its own banner when the fix is applied', () => {
+    // The other direction: with separate drafts the checkbox above would stay ticked for the rest
+    // of the session and write `custom-fields` straight back on the next unrelated toggle.
+    h.categoryRows = [category({ hiddenCapabilities: ['custom-fields'], fieldProminence: 'promoted' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByTestId('category-hide-custom-fields')).toBeChecked();
+
+    fireEvent.click(screen.getByTestId('category-field-prominence-conflict-clear'));
+
+    expect(screen.getByTestId('category-hide-custom-fields')).not.toBeChecked();
+    expect(screen.queryByTestId('category-field-prominence-conflict-clear')).toBeNull();
   });
 });

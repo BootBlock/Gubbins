@@ -88,7 +88,9 @@ of materials whose assembly consumes its members (reversibly — `DISASSEMBLED` 
 preset library ships four container archetypes — Tool bag, Storage tote, Gridfinity bin, First aid
 kit — as *categories of item*, and three of the four fall back to a `Contents` `LONG_TEXT` field of
 prose. (Open issue [#617](https://github.com/BootBlock/Gubbins/issues/617) meets the same table
-boundary from the other side, though it asks the opposite question.)
+boundary from the other side, though it asks the opposite question — researched separately in
+[non-items on a Location](location-non-items_2026-07-31.md), which finds that the boundary is not
+what constrains it.)
 
 **C5 — Ownership is unmodelled; custody is one-directional.**
 A scan of all 55 tables finds no `owner`, tenure or share column — the only user references are
@@ -318,9 +320,11 @@ does not make the app track anything better. None started.
   - **`W1b` — a per-definition unit** on `field_defs`, so a `NUMBER` field carries one. Open.
   - **`W1c` — min/max (and precision) on a `NUMBER` definition**, validated at the point of save
     through the existing `validateFieldValue` seam. Open.
-  - **`W1d` — the "surface this" prominence flag.** Open, and deliberately last: it is adjacent to
-    [#619](https://github.com/BootBlock/Gubbins/issues/619) and purely presentational, so it should
-    be designed with that issue rather than ahead of it.
+  - **`W1d` — the "surface this" prominence flag.** Open, and deliberately last. #619 has since
+    shipped, so its adjacency is now concrete: a *category* chooses where its whole field set sits
+    (`categories.field_prominence`). That is **not** `W1d`, which is per **definition** and would
+    let one field outrank its siblings — but it is the surface `W1d` would hang beside, so design
+    the two together rather than ahead of each other.
 - **`W2` — A repeating (table-valued) field.** Removes the `UNIQUE (item_id, def_id)` ceiling for
   opted-in definitions. Unlocks telemetry logs, per-position measurements, prior owners, lineage
   notes — every archetype whose data is a *series*. Addresses C1. Larger and schema-visible; do
@@ -329,7 +333,9 @@ does not make the app track anything better. None started.
   itself a place). Unlocks §3.7 outright and improves §3.1 and kits. Addresses C4. Adjacent to
   [#617](https://github.com/BootBlock/Gubbins/issues/617) — same table boundary, opposite direction
   (that asks for non-items *on* a location; this asks for an item that *is* one), so neither implies
-  the other. Structurally the largest item here.
+  the other. Structurally the largest item here. See
+  [non-items on a Location](location-non-items_2026-07-31.md), whose `N5` is `W1` with a location as
+  the subject, and whose `N3` defers to `W2` rather than duplicating it.
 - **`W4` — Dimensional stock and remnants.** A length/area tracking mode, or a gauge that splits
   into a tracked remainder. Unlocks §3.1. Consider `pack_qty` on the item at the same time.
 - **`W5` — Ownership and tenure.** An `owned | borrowed | rented | leased | shared` field plus an
