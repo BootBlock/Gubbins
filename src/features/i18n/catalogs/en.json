@@ -1585,6 +1585,7 @@
   "sync.remoteMissing.error": "This device has synced before, but the shared copy is no longer there. Syncing stopped rather than replace it with only this device's data — anything that lives on your other devices would be lost.",
   "sync.remoteMissing.body": "If this is the wrong folder or account, connect the right one and sync again. If the shared copy really has gone for good, you can publish this device's data as a new one — anything that only existed on your other devices will not come back.",
   "sync.remoteMissing.republish": "Publish this device's data",
+  "sync.pushFailed.error": "Your devices’ changes were merged and saved on this device, but publishing them to the sync location failed. They are safe here and will publish the next time you sync.",
   "signIn.title": "Who’s using Gubbins?",
   "signIn.subtitle.choose": "Choose your account to carry on.",
   "signIn.subtitle.password": "Enter your password to carry on.",

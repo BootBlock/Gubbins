@@ -1,3 +1,4 @@
+import { assertExhaustive } from '@/lib/exhaustive';
 import type { SyncResult } from './sync-engine';
 
 /** English count phrase for the small tallies a sync reports ("1 update" / "3 updates"). */
@@ -12,6 +13,18 @@ function joinClauses(parts: readonly string[]): string {
 }
 
 /**
+ * What the two-way merge moved — "brought in 2 updates and removed 1 item" — or `''` when it
+ * moved nothing. Shared by the completed sync and the merge whose push failed (#638): both
+ * describe the *same* local merge, so they must count it the same way.
+ */
+function changeClauses(result: SyncResult): string {
+  const changes: string[] = [];
+  if (result.pulled > 0) changes.push(`brought in ${count(result.pulled, 'update')}`);
+  if (result.deleted > 0) changes.push(`removed ${count(result.deleted, 'item')}`);
+  return joinClauses(changes);
+}
+
+/**
  * Turn a {@link SyncResult} into a plain-English sentence for the Sync screen's status line.
  *
  * The engine's raw status enum (`PUBLISHED`/`SYNCED`/`CLONED`) rendered as
@@ -22,29 +35,45 @@ function joinClauses(parts: readonly string[]): string {
  * transport-free, so it is unit-testable without rendering the screen.
  */
 export function describeSyncOutcome(result: SyncResult): string {
-  // HARD_STOP carries its own operator-facing message (e.g. storage nearly full); pass it through.
-  if (result.status === 'HARD_STOP') return result.message ?? 'Sync paused.';
-
   const sentences: string[] = [];
 
-  if (result.status === 'PUBLISHED') {
-    // First publish: the sync location had no snapshot yet, so there was nothing to merge in.
-    sentences.push(
-      'Published — saved your library to the sync location (nothing was there yet to merge in).',
-    );
-  } else if (result.status === 'CLONED') {
-    // §7.2 TTL full clone: rebuilt from the remote after a long time away, then republished.
-    sentences.push('Re-synced — rebuilt your library from the sync location and republished it.');
-  } else {
-    // SYNCED — the normal two-way delta reconcile.
-    const changes: string[] = [];
-    if (result.pulled > 0) changes.push(`brought in ${count(result.pulled, 'update')}`);
-    if (result.deleted > 0) changes.push(`removed ${count(result.deleted, 'item')}`);
-    sentences.push(
-      changes.length === 0
-        ? 'Up to date — published your changes; nothing new to bring in.'
-        : `Synced — ${joinClauses(changes)}.`,
-    );
+  switch (result.status) {
+    case 'HARD_STOP':
+      // Carries its own operator-facing message (e.g. storage nearly full); pass it through.
+      return result.message ?? 'Sync paused.';
+    case 'PUBLISHED':
+      // First publish: the sync location had no snapshot yet, so there was nothing to merge in.
+      sentences.push(
+        'Published — saved your library to the sync location (nothing was there yet to merge in).',
+      );
+      break;
+    case 'CLONED':
+      // §7.2 TTL full clone: rebuilt from the remote after a long time away, then republished.
+      sentences.push('Re-synced — rebuilt your library from the sync location and republished it.');
+      break;
+    case 'MERGED_NOT_PUBLISHED': {
+      // Issue #638: the pull landed and is committed here; only the upload failed. Say both
+      // halves — "Sync failed" alone reads as "nothing happened", which is the opposite of true.
+      const changes = changeClauses(result);
+      sentences.push(
+        changes === ''
+          ? 'Merged on this device, but publishing to the sync location failed — your changes will publish next time you sync.'
+          : `Merged on this device — ${changes} — but publishing to the sync location failed; your changes will publish next time you sync.`,
+      );
+      break;
+    }
+    case 'SYNCED': {
+      // The normal two-way delta reconcile.
+      const changes = changeClauses(result);
+      sentences.push(
+        changes === ''
+          ? 'Up to date — published your changes; nothing new to bring in.'
+          : `Synced — ${changes}.`,
+      );
+      break;
+    }
+    default:
+      assertExhaustive(result.status);
   }
 
   // Rare but worth surfacing plainly when they occur.

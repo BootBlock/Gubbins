@@ -1585,6 +1585,7 @@
   "sync.remoteMissing.error": "Dieses Gerät wurde bereits synchronisiert, aber die gemeinsame Kopie ist nicht mehr vorhanden. Die Synchronisierung wurde angehalten, statt sie durch die Daten allein dieses Geräts zu ersetzen – alles, was auf Ihren anderen Geräten liegt, ginge verloren.",
   "sync.remoteMissing.body": "Falls dies der falsche Ordner oder das falsche Konto ist, verbinden Sie das richtige und synchronisieren Sie erneut. Ist die gemeinsame Kopie tatsächlich endgültig verloren, können Sie die Daten dieses Geräts als neue Kopie veröffentlichen – alles, was nur auf Ihren anderen Geräten vorhanden war, kehrt dadurch nicht zurück.",
   "sync.remoteMissing.republish": "Daten dieses Geräts veröffentlichen",
+  "sync.pushFailed.error": "Die Änderungen Ihrer Geräte wurden zusammengeführt und auf diesem Gerät gespeichert, aber das Veröffentlichen am Synchronisierungsort ist fehlgeschlagen. Sie sind hier sicher und werden bei der nächsten Synchronisierung veröffentlicht.",
   "signIn.title": "Wer nutzt Gubbins?",
   "signIn.subtitle.choose": "Wählen Sie Ihr Konto, um fortzufahren.",
   "signIn.subtitle.password": "Geben Sie Ihr Passwort ein, um fortzufahren.",
