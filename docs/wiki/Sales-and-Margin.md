@@ -11,8 +11,10 @@ money.
 When you record an item as **sold** (see [[Sales & disposals|Sales-and-Disposals]]), you capture
 what it went for. The **sales & margin** report then compares that against the item's cost to show:
 
-- **Revenue** — what your sales brought in.
-- **Margin** — the profit after cost, per item and overall.
+- **Revenue** — what your sales brought in. Every sale counts, whether or not Gubbins knows what
+  the item cost you.
+- **Margin** — the profit after cost, per item and overall. Only sales Gubbins has a **cost** for
+  count towards it (see [below](#where-the-cost-comes-from)).
 
 So you can see which items are worth selling, and which barely cover their cost.
 
@@ -32,15 +34,22 @@ was — a later price edit never rewrites a sale you've already made. Gubbins ta
 
 Two things follow from that:
 
-- **Set a unit cost before you sell.** An item with no cost of either kind still counts its
-  revenue, but contributes no cost — so it reads as pure profit. The report flags how much of it
-  you're looking at: *"Margin excludes N sold units with no recorded cost."*
+- **Set a unit cost before you sell.** An item with no cost of either kind is kept out of the
+  margin **entirely**. Its takings still count towards your revenue — the money really did come in
+  — but Gubbins won't treat a sale it can't cost as pure profit, so neither the takings nor the
+  missing cost reach the margin. The report says how much it is working from: *"Margin covers the
+  … of proceeds from sales with a recorded cost. N sold units have no recorded cost…"*
 - **A supplier price in another currency isn't used.** Gubbins holds no exchange rates and never
   converts, so a part quoted in yen can't become a cost in pounds — the sale is counted as one of
   those uncosted units instead of being booked at a wrong figure. The same rule applies to
   [[valuation & spend|Valuation-and-Spend]] and the
   [[insurance schedule|Insurance-and-Estate-Schedule]]. Give the item its own **unit cost**, in your
   base currency, so its sales carry a real cost into the margin.
+
+> **ℹ️ Note**
+> While some sales are uncosted, **revenue − cost of goods won't equal the margin** — the
+> difference is the revenue those sales leave out. The caveat under the figures names the revenue
+> the margin *was* worked out from, so the subtraction is always checkable.
 
 ## Related pages
 

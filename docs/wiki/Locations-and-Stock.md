@@ -338,7 +338,9 @@ you can see a location's worth and contents at a glance without opening the full
   dimensions (width × height × depth) times the number held. If the location has an internal size
   of its own (see [[Capacity & fullness|#capacity--fullness]] and its *Dimensions* / *Usable
   volume* fields), it also shows how full that is — e.g. *20% of 60 L*.
-- **Value by category** — where that value sits, broken down by category, largest first.
+- **Value by category** — where that value sits, broken down by category, largest first. With more
+  categories than fit, it says how many of how many it is showing and offers **Show more** — the
+  same behaviour as [[long lists in a report|Reports-Overview]].
 
 ![The Statistics tab of a location's Edit dialog: Total value, Items, Units and Space used tiles above a value-by-category breakdown](images/location-statistics.png)
 

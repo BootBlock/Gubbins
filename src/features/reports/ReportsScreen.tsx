@@ -28,6 +28,7 @@ import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { ValueBreakdown } from './components/ValueBreakdown';
+import { DeadStockList } from './components/DeadStockList';
 import { ConsumptionBreakdown } from './components/ConsumptionBreakdown';
 import { formatConsumed } from './components/consumption-format';
 import { MovementChart } from './components/MovementChart';
@@ -55,11 +56,9 @@ import {
   useSpendAnalytics,
   useStockAging,
   useTurnover,
-  useUnpricedGaugeCount,
   useValuationTrend,
 } from './queries';
 import { ForeignCurrencyNotice } from './components/ForeignCurrencyNotice';
-import { UnpricedGaugeNotice } from './components/UnpricedGaugeNotice';
 
 /**
  * The §3 Reports & valuation screen (inventory-depth Phase 61): headline value cards, a
@@ -82,9 +81,6 @@ export function ReportsScreen() {
   // Stock the valuation queries had to leave out because its price is quoted in another
   // currency — surfaced beneath the headline cards so the totals are never quietly short (#284).
   const excludedByCurrency = useForeignCurrencyCostCount();
-  // Gauge contents nothing prices — excluded for a different reason, so it gets its own
-  // notice rather than being folded into the unpriced count silently (#683).
-  const unpricedGauges = useUnpricedGaugeCount();
   const baseCurrency = usePreferencesStore((s) => s.baseCurrency);
   const consumption = useConsumptionRate();
   // The consumption report is one line per unit of measure and carries no overall total (issue
@@ -344,7 +340,6 @@ export function ReportsScreen() {
         </section>
 
         <ForeignCurrencyNotice count={excludedByCurrency.data} baseCurrency={baseCurrency} />
-        <UnpricedGaugeNotice count={unpricedGauges.data} />
 
         {/* Valuation breakdown */}
         <Reveal as="section" className="grid gap-6 lg:grid-cols-2">
@@ -355,6 +350,7 @@ export function ReportsScreen() {
               <ValueBreakdown
                 groups={value.data?.byCategory ?? []}
                 formatters={f}
+                label={t('common.rows.categories')}
                 emptyLabel="No priced stock yet."
               />
             )}
@@ -366,6 +362,7 @@ export function ReportsScreen() {
               <ValueBreakdown
                 groups={value.data?.byLocation ?? []}
                 formatters={f}
+                label={t('common.rows.locations')}
                 emptyLabel="No priced stock yet."
               />
             )}
@@ -416,30 +413,7 @@ export function ReportsScreen() {
             {deadStock.isLoading ? (
               <CentredSpinner />
             ) : deadStock.data && deadStock.data.lines.length > 0 ? (
-              <ul className="divide-y divide-border" data-testid="dead-stock-list">
-                {deadStock.data.lines.slice(0, 20).map((line) => (
-                  <li key={line.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                    <span className="min-w-0 truncate font-medium">{line.name}</span>
-                    <span className="flex shrink-0 items-center gap-4 text-muted-foreground">
-                      {/* A gauge is idle by its *contents*, not a unit count it does not
-                          have (issue #683) — "400g", not "0 units". */}
-                      <span>
-                        {line.measure
-                          ? f.measure(line.measure.amount, line.measure.unit)
-                          : `${f.quantity(line.quantity)} units`}
-                      </span>
-                      {/* A location may set its own threshold, so a line can be flagged at a
-                          figure other than the one in the panel heading — show it rather
-                          than leave the row looking wrong. */}
-                      <span>
-                        {line.idleDays}d idle
-                        {line.thresholdDays !== deadStockDays ? ` (of ${line.thresholdDays}d)` : ''}
-                      </span>
-                      <Money value={line.value} formatters={f} className="font-medium text-foreground" />
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <DeadStockList lines={deadStock.data.lines} thresholdDays={deadStockDays} formatters={f} />
             ) : (
               // Reporting is opt-in (issue #92), so an empty panel is ambiguous on its own:
               // nothing is idle, or nothing is being watched. `consideredCount` says which.
@@ -572,10 +546,7 @@ export function ReportsScreen() {
                 label="Sales window"
               />
             </div>
-            <p className="text-sm text-muted-foreground">
-              Proceeds from items sold against the cost recorded when they left inventory, plus the value of
-              stock written off. Margin excludes any units sold without a recorded cost.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('reports.sales.description')}</p>
             <Panel title={`Sales (last ${salesWindow} days)`}>
               {sales.isLoading ? (
                 <CentredSpinner />

@@ -152,6 +152,7 @@ export function LocationStats({
                 <ValueBreakdown
                   groups={stats.data.byCategory}
                   formatters={fmt}
+                  label={t('common.rows.categories')}
                   emptyLabel={t('inventory.locationStats.empty')}
                 />
               </div>

@@ -13,6 +13,11 @@ The **valuation** report totals what your inventory is worth, broken down **by c
 **by location**, so you can see where the value sits — which room holds the most, which category
 dominates.
 
+With a lot of categories or locations, each breakdown opens on the highest-value dozen and says how
+many there are in total — **Show more** brings the rest in, a batch at a time. The headline total
+above always covers every one of them, listed or not. See
+[[long lists in a report|Reports-Overview]].
+
 Each item is valued through Gubbins' valuation logic: a manual
 **[[current value|Current-Value-and-Revaluation]]** where you've set one, otherwise purchase price
 less [[depreciation|Warranty-and-Depreciation]]. So the total reflects *today's* worth, not just
