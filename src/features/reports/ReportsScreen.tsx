@@ -546,10 +546,7 @@ export function ReportsScreen() {
                 label="Sales window"
               />
             </div>
-            <p className="text-sm text-muted-foreground">
-              Proceeds from items sold against the cost recorded when they left inventory, plus the value of
-              stock written off. Margin excludes any units sold without a recorded cost.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('reports.sales.description')}</p>
             <Panel title={`Sales (last ${salesWindow} days)`}>
               {sales.isLoading ? (
                 <CentredSpinner />
