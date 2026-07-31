@@ -520,10 +520,13 @@ const baselineStatements: SqlStatement[] = [
     //
     // Three column choices carry the design:
     //
-    //  - `location_id` is **nullable, ON DELETE SET NULL** rather than the CASCADE `item_history`
-    //    uses. Deleting a location must not silently destroy the record that it existed and what
-    //    was done to it — the entries survive the delete unattached, which is the same
-    //    "re-attribute rather than erase" answer `actor_user_id` gives for a deleted user.
+    //  - `location_id` carries **no foreign key at all** — it is a historical coordinate, the same
+    //    shape `stock_deltas.location_id` takes. `item_history`'s CASCADE would destroy the record
+    //    of a place at the moment it was removed, which is exactly when "what happened to it?" is
+    //    worth asking; and `ON DELETE SET NULL` would keep the row but blank the id on every single
+    //    `DELETED` entry — so a `location.removed` event could never tell a subscriber *which*
+    //    location went. Dropping the reference keeps both the entry and its subject, and a
+    //    dangling id is the correct reading of a record about something that no longer exists.
     //  - `location_name` is the snapshot of the name the location carried **when the entry was
     //    written**. It is what keeps an entry readable once its location is gone (and what lets a
     //    rename read as a rename), so it is NOT NULL and never back-filled.
@@ -542,7 +545,7 @@ const baselineStatements: SqlStatement[] = [
     sql: `
         CREATE TABLE location_history (
           id            TEXT    PRIMARY KEY NOT NULL,
-          location_id   TEXT    REFERENCES locations(id) ON DELETE SET NULL,
+          location_id   TEXT    NOT NULL,
           location_name TEXT    NOT NULL,
           action        TEXT    NOT NULL,
           note          TEXT,

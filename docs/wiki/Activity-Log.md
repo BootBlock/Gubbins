@@ -50,7 +50,9 @@ the fact:
 - a **rename**, showing the name before and after;
 - a **move** under a different parent (or out to the top level), naming both;
 - **archiving** and **restoring** it;
-- **deleting** it, noting how many items were moved to Unassigned.
+- **deleting** it, noting how many items went to Unassigned and how many sub-locations were moved
+  up — and the sub-locations themselves each record the move, so a shelf that ends up somewhere
+  new because the room above it was deleted says so.
 
 Everything else about a location — its colour, type, capacity, dimensions, walk order, the default
 flag and the dead-stock setting — describes the place rather than the shape of your storage, so it

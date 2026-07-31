@@ -106,7 +106,7 @@ describe('LocationRepository activity record (#691)', () => {
     expect((await locations.getById(parent.id))!.name).toBe('Parent');
   });
 
-  it('keeps a deleted location’s record, unattached but named', async () => {
+  it('keeps a deleted location’s record, still naming which location it was about', async () => {
     const items = new ItemRepository(driver);
     const workshop = await locations.create({ name: 'Workshop' });
     const shelf = await locations.create({ name: 'Shelf B', parentId: workshop.id });
@@ -115,12 +115,31 @@ describe('LocationRepository activity record (#691)', () => {
 
     await locations.delete(shelf.id);
 
-    // Nothing is readable through the location any more — it is gone — but the ledger kept it all.
-    expect((await locations.getHistory(shelf.id)).rows).toEqual([]);
-    const orphaned = (await locations.getHistoryFeed()).rows.filter((e) => e.locationId === null);
-    expect(orphaned.map((e) => e.action)).toEqual(['DELETED', 'RENAMED', 'CREATED']);
-    expect(orphaned[0]!.locationName).toBe('Shelf C');
-    expect(orphaned[0]!.note).toContain('1 item was moved to Unassigned');
+    // The subject column is a historical coordinate, not a foreign key, so the whole trail
+    // outlives the row it describes — id intact, so a `location.removed` subscriber can act on it.
+    const kept = (await locations.getHistory(shelf.id)).rows;
+    expect(kept.map((e) => e.action)).toEqual(['DELETED', 'RENAMED', 'CREATED']);
+    expect(kept.every((e) => e.locationId === shelf.id)).toBe(true);
+    expect(kept[0]!.locationName).toBe('Shelf C');
+    expect(kept[0]!.note).toContain('1 item was moved to Unassigned');
+    expect(kept[0]!.note).toContain('0 sub-locations were moved to "Workshop"');
+    // …and the location itself really is gone, so this is a record of something that no longer is.
+    expect(await locations.getById(shelf.id)).toBeUndefined();
+  });
+
+  it('records the move on each sub-location a delete promotes', async () => {
+    const room = await locations.create({ name: 'Room' });
+    const shelf = await locations.create({ name: 'Shelf', parentId: room.id });
+
+    await locations.delete(room.id);
+
+    // The one re-parent nobody asked for — and therefore the one most likely to prompt "why is
+    // this shelf suddenly somewhere else?".
+    const [latest] = (await locations.getHistory(shelf.id)).rows;
+    expect(latest).toMatchObject({ action: 'RE_PARENTED', locationId: shelf.id, locationName: 'Shelf' });
+    expect(latest!.note).toBe('Moved from "Room" to the top level: "Room" was deleted.');
+    expect(latest!.metadata).toEqual({ fromParentId: room.id, toParentId: null });
+    expect((await locations.getById(shelf.id))!.parentId).toBeNull();
   });
 
   it('feeds every location newest-first for the cross-location scan', async () => {

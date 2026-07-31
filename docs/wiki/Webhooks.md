@@ -91,11 +91,13 @@ Webhooks cover **changes to items**:
 different parent, archived, restored or deleted. These are about the *place*, not what is in it —
 renaming a shelf raises one of these and moves nothing.
 
-> **ℹ️ Note**
-> A location event carries the location's id, its name and what happened, but no item. So a filter
-> that narrows by item, category or tag will not match one, and an `{{item.name}}`-style
-> placeholder renders empty in a custom payload. Subscribe to them on their own, or send Gubbins'
-> standard event and read the fields you need.
+> **⚠️ Heads-up — location events carry no item, so no filter matches one**
+> A location event carries the location's id, its name and what happened, and no item at all. Every
+> filter kind — location, category, tag, specific items and the quantity threshold — narrows by the
+> *item* an event is about, so **any** filter you set will silently exclude your location events.
+> An `{{item.name}}`-style placeholder renders empty in a custom payload for the same reason.
+> Subscribe to location events on a webhook of their own with **no filter**, and send Gubbins'
+> standard event so the payload carries the fields you need.
 
 The rest of a location — its colour, type, capacity, dimensions, walk order and settings — is a
 description of the place rather than the shape of your storage, and raises nothing.

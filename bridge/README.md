@@ -1369,14 +1369,17 @@ source**. One transport-agnostic event model feeds two sinks — **outbound webh
 without integrating any of them by name. Both are **off by default** and strictly **read-only**
 w.r.t. inventory (an event never mutates data).
 
-> **Where events come from.** New rows in the synced, immutable `item_history` ledger — the same
-> table the app's activity feed projects — *are* the events, already typed by the §4 activity
-> actions. The bridge reuses the app's own `activityKindForAction` / `describeHistoryEntry` shapers
-> (never a fork) and never runs bespoke SQL. The **first** generation after a (re)start establishes
-> a baseline and emits **nothing** — it never replays history as a burst. The **one exception**
-> is the opt-in [`lookup.resolved` event](#lookup-events--read-triggered-opt-in-separate-flag),
-> which is triggered by a *read* (somebody asking "where is X?") rather than by a change — see
-> its section for why it has its own flag.
+> **Where events come from.** New rows in a synced activity ledger *are* the events, already typed
+> by the actions the app records. Two ledgers feed them: the immutable `item_history` — the same
+> table the app's activity feed projects, typed by the §4 activity actions — and `location_history`,
+> which carries the `location.*` slice. The bridge reuses the app's own `activityKindForAction` /
+> `describeHistoryEntry` / `locationHistoryActionLabel` shapers (never a fork) and never runs
+> bespoke SQL. Each ledger has its **own** window on the shared cursor, so the **first** generation
+> after a (re)start establishes a baseline for both and emits **nothing** — it never replays history
+> as a burst. The **one exception** is the opt-in
+> [`lookup.resolved` event](#lookup-events--read-triggered-opt-in-separate-flag), which is triggered
+> by a *read* (somebody asking "where is X?") rather than by a change — see its section for why it
+> has its own flag.
 
 ### The event shape
 
@@ -1617,7 +1620,8 @@ concurrent-stream count is capped (a `429` past the cap).
 ### Lookup events — read-triggered (opt-in, separate flag)
 
 > **⚠️ This event class is triggered by a *read*, not by a change.** Every other bridge event
-> comes from a new row in the `item_history` ledger: something in your inventory changed.
+> comes from a new row in an activity ledger — `item_history` or `location_history`: something in
+> your inventory, or in the shape of your storage, changed.
 > `lookup.resolved` is the exception — it fires when somebody **asks where something is**, and
 > nothing was written. That is the point: an automation can react to the *question* (light the
 > shelf the answer names, wake a display, log the request). It also means the event **publishes

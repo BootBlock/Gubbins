@@ -52,7 +52,7 @@ const ACTION_LABELS: Record<HistoryAction, string> = {
  * degrades to readable prose rather than a SCREAMING_SNAKE token or a crash.
  */
 export function historyActionLabel(action: string): string {
-  return ACTION_LABELS[action as HistoryAction] ?? humanise(action);
+  return ACTION_LABELS[action as HistoryAction] ?? humaniseAction(action);
 }
 
 export type HistoryTone = 'positive' | 'negative' | 'neutral';
@@ -103,8 +103,13 @@ function signedDelta(n: number): string {
   return n > 0 ? `+${n}` : `−${Math.abs(n)}`;
 }
 
-/** "SOME_FUTURE_ACTION" → "Some future action". */
-function humanise(action: string): string {
+/**
+ * "SOME_FUTURE_ACTION" → "Some future action" — the graceful degradation both ledgers apply to an
+ * action a newer peer synced. Exported so the location record's own formatter shares it: one copy
+ * means a later fix to this fallback (an acronym to preserve, an empty token to survive) cannot
+ * land on one ledger's view and not the other's.
+ */
+export function humaniseAction(action: string): string {
   const words = action.toLowerCase().split('_').join(' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

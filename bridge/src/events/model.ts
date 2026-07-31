@@ -64,12 +64,13 @@ export type LedgerEvent = BridgeEventBase<BridgeEventData>;
  * location's live state here would mean a read per event for a change that is usually a rename,
  * and `location.removed` has no live state left to read at all.
  *
- * `locationId` is `null` for exactly one case — an entry whose location was deleted before this
- * generation ran, so the ledger's `ON DELETE SET NULL` has already cleared the link. `locationName`
- * is always the name the place carried when the change happened, which is why it is never null.
+ * `locationId` is always present, `location.removed` included — the ledger's `location_id` is a
+ * historical coordinate with no foreign key, so it survives the location it names. That is the
+ * whole point: an automation keyed by location id has to be told *which* one went.
+ * `locationName` is the name the place carried when the change happened.
  */
 export interface LocationEventData {
-  readonly locationId: string | null;
+  readonly locationId: string;
   readonly locationName: string;
   /** The raw location activity action (e.g. `RE_PARENTED`). */
   readonly action: LocationHistoryAction;
@@ -180,10 +181,16 @@ export interface EventCursor {
 /** Default page size when scanning the recent ledger for new rows (== the repo page ceiling). */
 export const DEFAULT_EVENT_SCAN_LIMIT = 100;
 /**
- * Default cap on how many events one generation may fan out. A bulk import writes one snapshot
- * with many new ledger rows; without a cap that would flood every downstream sink. Beyond the
- * cap the batch is truncated and a single {@link EVENTS_TRUNCATED_TYPE} summary event is
- * appended so consumers know changes were omitted.
+ * Default cap on how many events one **ledger** may fan out per generation. A bulk import writes
+ * one snapshot with many new ledger rows; without a cap that would flood every downstream sink.
+ * Beyond the cap the batch is truncated and a single {@link EVENTS_TRUNCATED_TYPE} summary event
+ * is appended so consumers know changes were omitted.
+ *
+ * The two ledgers are capped **independently**, so a generation that bursts on both can carry up
+ * to two capped batches and two truncation summaries. That is deliberate rather than an oversight:
+ * a shared budget would let a bulk item import starve the location events entirely, and "someone
+ * deleted the garage" is exactly the change an automation must not lose to an import running at
+ * the same moment.
  */
 export const DEFAULT_FAN_OUT_CAP = 50;
 

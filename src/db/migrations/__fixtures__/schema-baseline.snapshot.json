@@ -665,7 +665,7 @@
       "type": "table",
       "name": "location_history",
       "tbl_name": "location_history",
-      "sql": "CREATE TABLE location_history (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          location_id   TEXT    REFERENCES locations(id) ON DELETE SET NULL,\n          location_name TEXT    NOT NULL,\n          action        TEXT    NOT NULL,\n          note          TEXT,\n          metadata      TEXT,\n          actor_user_id TEXT    NOT NULL DEFAULT '00000000-0000-4000-8000-000000000010'\n                                REFERENCES users(id) ON DELETE SET DEFAULT,\n          created_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
+      "sql": "CREATE TABLE location_history (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          location_id   TEXT    NOT NULL,\n          location_name TEXT    NOT NULL,\n          action        TEXT    NOT NULL,\n          note          TEXT,\n          metadata      TEXT,\n          actor_user_id TEXT    NOT NULL DEFAULT '00000000-0000-4000-8000-000000000010'\n                                REFERENCES users(id) ON DELETE SET DEFAULT,\n          created_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -3952,7 +3952,7 @@
           "cid": 1,
           "name": "location_id",
           "type": "TEXT",
-          "notnull": 0,
+          "notnull": 1,
           "dflt_value": null,
           "pk": 0
         },
@@ -4022,16 +4022,6 @@
           "to": "id",
           "on_update": "NO ACTION",
           "on_delete": "SET DEFAULT",
-          "match": "NONE"
-        },
-        {
-          "id": 1,
-          "seq": 0,
-          "table": "locations",
-          "from": "location_id",
-          "to": "id",
-          "on_update": "NO ACTION",
-          "on_delete": "SET NULL",
           "match": "NONE"
         }
       ],

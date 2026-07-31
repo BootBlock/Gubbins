@@ -308,9 +308,9 @@ busiest-first order.
 ## A location's history
 
 Beside **Statistics** sits a **History** tab: the record of what has been done to this location
-itself — when it was created, renamed, moved under a different parent, archived or restored, and by
-whom. It answers *"why is this shelf suddenly under a different room?"*, which nothing else in
-Gubbins could.
+itself — when it was created, renamed, moved under a different parent, archived or restored. It
+answers *"why is this shelf suddenly under a different room?"*, which nothing else in Gubbins
+could.
 
 It records the changes that reshape your storage, not every edit: colour, type, capacity,
 dimensions, walk order and the settings below describe the place rather than move anything, so they

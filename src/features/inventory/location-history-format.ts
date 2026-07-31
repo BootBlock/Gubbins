@@ -12,6 +12,7 @@
  */
 import type { LocationHistoryAction } from '@/db/repositories/constants';
 import type { LocationHistoryEntry } from '@/db/repositories/types';
+import { humaniseAction } from './history-format.ts';
 
 /** Short, British-English action titles (one per location activity action). */
 const ACTION_LABELS: Record<LocationHistoryAction, string> = {
@@ -29,7 +30,7 @@ const ACTION_LABELS: Record<LocationHistoryAction, string> = {
  * readable prose rather than a SCREAMING_SNAKE token or a crash, exactly as the item ledger does.
  */
 export function locationHistoryActionLabel(action: string): string {
-  return ACTION_LABELS[action as LocationHistoryAction] ?? humanise(action);
+  return ACTION_LABELS[action as LocationHistoryAction] ?? humaniseAction(action);
 }
 
 /** Everything a location activity row needs to render one entry. */
@@ -45,10 +46,4 @@ export function describeLocationHistoryEntry(entry: LocationHistoryEntry): Locat
     label: locationHistoryActionLabel(entry.action),
     detail: entry.note?.trim() ? entry.note.trim() : null,
   };
-}
-
-/** "SOME_FUTURE_ACTION" → "Some future action". */
-function humanise(action: string): string {
-  const words = action.toLowerCase().split('_').join(' ');
-  return words.charAt(0).toUpperCase() + words.slice(1);
 }

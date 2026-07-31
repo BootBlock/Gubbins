@@ -65,7 +65,7 @@ describe('buildLocationEvents', () => {
     const events = buildLocationEvents([
       entry({ id: 'a', action: 'CREATED' }),
       entry({ id: 'b', action: 'RE_PARENTED' }),
-      entry({ id: 'c', action: 'DELETED', locationId: null }),
+      entry({ id: 'c', action: 'DELETED' }),
     ]);
 
     expect(events.map((e) => e.type)).toEqual(['location.created', 'location.moved', 'location.removed']);
@@ -74,8 +74,9 @@ describe('buildLocationEvents', () => {
       occurredAt: '2023-11-14T22:13:20.000Z',
       data: { locationId: 'loc-1', locationName: 'Shelf B', action: 'RE_PARENTED', label: 'Moved' },
     });
-    // A deleted location's entry keeps its name and loses only the link.
-    expect(events[2]!.data).toMatchObject({ locationId: null, locationName: 'Shelf B' });
+    // `location.removed` still names which location went — an automation keyed by location id
+    // has nothing to act on otherwise, and it is the event most likely to be acted on.
+    expect(events[2]!.data).toMatchObject({ locationId: 'loc-1', locationName: 'Shelf B' });
   });
 
   it('falls back to location.changed for an action a newer peer synced', () => {

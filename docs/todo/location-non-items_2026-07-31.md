@@ -332,8 +332,9 @@ happens to the rest of this document.
 ## 11. What building `N1`/`N2`/`N6` proved wrong (2026-07-31)
 
 Recorded because the research above is otherwise a snapshot of `d4d8d385` and would keep reading as
-live guidance. Three corrections, one of which changed the design — then §11.4, which is not a
-correction but the verdict `N1` was built to make possible.
+live guidance. First the three `N1`/`N2` corrections, one of which changed the design — then §11.4,
+which is not a correction but the verdict `N1` was built to make possible, and §11.5, what building
+`N6` corrected in turn.
 
 1. **"Non-inheritable field values" was the wrong scope for the panel — it now shows them all.**
    §5's asymmetry argument is sound as far as it goes, but it misses that `LocationFieldsEditor`
@@ -414,16 +415,20 @@ against relaxing `item_history.item_id`'s `NOT NULL`. Three details of the *shap
    trigger on top would have turned a *corrupt or hostile* snapshot claiming a newer timestamp for
    a known id from a silent no-op into an **ABORT of the whole restore transaction**. Append-only
    is therefore enforced where it is written, not by a trigger.
-2. **"Re-attribute rather than erase" applies to the *subject*, not only the actor.** The issue
-   read `item_history`'s deleted-user handling (`ON DELETE SET DEFAULT` → System) as the precedent
-   to copy for the cascade, and that was copied verbatim for `actor_user_id`. But `item_history`'s
-   *subject* column is `ON DELETE CASCADE`: hard-deleting an item destroys its ledger. Copying that
-   would have made `location.removed` the one event whose own record is deleted in the same
-   transaction that raises it. So `location_id` is **nullable, `ON DELETE SET NULL`**, with a
-   `location_name` snapshot column that is what keeps an unattached entry readable. A deleted
-   location's trail survives in the ledger, in a backup and across a sync. The honest limitation:
-   the shipped History tab reads one *live* location, so those entries have no in-app reader yet —
-   the deletion reaches a person through the `location.removed` event (which is what
+2. **"Re-attribute rather than erase" applies to the *subject*, not only the actor — and neither
+   of `item_history`'s two FK behaviours is the right one for it.** The issue read that ledger's
+   deleted-*user* handling (`ON DELETE SET DEFAULT` → System) as the precedent to copy, and it was,
+   verbatim, for `actor_user_id`. But its *subject* column is `ON DELETE CASCADE`: hard-deleting an
+   item destroys its ledger, which would have made `location.removed` the one event whose own
+   record is deleted in the same transaction that raises it. The obvious repair, `ON DELETE SET
+   NULL`, is *also* wrong, and less obviously so — it keeps the row but blanks the id on **every**
+   `DELETED` entry the instant it is written, so a subscriber could never be told *which* location
+   went. So `location_id` carries **no foreign key at all**: a historical coordinate, the shape
+   `stock_deltas.location_id` already takes, alongside the `location_name` snapshot. A deleted
+   location's trail survives whole — id, name and all — in the ledger, in a backup and across a
+   sync. The honest limitation that remains: the shipped History tab is opened *from* a location,
+   so a deleted one's entries have no in-app reader; the deletion reaches a person through the
+   `location.removed` event (which is what
    [#565](https://github.com/BootBlock/Gubbins/issues/565) needed) and through the ledger's durable
    copy. A cross-location activity view would close it; it is not this issue.
 3. **A location write can legitimately not happen, which an item write never does.** A parent move
@@ -437,4 +442,15 @@ against relaxing `item_history.item_id`'s `NOT NULL`. Three details of the *shap
 One thing the §8 entry understated rather than got wrong: the `location.*` slice is **not** purely
 additive on the bridge. `BridgeEventData` is item-shaped, so the event union gained a third arm, and
 `events.truncated` became the one type that can arrive with either payload — which is why
-`isLocationEvent` discriminates on `data.locationName` rather than on the dotted type name.
+`isLocationEvent` discriminates on `data.locationName` rather than on the dotted type name. Three
+sibling surfaces had to move with it and are easy to miss: the OpenAPI `BridgeEvent.data` `oneOf`,
+the synthetic **test event** (a location-only subscription must be test-fired with a location-shaped
+payload, or the button greenlights a receiver that cannot read the real thing), and the per-ledger
+fan-out cap — kept deliberately independent, because a shared budget would let a bulk item import
+starve the location events entirely.
+
+And one thing the *delete* path proved: the re-parent nobody asks for is the one most worth
+recording. Deleting a location promotes its children to its parent, which is the exact
+"why is this shelf suddenly under a different room?" the issue opens with — so each promoted child
+records its own `RE_PARENTED` entry, mirroring the per-item `RE_PARENTED` the same method already
+wrote for the items it re-homes.

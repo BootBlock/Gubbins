@@ -76,14 +76,12 @@ export const FK_REFS: Partial<Record<SyncTable, readonly FkRef[]>> = {
   // on a photo that did not survive the merge — is dropped rather than resurrected. The
   // chain is two deep, and the SYNC_TABLES order (locations → location_photos →
   // location_regions) is what lets a single pass resolve it.
-  // The location activity record (issue #691). Deliberately the *opposite* repair to every other
-  // location child above: the column is ON DELETE SET NULL, so an incoming entry whose location did
-  // not survive the merge keeps its row with the link cleared rather than being dropped. What
-  // happened to a place is worth more than the place — and the entry carries `location_name`, so it
-  // stays readable without one. `actor_user_id` is NOT NULL / ON DELETE SET DEFAULT and so has no
-  // entry here: dropping the entry would be the wrong repair, and re-attributing it to System is
-  // what the snapshot repair does (see `snapshot-integrity.ts`), mirroring `item_history`.
-  location_history: [{ col: 'location_id', parent: 'locations', nullable: true }],
+  // `location_history` (issue #691) has no entry here, and needs none. Its `location_id` is a
+  // historical coordinate with **no foreign key** — the record of a place has to outlive the place,
+  // so a dangling id is the correct state, not a dangling reference to repair (the same shape
+  // `stock_deltas.location_id` takes). Its one real FK, `actor_user_id`, is NOT NULL /
+  // ON DELETE SET DEFAULT: dropping the entry would be the wrong repair, and re-attributing it to
+  // System is what the snapshot repair does (`snapshot-integrity.ts`), mirroring `item_history`.
   location_photos: [{ col: 'location_id', parent: 'locations', nullable: false }],
   location_regions: [{ col: 'photo_id', parent: 'location_photos', nullable: false }],
   item_aliases: [{ col: 'item_id', parent: 'items', nullable: false }],

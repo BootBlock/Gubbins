@@ -9,8 +9,9 @@ import type { LocationHistoryAction } from '../constants';
 
 export interface LocationHistoryRow {
   readonly id: string;
-  /** NULL once the location was deleted; the entry survives it (ON DELETE SET NULL). */
-  readonly location_id: string | null;
+  /** The location the entry is about. A historical coordinate, not a foreign key — it outlives
+   *  the location, so an entry about a deleted place still names which one. */
+  readonly location_id: string;
   /** The name the location carried when the entry was written — never back-filled. */
   readonly location_name: string;
   readonly action: LocationHistoryAction;
@@ -24,10 +25,11 @@ export interface LocationHistoryRow {
 export interface LocationHistoryEntry {
   readonly id: string;
   /**
-   * `null` once the location was deleted. The entry is kept rather than erased, so a deletion
-   * is still a fact the ledger, a backup and a sync all carry — see the table's schema note.
+   * The location the entry is about. It stays set after the location is deleted — the entry is
+   * kept rather than erased, so a deletion is still a fact the ledger, a backup and a sync all
+   * carry, and still names its subject. See the table's schema note.
    */
-  readonly locationId: string | null;
+  readonly locationId: string;
   /** The name the location carried when the entry was written. */
   readonly locationName: string;
   readonly action: LocationHistoryAction;

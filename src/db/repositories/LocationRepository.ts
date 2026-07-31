@@ -555,25 +555,48 @@ export class LocationRepository extends BaseRepository {
       params: [id],
     });
 
-    // Promote child locations to the deleted node's parent.
+    // Promote child locations to the deleted node's parent, and record the move on each of them
+    // (issue #691). A promotion reshapes the hierarchy exactly as an ordinary re-parent does, and
+    // it is the one that happens *to* somebody rather than being asked for — so leaving it silent
+    // would make "why is this shelf suddenly under a different room?" unanswerable in precisely the
+    // case the question is most likely to be asked. This mirrors the per-item `RE_PARENTED` entries
+    // the orphan re-home writes above.
+    const promoted = await this.driver.query<{ id: string; name: string }>(
+      'SELECT id, name FROM locations WHERE parent_id = ?;',
+      [id],
+    );
     statements.push({
       sql: 'UPDATE locations SET parent_id = ? WHERE parent_id = ?;',
       params: [location.parentId, id],
     });
+    const promotedTo = await this.parentLabel(location.parentId);
+    for (const child of promoted) {
+      statements.push(
+        locationHistoryStatement(child.id, child.name, 'RE_PARENTED', this.actorId(), {
+          note: `Moved from "${location.name}" to ${promotedTo}: "${location.name}" was deleted.`,
+          metadata: { fromParentId: id, toParentId: location.parentId },
+        }),
+      );
+    }
 
-    // Record the deletion *before* the row goes (issue #691). The entry is written against the
-    // location, and the DELETE below then clears that link via `ON DELETE SET NULL` rather than
-    // cascading the entry away — so this location's whole trail, this entry included, survives it
-    // carrying the name it had. That is the whole point of the nullable subject column: a place
-    // that was removed is exactly the case where "what happened to it?" is worth answering, and a
-    // CASCADE would answer it by destroying the evidence.
+    // Record the deletion itself (issue #691). `location_history.location_id` carries no foreign
+    // key, so this location's whole trail — this entry included — outlives the `DELETE` below
+    // still naming which location it was about. A place that was removed is exactly the case
+    // where "what happened to it?" is worth answering, and a cascade would answer it by
+    // destroying the evidence.
     statements.push(
       locationHistoryStatement(id, location.name, 'DELETED', this.actorId(), {
         note:
           `Deleted "${location.name}". ` +
           `${orphanedItems.length === 1 ? '1 item was' : `${orphanedItems.length} items were`} ` +
-          'moved to Unassigned; any sub-locations were promoted.',
-        metadata: { parentId: location.parentId, itemsReHomed: orphanedItems.length },
+          `moved to Unassigned; ` +
+          `${promoted.length === 1 ? '1 sub-location was' : `${promoted.length} sub-locations were`} ` +
+          `moved to ${promotedTo}.`,
+        metadata: {
+          parentId: location.parentId,
+          itemsReHomed: orphanedItems.length,
+          subLocationsPromoted: promoted.length,
+        },
       }),
     );
 
@@ -612,9 +635,10 @@ export class LocationRepository extends BaseRepository {
    * counterpart of {@link getHistory}, and the read the bridge's event generation diffs to decide
    * what is new since the last hydration (issue #691).
    *
-   * Entries whose location has since been deleted are deliberately included: a `DELETED` entry is
-   * precisely the one an automation most wants, and it carries `location_id = NULL` the moment the
-   * row it named went (see the table's schema note). `location_name` is what keeps it readable.
+   * Entries about a location that has since been deleted are deliberately included — a `DELETED`
+   * entry is precisely the one an automation most wants — and they still carry both the id and the
+   * name the place had, because `location_id` is a historical coordinate rather than a foreign key
+   * (see the table's schema note).
    */
   async getHistoryFeed(params: PageParams = {}): Promise<Page<LocationHistoryEntry>> {
     const { limit, offset } = this.resolvePage(params);
