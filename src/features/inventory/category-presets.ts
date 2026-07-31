@@ -208,6 +208,11 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         glyph: '🎬',
         defaultTrackingMode: 'SERIALISED',
         hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+        // Fills a film's details from Wikidata — an open database, and the IMDb *link* among them
+        // (IMDb itself has no callable free API). The provider's default field names are lifted
+        // verbatim from the fields below, so this binds with no configuration at all; a unit test
+        // pins the two lists together so renaming a field here can't quietly break the lookup.
+        lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }],
         fieldProminence: 'own-tab',
         fieldTabLabel: 'Film details',
       },

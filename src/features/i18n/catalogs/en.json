@@ -1859,5 +1859,22 @@
   "lookup.fieldType.select": "choice",
   "lookup.fieldType.file": "file link",
   "lookup.fieldType.image": "image",
-  "lookup.panel.loading": "Loading this category’s fields…"
+  "lookup.panel.loading": "Loading this category’s fields…",
+  "category.lookupSources.title": "Fill from an open database",
+  "category.lookupSources.blurb": "Let items in this category be filled in from a free, open database — you pick the right match and review every value first.",
+  "category.lookupSources.hint": "Some things are already described in a public database, so there is no need to retype what someone has already written down.\n\nTick a database here and every item in this category gains a **Fill from a database** button. It searches by the item’s name, asks you **which** entry is the right one, then shows you exactly what it would put where — **your own entries are never overwritten** unless you tick them.\n\nNothing is sent anywhere until you press the button, and the first time you use one you are asked to agree to that database’s address. You can withdraw that agreement later under **Settings → Scanning & labels**.",
+  "category.lookupSources.fills": "Fills: {fields}",
+  "category.lookupSources.mapping": "Where each value goes",
+  "category.lookupSources.autoBound": "Match by name — {name}",
+  "category.lookupSources.autoUnbound": "Match by name — no “{name}” field",
+  "category.lookupSources.autoMismatch": "Match by name — “{name}” is the wrong type",
+  "category.lookupSources.missingTarget": "A field that no longer exists",
+  "category.lookupSources.problems.one": "{count} value has nowhere to go in this category. Choose a field for it below, or add the missing field above.",
+  "category.lookupSources.problems.other": "{count} values have nowhere to go in this category. Choose a field for them below, or add the missing fields above.",
+  "settings.lookupConsent.section": "Database lookups",
+  "settings.lookupConsent.label": "Sites you’ve agreed to",
+  "settings.lookupConsent.description": "The open databases this device may contact when you fill an item’s fields from one. Remove any to be asked again.",
+  "settings.lookupConsent.hint": "A category can be set up to **fill an item’s fields from an open database**. Before this device contacts one for the first time, Gubbins asks your permission and names the exact site.\n\nEach site is agreed to **separately** — saying yes to a film database is not saying yes to everything — and only the item’s name is ever sent, only when you press the button.\n\nRemoving a site here **withdraws** that agreement: nothing is contacted until you agree again. This choice stays on **this device** and is never shared by sync or restored from a backup.",
+  "settings.lookupConsent.empty": "You haven’t agreed to any yet.",
+  "settings.lookupConsent.withdraw": "Withdraw agreement for {host}"
 }

@@ -89,6 +89,7 @@ const category = (overrides: Partial<CategoryWithFieldCount> = {}): CategoryWith
   defaultMaintenanceIntervalDays: null,
   defaultMaintenanceIntervalUsage: null,
   hiddenCapabilities: [],
+  lookupSources: [],
   fieldProminence: null,
   fieldTabLabel: null,
   updatedAt: 0,
@@ -1083,5 +1084,155 @@ describe('CategoryManagerDialog — where the custom fields go', () => {
 
     expect(screen.getByTestId('category-hide-custom-fields')).not.toBeChecked();
     expect(screen.queryByTestId('category-field-prominence-conflict-clear')).toBeNull();
+  });
+});
+
+/**
+ * Attaching an open database to a category (issue #616, phase L2).
+ *
+ * This picker is the *only* thing that makes the lookup feature reachable — nothing below it
+ * renders for an item whose category has no provider attached — so its two storage invariants are
+ * worth pinning: a provider id this build doesn't recognise survives a round-trip through the
+ * picker, and "no field-map overrides" stores as `null` rather than an empty object (the column
+ * syncs LWW, so a write must not look like an edit when the user changed nothing).
+ */
+describe('CategoryManagerDialog — filling from an open database', () => {
+  /** The Movie preset's lookup-relevant fields, so the provider binds with no configuration. */
+  const movieFields = (): CategoryField[] => [
+    field({ id: 'f-dir', name: 'Director', fieldType: 'TEXT' }),
+    field({ id: 'f-cast', name: 'Cast', fieldType: 'LONG_TEXT' }),
+    field({ id: 'f-genre', name: 'Genre', fieldType: 'TEXT' }),
+    field({ id: 'f-year', name: 'Release year', fieldType: 'NUMBER' }),
+    field({ id: 'f-run', name: 'Runtime (min)', fieldType: 'NUMBER' }),
+    field({ id: 'f-studio', name: 'Studio', fieldType: 'TEXT' }),
+    field({ id: 'f-ref', name: 'Reference (IMDb/TMDB)', fieldType: 'URL' }),
+  ];
+
+  const providerTick = () => screen.getByTestId('category-lookup-wikidata-film');
+  const openMapping = () => fireEvent.click(screen.getByTestId('category-lookup-map-toggle-wikidata-film'));
+
+  it('offers the registered databases, unticked, naming what each one fills', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.getByText('Fill from an open database')).toBeInTheDocument();
+    expect(providerTick()).not.toBeChecked();
+    expect(screen.getByText('Wikidata')).toBeInTheDocument();
+    // Derived from the provider's own outputs, so a built-in target reads as its label.
+    expect(screen.getByText(/Fills: Name, Director, Cast/)).toBeInTheDocument();
+  });
+
+  it('attaches the provider with no field map when ticked', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    fireEvent.click(providerTick());
+
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] },
+    });
+  });
+
+  it('detaching leaves a provider this build does not recognise untouched', () => {
+    // A peer on a newer version attached something this build has no entry for. Dropping it here
+    // would silently discard that device's choice the next time this row was written back.
+    h.categoryRows = [
+      category({
+        lookupSources: [
+          { providerId: 'wikidata-film', fieldMap: null },
+          { providerId: 'some-future-provider', fieldMap: null },
+        ],
+      }),
+    ];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(providerTick()).toBeChecked();
+
+    fireEvent.click(providerTick());
+
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { lookupSources: [{ providerId: 'some-future-provider', fieldMap: null }] },
+    });
+  });
+
+  it('says how many values have nowhere to go, and says nothing once they all land', () => {
+    h.categoryRows = [category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    // A resistor category has none of a film's fields; only the title binds (to the item's name).
+    expect(screen.getByTestId('category-lookup-problems-wikidata-film')).toHaveTextContent(
+      '7 values have nowhere to go',
+    );
+
+    h.fields = movieFields();
+    cleanup();
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.queryByTestId('category-lookup-problems-wikidata-film')).toBeNull();
+  });
+
+  it('names what the run-time name match would actually do for each value', () => {
+    h.fields = movieFields();
+    h.categoryRows = [category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    openMapping();
+
+    expect(screen.getByRole('combobox', { name: 'Director' })).toHaveTextContent('Match by name — Director');
+    // The item's own name is a legitimate target, and reads as its label rather than its raw id.
+    expect(screen.getByRole('combobox', { name: 'Name' })).toHaveTextContent('Match by name — Name');
+  });
+
+  it('stores an override, and drops the map back to null when the last one is cleared', () => {
+    h.fields = [...movieFields(), field({ id: 'f-helmed', name: 'Helmed by', fieldType: 'TEXT' })];
+    h.categoryRows = [category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    openMapping();
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Director' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Helmed by' }));
+    expect(h.updateCategory).toHaveBeenLastCalledWith({
+      id: 'cat-1',
+      input: { lookupSources: [{ providerId: 'wikidata-film', fieldMap: { director: 'f-helmed' } }] },
+    });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Director' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Match by name — Director' }));
+    expect(h.updateCategory).toHaveBeenLastCalledWith({
+      id: 'cat-1',
+      input: { lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] },
+    });
+  });
+
+  it('only offers fields of the value’s own type', () => {
+    h.fields = movieFields();
+    h.categoryRows = [category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    openMapping();
+
+    // A type mismatch is something the binder *reports* rather than coerces, so the picker must
+    // offer no way to create one: the number-valued runtime sees only the NUMBER fields.
+    fireEvent.click(screen.getByRole('combobox', { name: 'Runtime (min)' }));
+    expect(screen.getByRole('option', { name: 'Release year' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Director' })).toBeNull();
+  });
+
+  it('shows an override pointing at a removed field as exactly that', () => {
+    // The map outlives the field it names. Falling back to "match by name" would report a state
+    // the category is not in, and hide the reason a value stopped landing where it used to.
+    h.fields = movieFields();
+    h.categoryRows = [
+      category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: { director: 'f-gone' } }] }),
+    ];
+    renderDialog();
+    selectCategory(/Resistors/);
+    openMapping();
+
+    expect(screen.getByRole('combobox', { name: 'Director' })).toHaveTextContent(
+      'A field that no longer exists',
+    );
   });
 });

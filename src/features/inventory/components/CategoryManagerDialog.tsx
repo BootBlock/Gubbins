@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -13,8 +13,17 @@ import {
   Textarea,
   Tooltip,
   INFO_OPEN_DELAY_MS,
+  type SelectOption,
 } from '@/components/foundry';
-import { AddIcon, CategoryIcon, CloseIcon, DeleteIcon, InfoIcon, WarningIcon } from '@/components/icons';
+import {
+  AddIcon,
+  CategoryIcon,
+  ChevronDownIcon,
+  CloseIcon,
+  DeleteIcon,
+  InfoIcon,
+  WarningIcon,
+} from '@/components/icons';
 import {
   FIELD_DUE_LEAD_DAYS_DEFAULT,
   FIELD_DUE_LEAD_DAYS_MAX,
@@ -23,16 +32,27 @@ import {
   MAINTENANCE_BASES,
   TRACKING_MODES,
   type CategoryField,
+  type CategoryLookupSource,
   type CategoryWithFieldCount,
   type Condition,
   type FieldType,
   type MaintenanceBasis,
   type TrackingMode,
 } from '@/db/repositories';
-import { useT, type MessageKey } from '@/features/i18n';
+import { useT, type MessageKey, type TypedTranslator } from '@/features/i18n';
+import {
+  bindLookupOutputs,
+  isBuiltinLookupTarget,
+  LOOKUP_PROVIDERS,
+  type BindableField,
+  type BuiltinLookupTarget,
+  type LookupOutputDef,
+  type LookupProvider,
+} from '@/features/lookups';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
 import { clampFieldDueLeadDays } from '@/features/lifecycle/field-due';
+import { cn } from '@/lib/utils';
 import { builtInFieldNameClash } from '../builtin-field-names';
 import { HIDEABLE_CAPABILITIES, toggleHiddenCapability } from '../category-capabilities';
 import {
@@ -390,6 +410,8 @@ function CategoryDetail({
       <CategoryHiddenSectionsPanel category={category} hiddenCapabilities={hiddenCapabilities} />
 
       <CategoryFieldProminencePanel category={category} hiddenCapabilities={hiddenCapabilities} />
+
+      <CategoryLookupSourcesPanel category={category} fields={fields ?? []} />
     </div>
   );
 }
@@ -669,6 +691,306 @@ function CategoryHiddenSectionsPanel({
         </Banner>
       ) : null}
     </fieldset>
+  );
+}
+
+/**
+ * The copy naming each reserved built-in item attribute a lookup value can be pointed at.
+ *
+ * Keyed by target id so a built-in added to the seam is a compile error here until it has a
+ * label, rather than quietly rendering its raw `builtin:` id to the user.
+ */
+const BUILTIN_TARGET_LABEL_KEYS = {
+  'builtin:name': 'lookup.builtin.name',
+  'builtin:description': 'lookup.builtin.description',
+} as const satisfies Record<BuiltinLookupTarget, MessageKey>;
+
+/** A lookup target's user-facing name: a built-in's translated label, or the field's own name. */
+function lookupTargetLabel(t: TypedTranslator, target: string): string {
+  return isBuiltinLookupTarget(target) ? t(BUILTIN_TARGET_LABEL_KEYS[target]) : target;
+}
+
+/**
+ * The built-in attributes offered as an override target for an output key of this type.
+ *
+ * Type-gated here rather than offered universally, because the binder cannot do it: an explicit
+ * map entry naming a built-in is authoritative and type-checked against nothing (a built-in has
+ * no declared type to mismatch). Without this guard the picker would cheerfully offer to write a
+ * runtime in minutes into the item's description.
+ */
+function builtinTargetsFor(type: FieldType): readonly BuiltinLookupTarget[] {
+  if (type === 'TEXT') return ['builtin:name'];
+  if (type === 'LONG_TEXT') return ['builtin:description'];
+  return [];
+}
+
+/**
+ * The field map with one output key pointed at `target`, or with its override dropped when
+ * `target` is blank (back to the run-time name match).
+ *
+ * An emptied map collapses to `null` rather than `{}` so "no overrides at all" has exactly one
+ * stored spelling — the repository canonicalises the same way, and an LWW sync must not read a
+ * write as an edit when the user has changed nothing.
+ */
+function withLookupTarget(
+  fieldMap: Readonly<Record<string, string>> | null,
+  outputKey: string,
+  target: string,
+): Readonly<Record<string, string>> | null {
+  const next = { ...(fieldMap ?? {}) };
+  if (target === '') delete next[outputKey];
+  else next[outputKey] = target;
+  return Object.keys(next).length > 0 ? next : null;
+}
+
+/**
+ * "Fill from an open database" — which curated open databases this category's fields can be
+ * filled from (issue #616, phase L2).
+ *
+ * The one place a provider becomes reachable: everything below it — the search, the match picker,
+ * the review dialog — renders only for an item whose category has a provider attached here.
+ * Nothing in the mechanism knows the word "Movie"; the binding is category-id → provider-id, so a
+ * user's own "Films I own" category attaches the same provider and a renamed category keeps it.
+ *
+ * Saving is immediate, like every other control in this dialog.
+ */
+function CategoryLookupSourcesPanel({
+  category,
+  fields,
+}: {
+  category: CategoryWithFieldCount;
+  fields: readonly CategoryField[];
+}) {
+  const t = useT();
+  const updateCategory = useUpdateCategory();
+
+  // The column holds a *list*, so every change is a read-modify-write of the whole value, and
+  // `useUpdateCategory` is not optimistic (it only invalidates on settle) — recomputing the next
+  // value from the query cache would silently drop a second change made before the refetch lands,
+  // and because the column syncs LWW that discard would reach other devices. Unlike
+  // `hiddenCapabilities`, this column has exactly one writer, so the draft can live here rather
+  // than one level up.
+  const [draft, setDraft] = useState<readonly CategoryLookupSource[]>(category.lookupSources);
+  const seededFor = useRef(category.id);
+  useEffect(() => {
+    if (seededFor.current !== category.id) {
+      seededFor.current = category.id;
+      setDraft(category.lookupSources);
+    }
+  }, [category.id, category.lookupSources]);
+
+  const save = (next: readonly CategoryLookupSource[]) => {
+    setDraft(next);
+    updateCategory.mutate({ id: category.id, input: { lookupSources: next } });
+  };
+
+  // `BindableField` is the narrow shape the pure binder takes; a category field satisfies it
+  // structurally, so this trims rather than reshapes.
+  const bindable = useMemo<readonly BindableField[]>(
+    () => fields.map((f) => ({ id: f.id, name: f.name, fieldType: f.fieldType, options: f.options })),
+    [fields],
+  );
+
+  /**
+   * Attach or detach a provider, leaving every other stored entry — **including one this build
+   * doesn't recognise** — exactly as it was. A provider id written by a peer on a newer version
+   * has to survive a round-trip through this picker, which is why the draft is filtered rather
+   * than rebuilt from the registry.
+   */
+  const setAttached = (providerId: string, attached: boolean) => {
+    if (!attached) {
+      save(draft.filter((source) => source.providerId !== providerId));
+      return;
+    }
+    if (draft.some((source) => source.providerId === providerId)) return;
+    save([...draft, { providerId, fieldMap: null }]);
+  };
+
+  return (
+    <fieldset className="space-y-field-gap-compact rounded-lg border border-border bg-secondary/10 p-2.5">
+      {/* As in the panels above, the legend *is* the visible heading — a sr-only legend beside an
+          identical <h4> would name the group twice to a screen reader for no visual gain. */}
+      <legend className="flex items-center gap-1.5 text-sm font-semibold">
+        {t('category.lookupSources.title')}
+        <InfoHint content={t('category.lookupSources.hint')} />
+      </legend>
+      <p className="text-xs text-muted-foreground">{t('category.lookupSources.blurb')}</p>
+
+      <div className="space-y-1">
+        {LOOKUP_PROVIDERS.map((provider) => {
+          const attached = draft.find((source) => source.providerId === provider.id) ?? null;
+          return (
+            <div key={provider.id}>
+              <label className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-secondary/40">
+                <Checkbox
+                  checked={attached !== null}
+                  onChange={(e) => setAttached(provider.id, e.target.checked)}
+                  className="mt-0.5"
+                  data-testid={`category-lookup-${provider.id}`}
+                />
+                <span className="flex-1">
+                  <span className="block text-xs font-medium">{provider.sourceName}</span>
+                  {/* Derived from the provider's own outputs rather than a hand-written blurb per
+                      provider: one less parallel list to drift, and it names exactly what this
+                      build would fill. */}
+                  <span className="block text-xs text-muted-foreground">
+                    {t('category.lookupSources.fills', {
+                      vars: {
+                        fields: provider.outputs
+                          .map((output) => lookupTargetLabel(t, output.defaultTarget))
+                          .join(', '),
+                      },
+                    })}
+                  </span>
+                </span>
+              </label>
+              {attached !== null ? (
+                <LookupFieldMapEditor
+                  provider={provider}
+                  fieldMap={attached.fieldMap}
+                  fields={bindable}
+                  onChangeTarget={(outputKey, target) =>
+                    save(
+                      draft.map((source) =>
+                        source.providerId === provider.id
+                          ? { ...source, fieldMap: withLookupTarget(source.fieldMap, outputKey, target) }
+                          : source,
+                      ),
+                    )
+                  }
+                />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * "Where each value goes" — the per-output-key override for one attached provider.
+ *
+ * This is the *second* of the binder's two layers. The first matches each value's default field
+ * name against the category's own fields at run time, and covers an untouched preset category with
+ * no configuration at all; this is the way back for a category whose field has since been renamed
+ * or re-purposed, which otherwise has no way to fix a value reported as having nowhere to go.
+ *
+ * Collapsed by default, because the common case needs nothing here — but the *problem* summary
+ * sits outside the collapse, so a value with nowhere to land is never hidden behind a toggle.
+ */
+function LookupFieldMapEditor({
+  provider,
+  fieldMap,
+  fields,
+  onChangeTarget,
+}: {
+  provider: LookupProvider;
+  fieldMap: Readonly<Record<string, string>> | null;
+  fields: readonly BindableField[];
+  onChangeTarget: (outputKey: string, target: string) => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+
+  // Two resolutions, deliberately. The *effective* one — overrides applied — is what the summary
+  // must count, since that is what a lookup would actually do. The unmapped one is what each key's
+  // "Match by name" option would do if chosen, which is what that option has to name; reading it
+  // off the effective binding would make the option describe the override it replaces.
+  const effective = useMemo(
+    () => bindLookupOutputs(provider.outputs, fields, fieldMap),
+    [provider, fields, fieldMap],
+  );
+  const byName = useMemo(() => bindLookupOutputs(provider.outputs, fields, null), [provider, fields]);
+  const autoTarget = useMemo(
+    () => new Map(byName.bindings.map((binding) => [binding.outputKey, binding.targetName])),
+    [byName],
+  );
+  const autoProblem = useMemo(
+    () => new Map(byName.problems.map((problem) => [problem.outputKey, problem])),
+    [byName],
+  );
+
+  /** What "Match by name" would do for this key — named, so choosing it is never a leap of faith. */
+  const autoLabel = (output: LookupOutputDef): string => {
+    const bound = autoTarget.get(output.key);
+    if (bound !== undefined) {
+      return t('category.lookupSources.autoBound', { vars: { name: lookupTargetLabel(t, bound) } });
+    }
+    const problem = autoProblem.get(output.key);
+    return problem !== undefined && problem.kind === 'TYPE_MISMATCH'
+      ? t('category.lookupSources.autoMismatch', { vars: { name: problem.wantedName } })
+      : t('category.lookupSources.autoUnbound', {
+          vars: { name: lookupTargetLabel(t, output.defaultTarget) },
+        });
+  };
+
+  const optionsFor = (output: LookupOutputDef): readonly SelectOption[] => {
+    const options: SelectOption[] = [
+      { value: '', label: autoLabel(output) },
+      // Only fields of the value's own type: a mismatch is something the binder *reports* rather
+      // than coerces, so offering one here would be offering the user a way to break their own
+      // lookup.
+      ...fields
+        .filter((field) => field.fieldType === output.type)
+        .map((field) => ({ value: field.id, label: field.name })),
+      ...builtinTargetsFor(output.type).map((target) => ({
+        value: target,
+        label: lookupTargetLabel(t, target),
+      })),
+    ];
+    // A stored override can outlive the field it names. Kept as an option rather than letting the
+    // select fall back to "Match by name", which would report a state the category is not in.
+    const current = fieldMap?.[output.key];
+    if (current !== undefined && !options.some((option) => option.value === current)) {
+      options.push({ value: current, label: t('category.lookupSources.missingTarget') });
+    }
+    return options;
+  };
+
+  return (
+    <div className="ml-7 space-y-field-gap-compact">
+      {effective.problems.length > 0 ? (
+        <Banner
+          tone="warning"
+          icon={<WarningIcon aria-hidden />}
+          role="status"
+          className="text-xs"
+          data-testid={`category-lookup-problems-${provider.id}`}
+        >
+          {t('category.lookupSources.problems', { vars: { count: effective.problems.length } })}
+        </Banner>
+      ) : null}
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        data-testid={`category-lookup-map-toggle-${provider.id}`}
+      >
+        {t('category.lookupSources.mapping')}
+        <ChevronDownIcon
+          aria-hidden
+          className={cn('transition-transform ease-emphasized', open && 'rotate-180')}
+        />
+      </Button>
+      {open ? (
+        <div id={panelId} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {provider.outputs.map((output) => (
+            <SelectField
+              key={output.key}
+              label={lookupTargetLabel(t, output.defaultTarget)}
+              value={fieldMap?.[output.key] ?? ''}
+              onChange={(target) => onChangeTarget(output.key, target)}
+              options={optionsFor(output)}
+              data-testid={`category-lookup-target-${provider.id}-${output.key}`}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

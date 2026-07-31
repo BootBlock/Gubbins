@@ -19,10 +19,12 @@ import {
 import {
   AppearanceIcon,
   BrandingIcon,
+  CloseIcon,
   CriticalIcon,
   CustomiseIcon,
   DarkThemeIcon,
   DataDensityIcon,
+  DatabaseIcon,
   DatasheetIcon,
   HomeIcon,
   HotkeyIcon,
@@ -1221,6 +1223,52 @@ export default function SettingsDialog({
                   onChange={(value) => prefs.setAllowOnlineProductLookup(value === 'on')}
                   options={ON_OFF_OPTIONS}
                 />
+              </SettingRow>
+            </SettingsSection>
+          ) : null}
+
+          {/* Category data lookups (issue #616): consent is granted per **host**, at the point of
+              use, and this is the way back out. Shown while a consent is stored even if the
+              scraping capability is since off — a permission the user granted must never become
+              unrevokable because the section that offers it was hidden. */}
+          {scrapingOn || prefs.lookupConsentHosts.length > 0 ? (
+            <SettingsSection icon={<DatabaseIcon />} title={t('settings.lookupConsent.section')}>
+              <SettingRow
+                label={t('settings.lookupConsent.label')}
+                description={t('settings.lookupConsent.description')}
+                hintSize="md"
+                hint={t('settings.lookupConsent.hint')}
+                stack
+                fill
+              >
+                {prefs.lookupConsentHosts.length === 0 ? (
+                  <p className="text-xs text-muted-foreground" data-testid="setting-lookup-consent-empty">
+                    {t('settings.lookupConsent.empty')}
+                  </p>
+                ) : (
+                  <ul className="flex flex-wrap gap-1.5">
+                    {prefs.lookupConsentHosts.map((host) => (
+                      <li
+                        key={host}
+                        className="flex max-w-full items-center gap-1.5 rounded-lg border border-border bg-secondary/20 px-2.5 py-1 text-sm"
+                      >
+                        {/* `min-w-0` is what lets a long host actually shrink: a flex item defaults
+                            to its content's width, so `truncate` alone would never engage. */}
+                        <span className="min-w-0 truncate">{host}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-5 [&_svg]:size-3.5"
+                          aria-label={t('settings.lookupConsent.withdraw', { vars: { host } })}
+                          data-testid={`setting-lookup-consent-withdraw-${host}`}
+                          onClick={() => prefs.setLookupHostConsent(host, false)}
+                        >
+                          <CloseIcon className="text-glyph-danger" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </SettingRow>
             </SettingsSection>
           ) : null}
