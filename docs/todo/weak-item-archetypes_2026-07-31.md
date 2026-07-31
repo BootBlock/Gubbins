@@ -328,7 +328,11 @@ does not make the app track anything better. None started.
 - **`W2` — A repeating (table-valued) field.** Removes the `UNIQUE (item_id, def_id)` ceiling for
   opted-in definitions. Unlocks telemetry logs, per-position measurements, prior owners, lineage
   notes — every archetype whose data is a *series*. Addresses C1. Larger and schema-visible; do
-  after `W1`.
+  after `W1`. **Scope it over two subjects:** `location_field_values` carries the identical
+  `UNIQUE (location_id, def_id)` ceiling, and it is the *only* thing a location's notes still
+  can't do now that [`N1`/`N2`](location-non-items_2026-07-31.md#11-what-building-n1n2-proved-wrong-2026-07-31)
+  have shipped — so a location-only `location_notes` table was rejected in favour of this. One
+  change over both, the same way `N5` folds into `W1`.
 - **`W3` — An item can be a container.** Let a location be backed by an item (or an item declare
   itself a place). Unlocks §3.7 outright and improves §3.1 and kits. Addresses C4. Adjacent to
   [#617](https://github.com/BootBlock/Gubbins/issues/617) — same table boundary, opposite direction

@@ -1,8 +1,11 @@
 # Non-items attached to a Location — what the ask really is (2026-07-31)
 
-> **Status:** 🟢 ACTIVE — research complete. `N1` and `N2` shipped together (2026-07-31), along
-> with [#689](https://github.com/BootBlock/Gubbins/issues/689) from §9; `N3`–`N7` remain an open
-> backlog, none started.
+> **Status:** 🟢 ACTIVE — research complete. `N1` and `N2` shipped together (2026-07-31), along with
+> both §9 defects ([#689](https://github.com/BootBlock/Gubbins/issues/689),
+> [#690](https://github.com/BootBlock/Gubbins/issues/690) — both closed). `N6` is filed as
+> [#691](https://github.com/BootBlock/Gubbins/issues/691) and not started. `N3` is **resolved
+> without building it** — see §11.4. `N4`, `N5` and `N7` remain open and unstarted, as does the
+> deferred `locations_fts` table.
 
 Answers issue [#617](https://github.com/BootBlock/Gubbins/issues/617): *is there a valid use for
 attaching an "item" to a `Location` that isn't an actual `Item` — a Note, say — and what else can be
@@ -215,7 +218,9 @@ Recorded so they aren't folded in and used to inflate the scope.
 
 Ranked by *(what it unlocks) ÷ (cost)*, and deliberately weighted toward **surfacing what exists**,
 because §5 is the finding: the mechanism is built and nobody can see it. `N1` and `N2` shipped
-together on 2026-07-31 (see §11 for what building them proved wrong); `N3`–`N7` are unstarted.
+together on 2026-07-31 (see §11 for what building them proved wrong); `N6` is filed as
+[#691](https://github.com/BootBlock/Gubbins/issues/691); `N3` is resolved without being built
+(§11.4); `N4`, `N5` and `N7` are unstarted.
 
 - **`N1` — Give a location's own detail somewhere to appear. ✅ SHIPPED.** Render a location's
   non-inheritable field values, alongside its description, where a location is actually looked
@@ -243,7 +248,9 @@ together on 2026-07-31 (see §11 for what building them proved wrong); `N3`–`N
   `item_field_values`, which is the identical gap `W1` records for items. **Do it with `W1`, as one
   change over two subjects**, not as a location-only special case. Unlocks use case D (inspections,
   PAT tests, seasonal checks).
-- **`N6` — A location activity record.** Renaming, re-parenting, archiving, resizing or re-colouring
+- **`N6` — A location activity record. 📋 FILED as
+  [#691](https://github.com/BootBlock/Gubbins/issues/691), not started.** Renaming, re-parenting,
+  archiving, resizing or re-colouring
   a location records **nothing** beyond bumping its own `updated_at` — `LocationRepository.update`
   writes a bare `UPDATE` and no ledger row. Only *deleting* a location leaves a readable trace, and
   even then only as item-scoped entries: `RE_PARENTED` on the items **homed** there
@@ -264,20 +271,24 @@ together on 2026-07-31 (see §11 for what building them proved wrong); `N3`–`N
 - **`N7` — A location list export.** Add locations to the tabular-export seam, and carry the
   description (and kind/capacity/dimensions/walk order) in the JSON export and as a folder-level
   page in the Markdown vault. Mechanical, and it closes §4's third weakness.
-- **`N3` — A repeating note list on a location — *only if `N1` proves one field isn't enough*.** A
-  narrow `location_notes` table shaped like `location_photos` (`id`, `location_id` CASCADE, `body`,
-  `kind`, `position`, timestamps). Deliberately last, and deliberately conditional: a second
-  free-text field that nothing reads is strictly worse than one. If the real want is *many typed
-  notes*, that is `W2` (repeating fields) in the archetypes audit, applied to a location — solve it
-  once, for both subjects.
+- **`N3` — A repeating note list on a location. ⛔ RESOLVED WITHOUT BUILDING IT — the condition
+  came back "no".** The proposal was a narrow `location_notes` table shaped like `location_photos`
+  (`id`, `location_id` CASCADE, `body`, `kind`, `position`, timestamps), deliberately last and
+  deliberately conditional on *`N1` proving one field isn't enough*. `N1` has shipped, and it
+  proves the opposite: **"one field" was never the ceiling**, so a second free-text mechanism
+  would be a duplicate rather than a capability. The evidence, and the one genuine gap it leaves,
+  are in §11.4. What remains — *several notes under the **same** label* — is exactly `W2`
+  (repeating fields) in the archetypes audit, whose `UNIQUE` ceiling exists identically on both
+  subjects; solve it once, for both.
 
 ## 9. Defects found while surveying
 
 Not part of the ask — existing behaviour that looks wrong, found on the way. **Both are now filed
 as [#689](https://github.com/BootBlock/Gubbins/issues/689) and
 [#690](https://github.com/BootBlock/Gubbins/issues/690)**; those issues carry the full evidence and
-are the live record, so treat this section as the summary of how they were found. **#689 was fixed
-alongside `N1`** (the panel is now titled *"Fields"*); #690 is still open.
+are the live record, so treat this section as the summary of how they were found. **Both are now
+fixed and closed** — #689 alongside `N1` (the panel is now titled *"Fields"*), and #690 separately
+on 2026-07-31.
 
 1. **A location's own detail lives under a heading that says it is for something else**
    ([#689](https://github.com/BootBlock/Gubbins/issues/689)). The
@@ -316,7 +327,8 @@ happens to the rest of this document.
 ## 11. What building `N1`/`N2` proved wrong (2026-07-31)
 
 Recorded because the research above is otherwise a snapshot of `d4d8d385` and would keep reading as
-live guidance. Three corrections, one of which changed the design.
+live guidance. Three corrections, one of which changed the design — then §11.4, which is not a
+correction but the verdict `N1` was built to make possible.
 
 1. **"Non-inheritable field values" was the wrong scope for the panel — it now shows them all.**
    §5's asymmetry argument is sound as far as it goes, but it misses that `LocationFieldsEditor`
@@ -340,6 +352,39 @@ live guidance. Three corrections, one of which changed the design.
    `data:` URL, so indexing it would ship megabytes into a haystack where it can only produce
    nonsense matches.
 
-`N3` remains conditional on exactly the evidence `N1` was meant to produce, and that evidence is now
-gatherable: the panel shows what a location holds, so whether one free-text field is enough is
-answerable rather than speculative.
+`N3` remained conditional on exactly the evidence `N1` was meant to produce, and that evidence is now
+gathered — §11.4 records what it said.
+
+### 11.4 `N3` reassessed against the evidence `N1` produced — the answer is "don't build it"
+
+`N3` was written conditional on *"only if `N1` proves one field isn't enough"*. `N1` has shipped, so
+that is now answerable from the schema and the shipped surface rather than from intuition. The
+condition comes back **no**, and for a reason the original framing had wrong: the question was never
+*how many free-text fields* a location gets.
+
+**A location can already hold as many labelled notes as a user cares to name.** `field_defs` is a
+global dictionary with one definition per name
+([`UNIQUE INDEX … name COLLATE NOCASE`](../../src/db/migrations/v1-initial.ts#L670)), and a location
+records one value per definition
+([`location_field_values`, `UNIQUE (location_id, def_id)`](../../src/db/migrations/v1-initial.ts#L711)).
+So *"Access instructions"*, *"Warnings"* and *"Maintenance notes"* are three `LONG_TEXT` definitions
+and three separate, individually-labelled notes on the same place — plus `description` as the
+unlabelled one. `LocationFieldsEditor` offers every definition the location hasn't used yet, and
+since `N1` the detail panel renders each of them, wrapping rather than truncating precisely because
+they may be long. A `location_notes` table would therefore be a **second** free-text mechanism
+sitting beside a working one — the outcome `N3` itself warned was "strictly worse than one".
+
+**The one real gap is repeats of the same label, and it is not location-shaped.** What the field
+mechanism genuinely cannot do is hold *two values for one definition* — three entries all called
+"Site visit", ordered, appended to over time. That ceiling is the `UNIQUE` above, and the identical
+constraint exists on items as
+[`UNIQUE (item_id, def_id)`](../../src/db/migrations/v1-initial.ts#L740). It is `W2` (repeating
+fields) in the [archetypes audit](weak-item-archetypes_2026-07-31.md#4-candidate-work-items), which
+names only the item constraint — the location one wants folding into its scope, exactly as `N5`
+folds into `W1`. **One change over two subjects, not a location-only table.**
+
+So §5's diagnosis holds and is now complete: the mechanism was built, sufficient, and invisible.
+`N1` and `N2` made it visible and findable, and nothing about a location's own text needs new schema.
+The remaining location gaps are the other §8 entries — a document with ordering and labels (`N4`), a
+date that raises something (`N5`), an activity record
+(`N6`/[#691](https://github.com/BootBlock/Gubbins/issues/691)) and an export (`N7`).
