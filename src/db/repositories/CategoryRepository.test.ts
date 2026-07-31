@@ -1076,7 +1076,10 @@ describe('CategoryRepository', () => {
       await categories.addField(a.id, { name: 'Plain', fieldType: 'TEXT' });
       await categories.addField(b.id, { name: 'Leading', fieldType: 'TEXT', prominence: 'key' });
       const all = await categories.listAllFields();
-      expect(all.map((f) => f.categoryId)).toEqual([a.id, b.id]);
+      // Compared against the ids in *id* order, which is what `ORDER BY cf.category_id ASC`
+      // actually produces — the ids are UUIDs, so it is unrelated to the categories' names and
+      // to which of them holds the key field.
+      expect(all.map((f) => f.categoryId)).toEqual([a.id, b.id].sort());
     });
   });
 });
