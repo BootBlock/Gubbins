@@ -264,22 +264,36 @@ describe('Modal — dismissing by tapping the backdrop (#614)', () => {
   });
 
   it('stays open when the browser takes the gesture over — a pinch, not a tap', async () => {
-    // A claimed gesture arrives as pointercancel and produces no click; the press must not
-    // stay armed for whatever click comes next.
+    // A claimed gesture arrives as pointercancel; it is over at that point, so a release
+    // afterwards must not be able to complete it and hand the next click a dismissal.
     render(<Harness />);
     const backdrop = backdropOf();
     fireEvent.pointerDown(backdrop, pointer());
     fireEvent.pointerCancel(backdrop, pointer());
-    fireEvent.click(screen.getByLabelText('Name'), pointer());
+    fireEvent.pointerUp(backdrop, pointer());
+    fireEvent.click(backdrop, pointer());
     expect(screen.queryByRole('dialog')).not.toBeNull();
   });
 
-  it('does not let a right-press on the backdrop arm the next click', async () => {
-    // Right-clicking the backdrop opens the browser's context menu rather than dismissing, so
-    // the click the user makes afterwards — anywhere — must not close the dialog either.
+  it('does not let an abandoned press be cashed in by a later keyboard activation', async () => {
+    // Press the backdrop and let go outside the window: no release reaches the dialog and no
+    // click ever arrives. Activating a control with Enter afterwards dispatches a click with
+    // no press behind it, and that must not collect the dismissal the abandoned press left.
     render(<Harness />);
-    fireEvent.pointerDown(backdropOf(), pointer({ button: 2 }));
-    fireEvent.click(screen.getByLabelText('Name'), pointer());
+    fireEvent.pointerDown(backdropOf(), pointer());
+    fireEvent.click(screen.getByLabelText('Name'), { detail: 0 });
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+  });
+
+  it('does not let a right-press on the backdrop be cashed in by a later click', async () => {
+    // A right-press and release opens the context menu; the browser sends no click, so the
+    // gesture would sit there complete-but-unclaimed. The next click to reach the dialog —
+    // here a keyboard activation, which brings no press of its own — must not collect it.
+    render(<Harness />);
+    const backdrop = backdropOf();
+    fireEvent.pointerDown(backdrop, pointer({ button: 2 }));
+    fireEvent.pointerUp(backdrop, pointer({ button: 2 }));
+    fireEvent.click(screen.getByLabelText('Name'), { detail: 0 });
     expect(screen.queryByRole('dialog')).not.toBeNull();
   });
 

@@ -11,11 +11,17 @@
  * the panel as the finger lifts silently did nothing (#614).
  *
  * The click was never missing, then, only aimed one level up. So the handler moves to the
- * container and the gesture is qualified by where it *began*: the press is remembered on
- * `pointerdown`, and the click that follows dismisses only if that press landed on the
- * backdrop. A press that begins *inside* the panel never dismisses however far it is dragged,
- * which is what stops a text selection dragged out of a field from closing the dialog it was
- * being typed into.
+ * container and the gesture is qualified by where it *began*: a click dismisses only when it
+ * completes a pointer gesture — press, then release — that started on the backdrop. A press
+ * that begins *inside* the panel never dismisses however far it is dragged, which is what
+ * stops a text selection dragged out of a field from closing the dialog it was being typed
+ * into.
+ *
+ * Requiring the release, not just the press, is what keeps an *abandoned* gesture from being
+ * cashed in later: press the backdrop and let go outside the window and no click ever arrives,
+ * so without it the dialog would stay armed and the next click to reach the container — an
+ * Enter on a focused button, a form submit, anything not preceded by a press — would dismiss
+ * it out of nowhere.
  *
  * Staying with `click` rather than closing on the release directly is deliberate: it keeps the
  * dismissing click *inside* the dialog's own tree. Closing a frame earlier, on `pointerup`,
@@ -37,7 +43,8 @@ export interface BackdropDismiss {
    */
   readonly containerProps: {
     readonly onPointerDown: (e: ReactPointerEvent) => void;
-    readonly onPointerCancel: () => void;
+    readonly onPointerUp: (e: ReactPointerEvent) => void;
+    readonly onPointerCancel: (e: ReactPointerEvent) => void;
     readonly onClick: () => void;
   };
 }
@@ -50,31 +57,39 @@ export interface BackdropDismiss {
  */
 export function useBackdropDismiss(onClose: () => void): BackdropDismiss {
   const backdropRef = useRef<HTMLDivElement>(null);
-  /** Whether the press that the next click belongs to landed on the backdrop. */
-  const pressedBackdropRef = useRef(false);
+  /** The in-flight gesture that began on the backdrop, and whether it has been released yet. */
+  const gestureRef = useRef<{ readonly pointerId: number; readonly released: boolean } | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   const onPointerDown = useCallback((e: ReactPointerEvent) => {
-    // Only a primary press of the primary button on the backdrop itself arms the gesture: a
-    // non-primary pointer is the second finger of a pinch, and a right- or middle-press
-    // produces a context menu rather than the click this waits for — leaving it armed would
-    // hand the dismissal to whatever the user clicked next. A press on the panel likewise has
-    // to clear an armed gesture rather than let it fire on an unrelated click.
-    pressedBackdropRef.current = e.isPrimary && e.button === 0 && e.target === backdropRef.current;
+    // Only a primary press of the primary button on the backdrop itself starts a dismissing
+    // gesture: a non-primary pointer is the second finger of a pinch, and a right- or
+    // middle-press produces a context menu rather than the click this waits for. A press
+    // anywhere else — the panel, a control in it — discards any gesture still in flight rather
+    // than letting it fire on an unrelated click.
+    const dismissing = e.isPrimary && e.button === 0 && e.target === backdropRef.current;
+    gestureRef.current = dismissing ? { pointerId: e.pointerId, released: false } : null;
   }, []);
 
-  const onPointerCancel = useCallback(() => {
-    // The browser took the gesture over — a pinch, a pan it decided to own. No click follows,
-    // so disarm rather than leave the flag set for whatever click comes next.
-    pressedBackdropRef.current = false;
+  const onPointerUp = useCallback((e: ReactPointerEvent) => {
+    // Wherever it lands — the release rolling onto the panel is the case that was broken.
+    if (gestureRef.current?.pointerId === e.pointerId) {
+      gestureRef.current = { pointerId: e.pointerId, released: true };
+    }
+  }, []);
+
+  const onPointerCancel = useCallback((e: ReactPointerEvent) => {
+    // The browser took the gesture over — a pinch, a pan it decided to own. Drop it, so a
+    // stray release from another finger cannot complete it on this pointer's behalf.
+    if (gestureRef.current?.pointerId === e.pointerId) gestureRef.current = null;
   }, []);
 
   const onClick = useCallback(() => {
-    const pressedBackdrop = pressedBackdropRef.current;
-    pressedBackdropRef.current = false;
-    if (pressedBackdrop) onCloseRef.current();
+    const completed = gestureRef.current?.released === true;
+    gestureRef.current = null;
+    if (completed) onCloseRef.current();
   }, []);
 
-  return { backdropRef, containerProps: { onPointerDown, onPointerCancel, onClick } };
+  return { backdropRef, containerProps: { onPointerDown, onPointerUp, onPointerCancel, onClick } };
 }
