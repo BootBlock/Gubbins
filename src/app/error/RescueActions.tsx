@@ -180,9 +180,8 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
        * The restorable rescue (issue #197), first and solid because it is the only one of these
        * downloads the app can read back in. The two below it are diagnostic copies: after the
        * hard reset this screen recommends, a `.sqlite` from the old schema is refused by the
-       * baseline check on every restore path (issue #501) and the JSON dump has no importer at
-       * all — so leading with either would send the user into a purge holding a file that cannot
-       * bring their data back.
+       * baseline check (issue #501) and the JSON dump has no importer at all — so leading with
+       * either would send the user into a purge holding a file that cannot bring their data back.
        */}
       <Button variant="primary" onClick={takeBackup} disabled={busy !== null}>
         <ArchiveIcon /> Back up everything (.zip)

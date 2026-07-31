@@ -19,7 +19,7 @@
  * that is structurally sound but that this build could not boot.
  */
 import { loadSqlite3 } from './sqlite-bootstrap';
-import { BASELINE_REVISION_KEY } from '../migrations/migration';
+import { BASELINE_REVISION_KEY, MISSING_SCHEMA_MARKERS } from '../migrations/migration';
 import type { CandidateSchemaIdentity, VerifyBinaryResult } from '../rpc/protocol';
 
 /**
@@ -69,15 +69,6 @@ export async function verifySqliteBinary(bytes: Uint8Array): Promise<VerifyBinar
 }
 
 /**
- * SQLite's phrasings for "that schema object does not exist" — the one outcome that means the
- * candidate genuinely *predates* the thing being read rather than that the read went wrong. Kept
- * in step with the same distinction the boot-time stamp read draws (see `assertBaselineCurrent`
- * and issue #500): a database old enough to have no `app_meta` is unstamped, which is a refusable
- * answer; anything else is no answer at all.
- */
-const MISSING_SCHEMA_MARKERS: readonly string[] = ['no such table', 'no such column'];
-
-/**
  * Read which schema built the candidate (issue #501), or `null` where that could not be
  * established.
  *
@@ -105,7 +96,15 @@ function readSchemaIdentity(db: CandidateDb): CandidateSchemaIdentity | null {
   }
 }
 
-/** True when `err` reports an absent table or column rather than a failure to read at all. */
+/**
+ * True when `err` reports an absent table or column rather than a failure to read at all.
+ *
+ * The message test only, unlike the boot-time twin in `migrations/engine.ts`, which additionally
+ * screens on a `DbError` result code: these errors come straight from `sqlite3.oo1` on a connection
+ * this module opened itself, so there is no transport or worker-timeout failure in the population
+ * to be talked into looking like a stale schema. The *vocabulary* is shared, so the two cannot
+ * drift on what "missing" means.
+ */
 function isMissingSchemaError(err: unknown): boolean {
   const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return MISSING_SCHEMA_MARKERS.some((marker) => message.includes(marker));

@@ -39,9 +39,12 @@ export interface ArchiveContents {
    * What the archive says about itself (issue #501), or `null` where it says nothing readable —
    * archives written before `manifest.json` existed, and any whose manifest is damaged.
    *
-   * Absent is *benign* here, unlike a backup's manifest (issue #353): this one is only ever a
-   * cheap head start on the check the database bytes get regardless, so nothing is waved through
-   * by its absence. See {@link ArchiveManifest}.
+   * Absent is *benign* here, unlike a backup's manifest (issue #353), because this one is never
+   * the only check: it is a worker-free head start on the stamp read from the database bytes, and
+   * an archive without it is assessed exactly as one was before manifests existed. That is a
+   * weaker position, not an open door — where no worker can start, the bytes-level read reports
+   * `unverified` and such an archive still passes, which is precisely the hole the manifest
+   * narrows rather than closes. See {@link ArchiveManifest}.
    */
   readonly manifest: ArchiveManifest | null;
 }
@@ -84,9 +87,10 @@ export function parseArchive(entries: Record<string, Uint8Array>): ArchiveConten
  * Decode the archive's `manifest.json`, or `null` where there isn't a usable one.
  *
  * Deliberately forgiving, unlike the backup codec's manifest: this one only ever *adds* a
- * refusal a later check would reach anyway, so treating a damaged one as "no manifest" costs
- * nothing — whereas rejecting the archive over it would strand a user whose database is fine.
- * Every field is checked before it is trusted, since a zip is whatever was put in it.
+ * refusal, so treating a damaged one as "no manifest" leaves the archive exactly as well checked
+ * as one written before manifests existed — whereas rejecting the archive over it would strand a
+ * user whose database is fine. Every field is checked before it is trusted, since a zip is
+ * whatever was put in it.
  */
 function readManifestEntry(bytes: Uint8Array | undefined): ArchiveManifest | null {
   if (!bytes) return null;
