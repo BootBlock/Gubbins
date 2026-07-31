@@ -36,6 +36,7 @@ const GROUP_LABEL_KEYS = {
   lifecycle: 'events.group.lifecycle',
   stock: 'events.group.stock',
   movement: 'events.group.movement',
+  places: 'events.group.places',
   custody: 'events.group.custody',
   upkeep: 'events.group.upkeep',
   system: 'events.group.system',

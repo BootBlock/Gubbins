@@ -82,6 +82,14 @@ const EXEMPT: Readonly<Record<string, string>> = {
   // only reference `filterSnapshot` can dangle is `item_id`, which is covered by FK_REFS.
   'checkouts.project_id': 'tagged-union borrower; needs its own repair rule',
   'checkouts.location_id': 'tagged-union borrower; needs its own repair rule',
+  // NOT NULL `ON DELETE SET DEFAULT` (issue #691), so the rule above would demand `false` —
+  // "drop the row". That is the wrong repair for a ledger: an activity entry must not be destroyed
+  // because the account that wrote it was removed on another device. Its repair is the schema's
+  // own, re-attribution to System, which `FK_REFS` has no way to express and the snapshot repair
+  // applies at the source (`snapshot-integrity.ts`, EXTRA_REFS). Exactly how `item_history`'s
+  // identical actor column is handled — that ledger simply isn't enumerated here, because it is
+  // not a SYNC_TABLES member.
+  'location_history.actor_user_id': 're-attributed to System by the snapshot repair, never dropped',
 };
 
 describe('FK_REFS covers the real schema (#152, #246)', () => {

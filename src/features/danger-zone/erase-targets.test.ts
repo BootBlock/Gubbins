@@ -16,6 +16,7 @@ const ALL_IDS: EraseTargetId[] = [
   'categories',
   'field-dictionary',
   'locations',
+  'location-history',
   'location-photos',
   'projects',
   'purchase-orders',
@@ -177,6 +178,19 @@ describe('buildStatements — tombstone toggling', () => {
     expect(sql).toContain('DELETE FROM item_history;');
     const watermark = statements.find((s) => s.sql.includes('history_pruned_before'));
     expect(watermark?.params).toEqual([99]);
+  });
+
+  it('location-history: tombstones rather than watermarks (it is an LWW synced table)', () => {
+    // The mirror image of `item-history` above, and the difference matters: `location_history`
+    // (#691) reconciles by LWW, so without a tombstone a peer would hand every cleared entry
+    // straight back on the next sync.
+    const off = sqlOf('location-history', false);
+    expect(off).not.toContain('tombstones');
+    expect(off).toContain('DELETE FROM location_history;');
+
+    const on = sqlOf('location-history', true);
+    expect(on).toContain("INSERT OR REPLACE INTO tombstones (table_name, id) SELECT 'location_history', id");
+    expect(on).not.toContain('history_pruned_before');
   });
 
   it('suppliers: keeps the purchase orders, unlinking them and the PO lines', () => {

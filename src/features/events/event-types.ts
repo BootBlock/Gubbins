@@ -22,7 +22,7 @@
  * This module is imported by the bridge, so it must survive Node's **strip-only** loader: no `enum`,
  * no `namespace`, no TS parameter properties. Plain `const` objects and derived union types only.
  */
-import type { HistoryAction } from '@/db/repositories/constants.ts';
+import type { HistoryAction, LocationHistoryAction } from '@/db/repositories/constants.ts';
 
 /**
  * The stable dotted event type for each §4 ledger action. Grouped so related actions share a type
@@ -81,6 +81,46 @@ export const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
 };
 
 /**
+ * The stable dotted event type for each location activity action (issue #691) — the `location.*`
+ * slice of the vocabulary, and the first events in it that are not about an item.
+ *
+ * Exhaustive over {@link LocationHistoryAction} by construction, for the same reason
+ * {@link ACTION_EVENT_TYPE} is: adding a location action without deciding what it publishes is a
+ * compile error, not a silent omission.
+ *
+ * `RE_PARENTED` maps to `location.moved` rather than reusing `item.moved`: a subscriber filtering
+ * on "something moved" wants to know *what* moved, and a location moving takes its whole subtree —
+ * and everything stored in it — with it. Archiving gets its own type rather than folding into
+ * `location.removed`, because it is reversible and nothing physically changed.
+ */
+export const LOCATION_ACTION_EVENT_TYPE: Record<LocationHistoryAction, string> = {
+  CREATED: 'location.created',
+  RENAMED: 'location.renamed',
+  RE_PARENTED: 'location.moved',
+  ARCHIVED: 'location.archived',
+  RESTORED: 'location.restored',
+  DELETED: 'location.removed',
+};
+
+/**
+ * The generic type a location action falls back to — the `location.*` twin of
+ * {@link ITEM_CHANGED_TYPE}, and reachable the same way: an action synced from a newer peer that
+ * this build has no mapping for.
+ */
+export const LOCATION_CHANGED_TYPE = 'location.changed';
+
+/**
+ * The dotted event type for a location activity action (unknown actions →
+ * {@link LOCATION_CHANGED_TYPE}). The `Object.hasOwn` guard matters for the reason given on
+ * {@link eventTypeForAction}.
+ */
+export function eventTypeForLocationAction(action: string): string {
+  return Object.hasOwn(LOCATION_ACTION_EVENT_TYPE, action)
+    ? LOCATION_ACTION_EVENT_TYPE[action as LocationHistoryAction]
+    : LOCATION_CHANGED_TYPE;
+}
+
+/**
  * The generic type an action falls back to. A forward-compat action synced from a newer peer lands
  * here rather than crashing — mirroring the activity-kind graceful degradation. This makes the
  * emitted set **open**, which is why the subscription catalogue cannot simply be derived from
@@ -129,15 +169,17 @@ export function eventTypeForAction(action: string): string {
  * Every event type the system can emit, sorted and de-duplicated — the basis for the user-facing
  * subscription picker.
  *
- * Assembled from **four** sources, because no single one is complete: the action map, the
- * unknown-action fallback, the derived stock-status types, and the two types declared outside the
- * ledger path entirely ({@link EVENTS_TRUNCATED_TYPE}, {@link LOOKUP_RESOLVED_TYPE}). A test pins
- * this against what the bridge actually emits.
+ * Assembled from **six** sources, because no single one is complete: the item action map and the
+ * location action map, each with its own unknown-action fallback, the derived stock-status types,
+ * and the two types declared outside the ledger path entirely ({@link EVENTS_TRUNCATED_TYPE},
+ * {@link LOOKUP_RESOLVED_TYPE}). A test pins this against what the bridge actually emits.
  */
 export const KNOWN_EVENT_TYPES: readonly string[] = [
   ...new Set<string>([
     ...Object.values(ACTION_EVENT_TYPE),
     ITEM_CHANGED_TYPE,
+    ...Object.values(LOCATION_ACTION_EVENT_TYPE),
+    LOCATION_CHANGED_TYPE,
     LOW_STOCK_TYPE,
     OUT_OF_STOCK_TYPE,
     EVENTS_TRUNCATED_TYPE,

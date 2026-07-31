@@ -38,9 +38,35 @@ that have always been logged.
 > rather than changes to what the item is. Saving a form without actually changing anything records
 > nothing at all.
 
+## A location's own history
+
+Locations keep a record too, separate from the items inside them. Open a location's **Edit** dialog
+and pick the **History** tab to see it.
+
+It covers the changes that reshape where things live — the ones that are hardest to explain after
+the fact:
+
+- the location being **created**;
+- a **rename**, showing the name before and after;
+- a **move** under a different parent (or out to the top level), naming both;
+- **archiving** and **restoring** it;
+- **deleting** it, noting how many items went to Unassigned and how many sub-locations were moved
+  up — and the sub-locations themselves each record the move, so a shelf that ends up somewhere
+  new because the room above it was deleted says so.
+
+Everything else about a location — its colour, type, capacity, dimensions, walk order, the default
+flag and the dead-stock setting — describes the place rather than the shape of your storage, so it
+isn't recorded. Nor is a save that didn't actually change anything.
+
+> **ℹ️ Note**
+> Deleting a location doesn't erase its record. The entries are kept with the name the place had, so
+> a deletion still travels to your other devices and still appears in a backup — even though there
+> is no longer a location to open and read it in.
+
 > **💡 Tip**
 > The Activity log is the fastest way to answer *"what changed, and when did that happen?"* — if a
-> count looks wrong, its item's history usually shows exactly what led to it.
+> count looks wrong, its item's history usually shows exactly what led to it. For *"why is this
+> shelf suddenly under a different room?"*, it's the location's own **History** tab you want.
 
 > **ℹ️ Note**
 > The log can grow large over time. If you need to reclaim space, old history can be pruned (with
@@ -85,3 +111,4 @@ they were; only the record of how it got there goes.
 - **[[Export & import|Export-and-Import]]** — saving the log to a file.
 - **[[Upcoming agenda|Upcoming-Agenda]]** — things due soon.
 - **[[Storage triage|Storage-Triage]]** — managing history size.
+- **[[Locations & stock|Locations-and-Stock]]** — the hierarchy a location's own history records.

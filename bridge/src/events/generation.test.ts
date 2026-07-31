@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import { computeGenerationEvents } from './generation.ts';
 import { createEventPipeline } from './pipeline.ts';
-import type { BridgeEvent } from './model.ts';
+import type { BridgeEvent, LedgerEvent } from './model.ts';
 
 interface HistoryRow {
   id: string;
@@ -123,7 +123,9 @@ describe('computeGenerationEvents', () => {
     const { driver } = await hydrate(snapshot(7, [created(100)]));
     const { events, cursor } = await computeGenerationEvents(driver, null);
     expect(events).toEqual([]);
-    expect(cursor).toEqual({ seenIds: ['h-created'] });
+    // Both ledger windows establish their baseline together; this vault has no location activity,
+    // so the location window is simply empty (issue #691).
+    expect(cursor).toEqual({ seenIds: ['h-created'], locationSeenIds: [] });
   });
 
   it('emits stock.adjusted + item.low_stock for a new drop below the low-stock floor', async () => {
@@ -134,7 +136,7 @@ describe('computeGenerationEvents', () => {
     const { events } = await computeGenerationEvents(next.driver, first.cursor);
 
     expect(events.map((e) => e.type)).toEqual(['stock.adjusted', 'item.low_stock']);
-    expect(events[0]!.data.item).toMatchObject({
+    expect((events[0] as LedgerEvent).data.item).toMatchObject({
       id: 'item-1',
       name: 'Widget',
       quantity: 3,
