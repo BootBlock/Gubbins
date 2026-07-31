@@ -1,8 +1,8 @@
 # Category-scoped capability hiding — feasibility study & plan (issue #618)
 
 > **Status:** 🟢 ACTIVE — investigation complete, verdict **yes (scoped)**; no phase implemented
-> yet. Phase 1 (schema + gating seam) is next. Two product decisions in §6 are open and should be
-> settled before phase 2 starts.
+> yet. Phase 1 (schema + gating seam) is next. Three product decisions in §6 are open; (a) and (c)
+> should be settled before phase 2 starts, (b) before phase 3.
 
 ## The question
 
@@ -93,17 +93,26 @@ Where it sits (`location-photos`).
 copy that will be translated. Persisting a hidden set keyed on titles is not an option, so the
 alternative to reusing `FeatureId` is inventing a `SectionId` union and threading it through every
 section. That would create a *second* vocabulary running parallel to the capability list, which
-has to be kept in sync by hand — the failure mode this codebase already has too much of (see the
-memory note on the item model's parallel exhaustive lists). `FeatureId` is explicitly documented
+has to be kept in sync by hand — the failure mode this codebase already has too much of, in the
+way adding one `FieldType` means finding and updating roughly six parallel lists. `FeatureId` is
+explicitly documented
 as "treat them like a public enum", is already persisted in device state, and already carries the
 label, description and icon a picker needs.
 
 **The cost of that choice, stated plainly:** sections that carry no `feature` today cannot be
-hidden — Item details, Location, the whole **Supplier & ops** tab, Related, Substitutions, Images,
-and Activity. For a `Movie` category, Supplier & ops (reorder points, dead-stock reporting,
-operational parameters) is arguably the *next* thing a user would want gone. The fix there is to
-give those sections the right `feature` tag — which also makes them respond to Modular UI, a
-benefit in its own right — not to build a parallel id space. That is phase 3 below.
+hidden — Item details, Location, **Lifecycle**, the whole **Supplier & ops** tab, Related,
+Substitutions, Images, and Activity. (Two more, Gauge setup and Test & calibration records, are
+also untagged but gate on `item.trackingMode` instead, so they are already narrow.)
+
+**Lifecycle** is the one that stings, and it undercuts the issue's own example: that section owns
+expiry, batch and condition, so capability-only hiding would *not* strip the expiry date from a
+`Movie` item — only the Maintenance and Asset-details sections beside it. Supplier & ops (reorder
+points, dead-stock reporting, operational parameters) is the next-most obvious candidate.
+
+The fix is to give those sections the right `feature` tag — which also makes them respond to
+Modular UI, a benefit in its own right — not to build a parallel id space. That is phase 3, and
+the Lifecycle case is why phase 3 is **not** optional polish: without it the feature only half
+answers the case that prompted it.
 
 ## 4. Precedence, and the invariant that must hold
 
@@ -150,7 +159,9 @@ in `BarcodeField`), i18n for both `en.json` and `de.json`, and the wiki pages.
 `Coin` or `Fastener` should suppress is a per-preset editorial call, and a wrong default is worse
 than no default because it hides something the user expected to find.
 
-## 6. Open decisions (settle before phase 2)
+## 6. Open decisions
+
+(a) and (c) gate phase 2; (b) gates phase 3.
 
 **(a) What happens when a hidden section has data?** Hidden ≠ absent. An item can acquire
 maintenance, batch or warranty data while its category hides it — via bulk edit, spreadsheet
@@ -167,7 +178,7 @@ Batch no. and Lot no. unconditionally, and the file contains **no** `useFeature`
 `useEnabledFeatures` call at all — so creating an item today shows warranty and batch fields even
 with those modules switched off. That is a **pre-existing Modular UI gap, independent of #618**,
 and probably deserves its own issue. Whether #618 fixes it or merely stops making it worse changes
-the size of phase 2 substantially, because the create form has no section registry and its
+the size of phase 3 substantially, because the create form has no section registry and its
 Lifecycle panel is one monolithic grid that would need splitting into addressable groups first.
 
 **(c) Minor, but decide it:** a category carrying both `default_maintenance_basis` *and* a hidden
@@ -179,9 +190,9 @@ set.
 
 | Phase | Scope |
 | --- | --- |
-| **1** | Schema + seam. `categories.hidden_capabilities` (JSON array of `FeatureId`, nullable), the six repository/type touch-points, snapshot regen. Extend `buildTabs(item, enabled, hidden)` with the narrowing predicate and cover it in `ItemDetailDialog.buildTabs.test.tsx`. A pure resolver seam for `visible()` so precedence is tested once, not at each call site. No UI yet. |
-| **2** | The editor. A capability multi-select in `CategoryDefaultsSection`, auto-saving like every other facet default, driven off `FEATURE_REGISTRY` so it can never drift from the capability list. Decision (a) implemented. i18n for `en.json` **and** `de.json`. Wiki: `Custom-Fields-and-Capabilities.md` + a cross-reference from `Modular-UI.md`. |
-| **3** | Reach. Tag the currently-ungated sections (Supplier & ops, Related, Substitutions) with their owning `FeatureId` so they respond to both axes. Push the narrowing into the in-editor sub-section gates. Resolve decision (b), or split it out as its own issue. |
+| **1** | Schema + seam. `categories.hidden_capabilities` (JSON array of `FeatureId`, nullable), the repository/type touch-points listed in §5, snapshot regen. Extend `buildTabs(item, enabled, hidden)` with the narrowing predicate and cover it in `ItemDetailDialog.buildTabs.test.tsx`. A pure resolver seam for `visible()` so precedence is tested once, not at each call site. No UI yet. |
+| **2** | The editor. A capability multi-select in `CategoryDefaultsSection`, auto-saving like every other facet default, driven off `FEATURE_REGISTRY` so it can never drift from the capability list. Decisions **(a)** and **(c)** implemented. i18n for `en.json` **and** `de.json`. Wiki: `Custom-Fields-and-Capabilities.md` + a cross-reference from `Modular-UI.md`. |
+| **3** | Reach — **not optional** (see §3: without it, Lifecycle stays unhidable and the `Movie` case is only half answered). Tag the currently-ungated sections (Lifecycle, Supplier & ops, Related, Substitutions) with their owning `FeatureId` so they respond to both axes. Push the narrowing into the in-editor sub-section gates. Decision **(b)** settled first — fix the create form here, or split it out as its own issue. |
 | **4** | Preset seeding. Author a hidden set per preset, most conservatively for the presets where the win is clearest (`Movie`, `Book`, `Vinyl record`, the collectibles). Ship nothing speculative — an unhidden section is always recoverable by the user, a wrongly hidden one is confusing. |
 
 ## 8. What would make this a bad idea
