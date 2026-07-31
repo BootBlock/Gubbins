@@ -77,4 +77,37 @@ describe('SubLocationNav', () => {
     // Cabinet B's only child is archived → it reads "Empty", not "1 sub-location".
     expect(screen.getByRole('button', { name: /Open Cabinet B — Empty/i })).toBeInTheDocument();
   });
+
+  // Issue #617: a child's description previews on its card, so the note a user wrote about a
+  // place is readable at the moment they choose which place to open.
+  describe("a child's description", () => {
+    const described = [
+      loc({ id: 'a', name: 'Cabinet A', parentId: 'shed', description: 'Overflow for the **workshop**' }),
+      loc({ id: 'b', name: 'Cabinet B', parentId: 'shed' }),
+    ];
+
+    it.each(['visual', 'data'] as const)('previews it as plain text (%s)', (density) => {
+      render(
+        <SubLocationNav
+          childLocations={described}
+          locations={described}
+          density={density}
+          onSelect={vi.fn()}
+        />,
+      );
+      // Flattened, so the Markdown markers never leak onto the card.
+      expect(screen.getByText('Overflow for the workshop')).toBeInTheDocument();
+    });
+
+    it('carries the preview into the accessible name, which the Data row relies on', () => {
+      render(
+        <SubLocationNav childLocations={described} locations={described} density="data" onSelect={vi.fn()} />,
+      );
+      expect(
+        screen.getByRole('button', { name: 'Open Cabinet A — Empty. Overflow for the workshop' }),
+      ).toBeInTheDocument();
+      // A child with no description keeps the original label exactly.
+      expect(screen.getByRole('button', { name: 'Open Cabinet B — Empty' })).toBeInTheDocument();
+    });
+  });
 });

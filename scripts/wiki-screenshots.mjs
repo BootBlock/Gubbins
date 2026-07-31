@@ -568,11 +568,11 @@ try {
 }
 
 // ── Location-inherited custom fields (issue #97) ─────────────────────────────
-// The location's side of the feature: the "Inheritable fields" panel in the Edit-location
-// dialog, where a location sets a value and chooses whether to offer it to its contents.
+// The location's side of the feature: the "Fields" panel in the Edit-location dialog, where a
+// location sets a value and chooses whether to offer it to its contents.
 try {
   const dialog = await openLocationEditor('Garage');
-  const panel = dialog.getByText('Inheritable fields', { exact: true }).locator('xpath=ancestor::section[1]');
+  const panel = dialog.getByText('Fields', { exact: true }).locator('xpath=ancestor::section[1]');
   await shot('location-inheritable-fields', panel.first(), { settle: 500 });
   await page.keyboard.press('Escape').catch(() => {});
 } catch (err) {

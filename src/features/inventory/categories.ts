@@ -291,6 +291,22 @@ export function useLocationFieldValues(locationId: string | undefined) {
 }
 
 /**
+ * Every location's field values as one searchable text blob each, so the sidebar's search can
+ * find a place by something recorded *about* it (issue #617, `N2`).
+ *
+ * Gated by `enabled` — the sidebar passes "the user has typed something" — so a screen where
+ * nobody searches never pays for the read at all. Once fetched it is cached under the shared
+ * locations prefix, so subsequent keystrokes match against it synchronously.
+ */
+export function useLocationFieldSearchText(enabled: boolean) {
+  return useQuery({
+    queryKey: inventoryKeys.locationFieldSearchText(),
+    queryFn: () => getCategoryRepository().listLocationFieldSearchText(),
+    enabled,
+  });
+}
+
+/**
  * Set (or clear) a location's value for a definition, then refresh everything that could
  * be *inheriting* it (issue #97).
  *
@@ -334,6 +350,9 @@ export function useRemoveLocationFieldValue(locationId: string) {
 function invalidateInheritance(client: QueryClient, locationId: string): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.locationFields(locationId) });
   void client.invalidateQueries({ queryKey: inventoryKeys.fieldDefs() });
+  // The sidebar's searchable text is built from these very rows, and this write touches no
+  // `locations` row — so nothing else sweeps it (issue #617, `N2`).
+  void client.invalidateQueries({ queryKey: inventoryKeys.locationFieldSearchText() });
   // Every item's resolved fields, and every on-card value: an inheritable change can
   // reach any descendant item at any depth. Matched by predicate rather than prefix because
   // the `'fields'` segment sits *after* the item id — the prefix is taken from the factory

@@ -326,8 +326,13 @@ function quantityValue(item: Item, fmt: CardFieldFormatters): CardFieldValue {
   return { kind: 'text', text: fmt.quantity(item.quantity) };
 }
 
-/** Format a raw stored custom-field value by type; a blank/absent value is em-dash. */
-function customFieldValue(type: FieldType, raw: string | null): CardFieldValue {
+/**
+ * Format a raw stored custom-field value by type; a blank/absent value is em-dash.
+ *
+ * Shared with the location detail panel (`location-detail.ts`), so a custom field reads the same
+ * whether it is a fact about an item or about the place it sits in (issue #617).
+ */
+export function customFieldValue(type: FieldType, raw: string | null): CardFieldValue {
   if (raw === null || raw.trim() === '') return EMPTY;
   if (type === 'BOOLEAN') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'Yes' : 'No' };
   if (type === 'ON_OFF') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'On' : 'Off' };

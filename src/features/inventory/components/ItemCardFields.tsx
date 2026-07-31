@@ -20,9 +20,18 @@ import { CONDITION_COLOR_CLASS, CONDITION_LABELS } from './inventory-ui';
 export function FieldValue({
   field,
   locationColorClass,
+  wrap = false,
 }: {
   field: ResolvedCardField;
   locationColorClass?: string;
+  /**
+   * Let a text value wrap over several lines instead of truncating to one.
+   *
+   * Off for the cards and rows, where a fixed height per configuration is the point. On for the
+   * location detail panel (issue #617), which exists to *reveal* what a place records about
+   * itself — clipping a long note there would reintroduce the very problem it fixes.
+   */
+  wrap?: boolean;
 }) {
   const value = field.value;
   switch (value.kind) {
@@ -56,7 +65,16 @@ export function FieldValue({
       return <span className="text-muted-foreground/60">—</span>;
     case 'text':
       return (
-        <span className={cn('truncate', field.id === 'location' && locationColorClass)}>{value.text}</span>
+        <span
+          className={cn(
+            // `break-words` so a long unbroken value (a URL, a part number) wraps rather than
+            // pushing the panel wider; `pre-wrap` keeps the line breaks a LONG_TEXT value holds.
+            wrap ? 'whitespace-pre-wrap break-words' : 'truncate',
+            field.id === 'location' && locationColorClass,
+          )}
+        >
+          {value.text}
+        </span>
       );
   }
 }
