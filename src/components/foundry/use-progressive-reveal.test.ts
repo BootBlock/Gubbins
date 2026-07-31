@@ -24,12 +24,6 @@ describe('useProgressiveReveal', () => {
     expect(result.current.expanded).toBe(true);
   });
 
-  it('honours a step that differs from the initial slice', () => {
-    const { result } = renderHook(() => useProgressiveReveal(100, { initial: 20, step: 5 }));
-    act(() => result.current.showMore());
-    expect(result.current.limit).toBe(25);
-  });
-
   it('collapses back to the initial slice', () => {
     const { result } = renderHook(() => useProgressiveReveal(40, { initial: 12 }));
     act(() => result.current.showMore());

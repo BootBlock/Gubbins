@@ -49,10 +49,13 @@ export function DeadStockList({
           </li>
         ))}
       </ul>
+      {/* The noun is "idle items", not the turnover table's plain "items": both panels sit on the
+          Reports screen at once, and two controls named "Show more: items" would be
+          indistinguishable to a screen reader. */}
       <ShowMore
         shown={reveal.limit}
         total={lines.length}
-        label={t('common.rows.items')}
+        label={t('common.rows.idleItems')}
         expanded={reveal.expanded}
         onShowMore={reveal.showMore}
         onShowLess={reveal.showLess}

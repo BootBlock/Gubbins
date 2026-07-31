@@ -1,20 +1,24 @@
 import { useState } from 'react';
 
 export interface ProgressiveRevealOptions {
-  /** How many rows are visible before the user asks for more. Must be at least 1. */
+  /**
+   * How many rows are visible before the user asks for more, and how many each "show more"
+   * reveals. Must be at least 1.
+   */
   readonly initial: number;
-  /** How many further rows each "show more" reveals. Defaults to {@link initial}. */
-  readonly step?: number;
 }
 
 export interface ProgressiveReveal {
-  /** How many rows to render — never more than the total, never fewer than `initial`. */
+  /**
+   * How many rows to render — the count the user has asked for, clamped into `[initial, total]`,
+   * so a set smaller than the opening slice renders whole.
+   */
   readonly limit: number;
   /** Whether rows remain beyond {@link limit} (i.e. the list is still a partial view). */
   readonly hasMore: boolean;
   /** Whether the user has revealed past the initial slice (i.e. collapsing is meaningful). */
   readonly expanded: boolean;
-  /** Reveal the next `step` rows. */
+  /** Reveal the next `initial` rows. */
   readonly showMore: () => void;
   /** Collapse back to the initial slice. */
   readonly showLess: () => void;
@@ -35,10 +39,9 @@ export interface ProgressiveReveal {
  */
 export function useProgressiveReveal(
   total: number,
-  { initial, step = initial }: ProgressiveRevealOptions,
+  { initial }: ProgressiveRevealOptions,
 ): ProgressiveReveal {
   const floor = Math.max(1, Math.floor(initial));
-  const chunk = Math.max(1, Math.floor(step));
   const size = Math.max(0, Math.floor(total));
   const [requested, setRequested] = useState(floor);
 
@@ -52,7 +55,7 @@ export function useProgressiveReveal(
     expanded: limit > floor,
     // Step from the clamped `limit`, not the raw request, so a stale request left over from a
     // larger set doesn't make the first "show more" jump a long way down the new one.
-    showMore: () => setRequested(limit + chunk),
+    showMore: () => setRequested(limit + floor),
     showLess: () => setRequested(floor),
   };
 }

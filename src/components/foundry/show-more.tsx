@@ -1,6 +1,7 @@
+import { useEffect, useRef } from 'react';
 import { useT } from '@/features/i18n';
-import { cn } from '@/lib/utils';
 import { Button } from './button';
+import { LiveRegion } from './live-region';
 
 export interface ShowMoreProps {
   /** How many rows the list is currently rendering. */
@@ -17,7 +18,6 @@ export interface ShowMoreProps {
   readonly expanded: boolean;
   readonly onShowMore: () => void;
   readonly onShowLess: () => void;
-  readonly className?: string;
   readonly 'data-testid'?: string;
 }
 
@@ -32,9 +32,10 @@ export interface ShowMoreProps {
  * exists to prevent, so it renders whenever anything is held back (and while expanded, to offer
  * the way back), and `null` only when the list really is complete and unexpanded.
  *
- * Accessibility: the summary is a polite live region, so revealing more announces the new count;
- * each control's accessible name carries the list's noun after its visible text (WCAG 2.5.3
- * label-in-name is preserved — the visible label stays the start of the accessible name).
+ * Accessibility: the summary is a `LiveRegion`, so revealing more announces the new count;
+ * each control names its list ("Show more: categories") through its own catalog key rather than a
+ * hidden suffix, so a language that would not simply concatenate the two still reads as a phrase.
+ * WCAG 2.5.3 label-in-name holds in every catalog because the visible label opens that key.
  */
 export function ShowMore({
   shown,
@@ -43,55 +44,63 @@ export function ShowMore({
   expanded,
   onShowMore,
   onShowLess,
-  className,
   'data-testid': testId,
 }: ShowMoreProps) {
   const t = useT();
   const hasMore = shown < total;
+  const lessRef = useRef<HTMLButtonElement>(null);
+  const focusAfterReveal = useRef(false);
+
+  // The click that reveals the last chunk unmounts the control it came from, and focus with it
+  // falls to `<body>` — dropping a keyboard user at the top of the document at exactly the moment
+  // they asked to see the rest. Hand focus to the collapse control, which is always present by
+  // then (revealing anything sets `expanded`). The flag is cleared on the first render after any
+  // click, so only the click that actually ended the list moves focus.
+  useEffect(() => {
+    if (!focusAfterReveal.current) return;
+    focusAfterReveal.current = false;
+    if (!hasMore) lessRef.current?.focus();
+  });
 
   // Nothing held back and nothing to collapse — the list is already the whole set.
   if (!hasMore && !expanded) return null;
 
   return (
-    <div
-      className={cn('flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1', className)}
-      data-testid={testId}
-    >
-      <p
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1" data-testid={testId}>
+      <LiveRegion
         className="text-xs tabular-nums text-muted-foreground"
-        role="status"
-        aria-live="polite"
         data-testid={testId ? `${testId}-summary` : undefined}
       >
         {t('showMore.summary', { vars: { shown, total, label } })}
-      </p>
+      </LiveRegion>
 
       <div className="flex items-center gap-2">
         {expanded ? (
           <Button
+            ref={lessRef}
             variant="ghost"
             size="sm"
             onClick={onShowLess}
+            aria-label={t('showMore.fewerLabel', { vars: { label } })}
             data-testid={testId ? `${testId}-less` : undefined}
           >
-            {/* One flex child, so the visually-hidden noun can't open a gap in the label. */}
-            <span>
-              {t('showMore.fewer')}
-              <span className="sr-only"> {label}</span>
-            </span>
+            {t('showMore.fewer')}
           </Button>
         ) : null}
         {hasMore ? (
           <Button
             variant="outline"
             size="sm"
-            onClick={onShowMore}
+            onClick={(event) => {
+              // Only hand focus on if this control actually held it — a mouse user who clicked
+              // without focusing shouldn't have the focus ring jump somewhere new.
+              focusAfterReveal.current = event.currentTarget === document.activeElement;
+              onShowMore();
+            }}
+            aria-label={t('showMore.moreLabel', { vars: { label } })}
             data-testid={testId ? `${testId}-more` : undefined}
           >
-            <span>
-              {t('showMore.more')}
-              <span className="sr-only"> {label}</span>
-            </span>
+            {t('showMore.more')}
           </Button>
         ) : null}
       </div>

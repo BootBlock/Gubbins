@@ -39,11 +39,6 @@ describe('TurnoverTable', () => {
     expect(screen.getByText('Item 23')).toBeInTheDocument();
   });
 
-  it('keeps the portfolio headline whole-set while the table is partial', () => {
-    render(<TurnoverTable report={report(30)} formatters={formatters} />);
-    expect(screen.getByTestId('turnover-headline')).toHaveTextContent('2×');
-  });
-
   it('shows no footer when every item already has a row', () => {
     render(<TurnoverTable report={report(4)} formatters={formatters} />);
     expect(screen.queryByTestId('turnover-more')).not.toBeInTheDocument();

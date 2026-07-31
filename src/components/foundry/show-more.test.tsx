@@ -5,7 +5,7 @@ import { ShowMore } from './show-more';
 function setup(overrides: Partial<React.ComponentProps<typeof ShowMore>> = {}) {
   const onShowMore = vi.fn();
   const onShowLess = vi.fn();
-  const view = render(
+  const { rerender, ...view } = render(
     <ShowMore
       shown={12}
       total={40}
@@ -17,7 +17,7 @@ function setup(overrides: Partial<React.ComponentProps<typeof ShowMore>> = {}) {
       {...overrides}
     />,
   );
-  return { ...view, onShowMore, onShowLess };
+  return { ...view, rerender, onShowMore, onShowLess };
 }
 
 describe('ShowMore', () => {
@@ -60,9 +60,33 @@ describe('ShowMore', () => {
 
   it('names the list in each control so several on one screen are told apart', () => {
     setup({ shown: 24, expanded: true });
-    // The visible label starts the accessible name (WCAG 2.5.3 label-in-name), with the noun
-    // appended for assistive tech.
-    expect(screen.getByRole('button', { name: 'Show more categories' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Show fewer categories' })).toBeInTheDocument();
+    // Each name comes from its own catalog key opening with the visible label, so WCAG 2.5.3
+    // label-in-name holds in every language rather than only where concatenation reads.
+    expect(screen.getByRole('button', { name: 'Show more: categories' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show fewer: categories' })).toBeInTheDocument();
+  });
+
+  it('hands focus to the collapse control when the last reveal unmounts "show more"', () => {
+    // Otherwise the click that finishes the list drops focus to <body>, stranding a keyboard
+    // user at the top of the document exactly when they asked to see the rest.
+    const { rerender, onShowMore } = setup({ shown: 24, total: 30, expanded: true });
+    const more = screen.getByTestId('more-more');
+    more.focus();
+    fireEvent.click(more);
+    expect(onShowMore).toHaveBeenCalled();
+
+    rerender(
+      <ShowMore
+        shown={30}
+        total={30}
+        label="categories"
+        expanded
+        onShowMore={onShowMore}
+        onShowLess={vi.fn()}
+        data-testid="more"
+      />,
+    );
+    expect(screen.queryByTestId('more-more')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByTestId('more-less'));
   });
 });

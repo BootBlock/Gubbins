@@ -53,7 +53,7 @@ so underneath: *"Showing 12 of 40 categories"*, with **Show more** to bring the 
 
 The count is always the truth about the whole set, so you can tell at a glance whether you're
 looking at all of something or the head of a longer list. Nothing is quietly left out — and the
-headline figures above each panel (total value, portfolio turnover, tied-up capital) are always
+headline figures (total value, portfolio turnover, the capital tied up in dead stock) are always
 computed over **every** row, not just the ones on screen.
 
 > **💡 Tip**

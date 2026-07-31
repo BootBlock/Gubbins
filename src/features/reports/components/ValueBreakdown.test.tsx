@@ -50,14 +50,22 @@ describe('ValueBreakdown', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(VALUE_BREAKDOWN_INITIAL_GROUPS);
   });
 
-  it('scales a revealed bar against the whole set, not against the rows on screen', () => {
-    const { container } = renderBreakdown(40);
-    fireEvent.click(screen.getByTestId('value-breakdown-more-more'));
+  it('scales the bars against the whole set, not against the rows on screen', () => {
+    // `sortValueGroups` forces the ungrouped bucket last **regardless of its value**, so the
+    // largest group can sit off the opening slice — the case where "max over all" and "max over
+    // visible" actually differ, and the one a strictly-descending fixture would never reach.
+    const { container } = render(
+      <ValueBreakdown
+        groups={[...groups(14), { id: null, name: 'Ungrouped', quantity: 1, value: 100 }]}
+        formatters={formatters}
+        label="categories"
+        emptyLabel="No priced stock yet."
+      />,
+    );
     const bars = container.querySelectorAll<HTMLElement>('.bg-primary');
-    // Group 0 holds 40 of the largest value; group 12 holds 28 ⇒ 70% of the leader, a share
-    // that would read as 100% if the maximum were taken over the visible rows only.
-    expect(bars[0]?.style.width).toBe('100%');
-    expect(bars[12]?.style.width).toBe('70%');
+    // The leading visible group holds 14 against the off-screen maximum of 100 ⇒ 14%. Scaled
+    // against the visible rows alone it would read 100%.
+    expect(bars[0]?.style.width).toBe('14%');
   });
 
   it('shows no footer when every group is already listed', () => {

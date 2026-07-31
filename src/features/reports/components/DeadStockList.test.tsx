@@ -22,7 +22,7 @@ describe('DeadStockList', () => {
   it('says how much of the worklist is on screen rather than emptying out at the cap (issue #609)', () => {
     render(<DeadStockList lines={lines(50)} thresholdDays={90} formatters={formatters} />);
     expect(screen.getAllByRole('listitem')).toHaveLength(DEAD_STOCK_INITIAL_ROWS);
-    expect(screen.getByTestId('dead-stock-more-summary')).toHaveTextContent('Showing 20 of 50 items');
+    expect(screen.getByTestId('dead-stock-more-summary')).toHaveTextContent('Showing 20 of 50 idle items');
   });
 
   it('makes the rest of the worklist reachable', () => {
@@ -32,7 +32,7 @@ describe('DeadStockList', () => {
     fireEvent.click(screen.getByTestId('dead-stock-more-more'));
     expect(screen.getAllByRole('listitem')).toHaveLength(50);
     expect(screen.queryByTestId('dead-stock-more-more')).not.toBeInTheDocument();
-    expect(screen.getByTestId('dead-stock-more-summary')).toHaveTextContent('Showing 50 of 50 items');
+    expect(screen.getByTestId('dead-stock-more-summary')).toHaveTextContent('Showing 50 of 50 idle items');
   });
 
   it('shows no footer when the whole worklist already fits', () => {
