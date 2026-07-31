@@ -152,4 +152,57 @@ describe('LocationRepository activity record (#691)', () => {
     expect(feed.rows[1]!.locationId).toBe(second.id);
     expect(feed.hasMore).toBe(true);
   });
+
+  /**
+   * The cross-location feed's filter and count (issue #693) — what the Activity screen's Locations
+   * lane reads. The count is the denominator its paginated mode sizes pages from, so the two must
+   * agree about what the filter matches; a count that disagreed would offer pages that are empty
+   * or hide pages that are not.
+   */
+  describe('cross-location feed filter + count (#693)', () => {
+    it('filters the feed by action, and counts exactly what the filter matches', async () => {
+      const shelf = await locations.create({ name: 'Shelf' });
+      await locations.create({ name: 'Bin' });
+      await locations.update(shelf.id, { name: 'Top shelf' });
+
+      const renames = await locations.getHistoryFeed({ actions: ['RENAMED'] });
+      expect(renames.rows.map((e) => e.locationName)).toEqual(['Top shelf']);
+      expect(await locations.countHistoryFeed({ actions: ['RENAMED'] })).toBe(1);
+
+      const both = await locations.getHistoryFeed({ actions: ['RENAMED', 'CREATED'] });
+      expect(both.rows).toHaveLength(3);
+      expect(await locations.countHistoryFeed({ actions: ['RENAMED', 'CREATED'] })).toBe(3);
+    });
+
+    it('treats an omitted filter as the whole feed and an empty one as nothing', async () => {
+      await locations.create({ name: 'Shelf' });
+
+      expect((await locations.getHistoryFeed()).rows).toHaveLength(1);
+      expect(await locations.countHistoryFeed()).toBe(1);
+      expect(await locations.countHistoryFeed({})).toBe(1);
+
+      // De-selecting every chip must show an empty lane, not silently fall back to everything.
+      expect((await locations.getHistoryFeed({ actions: [] })).rows).toEqual([]);
+      expect(await locations.countHistoryFeed({ actions: [] })).toBe(0);
+    });
+
+    it('still counts and feeds a deleted location’s entries — the lane’s whole reason to exist', async () => {
+      const shelf = await locations.create({ name: 'Top shelf' });
+      await locations.delete(shelf.id);
+
+      // Nothing is left to open this from, so the cross-location read is the only in-app reader.
+      const feed = await locations.getHistoryFeed({ actions: ['DELETED'] });
+      expect(feed.rows.map((e) => e.locationName)).toEqual(['Top shelf']);
+      expect(await locations.countHistoryFeed({ actions: ['DELETED'] })).toBe(1);
+      expect(await locations.getById(shelf.id)).toBeUndefined();
+    });
+
+    it('counts the whole feed, not the page the caller asked for', async () => {
+      for (const name of ['A', 'B', 'C']) await locations.create({ name });
+
+      const firstPage = await locations.getHistoryFeed({ limit: 2 });
+      expect(firstPage.rows).toHaveLength(2);
+      expect(await locations.countHistoryFeed()).toBe(3);
+    });
+  });
 });

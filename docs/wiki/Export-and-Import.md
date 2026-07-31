@@ -42,7 +42,8 @@ Look for the **Export** button and pick a format — **CSV**, **TSV**, an **Exce
 
 | List | Where | What the file holds |
 | --- | --- | --- |
-| [[Activity\|Activity-Log]] | Activity | Every change, with the item, what happened and any quantity or value movement |
+| [[Activity\|Activity-Log]] | Activity → Items | Every change, with the item, what happened and any quantity or value movement |
+| [[Location activity\|Activity-Log]] | Activity → Locations | Every change to a location — when, which place, what happened and the detail |
 | [[One item's activity\|Activity-Log]] | An item → Activity | That item's own history — the same columns without the item name on every row |
 | [[Alerts]] | Alert centre | The alerts you can currently see, with their urgency and due date |
 | [[On loan\|Loans-Check-Out-and-In]] | Contacts & borrowing | Who has what, how many, when it went out and when it's due |

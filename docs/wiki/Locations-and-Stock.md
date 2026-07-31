@@ -317,6 +317,9 @@ dimensions, walk order and the settings below describe the place rather than mov
 aren't logged. See [[Activity log|Activity-Log]] for the full rules, and for the separate ledger
 that covers the items *inside* a location.
 
+To read every location's record at once — including places you have since deleted, which no longer
+have an **Edit** dialog to open — switch the **Activity** screen to its **Locations** view.
+
 ## Statistics for a location
 
 Every location's **Edit** dialog has a **Statistics** tab that adds up what's stored there, so
