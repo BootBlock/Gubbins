@@ -380,8 +380,8 @@ mechanism genuinely cannot do is hold *two values for one definition* — three 
 constraint exists on items as
 [`UNIQUE (item_id, def_id)`](../../src/db/migrations/v1-initial.ts#L740). It is `W2` (repeating
 fields) in the [archetypes audit](weak-item-archetypes_2026-07-31.md#4-candidate-work-items), which
-names only the item constraint — the location one wants folding into its scope, exactly as `N5`
-folds into `W1`. **One change over two subjects, not a location-only table.**
+named only the item constraint until this reassessment; its scope now carries the location one too,
+exactly as `N5` folds into `W1`. **One change over two subjects, not a location-only table.**
 
 So §5's diagnosis holds and is now complete: the mechanism was built, sufficient, and invisible.
 `N1` and `N2` made it visible and findable, and nothing about a location's own text needs new schema.
