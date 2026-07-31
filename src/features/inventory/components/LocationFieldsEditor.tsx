@@ -75,8 +75,14 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
             return (
               <li key={value.id} className="rounded-lg border border-border bg-card p-3">
                 <div className="mb-field-gap-compact flex items-center justify-between gap-2">
+                  {/* The unit joins the label here for the same reason it does on an item's
+                      editor — the box holds the number alone. */}
                   <span id={labelId} className="text-xs font-medium">
-                    {value.name}
+                    {value.unit
+                      ? t('inventory.fields.unit.withName', {
+                          vars: { name: value.name, unit: value.unit },
+                        })
+                      : value.name}
                   </span>
                   <Button
                     variant="ghost"

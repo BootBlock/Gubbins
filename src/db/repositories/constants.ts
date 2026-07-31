@@ -341,6 +341,40 @@ export const FIELD_DUE_LEAD_DAYS_MAX = 365;
 export const FIELD_DUE_LEAD_DAYS_DEFAULT = 14;
 
 /**
+ * Bounds on `field_defs.unit` — a `NUMBER` custom field's **unit of measure** (W1b).
+ *
+ * A unit is a *symbol*, not a sentence: `mm`, `V`, `kg`, `kWh/100km`, `µg/m³`. The cap is
+ * generous enough for a compound SI unit and tight enough that the value it sits beside stays
+ * the thing being read — a card renders `5 V`, and a unit long enough to wrap would turn that
+ * into prose. `NULL` means "no unit", and so does a blank: the write seam folds one to the
+ * other, the same way a value is never stored as `''` (see `validateFieldValue`).
+ *
+ * Interpolated into the `field_defs` CHECK, so the schema and the app clamp to the same range.
+ */
+export const FIELD_UNIT_MAX_LENGTH = 16;
+
+/**
+ * The outer limit on `field_defs.min_value` / `max_value` — a `NUMBER` custom field's
+ * **range** (W1c), either side of zero.
+ *
+ * `Number.MAX_SAFE_INTEGER` rather than a round figure, because that is precisely where a
+ * JavaScript number stops being exact: past it, `n` and `n + 1` can be the same double, so a
+ * bound stored there would not reliably mean what it says, and the comparison the validator
+ * makes against it would be arbitrary. It also keeps `±Infinity` out of a `REAL` column that
+ * would otherwise accept it (SQLite stores `9e999` happily; it turns `NaN` into `NULL`).
+ *
+ * Each bound is **independently** nullable and `NULL` means *unbounded on that side*, which is
+ * the deliberate difference from {@link FIELD_DUE_LEAD_DAYS_MIN}'s single-column opt-in: a
+ * one-sided range ("never negative", "at most 100") is a constraint users genuinely want, so a
+ * half-set pair is legitimate rather than a half-finished one. An **inverted** pair is not —
+ * `min > max` admits no value at all, so the CHECK forbids it and the write seam refuses it
+ * first, in the app's voice. `min = max` is allowed: it means "exactly this".
+ *
+ * Interpolated into the `field_defs` CHECK, so the schema and the app clamp to the same range.
+ */
+export const FIELD_NUMBER_BOUND_LIMIT = Number.MAX_SAFE_INTEGER;
+
+/**
  * Attachment/datasheet kinds (spec §4 "Attachments & Datasheets"). `URL` is an
  * external link; `LOCAL_POINTER` stores only the literal local file-path string
  * (never the blob), keeping it sync-safe (§4 Strict Sync Isolation). Which kinds a

@@ -1,7 +1,7 @@
 # What Gubbins is weakest at tracking — archetype audit (2026-07-31)
 
-> **Status:** 🟢 ACTIVE — research complete. `W1a` (custom-field due dates) has shipped; the rest
-> of `W1` and `W2`–`W10` remain open.
+> **Status:** 🟢 ACTIVE — research complete. `W1a` (custom-field due dates) and `W1b`/`W1c` (a
+> number's unit and range) have shipped; `W1d`, the deferred `W1e`, and `W2`–`W10` remain open.
 
 Answers issue [#621](https://github.com/BootBlock/Gubbins/issues/621): *which items, or types of
 item, is Gubbins weakest at tracking or managing?*
@@ -317,9 +317,15 @@ does not make the app track anything better. None started.
   to issue [#619](https://github.com/BootBlock/Gubbins/issues/619) (which is purely presentational),
   but the load-bearing half — feeds reading `DATE` fields — is untouched by it.
   - **`W1a` — DATE fields as due dates. ✅ Shipped** (see [§4.1](#41-w1a--the-due-date-opt-in-shipped)).
-  - **`W1b` — a per-definition unit** on `field_defs`, so a `NUMBER` field carries one. Open.
-  - **`W1c` — min/max (and precision) on a `NUMBER` definition**, validated at the point of save
-    through the existing `validateFieldValue` seam. Open.
+  - **`W1b` — a per-definition unit** on `field_defs`, so a `NUMBER` field carries one.
+    ✅ **Shipped** (see [§4.2](#42-w1bw1c--a-numbers-unit-and-range-shipped)).
+  - **`W1c` — min/max on a `NUMBER` definition**, validated at the point of save through the
+    existing `validateFieldValue` seam. ✅ **Shipped** with `W1b` — same surface, one migration
+    (see [§4.2](#42-w1bw1c--a-numbers-unit-and-range-shipped)). **Precision was considered and
+    deliberately deferred** as `W1e`; §4.2 records why.
+  - **`W1e` — decimal precision on a `NUMBER` definition.** Open, split out of `W1c`. Not a third
+    bound of the same kind: min/max are pure *constraints*, while precision is half constraint
+    ("at most 2 decimal places") and half *display format* ("show `5.5` as `5.50`"). See §4.2.
   - **`W1d` — the "surface this" prominence flag.** Open, and deliberately last. #619 has since
     shipped, so its adjacency is now concrete: a *category* chooses where its whole field set sits
     (`categories.field_prominence`). That is **not** `W1d`, which is per **definition** and would
@@ -434,6 +440,94 @@ booking lanes. The due-date lane re-anchors with `utcDayToLocalDay` and so is co
 fix should adopt the same call rather than invent a second answer, and the lane's test shows the
 shape a guard for it needs (an off-midnight fixture, since `utcDayToLocalDay` is the identity in
 UTC and CI runs there).
+
+### 4.2 `W1b`/`W1c` — a number's unit and range (shipped)
+
+A custom `NUMBER` field can carry a **unit** (`mm`, `V`, `kg`) shown beside its value, and an
+accepted **range** enforced when the value is saved. Both are optional, both are per definition,
+and a field with neither behaves exactly as before.
+
+**Where they live: `field_defs`, the same answer `W1a` reached, and stated rather than inherited.**
+A unit and a range are part of what a field *means*, not a category's policy about it: "Voltage" is
+measured in volts wherever it is used, and a torque that must fall between 8 and 12 is out of range
+wherever it is entered. The same two storage facts settle it beyond taste:
+
+- `item_field_values` and the effective-value view key on `def_id`, never on a category's *use* of a
+  definition, so a def-scoped unit reaches every value — including one an item
+  **inherited from a location**, which a category-scoped one would render bare.
+- The dictionary already refuses to let one name carry two *types*, precisely so a field cannot mean
+  two things at once. Letting the unit fork per category would reintroduce exactly that: the same
+  number reading as millimetres on one item and inches on another, with nothing on screen to say why.
+
+The cost is the same accepted one — editing a shared definition changes it everywhere — and the
+field editor's hint says so.
+
+**Their shape: three independently nullable columns, no boolean gate.** `unit TEXT`,
+`min_value REAL`, `max_value REAL`; `NULL` means "not set" in each case, and that *is* the opt-in.
+`W1a`'s "one column, not two" rule was really *never store a flag that can disagree with the value
+it gates* — a boolean plus a lead time can say "opted in, no notice", which has no meaning. Three
+nullable columns carry no such pair.
+
+**What a half-set range means — legitimate, not half-finished.** This is where min/max genuinely
+differs from `due_lead_days`, and it had to be decided rather than assumed. A one-sided range is a
+constraint users actually want: "never negative" on a depth, "at most 100" on a percentage. So the
+two bounds are independent, `NULL` on either means *unbounded on that side*, and neither implies the
+other.
+
+**What an inverted pair means — nothing, so it is refused.** `min > max` admits no value at all:
+every entry would fail, and a field that cannot be filled in is broken rather than strict. A table
+CHECK forbids it, with the write seam refusing it first in the app's voice so the user meets a
+readable message instead of a raw constraint failure. Because either end can be edited alone, the
+ordering rule is judged on the pair the row will actually *hold* — not on the input — so a one-sided
+edit (or a reuse) cannot slip past it. `min = max` is allowed: it means "exactly this".
+
+**Precision: considered, and deferred as `W1e`.** It is not a third bound of the same kind. Min/max
+are pure constraints — they live wholly in `validateFieldValue` and change nothing about how a
+stored value is displayed. Precision is half constraint and half display format, and the display
+half opens a question this change should not answer: a `NUMBER` is stored canonically via `String(n)`
+and rendered as that raw string, with no locale awareness at all, while the app has a whole
+`useFormatters`/`Money` seam for numbers that *are* locale-formatted. Shipping the constraint half
+alone would read as broken — someone who sets 2 dp and still sees `5.5` will call it a bug — and
+shipping the display half means deciding whether a custom number joins the locale-formatted world.
+The strongest single argument for picking it up is the `precision = 0` case, "whole numbers only",
+which a range cannot express and which several archetypes want.
+
+**Where the unit appears, and where it does not.** Beside the *value* on the read-only surfaces
+(card, dense row, table cell) — `5 V` — and appended to the *label* in the editors — *Voltage (V)*.
+The split is deliberate: an editor's box holds the number alone, so the unit belongs with the label
+naming it, where it also correctly joins the control's accessible name; a card has no
+label-and-control pair, so the unit has to travel with the value. The table keeps the bare field name
+in its header for the same reason — the cell carries the unit, so a table agrees with the cards
+rather than needing a second rule.
+
+**The range is enforced in the pure seam, and only there.** A `NUMBER` *value* box is a Foundry
+`Input type="number"`, which delegates to the micro-calculator `NumberInput` — a `type="text"` field,
+because it must hold `/` and `*`. `min`/`max` on it would be inert attributes that are not even valid
+for a text input, so passing them would look like enforcement while doing nothing. `validateFieldValue`
+is the real gate; it already runs on every render of the item editor, so an out-of-range value shows
+its reason as the user types and blocks the save, and it covers a **location's** value on the same
+path (a location feeds every item inheriting it, so it must not be the one place a range is
+side-stepped).
+
+**One thing the tests caught that types could not.** The range boxes in the *definition* editor are
+text inputs with `inputMode="decimal"`, not `type="number"`. A native number input reports `''` for
+anything it cannot parse — including a lone `-` part-way through typing a negative bound — and `''`
+is exactly the string that means "cleared" here, so the box would silently drop a stored bound the
+moment someone retyped one. Keeping the raw text is what lets a blank ("unbounded") be told apart
+from a mid-edit ("leave it alone"). This is the mirror of `W1a`'s blank-is-not-zero rule, reached
+from the opposite direction: there, blank had to *revert*, because the field was already opted in and
+every number was a legal setting.
+
+**Deliberately not in scope:**
+
+- **The preset library still encodes units in field *names*** (`Voltage (V)`, `Capacity (mAh)` in
+  `category-presets.ts`) — the clearest demonstration of why `W1b` exists. Moving them onto the new
+  setting means renaming the definitions, and a name *is* the dictionary key, so it would fork
+  existing definitions rather than update them. Its own change, with a migration story.
+- **Bridge exposure.** `ITEM_FIELD_VALUE_KEYS` and `CategoryFieldDto`/`toCategoryField` still
+  describe the pre-`W1a` shape, so a consumer cannot see a unit, a range or the due-date opt-in.
+  Still one change, now covering three attributes, gated by the OpenAPI and field-vocabulary drift
+  tests.
 
 ## 5. Defects found while surveying
 

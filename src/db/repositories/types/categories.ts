@@ -175,6 +175,9 @@ export interface FieldDefRow {
   readonly options: string | null;
   readonly description: string | null;
   readonly due_lead_days: number | null;
+  readonly unit: string | null;
+  readonly min_value: number | null;
+  readonly max_value: number | null;
   readonly updated_at: number;
 }
 
@@ -203,6 +206,28 @@ export interface FieldDef {
    * same thing wherever it appears.
    */
   readonly dueLeadDays: number | null;
+  /**
+   * The **unit of measure** for a `NUMBER` field (W1b) — a symbol such as `mm`, `V` or `kg`,
+   * shown beside the value wherever one is displayed. `null` — the default, and the only legal
+   * value on any non-`NUMBER` type — means the number is unitless.
+   *
+   * Never a blank string: the write seam folds one to `null`, so "no unit" has a single
+   * spelling. Like {@link dueLeadDays} it lives on the **definition**, because a field named
+   * "Voltage" is measured in volts wherever it is used.
+   */
+  readonly unit: string | null;
+  /**
+   * The lower bound of a `NUMBER` field's accepted **range** (W1c), enforced at the point of
+   * save by `validateFieldValue`. `null` means unbounded below.
+   *
+   * The two bounds are **independent**: either may be set without the other, so "never
+   * negative" ({@link minValue} alone) and "at most 100" ({@link maxValue} alone) are both
+   * expressible. What is refused is an *inverted* pair — a range no value can satisfy is a
+   * broken field rather than a strict one — while equal bounds mean "exactly this".
+   */
+  readonly minValue: number | null;
+  /** The upper bound of a `NUMBER` field's accepted range; `null` is unbounded above. See {@link minValue}. */
+  readonly maxValue: number | null;
   readonly updatedAt: number;
 }
 
@@ -222,6 +247,9 @@ export interface CategoryFieldRow {
   readonly default_value: string | null;
   readonly description: string | null;
   readonly due_lead_days: number | null;
+  readonly unit: string | null;
+  readonly min_value: number | null;
+  readonly max_value: number | null;
   readonly position: number;
   readonly updated_at: number;
 }
@@ -259,6 +287,16 @@ export interface CategoryField {
    * a second read; it is a *definition* attribute, so editing it here changes it everywhere.
    */
   readonly dueLeadDays: number | null;
+  /**
+   * The dictionary definition's unit of measure — see {@link FieldDef.unit}. Carried onto the
+   * category's view of the field so the editor and every value surface can render it without a
+   * second read; a *definition* attribute, so editing it here changes it everywhere.
+   */
+  readonly unit: string | null;
+  /** The definition's lower bound — see {@link FieldDef.minValue}. Definition-wide, like {@link unit}. */
+  readonly minValue: number | null;
+  /** The definition's upper bound — see {@link FieldDef.maxValue}. Definition-wide, like {@link unit}. */
+  readonly maxValue: number | null;
   readonly position: number;
   readonly updatedAt: number;
 }
@@ -292,6 +330,19 @@ export interface CreateCategoryFieldInput {
    * first category's items alerting.
    */
   readonly dueLeadDays?: number | null;
+  /**
+   * The unit of measure for a `NUMBER` field (W1b); omit/null for a unitless number. Follows
+   * the same reuse rule as {@link dueLeadDays}: a value here is *applied* to an existing
+   * definition, but null/omitted never clears one that is already set.
+   */
+  readonly unit?: string | null;
+  /**
+   * The lower bound of a `NUMBER` field's range (W1c); omit/null for unbounded below. Applied
+   * on reuse and never cleared by omission, like {@link unit}.
+   */
+  readonly minValue?: number | null;
+  /** The upper bound of a `NUMBER` field's range; omit/null for unbounded above. See {@link minValue}. */
+  readonly maxValue?: number | null;
   readonly position?: number;
 }
 
@@ -315,6 +366,20 @@ export interface UpdateCategoryFieldInput {
    * field. Rejected on a non-`DATE` field; retyping away from `DATE` clears it.
    */
   readonly dueLeadDays?: number | null;
+  /**
+   * The unit of measure (W1b); `null` or a blank string clears it. A *definition* attribute,
+   * so this reaches every category and location using the field. Rejected on a non-`NUMBER`
+   * field; retyping away from `NUMBER` clears it.
+   */
+  readonly unit?: string | null;
+  /**
+   * The lower bound of the accepted range (W1c); `null` clears it, leaving the field unbounded
+   * below. Rejected on a non-`NUMBER` field, and rejected when it would invert the range
+   * against the effective {@link maxValue}; retyping away from `NUMBER` clears it.
+   */
+  readonly minValue?: number | null;
+  /** The upper bound of the accepted range; `null` leaves the field unbounded above. See {@link minValue}. */
+  readonly maxValue?: number | null;
   readonly position?: number;
 }
 
@@ -388,6 +453,16 @@ export interface LocationFieldValue {
   readonly fieldType: FieldType;
   readonly options: string[] | null;
   readonly description: string | null;
+  /**
+   * The definition's unit and range — see {@link FieldDef.unit} / {@link FieldDef.minValue}.
+   * Carried here for the same reason the identity half is: a location's value is edited and
+   * validated against the *definition*, so the editor must be able to label the control with
+   * its unit and the repository must be able to hold the value to the same range an item's is
+   * held to. Without them a location would be the one place a range could be side-stepped.
+   */
+  readonly unit: string | null;
+  readonly minValue: number | null;
+  readonly maxValue: number | null;
   readonly value: string | null;
   /** Opt-in: when false the value is the location's own metadata and is not offered. */
   readonly isInheritable: boolean;

@@ -27,6 +27,23 @@ export interface ValidatableField {
   readonly fieldType: FieldType;
   readonly options: string[] | null;
   readonly isRequired: boolean;
+  /**
+   * A `NUMBER` field's unit of measure (W1b). Not itself a rule — a unit constrains nothing —
+   * but it is carried here so an out-of-range message can name the range in the terms the user
+   * set it in ("must be at most 24 V" rather than a bare "24").
+   */
+  readonly unit?: string | null;
+  /**
+   * A `NUMBER` field's accepted range (W1c), enforced below. Both are optional and
+   * **independent**: `null`/absent on either side means unbounded *that* side, so a field can
+   * be "never negative" without also acquiring a ceiling nobody asked for.
+   *
+   * Optional on this interface rather than required, so the three callers that build a
+   * `ValidatableField` from a narrower shape keep compiling — and so a caller that has no
+   * bounds to offer cannot accidentally assert there are none.
+   */
+  readonly minValue?: number | null;
+  readonly maxValue?: number | null;
 }
 
 /**
@@ -76,7 +93,11 @@ function isBlank(raw: string | null | undefined): boolean {
  * - **URL** ⇒ must parse as an absolute `http:`/`https:` URL.
  * - **NUMBER** ⇒ must parse to a *finite* number and is re-serialised canonically
  *   via `String(n)` (so `'1.50'` → `'1.5'`, `'01'` → `'1'`); rejects `'1.2.3'`,
- *   `'abc'`, `'Infinity'`, `'NaN'`, blank-after-sign, etc.
+ *   `'abc'`, `'Infinity'`, `'NaN'`, blank-after-sign, etc. Must also fall inside the
+ *   definition's range where it sets one — either end independently (W1c, see
+ *   {@link rangeError}). This is the *only* gate on the range: a NUMBER value box is the
+ *   Foundry calculator input, a `type="text"` field, so `min`/`max` attributes on it would
+ *   be inert rather than enforcing.
  * - **RATING** ⇒ a whole number from 1 to 5.
  * - **BOOLEAN** / **ON_OFF** ⇒ normalised to `'true'` / `'false'` (case-insensitive
  *   in, plus the checkbox's own `'true'`/`'false'` output); anything else is
@@ -128,6 +149,8 @@ export function validateFieldValue(
       if (!Number.isFinite(n)) {
         return { ok: false, error: `${def.name} must be a number.` };
       }
+      const range = rangeError(def, n);
+      if (range !== null) return { ok: false, error: range };
       return { ok: true, value: String(n) };
     }
 
@@ -193,6 +216,38 @@ export function validateFieldValue(
       return { ok: false, error: `${def.name} has an unsupported field type.` };
     }
   }
+}
+
+/**
+ * The reason a `NUMBER` value falls outside its definition's range (W1c), or `null` when it
+ * does not.
+ *
+ * The three shapes a range can take each get their own wording — both ends, floor only,
+ * ceiling only — rather than one message with the unbounded side spelled out as some stand-in
+ * infinity, because a one-sided range is a first-class constraint here and should read like
+ * one. Where the definition carries a unit the bound is quoted in it ("at most 24 V"), so the
+ * message names the range in the terms the user set it in.
+ *
+ * An **inverted** range cannot reach this function: the table CHECK refuses to store one and
+ * the write seam refuses it first, so there is no case here for a range no value can satisfy.
+ *
+ * Like every other message in this seam the copy is English rather than a `t()` lookup. That is
+ * deliberate and pre-existing: the seam is dependency-free by design and runs in the repository
+ * and the CSV import, neither of which has a translator in scope. Routing it through the
+ * catalog means giving {@link FieldValidation} a structured code that each caller resolves —
+ * a coherent change to make for all fifteen of this file's messages at once, and the wrong one
+ * to make for three of them alone.
+ */
+function rangeError(def: ValidatableField, n: number): string | null {
+  const min = def.minValue ?? null;
+  const max = def.maxValue ?? null;
+  const unit = def.unit ? ` ${def.unit}` : '';
+  if (min !== null && max !== null) {
+    return n < min || n > max ? `${def.name} must be between ${min} and ${max}${unit}.` : null;
+  }
+  if (min !== null && n < min) return `${def.name} must be at least ${min}${unit}.`;
+  if (max !== null && n > max) return `${def.name} must be at most ${max}${unit}.`;
+  return null;
 }
 
 /**

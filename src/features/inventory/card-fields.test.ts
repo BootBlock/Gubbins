@@ -247,6 +247,7 @@ describe('resolveCardFields — custom fields', () => {
     name: 'Voltage',
     fieldType: 'TEXT',
     defaultValue: null,
+    unit: null,
   };
   const customFields = new Map<string, CardCustomField>([['f1', field]]);
 
@@ -299,6 +300,51 @@ describe('resolveCardFields — custom fields', () => {
       ctx({ customFields: new Map([['f1', onOffField]]), customValues: new Map([['f1', 'false']]) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'text', text: 'Off' });
+  });
+
+  it('renders a NUMBER custom field with its unit as a measure (W1b)', () => {
+    const voltage: CardCustomField = { ...field, fieldType: 'NUMBER', unit: 'V' };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', voltage]]), customValues: new Map([['f1', '5']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'measure', text: '5', unit: 'V' });
+  });
+
+  it('leaves a NUMBER without a unit as plain text', () => {
+    const plain: CardCustomField = { ...field, fieldType: 'NUMBER', unit: null };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', plain]]), customValues: new Map([['f1', '5']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: '5' });
+  });
+
+  it('does not attach a unit to a value of any other type', () => {
+    // The unit is NUMBER-only by schema CHECK. A definition retyped in one client and not yet
+    // synced to another must not render "true mm" in the meantime.
+    const retyped: CardCustomField = { ...field, fieldType: 'BOOLEAN', unit: 'mm' };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', retyped]]), customValues: new Map([['f1', 'true']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: 'Yes' });
+  });
+
+  it('renders the bare number when the catalog entry carries no unit at all', () => {
+    // The card catalog is assembled by hand in several places and this file is not
+    // type-checked, so a missing `unit` must degrade to "5", never to "5 undefined".
+    const noUnitKey = { ...field, fieldType: 'NUMBER' } as CardCustomField;
+    delete (noUnitKey as { unit?: string | null }).unit;
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', noUnitKey]]), customValues: new Map([['f1', '5']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: '5' });
   });
 
   it('renders an IMAGE custom field as a thumbnail of its data URL', () => {

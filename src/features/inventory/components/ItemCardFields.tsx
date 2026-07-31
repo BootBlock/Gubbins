@@ -54,6 +54,16 @@ export function FieldValue({
       return <img src={value.src} alt={field.label} className="max-h-8 rounded object-contain" />;
     case 'empty':
       return <span className="text-muted-foreground/60">—</span>;
+    case 'measure':
+      // A number and its unit (W1b). The unit takes the muted token so the value stays the
+      // thing being read, and the pair truncates together rather than letting a long value
+      // push its own unit out of sight.
+      return (
+        <span className="truncate">
+          {value.text}
+          <span className="text-muted-foreground"> {value.unit}</span>
+        </span>
+      );
     case 'text':
       return (
         <span className={cn('truncate', field.id === 'location' && locationColorClass)}>{value.text}</span>

@@ -551,6 +551,9 @@ export function rowToCategoryField(row: CategoryFieldRow): CategoryField {
     defaultValue: row.default_value,
     description: row.description,
     dueLeadDays: row.due_lead_days,
+    unit: row.unit,
+    minValue: row.min_value,
+    maxValue: row.max_value,
     position: row.position,
     updatedAt: row.updated_at,
   };
@@ -565,6 +568,9 @@ export function rowToFieldDef(row: FieldDefRow): FieldDef {
     options: parseStringArray(row.options),
     description: row.description,
     dueLeadDays: row.due_lead_days,
+    unit: row.unit,
+    minValue: row.min_value,
+    maxValue: row.max_value,
     updatedAt: row.updated_at,
   };
 }
@@ -597,6 +603,9 @@ export function rowToLocationFieldValue(
     readonly field_type: FieldType;
     readonly options: string | null;
     readonly description: string | null;
+    readonly unit: string | null;
+    readonly min_value: number | null;
+    readonly max_value: number | null;
   },
 ): LocationFieldValue {
   return {
@@ -607,6 +616,9 @@ export function rowToLocationFieldValue(
     fieldType: row.field_type,
     options: parseStringArray(row.options),
     description: row.description,
+    unit: row.unit,
+    minValue: row.min_value,
+    maxValue: row.max_value,
     value: row.value,
     isInheritable: row.is_inheritable === 1,
     updatedAt: row.updated_at,

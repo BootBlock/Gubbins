@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, InfoHint, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { fieldAria } from '@/components/foundry/field-aria';
 import { InfoIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { useItemFields, useSetItemFieldValues } from '../categories';
 import { validateFieldValue } from '../custom-fields';
 import { InheritableFieldControl, INHERIT_DRAFT_VALUE } from './InheritableFieldControl';
@@ -19,6 +20,7 @@ import { InheritableFieldControl, INHERIT_DRAFT_VALUE } from './InheritableField
  * pattern, via the {@link fieldAria} seam).
  */
 export function CustomFieldsEditor({ itemId }: { itemId: string }) {
+  const t = useT();
   const { data: fields, isLoading } = useItemFields(itemId);
   const setValues = useSetItemFieldValues(itemId);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -96,7 +98,14 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
                 associated via aria-describedby. */}
             <div className="mb-field-gap flex items-center gap-1.5 text-sm font-medium">
               <span id={`${field.id}-label`} className="flex items-center gap-1.5">
-                {field.name}
+                {/* A unit belongs with the *label* in an editor, not beside the box: the box
+                    holds the number alone, so "Voltage (V)" names what to type — and, unlike
+                    the badges below, it is meant to join the control's accessible name. The
+                    read-only surfaces do the opposite and put it beside the value, because
+                    they have no label-and-control pair to hang it on. */}
+                {field.unit
+                  ? t('inventory.fields.unit.withName', { vars: { name: field.name, unit: field.unit } })
+                  : field.name}
                 {field.isRequired ? <span className="text-destructive">*</span> : null}
               </span>
               {field.description ? <InfoHint content={field.description} /> : null}

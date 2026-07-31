@@ -20,6 +20,7 @@ import {
   FIELD_DUE_LEAD_DAYS_MAX,
   FIELD_DUE_LEAD_DAYS_MIN,
   FIELD_TYPES,
+  FIELD_UNIT_MAX_LENGTH,
   MAINTENANCE_BASES,
   TRACKING_MODES,
   type CategoryField,
@@ -28,6 +29,7 @@ import {
   type FieldType,
   type MaintenanceBasis,
   type TrackingMode,
+  type UpdateCategoryFieldInput,
 } from '@/db/repositories';
 import { useT, type MessageKey } from '@/features/i18n';
 import type { FeatureId } from '@/features/modules/feature-registry';
@@ -378,6 +380,10 @@ function CategoryDetail({
                   usually already there by the time its deadline-ness matters — the preset library
                   ships several, and a field added before this existed has no other way back. */}
               {field.fieldType === 'DATE' ? <FieldDueDateControl field={field} /> : null}
+              {/* Likewise a unit and a range belong to a number and nothing else, and they sit
+                  on the existing field for the same reason: the preset library ships plenty of
+                  number fields, and one added before this existed has no other way back. */}
+              {field.fieldType === 'NUMBER' ? <FieldNumberOptionsControl field={field} /> : null}
             </li>
           ))
         )}
@@ -1000,6 +1006,134 @@ function resolveLeadDays(raw: string): number {
   return clampFieldDueLeadDays(typed);
 }
 
+/**
+ * What a typed bound means (W1c): the number, `null` when the box is **empty**, or `undefined`
+ * for anything that is not a number — meaning "leave the stored bound alone".
+ *
+ * The three-way answer is the point. Unlike the due-date notice period, where blank had to
+ * revert because the field was already opted in and every number was a legal setting, a blank
+ * bound has its own meaning here: *unbounded on that side*. So blank clears, and only genuinely
+ * un-parseable text (a lone `-` mid-type, a stray letter) reverts — otherwise half-typing a
+ * negative bound would clear the one already set.
+ */
+function resolveBound(raw: string): number | null | undefined {
+  if (raw.trim() === '') return null;
+  const typed = Number(raw);
+  return Number.isFinite(typed) ? typed : undefined;
+}
+
+/**
+ * The **unit and range** of an existing `NUMBER` custom field (W1b/W1c), saved onto the shared
+ * dictionary definition.
+ *
+ * One control for all three rather than three independent ones: they share a row, a save
+ * failure, and a definition, and separate controls would each fire their own mutation against
+ * the same non-optimistic refetch. It offers nothing on any other field type, because only a
+ * number has a unit or a range (the schema's CHECK says the same).
+ *
+ * There is no tick here, unlike the due-date opt-in. Each setting's *stored value is* the
+ * opt-in — an empty unit is "unitless" and an empty bound is "unbounded that side" — so a tick
+ * would only add a second way to say what an empty box already says. Everything commits on
+ * **blur** for the reason W1a documents: the boxes are fed from server state, so writing per
+ * keystroke races the refetch.
+ */
+function FieldNumberOptionsControl({ field }: { field: CategoryField }) {
+  const t = useT();
+  const updateField = useUpdateCategoryField();
+  const describeError = useErrorMessage();
+  const [error, setError] = useState<string | null>(null);
+
+  // Fed from server state and re-seated whenever the definition changes underneath us — see
+  // the note in {@link FieldDueDateControl} for why a concurrent overwrite is accepted here.
+  const [unit, setUnit] = useState(field.unit ?? '');
+  const [min, setMin] = useState(field.minValue == null ? '' : String(field.minValue));
+  const [max, setMax] = useState(field.maxValue == null ? '' : String(field.maxValue));
+  useEffect(() => setUnit(field.unit ?? ''), [field.unit]);
+  useEffect(() => setMin(field.minValue == null ? '' : String(field.minValue)), [field.minValue]);
+  useEffect(() => setMax(field.maxValue == null ? '' : String(field.maxValue)), [field.maxValue]);
+
+  const save = (input: UpdateCategoryFieldInput) => {
+    setError(null);
+    updateField.mutate(
+      { fieldId: field.id, input },
+      { onError: (e) => setError(describeError(e, t('inventory.fields.number.saveFailed'))) },
+    );
+  };
+
+  const commitUnit = () => {
+    const next = unit.trim() === '' ? null : unit.trim();
+    setUnit(next ?? '');
+    if (next !== field.unit) save({ unit: next });
+  };
+
+  /**
+   * Commit one end of the range: write the parsed bound, or put the stored one back when the
+   * box holds something that is not a number. `end` names which column the write targets, so
+   * one edit can never send both ends and the untouched one keeps whatever it already had.
+   */
+  const commitBound = (
+    raw: string,
+    stored: number | null,
+    setDraft: (v: string) => void,
+    end: 'minValue' | 'maxValue',
+  ) => {
+    const next = resolveBound(raw);
+    if (next === undefined) {
+      setDraft(stored == null ? '' : String(stored));
+      return;
+    }
+    setDraft(next == null ? '' : String(next));
+    if (next !== stored) save({ [end]: next });
+  };
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+      {t('inventory.fields.number.unitLabel')}
+      <Input
+        value={unit}
+        maxLength={FIELD_UNIT_MAX_LENGTH}
+        onChange={(e) => setUnit(e.target.value)}
+        onBlur={commitUnit}
+        placeholder={t('inventory.fields.number.unitPlaceholder')}
+        aria-label={t('inventory.fields.number.unitAria', { vars: { name: field.name } })}
+        data-testid={`field-unit-${field.id}`}
+        className="h-8 w-24"
+      />
+      {t('inventory.fields.number.rangeLabel')}
+      {/* Deliberately a text box with a decimal keypad rather than `type="number"`. A native
+          number input reports `''` for anything it cannot parse — including a lone `-` part-way
+          through typing a negative bound — which is exactly the string that means "cleared"
+          here, so it would silently drop a stored bound the moment someone retyped one. Keeping
+          the raw text is what lets {@link resolveBound} tell "emptied" from "mid-edit". */}
+      <Input
+        inputMode="decimal"
+        value={min}
+        onChange={(e) => setMin(e.target.value)}
+        onBlur={() => commitBound(min, field.minValue, setMin, 'minValue')}
+        aria-label={t('inventory.fields.number.minAria', { vars: { name: field.name } })}
+        data-testid={`field-min-${field.id}`}
+        className="h-8 w-24"
+      />
+      <span aria-hidden>–</span>
+      <Input
+        inputMode="decimal"
+        value={max}
+        onChange={(e) => setMax(e.target.value)}
+        onBlur={() => commitBound(max, field.maxValue, setMax, 'maxValue')}
+        aria-label={t('inventory.fields.number.maxAria', { vars: { name: field.name } })}
+        data-testid={`field-max-${field.id}`}
+        className="h-8 w-24"
+      />
+      <InfoHint content={t('inventory.fields.number.hint')} />
+      {error ? (
+        <p role="alert" className="w-full text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function AddFieldForm({ categoryId }: { categoryId: string }) {
   const t = useT();
   const addField = useAddCategoryField();
@@ -1012,6 +1146,12 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
   // tick decides whether anything is stored.
   const [isDueDate, setIsDueDate] = useState(false);
   const [dueLeadDays, setDueLeadDays] = useState(String(FIELD_DUE_LEAD_DAYS_DEFAULT));
+  // The unit and range of a NUMBER field (W1b/W1c). No tick to gate them, unlike the due-date
+  // opt-in: an empty box already says "unitless" / "unbounded that side", so a tick would only
+  // add a second way to say the same thing.
+  const [unit, setUnit] = useState('');
+  const [minValue, setMinValue] = useState('');
+  const [maxValue, setMaxValue] = useState('');
   const [defaultValue, setDefaultValue] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -1038,6 +1178,12 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           // A blank or un-parseable box falls back to the default rather than to `Number('')`,
           // which is 0 and would silently create the field as "notify on the day".
           dueLeadDays: fieldType === 'DATE' && isDueDate ? resolveLeadDays(dueLeadDays) : null,
+          // Only a NUMBER carries these. An empty or un-parseable box is `null` — "no unit" and
+          // "unbounded" respectively — so, unlike the notice period, there is no default to
+          // fall back to and nothing is invented for a box the user left alone.
+          unit: fieldType === 'NUMBER' ? unit.trim() || null : null,
+          minValue: fieldType === 'NUMBER' ? (resolveBound(minValue) ?? null) : null,
+          maxValue: fieldType === 'NUMBER' ? (resolveBound(maxValue) ?? null) : null,
         },
       },
       {
@@ -1050,6 +1196,9 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           setIsRequired(false);
           setIsDueDate(false);
           setDueLeadDays(String(FIELD_DUE_LEAD_DAYS_DEFAULT));
+          setUnit('');
+          setMinValue('');
+          setMaxValue('');
         },
       },
     );
@@ -1092,6 +1241,13 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
             // The opt-in only exists on a date, so switching away from one retracts it rather
             // than leaving a tick set that the submit would silently discard.
             if (value !== 'DATE') setIsDueDate(false);
+            // Likewise the unit and range only exist on a number — clear them rather than leave
+            // typed values behind that the submit would drop without saying so.
+            if (value !== 'NUMBER') {
+              setUnit('');
+              setMinValue('');
+              setMaxValue('');
+            }
           }}
           options={FIELD_TYPES.map((t) => ({ value: t, label: FIELD_TYPE_LABELS[t] }))}
         />
@@ -1123,14 +1279,17 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
       </FormField>
       <FormField
         label="Description"
-        hint="An optional note about this field. When set, an **(i)** info badge appears beside the field on each item, showing this text — a handy place for guidance such as *where to read the value from* or *which units to use*. Supports Markdown."
+        // Reworded for W1b: this used to offer the description as the place to say "which units
+        // to use", which a Number field now has a real setting for. Pointing at both would
+        // leave two places to state a unit and no answer for which one a reader should trust.
+        hint={t('inventory.fields.descriptionHint')}
       >
         <Textarea
           sizeKey="category-field.description"
           autoGrow
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="e.g. Read from the label on the base — in volts."
+          placeholder={t('inventory.fields.descriptionPlaceholder')}
           aria-label="Description"
           rows={2}
         />
@@ -1172,6 +1331,41 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
               </span>
             </>
           ) : null}
+        </div>
+      ) : null}
+      {fieldType === 'NUMBER' ? (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          {t('inventory.fields.number.unitLabel')}
+          <Input
+            value={unit}
+            maxLength={FIELD_UNIT_MAX_LENGTH}
+            onChange={(e) => setUnit(e.target.value)}
+            placeholder={t('inventory.fields.number.unitPlaceholder')}
+            aria-label={t('inventory.fields.number.addUnitLabel')}
+            data-testid="add-field-unit"
+            className="h-8 w-24"
+          />
+          {t('inventory.fields.number.rangeLabel')}
+          {/* Text boxes with a decimal keypad, matching the existing-field control — see the
+              note there for why a native number input cannot carry these. */}
+          <Input
+            inputMode="decimal"
+            value={minValue}
+            onChange={(e) => setMinValue(e.target.value)}
+            aria-label={t('inventory.fields.number.addMinLabel')}
+            data-testid="add-field-min"
+            className="h-8 w-24"
+          />
+          <span aria-hidden>–</span>
+          <Input
+            inputMode="decimal"
+            value={maxValue}
+            onChange={(e) => setMaxValue(e.target.value)}
+            aria-label={t('inventory.fields.number.addMaxLabel')}
+            data-testid="add-field-max"
+            className="h-8 w-24"
+          />
+          <InfoHint content={t('inventory.fields.number.hint')} />
         </div>
       ) : null}
       {builtInClash ? (

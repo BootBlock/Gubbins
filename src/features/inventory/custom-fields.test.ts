@@ -12,6 +12,9 @@ function def(over: Partial<CategoryField> & { fieldType: FieldType }): CategoryF
     options: over.options ?? null,
     isRequired: over.isRequired ?? false,
     defaultValue: over.defaultValue ?? null,
+    unit: over.unit ?? null,
+    minValue: over.minValue ?? null,
+    maxValue: over.maxValue ?? null,
     position: over.position ?? 0,
     updatedAt: over.updatedAt ?? 0,
   };
@@ -123,6 +126,96 @@ describe('validateFieldValue — NUMBER', () => {
       ok: true,
       value: '16',
     });
+  });
+});
+
+describe('validateFieldValue — NUMBER range (W1c)', () => {
+  it('accepts anything when neither bound is set', () => {
+    const d = def({ fieldType: 'NUMBER' });
+    for (const raw of ['-9999999', '0', '3.14', '9999999']) {
+      expect(validateFieldValue(d, raw).ok).toBe(true);
+    }
+  });
+
+  it('enforces a two-ended range, inclusive at both ends', () => {
+    const d = def({ fieldType: 'NUMBER', name: 'Torque', minValue: 8, maxValue: 12 });
+    expect(validateFieldValue(d, '8')).toEqual({ ok: true, value: '8' });
+    expect(validateFieldValue(d, '12')).toEqual({ ok: true, value: '12' });
+    expect(validateFieldValue(d, '10.5')).toEqual({ ok: true, value: '10.5' });
+    expect(validateFieldValue(d, '7.99')).toEqual({
+      ok: false,
+      error: 'Torque must be between 8 and 12.',
+    });
+    expect(validateFieldValue(d, '12.01')).toEqual({
+      ok: false,
+      error: 'Torque must be between 8 and 12.',
+    });
+  });
+
+  // A one-sided range is a first-class constraint, not a half-finished one: `null` on either
+  // end means *unbounded that side*, so each is enforced without inventing the other.
+  it('enforces a floor alone, leaving the field unbounded above', () => {
+    const d = def({ fieldType: 'NUMBER', name: 'Depth', minValue: 0 });
+    expect(validateFieldValue(d, '0')).toEqual({ ok: true, value: '0' });
+    expect(validateFieldValue(d, '1e9')).toEqual({ ok: true, value: '1000000000' });
+    expect(validateFieldValue(d, '-0.5')).toEqual({
+      ok: false,
+      error: 'Depth must be at least 0.',
+    });
+  });
+
+  it('enforces a ceiling alone, leaving the field unbounded below', () => {
+    const d = def({ fieldType: 'NUMBER', name: 'Charge', maxValue: 100 });
+    expect(validateFieldValue(d, '100')).toEqual({ ok: true, value: '100' });
+    expect(validateFieldValue(d, '-500')).toEqual({ ok: true, value: '-500' });
+    expect(validateFieldValue(d, '101')).toEqual({
+      ok: false,
+      error: 'Charge must be at most 100.',
+    });
+  });
+
+  it('accepts exactly one value when the bounds are equal', () => {
+    const d = def({ fieldType: 'NUMBER', name: 'Poles', minValue: 2, maxValue: 2 });
+    expect(validateFieldValue(d, '2')).toEqual({ ok: true, value: '2' });
+    expect(validateFieldValue(d, '3').ok).toBe(false);
+  });
+
+  it('quotes the bound in the field’s unit when it has one', () => {
+    const d = def({ fieldType: 'NUMBER', name: 'Voltage', unit: 'V', maxValue: 24 });
+    expect(validateFieldValue(d, '25')).toEqual({
+      ok: false,
+      error: 'Voltage must be at most 24 V.',
+    });
+    expect(
+      validateFieldValue(
+        def({ fieldType: 'NUMBER', name: 'Voltage', unit: 'V', minValue: 3, maxValue: 24 }),
+        '1',
+      ),
+    ).toEqual({ ok: false, error: 'Voltage must be between 3 and 24 V.' });
+  });
+
+  it('lets a blank clear an optional field regardless of its range', () => {
+    // The blank guard runs before the range, so "unset" is never mistaken for "out of range".
+    const d = def({ fieldType: 'NUMBER', minValue: 10, maxValue: 20, isRequired: false });
+    expect(validateFieldValue(d, '')).toEqual({ ok: true, value: null });
+  });
+
+  it('applies the range to a location’s value, not just an item’s', () => {
+    // A location value is validated through this same seam with `isRequired` forced false
+    // (see `setLocationFieldValue`), so the bounds must survive that narrowing — otherwise an
+    // inherited value could sit outside the range every item below it is held to.
+    const d = def({ fieldType: 'NUMBER', name: 'Voltage', maxValue: 24, isRequired: false });
+    expect(validateFieldValue({ ...d, isRequired: false }, '30')).toEqual({
+      ok: false,
+      error: 'Voltage must be at most 24.',
+    });
+  });
+
+  it('ignores a range on any type other than NUMBER', () => {
+    // The bounds are NUMBER-only by schema CHECK; a stale object carrying them on another type
+    // must not start rejecting values that type has always accepted.
+    const d = def({ fieldType: 'TEXT', name: 'Notes', minValue: 5, maxValue: 6 });
+    expect(validateFieldValue(d, 'anything at all')).toEqual({ ok: true, value: 'anything at all' });
   });
 });
 
