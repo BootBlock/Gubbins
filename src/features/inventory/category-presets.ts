@@ -125,14 +125,14 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // Groceries are eaten, not serviced, and carry no warranty — expiry and batch tracking stay.
+  // Groceries are eaten, not serviced — expiry and batch tracking stay.
   {
     id: 'food-pantry',
     sectionId: 'household',
     name: 'Food',
     description: 'Pantry and perishables — expiry, storage and whether the packet is opened.',
     seed: {
-      category: { name: 'Food', glyph: '🍎', hiddenCapabilities: ['maintenance', 'warranty'] },
+      category: { name: 'Food', glyph: '🍎', hiddenCapabilities: ['maintenance'] },
       fields: ordered([
         { name: 'Expiry date', fieldType: 'DATE' },
         { name: 'Storage', fieldType: 'SELECT', options: ['Pantry', 'Fridge', 'Freezer'] },
@@ -499,7 +499,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // Cards are collected one by one — nothing to service, no warranty, no expiry, no lots.
+  // Cards are collected one by one — nothing to service, nothing to expire, no lots.
   {
     id: 'trading-card',
     sectionId: 'collectibles',
@@ -509,7 +509,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Trading card',
         glyph: '🃏',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
       },
       fields: ordered([
         { name: 'Set / expansion', fieldType: 'TEXT' },
@@ -561,7 +561,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // Nobody services a coin, a warranty on one is meaningless, and coins are collected individually.
+  // Nobody services a coin, they don't expire, and they are collected individually rather than in lots.
   {
     id: 'coin',
     sectionId: 'collectibles',
@@ -571,7 +571,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Coin',
         glyph: '🪙',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
       },
       fields: ordered([
         { name: 'Country', fieldType: 'TEXT' },
@@ -587,7 +587,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // Paper currency is never serviced, carries no warranty, and doesn't expire or arrive in lots.
+  // Paper currency is never serviced, and doesn't expire or arrive in lots.
   {
     id: 'banknote',
     sectionId: 'collectibles',
@@ -597,7 +597,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Banknote',
         glyph: '💵',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
       },
       fields: ordered([
         { name: 'Country', fieldType: 'TEXT' },
@@ -659,7 +659,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // A signed piece is never serviced, carries no warranty, and doesn't expire or arrive in lots.
+  // A signed piece is never serviced, and doesn't expire or arrive in lots.
   {
     id: 'autograph',
     sectionId: 'collectibles',
@@ -670,7 +670,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         name: 'Autographs & signed memorabilia',
         glyph: '✍️',
         defaultTrackingMode: 'SERIALISED',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
       },
       fields: ordered([
         { name: 'Signed by', fieldType: 'TEXT' },
@@ -686,7 +686,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // Cards are collected one by one — nothing to service, no warranty, no expiry, no lots.
+  // Cards are collected one by one — nothing to service, nothing to expire, no lots.
   {
     id: 'baseball-card',
     sectionId: 'collectibles',
@@ -696,7 +696,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Baseball cards',
         glyph: '⚾',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
       },
       fields: ordered([
         { name: 'Player', fieldType: 'TEXT' },
@@ -756,7 +756,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // Comics are collected individually — nothing to service, no warranty, no expiry, no lots.
+  // Comics are collected individually — nothing to service, nothing to expire, no lots.
   {
     id: 'comic-book',
     sectionId: 'collectibles',
@@ -766,7 +766,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Comic books',
         glyph: '📚',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
       },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },
@@ -799,7 +799,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // A specimen is never serviced, carries no warranty, and doesn't expire or arrive in lots.
+  // A specimen is never serviced, and doesn't expire or arrive in lots.
   {
     id: 'mineral-gemstone',
     sectionId: 'collectibles',
@@ -809,7 +809,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Crystals, minerals & gemstones',
         glyph: '💎',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
       },
       fields: ordered([
         { name: 'Mineral / species', fieldType: 'TEXT' },
@@ -851,7 +851,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // A token has no physical stock — nothing to service or warranty, and nothing to expire or batch.
+  // A token has no physical stock — nothing to service, and nothing to expire or batch.
   {
     id: 'nft-digital-art',
     sectionId: 'collectibles',
@@ -861,7 +861,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Digital & generative art (NFTs)',
         glyph: '🖥️',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
       },
       fields: ordered([
         { name: 'Artist', fieldType: 'TEXT' },
@@ -953,7 +953,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // A specimen is never serviced, carries no warranty, and doesn't expire or arrive in lots.
+  // A specimen is never serviced, and doesn't expire or arrive in lots.
   {
     id: 'fossil-meteorite',
     sectionId: 'collectibles',
@@ -963,7 +963,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Fossils & meteorites',
         glyph: '🪨',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
       },
       fields: ordered([
         { name: 'Type', fieldType: 'SELECT', options: ['Fossil', 'Meteorite', 'Tektite'] },
@@ -1149,7 +1149,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // Cards are collected one by one — nothing to service, no warranty, no expiry, no lots.
+  // Cards are collected one by one — nothing to service, nothing to expire, no lots.
   {
     id: 'mtg-card',
     sectionId: 'collectibles',
@@ -1159,7 +1159,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Magic: The Gathering cards',
         glyph: '🎴',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
       },
       fields: ordered([
         { name: 'Card name', fieldType: 'TEXT' },
@@ -1184,7 +1184,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // Collected ephemera — nothing to service, no warranty, no expiry, and no lots or parts.
+  // Collected ephemera — nothing to service, nothing to expire, and no lots or parts.
   {
     id: 'matchbook',
     sectionId: 'collectibles',
@@ -1194,7 +1194,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Matchbooks & matchboxes',
         glyph: '🔥',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
       },
       fields: ordered([
         { name: 'Brand / advertiser', fieldType: 'TEXT' },
@@ -1353,7 +1353,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // Nobody services a postcard, a warranty on one is meaningless, and each is collected singly.
+  // Nobody services a postcard, they don't expire, and each is collected singly rather than in lots.
   {
     id: 'postcard',
     sectionId: 'collectibles',
@@ -1363,7 +1363,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Postcards',
         glyph: '📮',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
       },
       fields: ordered([
         { name: 'Subject / place', fieldType: 'TEXT' },
@@ -1527,7 +1527,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // Nobody services a stamp, a warranty on one is meaningless, and each is collected singly.
+  // Nobody services a stamp, they don't expire, and each is collected singly rather than in lots.
   {
     id: 'stamp',
     sectionId: 'collectibles',
@@ -1537,7 +1537,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Stamps',
         glyph: '✉️',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
       },
       fields: ordered([
         { name: 'Country', fieldType: 'TEXT' },
@@ -1704,7 +1704,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
-  // A vintage poster has nothing to service, no warranty, no expiry, and no lots or parts.
+  // A vintage poster has nothing to service, nothing to expire, and no lots or parts.
   {
     id: 'movie-poster',
     sectionId: 'media',
@@ -1714,7 +1714,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: {
         name: 'Vintage movie posters',
         glyph: '🖼️',
-        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
       },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },

@@ -206,8 +206,14 @@ export const inventoryKeys = {
   // item() so an `items()` invalidation refreshes it by prefix.
   itemRelations: (itemId: string) => [...inventoryKeys.item(itemId), 'relations'] as const,
   // Issue #618 — which of an item's sections hold data, so a section its category hides is
-  // still shown when it has something in it. Under item() so any write to the item refreshes
-  // it by prefix; a section that has just gained its first row must stop being hidden.
+  // still shown when it has something in it.
+  //
+  // Filed under item() so a broad `items()` sweep reaches it, but note that most of the writes
+  // which *change* the answer (adding a schedule, a tag, an attachment, a capability, a
+  // custom-field value, a placement) invalidate only their own deeper sibling key, which no
+  // prefix match reaches. Those hooks therefore invalidate this key explicitly — a section
+  // that has just gained its first row must stop being hidden, and a stale `false` here is
+  // the one failure this whole feature exists to prevent.
   itemSectionPresence: (itemId: string) => [...inventoryKeys.item(itemId), 'section-presence'] as const,
   // Issue #70 — full rows for a set of items in one round-trip (the checkout prerequisite panel);
   // under items() so any item write refreshes it by prefix.

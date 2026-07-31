@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FEATURE_REGISTRY, type FeatureId } from '@/features/modules/feature-registry';
+import { CATEGORY_PRESETS } from './category-presets';
 import {
   HIDEABLE_CAPABILITIES,
   HIDEABLE_CAPABILITY_IDS,
@@ -31,6 +32,13 @@ describe('HIDEABLE_CAPABILITY_IDS', () => {
     }
   });
 
+  it('excludes warranty, whose section is broader than the capability', () => {
+    // "Asset details" also holds the acquired-on date, purchase price and depreciation term, so
+    // hiding it per category would either bury an item's purchase record or — once "shown when
+    // it holds data" rescued it — do nothing at all for any item that records what it cost.
+    expect(HIDEABLE_CAPABILITY_IDS).not.toContain('warranty');
+  });
+
   it('resolves every id to a registry definition for the picker', () => {
     expect(HIDEABLE_CAPABILITIES).toHaveLength(HIDEABLE_CAPABILITY_IDS.length);
     for (const def of HIDEABLE_CAPABILITIES) {
@@ -48,10 +56,7 @@ describe('toHiddenCapabilitySet', () => {
   });
 
   it('keeps ids this build recognises as hideable', () => {
-    expect([...toHiddenCapabilitySet(['maintenance', 'warranty'])].sort()).toEqual([
-      'maintenance',
-      'warranty',
-    ]);
+    expect([...toHiddenCapabilitySet(['maintenance', 'kits'])].sort()).toEqual(['kits', 'maintenance']);
   });
 
   it('ignores ids this build does not recognise, rather than throwing', () => {
@@ -127,12 +132,44 @@ describe('toggleHiddenCapability', () => {
   });
 
   it('round-trips to the identical array, so a no-op edit cannot churn the synced row', () => {
-    const start = ['kits', 'maintenance', 'warranty'];
+    const start = ['kits', 'maintenance', 'tags-attachments'];
     const off = toggleHiddenCapability(start, 'maintenance', false);
     expect(toggleHiddenCapability(off, 'maintenance', true)).toEqual(start);
   });
 
   it('preserves ids it does not recognise, so a newer peer keeps its choice', () => {
     expect(toggleHiddenCapability(['time-travel'], 'kits', true)).toEqual(['kits', 'time-travel']);
+  });
+});
+
+/**
+ * The preset library seeds `hiddenCapabilities` as plain strings — `CreateCategoryInput` types
+ * it `string[]` so the db layer stays free of the feature registry (the bridge imports it). That
+ * buys nothing at compile time, so a typo in a preset would be silently discarded on read and
+ * the section would simply never hide. This is the guard that catches it instead.
+ */
+describe('CATEGORY_PRESETS hidden sets', () => {
+  it('only names capabilities a category is actually allowed to hide', () => {
+    for (const preset of CATEGORY_PRESETS) {
+      for (const id of preset.seed.category.hiddenCapabilities ?? []) {
+        expect(HIDEABLE_CAPABILITY_IDS, `preset "${preset.id}" hides unknown "${id}"`).toContain(id);
+      }
+    }
+  });
+
+  it('never hides the custom fields a preset exists to create', () => {
+    // Every preset's whole purpose is its field set; hiding that section would bury it.
+    for (const preset of CATEGORY_PRESETS) {
+      expect(preset.seed.category.hiddenCapabilities ?? [], preset.id).not.toContain('custom-fields');
+    }
+  });
+
+  it('omits the key entirely rather than storing an empty array', () => {
+    // `[]` and absent mean the same thing; keeping one spelling means an LWW merge can't see
+    // two encodings of "nothing hidden" as a change.
+    for (const preset of CATEGORY_PRESETS) {
+      const hidden = preset.seed.category.hiddenCapabilities;
+      expect(hidden === undefined || hidden.length > 0, preset.id).toBe(true);
+    }
   });
 });

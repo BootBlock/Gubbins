@@ -38,13 +38,19 @@ const EMPTY_SET: ReadonlySet<FeatureId> = new Set<FeatureId>();
  * - `sales` — gates a *menu action* ("record a sale"), not an item-detail section. This
  *   feature is about the fields and sections an item shows, so an action belongs to a
  *   separate decision about what a category may suppress.
+ * - `warranty` — gates the whole **Asset details** section, which also holds the acquired-on
+ *   date, purchase price and depreciation term. Hiding it per category would therefore be one
+ *   of two wrong things: it buries an item's purchase record along with the warranty, or — if
+ *   "shown when it holds data" rescues it — it does nothing at all for any item that records
+ *   when it was bought, which is most of them. Splitting acquisition from warranty is the
+ *   prerequisite, and that is a change to the section, not to this list.
  *
- * Every id here gates a section or sub-block of the item detail dialog, which is what makes
- * "hidden, unless it holds data" a meaningful promise for all of them.
+ * Every id here gates a section or sub-block of the item detail dialog whose content is
+ * *only* that capability, which is what makes "hidden, unless it holds data" a meaningful and
+ * honest promise for all of them.
  */
 export const HIDEABLE_CAPABILITY_IDS: readonly FeatureId[] = [
   'maintenance',
-  'warranty',
   'batches',
   'perishables',
   'variants',

@@ -5,15 +5,15 @@
  * schedule — but hiding must never make *existing* data invisible. So a hidden section is
  * still shown when it holds something, and this is how the UI finds out.
  *
- * It is one query on purpose. The obvious alternative — compose the eight hooks the child
+ * It is one query on purpose. The obvious alternative — compose the several hooks the child
  * editors already use — would defeat the item dialog's active-panel-only mounting and load
- * every section's data on every open, for a question that is eight `EXISTS` probes against
- * indexed columns. The dialog also only asks when the item's category hides something, so an
- * inventory that hides nothing pays nothing.
+ * every section's data on every open, for a question that is a handful of `EXISTS` probes
+ * against indexed columns. The dialog also only asks when the item's category hides something,
+ * so an inventory that hides nothing pays nothing.
  *
- * Only table-backed sections appear here. Presence for the sections backed by columns on the
- * item row itself (warranty, expiry, variants) is read straight off the already-loaded item,
- * so spending a subquery on them would be waste.
+ * Only table-backed sections appear here. Presence for anything already to hand is read from
+ * what the caller holds — the expiry and batch columns on the item row, the lot rows the stock
+ * breakdown has loaded — so spending a subquery on those would be waste.
  */
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
@@ -27,7 +27,6 @@ interface SectionPresenceRow {
   readonly has_capabilities: number;
   readonly has_custom_fields: number;
   readonly has_placements: number;
-  readonly has_batches: number;
 }
 
 /**
@@ -47,12 +46,14 @@ export interface ItemSectionPresence {
   readonly attachments: boolean;
   /** Any weighted capability. */
   readonly capabilities: boolean;
-  /** Any stored custom-field value (a default or inherited value is not "stored"). */
+  /**
+   * Any stored custom-field value, including one the item is deliberately inheriting from a
+   * location (choosing to inherit writes a row). A value showing only because the *category*
+   * supplies a default is not the item's own data and does not count.
+   */
   readonly customFields: boolean;
   /** Any location-region placement. */
   readonly placements: boolean;
-  /** Any *identified* stock batch — the anonymous remainder batch doesn't count. */
-  readonly batches: boolean;
 }
 
 /** Nothing anywhere — the answer for an item whose category hides nothing. */
@@ -64,7 +65,6 @@ export const NO_SECTION_PRESENCE: ItemSectionPresence = {
   capabilities: false,
   customFields: false,
   placements: false,
-  batches: false,
 };
 
 export function withSectionPresence<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
@@ -72,10 +72,13 @@ export function withSectionPresence<TBase extends Constructor<ItemCoreRepository
     /**
      * Which table-backed sections hold data for `itemId`.
      *
-     * One row, eight `EXISTS` subqueries, every one of them against an indexed `item_id`
-     * (`stock_batches` additionally discounts the anonymous remainder batch, matching what the
-     * stock breakdown itself treats as "there is something to show"). `EXISTS` stops at the
-     * first hit rather than counting, so this stays flat as an item accumulates history.
+     * One row, seven `EXISTS` subqueries, every one of them against an indexed `item_id`.
+     * `EXISTS` stops at the first hit rather than counting, so this stays flat as an item
+     * accumulates history.
+     *
+     * Batches are absent by design: both batch surfaces already hold the data they gate on —
+     * the stock breakdown has the lot rows, the lifecycle editor has the item's batch and lot
+     * numbers — so probing for them here would be a subquery with no reader.
      */
     async getSectionPresence(itemId: string): Promise<ItemSectionPresence> {
       const rows = await this.driver.query<SectionPresenceRow>(
@@ -86,8 +89,7 @@ export function withSectionPresence<TBase extends Constructor<ItemCoreRepository
            EXISTS(SELECT 1 FROM item_attachments      WHERE item_id = ?1)              AS has_attachments,
            EXISTS(SELECT 1 FROM capabilities          WHERE item_id = ?1)              AS has_capabilities,
            EXISTS(SELECT 1 FROM item_field_values     WHERE item_id = ?1)              AS has_custom_fields,
-           EXISTS(SELECT 1 FROM item_regions          WHERE item_id = ?1)              AS has_placements,
-           EXISTS(SELECT 1 FROM stock_batches         WHERE item_id = ?1 AND batch_key <> '') AS has_batches;`,
+           EXISTS(SELECT 1 FROM item_regions          WHERE item_id = ?1)              AS has_placements;`,
         [itemId],
       );
       const row = rows[0];
@@ -100,7 +102,6 @@ export function withSectionPresence<TBase extends Constructor<ItemCoreRepository
         capabilities: row.has_capabilities === 1,
         customFields: row.has_custom_fields === 1,
         placements: row.has_placements === 1,
-        batches: row.has_batches === 1,
       };
     }
   };

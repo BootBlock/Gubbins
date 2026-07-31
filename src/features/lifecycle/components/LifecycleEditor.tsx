@@ -39,7 +39,10 @@ export function LifecycleEditor({ item }: { item: Item }) {
   // no expiry, no batch identity and no variants (issue #618). Each still shows when it
   // actually holds something, so hiding never buries data.
   const isVisible = useItemSectionVisibility(item);
-  const showVariants = isVisible('variants', item.hasVariants);
+  // Both directions of the link count as data: `hasVariants` means this item has children,
+  // but the section also states "this is itself a variant of …" for a child, which is just
+  // as real and would otherwise be buried.
+  const showVariants = isVisible('variants', item.hasVariants || item.parentId !== null);
   const showExpiry = isVisible('perishables', item.expiryDate !== null);
   const showBatches = isVisible('batches', item.batchNumber !== null || item.lotNumber !== null);
   const [expiry, setExpiry] = useState(toDateInputValue(item.expiryDate));

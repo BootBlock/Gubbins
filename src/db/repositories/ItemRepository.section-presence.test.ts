@@ -6,10 +6,11 @@
  * That promise is only as good as this query: a false negative here silently swallows real
  * data, which is precisely the failure the "show it with a note" rule exists to prevent.
  *
- * Each case therefore pins one section independently — that writing to one table lights up
- * its own flag and *only* its own flag — plus the two cases most likely to be got wrong: the
- * anonymous remainder batch must not read as a tracked batch, and a custom field showing a
- * category default (rather than a stored value) must not read as stored data.
+ * Each case therefore pins one section independently — that writing to one table lights up its
+ * own flag and *only* its own flag — plus the two most likely to be got wrong: a custom field
+ * showing a *category default* rather than a stored value must not read as data, and the kit
+ * probe must answer for the assembly rather than the part, since `kit_components` names both
+ * ends and a join on the wrong column looks correct from one side.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
@@ -17,29 +18,26 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { ItemRepository, NO_SECTION_PRESENCE } from './ItemRepository';
 import { CategoryRepository } from './CategoryRepository';
-import { LocationRepository } from './LocationRepository';
 import { MaintenanceRepository } from './MaintenanceRepository';
 import { TagRepository } from './TagRepository';
-import { ProjectRepository } from './ProjectRepository';
+import { AttachmentRepository } from './AttachmentRepository';
 
 describe('ItemRepository.getSectionPresence', () => {
   let driver: MemoryDriver;
   let items: ItemRepository;
   let categories: CategoryRepository;
-  let locations: LocationRepository;
   let maintenance: MaintenanceRepository;
   let tags: TagRepository;
-  let projects: ProjectRepository;
+  let attachments: AttachmentRepository;
 
   beforeEach(async () => {
     driver = createMemoryDriver();
     await runMigrations(driver, migrations);
     items = new ItemRepository(driver);
     categories = new CategoryRepository(driver);
-    locations = new LocationRepository(driver);
     maintenance = new MaintenanceRepository(driver);
     tags = new TagRepository(driver);
-    projects = new ProjectRepository(driver);
+    attachments = new AttachmentRepository(driver);
   });
 
   afterEach(async () => {
@@ -90,25 +88,20 @@ describe('ItemRepository.getSectionPresence', () => {
     expect((await items.getSectionPresence(id)).customFields).toBe(true);
   });
 
-  it('does not count the anonymous remainder batch as a tracked batch', async () => {
-    const location = await locations.create({ name: 'Shelf' });
-    const id = (await items.create({ name: 'Resin', locationId: location.id, quantity: 5 })).id;
+  it('lights up kit for the assembly, not for the part it contains', async () => {
+    const kit = await newItem('Repair kit');
+    const part = await newItem('Spare fuse');
+    await items.addKitComponent(kit, part, 1);
+    expect((await items.getSectionPresence(kit)).kit).toBe(true);
+    // `kit_components` names both ends, so a join on the wrong column would still look right
+    // from the assembly's side. The component must NOT report itself as a kit.
+    expect((await items.getSectionPresence(part)).kit).toBe(false);
+  });
 
-    // Plain stock carries no batch identity, so it lands in the anonymous remainder batch.
-    // The stock breakdown treats that as "nothing to show", and so must this — otherwise
-    // every item with stock would count as holding batch data and never hide.
-    expect((await items.getSectionPresence(id)).batches).toBe(false);
-
-    // An identified lot arrives by receiving it, which is what gives the batch a real key.
-    const project = await projects.create({ name: 'P' });
-    const line = await projects.addLine(project.id, { itemId: id, requiredQty: 4 });
-    await projects.setProcurement(line.id, 'IN_TRANSIT');
-    await projects.receiveLine(line.id, {
-      locationId: location.id,
-      quantity: 4,
-      batch: { batchNumber: 'B-42', lotNumber: null, expiryDate: null },
-    });
-    expect((await items.getSectionPresence(id)).batches).toBe(true);
+  it('lights up attachments, and only attachments, for a datasheet', async () => {
+    const id = await newItem();
+    await attachments.add({ itemId: id, kind: 'URL', value: 'https://example.com/ds.pdf' });
+    expect(await items.getSectionPresence(id)).toEqual({ ...NO_SECTION_PRESENCE, attachments: true });
   });
 
   it('keeps sections independent when several hold data at once', async () => {

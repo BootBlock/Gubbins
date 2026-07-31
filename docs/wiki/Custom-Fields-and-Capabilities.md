@@ -185,9 +185,9 @@ search; pressing **Escape** anywhere else (or with the search box empty) closes 
 
 ### Hiding the sections a category doesn't need
 
-Gubbins tracks a lot about an item — maintenance schedules, warranty, batches, expiry dates —
-and most of it makes no sense for *some* of what you own. A film has nothing to service and no
-warranty to run out; a coin has no expiry date.
+Gubbins tracks a lot about an item — maintenance schedules, batches, expiry dates, variants,
+kit parts — and most of it makes no sense for *some* of what you own. A film has nothing to
+service and no best-before date; a coin doesn't arrive in lots.
 
 You could switch those capabilities off entirely under [[Modular UI|Modular-UI]], but that
 hides them **everywhere** — including on the power tools that genuinely need them. So a
@@ -206,8 +206,8 @@ schedule recorded — perhaps you added it before hiding the section, or it arri
 device — that section is shown anyway, with a short note explaining why it's there. You can't
 lose track of information this way.
 
-The built-in presets come with sensible choices already made: `Movie` and `Vinyl record` hide
-maintenance and expiry, `Coin` and `Postcard` also hide warranty. Anything that genuinely gets
+The built-in presets come with sensible choices already made: `Movie`, `Vinyl record`, `Coin`
+and `Postcard` all hide maintenance, expiry and batch tracking. Anything that genuinely gets
 serviced — watches, cameras, instruments, arcade machines — keeps everything. As always, a
 preset is only a starting point; change it to suit.
 

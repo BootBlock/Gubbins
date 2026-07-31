@@ -106,8 +106,12 @@ export function useAddAttachment() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateAttachmentInput) => getAttachmentRepository().add(input),
-    onSettled: (_d, _e, input) =>
-      void client.invalidateQueries({ queryKey: inventoryKeys.itemAttachments(input.itemId) }),
+    onSettled: (_d, _e, input) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemAttachments(input.itemId) });
+      // Gaining a first datasheet must un-hide the section for a category that hides it
+      // (issue #618); the presence probe is a deeper key than the one swept above.
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(input.itemId) });
+    },
   });
 }
 
@@ -116,7 +120,10 @@ export function useUpdateAttachment(itemId: string) {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateAttachmentInput }) =>
       getAttachmentRepository().update(id, input),
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.itemAttachments(itemId) }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemAttachments(itemId) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) });
+    },
   });
 }
 
@@ -131,6 +138,9 @@ export function useRemoveAttachment(itemId: string) {
     // Its siblings (`useAddAttachment`/`useUpdateAttachment`) surface errors at their call sites,
     // but removal is fired without one — so a failed delete would be silent here (#389).
     onError: reportFailure,
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.itemAttachments(itemId) }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemAttachments(itemId) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) });
+    },
   });
 }

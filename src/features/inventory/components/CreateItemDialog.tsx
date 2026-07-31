@@ -453,11 +453,10 @@ export function CreateItemDialog({
   // Soft, non-blocking heads-up when the chosen home is already at/over its capacity: the
   // add is still allowed (capacity is a guideline, not a hard cap), but the user is warned.
   const chosenLocationId = watch('locationId');
-  // The create form has always shown every lifecycle field regardless of the Modules
-  // screen, so warranty and batch boxes appeared even with those capabilities switched
-  // off. Gate them the same way the item detail dialog does — by the device's modules and
-  // by the chosen category (issue #618). A not-yet-created item holds nothing, so there is
-  // no existing data for hiding to bury.
+  // Which lifecycle fields this form offers, on the same two axes as the item detail dialog:
+  // the device's enabled modules, then the chosen category's own hidden set (issue #618). A
+  // not-yet-created item holds nothing, so there is no existing data for hiding to bury —
+  // which is also why each guards its *write* below, not just its rendering.
   const isVisible = useCategorySectionVisibility(watch('categoryId') || null);
   const showExpiry = isVisible('perishables', false);
   const showWarranty = isVisible('warranty', false);
@@ -636,9 +635,17 @@ export function CreateItemDialog({
 
     // Warranty window → absolute expiry (backlog T2): a whole-month window is measured from the
     // acquired-on date (else today), matching the category-template default's "N-month warranty".
-    const warrantyExpiresAt = values.warrantyMonths?.trim()
-      ? warrantyExpiryFromWindow(values.acquiredAt?.trim() || null, Number(values.warrantyMonths), Date.now())
-      : null;
+    // `showWarranty` guards the derivation as well as the field: a value typed before the
+    // category was chosen survives in form state after the box unmounts, and turning that into
+    // an expiry the user can no longer see would make hiding write data rather than just hide it.
+    const warrantyExpiresAt =
+      showWarranty && values.warrantyMonths?.trim()
+        ? warrantyExpiryFromWindow(
+            values.acquiredAt?.trim() || null,
+            Number(values.warrantyMonths),
+            Date.now(),
+          )
+        : null;
 
     const base = {
       name: values.name.trim(),
@@ -655,9 +662,14 @@ export function CreateItemDialog({
       // Acquisition date (§4, v24) — an ISO `YYYY-MM-DD` string; pre-fillable from a scanned receipt.
       ...(values.acquiredAt?.trim() ? { acquiredAt: values.acquiredAt.trim() } : {}),
       // Phase 9 perishables & condition (§4) — all optional.
-      ...(values.expiryDate?.trim() ? { expiryDate: fromDateInputValue(values.expiryDate) } : {}),
-      ...(values.batchNumber?.trim() ? { batchNumber: values.batchNumber.trim() } : {}),
-      ...(values.lotNumber?.trim() ? { lotNumber: values.lotNumber.trim() } : {}),
+      // Same guard as the warranty derivation above: a value typed before a hiding category was
+      // chosen stays in form state after its box unmounts, and submitting it would let hiding
+      // *write* rather than merely hide.
+      ...(showExpiry && values.expiryDate?.trim()
+        ? { expiryDate: fromDateInputValue(values.expiryDate) }
+        : {}),
+      ...(showBatches && values.batchNumber?.trim() ? { batchNumber: values.batchNumber.trim() } : {}),
+      ...(showBatches && values.lotNumber?.trim() ? { lotNumber: values.lotNumber.trim() } : {}),
       ...(values.condition ? { condition: values.condition as CreateItemInput['condition'] } : {}),
       // Warranty expiry derived from the months window above (backlog T2) — omitted when unset.
       ...(warrantyExpiresAt ? { warrantyExpiresAt } : {}),
@@ -959,7 +971,16 @@ export function CreateItemDialog({
               if (cat && !conditionTouched.current && cat.defaultCondition) {
                 setValue('condition', cat.defaultCondition);
               }
-              if (cat && !warrantyMonthsTouched.current && cat.defaultWarrantyMonths != null) {
+              // Only pre-fill a field the user can actually see. React Hook Form keeps the
+              // value of an unmounted field, so pre-filling a hidden Warranty box would stamp
+              // an expiry date onto the item that never appeared on screen and — with the
+              // module off — could not be found or cleared afterwards.
+              if (
+                cat &&
+                !warrantyMonthsTouched.current &&
+                cat.defaultWarrantyMonths != null &&
+                isVisible('warranty', false)
+              ) {
                 setValue('warrantyMonths', String(cat.defaultWarrantyMonths));
               }
             }}

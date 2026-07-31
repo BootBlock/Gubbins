@@ -37,6 +37,8 @@ const item: Item = {
   warrantyExpiresAt: null,
   purchasePrice: null,
   depreciationMonths: null,
+  currentValue: null,
+  hasVariants: false,
   isActive: true,
   createdAt: 0,
   updatedAt: 0,
@@ -52,8 +54,10 @@ const without = (...off: FeatureId[]): Set<FeatureId> => {
   return set;
 };
 const tabIds = (tabs: ReturnType<typeof buildTabs>) => tabs.map((t) => t.id);
-const sectionTitles = (tabs: ReturnType<typeof buildTabs>, tabId: string) =>
-  (tabs.find((t) => t.id === tabId)?.sections ?? []).map((s) => s.title);
+const sectionTitles = (tabs: ReturnType<typeof buildTabs>, tabId?: string) =>
+  tabId === undefined
+    ? tabs.flatMap((t) => t.sections.map((s) => s.title))
+    : (tabs.find((t) => t.id === tabId)?.sections ?? []).map((s) => s.title);
 
 describe('buildTabs — feature gating (Phase 6)', () => {
   it('shows every facet with the full feature set enabled', () => {
@@ -170,12 +174,6 @@ describe('buildTabs — category-scoped hiding (issue #618)', () => {
     expect(sectionTitles(tabs, 'media')).toContain('Datasheets');
   });
 
-  it('reads Asset details presence off the item row rather than the probe', () => {
-    const priced: Item = { ...item, purchasePrice: 12.5 };
-    const tabs = buildTabs(priced, ALL, hiding('warranty'), NO_SECTION_PRESENCE);
-    expect(sectionTitles(tabs, 'lifecycle')).toContain('Asset details');
-  });
-
   it('lets the device module win over a category that hides nothing, even with data present', () => {
     const tabs = buildTabs(item, without('maintenance'), hiding(), {
       ...NO_SECTION_PRESENCE,
@@ -197,8 +195,27 @@ describe('buildTabs — category-scoped hiding (issue #618)', () => {
     expect(tabIds(tabs)).not.toContain('kit');
   });
 
-  it('behaves exactly as before when no category hiding is supplied', () => {
-    expect(buildTabs(item, ALL)).toEqual(buildTabs(item, ALL, new Set(), NO_SECTION_PRESENCE));
+  it('hides nothing for an item whose category hides nothing', () => {
+    // The overwhelmingly common case, and the one the two-argument call site relies on.
+    expect(sectionTitles(buildTabs(item, ALL, hiding(), NO_SECTION_PRESENCE))).toEqual(
+      sectionTitles(buildTabs(item, ALL)),
+    );
+    expect(sectionTitles(buildTabs(item, ALL, hiding(), NO_SECTION_PRESENCE))).toContain('Maintenance');
+  });
+
+  it('titles the Lifecycle section without "& variants" when the category hides variants', () => {
+    // The variants block lives inside the editor, so a heading promising it while the editor
+    // drops it would be a half-applied edit against the same capability.
+    const tabs = buildTabs(item, ALL, hiding('variants'), NO_SECTION_PRESENCE);
+    expect(sectionTitles(tabs, 'lifecycle')).toContain('Lifecycle');
+    expect(sectionTitles(tabs, 'lifecycle')).not.toContain('Lifecycle & variants');
+  });
+
+  it('keeps "& variants" when the item is itself a child variant', () => {
+    // `hasVariants` only means "has children"; a child's own parent link is data too.
+    const child: Item = { ...item, parentId: 'parent-1' };
+    const tabs = buildTabs(child, ALL, hiding('variants'), NO_SECTION_PRESENCE);
+    expect(sectionTitles(tabs, 'lifecycle')).toContain('Lifecycle & variants');
   });
 
   it('never mutates the item it is given', () => {

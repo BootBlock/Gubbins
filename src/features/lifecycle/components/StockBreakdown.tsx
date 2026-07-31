@@ -61,9 +61,9 @@ export function StockBreakdown({ item }: { item: Item }) {
   // is the `batches` capability (modular-ui-plan §4, Phase 6). With it off, the per-location
   // stock breakdown and the transfer stay — only the lot-level facets disappear; a move
   // then simply uses the FEFO default. Stock and batch data underneath are untouched.
-  // Item-aware (issue #618): the item's category can also declare that its items are not
-  // batch-tracked. Any lot actually recorded still shows, so hiding never buries data —
-  // hence the presence test over the batches this item already has.
+  // Both axes decide this: the device's `batches` module, and the item's category, which can
+  // declare that its items are not batch-tracked (issue #618). Any lot actually recorded still
+  // shows — hence the presence test over the batches already loaded above.
   const isVisible = useItemSectionVisibility(item);
   const batchesEnabled = isVisible(
     'batches',

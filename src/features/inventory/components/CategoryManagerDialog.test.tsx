@@ -721,3 +721,38 @@ describe('CategoryManagerDialog — sections a category hides', () => {
     });
   });
 });
+
+/**
+ * Regression: the hidden-sections panel writes a *set* held in one column, so each toggle is a
+ * read-modify-write of the whole value. Reading the base from the query cache lost ticks — the
+ * write isn't optimistic, so a second toggle made before the refetch landed computed from the
+ * pre-first-toggle array and silently dropped it. On a synced LWW column that discard would
+ * propagate to other devices.
+ */
+describe('CategoryManagerDialog — hidden sections accumulate across quick toggles', () => {
+  it('keeps the first tick when a second lands before the refetch', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByTestId('category-hide-maintenance'));
+    // `h.categoryRows` is deliberately NOT updated: this is exactly the window where the cache
+    // still holds the pre-click value.
+    fireEvent.click(screen.getByTestId('category-hide-kits'));
+
+    expect(h.updateCategory).toHaveBeenLastCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['kits', 'maintenance'] },
+    });
+  });
+
+  it('reseeds from the category when a different one is selected', () => {
+    h.categoryRows = [category(), category({ id: 'cat-2', name: 'Movies', hiddenCapabilities: ['kits'] })];
+    renderDialog();
+
+    selectCategory(/Resistors/);
+    expect(screen.getByTestId('category-hide-kits')).not.toBeChecked();
+
+    selectCategory(/Movies/);
+    expect(screen.getByTestId('category-hide-kits')).toBeChecked();
+  });
+});

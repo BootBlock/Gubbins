@@ -52,8 +52,6 @@ export function useCategorySectionVisibility(
   // adds no query of its own.
   const categories = useCategories();
   const category = categories.data?.rows.find((c) => c.id === categoryId);
-  // Depend on the stored array itself, not the category object: the identity that matters is
-  // the hidden set, and a category refetch that changes nothing else must not churn callers.
   const hidden = category?.hiddenCapabilities;
 
   return useCallback(

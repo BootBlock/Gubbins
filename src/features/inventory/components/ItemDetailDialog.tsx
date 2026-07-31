@@ -372,6 +372,10 @@ export function buildTabs(
   hidden: ReadonlySet<FeatureId> = EMPTY_HIDDEN,
   presence: ItemSectionPresence = NO_SECTION_PRESENCE,
 ): readonly TabDef[] {
+  // The variants block lives inside LifecycleEditor and is gated there by both axes, so the
+  // section heading has to ask the same question rather than only the device's.
+  const showsVariants =
+    isCapabilityVisible('variants', enabled, hidden, item.hasVariants || item.parentId !== null) !== 'hidden';
   const tabs: readonly TabDef[] = [
     {
       id: 'details',
@@ -453,14 +457,16 @@ export function buildTabs(
       icon: <DueDateIcon />,
       sections: [
         {
-          // The variants sub-block is itself gated on the `variants` capability, so the
-          // heading drops "& variants" when that module is off (the editor still owns
-          // expiry/batch/condition — the "lifecycle" half — which is always present).
-          title: enabled.has('variants') ? 'Lifecycle & variants' : 'Lifecycle',
+          // The variants sub-block is gated on the `variants` capability, so the heading drops
+          // "& variants" when it isn't shown (the editor still owns expiry/batch/condition —
+          // the "lifecycle" half — which is always present). Both axes have to be consulted:
+          // titling a section "…& variants" while the item's category hides variants would
+          // promise a block the editor no longer renders.
+          title: showsVariants ? 'Lifecycle & variants' : 'Lifecycle',
           icon: <DueDateIcon />,
           content: <LifecycleEditor item={item} />,
-          // The hint mirrors the retitle: it only promises variants when that module is on.
-          hint: enabled.has('variants') ? SECTION_HINT_LIFECYCLE_VARIANTS : SECTION_HINT_LIFECYCLE,
+          // The hint mirrors the retitle: it only promises variants when that block is shown.
+          hint: showsVariants ? SECTION_HINT_LIFECYCLE_VARIANTS : SECTION_HINT_LIFECYCLE,
         },
         {
           title: 'Asset details',
@@ -468,7 +474,6 @@ export function buildTabs(
           content: <AssetEditor item={item} />,
           hint: SECTION_HINT_ASSET,
           feature: 'warranty',
-          hasData: hasAssetData(item),
         },
         {
           title: 'Maintenance',
@@ -627,23 +632,6 @@ export function buildTabs(
 
 /** No category hiding — the default, and the answer for an uncategorised item. */
 const EMPTY_HIDDEN: ReadonlySet<FeatureId> = new Set<FeatureId>();
-
-/**
- * Whether the Asset details section holds anything, read straight off the already-loaded item.
- *
- * These five live on the item row, so asking the database again would be waste — hence they
- * are absent from the `EXISTS` probe rather than forgotten by it. `currentValue` stands in for
- * a non-empty revaluation log: recording a revaluation writes both in one transaction.
- */
-function hasAssetData(item: Item): boolean {
-  return (
-    item.acquiredAt !== null ||
-    item.warrantyExpiresAt !== null ||
-    item.purchasePrice !== null ||
-    item.depreciationMonths !== null ||
-    item.currentValue !== null
-  );
-}
 
 /**
  * Each editor is wrapped in a self-contained card — a bordered surface with a

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -385,13 +385,30 @@ function CategoryDetail({
 function CategoryHiddenSectionsPanel({ category }: { category: CategoryWithFieldCount }) {
   const t = useT();
   const updateCategory = useUpdateCategory();
-  const hidden = new Set(category.hiddenCapabilities);
 
-  const toggle = (id: FeatureId, hide: boolean) =>
-    updateCategory.mutate({
-      id: category.id,
-      input: { hiddenCapabilities: toggleHiddenCapability(category.hiddenCapabilities, id, hide) },
-    });
+  // Unlike every other control in this dialog, this one writes a *set* held in a single column,
+  // so each toggle is a read-modify-write of the whole value. Reading the base from the query
+  // cache would lose ticks: the write is not optimistic, so a second toggle made before the
+  // refetch lands would compute from the pre-first-toggle array and silently drop it — and
+  // since the column is synced LWW, that discard would propagate to other devices. Ticking
+  // several boxes in a row is exactly how this control gets used, so the local draft is the
+  // base, reseeded when a different category is selected (the buffer idiom used above).
+  const [draft, setDraft] = useState<readonly string[]>(category.hiddenCapabilities);
+  const seededFor = useRef(category.id);
+  useEffect(() => {
+    if (seededFor.current !== category.id) {
+      seededFor.current = category.id;
+      setDraft(category.hiddenCapabilities);
+    }
+  }, [category.id, category.hiddenCapabilities]);
+
+  const hidden = new Set(draft);
+
+  const toggle = (id: FeatureId, hide: boolean) => {
+    const next = toggleHiddenCapability(draft, id, hide);
+    setDraft(next);
+    updateCategory.mutate({ id: category.id, input: { hiddenCapabilities: next } });
+  };
 
   // A category that both *applies* a maintenance schedule to every new item and hides the
   // section showing it would be quietly contradictory — the schedule would be created and then
@@ -433,7 +450,7 @@ function CategoryHiddenSectionsPanel({ category }: { category: CategoryWithField
       {maintenanceConflict ? (
         <Banner
           tone="warning"
-          icon={<WarningIcon />}
+          icon={<WarningIcon aria-hidden />}
           action={
             <Button
               size="sm"
