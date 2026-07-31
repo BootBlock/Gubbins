@@ -24,9 +24,10 @@ cannot do is **show** them. A location has no page of its own — it is a *filte
 not a screen — so everything attached to it either rides as a hover tooltip, hides inside an Edit
 dialog, or is published to Home Assistant and never rendered in the app at all. The valid non-item
 attachments are real, but the binding constraint is a **missing surface, not a missing table**; and
-the two that genuinely need schema — a document, and a date that can raise something — are each
-already a filed issue or a candidate in the archetypes audit. Building a polymorphic "location
-child" table would be solving the one part of this that isn't broken.
+the two that genuinely need more than a surface — a document, and a date that can raise something —
+each sit beside work already filed or ranked elsewhere, so both want scoping against it rather than
+starting fresh. Building a polymorphic "location child" table would be solving the one part of this
+that isn't broken.
 
 ## 2. What a user might actually mean
 
@@ -43,7 +44,8 @@ invisible — §5.
 
 **C. A document pinned to the place** — the boiler manual in the airing cupboard, the workshop's
 wiring diagram, a fire-safety certificate for the garage. **Genuinely absent**: `item_attachments`
-has no location counterpart, and a `URL` custom field is the only route. Overlaps
+has no location counterpart, and a `URL` or `FILE` custom field — both of which store a link
+string, not bytes — is the only route. Overlaps
 [#466](https://github.com/BootBlock/Gubbins/issues/466) and `W6` in the archetypes audit — §8 `N4`.
 
 **D. A dated, actionable thing about the place** — an inspection due, a PAT test, *"check for damp in
@@ -66,7 +68,7 @@ non-goals in §7.
 | Thing | Where it lives | Where the user sees it |
 | --- | --- | --- |
 | One free-text description (Markdown) | `locations.description` ([:1360](../../src/db/migrations/v1-initial.ts#L1360)) | Hover tooltip on the tree row; a card above the item list when selected |
-| Typed custom-field values, any number, optionally inherited by contents | [`location_field_values`](../../src/db/migrations/v1-initial.ts#L649) | **Only** inside the Edit dialog's Details tab |
+| Typed custom-field values, any number, optionally inherited by contents | [`location_field_values`](../../src/db/migrations/v1-initial.ts#L649) | As the location's *own* detail: only inside the Edit dialog's Details tab. An *inheritable* value also surfaces on the items that adopt it |
 | Tags | [`location_tags`](../../src/db/migrations/v1-initial.ts#L761) | Edit dialog; the sidebar's tag filter |
 | Photos, and named regions drawn on them | [`location_photos`](../../src/db/migrations/v1-initial.ts#L2020), [`location_regions`](../../src/db/migrations/v1-initial.ts#L2046) | Edit dialog's Photos tab; the location map view |
 | Child locations | `locations.parent_id` | The tree, and `SubLocationNav` |
@@ -98,13 +100,17 @@ one that most wants to stand out (a *warning*: unventilated, damp, load limit) h
 different from the one that wants to stay quiet.
 
 **It leaves the app in a backup but not in an export.** `locations` is a synced table, so a
-description survives sync and restore. But every *export* reduces a location to a name string —
-the JSON and CSV payloads carry `locationName` per item
-([run-export.ts:400-415](../../src/features/export/run-export.ts#L400)) and the Markdown vault uses
-it as a folder name ([export-data.ts:371](../../src/features/export/export-data.ts#L371)). No export
-carries a location's description, kind, capacity, dimensions or walk order, and the
-[tabular-export seam](../../src/features/export/tabular-export.ts) — which covers ten lists,
-including Tags and Contacts — has no location list at all.
+description survives sync and restore. No *export* carries one. The Markdown vault gets closest,
+reducing a location to a folder name
+([run-export.ts:400-415](../../src/features/export/run-export.ts#L400),
+[export-data.ts:371](../../src/features/export/export-data.ts#L371)); the JSON payload is
+`{ items, contacts, checkouts }` with no locations array at all
+([export-data.ts:22-31](../../src/features/export/export-data.ts#L22)), so an item carries a bare
+`locationId` UUID; and the items CSV has no location column, while the catalogue CSV writes the same
+raw UUID — which is [#596](https://github.com/BootBlock/Gubbins/issues/596) from the item side.
+Nothing anywhere exports a location's description, kind, capacity, dimensions or walk order, and the
+[tabular-export seam](../../src/features/export/tabular-export.ts) — which covers a dozen lists,
+from Contacts to the insurance schedule — has no location list at all.
 
 ## 5. The general mechanism already exists, and is hidden
 
@@ -125,9 +131,18 @@ Three things bury it:
    ("a shelf's load rating, a room's humidity"), and so does the wiki. A user looking for somewhere
    to record a fact about a shelf is reading a heading that tells them this panel is for something
    else. See §9.
-2. **It renders in exactly one place.** `LocationFieldsEditor` is mounted only in the Edit dialog's
-   Details tab. Nothing else in the app reads a location's field values — not `LocationInfoCard`,
-   not the tree, not the item list, not search, not any export. Verified by call-site sweep.
+2. **A location's own detail renders in exactly one place.** `LocationFieldsEditor` is mounted only
+   in the Edit dialog's Details tab, and nothing else in the app reads a location's field values
+   *as facts about the location* — not `LocationInfoCard`, not the tree, not the item list, not
+   search, not any export. Note the asymmetry that proves the point: a value marked **inheritable**
+   is read all over the place, because it stops being the location's detail and becomes the item's
+   — the card-field resolver reads
+   `location_field_values WHERE is_inheritable = 1`
+   ([CategoryRepository.ts:455](../../src/db/repositories/CategoryRepository.ts#L455)), and the
+   `item_field_effective_values` view carries the same value into search
+   ([:712-736](../../src/db/migrations/v1-initial.ts#L712)) and the catalogue export. So the app
+   already knows how to surface these values — it just refuses to do it for the one flag state whose
+   documented purpose is "this is about the place".
 3. **The bridge publishes them.** `include=fields` on the REST location view
    ([location-view.ts:48](../../bridge/src/api/location-view.ts#L48)) and the retained MQTT state
    ([mqtt/state.ts:109](../../bridge/src/mqtt/state.ts#L109)) both expose `fieldValues` per
@@ -144,14 +159,19 @@ create — the only genuinely required input is a name
 ([create.ts:73-79](../../src/db/repositories/item/create.ts#L73)) — and expensive to have around,
 because **every aggregate in the app keys off `items`**. A note-shaped item pollutes:
 
-- the vault item count, the location's item-count badge and its capacity gauge — the
-  `location_item_counts` cache is maintained by three triggers that fire on `items` and nothing else
-  ([:2120-2159](../../src/db/migrations/v1-initial.ts#L2120));
+- the vault item count, the location's item-count badge and its capacity gauge — the three triggers
+  that *increment* `location_item_counts` all fire on `items`
+  ([:2120-2159](../../src/db/migrations/v1-initial.ts#L2120)), and the only other one sweeps the
+  cache when a location is deleted (`:2165`);
 - inventory valuation and its **unpriced-inventory** count, and therefore the printed insurance
   schedule and the parts catalogue;
-- the data-hygiene report, which a note fails on six of its seven checks — every one bar
-  `duplicate-mpn` ([data-hygiene.ts:21-28](../../src/features/reports/data-hygiene.ts#L21));
-- dead-stock and stock-aging, since a note is idle by definition;
+- the data-hygiene report — four of its seven checks immediately (no category, no price, no photo,
+  never counted) and a fifth once it goes stale
+  ([data-hygiene.ts:21-28](../../src/features/reports/data-hygiene.ts#L21)). Not `missing-location`,
+  which flags only the Unassigned holding pen (`:37-38`), and not `duplicate-mpn`;
+- stock aging unconditionally, and dead-stock reporting wherever the note's location chain has
+  opted in — that one is opt-in by design
+  ([dead-stock.ts:4-7](../../src/features/reports/dead-stock.ts#L4));
 - the cycle-count sheet — a `DISCRETE` note becomes a line to tick off at every audit;
 - FTS search and the command palette, every export and the sync payload;
 - an `item.created` webhook/SSE event, and the Home Assistant `itemsTotal` sensor.
@@ -175,8 +195,10 @@ Recorded so they aren't folded in and used to inflate the scope.
   implies the other.
 - **A bookable location.** `asset_bookings.item_id` is the only booking subject
   ([:1587](../../src/db/migrations/v1-initial.ts#L1587)); §3.10 of the archetypes audit.
-- **Storing file *bytes*.** Gubbins cannot store a file — `item_attachments.kind` is
-  `URL | LOCAL_POINTER` ([constants.ts:326](../../src/db/repositories/constants.ts#L326)). That is
+- **Storing a *document's* bytes.** Gubbins holds image bytes (a photo's thumbnail blob plus its
+  OPFS full-res, and a bounded WebP inside an `IMAGE` field value) but nothing else:
+  `item_attachments.kind` is `URL | LOCAL_POINTER`
+  ([constants.ts:326](../../src/db/repositories/constants.ts#L326)), a link or a path string. That is
   `W6` / [#466](https://github.com/BootBlock/Gubbins/issues/466), and `N4` below must not quietly
   become it.
 - **A polymorphic `location_children` table.** Gubbins' precedent is a **narrow typed table per
@@ -213,10 +235,12 @@ because §5 is the finding: the mechanism is built and nobody can see it. None s
   change over two subjects**, not as a location-only special case. Unlocks use case D (inspections,
   PAT tests, seasonal checks).
 - **`N6` — A location activity record.** Renaming, re-parenting, archiving, resizing or re-colouring
-  a location records **nothing, anywhere** — `LocationRepository.update` writes a bare `UPDATE` and
-  no ledger row. Only *deleting* a location leaves a trace, and even then as item-scoped
-  `RE_PARENTED` entries on everything it re-homed
-  ([LocationRepository.ts:491-498](../../src/db/repositories/LocationRepository.ts#L491)). There are
+  a location records **nothing** beyond bumping its own `updated_at` — `LocationRepository.update`
+  writes a bare `UPDATE` and no ledger row. Only *deleting* a location leaves a readable trace, and
+  even then only as item-scoped entries: `RE_PARENTED` on the items **homed** there
+  ([LocationRepository.ts:491-498](../../src/db/repositories/LocationRepository.ts#L491)) and
+  `CHECKED_IN` on anything out on loan to it. Stock merely *placed* at the location is re-homed by
+  the batch merge with no ledger entry at all (`:508-518`). There are
   also **zero `location.*` event types** — the whole vocabulary is `item.*` plus `stock.adjusted`,
   `events.truncated` and `lookup.resolved`
   ([event-types.ts:35-112](../../src/features/events/event-types.ts#L35)). `item_history.item_id` is
