@@ -13,7 +13,12 @@
  */
 import { DbError } from '../errors';
 import type { IDatabaseDriver, SqlStatement } from '../rpc/driver';
-import { BASELINE_REVISION_KEY, type Migration, type MigrationReport } from './migration';
+import {
+  BASELINE_REVISION_KEY,
+  MISSING_SCHEMA_MARKERS,
+  type Migration,
+  type MigrationReport,
+} from './migration';
 
 /** Read the current schema version from `PRAGMA user_version` (spec §2.3.1). */
 export async function getUserVersion(driver: IDatabaseDriver): Promise<number> {
@@ -125,12 +130,6 @@ export async function assertBaselineCurrent(driver: IDatabaseDriver, expected: s
  */
 const STAMP_READ_ATTEMPTS = 2;
 const STAMP_RETRY_DELAY_MS = 50;
-
-/**
- * SQLite's phrasings for "that schema object does not exist". These, and only these, mean the
- * database predates the thing being read rather than that the read itself went wrong.
- */
-const MISSING_SCHEMA_MARKERS: readonly string[] = ['no such table', 'no such column'];
 
 /**
  * Read the baseline stamp, distinguishing *unstamped* from *unknown* (issue #500).

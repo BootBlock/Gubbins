@@ -14,6 +14,18 @@ export const SQL_NOW_MS = "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTE
 export const BASELINE_REVISION_KEY = 'baseline_revision';
 
 /**
+ * SQLite's phrasings for "that schema object does not exist" — the only outcomes that mean a
+ * database genuinely *predates* the thing being read, rather than that the read itself went wrong.
+ *
+ * Kept here, beside the key it is used to look up, because two places must draw exactly the same
+ * distinction and must never drift apart: the boot-time stamp read (`assertBaselineCurrent`) and
+ * the pre-restore read of a candidate's stamp (`verifySqliteBinary`). Getting it wrong in either
+ * direction is costly — see issue #500 for why "the read failed" must not be reported as
+ * "unstamped".
+ */
+export const MISSING_SCHEMA_MARKERS: readonly string[] = ['no such table', 'no such column'];
+
+/**
  * Fingerprint of the squashed `v1-initial` baseline's SQL (spec §2.3).
  *
  * Gubbins is pre-release and **does not maintain backwards compatibility**: schema changes are
