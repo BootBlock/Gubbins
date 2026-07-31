@@ -72,6 +72,7 @@ const customField = (over: Partial<CardCustomField> = {}): CardCustomField => ({
   fieldType: 'TEXT',
   defaultValue: null,
   unit: null,
+  precision: null,
   ...over,
 });
 

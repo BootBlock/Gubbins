@@ -10,6 +10,8 @@ import {
   FIELD_DUE_LEAD_DAYS_MAX,
   FIELD_DUE_LEAD_DAYS_MIN,
   FIELD_NUMBER_BOUND_LIMIT,
+  FIELD_PRECISION_MAX,
+  FIELD_PRECISION_MIN,
   FIELD_TYPES,
   FIELD_UNIT_MAX_LENGTH,
   IN_TRANSIT_LOCATION_ID,
@@ -739,6 +741,15 @@ const baselineStatements: SqlStatement[] = [
     // rather than fail that peer's entire sync apply over a display preference. And unlike a unit
     // or a lead time, *any* field type can be the one that matters most, so nothing is cleared on
     // a retype.
+    //
+    // `precision` (W1e) is the fifth, and it is the one attribute here that is not purely one
+    // thing or the other: it refuses a value carrying more decimals than it allows *and* decides
+    // how a stored one is written wherever it is displayed (`5.5` on a two-decimal field reads
+    // `5.50`). Because it refuses a save it takes the behavioural shape — a CHECK, gated on
+    // `field_type = 'NUMBER'`, cleared by the write seam on a retype away from it — rather than
+    // `prominence`'s tolerant one. It sits on the definition for the same two storage reasons as
+    // the unit: how many decimals a measurement is quoted to is part of what the field means, and
+    // a category-scoped answer would render nothing for a value inherited from a location.
     sql: `
         CREATE TABLE field_defs (
           id            TEXT    PRIMARY KEY NOT NULL,
@@ -750,6 +761,7 @@ const baselineStatements: SqlStatement[] = [
           unit          TEXT,                          -- NUMBER only: unit of measure; NULL = unitless
           min_value     REAL,                          -- NUMBER only: lower bound; NULL = unbounded below
           max_value     REAL,                          -- NUMBER only: upper bound; NULL = unbounded above
+          precision     INTEGER,                       -- NUMBER only: decimal places; NULL = as entered
           prominence    TEXT,                          -- any type: 'key' leads its siblings; NULL = ordinary
           updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (field_type IN (${fieldTypeList})),
@@ -788,7 +800,16 @@ const baselineStatements: SqlStatement[] = [
           ),
           -- An inverted range admits no value at all, so it is not a strict field but a
           -- broken one. Equal bounds are allowed and mean "exactly this".
-          CHECK (min_value IS NULL OR max_value IS NULL OR min_value <= max_value)
+          CHECK (min_value IS NULL OR max_value IS NULL OR min_value <= max_value),
+          -- Only a NUMBER is written to a number of decimal places, and the count is a whole
+          -- number in a bounded range. Zero is a legitimate setting — "whole numbers only" — so
+          -- NULL is the only spelling of "as entered"; there is no second value meaning it.
+          CHECK (
+            precision IS NULL
+            OR (field_type = 'NUMBER'
+                AND precision >= ${FIELD_PRECISION_MIN}
+                AND precision <= ${FIELD_PRECISION_MAX})
+          )
         ) STRICT;
       `,
   },

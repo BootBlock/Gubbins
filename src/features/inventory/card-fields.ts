@@ -15,6 +15,7 @@ import type { Item } from '@/db/repositories';
 import type { Condition, FieldType } from '@/db/repositories/constants';
 import { isImageDataUrl } from '@/lib/image-data-url';
 import { isExternalHref } from './external-href';
+import { formatFieldNumber } from './field-number-format';
 import { UNLIMITED_GLYPH } from './unlimited';
 import { itemTotalValue } from './item-total-value';
 
@@ -207,6 +208,14 @@ export interface CardCustomField {
    * unit, so a table agrees with the cards instead of needing a second rule.
    */
   readonly unit: string | null;
+  /**
+   * The definition's decimal places for a `NUMBER` field (W1e), or null for "as entered".
+   *
+   * Carried beside {@link unit} because it answers the same kind of question — how this number is
+   * *written* — and because these surfaces are where the answer shows: a two-decimal field reads
+   * `5.50` here even though `5.5` is what is stored.
+   */
+  readonly precision: number | null;
 }
 
 /**
@@ -301,7 +310,11 @@ function resolveOne(id: string, item: Item, ctx: CardFieldContext): ResolvedCard
     // line still renders (as em-dash) so cards keep a uniform height.
     if (item.categoryId !== field.categoryId) return { id, label: field.name, value: EMPTY };
     const raw = ctx.customValues?.get(customId) ?? field.defaultValue;
-    return { id, label: field.name, value: customFieldValue(field.fieldType, raw, field.unit) };
+    return {
+      id,
+      label: field.name,
+      value: customFieldValue(field.fieldType, raw, field.unit, field.precision),
+    };
   }
 
   switch (id) {
@@ -363,21 +376,35 @@ function quantityValue(item: Item, fmt: CardFieldFormatters): CardFieldValue {
  *
  * Shared with the location detail panel (`location-detail.ts`), so a custom field reads the same
  * whether it is a fact about an item or about the place it sits in (issue #617) — including the
- * unit a NUMBER definition carries (W1b), which is a property of the definition and so is the
- * same in both places — and, since W1f, the openability of a `URL`/`FILE` value, so a link to
- * the boiler manual is clickable on the place that holds it exactly as on an item inside it.
+ * unit a NUMBER definition carries (W1b) and the decimal places it is written to (W1e), both
+ * properties of the definition and so the same in both places — and, since W1f, the openability
+ * of a `URL`/`FILE` value, so a link to the boiler manual is clickable on the place that holds it
+ * exactly as on an item inside it.
  */
-export function customFieldValue(type: FieldType, raw: string | null, unit: string | null): CardFieldValue {
+export function customFieldValue(
+  type: FieldType,
+  raw: string | null,
+  unit: string | null,
+  precision: number | null,
+): CardFieldValue {
   if (raw === null || raw.trim() === '') return EMPTY;
   if (type === 'BOOLEAN') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'Yes' : 'No' };
   if (type === 'ON_OFF') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'On' : 'Off' };
-  // A NUMBER with a unit (W1b) reads as the measurement it is. The unit is only ever set on a
-  // NUMBER definition (a table CHECK enforces that), but the type is tested here too so a
-  // definition retyped in one client and not yet synced to another can't render "true mm".
-  // Truthiness rather than `!== null`: a `unit` that is absent rather than null renders the bare
-  // number instead of "5 undefined". Types alone don't guarantee it is present, because this
-  // file's tests are excluded from `tsconfig.app.json` and build the catalog by hand.
-  if (type === 'NUMBER' && unit) return { kind: 'measure', text: raw, unit };
+  // A NUMBER is written to its definition's decimal places (W1e) and, where it has one, carries
+  // its unit (W1b), so it reads as the measurement it is. Both are gated on the type as well as
+  // on being set, so a definition retyped in one client and not yet synced to another can't
+  // render "true mm" or pad a date to two places.
+  //
+  // `precision ?? null` rather than a truthiness test — `0` is the "whole numbers only" setting,
+  // and it is the one value a truthy check would drop. The unit *is* tested for truthiness, and
+  // deliberately: an absent one must render the bare number rather than "5 undefined", and types
+  // alone don't guarantee it is present because this file's tests are excluded from
+  // `tsconfig.app.json` and build the catalog by hand.
+  if (type === 'NUMBER') {
+    const text = formatFieldNumber(raw, precision ?? null);
+    if (unit) return { kind: 'measure', text, unit };
+    return { kind: 'text', text };
+  }
   // A URL/FILE value becomes something the user can act on (W1f). Which of the two arms it
   // takes is decided by the string, not the type, because `FILE` covers a local path, a UNC
   // share *and* an `http(s)` URI — so only the value can say which it is. {@link isExternalHref}

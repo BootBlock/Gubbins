@@ -33,6 +33,12 @@ export interface LocationDetailField {
    * label-and-control pair to hang it on, so it travels with the value.
    */
   readonly unit: string | null;
+  /**
+   * The definition's decimal places for a `NUMBER` field (W1e); null for "as entered". Applied
+   * here for the same reason as on an item's card: how a number is written is a property of the
+   * definition, so a location's value must not read `5.5` where an item's reads `5.50`.
+   */
+  readonly precision: number | null;
   /** The stored value; `null` when the location holds the field but has not filled it in. */
   readonly value: string | null;
 }
@@ -49,7 +55,7 @@ export interface LocationDetailField {
 export function resolveLocationDetailFields(values: readonly LocationDetailField[]): ResolvedCardField[] {
   const out: ResolvedCardField[] = [];
   for (const field of values) {
-    const value = customFieldValue(field.fieldType, field.value, field.unit);
+    const value = customFieldValue(field.fieldType, field.value, field.unit, field.precision);
     if (value.kind === 'empty') continue;
     out.push({ id: field.defId, label: field.name, value });
   }

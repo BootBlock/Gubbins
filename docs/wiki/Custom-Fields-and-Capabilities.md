@@ -49,8 +49,9 @@ so `Manufacturer` can be required for Power tools and optional for Spares.
 Each custom field has a **type** that decides how you enter and how Gubbins shows its value:
 
 - **Text** / **Long text** — a single line, or a multi-line note.
-- **Number** — any number, and optionally a [[unit and an accepted
-  range|#giving-a-number-a-unit-and-a-range]]; **Rating (1–5)** — a whole-number star rating.
+- **Number** — any number, and optionally a [[unit, an accepted range and a number of decimal
+  places|#giving-a-number-a-unit-a-range-and-decimal-places]]; **Rating (1–5)** — a whole-number
+  star rating.
 - **Yes / No** and **On / Off** — a simple two-state toggle.
 - **Date** — a calendar date.
 - **Choice** — a value picked from a list of options you define.
@@ -141,11 +142,11 @@ matters for a field you added before, or one that came from a
 > Only **Date** fields can do this. If you change a field's type away from Date, the due-date
 > setting is cleared along with it.
 
-### Giving a number a unit and a range
+### Giving a number a unit, a range and decimal places
 
-A **Number** field can carry a **unit** and an accepted **range**. Both sit under the field in
-**Categories & schemas**, and both are optional — a number with neither behaves exactly as it
-always has.
+A **Number** field can carry a **unit**, an accepted **range**, and a number of **decimals**. All
+three sit under the field in **Categories & schemas**, and all three are optional — a number with
+none of them behaves exactly as it always has.
 
 **Unit** is the symbol the number is measured in: `mm`, `V`, `kg`, `mAh`. Gubbins shows it beside
 the value wherever the value appears — on the item's card, in the dense list, in the table, and
@@ -164,11 +165,30 @@ If you type a value outside the range, Gubbins says so as you type and won't sav
 it's fixed — *"Voltage must be at most 24 V."* The message quotes the unit, so it reads in the
 terms you set the field up in.
 
+**Decimals** is how many decimal places the number is written to. Unlike the range, it changes how
+the value *looks* as well as what's allowed:
+
+- set **2** on a *Torque* field and `5.5` is shown as `5.50` on the item's card, the dense list, the
+  table and a location's details panel;
+- set **0** for **whole numbers only** — a rule a range can't express, since no smallest-and-largest
+  pair rules out `2.5` while still allowing `2` and `3`;
+- leave the box empty to show numbers exactly as they were typed.
+
+Typing more decimal places than the field allows is refused the same way an out-of-range value is —
+*"Shelves must be a whole number."* Typing **fewer** is fine: `5.5` on a two-decimal field is saved
+and simply shown as `5.50`.
+
 > **ℹ️ Note**
-> Like the field's name and type — and like the due-date setting above — a unit and a range
-> belong to the **field itself**, not to one category. Set them on *Voltage* and they apply
-> everywhere that field is used, including values
+> Like the field's name and type — and like the due-date setting above — a unit, a range and the
+> decimals belong to the **field itself**, not to one category. Set them on *Voltage* and they
+> apply everywhere that field is used, including values
 > [[inherited from a location|#inheriting-a-value-from-a-location]].
+
+> **💡 Tip**
+> Decimals only change how the value is *displayed* — the number you typed is what's stored. So you
+> can raise or lower the setting later and every existing value is rewritten to match, rather than
+> leaving a mixture of old and new. The box you type the value into keeps it as you typed it, and so
+> do exports and searches.
 
 > **💡 Tip**
 > Use the **Unit** setting rather than putting the unit in the field's *name* or its
@@ -177,9 +197,9 @@ terms you set the field up in.
 > range messages can quote it.
 
 > **⚠️ Heads-up**
-> Only **Number** fields can carry a unit or a range. If you change a field's type away from
-> Number, both are cleared along with it. A range can't be set back-to-front either: a smallest
-> value above the largest would accept nothing at all, so Gubbins refuses it.
+> Only **Number** fields can carry a unit, a range or a decimals setting. If you change a field's
+> type away from Number, all three are cleared along with it. A range can't be set back-to-front
+> either: a smallest value above the largest would accept nothing at all, so Gubbins refuses it.
 
 ### Marking a field as a key field
 
@@ -193,8 +213,8 @@ everything else follows, also in its usual order. Nothing else changes: the fiel
 re-typed or moved to another tab, and it still saves, syncs, exports and searches exactly as before.
 
 > **ℹ️ Note**
-> Like the field's name and type — and like the due-date, unit and range settings above — this
-> belongs to the **field itself**, not to one category. Mark *Serial number* as a key field and it
+> Like the field's name and type — and like the due-date, unit, range and decimals settings above —
+> this belongs to the **field itself**, not to one category. Mark *Serial number* as a key field and it
 > leads in every category that uses it, and on values
 > [[inherited from a location|#inheriting-a-value-from-a-location]]. That is also what makes it work
 > on a location, whose fields have no order of their own to arrange.
@@ -291,7 +311,7 @@ reminder such as *where to read the value from*, or a link to a reference. The n
 Markdown, and leaving it blank simply hides the badge.
 
 > **💡 Tip**
-> For a number's unit of measure, use the [[**Unit** setting|#giving-a-number-a-unit-and-a-range]]
+> For a number's unit of measure, use the [[**Unit** setting|#giving-a-number-a-unit-a-range-and-decimal-places]]
 > rather than this note — that way the unit is shown beside the value itself, not tucked behind a
 > badge.
 

@@ -276,7 +276,15 @@ describe('ItemCard — content branches', () => {
     const customFields = new Map([
       [
         'f1',
-        { id: 'f1', categoryId: 'cat', name: 'Voltage', fieldType: 'TEXT', defaultValue: null, unit: null },
+        {
+          id: 'f1',
+          categoryId: 'cat',
+          name: 'Voltage',
+          fieldType: 'TEXT',
+          defaultValue: null,
+          unit: null,
+          precision: null,
+        },
       ],
     ]);
     renderCard(makeItem({ categoryId: 'cat', condition: 'GOOD', unitCost: 2, quantity: 3 }), {
@@ -297,7 +305,15 @@ describe('ItemCard — content branches', () => {
     const customFields = new Map([
       [
         'f1',
-        { id: 'f1', categoryId: 'cat', name: 'Voltage', fieldType: 'TEXT', defaultValue: null, unit: null },
+        {
+          id: 'f1',
+          categoryId: 'cat',
+          name: 'Voltage',
+          fieldType: 'TEXT',
+          defaultValue: null,
+          unit: null,
+          precision: null,
+        },
       ],
     ]);
     // The item is in a *different* category, so its Voltage field is not applicable.

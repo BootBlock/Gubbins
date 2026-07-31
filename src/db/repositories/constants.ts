@@ -425,6 +425,31 @@ export const FIELD_UNIT_MAX_LENGTH = 16;
 export const FIELD_NUMBER_BOUND_LIMIT = Number.MAX_SAFE_INTEGER;
 
 /**
+ * Bounds on `field_defs.precision` — a `NUMBER` custom field's **decimal places** (W1e).
+ *
+ * Unlike {@link FIELD_NUMBER_BOUND_LIMIT}, this is not a third bound of the same kind. A range
+ * only ever *refuses* a value; a precision also decides how a stored one is written — `5.5` on a
+ * 2-decimal field reads `5.50`. `NULL` means "as entered", which is what every existing field
+ * has and what keeps them rendering exactly as before.
+ *
+ * `0` is the case the setting most exists for: "whole numbers only" is a rule a range cannot
+ * express — no pair of bounds excludes `2.5` while admitting `2` and `3`.
+ *
+ * The cap is 6 because that is roughly where the setting stops meaning anything. Six places
+ * covers any realistic measurement (a micrometre written in metres is `0.000001`), and it stays
+ * far enough inside a double's ~15 significant digits that the round-trip test the validator
+ * makes — does writing the value at this precision lose anything? — still answers truthfully for
+ * values of everyday size. Note it says nothing about the *range*: a field bounded near
+ * {@link FIELD_NUMBER_BOUND_LIMIT} has already spent those digits on its integer part, and no
+ * decimal place is exact up there whatever this is set to.
+ *
+ * Interpolated into the `field_defs` CHECK, so the schema and the app clamp to the same range.
+ */
+export const FIELD_PRECISION_MIN = 0;
+/** Six decimal places — see {@link FIELD_PRECISION_MIN} for why the cap sits there. */
+export const FIELD_PRECISION_MAX = 6;
+
+/**
  * Attachment/datasheet kinds (spec §4 "Attachments & Datasheets"). `URL` is an
  * external link; `LOCAL_POINTER` stores only the literal local file-path string
  * (never the blob), keeping it sync-safe (§4 Strict Sync Isolation). Which kinds a
