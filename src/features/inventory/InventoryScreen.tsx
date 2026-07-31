@@ -103,7 +103,7 @@ import { defaultLocationForNewItem, markedDefaultLocationId } from './location-t
 import { InventoryFilterBar } from './components/InventoryFilterBar';
 import { InventoryFacetBar } from './components/InventoryFacetBar';
 import { LocationInfoCard } from './components/LocationInfoCard';
-import { LocationDescriptionCard } from './components/LocationDescriptionCard';
+import { LocationDetailCard } from './components/LocationDetailCard';
 import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
@@ -1069,13 +1069,12 @@ function InventoryWorkspace() {
               </div>
             ) : null}
 
-            {/* The selected location's own description, rendered as rich Markdown above the
-                item list (issue #108). Independent of the compact summary card above — it
-                shows whenever the location carries a description, and is hidden for the
-                "All locations" view and the whole-collection visualisations. */}
-            {selectedLocation?.description && !isVizMode ? (
-              <LocationDescriptionCard location={selectedLocation} />
-            ) : null}
+            {/* The selected location's own detail — its description as rich Markdown, plus the
+                custom-field values it holds about itself (issues #108, #617). Independent of the
+                compact summary card above: it is never dismissed, and it renders itself away when
+                the location holds neither, so the gate here is only "a location is selected and
+                we're not in a whole-collection visualisation". */}
+            {selectedLocation && !isVizMode ? <LocationDetailCard location={selectedLocation} /> : null}
 
             {/* The filter/facet bars and the "shown" count belong to the item list; a
                 whole-collection visualisation (map/treemap) stands alone, so they're hidden then. */}

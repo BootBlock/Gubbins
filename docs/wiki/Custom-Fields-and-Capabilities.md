@@ -114,16 +114,23 @@ matters for a field you added before, or one that came from a
 > Only **Date** fields can do this. If you change a field's type away from Date, the due-date
 > setting is cleared along with it.
 
+### Fields on a location
+
+A location can hold field values of its own, exactly as an item can — a shelf's load rating, a
+room's humidity, an access note. Open a location's **Edit** dialog and find **Fields**, then add a
+field and give it a value.
+
+![The Fields panel in a location's Edit dialog: a Storage conditions field set to "Dry, unheated", with "Offer to items here" ticked](images/location-inheritable-fields.png)
+
+Whatever a location holds shows in the panel above the item list whenever that location is
+selected, and the location tree's search box matches it — see
+[[Locations & stock|Locations-and-Stock#the-details-panel]].
+
 ### Inheriting a value from a location
 
 Instead of typing the same value onto every item in a drawer, you can set it **once on the
-location** and let the items take it.
-
-Open a location's **Edit** dialog and find **Inheritable fields**. Add a field, give it a value,
-and tick **Offer to items here**. Any item in that location — or in any location nested inside
-it — can then pick up that value.
-
-![The Inheritable fields panel in a location's Edit dialog: a Storage conditions field set to "Dry, unheated", with "Offer to items here" ticked](images/location-inheritable-fields.png)
+location** and let the items take it: tick **Offer to items here** on that value's row. Any item
+in that location — or in any location nested inside it — can then pick up that value.
 
 On the item, the field grows a small chooser above it:
 
@@ -149,7 +156,8 @@ finds items that inherit Ryobi just as it finds items that store it.
 > **ℹ️ Note**
 > Ticking **Offer to items here** is deliberately separate from setting the value. A location
 > can record a detail about *itself* — a shelf's load rating, a room's humidity — without every
-> item inside quietly adopting it.
+> item inside quietly adopting it. Either way the value stays visible on the location, in the
+> panel above its item list.
 
 If a location stops offering a field (you untick the box, clear the value, or move the item
 elsewhere), items that were inheriting fall back to the category default. Your choice to inherit

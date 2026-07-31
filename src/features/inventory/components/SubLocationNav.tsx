@@ -4,6 +4,7 @@ import { Surface } from '@/components/foundry';
 import { ChevronRightIcon } from '@/components/icons';
 import type { LocationWithCount } from '@/db/repositories';
 import type { LayoutDensity } from '@/state/stores/useLayoutStore';
+import { descriptionSnippet } from '../location-detail';
 import { LocationKindIcon } from './LocationKindIcon';
 
 /**
@@ -34,6 +35,12 @@ export function describeLocationContents(itemCount: number, subLocationCount: nu
  * operable and announced by screen readers. The Visual card reuses the {@link Surface}
  * primitive for its chrome, with a stretched button covering it so the whole card is the
  * hit target while the panel styling stays defined in one place.
+ *
+ * A child that carries a **description** shows a one-line, plain-text preview of it beneath the
+ * summary (issue #617): choosing which of several bins to open is exactly the moment the note a
+ * user wrote about a place is worth reading, and until now it appeared only as a hover tooltip in
+ * the tree. It is a preview, not the note — the full Markdown renders in the detail panel once
+ * the location is open, so the card keeps a fixed height.
  */
 export function SubLocationNav({
   childLocations,
@@ -74,7 +81,13 @@ export function SubLocationNav({
         {childLocations.map((loc) => {
           const summary = describeLocationContents(loc.itemCount, subLocationCounts.get(loc.id) ?? 0);
           const colorClass = locationColorClass?.(loc.id);
-          const label = `Open ${loc.name} — ${summary}`;
+          const snippet = descriptionSnippet(loc.description);
+          // The preview joins the accessible name too: the visible line is `aria-hidden` in the
+          // Data row (the button's label is the whole announcement there), so leaving it out
+          // would give a screen-reader user less to go on than a sighted one.
+          const label = snippet
+            ? `Open ${loc.name} — ${summary}. ${snippet}`
+            : `Open ${loc.name} — ${summary}`;
           return density === 'data' ? (
             <button
               key={loc.id}
@@ -93,6 +106,11 @@ export function SubLocationNav({
                 <p className="truncate text-xs text-muted-foreground" aria-hidden>
                   {summary}
                 </p>
+                {snippet ? (
+                  <p className="truncate text-xs text-muted-foreground/80" aria-hidden>
+                    {snippet}
+                  </p>
+                ) : null}
               </div>
               <ChevronRightIcon
                 className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
@@ -112,6 +130,7 @@ export function SubLocationNav({
                   {loc.name}
                 </h3>
                 <p className="mt-1 truncate text-xs text-muted-foreground">{summary}</p>
+                {snippet ? <p className="mt-1 truncate text-xs text-muted-foreground/80">{snippet}</p> : null}
               </div>
               <ChevronRightIcon
                 className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"

@@ -21,12 +21,34 @@ Each location can have:
   grid reads at a glance.
 - **A description** — free notes about the location (what it holds, how to get to it, a link).
   It shows as a tooltip when you hover the location in the tree, and — when that location is
-  selected — as a panel above the item list.
+  selected — in the **details panel** above the item list.
 - **A parent** — the location it sits inside.
 
 Selecting a location **filters** the inventory to what it holds, including everything nested
-beneath it, and shows the location's description (if it has one) above the items. Select
+beneath it, and shows the location's own details (if it has any) above the items. Select
 **All items** to clear the filter.
+
+### The details panel
+
+When a location carries a description, or values for any [[custom
+fields|Custom-Fields-and-Capabilities]], they appear together in a panel directly above the item
+list — so everything you recorded *about the place* is readable while you're browsing what's in
+it, without opening its **Edit** dialog.
+
+The description renders as full Markdown; the field values read as a plain list of label and
+value, the same way they read on an item's card. A location with neither shows no panel at all.
+
+> **ℹ️ Note**
+> This is separate from the compact **summary** strip above it (item count, fullness, last
+> counted). That strip can be dismissed from the **More** menu; the details panel always shows
+> when there is something to show.
+
+### Drilling into a sub-location
+
+Select a location that holds no items of its own but *does* nest others, and the item pane offers
+each of those as a card to open. Alongside the name and what it holds, a card shows the first line
+of that location's description — so *"overflow for the workshop"* helps you pick the right bin
+before you open it.
 
 Each row also carries two small buttons — **edit** the location, and **print a label** for it.
 With a mouse they slide into view when you hover the row (so long names have the full width to
@@ -60,6 +82,17 @@ deeply nested bin without expanding anything by hand.
 Search matches the **whole path**, not just the location's own name, and every word you type has
 to appear somewhere on it. So `garage bin` finds *Garage → Shelf A → Bin 3*, and typing just
 `garage` narrows the tree to the Garage and everything inside it.
+
+It also matches what a location records about **itself** — its description, and the values it
+holds for any [[custom fields|Custom-Fields-and-Capabilities]]. So a note reading *"damp in
+winter"* makes that location findable by typing `damp`, and a shelf whose *Access note* says
+*"key in the kitchen drawer"* turns up under `kitchen drawer`. Words can come from different
+places: `garage damp` finds the Garage whose description mentions damp.
+
+> **ℹ️ Note**
+> A description belongs to the location that carries it — it is never inherited downward, so a
+> bin doesn't match because the shed above it has a note. The **path** still is, which is what
+> makes `garage bin` work.
 
 Clear the box (with the **✕**, or by pressing `Escape` while typing in it) and the tree comes
 back exactly as you left it — searching never changes which branches you had open.
@@ -140,20 +173,26 @@ A **transfer** moves quantity from one location to another. The total on-hand do
 the stock just now lives somewhere else. This is how you record moving a batch of parts from
 receiving to a shelf, or loading tools into a van.
 
-## Passing values down to the items inside
+## Recording details about a location
 
-A location can hold **custom field values** of its own, and offer them to everything stored
-inside it. If a whole cabinet holds Ryobi tools, set `Manufacturer = Ryobi` once on the cabinet
-instead of typing it onto every item.
-
-Open the location's **Edit** dialog and find **Inheritable fields**:
+A location can hold **custom field values** of its own — a shelf's load rating, a room's
+humidity, an access note, a link to the boiler manual. Open the location's **Edit** dialog and
+find **Fields**:
 
 1. Pick a field from the list (fields are defined under **Categories & schemas** — see
    [[Custom fields & capabilities|Custom-Fields-and-Capabilities]]).
 2. Give it a value.
-3. Tick **Offer to items here**.
 
-![The Inheritable fields panel in a location's Edit dialog: a Storage conditions field set to "Dry, unheated", with "Offer to items here" ticked](images/location-inheritable-fields.png)
+![The Fields panel in a location's Edit dialog: a Storage conditions field set to "Dry, unheated", with "Offer to items here" ticked](images/location-inheritable-fields.png)
+
+Whatever you set here shows in the [[details panel|#the-details-panel]] above the item list
+whenever that location is selected, and is matched by the [[location search|#finding-a-location]].
+
+### Passing a value down to the items inside
+
+A location can also **offer** a value to everything stored inside it. If a whole cabinet holds
+Ryobi tools, set `Manufacturer = Ryobi` once on the cabinet instead of typing it onto every item:
+tick **Offer to items here** on that value's row.
 
 Items in that location — and in any location nested inside it — can then choose **Inherit** for
 that field instead of entering their own value. It's opt-in per item, and the value stays live:
@@ -165,7 +204,8 @@ Nested locations override their parents, so a value on `Cabinet A` beats the one
 > **ℹ️ Note**
 > Setting a value and *offering* it are separate steps. Leave **Offer to items here** unticked
 > to keep a value as the location's own detail — a shelf's load rating, say — without the items
-> inside picking it up.
+> inside picking it up. Either way it stays a detail *about the location*, and shows in the
+> details panel.
 
 The full behaviour, including what happens when you withdraw an offer, is covered in
 [[Custom fields & capabilities|Custom-Fields-and-Capabilities]].

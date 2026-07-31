@@ -982,6 +982,44 @@ export class CategoryRepository extends BaseRepository {
   }
 
   /**
+   * Every location's field values as one searchable text blob per location, so the sidebar's
+   * free-text search can find a place by something recorded *about* it and not only by its
+   * ancestry path (issue #617, `N2`).
+   *
+   * Text rather than rows because that is all the caller does with it, and because it is what
+   * keeps the read small: the alternative — hydrating every location's full `LocationFieldValue`
+   * list to concatenate it in the UI — pulls the dictionary join and every unused column across
+   * the worker boundary for a haystack.
+   *
+   * `IMAGE` values are excluded in **SQL**, not afterwards: the stored value *is* the picture (a
+   * base64 `data:` URL), so a vault with a few image fields would otherwise ship megabytes of
+   * base64 into a search index where it can only produce nonsense matches. Blank values are
+   * dropped for the same reason they contribute nothing.
+   *
+   * Bounded by the location × field count — the same "physical hierarchy, not the 100k+ item
+   * set" reasoning as {@link LocationRepository.listAll} — so it reads whole rather than paging.
+   */
+  async listLocationFieldSearchText(): Promise<Map<string, string>> {
+    const rows = await this.driver.query<{ location_id: string; value: string }>(
+      `SELECT lfv.location_id, lfv.value
+       FROM location_field_values lfv
+       JOIN field_defs fd ON fd.id = lfv.def_id
+       WHERE fd.field_type <> 'IMAGE'
+         AND lfv.value IS NOT NULL
+         AND TRIM(lfv.value) <> ''
+       ORDER BY lfv.location_id ASC, fd.name COLLATE NOCASE ASC;`,
+    );
+    const byLocation = new Map<string, string>();
+    for (const row of rows) {
+      const existing = byLocation.get(row.location_id);
+      // Newline-joined so no search term — which is split on whitespace — can straddle two
+      // values and match text the location does not actually hold.
+      byLocation.set(row.location_id, existing === undefined ? row.value : `${existing}\n${row.value}`);
+    }
+    return byLocation;
+  }
+
+  /**
    * Set a location's value for a dictionary definition, creating the row if absent.
    *
    * The value is validated against its definition through the same seam item values go

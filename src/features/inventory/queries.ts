@@ -137,6 +137,10 @@ export const inventoryKeys = {
   /** One location's custom-field values, inheritable or not (issue #97). Under locations()
    *  so a location write refreshes it by prefix. */
   locationFields: (locationId: string) => [...inventoryKeys.locations(), locationId, 'fields'] as const,
+  /** Every location's field values as one searchable blob each — the sidebar search (#617, N2).
+   *  Under locations() so a location write refreshes it by prefix; a *field-value* write names it
+   *  explicitly (see `invalidateInheritance`), since that write touches no location row. */
+  locationFieldSearchText: () => [...inventoryKeys.locations(), 'field-search-text'] as const,
   /** The prefix every on-card custom-field read shares (one query per resident window, so a
    *  field write invalidates *this* rather than trying to name each window's item ids). */
   itemFieldValuesAll: () => [...inventoryKeys.items(), 'fieldValues'] as const,
