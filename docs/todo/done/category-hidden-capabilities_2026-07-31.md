@@ -1,8 +1,9 @@
 # Category-scoped capability hiding — feasibility study & plan (issue #618)
 
-> **Status:** 🟢 ACTIVE — investigation complete, verdict **yes (scoped)**; no phase implemented
-> yet. Phase 1 (schema + gating seam) is next. Three product decisions in §6 are open; (a) and (c)
-> should be settled before phase 2 starts, (b) before phase 3.
+> **Status:** ✅ COMPLETE — all four phases shipped. The verdict was **yes (scoped)**, and the
+> three §6 decisions were settled as recommended: a populated section is shown with a note, the
+> create form was brought in scope, and the contradictory-defaults case is flagged in the editor.
+> §9 records where the delivered work deliberately departs from the plan below.
 
 ## The question
 
@@ -207,3 +208,37 @@ Recorded so a later reader can re-test the verdict rather than inherit it:
 - **If it becomes a permission system.** This is presentation only. The moment "hidden" starts to
   mean "cannot be set", it collides with [Roles & permissions](../wiki/Roles-and-Permissions.md),
   which is the subsystem that genuinely owns that question.
+
+## 9. What shipped, and where it departed from this plan
+
+Recorded because the sections above are the plan as *written*, not as *built* — a later reader
+following §7 as a recipe would otherwise be misled.
+
+**Settled as recommended.** (a) a section the category hides is shown anyway when it holds data,
+carrying a note naming the category. (b) the create form was brought into scope. (c) a category
+that both applies a maintenance schedule and hides the section shows a warning offering to stop
+adding the schedule — the editor does not silently clear either half of the contradiction.
+
+**Where phase 3 differs from §7.** The plan proposed tagging the ungated sections — Lifecycle,
+Supplier & ops, Related, Substitutions — with an owning `FeatureId`. Only the Lifecycle case was
+actionable, and not in that form:
+
+- **Lifecycle is a composite**, not a section with one owner. It holds expiry (`perishables`),
+  batch and lot (`batches`), variants (`variants`) *and* condition, which no capability gates.
+  Tagging the section wholesale would have hidden condition along with the rest. The narrowing
+  was therefore pushed **inside** the editor, per field, which is what makes the `Movie` case
+  actually work — the expiry date disappears while condition stays.
+- **Supplier & ops, Related and Substitutions were left ungated.** No registered capability owns
+  them, and minting `FeatureId`s to create one would have widened the Modules screen's public,
+  persisted vocabulary as a side effect of this issue. They remain hideable only by the device.
+
+**Scope trimmed deliberately.** `sales` and `cycle-counts` are *not* hideable per category. Both
+gate behaviour rather than an item-detail section — `sales` is a menu action, and a hidden
+`cycle-counts` would imply an exclusion from stock takes that this presentation-only feature does
+not deliver. `scanner`, `nfc`, `labels` and `scraping` are excluded as device concerns.
+
+**Left undone, deliberately.** The Modules screen and the feature registry are still untranslated
+English, so the picker shows translated chrome around English capability names. Converting
+`FEATURE_REGISTRY` to `labelKey`/`descriptionKey` would touch the Modules screen, the cascade
+modal, the module guard, first-run and their tests — a Modules-subsystem i18n conversion, not part
+of this issue. Worth its own issue.

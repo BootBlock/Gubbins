@@ -183,6 +183,44 @@ search; pressing **Escape** anywhere else (or with the search box empty) closes 
 > A preset whose category already exists is marked **Added** and can't be imported twice, so
 > there's no risk of duplicates.
 
+### Hiding the sections a category doesn't need
+
+Gubbins tracks a lot about an item — maintenance schedules, warranty, batches, expiry dates —
+and most of it makes no sense for *some* of what you own. A film has nothing to service and no
+warranty to run out; a coin has no expiry date.
+
+You could switch those capabilities off entirely under [[Modular UI|Modular-UI]], but that
+hides them **everywhere** — including on the power tools that genuinely need them. So a
+**category** can say what its own items don't have.
+
+Open **Categories & schemas**, pick a category, and find **Sections these items don't need**.
+Tick anything that doesn't apply, and it disappears from every item in that category —
+on the item's details *and* on the form for adding a new one.
+
+> **ℹ️ Note**
+> This only changes what you **see**. Nothing is deleted, nothing stops syncing, and reminders
+> carry on as normal. Untick the box and everything is exactly where you left it.
+
+**Nothing with something in it is ever hidden.** If an item already has, say, a maintenance
+schedule recorded — perhaps you added it before hiding the section, or it arrived from another
+device — that section is shown anyway, with a short note explaining why it's there. You can't
+lose track of information this way.
+
+The built-in presets come with sensible choices already made: `Movie` and `Vinyl record` hide
+maintenance and expiry, `Coin` and `Postcard` also hide warranty. Anything that genuinely gets
+serviced — watches, cameras, instruments, arcade machines — keeps everything. As always, a
+preset is only a starting point; change it to suit.
+
+> **⚠️ Heads-up**
+> A category can only hide **more**, never bring something back. If a capability is switched off
+> under [[Modules|Modular-UI]], it stays off everywhere, and unticking it here won't return it —
+> switch the module back on instead.
+
+> **💡 Tip**
+> If a category is also set to give every new item a **maintenance schedule** (below) *and* you
+> hide the Maintenance section, Gubbins points out the contradiction and offers to stop adding
+> the schedule — otherwise it would create one on every item and then hide it.
+
 ### Giving a category a glyph
 
 A category can carry an optional **glyph** — a single emoji such as 🔋 for batteries, 📖 for
