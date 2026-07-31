@@ -28,8 +28,10 @@ function hasText(value: string | null): boolean {
  * fallback kicks in. `stockHealth` and `lastUpdated` are always available (every item has a
  * reorder-derived band and an updated-at instant); the others depend on the item:
  * - `value` — an item with a meaningful total ({@link itemTotalValue}, shared with the `value`
- *   card field and badge): priced, not an unlimited source, and for a gauge priced per unit of
- *   measure rather than per unit (issue #683).
+ *   card field, the badge, and the metric's own renderer so the gate and the figure can never
+ *   state different rules): priced and not an unlimited source. In practice the card routes a
+ *   gauge to its fill bar before this metric is reached, so the gauge branch of that rule shows
+ *   up here only as consistency, not as a surface a user sees (issue #683).
  * - `condition` — a tracked condition is set.
  * - `manufacturer` — a manufacturer/brand is recorded.
  *
