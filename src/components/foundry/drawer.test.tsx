@@ -48,6 +48,11 @@ describe('Drawer — dialog semantics', () => {
 });
 
 describe('Drawer — every route out works', () => {
+  /** One end of a pointer gesture, as a real pointing device reports it. */
+  const POINTER = { pointerId: 1, isPrimary: true, button: 0 };
+  /** A click a pointer actually made: `detail` counts the clicks of the press behind it. */
+  const POINTER_CLICK = { ...POINTER, detail: 1 };
+
   /** Renders a drawer that actually unmounts on close, so we assert the real user outcome. */
   function Harness() {
     const [open, setOpen] = useState(true);
@@ -74,7 +79,21 @@ describe('Drawer — every route out works', () => {
     render(<Harness />);
     const backdrop = screen.getByRole('dialog').firstElementChild;
     expect(backdrop).toBeTruthy();
-    fireEvent.click(backdrop!);
+    fireEvent.pointerDown(backdrop!, POINTER);
+    fireEvent.pointerUp(backdrop!, POINTER);
+    fireEvent.click(backdrop!, POINTER_CLICK);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('closes on a backdrop tap that rolls onto the panel as the finger lifts (#614)', async () => {
+    // The strip of backdrop left beside the panel is the whole tap target on a phone, so a tap
+    // that ends a few pixels inside the panel still has to dismiss — the browser dispatches
+    // that click on the container, where a backdrop-only handler never saw it.
+    render(<Harness />);
+    const dialog = screen.getByRole('dialog');
+    fireEvent.pointerDown(dialog.firstElementChild!, POINTER);
+    fireEvent.pointerUp(screen.getByRole('button', { name: 'Shelf A' }), POINTER);
+    fireEvent.click(dialog, POINTER_CLICK);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { Surface } from './surface';
 import { CloseButton } from './close-button';
+import { useBackdropDismiss } from './backdrop-dismiss';
 import { useDialogBehaviour } from './use-dialog-behaviour';
 import { useReducedMotion } from './useReducedMotion';
 
@@ -45,6 +46,13 @@ export function Drawer({ open, onClose, title, children, className }: DrawerProp
 
   useDialogBehaviour(open, onClose, dialogRef);
 
+  // Tap-the-backdrop-to-close (#614) — the gesture this panel leans on hardest, since the
+  // strip of backdrop left beside it at `85vw` is the tap target a phone user reaches for, and
+  // a tap that rolls onto the panel as the finger lifts has to count. See
+  // `backdrop-dismiss.ts`. Escape (via `useDialogBehaviour`) and the Close button remain, so
+  // this pointer route is never the only way out and needs no keyboard handler of its own.
+  const { backdropRef, containerProps } = useBackdropDismiss(onClose);
+
   if (!open) return null;
 
   return createPortal(
@@ -55,11 +63,11 @@ export function Drawer({ open, onClose, title, children, className }: DrawerProp
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      {...containerProps}
     >
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- the backdrop's click-to-dismiss is a redundant pointer affordance; keyboard users dismiss via Escape (handled by useDialogBehaviour) or the Close button, so no keyboard handler belongs on this decorative overlay. */}
       <div
+        ref={backdropRef}
         className={cn('absolute inset-0 bg-black/60 backdrop-blur-sm', !reducedMotion && 'animate-fade-in')}
-        onClick={onClose}
       />
       <Surface
         className={cn(
