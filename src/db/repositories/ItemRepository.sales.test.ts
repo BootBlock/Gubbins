@@ -5,6 +5,7 @@ import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
+import { SupplierPartRepository } from './SupplierPartRepository';
 
 /**
  * Sell / write-off outbound movements (Sales & disposals capability). Both draw DISCRETE stock
@@ -15,12 +16,14 @@ describe('ItemRepository — sell & write-off', () => {
   let driver: MemoryDriver;
   let items: ItemRepository;
   let locations: LocationRepository;
+  let supplierParts: SupplierPartRepository;
 
   beforeEach(async () => {
     driver = createMemoryDriver();
     await runMigrations(driver, migrations);
     items = new ItemRepository(driver);
     locations = new LocationRepository(driver);
+    supplierParts = new SupplierPartRepository(driver);
   });
 
   afterEach(async () => {
@@ -109,6 +112,85 @@ describe('ItemRepository — sell & write-off', () => {
     expect((await items.getHistory(item.id)).rows.find((h) => h.action === 'SOLD')!.netValueDelta).toBe(
       3.702,
     );
+  });
+
+  it('snapshots the preferred supplier cost when the item carries no manual one', async () => {
+    const drawer = await locations.create({ name: 'Drawer A' });
+    const item = await items.create({ name: 'Widget', quantity: 10, locationId: drawer.id, unitCost: null });
+    await supplierParts.create(item.id, {
+      supplier: { supplierName: 'Home Co' },
+      unitCost: 4,
+      currency: 'GBP',
+      isPreferred: true,
+    });
+
+    const gbp = new ItemRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+    await gbp.sell({ itemId: item.id, quantity: 2, unitSalePrice: 7 });
+
+    const sold = (await items.getHistory(item.id)).rows.find((h) => h.action === 'SOLD');
+    expect(sold!.metadata).toMatchObject({ unitCostAtSale: 4 });
+  });
+
+  it('declines a preferred supplier cost quoted in another currency (issue #687)', async () => {
+    // Gubbins holds no exchange rates, so ¥9,800 cannot become a £ figure — and unlike a report,
+    // this one is written into the append-only ledger, where a wrong number can never be
+    // corrected. The sale books no cost at all, which the sales report already counts honestly
+    // as a unit sold without cost.
+    const drawer = await locations.create({ name: 'Drawer A' });
+    const item = await items.create({
+      name: 'Oscilloscope',
+      quantity: 3,
+      locationId: drawer.id,
+      unitCost: null,
+    });
+    await supplierParts.create(item.id, {
+      supplier: { supplierName: 'Akihabara Denshi' },
+      unitCost: 9800,
+      currency: 'JPY',
+      isPreferred: true,
+    });
+
+    const gbp = new ItemRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+    await gbp.sell({ itemId: item.id, quantity: 1, unitSalePrice: 120 });
+
+    const sold = (await items.getHistory(item.id)).rows.find((h) => h.action === 'SOLD');
+    expect(sold!.metadata).toMatchObject({ unitSalePrice: 120, unitCostAtSale: null });
+  });
+
+  it('declines a foreign supplier cost on a write-off too (issue #687)', async () => {
+    const drawer = await locations.create({ name: 'Drawer A' });
+    const item = await items.create({ name: 'Scope', quantity: 3, locationId: drawer.id, unitCost: null });
+    await supplierParts.create(item.id, {
+      supplier: { supplierName: 'Akihabara Denshi' },
+      unitCost: 9800,
+      currency: 'JPY',
+      isPreferred: true,
+    });
+
+    const gbp = new ItemRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+    await gbp.writeOff({ itemId: item.id, quantity: 1, reason: 'Damaged' });
+
+    const written = (await items.getHistory(item.id)).rows.find((h) => h.action === 'WRITTEN_OFF');
+    expect(written!.metadata).toMatchObject({ unitCostAtSale: null });
+  });
+
+  it('keeps a manual unit cost even when the preferred supplier quotes a foreign price', async () => {
+    // A manual cost is the user stating the item's worth in *their* currency, so it wins outright
+    // and the supplier's foreign quote never comes into it.
+    const drawer = await locations.create({ name: 'Drawer A' });
+    const item = await items.create({ name: 'Scope', quantity: 3, locationId: drawer.id, unitCost: 55 });
+    await supplierParts.create(item.id, {
+      supplier: { supplierName: 'Akihabara Denshi' },
+      unitCost: 9800,
+      currency: 'JPY',
+      isPreferred: true,
+    });
+
+    const gbp = new ItemRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+    await gbp.sell({ itemId: item.id, quantity: 1, unitSalePrice: 120 });
+
+    const sold = (await items.getHistory(item.id)).rows.find((h) => h.action === 'SOLD');
+    expect(sold!.metadata).toMatchObject({ unitCostAtSale: 55 });
   });
 
   it('refuses to sell a non-DISCRETE item', async () => {
