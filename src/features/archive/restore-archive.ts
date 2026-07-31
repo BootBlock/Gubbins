@@ -141,10 +141,10 @@ export function readArchive(zip: Uint8Array): ArchiveContents {
  * saves a restore point of the current one (issue #198), then replaces the stored database,
  * re-hydrates the full-resolution images and reloads so the worker re-opens the restored
  * database. Throws {@link InvalidArchiveError} for a malformed archive, or
- * `DamagedDatabaseError` / `IncompatibleDatabaseError` / `RestorePointError` from the pre-flight —
- * all before any OPFS write.
+ * `DamagedDatabaseError` / `IncompatibleDatabaseError` / `RestorePointError` /
+ * `RestorePointNotSavedError` from the pre-flight — all before any OPFS write.
  */
-export async function restoreArchive(file: File, options: RestoreOptions = {}): Promise<void> {
+export async function restoreArchive(file: File, options: RestoreOptions): Promise<void> {
   const zip = new Uint8Array(await file.arrayBuffer());
   const { sqlite, images, manifest } = readArchive(zip); // validates before we touch OPFS
 

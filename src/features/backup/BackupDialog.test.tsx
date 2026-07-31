@@ -19,7 +19,13 @@ const mockCreateBackup = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<
 const mockReadBackup = vi.hoisted(() => vi.fn<(f: File) => Promise<unknown>>());
 const mockRestoreBackup = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<unknown>>());
 
-vi.mock('./build-backup', () => ({ createBackup: mockCreateBackup }));
+// `backupFilename` / `BACKUP_FILE_KIND` name the restore point's destination before the zip
+// exists (issue #502); they are pure and carry no IO, so the mock keeps them faithful.
+vi.mock('./build-backup', () => ({
+  createBackup: mockCreateBackup,
+  backupFilename: (prefix = 'gubbins-backup') => `${prefix}-20260630-120000.zip`,
+  BACKUP_FILE_KIND: { description: 'Gubbins backup', mimeType: 'application/zip', extensions: ['.zip'] },
+}));
 vi.mock('./restore-backup', () => ({
   readBackup: mockReadBackup,
   restoreBackup: mockRestoreBackup,
@@ -54,6 +60,9 @@ const BACKUP_RESULT = {
     createdAt: Date.now(),
     counts: { items: 42, images: 5 },
   },
+  // The pre-Replace restore point provably reached the user (issue #502); the Create tab, which
+  // is not about to delete anything, never reads this.
+  secured: true,
 };
 
 /** A minimal ParsedBackup that satisfies RestorePanel's parsed rendering. */
@@ -288,6 +297,26 @@ describe('BackupDialog — choosing which settings travel (issue #175)', () => {
 
     const selection = mockCreateBackup.mock.calls[0]![0] as { settingGroups: Record<string, boolean> };
     expect(Object.values(selection.settingGroups).every(Boolean)).toBe(true);
+  });
+
+  it('cancels the Replace when the restore point did not reach the user (issue #502)', async () => {
+    // The bug this closes: the old code awaited `createBackup`, which only ever reported whether
+    // the zip *built*. A browser that dropped the download looked exactly like one that saved it,
+    // and the wipe went ahead on the strength of that.
+    mockCreateBackup.mockResolvedValue({ ...BACKUP_RESULT, secured: false });
+    mockRestoreBackup.mockResolvedValue({ reloadRequired: false, message: 'done' });
+    renderDialog('restore');
+    await chooseBackupFile(PARSED_BACKUP);
+
+    fireEvent.click(screen.getByTestId('restore-mode-replace'));
+    fireEvent.click(screen.getByTestId('restore-backup'));
+    fireEvent.change(screen.getByTestId('replace-confirm-input'), { target: { value: 'REPLACE' } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-restore-backup'));
+    });
+
+    expect(mockRestoreBackup).not.toHaveBeenCalled();
+    expect(screen.getByTestId('restore-error-live-region').textContent).toMatch(/not confirmed as saved/i);
   });
 
   it('offers only the groups the chosen backup actually carries', async () => {

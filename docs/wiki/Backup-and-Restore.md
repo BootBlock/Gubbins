@@ -65,8 +65,26 @@ There are two ways to restore:
 
 > **⚠️ Heads-up**
 > **Replace** overwrites everything currently in Gubbins. It's deliberately well-guarded — an
-> automatic restore-point is taken first, you get an impact preview and a storage-space check, and
+> automatic restore-point is saved first, you get an impact preview and a storage-space check, and
 > you must type-to-confirm — but it *is* destructive. When in doubt, **Merge**.
+
+### The restore point has to actually land
+
+The restore point is the undo for an overwrite that cannot otherwise be undone, so Gubbins doesn't
+just *offer* you the file and carry on — it waits until the copy is really there.
+
+- On browsers that can save a file properly (Chrome, Edge and other Chromium browsers on desktop),
+  you're asked **where to put it**. Once it's written, the restore runs. Close that dialog without
+  choosing anywhere and nothing is restored.
+- Everywhere else — Firefox, Safari, and apps that open web pages inside themselves — a browser can
+  start a download without ever saying whether it finished. There, Gubbins names the file and asks
+  you to check you have it. Answer **Cancel — change nothing** and your data is left exactly as it
+  was.
+
+> **⚠️ Heads-up**
+> Don't wave that question through. A download can be refused, cancelled or silently dropped —
+> most often on a phone, or when the disk is full — and the whole point of the copy is to exist
+> before anything is overwritten. Go and look for the file first.
 
 > **💡 Tip**
 > Take a backup before any big change — a large import, a bulk edit, or a Replace restore. The
@@ -110,7 +128,8 @@ If something is wrong it says what, and nothing is overwritten.
 
 You can still go ahead — a damaged copy is sometimes all that's left, and most of the records in one
 are usually still readable — but it takes a second, deliberate confirmation. Either way, Gubbins
-downloads a copy of your current database first, so a restore that turns out wrong can be undone.
+saves a copy of your current database first and waits for it to land, so a restore that turns out
+wrong can be undone.
 
 Every `.zip` backup also carries its own packing list: how many items and images it holds, which
 optional parts were included, and a fingerprint of each one. When you pick a file to restore,
@@ -145,8 +164,9 @@ with **Merge**, which re-applies your records onto the new database shape rather
 database file back.
 
 As with a damaged file, you can still override it after a second, deliberate confirmation — and a
-copy of your current database is downloaded first either way, so you can get straight back to where
-you were.
+copy of your current database is saved first either way, so you can get straight back to where you
+were. That copy is not optional: if it can't be saved, or you tell Gubbins it never arrived, the
+restore is cancelled and nothing is touched.
 
 > **ℹ️ Note**
 > This is the same check that makes **Replace everything** decline a backup whose exact database copy

@@ -38,6 +38,17 @@ vi.mock('@/features/images/opfs-images', () => ({ writeImageFiles }));
 
 import { IncompatibleDatabaseError } from '@/app/error/safe-mode-actions';
 import { InvalidArchiveError, parseArchive, readArchive, restoreArchive } from './restore-archive';
+import type { SafeSave } from '@/lib/save-file';
+
+/**
+ * Where the restore point goes (issue #502). Opaque here — `prepareDestructiveRestore` is
+ * stubbed above and is the only thing that reads it — but it is required, so the calls below
+ * pass one rather than pretending a destructive restore can start without a destination.
+ */
+const SAVE: SafeSave = {
+  saver: { filename: 'gubbins-restore-point.sqlite', save: async () => 'saved' },
+  confirmUnverified: async () => true,
+};
 
 /** Bytes that begin with the SQLite 3 magic header, so they pass the file guard. */
 function fakeSqlite(tail = 'payload'): Uint8Array {
@@ -187,7 +198,7 @@ describe('restoreArchive — schema baseline (issue #501)', () => {
       [ARCHIVE_MANIFEST_ENTRY]: manifestEntry({ baselineRevision: 'deadbeef' }),
     });
 
-    await expect(restoreArchive(file)).rejects.toBeInstanceOf(IncompatibleDatabaseError);
+    await expect(restoreArchive(file, { save: SAVE })).rejects.toBeInstanceOf(IncompatibleDatabaseError);
 
     expect(prepareDestructiveRestore).not.toHaveBeenCalled();
     expect(overwriteDatabaseFile).not.toHaveBeenCalled();
@@ -200,14 +211,14 @@ describe('restoreArchive — schema baseline (issue #501)', () => {
       [ARCHIVE_MANIFEST_ENTRY]: manifestEntry(),
     });
 
-    await restoreArchive(file);
+    await restoreArchive(file, { save: SAVE });
 
     expect(prepareDestructiveRestore).toHaveBeenCalledOnce();
     expect(overwriteDatabaseFile).toHaveBeenCalledOnce();
   });
 
   it('leaves a manifest-less archive to the pre-flight, which reads the database itself', async () => {
-    await restoreArchive(archiveFile({ [ARCHIVE_DB_ENTRY]: fakeSqlite() }));
+    await restoreArchive(archiveFile({ [ARCHIVE_DB_ENTRY]: fakeSqlite() }), { save: SAVE });
 
     expect(prepareDestructiveRestore).toHaveBeenCalledOnce();
     expect(overwriteDatabaseFile).toHaveBeenCalledOnce();
@@ -219,7 +230,7 @@ describe('restoreArchive — schema baseline (issue #501)', () => {
       [ARCHIVE_MANIFEST_ENTRY]: manifestEntry({ baselineRevision: 'deadbeef' }),
     });
 
-    await restoreArchive(file, { force: true });
+    await restoreArchive(file, { force: true, save: SAVE });
 
     expect(overwriteDatabaseFile).toHaveBeenCalledOnce();
   });

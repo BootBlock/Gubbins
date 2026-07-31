@@ -4,7 +4,8 @@
  * A modal the user is directed to from the critical/locked storage banners. It shows
  * an estimated OPFS breakdown by table (row count × avg byte-size, §7.6.2) and the
  * two guided reclaim workflows (§7.6.3):
- *   A. Action History Pruning — downloads a cold-storage JSON archive *before* deleting.
+ *   A. Action History Pruning — saves a cold-storage JSON archive, confirms it landed,
+ *      and only then deletes.
  *   B. Image Downgrading — drops stale full-res files, keeping thumbnails (local-only).
  *
  * Ephemeral selections live in local component state (Tier-3, §2.1). Reads/writes go
@@ -12,6 +13,8 @@
  */
 import { useMemo, useState } from 'react';
 import { Button, Modal, Select, Spinner, Tooltip, useToast } from '@/components/foundry';
+import { useConfirmSaved } from '@/components/useConfirmSaved';
+import { prepareSave } from '@/lib/save-file';
 import {
   ArchiveIcon,
   DownloadIcon,
@@ -33,6 +36,7 @@ import {
   usePruneCandidateCount,
   useStorageBreakdown,
 } from './hooks';
+import { HISTORY_ARCHIVE_FILE_KIND, historyArchiveFilename } from './triage-actions';
 import { monthsLabel, pruneCutoff } from './triage';
 
 /** Which reclaim workflow is awaiting a confirm-before-delete (§7.6.3 nicety). */
@@ -53,6 +57,13 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
   const setPruneMonths = usePreferencesStore((s) => s.setPruneWindowMonths);
   const setDowngradeMonths = usePreferencesStore((s) => s.setDowngradeWindowMonths);
   const [confirming, setConfirming] = useState<Confirming>(null);
+  /**
+   * True while the archive's save destination is being chosen (issue #502). The mutation has not
+   * started yet, so `prune.isPending` is still false — without this the workflow's button comes
+   * back enabled underneath an open save dialog, and a second click would run the whole prune
+   * twice.
+   */
+  const [choosingArchiveDestination, setChoosingArchiveDestination] = useState(false);
   const fmt = useFormatters();
 
   const pruneCutoffMs = useMemo(() => pruneCutoff(now, pruneMonths), [now, pruneMonths]);
@@ -68,23 +79,44 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
   const prune = useArchiveAndPruneHistory(now);
   const downgrade = useDowngradeImages(now);
   const { show } = useToast();
+  const { confirmSaved, confirmSavedDialog } = useConfirmSaved();
 
-  const onPrune = () => {
+  const onPrune = async () => {
     setConfirming(null);
-    prune.mutate(pruneMonths, {
-      onSuccess: (result) => {
-        show({
-          tone: 'success',
-          icon: <ArchiveIcon />,
-          heading: 'History archived & pruned',
-          message:
-            result.pruned === 0
-              ? 'No history was older than that window.'
-              : `Archived ${result.archived} entries to a JSON download and freed ${result.pruned} rows.`,
-        });
+    // Reserve the destination inside the click (issue #502). The picker that can actually report
+    // a completed save needs the user gesture, and the rows are not read until it resolves —
+    // so choosing first is what lets the prune wait on a copy that provably exists.
+    setChoosingArchiveDestination(true);
+    const saver = await prepareSave(historyArchiveFilename(now), HISTORY_ARCHIVE_FILE_KIND);
+    setChoosingArchiveDestination(false);
+    if (!saver) return; // the user closed the save dialog: nothing is archived and nothing deleted
+    prune.mutate(
+      { months: pruneMonths, save: { saver, confirmUnverified: confirmSaved } },
+      {
+        onSuccess: (result) => {
+          if (!result.archiveSaved) {
+            show({
+              tone: 'warning',
+              icon: <ArchiveIcon />,
+              heading: 'Nothing was deleted',
+              message: 'The archive was not confirmed as saved, so your history is exactly as it was.',
+            });
+            return;
+          }
+          show({
+            tone: 'success',
+            icon: <ArchiveIcon />,
+            heading: 'History archived & pruned',
+            message:
+              result.pruned === 0
+                ? 'No history was older than that window.'
+                : `Archived ${result.archived} entries to ${saver.filename} and freed ${result.pruned} rows.`,
+          });
+        },
+        onError: () =>
+          show({ tone: 'danger', heading: 'Pruning failed', message: 'No history was deleted.' }),
       },
-      onError: () => show({ tone: 'danger', heading: 'Pruning failed', message: 'No history was deleted.' }),
-    });
+    );
   };
 
   const onDowngrade = () => {
@@ -177,7 +209,8 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
             </h3>
           </div>
           <p className="text-sm text-muted-foreground">
-            Downloads a JSON cold-storage archive first, then removes the entries from your device.
+            Saves a JSON cold-storage archive first, and removes the entries from your device only once that
+            copy is confirmed.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-sm">
@@ -197,14 +230,14 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
             {confirming === 'prune' ? (
               <ConfirmRow
                 testIdPrefix="prune"
-                message={`Permanently delete ${pruneCount.data ?? 0} ${plural(pruneCount.data ?? 0, 'entry', 'entries')} after the archive downloads?`}
-                onConfirm={onPrune}
+                message={`Permanently delete ${pruneCount.data ?? 0} ${plural(pruneCount.data ?? 0, 'entry', 'entries')} once the archive is saved?`}
+                onConfirm={() => void onPrune()}
                 onCancel={() => setConfirming(null)}
                 pending={prune.isPending}
               />
             ) : (
               <Tooltip
-                content="Downloads a JSON cold-storage archive first, then permanently deletes those history entries from this device."
+                content="Saves a JSON cold-storage archive first, and permanently deletes those history entries from this device only once that copy is confirmed."
                 triggerTabIndex={-1}
               >
                 <span>
@@ -212,9 +245,9 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                     data-testid="prune-history"
                     variant="outline"
                     onClick={() => setConfirming('prune')}
-                    disabled={prune.isPending || (pruneCount.data ?? 0) === 0}
+                    disabled={prune.isPending || choosingArchiveDestination || (pruneCount.data ?? 0) === 0}
                   >
-                    {prune.isPending ? <Spinner /> : <DownloadIcon />}
+                    {prune.isPending || choosingArchiveDestination ? <Spinner /> : <DownloadIcon />}
                     Archive &amp; purge
                   </Button>
                 </span>
@@ -278,6 +311,11 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
           </div>
         </section>
       </div>
+      {/*
+       * Nested inside this dialog deliberately: it only ever opens on top of the workflow that
+       * asked the question, and the modal stack hands Escape/Tab to whichever is topmost.
+       */}
+      {confirmSavedDialog}
     </Modal>
   );
 }

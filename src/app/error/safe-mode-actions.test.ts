@@ -32,6 +32,7 @@ import {
   DamagedDatabaseError,
   IncompatibleDatabaseError,
   RestorePointError,
+  RestorePointNotSavedError,
   captureRestorePoint,
   downloadJsonDump,
   downloadRawSqlite,
@@ -44,6 +45,43 @@ import {
 import { SAHPOOL_DIRECTORY } from '@/db/db-storage';
 import { readDbPresence, writeDbPresence } from '@/db/db-presence';
 import { SQLITE_MAGIC } from '@/db/sqlite-header';
+import type { SafeSave } from '@/lib/save-file';
+
+const RESTORE_POINT_NAME = 'gubbins-restore-point-20260719-120000.sqlite';
+
+/**
+ * The restore point's destination (issue #502). Defaults to the browsers that *cannot* report a
+ * save — the anchor download, plus the acknowledgement that stands in for one — so these tests
+ * keep asserting on `downloadBlob` exactly as they did before the copy had to prove itself.
+ */
+function anchorSave(confirm: () => Promise<boolean> = async () => true): SafeSave {
+  return {
+    saver: {
+      filename: RESTORE_POINT_NAME,
+      save: async (blob: Blob) => {
+        downloadBlob(RESTORE_POINT_NAME, blob);
+        return 'unverified';
+      },
+    },
+    confirmUnverified: confirm,
+  };
+}
+
+/** The File System Access route: the write itself reports, so nothing is asked of the user. */
+function verifiedSave(onSave: (blob: Blob) => void = () => {}): SafeSave {
+  return {
+    saver: {
+      filename: RESTORE_POINT_NAME,
+      save: async (blob: Blob) => {
+        onSave(blob);
+        return 'saved';
+      },
+    },
+    confirmUnverified: async () => {
+      throw new Error('A verified save must never ask the user.');
+    },
+  };
+}
 
 /** A file whose first 16 bytes are the SQLite magic — all the pre-#198 guard ever checked. */
 function sqliteBytes(size = 8192): Uint8Array {
@@ -145,8 +183,8 @@ beforeEach(() => {
 });
 
 describe('captureRestorePoint (issue #198)', () => {
-  it('downloads the current database before it can be overwritten', async () => {
-    expect(await captureRestorePoint()).toBe(true);
+  it('saves the current database before it can be overwritten', async () => {
+    expect(await captureRestorePoint(anchorSave())).toBe(true);
     expect(downloadBlob).toHaveBeenCalledWith(
       expect.stringContaining('gubbins-restore-point-'),
       expect.any(Blob),
@@ -155,13 +193,13 @@ describe('captureRestorePoint (issue #198)', () => {
 
   it('reports nothing captured when there is no database yet — which is not a failure', async () => {
     mockOpfs('absent');
-    expect(await captureRestorePoint()).toBe(false);
+    expect(await captureRestorePoint(anchorSave())).toBe(false);
     expect(downloadBlob).not.toHaveBeenCalled();
   });
 
   it('reports nothing captured for an empty database file', async () => {
     mockOpfs(0);
-    expect(await captureRestorePoint()).toBe(false);
+    expect(await captureRestorePoint(anchorSave())).toBe(false);
     expect(downloadBlob).not.toHaveBeenCalled();
   });
 
@@ -169,7 +207,26 @@ describe('captureRestorePoint (issue #198)', () => {
     // The dangerous confusion: treating "I could not read it" as "there was nothing there"
     // would let the restore overwrite real data with no copy behind it.
     mockOpfs('unreadable');
-    await expect(captureRestorePoint()).rejects.toThrow(/access denied/i);
+    await expect(captureRestorePoint(anchorSave())).rejects.toThrow(/access denied/i);
+  });
+});
+
+describe('captureRestorePoint — the copy has to prove it landed (issue #502)', () => {
+  it('refuses when the user says the file never arrived', async () => {
+    // The bug this closes: `<a download>` cannot report, so the old code returned `true`
+    // unconditionally and the caller overwrote the database on the strength of it.
+    await expect(captureRestorePoint(anchorSave(async () => false))).rejects.toBeInstanceOf(
+      RestorePointNotSavedError,
+    );
+  });
+
+  it('does not ask when the save reported itself', async () => {
+    // `verifiedSave` throws if its acknowledgement is reached — a File System Access write that
+    // closed cleanly is the answer, and asking again would be noise on every desktop restore.
+    const written: Blob[] = [];
+    expect(await captureRestorePoint(verifiedSave((blob) => written.push(blob)))).toBe(true);
+    expect(written).toHaveLength(1);
+    expect(downloadBlob).not.toHaveBeenCalled();
   });
 });
 
@@ -177,7 +234,9 @@ describe('restoreRawSqlite (issue #198)', () => {
   it('refuses a damaged database and touches nothing', async () => {
     inspectRestoreCandidate.mockResolvedValue({ status: 'damaged', problems: ['Page 4 is corrupt.'] });
 
-    await expect(restoreRawSqlite(sqliteFile())).rejects.toBeInstanceOf(DamagedDatabaseError);
+    await expect(restoreRawSqlite(sqliteFile(), { save: anchorSave() })).rejects.toBeInstanceOf(
+      DamagedDatabaseError,
+    );
 
     // The live database is still there — and the user was not made to sit through a
     // restore-point download for a file that was never going to be used.
@@ -188,7 +247,7 @@ describe('restoreRawSqlite (issue #198)', () => {
   it('carries the specific problems so the user can judge the override', async () => {
     inspectRestoreCandidate.mockResolvedValue({ status: 'damaged', problems: ['Page 4 is corrupt.'] });
 
-    await expect(restoreRawSqlite(sqliteFile())).rejects.toMatchObject({
+    await expect(restoreRawSqlite(sqliteFile(), { save: anchorSave() })).rejects.toMatchObject({
       problems: ['Page 4 is corrupt.'],
     });
   });
@@ -196,21 +255,21 @@ describe('restoreRawSqlite (issue #198)', () => {
   it('proceeds when forced, but still saves a restore point first', async () => {
     inspectRestoreCandidate.mockResolvedValue({ status: 'damaged', problems: ['Page 4 is corrupt.'] });
 
-    await restoreRawSqlite(sqliteFile(), { force: true });
+    await restoreRawSqlite(sqliteFile(), { force: true, save: anchorSave() });
 
     expect(downloadBlob).toHaveBeenCalledOnce();
     expect(disposeDatabase).toHaveBeenCalledOnce();
   });
 
   it('does not re-scan the file on a forced retry — the user has already seen the verdict', async () => {
-    await restoreRawSqlite(sqliteFile(), { force: true });
+    await restoreRawSqlite(sqliteFile(), { force: true, save: anchorSave() });
     expect(inspectRestoreCandidate).not.toHaveBeenCalled();
   });
 
   it('proceeds when the deep check could not run — an unverified file is not a blocked one', async () => {
     inspectRestoreCandidate.mockResolvedValue({ status: 'unverified', problems: [] });
 
-    await restoreRawSqlite(sqliteFile());
+    await restoreRawSqlite(sqliteFile(), { save: anchorSave() });
 
     expect(disposeDatabase).toHaveBeenCalledOnce();
   });
@@ -220,7 +279,7 @@ describe('restoreRawSqlite (issue #198)', () => {
     downloadBlob.mockImplementation(() => order.push('restore-point'));
     disposeDatabase.mockImplementation(() => order.push('dispose'));
 
-    await restoreRawSqlite(sqliteFile());
+    await restoreRawSqlite(sqliteFile(), { save: anchorSave() });
 
     expect(order).toEqual(['restore-point', 'dispose']);
   });
@@ -230,13 +289,25 @@ describe('restoreRawSqlite (issue #198)', () => {
       throw new Error('Download blocked.');
     });
 
-    await expect(restoreRawSqlite(sqliteFile())).rejects.toBeInstanceOf(RestorePointError);
+    await expect(restoreRawSqlite(sqliteFile(), { save: anchorSave() })).rejects.toBeInstanceOf(
+      RestorePointError,
+    );
+    expect(disposeDatabase).not.toHaveBeenCalled();
+  });
+
+  it('cancels the restore when the restore point is not confirmed as saved (issue #502)', async () => {
+    // The overwrite is irreversible and this copy is the only undo, so an unconfirmed one is
+    // worth exactly as much as a missing one: stop, before anything is written.
+    await expect(
+      restoreRawSqlite(sqliteFile(), { save: anchorSave(async () => false) }),
+    ).rejects.toBeInstanceOf(RestorePointNotSavedError);
+
     expect(disposeDatabase).not.toHaveBeenCalled();
   });
 
   it('still rejects a file that is not a SQLite database at all', async () => {
     const json = new File(['{"formatVersion":1}'], 'backup.json');
-    await expect(restoreRawSqlite(json)).rejects.toThrow(/not a SQLite database/);
+    await expect(restoreRawSqlite(json, { save: anchorSave() })).rejects.toThrow(/not a SQLite database/);
     expect(inspectRestoreCandidate).not.toHaveBeenCalled();
   });
 });
@@ -247,7 +318,9 @@ describe('restoreRawSqlite — schema baseline (issue #501)', () => {
     // healthy database with one the next boot would refuse outright.
     inspectRestoreCandidate.mockResolvedValue({ status: 'incompatible', problems: [] });
 
-    await expect(restoreRawSqlite(sqliteFile())).rejects.toBeInstanceOf(IncompatibleDatabaseError);
+    await expect(restoreRawSqlite(sqliteFile(), { save: anchorSave() })).rejects.toBeInstanceOf(
+      IncompatibleDatabaseError,
+    );
 
     expect(disposeDatabase).not.toHaveBeenCalled();
     expect(downloadBlob).not.toHaveBeenCalled();
@@ -258,7 +331,7 @@ describe('restoreRawSqlite — schema baseline (issue #501)', () => {
     // makes it so, and it must still be taken.
     inspectRestoreCandidate.mockResolvedValue({ status: 'incompatible', problems: [] });
 
-    await restoreRawSqlite(sqliteFile(), { force: true });
+    await restoreRawSqlite(sqliteFile(), { force: true, save: anchorSave() });
 
     expect(downloadBlob).toHaveBeenCalledOnce();
     expect(disposeDatabase).toHaveBeenCalledOnce();
@@ -362,7 +435,7 @@ describe('the opfs-sahpool fallback VFS (issue #255)', () => {
     mockOpfs('absent', { sahPool: true });
     readDatabaseFile.mockResolvedValue(sqliteBytes());
 
-    expect(await captureRestorePoint()).toBe(true);
+    expect(await captureRestorePoint(anchorSave())).toBe(true);
     expect(downloadBlob).toHaveBeenCalledWith(
       expect.stringContaining('gubbins-restore-point-'),
       expect.any(Blob),
@@ -373,7 +446,7 @@ describe('the opfs-sahpool fallback VFS (issue #255)', () => {
     mockOpfs('absent', { sahPool: true });
     readDatabaseFile.mockResolvedValue(null);
 
-    expect(await captureRestorePoint()).toBe(false);
+    expect(await captureRestorePoint(anchorSave())).toBe(false);
     expect(downloadBlob).not.toHaveBeenCalled();
   });
 

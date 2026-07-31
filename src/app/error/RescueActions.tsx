@@ -13,6 +13,8 @@ import { restoreArchive } from '@/features/archive/restore-archive';
 import { createRescueBackup } from '@/features/backup/build-backup';
 import { useErrorMessage } from '@/features/errors';
 import { assertExhaustive } from '@/lib/exhaustive';
+import { prepareSave } from '@/lib/save-file';
+import { useConfirmSaved } from '@/components/useConfirmSaved';
 import {
   DamagedDatabaseError,
   downloadJsonDump,
@@ -20,7 +22,10 @@ import {
   hardResetLocalData,
   IncompatibleDatabaseError,
   resetServiceWorkerOnly,
+  restorePointFilename,
+  RestorePointNotSavedError,
   restoreRawSqlite,
+  SQLITE_FILE_KIND,
 } from './safe-mode-actions';
 
 /** A restore awaiting confirmation: a raw `.sqlite` binary or a full `.zip` archive. */
@@ -94,6 +99,8 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
   /** What the rescue backup actually captured, once one has been taken (issue #197). */
   const [backupNote, setBackupNote] = useState<string | null>(null);
   const describeError = useErrorMessage();
+  // The restore point's fallback proof-of-save, where the browser cannot give one (issue #502).
+  const { confirmSaved, confirmSavedDialog } = useConfirmSaved();
   const sqliteRef = useRef<HTMLInputElement>(null);
   const archiveRef = useRef<HTMLInputElement>(null);
 
@@ -157,13 +164,36 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
     if (!pending) return;
     setBusy('restore');
     setActionError(null);
+    // Reserved here, inside the click (issue #502): the restore point is the undo for an
+    // irreversible overwrite, and the picker that can confirm it actually saved needs the user
+    // gesture — which the integrity checks below outlast comfortably.
+    //
+    // So a file the pre-flight goes on to reject costs a destination pick that is never written
+    // to. `prepareDestructiveRestore` orders its checks first precisely to spare a rejected file
+    // that cost, and it still does for the part that matters — nothing is *copied* until the
+    // file has passed. Naming a destination is the cheap half, and it is the half that has to
+    // happen while the click is still warm.
+    const saver = await prepareSave(restorePointFilename(), SQLITE_FILE_KIND);
+    if (!saver) {
+      // The user closed the save dialog. Keep the file pending so they can try again.
+      setBusy(null);
+      return;
+    }
+    const save = { saver, confirmUnverified: confirmSaved };
     try {
       // Both reload on success. Each saves a restore point of the current database first, so a
-      // restore that turns out wrong can still be undone from the downloaded copy.
-      if (pending.kind === 'archive') await restoreArchive(pending.file, { force });
-      else await restoreRawSqlite(pending.file, { force });
+      // restore that turns out wrong can still be undone from that copy.
+      if (pending.kind === 'archive') await restoreArchive(pending.file, { force, save });
+      else await restoreRawSqlite(pending.file, { force, save });
     } catch (error) {
       console.error('[gubbins] rescue action failed', error);
+      // Nothing was written, and the user may simply want another go at saving the copy — so
+      // this keeps the chosen file pending rather than sending them back to the file picker.
+      if (error instanceof RestorePointNotSavedError) {
+        setActionError(describeError(error, 'The restore was cancelled.'));
+        setBusy(null);
+        return;
+      }
       // Keep the file pending for either refusal: the whole point is to offer the override on the
       // same screen. The refusal panel is the `role="alert"` here, so no second copy of the same
       // news below.
@@ -256,7 +286,13 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
             {pending.kind === 'archive'
               ? ' This overwrites all local data and re-imports the full-resolution images.'
               : ' This overwrites all local data.'}{' '}
-            <strong>A copy of your current database is downloaded first</strong> so this can be undone.
+            {/*
+             * Deliberately says nothing about *how* the copy is saved: only browsers with the
+             * File System Access API ask where to put it, and this screen is reached on every
+             * one of them. "Once that copy is confirmed" is true on both routes (issue #502).
+             */}
+            <strong>A copy of your current database is saved first</strong> so this can be undone, and the
+            restore only runs once that copy is confirmed.
           </p>
           {/*
            * The refusal report (issues #198, #501). Shown only after the checks have rejected the
@@ -393,6 +429,9 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
           <ResetIcon /> Hard reset &amp; purge local data
         </Button>
       )}
+
+      {/* Asks whether the restore point arrived, on the browsers that cannot say (issue #502). */}
+      {confirmSavedDialog}
     </div>
   );
 }

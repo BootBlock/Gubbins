@@ -16,14 +16,33 @@ on — so you can see what's actually filling it up before deciding what to do.
 
 Two safe cleanups, each keeping a copy of anything it removes:
 
-- **Prune old history** — trim the [[activity log|Activity-Log]] back. Gubbins offers a
-  **cold-storage export** of the history it's about to remove *first*, so nothing is lost.
+- **Prune old history** — trim the [[activity log|Activity-Log]] back. Gubbins saves a
+  **cold-storage export** of the history it's about to remove *first*, and deletes nothing until
+  that file is safely yours.
 - **Downgrade images** — drop the full-resolution copy of old images while keeping their
   thumbnails, freeing significant space at the cost of detail you rarely need.
 
 > **💡 Tip**
 > Downgrading images usually frees the most space fastest — thumbnails still show on cards and in
 > lists, so day-to-day the app looks the same.
+
+### The cold-storage export has to land first
+
+Pruned history doesn't come back — not from another device either, because Gubbins remembers where
+you pruned to and won't re-download entries from before that point. The export is the only copy, so
+it isn't merely offered:
+
+- On browsers that can save a file properly (Chrome, Edge and other Chromium browsers on desktop),
+  you're asked **where to put it**, and the entries are removed once it's written. Close that
+  dialog and nothing is deleted.
+- Everywhere else — Firefox, Safari, and apps that open web pages inside themselves — Gubbins names
+  the file and asks you to check you have it. Say you haven't and your history is left untouched;
+  the app tells you plainly that nothing was deleted.
+
+> **⚠️ Heads-up**
+> This is the cleanup most worth being careful with, and it's the one you reach for when the device
+> is *short of space* — precisely when a save is most likely to fail. Find the file before you
+> confirm.
 
 > **ℹ️ Note**
 > Gubbins also tidies up after itself in the background: when a record is deleted, the
