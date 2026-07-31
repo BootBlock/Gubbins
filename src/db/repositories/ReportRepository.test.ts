@@ -673,6 +673,32 @@ describe('ReportRepository', () => {
         { unit: null, totalConsumed: 6, perDay: 0.6 },
       ]);
     });
+
+    it('counts a gauge item itself as a bare count, not as more of what it holds', async () => {
+      const now = Date.now();
+      // A gauge's unit describes its contents, so 2 cylinders leaving is not 2 more litres.
+      const cylinder = await items.create({
+        name: 'Argon cylinder',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'L', grossCapacity: 10, currentNetValue: 10 },
+      });
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
+         VALUES (?, ?, 'CHECKED_OUT', -2, ?);`,
+        [crypto.randomUUID(), cylinder.id, now - 3 * MS_PER_DAY],
+      );
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, net_value_delta, created_at)
+         VALUES (?, ?, 'GAUGE_UPDATE', -4, ?);`,
+        [crypto.randomUUID(), cylinder.id, now - 2 * MS_PER_DAY],
+      );
+
+      const report = await reports.consumptionRate(10, now);
+      expect(report.lines).toEqual([
+        { unit: 'L', totalConsumed: 4, perDay: 0.4 },
+        { unit: null, totalConsumed: 2, perDay: 0.2 },
+      ]);
+    });
   });
 
   describe('movement', () => {

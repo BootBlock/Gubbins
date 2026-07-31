@@ -488,7 +488,7 @@ describe('ReportsScreen — consumption is reported per unit of measure (issue #
     // The rate carries its unit, and the tile says the figure is not the whole story.
     // (The figure itself animates up from 0, so only the unit is asserted here.)
     expect(card.textContent).toContain('g/day');
-    expect(card.textContent).toContain('30 g total, plus 1 other unit');
+    expect(card.textContent).toContain('30g total, plus 1 other unit');
   });
 
   it('lists every unit separately, with no total across them', () => {
@@ -497,8 +497,9 @@ describe('ReportsScreen — consumption is reported per unit of measure (issue #
     const list = screen.getByTestId('consumption-breakdown');
     const rows = Array.from(list.querySelectorAll('li')).map((li) => li.textContent ?? '');
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toContain('30 g total');
-    expect(rows[0]).toContain('1 g/day');
+    // A real unit prints through the shared `measure` formatter, exactly as a gauge does.
+    expect(rows[0]).toContain('30g total');
+    expect(rows[0]).toContain('1g/day');
     // Items with no unit of measure read as a plain count of units.
     expect(rows[1]).toContain('5 units total');
     expect(rows[1]).toContain('0.2 units/day');

@@ -20,7 +20,16 @@ const reportRepo = {
   inventoryValue: vi.fn(async () => ({ totalValue: 0, itemCount: 0, byCategory: [], byLocation: [] })),
   consumptionRate: vi.fn(async (...args: unknown[]) => {
     calls.consumptionRate = args;
-    return { windowStart: 0, windowEnd: 0, windowDays: 0, totalConsumed: 0, perDay: 0 };
+    // Two units, because the report is per unit of measure and must never be summed across them.
+    return {
+      windowStart: 0,
+      windowEnd: 0,
+      windowDays: 30,
+      lines: [
+        { unit: 'g', totalConsumed: 400, perDay: 40 },
+        { unit: null, totalConsumed: 6, perDay: 0.6 },
+      ],
+    };
   }),
   movement: vi.fn(async (...args: unknown[]) => {
     calls.movement = args;
@@ -140,6 +149,17 @@ describe('report CSV export — selected window reaches the repository', () => {
     usePreferencesStore.setState({ reportsSpendWindow: 999 as never });
     await runExport('REPORTS', { includeInactive: false, reportKind: 'SPEND' });
     expect(calls.spendAnalytics?.[0]).toBe(DEFAULT_ANALYTICS_WINDOW);
+  });
+
+  it('CONSUMPTION exports one labelled row per unit of measure (issue #685)', async () => {
+    await runExport('REPORTS', { includeInactive: false, reportKind: 'CONSUMPTION' });
+    const [blob] = downloadSpy.mock.calls[0]! as [Blob, string];
+    const rows = (await blob.text()).split('\r\n');
+    expect(rows[0]).toContain('unit');
+    // One row per unit, each carrying its own total — never one figure across the two.
+    expect(rows).toHaveLength(3);
+    expect(rows[1]).toContain(',g,400,40');
+    expect(rows[2]).toContain(',,6,0.6');
   });
 
   it('leaves fixed-span reports on their constants', async () => {

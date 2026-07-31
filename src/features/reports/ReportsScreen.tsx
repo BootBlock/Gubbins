@@ -28,7 +28,7 @@ import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { ValueBreakdown } from './components/ValueBreakdown';
-import { ConsumptionBreakdown } from './components/ConsumptionBreakdown';
+import { ConsumptionBreakdown, formatConsumed } from './components/ConsumptionBreakdown';
 import { MovementChart } from './components/MovementChart';
 import { AbcBreakdown } from './components/AbcBreakdown';
 import { TurnoverTable } from './components/TurnoverTable';
@@ -85,15 +85,13 @@ export function ReportsScreen() {
   // #685): grams, millilitres and screws are not addable. The headline tile therefore shows the
   // largest single unit — the lines are ordered biggest-first — and counts the rest.
   const leadConsumption = consumption.data?.lines[0];
-  const leadConsumptionUnit = leadConsumption?.unit ?? t('reports.consumption.unitless');
   const otherConsumptionUnits = Math.max(0, (consumption.data?.lines.length ?? 0) - 1);
   // The tile's sub-label: the leading unit's total, saying how many other units are not in it —
   // or, once the report has loaded with nothing in it, that nothing was consumed at all.
   const consumptionSub = leadConsumption
     ? t(otherConsumptionUnits > 0 ? 'reports.consumption.totalWithMore' : 'reports.consumption.total', {
         vars: {
-          amount: f.quantity(leadConsumption.totalConsumed),
-          unit: leadConsumptionUnit,
+          amount: formatConsumed(leadConsumption.totalConsumed, leadConsumption.unit, f, t),
           count: otherConsumptionUnits,
         },
       })
@@ -286,13 +284,10 @@ export function ReportsScreen() {
               value={
                 leadConsumption ? (
                   <AnimatedNumber
-                    value={Math.round(leadConsumption.perDay * 10) / 10}
+                    value={leadConsumption.perDay}
                     format={(n) =>
                       t('reports.consumption.rate', {
-                        vars: {
-                          amount: f.quantity(Math.round(n * 10) / 10),
-                          unit: leadConsumptionUnit,
-                        },
+                        vars: { amount: formatConsumed(n, leadConsumption.unit, f, t) },
                       })
                     }
                     animateOnMount

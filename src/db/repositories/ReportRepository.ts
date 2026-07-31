@@ -872,10 +872,18 @@ export class ReportRepository extends BaseRepository {
    * millilitres, metres and screws all reduce a stock. Adding them produced a number of nothing,
    * so each row carries its item's unit and {@link summariseConsumption} groups on it.
    *
-   * The `UNION ALL` is what keeps the two deltas apart: a row is emitted per *delta*, not per
-   * ledger entry, so an entry that somehow carried both never has them folded into one
-   * magnitude. Joining `items` cannot drop history — `item_history.item_id` is a `NOT NULL` FK
-   * that cascades on delete — so the set of counted deltas is exactly what it was before.
+   * The `UNION ALL` emits a row per *delta*, not per ledger entry, so an entry that carried both
+   * changes contributes each magnitude on its own row rather than having them added together
+   * before anything knows what they measure.
+   *
+   * A gauge's `unit_of_measure` describes **what is inside it**, never the containers themselves,
+   * so a `quantity_delta` on a gauge item is a bare count and takes no unit — the `CASE` is what
+   * stops "3 cylinders" being counted as 3 of the litres those cylinders hold. (A gauge is not
+   * supposed to carry a quantity at all, but nothing in the schema forbids it, and an import or a
+   * check-out can put one there.)
+   *
+   * Joining `items` cannot drop history — `item_history.item_id` is a `NOT NULL` FK that cascades
+   * on delete — so the set of counted deltas is exactly what it was before.
    */
   async consumptionRate(windowDays: number, now: number = nowMs()): Promise<ConsumptionRateReport> {
     const windowStart = addCalendarDays(now, -Math.max(1, windowDays));
@@ -884,7 +892,9 @@ export class ReportRepository extends BaseRepository {
       unit: string | null;
       consumed: number;
     }>(
-      `SELECT h.created_at AS created_at, i.unit_of_measure AS unit, -h.quantity_delta AS consumed
+      `SELECT h.created_at AS created_at,
+              CASE WHEN i.tracking_mode = 'CONSUMABLE_GAUGE' THEN NULL ELSE i.unit_of_measure END AS unit,
+              -h.quantity_delta AS consumed
          FROM item_history h JOIN items i ON i.id = h.item_id
         WHERE h.created_at >= ? AND h.created_at < ? AND h.quantity_delta < 0
         UNION ALL

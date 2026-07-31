@@ -132,9 +132,10 @@ are a signed delta, a weigh-in and a reconfigure — no split that yields a trac
 cutting a 2400 mm board into 600 mm + an 1800 mm offcut is unrepresentable; you must hand-create a
 second item with no link to the first. Compounding it: no pack/case size exists anywhere
 (`pack_qty` is on the *supplier part*, not the item), so "12 boxes = 144 units" is inexpressible,
-and `unit_of_measure` is unvalidated free text with no conversion — `consumptionRate` sums grams,
-millilitres and screws into one scalar
-([ReportRepository.ts:869-878](../../src/db/repositories/ReportRepository.ts#L869-L878)).
+and `unit_of_measure` is unvalidated free text with no conversion — which is why `consumptionRate`
+used to sum grams, millilitres and screws into one scalar. That report now groups by unit and never
+adds two of them together ([#685](https://github.com/BootBlock/Gubbins/issues/685), fixed), but the
+absence of a conversion layer underneath it is unchanged.
 
 Why it ranks first: this is the *core maker/workshop audience*. Two whole preset sections — workshop
 and crafts, eight presets between them — are stock that behaves this way.
@@ -691,12 +692,12 @@ behaviour that does not exist.
    and the Alerts / Upcoming feeds, so a batch approaching its date surfaces before it lapses"
    ([Batches-and-Lots.md](../wiki/Batches-and-Lots.md)) — a second, user-facing defect alongside the
    behavioural one.
-3. **Consumption rate sums incommensurable units** ([#685](https://github.com/BootBlock/Gubbins/issues/685)) into one `totalConsumed` scalar — grams,
-   millilitres and screws added together
-   ([ReportRepository.ts:869-879](../../src/db/repositories/ReportRepository.ts#L869-L879)). There
-   is no `GROUP BY` and no join to `items`, so the mixed figure is the *entire* report: it is
-   rendered on the Reports screen as both a daily rate and a total, and exported to CSV, with no
-   unit and no qualifier.
+3. **Consumption rate summed incommensurable units** ([#685](https://github.com/BootBlock/Gubbins/issues/685)) into one `totalConsumed` scalar — grams,
+   millilitres and screws added together. There was no `GROUP BY` and no join to `items`, so the
+   mixed figure was the *entire* report: it rendered on the Reports screen as both a daily rate and
+   a total, and exported to CSV, with no unit and no qualifier. **Fixed:** the read now joins
+   `items`, the report is one line per unit of measure with no total across them, and the screen and
+   CSV label every figure.
 4. **Clearing an item's activity log can report it as dead stock the next day** ([#686](https://github.com/BootBlock/Gubbins/issues/686)). Dead-stock idle
    days derive from `MAX(item_history.created_at)` over rows carrying a delta
    ([ReportRepository.ts:1059-1061](../../src/db/repositories/ReportRepository.ts#L1059-L1061)),
