@@ -13,8 +13,12 @@ import { readRememberedHeight, rememberHeight } from './textarea-size';
  *  - an inline `height` wins, exactly as it does in a browser (which is also how the browser
  *    records a resize-handle drag), so clearing it really does reveal the default height;
  *  - `defaultBoxHeight` is what the box's own CSS gives it;
- *  - `laidOut` false is a box with no layout at all — inside a `Modal`'s still-closed
- *    `<dialog>`, or on an unselected tab — where every measurement reads zero.
+ *  - `laidOut` false is a box with no layout at all — mounted inside something collapsed,
+ *    hidden or off-screen — where every measurement reads zero.
+ *
+ * `getComputedStyle` reports nothing useful here either (no stylesheet is processed), so the
+ * box reads as `content-box` with no padding or border; a test that cares about the
+ * border-box correction states those as inline styles.
  */
 let defaultBoxHeight = 100;
 let contentHeight = 0;
@@ -97,6 +101,25 @@ describe('Textarea size memory', () => {
     expect(localStorage.getItem(TEXTAREA_SIZES_KEY)).toBeNull();
   });
 
+  it('does not mistake a click into an auto-grown box for a choice about its size', () => {
+    // The case that makes the click/drag distinction load-bearing: this box is taller than its
+    // default because of what it holds, not because anyone asked. Treating the click as a
+    // resize would pin that incidental height and remember it for good.
+    contentHeight = 180;
+    render(
+      <Textarea aria-label="Notes" sizeKey="item.notes" autoGrow value="a long note" onChange={vi.fn()} />,
+    );
+    expect(textarea().style.height).toBe('180px');
+
+    clickInto(textarea());
+
+    expect(localStorage.getItem(TEXTAREA_SIZES_KEY)).toBeNull();
+    // Still following its content rather than frozen at the height it happened to be.
+    contentHeight = 120;
+    fireEvent.change(textarea(), { target: { value: 'shorter' } });
+    expect(textarea().style.height).toBe('120px');
+  });
+
   it('forgets the box once it is dragged back to its default height', () => {
     rememberHeight('item.notes', 260);
     render(<Textarea aria-label="Notes" sizeKey="item.notes" />);
@@ -120,9 +143,9 @@ describe('Textarea size memory', () => {
   });
 
   it('still recognises the default height for a box that had no layout at mount', () => {
-    // A box inside a Modal: its own layout effects run while the <dialog> is still closed, so
-    // nothing about it is measurable until the dialog opens. Without a later measurement the
-    // "dragged back to the default" rule silently stops working and the default gets pinned.
+    // A box that mounts inside something collapsed, hidden or off-screen measures zero.
+    // Without a later measurement the "shrink it back down" rule silently stops working and
+    // whatever the default happens to be today gets pinned instead.
     rememberHeight('item.notes', 260);
     laidOut = false;
     render(<Textarea aria-label="Notes" sizeKey="item.notes" />);
@@ -163,6 +186,25 @@ describe('Textarea auto-grow', () => {
     render(<Textarea aria-label="Notes" autoGrow readOnly value="a long note" />);
 
     expect(textarea().style.height).toBe('180px');
+  });
+
+  it('adds the border back when the box is border-box, so the content still fits', () => {
+    // `scrollHeight` counts content + padding but not the border, while a border-box `height`
+    // counts all three. Assign one to the other unadjusted and the box lands short by its own
+    // border, leaving a scrollbar on the very box that grew to avoid one.
+    contentHeight = 180;
+
+    render(
+      <Textarea
+        aria-label="Notes"
+        autoGrow
+        style={{ boxSizing: 'border-box', borderTopWidth: '1px', borderBottomWidth: '1px' }}
+        value="a long note"
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(textarea().style.height).toBe('182px');
   });
 
   it('stops at the maxRows ceiling', () => {

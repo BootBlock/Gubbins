@@ -29,12 +29,13 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
   readonly sizeKey?: string;
   /**
    * Grow to fit the content as the user types, between the `rows` height and `maxRows`,
-   * instead of staying at a fixed height with an inner scrollbar. Suits free prose (a
-   * description, a note); leave it off where the fixed height is the point, such as a
-   * paste-a-list box.
+   * instead of staying at a fixed height with an inner scrollbar. Suits anything the user
+   * writes a line at a time — a description, a note, a short list they are building. Leave
+   * it off where a *fixed viewport* is the point: a box sized to have bulk text pasted into
+   * it and scrolled through is more usable at a stable height than one that leaps to its cap.
    *
    * A manual drag always wins: once the user has sized the box themselves, it stays at
-   * their height until they drag it back to the default.
+   * their height until they shrink it back down to the default.
    */
   readonly autoGrow?: boolean;
   /** The ceiling for `autoGrow`, in rows. Defaults to {@link DEFAULT_TEXTAREA_MAX_ROWS}. */
@@ -85,11 +86,10 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   /**
    * Note the height the box has with nothing of ours applied, once that can be measured.
    *
-   * Deliberately re-attempted rather than measured once at mount: a box inside a `Modal` is
-   * still in a closed `<dialog>` when its own layout effects run, and a box on an unselected
-   * tab is not laid out at all — both report a height of zero, and a zero here would silently
-   * disable "dragged back to the default forgets it". Cheap and idempotent: the first
-   * successful measurement is the last.
+   * Deliberately re-attempted rather than measured once at mount: a box that mounts inside a
+   * container with no layout — collapsed, hidden, or off-screen — measures zero, and a zero
+   * here would silently disable "shrink it back down and it is forgotten". Cheap and
+   * idempotent: the first successful measurement is the last.
    */
   const captureDefaultHeight = useCallback(() => {
     const element = elementRef.current;
@@ -108,15 +108,15 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     // Measuring the content needs the box at its natural height first, or last render's
     // height would be its own floor and it could only ever grow.
     element.style.height = '';
-    // No layout to measure (jsdom, or a hidden tab) — leave the height to CSS rather than
-    // pinning the box to a meaningless zero.
+    // No layout to measure (the test environment, or a hidden container) — leave the height
+    // to CSS rather than pinning the box to a meaningless zero.
     if (element.scrollHeight <= 0) return;
     if (defaultHeightRef.current === null && element.offsetHeight > 0) {
       defaultHeightRef.current = element.offsetHeight;
     }
+    const box = boxMetrics(element);
     const floor = defaultHeightRef.current ?? 0;
-    const ceiling = maxContentHeight(element, maxRows);
-    element.style.height = `${Math.round(Math.min(Math.max(element.scrollHeight, floor), ceiling))}px`;
+    element.style.height = `${Math.round(Math.min(Math.max(contentFittingHeight(element, box), floor), ceilingHeight(box, maxRows)))}px`;
   }, [autoGrow, maxRows]);
 
   /** Apply, store or forget a height the user dragged the box to. */
@@ -137,8 +137,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         return;
       }
       chosenHeightRef.current = height;
-      // Pin it explicitly: the browser applies its own resize, but only an inline height we
-      // set ourselves survives the box being unmounted and mounted again.
+      // Restate the height as an inline one of our own rather than relying on however the
+      // browser recorded the drag, so the box and the stored value cannot disagree.
       element.style.height = `${height}px`;
       if (sizeKey) rememberHeight(sizeKey, height);
     },
@@ -157,13 +157,17 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     const remembered = sizeKey ? readRememberedHeight(sizeKey) : null;
     chosenHeightRef.current = remembered;
     if (remembered !== null) element.style.height = `${remembered}px`;
-    // A box inside a `Modal` is measured above while its `<dialog>` is still closed, so it
-    // reads zero; the dialog is opened by an effect in the same commit, which makes the next
-    // frame the first moment it can be measured at all.
+    // A box that mounts with no layout — inside something collapsed, hidden or off-screen —
+    // measures zero above, and both the default height and the content fit depend on a real
+    // measurement. Retry on the next frame, by which point a container that opens as part of
+    // the same commit has done so.
     if (typeof requestAnimationFrame !== 'function') return;
-    const frame = requestAnimationFrame(captureDefaultHeight);
+    const frame = requestAnimationFrame(() => {
+      captureDefaultHeight();
+      fitToContent();
+    });
     return () => cancelAnimationFrame(frame);
-  }, [sizeKey, captureDefaultHeight]);
+  }, [sizeKey, captureDefaultHeight, fitToContent]);
 
   // Re-fit whenever the content changes from outside (a dialog opening onto an existing
   // note, a form reset). Typing is handled by the change wrapper below, since an
@@ -233,19 +237,43 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   );
 });
 
-/** The pixel height of `maxRows` lines of text in `element`, including its own chrome. */
-function maxContentHeight(element: HTMLTextAreaElement, maxRows: number): number {
+/**
+ * The measurements auto-grow needs, in pixels.
+ *
+ * `borderBox` is the one that bites: `scrollHeight` counts the content and its padding but
+ * *not* the border, whereas a CSS `height` under `box-sizing: border-box` (which Tailwind's
+ * preflight sets app-wide) counts all three. Assigning one to the other unadjusted leaves the
+ * box short by its own border, so the content overflows and the scrollbar auto-grow exists to
+ * avoid appears anyway.
+ */
+interface BoxMetrics {
+  readonly lineHeight: number;
+  readonly padding: number;
+  readonly border: number;
+  readonly borderBox: boolean;
+}
+
+function boxMetrics(element: HTMLTextAreaElement): BoxMetrics {
   const style = getComputedStyle(element);
-  const lineHeight = pixels(style.lineHeight) || pixels(style.fontSize) * 1.5;
+  return {
+    lineHeight: pixels(style.lineHeight) || pixels(style.fontSize) * 1.5,
+    padding: pixels(style.paddingTop) + pixels(style.paddingBottom),
+    border: pixels(style.borderTopWidth) + pixels(style.borderBottomWidth),
+    borderBox: style.boxSizing === 'border-box',
+  };
+}
+
+/** The `height` that makes `element` exactly tall enough for what it currently holds. */
+function contentFittingHeight(element: HTMLTextAreaElement, box: BoxMetrics): number {
+  return box.borderBox ? element.scrollHeight + box.border : element.scrollHeight - box.padding;
+}
+
+/** The `height` at which the box stops growing and starts scrolling instead. */
+function ceilingHeight(box: BoxMetrics, maxRows: number): number {
   // Without a usable line height there is no honest ceiling to impose, so impose none
   // rather than guessing one that could clip the content.
-  if (lineHeight <= 0) return Number.POSITIVE_INFINITY;
-  const chrome =
-    pixels(style.paddingTop) +
-    pixels(style.paddingBottom) +
-    pixels(style.borderTopWidth) +
-    pixels(style.borderBottomWidth);
-  return maxRows * lineHeight + chrome;
+  if (box.lineHeight <= 0) return Number.POSITIVE_INFINITY;
+  return maxRows * box.lineHeight + (box.borderBox ? box.padding + box.border : 0);
 }
 
 /** A computed-style length in pixels, or 0 for a keyword (`normal`, `auto`) or empty value. */
