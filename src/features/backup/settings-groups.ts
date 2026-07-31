@@ -252,6 +252,10 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       // which is precisely the choice the opt-in exists to leave local.
       'settingsSyncEnabled',
       'settingsSyncGroups',
+      // Issue #616: the hosts this device has agreed a category lookup may contact. Device-local
+      // for exactly the reason above — a restore or a live sync must never silently grant one
+      // machine permission to reach a network host that its user never agreed to.
+      'lookupConsentHosts',
     ],
   },
 ];

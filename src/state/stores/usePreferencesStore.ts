@@ -286,6 +286,17 @@ interface PreferencesStore {
    * (when installed) is unaffected by this flag.
    */
   readonly allowOnlineProductLookup: boolean;
+  /**
+   * The hosts this device has agreed a **category data lookup** may contact directly (issue
+   * #616) — e.g. `www.wikidata.org`.
+   *
+   * Deliberately a *set of hosts* rather than a second boolean: agreeing to query an open film
+   * database is not agreement to query everything, so {@link allowOnlineProductLookup} does not
+   * generalise here. Empty by default; a host is added only through the one-time consent prompt
+   * the lookup panel shows before its first direct fetch. The privileged extension path, when
+   * installed, does not consult this — the extension's own manifest allow-list is the gate there.
+   */
+  readonly lookupConsentHosts: readonly string[];
   /** Which barcode symbology the live scanner decodes (§6.6); `'all'` scans every supported code. */
   readonly scannerSymbology: ScannerSymbology;
   /**
@@ -655,6 +666,8 @@ interface PreferencesStore {
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
   /** Record the user's consent (or withdrawal) for direct online barcode lookups (issue #59). */
   setAllowOnlineProductLookup: (allowed: boolean) => void;
+  /** Grant or withdraw this device's consent for a category lookup to contact one host (#616). */
+  setLookupHostConsent: (host: string, allowed: boolean) => void;
   setScannerSymbology: (symbology: ScannerSymbology) => void;
   setLabelTemplate: (template: LabelTemplate) => void;
   setLabelBaseUrl: (url: string) => void;
@@ -783,6 +796,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       attachmentMode: DEFAULT_ATTACHMENT_MODE,
       scrapeNotifications: DEFAULT_SCRAPE_NOTIFICATIONS,
       allowOnlineProductLookup: false,
+      lookupConsentHosts: [],
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
       labelTemplate: DEFAULT_LABEL_TEMPLATE,
       labelBaseUrl: '',
@@ -886,6 +900,18 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setAttachmentMode: (mode) => set({ attachmentMode: normaliseAttachmentMode(mode) }),
       setScrapeNotifications: (mode) => set({ scrapeNotifications: normaliseScrapeNotifications(mode) }),
       setAllowOnlineProductLookup: (allowOnlineProductLookup) => set({ allowOnlineProductLookup }),
+      // Hosts are lower-cased and order-stabilised so granting the same consent twice — or in a
+      // different order on another device — produces the identical stored array rather than a
+      // write that looks like a change.
+      setLookupHostConsent: (host, allowed) =>
+        set((state) => {
+          const key = host.trim().toLowerCase();
+          if (key.length === 0) return {};
+          const next = new Set(state.lookupConsentHosts);
+          if (allowed) next.add(key);
+          else next.delete(key);
+          return { lookupConsentHosts: [...next].sort() };
+        }),
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.
       setScannerSymbology: (symbology) => set({ scannerSymbology: normaliseSymbology(symbology) }),
       // Normalise so a stale/partial persisted template can never reach the renderer.
@@ -1074,6 +1100,14 @@ export const usePreferencesStore = create<PreferencesStore>()(
           allowOnlineProductLookup: normaliseBoolean(
             p.allowOnlineProductLookup,
             current.allowOnlineProductLookup,
+          ),
+          // Members are checked, not just the array: a stored `null` or number would otherwise
+          // reach the consent test as a host that can never match, and a blank string would
+          // match nothing while looking like a grant.
+          lookupConsentHosts: normaliseArray<string>(
+            p.lookupConsentHosts,
+            current.lookupConsentHosts,
+            (candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0,
           ),
           scannerSymbology: normaliseSymbology(p.scannerSymbology),
           labelTemplate: normaliseLabelTemplate(p.labelTemplate),

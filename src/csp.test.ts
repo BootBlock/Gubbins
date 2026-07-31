@@ -59,7 +59,7 @@ describe('buildContentSecurityPolicy', () => {
   it('emits the committed policy unchanged when no bridge origin is registered', () => {
     const policy = buildContentSecurityPolicy();
     expect(policy).toContain(
-      "connect-src 'self' https://www.googleapis.com https://world.openfoodfacts.org;",
+      "connect-src 'self' https://www.googleapis.com https://world.openfoodfacts.org https://www.wikidata.org https://query.wikidata.org;",
     );
     expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval'");
     expect(policy).not.toContain('unsafe-inline; ');
@@ -68,7 +68,7 @@ describe('buildContentSecurityPolicy', () => {
   it('extends only connect-src with the registered bridge origin', () => {
     const withBridge = buildContentSecurityPolicy({ bridgeOrigin: BRIDGE });
     expect(withBridge).toContain(
-      `connect-src 'self' https://www.googleapis.com https://world.openfoodfacts.org ${BRIDGE};`,
+      `connect-src 'self' https://www.googleapis.com https://world.openfoodfacts.org https://www.wikidata.org https://query.wikidata.org ${BRIDGE};`,
     );
     // Every other directive is byte-identical: this widens one list, it does not relax the policy.
     const baseline = buildContentSecurityPolicy();

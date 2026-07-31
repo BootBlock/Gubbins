@@ -5,6 +5,7 @@ import {
   CapabilityIcon,
   CategoryIcon,
   CostIcon,
+  DatabaseIcon,
   DatasheetIcon,
   DueDateIcon,
   EditIcon,
@@ -33,6 +34,7 @@ import { KitEditor, LifecycleEditor, MaintenanceEditor } from '@/features/lifecy
 import { ActivityLog } from './ActivityLog';
 import { AttachmentManager } from './AttachmentManager';
 import { CapabilityEditor } from './CapabilityEditor';
+import { CategoryLookupPanel } from '@/features/lookups';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
 import { AssetEditor } from './AssetEditor';
@@ -340,6 +342,14 @@ const SECTION_HINT_CUSTOM_FIELDS =
   '- Here you just fill in this item’s **values**.\n\n' +
   '> Give an item a category on the **Details** tab to unlock its custom fields.';
 
+const SECTION_HINT_LOOKUP =
+  'Fill this item’s fields from an **open database** — the one the category is set up to use.\n\n' +
+  '- You always **pick which entry** is yours from a list of matches; a search hit is never applied ' +
+  'on your behalf.\n' +
+  '- You then **review** every value before anything is written, and your own entries are never ' +
+  'overwritten unless you tick them.\n\n' +
+  '> This only appears when the item’s category has a database attached to it.';
+
 const SECTION_HINT_ACTIVITY =
   'A dated **history** of everything that’s happened to this item — moves, quantity changes, ' +
   'condition updates, maintenance, kit builds and more.\n\n' +
@@ -598,6 +608,18 @@ export function buildTabs(
           hint: SECTION_HINT_CUSTOM_FIELDS,
           feature: 'custom-fields',
           hasData: presence.customFields,
+        },
+        // Filling those fields from an open database (issue #616). Sits directly under them
+        // because it answers the follow-up question — "do I have to type all this?" — and is gated
+        // by `scraping` ("Product & supplier lookup"), the same capability the barcode and supplier
+        // lookups live under. The panel itself renders nothing unless the item's category actually
+        // has a provider attached, so the section is empty far more often than not.
+        {
+          title: 'Fill from a database',
+          icon: <DatabaseIcon />,
+          content: <CategoryLookupPanel item={item} />,
+          hint: SECTION_HINT_LOOKUP,
+          feature: 'scraping',
         },
       ],
     },

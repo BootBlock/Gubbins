@@ -28,6 +28,7 @@ import type {
   Category,
   CategoryField,
   CategoryFieldRow,
+  CategoryLookupSource,
   CategoryRow,
   CategoryWithFieldCount,
   CreateCategoryFieldInput,
@@ -106,7 +107,7 @@ interface ResolvedFieldRow extends CategoryFieldRow {
 const SELECT_WITH_FIELD_COUNT = `
   SELECT c.id, c.name, c.glyph, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
          c.default_maintenance_basis, c.default_maintenance_interval_days,
-         c.default_maintenance_interval_usage, c.hidden_capabilities,
+         c.default_maintenance_interval_usage, c.hidden_capabilities, c.lookup_sources,
          c.updated_at, COUNT(f.id) AS field_count
   FROM categories c
   LEFT JOIN category_fields f ON f.category_id = c.id
@@ -126,6 +127,41 @@ function serialiseHiddenCapabilities(ids: readonly string[] | null | undefined):
   if (ids == null) return null;
   const unique = [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))].sort();
   return unique.length > 0 ? JSON.stringify(unique) : null;
+}
+
+/**
+ * Serialise a category's attached lookup providers (issue #616) for storage.
+ *
+ * Canonicalised for the same reason {@link serialiseHiddenCapabilities} is: "no lookups" is
+ * always NULL and never `"[]"`, entries are de-duplicated by provider and ordered by id, and
+ * an empty `fieldMap` is written as an omitted key rather than `{}`. A picker that reordered
+ * its rows must not produce a write that LWW sync reads as an edit.
+ *
+ * Provider ids are **not** filtered against the registry here. An id this build doesn't
+ * recognise came from a peer on a newer version, and dropping it on write would silently
+ * discard that peer's choice the moment an older device touched the row.
+ */
+function serialiseLookupSources(sources: readonly CategoryLookupSource[] | null | undefined): string | null {
+  if (sources == null) return null;
+  const byProvider = new Map<string, CategoryLookupSource>();
+  for (const source of sources) {
+    const providerId = source.providerId.trim();
+    if (providerId.length === 0 || byProvider.has(providerId)) continue;
+    byProvider.set(providerId, { providerId, fieldMap: source.fieldMap });
+  }
+  if (byProvider.size === 0) return null;
+  const entries = [...byProvider.values()]
+    .sort((a, b) => (a.providerId < b.providerId ? -1 : a.providerId > b.providerId ? 1 : 0))
+    .map(({ providerId, fieldMap }) => {
+      // Key order is canonicalised too: `JSON.stringify` emits insertion order, so two
+      // pickers that set the same overrides in a different sequence would otherwise store
+      // two different strings for one choice.
+      const pairs = Object.entries(fieldMap ?? {})
+        .filter(([, target]) => target.length > 0)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      return pairs.length > 0 ? { providerId, fieldMap: Object.fromEntries(pairs) } : { providerId };
+    });
+  return JSON.stringify(entries);
 }
 
 export class CategoryRepository extends BaseRepository {
@@ -173,8 +209,8 @@ export class CategoryRepository extends BaseRepository {
       `INSERT INTO categories
          (id, name, glyph, default_tracking_mode, default_condition, default_warranty_months,
           default_maintenance_basis, default_maintenance_interval_days, default_maintenance_interval_usage,
-          hidden_capabilities)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          hidden_capabilities, lookup_sources)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         name,
@@ -186,6 +222,7 @@ export class CategoryRepository extends BaseRepository {
         input.defaultMaintenanceIntervalDays ?? null,
         input.defaultMaintenanceIntervalUsage ?? null,
         serialiseHiddenCapabilities(input.hiddenCapabilities),
+        serialiseLookupSources(input.lookupSources),
       ],
     );
     return (await this.getById(id))!;
@@ -239,6 +276,10 @@ export class CategoryRepository extends BaseRepository {
     if (input.hiddenCapabilities !== undefined) {
       sets.push('hidden_capabilities = ?');
       params.push(serialiseHiddenCapabilities(input.hiddenCapabilities));
+    }
+    if (input.lookupSources !== undefined) {
+      sets.push('lookup_sources = ?');
+      params.push(serialiseLookupSources(input.lookupSources));
     }
     if (sets.length > 0) {
       params.push(id);

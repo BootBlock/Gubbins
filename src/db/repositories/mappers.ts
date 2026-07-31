@@ -23,6 +23,7 @@ import type {
   Category,
   CategoryField,
   CategoryFieldRow,
+  CategoryLookupSource,
   CategoryRow,
   FieldDef,
   FieldDefRow,
@@ -509,6 +510,60 @@ function parseHiddenCapabilities(value: string | null): readonly string[] {
   }
 }
 
+/**
+ * Read one member of the `categories.lookup_sources` array, or `null` when it isn't one.
+ *
+ * A member is usable only if it carries a non-blank `providerId`, since that id *is* the
+ * entry — an entry without one names no provider and could never be resolved or written back
+ * meaningfully. Everything else is salvaged rather than required: a `fieldMap` that isn't an
+ * object of string→string entries is dropped down to "bind by name", which is exactly what an
+ * absent map means, rather than discarding the whole entry over its optional half.
+ */
+function parseLookupSourceEntry(member: unknown): CategoryLookupSource | null {
+  if (typeof member !== 'object' || member === null || Array.isArray(member)) return null;
+  const raw = member as { providerId?: unknown; fieldMap?: unknown };
+  if (typeof raw.providerId !== 'string' || raw.providerId.trim().length === 0) return null;
+
+  let fieldMap: Record<string, string> | null = null;
+  if (typeof raw.fieldMap === 'object' && raw.fieldMap !== null && !Array.isArray(raw.fieldMap)) {
+    const pairs = Object.entries(raw.fieldMap as Record<string, unknown>).filter(
+      (pair): pair is [string, string] => typeof pair[1] === 'string' && pair[1].length > 0,
+    );
+    if (pairs.length > 0) fieldMap = Object.fromEntries(pairs);
+  }
+  return { providerId: raw.providerId, fieldMap };
+}
+
+/**
+ * Parse the `categories.lookup_sources` JSON array (issue #616).
+ *
+ * Softens rather than throws, exactly as {@link parseHiddenCapabilities} does and for the same
+ * reason — a malformed payload from a peer costs this one field, not the whole sync apply.
+ * Provider ids this build doesn't recognise are kept deliberately: resolving an id against the
+ * registry is the feature layer's job, so a newer peer's choice survives a round-trip through
+ * this device. Entries are de-duplicated by `providerId`, first occurrence winning, because
+ * running the same provider twice against one category is meaningless.
+ */
+function parseLookupSources(value: string | null): readonly CategoryLookupSource[] {
+  if (value == null) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const seen = new Set<string>();
+  const entries: CategoryLookupSource[] = [];
+  for (const member of parsed) {
+    const entry = parseLookupSourceEntry(member);
+    if (entry === null || seen.has(entry.providerId)) continue;
+    seen.add(entry.providerId);
+    entries.push(entry);
+  }
+  return entries;
+}
+
 export function rowToCategory(row: CategoryRow): Category {
   return {
     id: row.id,
@@ -521,6 +576,7 @@ export function rowToCategory(row: CategoryRow): Category {
     defaultMaintenanceIntervalDays: row.default_maintenance_interval_days,
     defaultMaintenanceIntervalUsage: row.default_maintenance_interval_usage,
     hiddenCapabilities: parseHiddenCapabilities(row.hidden_capabilities),
+    lookupSources: parseLookupSources(row.lookup_sources),
     updatedAt: row.updated_at,
   };
 }

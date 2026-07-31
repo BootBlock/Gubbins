@@ -79,7 +79,12 @@ describe('buildTabs — feature gating (Phase 6)', () => {
       'Maintenance',
     ]);
     expect(sectionTitles(tabs, 'kit')).toEqual(['Kit components']);
-    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
+    expect(sectionTitles(tabs, 'classification')).toEqual([
+      'Tags',
+      'Capabilities',
+      'Custom fields',
+      'Fill from a database',
+    ]);
     expect(sectionTitles(tabs, 'media')).toEqual(['Images', 'Datasheets']);
   });
 
@@ -111,17 +116,28 @@ describe('buildTabs — feature gating (Phase 6)', () => {
 
   it('drops Capabilities + Custom fields when custom-fields is off, keeping Tags', () => {
     const tabs = buildTabs(item, without('custom-fields'));
-    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags']);
+    // "Fill from a database" survives: it is gated by `scraping`, not by `custom-fields`, and it
+    // can fill an item's built-in attributes as well as its category's fields.
+    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Fill from a database']);
   });
 
   it('drops Tags + Datasheets when tags-attachments is off, keeping their tabs via core sections', () => {
     const tabs = buildTabs(item, without('tags-attachments'));
-    expect(sectionTitles(tabs, 'classification')).toEqual(['Capabilities', 'Custom fields']);
+    expect(sectionTitles(tabs, 'classification')).toEqual([
+      'Capabilities',
+      'Custom fields',
+      'Fill from a database',
+    ]);
     expect(sectionTitles(tabs, 'media')).toEqual(['Images']);
   });
 
-  it('drops the Classification tab entirely once both its capabilities are off', () => {
-    const tabs = buildTabs(item, without('custom-fields', 'tags-attachments'));
+  it('drops the "Fill from a database" section when scraping is off (issue #616)', () => {
+    const tabs = buildTabs(item, without('scraping'));
+    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
+  });
+
+  it('drops the Classification tab entirely once all three of its capabilities are off', () => {
+    const tabs = buildTabs(item, without('custom-fields', 'tags-attachments', 'scraping'));
     expect(tabIds(tabs)).not.toContain('classification');
     // The dialog falls back to the first surviving tab — Details always leads and stays.
     expect(tabs[0]!.id).toBe('details');
@@ -129,7 +145,7 @@ describe('buildTabs — feature gating (Phase 6)', () => {
 
   it('never mutates the item it is given (gating hides UI, never touches stored data)', () => {
     const snapshot = structuredClone(item);
-    buildTabs(item, without('warranty', 'maintenance', 'custom-fields', 'tags-attachments'));
+    buildTabs(item, without('warranty', 'maintenance', 'custom-fields', 'tags-attachments', 'scraping'));
     expect(item).toEqual(snapshot);
   });
 });

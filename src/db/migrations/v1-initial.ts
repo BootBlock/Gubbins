@@ -413,6 +413,23 @@ const baselineStatements: SqlStatement[] = [
           -- strings, so a malformed value from a peer costs this one field instead of
           -- failing the whole sync apply. Nullable (nothing hidden).
           hidden_capabilities                TEXT,
+          -- The open databases this category's fields can be filled from (issue #616): a JSON
+          -- array of { providerId, fieldMap? } entries naming providers from the app's own
+          -- curated registry. A Movie category can fill Director/Cast/Release year from an
+          -- open film database; a Book category from an open book database. The binding is
+          -- category-id → provider-id, never name → behaviour, so renaming the category to
+          -- "Films I own" keeps its lookup and a hand-built category can attach the same one.
+          --
+          -- The optional per-entry fieldMap (output key → the category_fields.id to fill)
+          -- overrides the provider's default name match, for a category whose field has been
+          -- renamed or re-purposed. Absent means "bind by name", which is the common case.
+          --
+          -- Opaque TEXT with no json_valid() CHECK, exactly as hidden_capabilities above: the
+          -- mapper parses tolerantly and drops malformed members, so a bad value from a peer
+          -- costs this one field instead of failing the whole sync apply. Provider ids this
+          -- build doesn't recognise are kept verbatim so an older device can't discard a newer
+          -- peer's choice on a round-trip. Nullable (no lookups).
+          lookup_sources                     TEXT,
           updated_at              INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (default_tracking_mode IS NULL OR default_tracking_mode IN (${trackingModeList})),
           CHECK (default_condition IS NULL OR default_condition IN (${conditionList})),
