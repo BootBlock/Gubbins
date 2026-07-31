@@ -85,6 +85,7 @@ import {
 } from '@/features/reports/parts-catalogue';
 import { THUMBNAIL_SUBQUERY } from './item/sql';
 import { notAVariantParentSql } from './item/attention-sql';
+import { inBaseCurrencySql, preferredSupplierCostSql } from './supplier-cost-sql';
 import { MONEY_STORAGE_DECIMALS, fromStoredMoney, roundMoney } from '@/lib/money';
 import {
   buildReorderPlan,
@@ -185,53 +186,6 @@ function valuableStockFilter(itemAlias: string, stockAlias: string): string {
  * is a document that does not add up.
  */
 const SCHEDULE_ITEM_FILTER = valuableItemFilter('items');
-
-/**
- * SQL predicate matching a currency column denominated in the user's base currency, and therefore
- * summable into a total (issue #284; extended to purchase orders by issue #285).
- *
- * A `currency` — on a supplier part or on a purchase order — is free ISO-4217 text the user sets,
- * and it is stored and shown **verbatim — never converted**, because Gubbins holds no exchange
- * rates (no rate column, no rate-capture timestamp, nothing). Adding a ¥9,800 part to a £ total as
- * "9800" is not an approximation, it is a wrong number — and on the insurance schedule it is a
- * wrong number in a document a user may hand to an insurer. So a foreign-currency price is
- * excluded from valuation rather than silently mis-summed, mirroring the same refusal
- * `price-refresh` already makes when asked for the cheapest of mixed-currency quotes.
- *
- * `NULL`/blank means "base currency" (the columns' documented convention), so those always
- * match — blank is tested after `TRIM`, since a whitespace-only code names no currency and can
- * reach the column through a sync merge or an import, neither of which trims the way the entry
- * dialogs do. `baseCurrency` is null when unknown, which disables the filter entirely — an
- * unknown base cannot tell foreign from domestic, and failing open preserves the previous
- * behaviour rather than blanking every total.
- *
- * `col` is the qualified currency column to test (`sp.currency`, `po.currency`); passing one the
- * enclosing query does not expose fails loudly as an unknown-column error rather than quietly
- * matching nothing.
- */
-function inBaseCurrencySql(col: string, baseCurrency: string): string {
-  // `baseCurrency` is normalised to three ASCII letters by `BaseRepository.baseCurrency()`,
-  // so this interpolation carries no quoting or injection surface.
-  return `(${col} IS NULL OR TRIM(${col}) = '' OR UPPER(TRIM(${col})) = '${baseCurrency}')`;
-}
-
-/**
- * Correlated subquery yielding the **preferred** supplier part's `unit_cost` for an item
- * (NULL when none is marked, the preferred row is unpriced, or its price is in a currency
- * other than the base — see {@link inBaseCurrencySql}). Feeds the `preferredSupplierCost`
- * fallback so valuation honours the Phase-60 cost precedence — a manual `items.unit_cost` wins,
- * else the preferred supplier cost — resolved in one place by `effectiveUnitCost`
- * (`@/features/reports/reports`). `col` is the qualified item-id column to correlate on. At most
- * one preferred row exists per item (repository invariant); the `ORDER BY` is a defensive
- * tiebreak for a malformed multi-preferred state.
- */
-function preferredSupplierCostSql(col: string, baseCurrency: string | null): string {
-  return `(SELECT sp.unit_cost FROM supplier_parts sp
-             WHERE sp.item_id = ${col} AND sp.is_preferred = 1${
-               baseCurrency === null ? '' : ` AND ${inBaseCurrencySql('sp.currency', baseCurrency)}`
-             }
-             ORDER BY sp.updated_at DESC LIMIT 1)`;
-}
 
 /**
  * SQL expression for an item's **effective per-unit value** — the exact rule the pure
@@ -871,23 +825,49 @@ export class ReportRepository extends BaseRepository {
   }
 
   /**
-   * Consumption rate (§3) over the trailing `windowDays`: the total units consumed and the
-   * mean per-day, drawn from `item_history` **negative** quantity deltas (a stock-out) and
-   * gauge net-value reductions. `windowEnd` defaults to `now`.
+   * Consumption rate (§3) over the trailing `windowDays`: what was consumed and the mean
+   * per-day, drawn from `item_history` **negative** quantity deltas (a stock-out) and gauge
+   * net-value reductions. `windowEnd` defaults to `now`.
+   *
+   * Reported **per unit of measure** and never as one figure (issue #685). The two deltas are
+   * different dimensions — `quantity_delta` is a count of things, `net_value_delta` a gauge's
+   * measure in `items.unit_of_measure` — and the items themselves differ again: grams,
+   * millilitres, metres and screws all reduce a stock. Adding them produced a number of nothing,
+   * so each row carries its item's unit and {@link summariseConsumption} groups on it.
+   *
+   * The `UNION ALL` emits a row per *delta*, not per ledger entry, so an entry that carried both
+   * changes contributes each magnitude on its own row rather than having them added together
+   * before anything knows what they measure.
+   *
+   * A gauge's `unit_of_measure` describes **what is inside it**, never the containers themselves,
+   * so a `quantity_delta` on a gauge item is a bare count and takes no unit — the `CASE` is what
+   * stops "3 cylinders" being counted as 3 of the litres those cylinders hold. (A gauge is not
+   * supposed to carry a quantity at all, but nothing in the schema forbids it, and an import or a
+   * check-out can put one there.)
+   *
+   * Joining `items` cannot drop history — `item_history.item_id` is a `NOT NULL` FK that cascades
+   * on delete — so the set of counted deltas is exactly what it was before.
    */
   async consumptionRate(windowDays: number, now: number = nowMs()): Promise<ConsumptionRateReport> {
     const windowStart = addCalendarDays(now, -Math.max(1, windowDays));
-    const rows = await this.driver.query<{ created_at: number; consumed: number }>(
-      `SELECT created_at,
-              ( COALESCE(-MIN(quantity_delta, 0), 0)
-              + COALESCE(-MIN(net_value_delta, 0), 0) ) AS consumed
-         FROM item_history
-        WHERE created_at >= ? AND created_at < ?
-          AND (quantity_delta < 0 OR net_value_delta < 0);`,
-      [windowStart, now],
+    const rows = await this.driver.query<{
+      created_at: number;
+      unit: string | null;
+      consumed: number;
+    }>(
+      `SELECT h.created_at AS created_at,
+              CASE WHEN i.tracking_mode = 'CONSUMABLE_GAUGE' THEN NULL ELSE i.unit_of_measure END AS unit,
+              -h.quantity_delta AS consumed
+         FROM item_history h JOIN items i ON i.id = h.item_id
+        WHERE h.created_at >= ? AND h.created_at < ? AND h.quantity_delta < 0
+        UNION ALL
+       SELECT h.created_at, i.unit_of_measure, -h.net_value_delta
+         FROM item_history h JOIN items i ON i.id = h.item_id
+        WHERE h.created_at >= ? AND h.created_at < ? AND h.net_value_delta < 0;`,
+      [windowStart, now, windowStart, now],
     );
     return summariseConsumption(
-      rows.map((r) => ({ createdAt: r.created_at, consumed: r.consumed })),
+      rows.map((r) => ({ createdAt: r.created_at, unit: r.unit, consumed: r.consumed })),
       windowStart,
       now,
     );

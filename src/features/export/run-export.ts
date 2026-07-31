@@ -23,9 +23,11 @@ import {
   type Checkout,
   type Contact,
   type Item,
+  type LocationWithCount,
 } from '@/db/repositories';
 import { getReportRepository } from '@/db/repositories';
 import { bucketIds } from '@/features/inventory/id-buckets';
+import { toLocationExportRows } from '@/features/inventory/locations-export';
 import { readImageBlob } from '@/features/images/opfs-images';
 import { download } from './download';
 import { summariseBudget } from '@/features/projects/budget';
@@ -63,6 +65,7 @@ import {
   type VaultAsset,
   type VaultBuild,
   type VaultItem,
+  type VaultLocation,
 } from './export-data';
 import type { TabularExportFormat } from './tabular-export';
 import type { ExportFormat, ExportScope, ReportExportKind } from './useExportStore';
@@ -303,6 +306,31 @@ async function collectContacts(): Promise<Contact[]> {
   return all;
 }
 
+/**
+ * Which locations a scoped export writes out (issue #617, `N7`).
+ *
+ * A whole-inventory export carries the **whole** hierarchy — a location with nothing in it still
+ * has a description, a capacity and a walk order, and that is precisely what left the app in no
+ * export at all. Any narrower scope carries only the locations its items actually sit in, plus the
+ * chosen location itself for a `LOCATION` scope (so exporting an empty shelf still says something
+ * about it); otherwise a one-item vault would be padded out with a folder per location in the
+ * vault, nearly all of them empty.
+ *
+ * The ancestry each row needs is resolved against `all`, never the filtered subset — a path that
+ * stopped at the first unexported ancestor would be wrong rather than short.
+ */
+function scopedLocations(
+  scope: ExportScope,
+  targetId: string | null | undefined,
+  all: readonly LocationWithCount[],
+  items: readonly Item[],
+): readonly VaultLocation[] {
+  const rows = toLocationExportRows(all);
+  if (scope === 'ALL') return rows;
+  const homes = new Set(items.map((item) => item.locationId));
+  return rows.filter((row) => row.location.id === targetId || homes.has(row.location.id));
+}
+
 async function collectCheckouts(items: readonly Item[]): Promise<Checkout[]> {
   const repo = getCheckoutRepository();
   const all: Checkout[] = [];
@@ -382,9 +410,18 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   }
 
   if (format === 'JSON') {
-    const [contacts, checkouts] = await Promise.all([collectContacts(), collectCheckouts(items)]);
+    // Locations ride along whatever the scope (issue #617, `N7`): before this the payload was
+    // `{ items, contacts, checkouts }`, so an item's `locationId` was a UUID pointing at nothing
+    // in the file and a location's own description left the app in no export at all. Read whole
+    // via the repository's uncapped `listAll` — the hierarchy is bounded physical structure, and
+    // a partial list would leave `parentId` chains dangling.
+    const [contacts, checkouts, locations] = await Promise.all([
+      collectContacts(),
+      collectCheckouts(items),
+      getLocationRepository().listAll(),
+    ]);
     const name = `gubbins-export${suffix}-${stamp()}.json`;
-    const json = buildJsonExport({ items, contacts, checkouts });
+    const json = buildJsonExport({ items, contacts, checkouts, locations });
     download(new Blob([json], { type: 'application/json' }), name);
     return name;
   }
@@ -401,6 +438,10 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   const categories = await getCategoryRepository().listAll();
   const locationNames = new Map(locations.map((l) => [l.id, l.name]));
   const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
+  // Folder notes for the locations this scope covers (issue #617, `N7`) — the vault reduced a
+  // location to a folder name, so its description, kind, capacity, dimensions and walk order
+  // were the one thing it threw away.
+  const vaultLocations = scopedLocations(scope, options.targetId, locations, items);
 
   const vaultItems: VaultItem[] = [];
   for (const item of items) {
@@ -437,19 +478,24 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
       // rather than a flat 2dp (issue #292).
       const prefs = usePreferencesStore.getState();
       const summary = summariseBudget(facts, prefs.budgetWarnPercent, moneyDecimals(prefs.baseCurrency));
-      build = buildProjectVault(project.name, vaultItems, {
-        budget: summary.budget,
-        totalSpent: summary.totalSpent,
-        committedFromBom: summary.committedFromBom,
-        manualExpenseTotal: summary.manualExpenseTotal,
-        remaining: summary.remaining,
-        projectedFinalCost: summary.projectedFinalCost,
-      });
+      build = buildProjectVault(
+        project.name,
+        vaultItems,
+        {
+          budget: summary.budget,
+          totalSpent: summary.totalSpent,
+          committedFromBom: summary.committedFromBom,
+          manualExpenseTotal: summary.manualExpenseTotal,
+          remaining: summary.remaining,
+          projectedFinalCost: summary.projectedFinalCost,
+        },
+        vaultLocations,
+      );
     } else {
-      build = buildVault(vaultItems);
+      build = buildVault(vaultItems, { locations: vaultLocations });
     }
   } else {
-    build = buildVault(vaultItems);
+    build = buildVault(vaultItems, { locations: vaultLocations });
   }
   const { files, assets } = build;
 

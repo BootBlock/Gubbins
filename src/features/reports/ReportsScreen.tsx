@@ -21,12 +21,15 @@ import {
   ReportIcon,
 } from '@/components/icons';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { useT } from '@/features/i18n';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { ValueBreakdown } from './components/ValueBreakdown';
+import { ConsumptionBreakdown } from './components/ConsumptionBreakdown';
+import { formatConsumed } from './components/consumption-format';
 import { MovementChart } from './components/MovementChart';
 import { AbcBreakdown } from './components/AbcBreakdown';
 import { TurnoverTable } from './components/TurnoverTable';
@@ -65,6 +68,7 @@ import { ForeignCurrencyNotice } from './components/ForeignCurrencyNotice';
  */
 export function ReportsScreen() {
   const f = useFormatters();
+  const t = useT();
   const [exportOpen, setExportOpen] = useState(false);
   // Selectable trailing window driving the turnover + valuation-trend analytics (ABC stays annual).
   // Persisted per-section (issue #116) so each remembers its own window across reloads; normalised
@@ -78,6 +82,23 @@ export function ReportsScreen() {
   const excludedByCurrency = useForeignCurrencyCostCount();
   const baseCurrency = usePreferencesStore((s) => s.baseCurrency);
   const consumption = useConsumptionRate();
+  // The consumption report is one line per unit of measure and carries no overall total (issue
+  // #685): grams, millilitres and screws are not addable. The headline tile therefore shows the
+  // largest single unit — the lines are ordered biggest-first — and counts the rest.
+  const leadConsumption = consumption.data?.lines[0];
+  const otherConsumptionUnits = Math.max(0, (consumption.data?.lines.length ?? 0) - 1);
+  // The tile's sub-label: the leading unit's total, saying how many other units are not in it —
+  // or, once the report has loaded with nothing in it, that nothing was consumed at all.
+  const consumptionSub = leadConsumption
+    ? t(otherConsumptionUnits > 0 ? 'reports.consumption.totalWithMore' : 'reports.consumption.total', {
+        vars: {
+          amount: formatConsumed(leadConsumption.totalConsumed, leadConsumption.unit, f, t),
+          count: otherConsumptionUnits,
+        },
+      })
+    : consumption.data
+      ? t('reports.consumption.none')
+      : undefined;
   // Stock movement has its own selectable window (issue #86), matching the Spend and Sales
   // sections rather than the fixed 30-day span it used to be pinned to.
   const movementWindow = normaliseAnalyticsWindow(usePreferencesStore((s) => s.reportsMovementWindow));
@@ -254,22 +275,29 @@ export function ReportsScreen() {
             />
           </Reveal>
           <Reveal index={1} className="h-full">
+            {/* The tile shows the single most-consumed unit of measure, labelled with that unit,
+                and says how many others there are — consumption is never one figure (issue #685),
+                so the whole per-unit picture lives in its own panel below. */}
             <StatCard
               label={`Consumption (${REPORT_WINDOW_DAYS}d)`}
               testId="stat-consumption"
               loading={consumption.isLoading}
               value={
-                consumption.data ? (
+                leadConsumption ? (
                   <AnimatedNumber
-                    value={Math.round(consumption.data.perDay * 10) / 10}
-                    format={(n) => `${f.quantity(Math.round(n * 10) / 10)}/day`}
+                    value={leadConsumption.perDay}
+                    format={(n) =>
+                      t('reports.consumption.rate', {
+                        vars: { amount: formatConsumed(n, leadConsumption.unit, f, t) },
+                      })
+                    }
                     animateOnMount
                   />
                 ) : (
                   '—'
                 )
               }
-              sub={consumption.data ? `${f.quantity(consumption.data.totalConsumed)} total` : undefined}
+              sub={consumptionSub}
             />
           </Reveal>
           <Reveal index={2} className="h-full">
@@ -335,6 +363,23 @@ export function ReportsScreen() {
                 emptyLabel="No priced stock yet."
               />
             )}
+          </Panel>
+        </Reveal>
+
+        {/* Consumption, one row per unit of measure (issue #685) */}
+        <Reveal>
+          <Panel title={t('reports.consumption.panelTitle', { vars: { days: REPORT_WINDOW_DAYS } })}>
+            {consumption.isLoading ? (
+              <CentredSpinner />
+            ) : consumption.data ? (
+              <ConsumptionBreakdown
+                report={consumption.data}
+                formatters={f}
+                emptyLabel={t('reports.consumption.panelEmpty', {
+                  vars: { days: REPORT_WINDOW_DAYS },
+                })}
+              />
+            ) : null}
           </Panel>
         </Reveal>
 

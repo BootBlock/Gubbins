@@ -73,20 +73,22 @@ export function buildValuationCsv(report: InventoryValueReport): string {
   return toCsv(['dimension', 'group', 'quantity', 'value'], rows);
 }
 
-/** Consumption CSV: a single summary row for the window. */
+/**
+ * Consumption CSV: one row per unit of measure consumed in the window, largest first. The `unit`
+ * column is what makes each figure mean something — the totals are dimensioned and are never
+ * summed across rows (issue #685), so a spreadsheet totalling the column would be adding grams to
+ * screws. An empty `unit` cell is the unitless line: items that count bare things and name no unit.
+ */
 export function buildConsumptionCsv(report: ConsumptionRateReport, formatDate: ReportDateFormatter): string {
-  return toCsv(
-    ['windowStart', 'windowEnd', 'windowDays', 'totalConsumed', 'perDay'],
-    [
-      [
-        formatDate(report.windowStart),
-        formatDate(report.windowEnd),
-        report.windowDays,
-        report.totalConsumed,
-        report.perDay,
-      ],
-    ],
-  );
+  const rows: unknown[][] = report.lines.map((line) => [
+    formatDate(report.windowStart),
+    formatDate(report.windowEnd),
+    report.windowDays,
+    line.unit ?? '',
+    line.totalConsumed,
+    line.perDay,
+  ]);
+  return toCsv(['windowStart', 'windowEnd', 'windowDays', 'unit', 'totalConsumed', 'perDay'], rows);
 }
 
 /** Movement CSV: one row per time bucket (ins/outs), then a totals row. */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Item, ItemHistoryEntry } from '@/db/repositories';
+import type { Item, ItemHistoryEntry, LocationWithCount } from '@/db/repositories';
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import {
   JSON_EXPORT_FORMAT_VERSION,
@@ -14,6 +14,7 @@ import {
   sanitiseSegment,
   type CatalogCustomFieldColumn,
   type VaultItem,
+  type VaultLocation,
 } from './export-data';
 
 function makeItem(overrides: Partial<Item> = {}): Item {
@@ -38,9 +39,41 @@ function makeItem(overrides: Partial<Item> = {}): Item {
   };
 }
 
+function makeLocation(overrides: Partial<LocationWithCount> = {}): LocationWithCount {
+  return {
+    id: 'l1',
+    name: 'Cabinet A',
+    parentId: null,
+    isSystem: false,
+    description: null,
+    color: null,
+    kind: null,
+    capacity: null,
+    isDefault: false,
+    archivedAt: null,
+    lastCountedAt: null,
+    deadStockMode: 'inherit',
+    deadStockDays: null,
+    width: null,
+    height: null,
+    depth: null,
+    usableVolume: null,
+    packingFactor: null,
+    walkOrder: null,
+    updatedAt: 0,
+    itemCount: 0,
+    ...overrides,
+  };
+}
+
+function makeVaultLocation(overrides: Partial<LocationWithCount> = {}): VaultLocation {
+  const location = makeLocation(overrides);
+  return { location, path: location.name, parentName: null };
+}
+
 describe('export-data builders', () => {
   it('builds a versioned JSON data export', () => {
-    const json = buildJsonExport({ items: [makeItem()], contacts: [], checkouts: [] }, 1234);
+    const json = buildJsonExport({ items: [makeItem()], contacts: [], checkouts: [], locations: [] }, 1234);
     const parsed = JSON.parse(json);
     expect(parsed.formatVersion).toBe(JSON_EXPORT_FORMAT_VERSION);
     expect(parsed.exportedAt).toBe(1234);
@@ -50,9 +83,29 @@ describe('export-data builders', () => {
   // Issue #153: the file must say what it is. Without the marker it parses as a valid but
   // empty backup snapshot, so an import silently succeeds having brought nothing in.
   it('marks the JSON export as a data extract, not a restorable backup', () => {
-    const parsed = JSON.parse(buildJsonExport({ items: [], contacts: [], checkouts: [] }));
+    const parsed = JSON.parse(buildJsonExport({ items: [], contacts: [], checkouts: [], locations: [] }));
     expect(parsed.kind).toBe(JSON_EXPORT_KIND);
     expect(parsed.note).toMatch(/cannot import this file back/i);
+  });
+
+  // Issue #617 (`N7`): before this the payload was `{ items, contacts, checkouts }`, so an
+  // item's `locationId` was a UUID pointing at nothing in the file and a location's own
+  // description left the app in no export at all.
+  it('carries the locations an item’s locationId refers to', () => {
+    const parsed = JSON.parse(
+      buildJsonExport({
+        items: [makeItem({ locationId: 'l1' })],
+        contacts: [],
+        checkouts: [],
+        locations: [makeLocation({ id: 'l1', description: 'Overflow for the workshop' })],
+      }),
+    );
+    expect(parsed.locations).toHaveLength(1);
+    expect(parsed.locations[0].id).toBe('l1');
+    expect(parsed.locations[0].description).toBe('Overflow for the workshop');
+    expect(parsed.items[0].locationId).toBe(parsed.locations[0].id);
+    // The note has to say the array is there, or nobody opening the file knows to look.
+    expect(parsed.note).toMatch(/locationId/);
   });
 
   it('builds CSV with RFC-4180 quoting', () => {
@@ -308,6 +361,97 @@ describe('buildVault — §4.5 asset extraction (Phase 14)', () => {
       { item: makeItem(), history: [], locationName: 'Box', categoryName: null },
     ];
     expect(buildVault(vaultItems).assets).toHaveLength(0);
+  });
+});
+
+/**
+ * Issue #617 (`N7`): the vault reduced a location to a folder name, so its description, kind,
+ * capacity, dimensions and walk order were the one thing it threw away.
+ */
+describe('buildVault — location folder notes (issue #617)', () => {
+  const items: VaultItem[] = [
+    { item: makeItem({ name: 'Servo' }), history: [], locationName: 'Cabinet A', categoryName: null },
+  ];
+
+  it('writes an Obsidian folder note carrying what the folder name could not', () => {
+    const { files } = buildVault(items, {
+      locations: [
+        {
+          location: makeLocation({
+            name: 'Cabinet A',
+            kind: 'cabinet',
+            description: 'No solvents here, unventilated.',
+            capacity: 40,
+            width: 600,
+            walkOrder: 2,
+            itemCount: 1,
+          }),
+          path: 'Workshop / Cabinet A',
+          parentName: 'Workshop',
+        },
+      ],
+    });
+    const note = files['Cabinet A/Cabinet A.md']!;
+    expect(note).toContain('type: "location"');
+    expect(note).toContain('path: "Workshop / Cabinet A"');
+    expect(note).toContain('parent: "Workshop"');
+    expect(note).toContain('kind: "cabinet"');
+    expect(note).toContain('capacity: 40');
+    expect(note).toContain('width: 600');
+    expect(note).toContain('walkOrder: 2');
+    expect(note).toContain('# Cabinet A');
+    expect(note).toContain('No solvents here, unventilated.');
+    // The items still land beside it, untouched.
+    expect(files['Cabinet A/Servo.md']).toBeDefined();
+  });
+
+  it('leaves the layout untouched when no locations are supplied', () => {
+    expect(Object.keys(buildVault(items).files)).toEqual(['Cabinet A/Servo.md']);
+  });
+
+  it('keeps the folder note’s canonical name when an item shares the location’s name', () => {
+    const clash: VaultItem[] = [
+      {
+        item: makeItem({ id: 'aaaaaaaa-1', name: 'Cabinet A' }),
+        history: [],
+        locationName: 'Cabinet A',
+        categoryName: null,
+      },
+    ];
+    const paths = Object.keys(buildVault(clash, { locations: [makeVaultLocation()] }).files);
+    // The folder note keeps `Folder/Folder.md` — renaming it would break Obsidian's convention —
+    // so the item takes the id-suffixed fallback a colliding item name already takes.
+    expect(paths).toContain('Cabinet A/Cabinet A.md');
+    expect(paths).toContain('Cabinet A/Cabinet A-aaaaaaaa.md');
+  });
+
+  it('does not let two same-named locations overwrite each other’s note', () => {
+    // The vault's folders are keyed by a location's *name*, so "Cabinet A" in two branches
+    // already share one folder. Both notes must survive, and say which is which.
+    const { files } = buildVault([], {
+      locations: [
+        {
+          location: makeLocation({ id: 'aaaaaaaa-1' }),
+          path: 'Workshop / Cabinet A',
+          parentName: 'Workshop',
+        },
+        { location: makeLocation({ id: 'bbbbbbbb-2' }), path: 'Garage / Cabinet A', parentName: 'Garage' },
+      ],
+    });
+    const paths = Object.keys(files);
+    expect(paths).toHaveLength(2);
+    expect(files['Cabinet A/Cabinet A.md']).toContain('path: "Workshop / Cabinet A"');
+    expect(files['Cabinet A/Cabinet A-bbbbbbbb.md']).toContain('path: "Garage / Cabinet A"');
+  });
+
+  it('writes timestamps as ISO instants and survives an unusable one', () => {
+    const { files } = buildVault([], {
+      locations: [makeVaultLocation({ lastCountedAt: 0, archivedAt: Number.NaN })],
+    });
+    const note = files['Cabinet A/Cabinet A.md']!;
+    expect(note).toContain('lastCounted: "1970-01-01T00:00:00.000Z"');
+    // A non-finite stored timestamp blanks its own field rather than throwing the whole export.
+    expect(note).toContain('archived: null');
   });
 });
 
