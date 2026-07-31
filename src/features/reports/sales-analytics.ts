@@ -305,9 +305,9 @@ export function buildSalesReport(
         : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
     );
 
-  // The bucket series is apportioned to the headline exactly like the categories (issue #400):
-  // the chronological proceeds/COGS columns sum to `totalProceeds`/`totalCogs`, not each rounded
-  // in isolation, so a chart's bars re-add to the total beside them.
+  // The bucket series is apportioned to the headline exactly like the categories (issue #400): all
+  // three chronological columns sum to `totalProceeds`/`totalCostedProceeds`/`totalCogs`, not each
+  // rounded in isolation, so a chart's bars re-add to the total beside them.
   const bucketProceeds = apportionMoney(
     buckets.map((b) => b.proceeds),
     totalProceeds,
