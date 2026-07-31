@@ -85,6 +85,7 @@ const category = (overrides: Partial<CategoryWithFieldCount> = {}): CategoryWith
   defaultMaintenanceBasis: null,
   defaultMaintenanceIntervalDays: null,
   defaultMaintenanceIntervalUsage: null,
+  hiddenCapabilities: [],
   updatedAt: 0,
   fieldCount: 1,
   ...overrides,
@@ -645,5 +646,78 @@ describe('CategoryManagerDialog — unused field definitions (#97 follow-up)', (
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove unused field Legacy code' }));
     expect(h.deleteUnusedFieldDef).toHaveBeenCalledWith('def-2');
+  });
+});
+
+/**
+ * Issue #618 — a category can declare the capabilities its items don't have, so those sections
+ * stop cluttering every item of that kind. Ticking hides; the writes must be exact, because the
+ * stored array is what every item in the category is then rendered against.
+ */
+describe('CategoryManagerDialog — sections a category hides', () => {
+  const hideMaintenance = () => screen.getByTestId('category-hide-maintenance');
+
+  it('offers a row per hideable capability, unticked when the category hides nothing', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByText('Sections these items don’t need')).toBeInTheDocument();
+    expect(hideMaintenance()).not.toBeChecked();
+  });
+
+  it('writes the capability into the hidden set when ticked', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    fireEvent.click(hideMaintenance());
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['maintenance'] },
+    });
+  });
+
+  it('removes just that capability when unticked, leaving the others alone', () => {
+    h.categoryRows = [category({ hiddenCapabilities: ['kits', 'maintenance'] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(hideMaintenance()).toBeChecked();
+
+    fireEvent.click(hideMaintenance());
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['kits'] },
+    });
+  });
+
+  it('says nothing about a maintenance conflict when the category adds no schedule', () => {
+    h.categoryRows = [category({ hiddenCapabilities: ['maintenance'] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.queryByTestId('category-hide-maintenance-conflict-clear')).toBeNull();
+  });
+
+  it('flags the contradiction when the category both adds a schedule and hides it', () => {
+    // Left alone, this would create a schedule on every new item and immediately hide it.
+    h.categoryRows = [
+      category({
+        hiddenCapabilities: ['maintenance'],
+        defaultMaintenanceBasis: 'TIME',
+        defaultMaintenanceIntervalDays: 365,
+      }),
+    ];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.getByText(/also gives every new item a maintenance schedule/)).toBeInTheDocument();
+
+    // The offered fix clears the schedule default rather than un-hiding the section, because
+    // hiding it is the choice the user just made explicitly.
+    fireEvent.click(screen.getByTestId('category-hide-maintenance-conflict-clear'));
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: {
+        defaultMaintenanceBasis: null,
+        defaultMaintenanceIntervalDays: null,
+        defaultMaintenanceIntervalUsage: null,
+      },
+    });
   });
 });

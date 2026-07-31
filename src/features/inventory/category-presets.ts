@@ -125,13 +125,14 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Groceries are eaten, not serviced, and carry no warranty — expiry and batch tracking stay.
   {
     id: 'food-pantry',
     sectionId: 'household',
     name: 'Food',
     description: 'Pantry and perishables — expiry, storage and whether the packet is opened.',
     seed: {
-      category: { name: 'Food', glyph: '🍎' },
+      category: { name: 'Food', glyph: '🍎', hiddenCapabilities: ['maintenance', 'warranty'] },
       fields: ordered([
         { name: 'Expiry date', fieldType: 'DATE' },
         { name: 'Storage', fieldType: 'SELECT', options: ['Pantry', 'Fridge', 'Freezer'] },
@@ -158,13 +159,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A book is never serviced, never expires, and isn't received in lots or built from parts.
   {
     id: 'book-media',
     sectionId: 'media',
     name: 'Book',
     description: 'Books and reading — author, ISBN, format and a personal rating.',
     seed: {
-      category: { name: 'Book', glyph: '📖' },
+      category: {
+        name: 'Book',
+        glyph: '📖',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Author', fieldType: 'TEXT' },
         { name: 'Publisher', fieldType: 'TEXT' },
@@ -176,6 +182,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A disc is never serviced, never expires, and isn't received in lots or built from parts.
   {
     id: 'movie',
     sectionId: 'media',
@@ -183,7 +190,12 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     // Deliberately "Movie", not "Film" — "film" also means photographic/cine film.
     description: 'Films on disc or digital — format, cast, edition, cover art and where the file lives.',
     seed: {
-      category: { name: 'Movie', glyph: '🎬', defaultTrackingMode: 'SERIALISED' },
+      category: {
+        name: 'Movie',
+        glyph: '🎬',
+        defaultTrackingMode: 'SERIALISED',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Cover art', fieldType: 'IMAGE' },
         {
@@ -487,13 +499,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Cards are collected one by one — nothing to service, no warranty, no expiry, no lots.
   {
     id: 'trading-card',
     sectionId: 'collectibles',
     name: 'Trading card',
     description: 'Collectible cards — set, rarity, condition and language.',
     seed: {
-      category: { name: 'Trading card', glyph: '🃏' },
+      category: {
+        name: 'Trading card',
+        glyph: '🃏',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Set / expansion', fieldType: 'TEXT' },
         { name: 'Card number', fieldType: 'TEXT' },
@@ -513,13 +530,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A record is never serviced, never expires, and isn't received in lots or built from parts.
   {
     id: 'vinyl-record',
     sectionId: 'media',
     name: 'Vinyl record',
     description: 'Records — artist, format, speed and condition.',
     seed: {
-      category: { name: 'Vinyl record', glyph: '💿' },
+      category: {
+        name: 'Vinyl record',
+        glyph: '💿',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Artist', fieldType: 'TEXT' },
         { name: 'Label', fieldType: 'TEXT' },
@@ -539,13 +561,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Nobody services a coin, a warranty on one is meaningless, and coins are collected individually.
   {
     id: 'coin',
     sectionId: 'collectibles',
     name: 'Coin',
     description: 'Coins — country, year, denomination and grade.',
     seed: {
-      category: { name: 'Coin', glyph: '🪙' },
+      category: {
+        name: 'Coin',
+        glyph: '🪙',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Country', fieldType: 'TEXT' },
         { name: 'Year', fieldType: 'NUMBER' },
@@ -560,13 +587,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Paper currency is never serviced, carries no warranty, and doesn't expire or arrive in lots.
   {
     id: 'banknote',
     sectionId: 'collectibles',
     name: 'Banknote',
     description: 'Paper currency — country, denomination, serial and grade.',
     seed: {
-      category: { name: 'Banknote', glyph: '💵' },
+      category: {
+        name: 'Banknote',
+        glyph: '💵',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Country', fieldType: 'TEXT' },
         { name: 'Year', fieldType: 'NUMBER' },
@@ -581,13 +613,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Figures are collected individually — nothing to service, no expiry, and no lots.
   {
     id: 'action-figure',
     sectionId: 'collectibles',
     name: 'Action figures',
     description: 'Figures and characters — line, scale and boxed condition.',
     seed: {
-      category: { name: 'Action figures', glyph: '🦸' },
+      category: {
+        name: 'Action figures',
+        glyph: '🦸',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Manufacturer', fieldType: 'TEXT' },
         { name: 'Character', fieldType: 'TEXT' },
