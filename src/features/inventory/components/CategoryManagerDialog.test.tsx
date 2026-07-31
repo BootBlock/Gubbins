@@ -15,7 +15,9 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 const h = vi.hoisted(() => ({
   categoryRows: [] as CategoryWithFieldCount[],
-  fields: [] as CategoryField[],
+  // `undefined` is a state the dialog must handle, not just a missing value — it is what
+  // `useCategoryFields` reports while the query is in flight.
+  fields: [] as CategoryField[] | undefined,
   createCategory: vi.fn(),
   createCategoryAsync: vi.fn(),
   updateCategory: vi.fn(),
@@ -1220,19 +1222,52 @@ describe('CategoryManagerDialog — filling from an open database', () => {
     expect(screen.queryByRole('option', { name: 'Director' })).toBeNull();
   });
 
-  it('shows an override pointing at a removed field as exactly that', () => {
-    // The map outlives the field it names. Falling back to "match by name" would report a state
-    // the category is not in, and hide the reason a value stopped landing where it used to.
+  it('reads an override whose field is gone as the name match, exactly as the binder does', () => {
+    // A map entry the binder cannot resolve falls back to the name match rather than failing, so
+    // the value still lands — on `Director`, here. Showing the dangling id would tell the user a
+    // working binding is broken, and would disagree with the problem banner right above it.
     h.fields = movieFields();
     h.categoryRows = [
       category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: { director: 'f-gone' } }] }),
     ];
     renderDialog();
     selectCategory(/Resistors/);
-    openMapping();
 
-    expect(screen.getByRole('combobox', { name: 'Director' })).toHaveTextContent(
-      'A field that no longer exists',
+    expect(screen.queryByTestId('category-lookup-problems-wikidata-film')).toBeNull();
+    openMapping();
+    expect(screen.getByRole('combobox', { name: 'Director' })).toHaveTextContent('Match by name — Director');
+  });
+
+  it('keeps an override whose field has been retyped visible, marked as the wrong kind', () => {
+    // Retyping is the case the binder *does* honour — it reports a TYPE_MISMATCH rather than
+    // ignoring the entry — so the choice has to stay on screen to be fixable, even though the
+    // type filter would otherwise hide it.
+    h.fields = [...movieFields(), field({ id: 'f-note', name: 'Production note', fieldType: 'LONG_TEXT' })];
+    h.categoryRows = [
+      category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: { director: 'f-note' } }] }),
+    ];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.getByTestId('category-lookup-problems-wikidata-film')).toHaveTextContent(
+      '1 value has nowhere to go',
     );
+    openMapping();
+    expect(screen.getByRole('combobox', { name: 'Director' })).toHaveTextContent(
+      'Production note — no longer the right kind of field',
+    );
+  });
+
+  it('says the fields are still loading rather than reporting them all as missing', () => {
+    // `undefined` fields and an empty list bind identically, so collapsing the two would announce
+    // "8 values have nowhere to go" on a category where every one of them lands.
+    h.fields = undefined;
+    h.categoryRows = [category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.getByTestId('category-lookup-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('category-lookup-problems-wikidata-film')).toBeNull();
+    expect(screen.queryByTestId('category-lookup-map-toggle-wikidata-film')).toBeNull();
   });
 });

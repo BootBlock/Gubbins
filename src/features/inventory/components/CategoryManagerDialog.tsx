@@ -411,7 +411,9 @@ function CategoryDetail({
 
       <CategoryFieldProminencePanel category={category} hiddenCapabilities={hiddenCapabilities} />
 
-      <CategoryLookupSourcesPanel category={category} fields={fields ?? []} />
+      {/* `fields` is passed through undefined-and-all: the panel must be able to tell "not loaded
+          yet" from "this category has none", because binding treats the two identically. */}
+      <CategoryLookupSourcesPanel category={category} fields={fields} />
     </div>
   );
 }
@@ -759,7 +761,16 @@ function CategoryLookupSourcesPanel({
   fields,
 }: {
   category: CategoryWithFieldCount;
-  fields: readonly CategoryField[];
+  /**
+   * The category's fields, or `undefined` while they are still arriving (or could not be read).
+   *
+   * Deliberately **not** defaulted to `[]` by the caller: an empty list and an unknown one bind
+   * identically through `bindLookupOutputs`, so collapsing the two would make a category that
+   * binds every value perfectly report all of them as having nowhere to go, for as long as the
+   * query is in flight. The sibling `CategoryLookupPanel` refuses to resolve a binding in that
+   * state for exactly the same reason.
+   */
+  fields: readonly CategoryField[] | undefined;
 }) {
   const t = useT();
   const updateCategory = useUpdateCategory();
@@ -785,9 +796,11 @@ function CategoryLookupSourcesPanel({
   };
 
   // `BindableField` is the narrow shape the pure binder takes; a category field satisfies it
-  // structurally, so this trims rather than reshapes.
-  const bindable = useMemo<readonly BindableField[]>(
-    () => fields.map((f) => ({ id: f.id, name: f.name, fieldType: f.fieldType, options: f.options })),
+  // structurally, so this trims rather than reshapes. Stays null until the fields are known — see
+  // the `fields` prop.
+  const bindable = useMemo<readonly BindableField[] | null>(
+    () =>
+      fields?.map((f) => ({ id: f.id, name: f.name, fieldType: f.fieldType, options: f.options })) ?? null,
     [fields],
   );
 
@@ -844,7 +857,13 @@ function CategoryLookupSourcesPanel({
                   </span>
                 </span>
               </label>
-              {attached !== null ? (
+              {attached === null ? null : bindable === null ? (
+                // Say the fields aren't known yet rather than resolving against none of them: every
+                // value would report as having nowhere to go, on a category where they all land.
+                <p className="ml-7 text-xs text-muted-foreground" data-testid="category-lookup-loading">
+                  {t('lookup.panel.loading')}
+                </p>
+              ) : (
                 <LookupFieldMapEditor
                   provider={provider}
                   fieldMap={attached.fieldMap}
@@ -859,7 +878,7 @@ function CategoryLookupSourcesPanel({
                     )
                   }
                 />
-              ) : null}
+              )}
             </div>
           );
         })}
@@ -926,6 +945,21 @@ function LookupFieldMapEditor({
         });
   };
 
+  /**
+   * The target this key is pointed at **right now** — `''` for the run-time name match.
+   *
+   * A stored id naming a field the category no longer has reads as `''`, because that is exactly
+   * what it does: `bindLookupOutputs` falls back to the name match for a map entry it cannot
+   * resolve rather than failing on it (see `binding.ts`). Showing the dangling id instead would
+   * tell the user a value is broken while it is landing perfectly well.
+   */
+  const storedTarget = (output: LookupOutputDef): string => {
+    const stored = fieldMap?.[output.key];
+    if (stored === undefined) return '';
+    if (isBuiltinLookupTarget(stored)) return stored;
+    return fields.some((field) => field.id === stored) ? stored : '';
+  };
+
   const optionsFor = (output: LookupOutputDef): readonly SelectOption[] => {
     const options: SelectOption[] = [
       { value: '', label: autoLabel(output) },
@@ -940,11 +974,24 @@ function LookupFieldMapEditor({
         label: lookupTargetLabel(t, target),
       })),
     ];
-    // A stored override can outlive the field it names. Kept as an option rather than letting the
-    // select fall back to "Match by name", which would report a state the category is not in.
-    const current = fieldMap?.[output.key];
-    if (current !== undefined && !options.some((option) => option.value === current)) {
-      options.push({ value: current, label: t('category.lookupSources.missingTarget') });
+    // A field can be *retyped* after being chosen, which the filter above then hides — but the
+    // binder still honours the entry and reports the mismatch, so the choice has to stay visible
+    // and marked. (A stored id whose field is gone never reaches here: `storedTarget` already
+    // reads it as the name match, which is what the binder does with it.)
+    const current = storedTarget(output);
+    if (current !== '' && !options.some((option) => option.value === current)) {
+      // `storedTarget` only yields a built-in or a field that exists, so "no field" means the
+      // former — a built-in this build wouldn't offer for this value's type, written by a peer on
+      // a newer version. The binder treats an explicit built-in entry as authoritative, so it is
+      // genuinely in force and must be shown rather than dropped from the list.
+      const field = fields.find((candidate) => candidate.id === current);
+      options.push({
+        value: current,
+        label:
+          field === undefined
+            ? lookupTargetLabel(t, current)
+            : t('category.lookupSources.wrongType', { vars: { name: field.name } }),
+      });
     }
     return options;
   };
@@ -982,7 +1029,7 @@ function LookupFieldMapEditor({
             <SelectField
               key={output.key}
               label={lookupTargetLabel(t, output.defaultTarget)}
-              value={fieldMap?.[output.key] ?? ''}
+              value={storedTarget(output)}
               onChange={(target) => onChangeTarget(output.key, target)}
               options={optionsFor(output)}
               data-testid={`category-lookup-target-${provider.id}-${output.key}`}

@@ -41,8 +41,8 @@ description and a year, and **nothing is fetched or filled until you pick one** 
 is only a single result.
 
 > **⚠️ Heads-up**
-> This step is not busywork. Searching an open database for *Blade Runner* returns Philip K. Dick's
-> **novel** as its first hit, because that is a registered alternative title for it. Anything that
+> This step is not busywork. Searching an open database for *Blade Runner* turns up Philip K. Dick's
+> **novel** ahead of the film, because that is a registered alternative title for it. Anything that
 > quietly took the top answer would fill a film's details from a book.
 
 ## Your own entries are never overwritten
@@ -68,8 +68,9 @@ automatic behaviour.
 
 ## What is sent, and who is asked
 
-Only the item's **name** (and its year, when the category records one) is sent, and only when you
-press the button. Nothing else about your inventory leaves the device.
+Only the item's **name** is sent, and only when you press the button. Nothing else about your
+inventory leaves the device — not even the year, which is used on your own machine to mark the
+candidate whose year agrees with the item's.
 
 - **With the [[companion extension|Companion-Extension-Setup]]** installed, the extension makes the
   request for you.
@@ -79,8 +80,9 @@ press the button. Nothing else about your inventory leaves the device.
 
 You can take that permission back at any time under **Settings → Scanning & labels → Database
 lookups**: remove a site from the list and nothing is contacted again until you agree afresh. That
-choice belongs to the device you made it on — it is never carried over by
-[[sync|Sharing-Settings-Between-Devices]] or restored from a [[backup|Backup-and-Restore]].
+choice belongs to the device you made it on: it is never carried between devices by
+[[settings sync|Sharing-Settings-Between-Devices]], and a [[backup|Backup-and-Restore]] only puts
+it back if you tick the **This device** group when you restore.
 
 > **💡 Tip**
 > The panel is part of the **Product & supplier lookup** module. If you have switched that off under
