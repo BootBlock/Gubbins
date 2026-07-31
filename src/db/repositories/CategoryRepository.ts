@@ -10,6 +10,7 @@
  * the category's field count, not the 100k+ item set, so they need no pagination.
  */
 import { validateFieldValue } from '@/features/inventory/custom-fields';
+import { normaliseFieldTabLabel } from '@/features/inventory/field-prominence';
 import {
   buildAncestorChain,
   findInheritedValue,
@@ -107,6 +108,7 @@ const SELECT_WITH_FIELD_COUNT = `
   SELECT c.id, c.name, c.glyph, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
          c.default_maintenance_basis, c.default_maintenance_interval_days,
          c.default_maintenance_interval_usage, c.hidden_capabilities,
+         c.field_prominence, c.field_tab_label,
          c.updated_at, COUNT(f.id) AS field_count
   FROM categories c
   LEFT JOIN category_fields f ON f.category_id = c.id
@@ -126,6 +128,20 @@ function serialiseHiddenCapabilities(ids: readonly string[] | null | undefined):
   if (ids == null) return null;
   const unique = [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))].sort();
   return unique.length > 0 ? JSON.stringify(unique) : null;
+}
+
+/**
+ * Canonicalise a custom-field prominence mode for storage (issue #619).
+ *
+ * Trimmed, and `'default'` collapsed to NULL: "leave the fields where they are" is the absence of
+ * a preference, and storing two spellings of it would make an LWW merge see an edit where the
+ * user changed nothing. An unrecognised mode is *not* rejected here — the column keeps whatever a
+ * newer peer wrote, and `toFieldProminenceMode` decides what this build renders.
+ */
+function serialiseFieldProminence(mode: string | null | undefined): string | null {
+  if (mode == null) return null;
+  const trimmed = mode.trim();
+  return trimmed.length === 0 || trimmed === 'default' ? null : trimmed;
 }
 
 export class CategoryRepository extends BaseRepository {
@@ -173,8 +189,8 @@ export class CategoryRepository extends BaseRepository {
       `INSERT INTO categories
          (id, name, glyph, default_tracking_mode, default_condition, default_warranty_months,
           default_maintenance_basis, default_maintenance_interval_days, default_maintenance_interval_usage,
-          hidden_capabilities)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          hidden_capabilities, field_prominence, field_tab_label)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         name,
@@ -186,6 +202,8 @@ export class CategoryRepository extends BaseRepository {
         input.defaultMaintenanceIntervalDays ?? null,
         input.defaultMaintenanceIntervalUsage ?? null,
         serialiseHiddenCapabilities(input.hiddenCapabilities),
+        serialiseFieldProminence(input.fieldProminence),
+        normaliseFieldTabLabel(input.fieldTabLabel),
       ],
     );
     return (await this.getById(id))!;
@@ -239,6 +257,14 @@ export class CategoryRepository extends BaseRepository {
     if (input.hiddenCapabilities !== undefined) {
       sets.push('hidden_capabilities = ?');
       params.push(serialiseHiddenCapabilities(input.hiddenCapabilities));
+    }
+    if (input.fieldProminence !== undefined) {
+      sets.push('field_prominence = ?');
+      params.push(serialiseFieldProminence(input.fieldProminence));
+    }
+    if (input.fieldTabLabel !== undefined) {
+      sets.push('field_tab_label = ?');
+      params.push(normaliseFieldTabLabel(input.fieldTabLabel));
     }
     if (sets.length > 0) {
       params.push(id);

@@ -521,6 +521,8 @@ export function rowToCategory(row: CategoryRow): Category {
     defaultMaintenanceIntervalDays: row.default_maintenance_interval_days,
     defaultMaintenanceIntervalUsage: row.default_maintenance_interval_usage,
     hiddenCapabilities: parseHiddenCapabilities(row.hidden_capabilities),
+    fieldProminence: row.field_prominence,
+    fieldTabLabel: row.field_tab_label,
     updatedAt: row.updated_at,
   };
 }
