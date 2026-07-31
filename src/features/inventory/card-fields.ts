@@ -15,6 +15,7 @@ import type { Item } from '@/db/repositories';
 import type { Condition, FieldType } from '@/db/repositories/constants';
 import { isImageDataUrl } from '@/lib/image-data-url';
 import { UNLIMITED_GLYPH } from './unlimited';
+import { itemTotalValue } from './item-total-value';
 
 /** The built-in (always-available) card fields — those derivable from the item row itself. */
 export type BuiltinCardFieldId =
@@ -302,31 +303,15 @@ function resolveOne(id: string, item: Item, ctx: CardFieldContext): ResolvedCard
         value: item.condition ? { kind: 'condition', condition: item.condition } : EMPTY,
       };
     case 'value': {
-      // Total value = unit cost × on-hand count, so it needs a *real* count. An unlimited item's
-      // quantity is ∞-ignored, so the product is meaningless (it would read £0.00) — show
-      // em-dash, matching how the `quantity` field itself declines to show it (see
-      // {@link quantityValue}).
-      //
-      // A gauge is the one item with a *second* axis (issue #683): it tracks a measure, so its
-      // count is always 0, but "what's in it × its cost per unit of measure" is a real figure —
-      // the same one the valuation reports and the insurance schedule now total. Unpriced, it
-      // still shows em-dash rather than a confident £0.00, which is the whole point.
-      if (item.trackingMode === 'CONSUMABLE_GAUGE') {
-        const perUnit = item.gauge?.costPerUnitOfMeasure;
-        return {
-          id,
-          label: 'Total value',
-          value:
-            item.gauge != null && perUnit != null && Number.isFinite(perUnit)
-              ? { kind: 'money', amount: Math.max(0, item.gauge.currentNetValue) * perUnit }
-              : EMPTY,
-        };
-      }
-      const priced = !item.isUnlimited && item.unitCost != null && Number.isFinite(item.unitCost);
+      // One rule for every card surface ({@link itemTotalValue}): a gauge is valued from its
+      // contents, an unlimited or unpriced item has no meaningful total and shows em-dash —
+      // matching how the `quantity` field declines an ∞ count (see {@link quantityValue}), and
+      // never printing a confident £0.00 for "no price recorded".
+      const total = itemTotalValue(item);
       return {
         id,
         label: 'Total value',
-        value: priced ? { kind: 'money', amount: item.unitCost! * item.quantity } : EMPTY,
+        value: total === null ? EMPTY : { kind: 'money', amount: total },
       };
     }
     case 'quantity':

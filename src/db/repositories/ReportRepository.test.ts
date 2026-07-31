@@ -436,11 +436,32 @@ describe('ReportRepository', () => {
       // Soft-deleted stock is outside every valuation read, so it cannot be "excluded" from one.
       const gone = await makeGauge({ name: 'Gone', locationId: shelf.id, net: 500 });
       await items.softDelete(gone.id);
-      await makeGauge({ name: 'Unpriced', locationId: shelf.id, net: 250 });
+      const unpriced = await makeGauge({ name: 'Unpriced', locationId: shelf.id, net: 250 });
 
       expect(await reports.unpricedGaugeCount()).toBe(1);
-      // Gauges are never valued from a supplier price, so no currency of one can exclude them.
-      expect(await reports.foreignCurrencyCostCount()).toBe(0);
+
+      // A gauge is never valued from a supplier price, so no currency of one can exclude it —
+      // it must not also be counted by the foreign-currency notice, whose only remedy ("give
+      // the item its own unit cost") does nothing for a gauge. Needs a base currency to be
+      // resolvable *and* a foreign preferred part, or the count returns 0 for unrelated reasons
+      // and could not tell the exclusion apart from its absence.
+      await supplierParts.create(unpriced.id, {
+        supplier: { supplierName: 'Akihabara Denshi' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      expect(await gbp.foreignCurrencyCostCount()).toBe(0);
+      // The same part on a *counted* item is excluded, proving the read is live either way.
+      const scope = await items.create({ name: 'Oscilloscope', locationId: shelf.id, quantity: 1 });
+      await supplierParts.create(scope.id, {
+        supplier: { supplierName: 'Akihabara Denshi' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+      expect(await gbp.foreignCurrencyCostCount()).toBe(1);
     });
 
     it('schedules a gauge at its contents, and captions the line with the measure', async () => {

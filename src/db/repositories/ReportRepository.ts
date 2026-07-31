@@ -588,9 +588,9 @@ export class ReportRepository extends BaseRepository {
                 GROUP BY s.item_id
                UNION ALL
                -- The gauge arm (issue #683): counted as an item held here and valued from its
-               -- contents, but contributing no *units* (grams are not a count) and — as before
-               -- this change — no volume, since what a container's footprint should add to a
-               -- location's fill is the volume bar's question (issue #457), not valuation's.
+               -- contents, but contributing no *units* (grams are not a count) and no volume,
+               -- since what a container's footprint should add to a location's fill is the
+               -- volume bar's question (issue #457), not valuation's.
                SELECT 0 AS qty, ${valuedAmountSql('i')} AS amount,
                       ${unitValue} AS unit_value,
                       NULL AS unit_volume
@@ -843,6 +843,9 @@ export class ReportRepository extends BaseRepository {
       supplier_name: string | null;
       unit_cost: number | null;
       preferred_supplier_cost: number | null;
+      tracking_mode: string;
+      current_net_value: number | null;
+      cost_per_unit_of_measure: number | null;
       purchase_price: number | null;
       acquired_at: string | null;
       warranty_expires_at: string | null;
@@ -858,6 +861,9 @@ export class ReportRepository extends BaseRepository {
               ${preferredSupplierNameSql('items.id')} AS supplier_name,
               items.unit_cost AS unit_cost,
               ${preferredSupplierCostSql('items.id', base)} AS preferred_supplier_cost,
+              items.tracking_mode AS tracking_mode,
+              items.current_net_value AS current_net_value,
+              items.cost_per_unit_of_measure AS cost_per_unit_of_measure,
               items.purchase_price AS purchase_price,
               items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
               items.notes AS notes,
@@ -891,6 +897,16 @@ export class ReportRepository extends BaseRepository {
       // Money columns are stored in micro-units (issue #286); back to major units at this boundary.
       unitCost: fromStoredMoney(r.unit_cost),
       preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
+      // A gauge is priced per unit of *measure* and its count is always 0, so the catalogue
+      // values it from its contents exactly as the insurance schedule does (issue #683) —
+      // otherwise a printed parts list totals a full cylinder at nothing.
+      gauge:
+        r.tracking_mode === 'CONSUMABLE_GAUGE'
+          ? {
+              netValue: r.current_net_value ?? 0,
+              costPerUnitOfMeasure: fromStoredMoney(r.cost_per_unit_of_measure),
+            }
+          : null,
       purchasePrice: fromStoredMoney(r.purchase_price),
       acquiredAt: r.acquired_at,
       warrantyExpiresAt: r.warranty_expires_at,
@@ -1670,6 +1686,8 @@ export class ReportRepository extends BaseRepository {
       category_id: string | null;
       location_id: string;
       unit_cost: number | null;
+      cost_per_unit_of_measure: number | null;
+      tracking_mode: string;
       preferred_supplier_cost: number | null;
       has_photo: number;
       ever_counted: number;
@@ -1677,6 +1695,8 @@ export class ReportRepository extends BaseRepository {
     }>(
       `SELECT i.id AS id, i.name AS name, i.mpn AS mpn, i.category_id AS category_id,
               i.location_id AS location_id, i.unit_cost AS unit_cost,
+              i.cost_per_unit_of_measure AS cost_per_unit_of_measure,
+              i.tracking_mode AS tracking_mode,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               (EXISTS (SELECT 1 FROM item_images im WHERE im.item_id = i.id)) AS has_photo,
               (EXISTS (SELECT 1 FROM item_history h WHERE h.item_id = i.id AND h.action = 'RECONCILED')) AS ever_counted,
@@ -1691,7 +1711,15 @@ export class ReportRepository extends BaseRepository {
       mpn: r.mpn,
       hasCategory: r.category_id != null,
       hasLocation: r.location_id !== UNASSIGNED_LOCATION_ID,
-      hasPrice: r.unit_cost != null || r.preferred_supplier_cost != null,
+      // "Priced" has to mean priced *the way this item is valued* (issue #683). A gauge is
+      // valued from its cost per unit of measure and never from a per-unit figure, so reading
+      // `unit_cost` here would both clear the flag on a gauge that is genuinely unpriced and
+      // raise it on one that is correctly priced — directly contradicting the unpriced-gauge
+      // notice on the same screen.
+      hasPrice:
+        r.tracking_mode === 'CONSUMABLE_GAUGE'
+          ? r.cost_per_unit_of_measure != null
+          : r.unit_cost != null || r.preferred_supplier_cost != null,
       hasPhoto: r.has_photo === 1,
       everCounted: r.ever_counted === 1,
       lastActivityAt: Number(r.last_activity_at),

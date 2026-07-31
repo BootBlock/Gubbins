@@ -16,6 +16,7 @@
 import { assertExhaustive } from '@/lib/exhaustive';
 import type { Item } from '@/db/repositories';
 import type { VisualCardMetric, VisualCardMetricFallback } from '@/features/settings/settings';
+import { itemTotalValue } from './item-total-value';
 
 /** Whether a string field carries printable (non-whitespace) text. */
 function hasText(value: string | null): boolean {
@@ -26,8 +27,9 @@ function hasText(value: string | null): boolean {
  * Whether `metric` has genuine content to show for `item` — the test that decides whether the
  * fallback kicks in. `stockHealth` and `lastUpdated` are always available (every item has a
  * reorder-derived band and an updated-at instant); the others depend on the item:
- * - `value` — a *countable* priced item (an unlimited or gauge item has no meaningful unit
- *   total, matching the `value` card field and badge).
+ * - `value` — an item with a meaningful total ({@link itemTotalValue}, shared with the `value`
+ *   card field and badge): priced, not an unlimited source, and for a gauge priced per unit of
+ *   measure rather than per unit (issue #683).
  * - `condition` — a tracked condition is set.
  * - `manufacturer` — a manufacturer/brand is recorded.
  *
@@ -38,10 +40,8 @@ export function metricHasContent(metric: VisualCardMetric, item: Item): boolean 
     case 'stockHealth':
     case 'lastUpdated':
       return true;
-    case 'value': {
-      const countable = !item.isUnlimited && item.trackingMode !== 'CONSUMABLE_GAUGE';
-      return countable && item.unitCost != null && Number.isFinite(item.unitCost);
-    }
+    case 'value':
+      return itemTotalValue(item) !== null;
     case 'condition':
       return item.condition != null;
     case 'manufacturer':

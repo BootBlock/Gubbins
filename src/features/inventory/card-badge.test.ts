@@ -46,6 +46,19 @@ const BASE: Item = {
 };
 const item = (overrides: Partial<Item> = {}): Item => ({ ...BASE, ...overrides });
 
+/** A full 1000 g gauge, with the fields a test cares about overridable (issue #683). */
+const gaugeState = (overrides: Partial<NonNullable<Item['gauge']>> = {}): NonNullable<Item['gauge']> => ({
+  unitOfMeasure: 'g',
+  grossCapacity: 1000,
+  tareWeight: 0,
+  currentNetValue: 1000,
+  percentageRemaining: 100,
+  currentGrossWeight: 1000,
+  attritionPercent: null,
+  costPerUnitOfMeasure: null,
+  ...overrides,
+});
+
 describe('normaliseCardBadgeContent', () => {
   it('passes every offered content id through unchanged', () => {
     for (const { value } of CARD_BADGE_OPTIONS) {
@@ -127,17 +140,37 @@ describe('resolveCardBadge — availability and fallback', () => {
     expect(resolveCardBadge(item({ unitCost: null }), 'unitPrice', 'none')).toEqual({ kind: 'none' });
   });
 
-  it('declines total value for an unlimited or gauge item (no meaningful unit total), then falls back', () => {
+  it('declines total value for an unlimited or unpriced-gauge item, then falls back', () => {
     const unlimited = item({ isUnlimited: true, unitCost: 3, quantity: 5 });
     expect(resolveCardBadge(unlimited, 'totalValue', 'unitPrice')).toEqual({
       kind: 'money',
       amount: 3,
       scope: 'unit',
     });
-    const gauge = item({ trackingMode: 'CONSUMABLE_GAUGE', unitCost: 4, quantity: 2 });
+    // A gauge is never valued from `unitCost` — that prices one countable unit (issue #683) —
+    // so a gauge carrying only one has no total and falls back rather than showing £0.00.
+    const gauge = item({
+      trackingMode: 'CONSUMABLE_GAUGE',
+      unitCost: 4,
+      quantity: 2,
+      gauge: gaugeState({ costPerUnitOfMeasure: null }),
+    });
     expect(resolveCardBadge(gauge, 'totalValue', 'tracking')).toEqual({
       kind: 'tracking',
       mode: 'CONSUMABLE_GAUGE',
+    });
+  });
+
+  it('shows a priced gauge’s total from its contents, agreeing with the card field (#683)', () => {
+    const spool = item({
+      trackingMode: 'CONSUMABLE_GAUGE',
+      quantity: 0,
+      gauge: gaugeState({ currentNetValue: 400, costPerUnitOfMeasure: 0.025 }),
+    });
+    expect(resolveCardBadge(spool, 'totalValue', 'tracking')).toEqual({
+      kind: 'money',
+      amount: 10,
+      scope: 'total',
     });
   });
 
