@@ -228,8 +228,13 @@ There are two different routes, and they behave differently — worth knowing wh
 When you define a custom field you can give it an optional **Description** — a short note about
 what the field is for. If you fill it in, an **(i)** info badge appears next to that field on
 every item in the category; hovering or focusing it shows your note. It's the ideal place for a
-reminder such as *where to read the value from*, *which units to use*, or a link to a reference.
-The note supports Markdown, and leaving it blank simply hides the badge.
+reminder such as *where to read the value from*, or a link to a reference. The note supports
+Markdown, and leaving it blank simply hides the badge.
+
+> **💡 Tip**
+> For a number's unit of measure, use the [[**Unit** setting|#giving-a-number-a-unit-and-a-range]]
+> rather than this note — that way the unit is shown beside the value itself, not tucked behind a
+> badge.
 
 ### Starting from a preset
 

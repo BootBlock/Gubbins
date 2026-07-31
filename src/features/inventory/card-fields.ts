@@ -349,9 +349,9 @@ function customFieldValue(type: FieldType, raw: string | null, unit: string | nu
   // A NUMBER with a unit (W1b) reads as the measurement it is. The unit is only ever set on a
   // NUMBER definition (a table CHECK enforces that), but the type is tested here too so a
   // definition retyped in one client and not yet synced to another can't render "true mm".
-  // Truthiness rather than `!== null`, so a catalog entry built without a unit at all renders
-  // the bare number instead of "5 undefined" — the card catalog is assembled by hand in several
-  // places, and this file's tests are not type-checked (`tsconfig.app.json` excludes them).
+  // Truthiness rather than `!== null`: a `unit` that is absent rather than null renders the bare
+  // number instead of "5 undefined". Types alone don't guarantee it is present, because this
+  // file's tests are excluded from `tsconfig.app.json` and build the catalog by hand.
   if (type === 'NUMBER' && unit) return { kind: 'measure', text: raw, unit };
   // An IMAGE value is an image `data:` URL — render it as a thumbnail, not its base64 text.
   // Only a value of exactly that shape becomes a `src` (see {@link isImageDataUrl}); anything

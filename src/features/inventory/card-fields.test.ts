@@ -335,8 +335,9 @@ describe('resolveCardFields — custom fields', () => {
   });
 
   it('renders the bare number when the catalog entry carries no unit at all', () => {
-    // The card catalog is assembled by hand in several places and this file is not
-    // type-checked, so a missing `unit` must degrade to "5", never to "5 undefined".
+    // This file is excluded from `tsconfig.app.json`, so a hand-built catalog entry that omits
+    // `unit` type-checks nowhere and reaches the resolver as `undefined`. It must degrade to
+    // "5", never to "5 undefined".
     const noUnitKey = { ...field, fieldType: 'NUMBER' } as CardCustomField;
     delete (noUnitKey as { unit?: string | null }).unit;
     const resolved = resolveCardFields(

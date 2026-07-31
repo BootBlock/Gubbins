@@ -38,9 +38,10 @@ export interface ValidatableField {
    * **independent**: `null`/absent on either side means unbounded *that* side, so a field can
    * be "never negative" without also acquiring a ceiling nobody asked for.
    *
-   * Optional on this interface rather than required, so the three callers that build a
-   * `ValidatableField` from a narrower shape keep compiling — and so a caller that has no
-   * bounds to offer cannot accidentally assert there are none.
+   * Optional on this interface rather than required, because this is the *minimum* a value can
+   * be validated against — deliberately narrower than {@link CategoryField} so an item's value
+   * and a location's share one seam. A caller that genuinely has no bounds to offer should be
+   * able to say nothing, rather than be forced to assert there are none.
    */
   readonly minValue?: number | null;
   readonly maxValue?: number | null;

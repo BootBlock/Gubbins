@@ -200,15 +200,24 @@ describe('validateFieldValue — NUMBER range (W1c)', () => {
     expect(validateFieldValue(d, '')).toEqual({ ok: true, value: null });
   });
 
-  it('applies the range to a location’s value, not just an item’s', () => {
-    // A location value is validated through this same seam with `isRequired` forced false
-    // (see `setLocationFieldValue`), so the bounds must survive that narrowing — otherwise an
-    // inherited value could sit outside the range every item below it is held to.
-    const d = def({ fieldType: 'NUMBER', name: 'Voltage', maxValue: 24, isRequired: false });
-    expect(validateFieldValue({ ...d, isRequired: false }, '30')).toEqual({
+  it('enforces the range against the narrowest shape the seam accepts', () => {
+    // `setLocationFieldValue` validates a location's value through this seam with only the
+    // `ValidatableField` members — no `id`, `categoryId` or `position`. The bounds must survive
+    // that narrowing, or a location could offer an inherited value outside the range every item
+    // below it is held to. (The repository-level proof is in `CategoryRepository.test.ts`.)
+    const narrow = {
+      name: 'Voltage',
+      fieldType: 'NUMBER' as const,
+      options: null,
+      isRequired: false,
+      unit: 'V',
+      maxValue: 24,
+    };
+    expect(validateFieldValue(narrow, '30')).toEqual({
       ok: false,
-      error: 'Voltage must be at most 24.',
+      error: 'Voltage must be at most 24 V.',
     });
+    expect(validateFieldValue(narrow, '12')).toEqual({ ok: true, value: '12' });
   });
 
   it('ignores a range on any type other than NUMBER', () => {

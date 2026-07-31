@@ -1279,9 +1279,8 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
       </FormField>
       <FormField
         label="Description"
-        // Reworded for W1b: this used to offer the description as the place to say "which units
-        // to use", which a Number field now has a real setting for. Pointing at both would
-        // leave two places to state a unit and no answer for which one a reader should trust.
+        // The hint points a unit at the Unit setting rather than at this note: two places to
+        // state a unit would leave no answer for which one a reader should trust.
         hint={t('inventory.fields.descriptionHint')}
       >
         <Textarea
