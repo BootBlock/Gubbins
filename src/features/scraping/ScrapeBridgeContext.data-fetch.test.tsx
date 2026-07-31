@@ -6,7 +6,8 @@
  * no render state to watch, so the correlation happens in a ref rather than in the reducer. That
  * makes three things worth pinning, because none of them is visible in the reducer's own tests:
  *
- * - a reply is matched by **both** the correlation id and the URL;
+ * - a reply is matched by **both** the correlation id and the URL, and a mismatch fails the
+ *   request rather than leaving it to time out;
  * - a request the extension never answers resolves (as `null`) rather than hanging forever;
  * - and unmounting settles anything still outstanding.
  */
@@ -88,9 +89,10 @@ describe('fetchDataUrl', () => {
     expect(settled).toEqual({ ok: false, error });
   });
 
-  it('ignores a reply whose URL is not the one this request asked for', async () => {
-    // The id alone is not enough: a reply carrying a different URL is not an answer to this
-    // request, whatever id it echoes.
+  it('fails the request when a reply carries a URL it did not ask for', async () => {
+    // The id alone is not enough: a body fetched from a different URL is not an answer to this
+    // request, whatever id it echoes. Failed rather than ignored — our own extension answering the
+    // wrong URL is a fault, and leaving the caller to sit out the timeout would hide it.
     render(
       <ScrapeBridgeProvider>
         <Probe />

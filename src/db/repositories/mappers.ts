@@ -522,7 +522,11 @@ function parseHiddenCapabilities(value: string | null): readonly string[] {
 function parseLookupSourceEntry(member: unknown): CategoryLookupSource | null {
   if (typeof member !== 'object' || member === null || Array.isArray(member)) return null;
   const raw = member as { providerId?: unknown; fieldMap?: unknown };
-  if (typeof raw.providerId !== 'string' || raw.providerId.trim().length === 0) return null;
+  const providerId = typeof raw.providerId === 'string' ? raw.providerId.trim() : '';
+  // Trimmed on the way in, not merely validated: a peer that wrote `"wikidata-film "` would
+  // otherwise round-trip verbatim and then silently fail to resolve against the registry, so a
+  // provider this build *does* have would quietly offer no lookup.
+  if (providerId.length === 0) return null;
 
   let fieldMap: Record<string, string> | null = null;
   if (typeof raw.fieldMap === 'object' && raw.fieldMap !== null && !Array.isArray(raw.fieldMap)) {
@@ -531,7 +535,7 @@ function parseLookupSourceEntry(member: unknown): CategoryLookupSource | null {
     );
     if (pairs.length > 0) fieldMap = Object.fromEntries(pairs);
   }
-  return { providerId: raw.providerId, fieldMap };
+  return { providerId, fieldMap };
 }
 
 /**

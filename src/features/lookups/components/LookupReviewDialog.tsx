@@ -17,11 +17,12 @@
  *   *not* IMDb, even though the IMDb link is among the values.
  */
 import { useEffect, useState } from 'react';
-import { Button, Checkbox, Modal, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, Checkbox, InfoHint, Modal } from '@/components/foundry';
 import { InfoIcon, WarningIcon } from '@/components/icons';
 import { useT, type TypedTranslator } from '@/features/i18n';
-import { FIELD_TYPE_LABELS } from '@/features/inventory/components/inventory-ui';
 import { assertExhaustive } from '@/lib/exhaustive';
+import type { FieldType } from '@/db/repositories';
+import type { MessageKey } from '@/features/i18n';
 import {
   applyLookupFillPlan,
   planHasChanges,
@@ -30,6 +31,28 @@ import {
   type LookupFillWrite,
 } from '../fill-plan';
 import { isBuiltinLookupTarget, type BuiltinLookupTarget } from '../types';
+
+/**
+ * The translated name of each field type, for the "wrong kind of field" line.
+ *
+ * `FIELD_TYPE_LABELS` (`inventory-ui.ts`) is the app's English-only registry, and splicing it into
+ * an otherwise-translated sentence would leave a German reader reading "…ist ein Feld des Typs
+ * Long text". Typed as a total `Record<FieldType, …>`, so adding a field type is a compile error
+ * here rather than a silently missing word.
+ */
+const FIELD_TYPE_MESSAGE: Record<FieldType, MessageKey> = {
+  TEXT: 'lookup.fieldType.text',
+  LONG_TEXT: 'lookup.fieldType.longText',
+  URL: 'lookup.fieldType.url',
+  NUMBER: 'lookup.fieldType.number',
+  RATING: 'lookup.fieldType.rating',
+  BOOLEAN: 'lookup.fieldType.boolean',
+  ON_OFF: 'lookup.fieldType.onOff',
+  DATE: 'lookup.fieldType.date',
+  SELECT: 'lookup.fieldType.select',
+  FILE: 'lookup.fieldType.file',
+  IMAGE: 'lookup.fieldType.image',
+};
 
 /** The translated name of a reserved built-in target, for a row that fills one. */
 function builtinLabel(t: TypedTranslator, target: BuiltinLookupTarget): string {
@@ -50,13 +73,13 @@ function targetLabel(t: TypedTranslator, name: string): string {
 function problemText(t: TypedTranslator, problem: LookupFillProblem): string {
   switch (problem.kind) {
     case 'NO_FIELD':
-      return t('lookup.review.problem.noField', { vars: { name: problem.wantedName } });
+      return t('lookup.review.problem.noField', { vars: { name: targetLabel(t, problem.wantedName) } });
     case 'TYPE_MISMATCH':
       return t('lookup.review.problem.typeMismatch', {
         vars: {
           name: targetLabel(t, problem.wantedName),
-          found: FIELD_TYPE_LABELS[problem.foundType],
-          wanted: FIELD_TYPE_LABELS[problem.wantedType],
+          found: t(FIELD_TYPE_MESSAGE[problem.foundType]),
+          wanted: t(FIELD_TYPE_MESSAGE[problem.wantedType]),
         },
       });
     case 'UNUSABLE_VALUE':
@@ -153,13 +176,7 @@ export function LookupReviewDialog({
             <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-warning [&_svg]:size-3.5">
               <WarningIcon aria-hidden />
               {t('lookup.review.conflicts')}
-              <Tooltip
-                content={t('lookup.review.conflictsHint')}
-                openDelayMs={INFO_OPEN_DELAY_MS}
-                className="ml-0.5 text-muted-foreground"
-              >
-                <InfoIcon aria-label={t('lookup.review.conflictsHintLabel')} />
-              </Tooltip>
+              <InfoHint content={t('lookup.review.conflictsHint')} className="ml-0.5" />
             </h4>
             <ul className="space-y-2 text-sm">
               {conflicts.map((proposal) => (

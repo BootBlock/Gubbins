@@ -138,9 +138,17 @@ export function bindLookupOutputs(
       continue;
     }
 
+    const field =
+      (mapped === undefined ? undefined : byId.get(mapped)) ??
+      byFoldedName.get(foldName(output.defaultTarget));
+
     // The provider's own default may address a built-in directly (`builtin:name`), in which case
-    // there is no name to match — unless the category has mapped that key elsewhere.
-    if (mapped === undefined && isBuiltinLookupTarget(output.defaultTarget)) {
+    // there is no field name to match. Tested *after* the map lookup, so an override still wins,
+    // but *before* the not-found report, so a map entry pointing at a field the category no longer
+    // has falls back to the built-in — the same fallback a name-targeted key gets. Without that
+    // ordering a stale map entry would permanently lose a target that cannot itself go missing,
+    // and report it as "there's no `builtin:name` field", which is not a sentence to show anyone.
+    if (field === undefined && isBuiltinLookupTarget(output.defaultTarget)) {
       bindings.push({
         outputKey: output.key,
         target: { kind: 'builtin', target: output.defaultTarget },
@@ -148,10 +156,6 @@ export function bindLookupOutputs(
       });
       continue;
     }
-
-    const field =
-      (mapped === undefined ? undefined : byId.get(mapped)) ??
-      byFoldedName.get(foldName(output.defaultTarget));
 
     if (field === undefined) {
       problems.push({

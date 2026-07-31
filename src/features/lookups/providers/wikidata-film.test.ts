@@ -235,6 +235,17 @@ describe('wikidata-film — parsing a detail response', () => {
     });
   });
 
+  it('never throws on a hostile binding row — a pure seam must return, not raise', () => {
+    // `bindings[0]` being `null` passes an `=== undefined` guard and then throws on the first
+    // property read, out of a function the descriptor promises is pure and never throws. Every
+    // other primitive is harmless (`(42).imdbId` is `undefined`), so `null` is the one hole.
+    for (const member of [null, 42, 'nope', []]) {
+      const body = JSON.stringify({ results: { bindings: [member] } });
+      expect(() => provider.parseDetailResponse(body), JSON.stringify(member)).not.toThrow();
+      expect(provider.parseDetailResponse(body).ok, JSON.stringify(member)).toBe(false);
+    }
+  });
+
   it('reports UNREADABLE for a body that is not a SPARQL result', () => {
     expect(provider.parseDetailResponse('not json')).toEqual({ ok: false, failure: { code: 'UNREADABLE' } });
     expect(provider.parseDetailResponse(JSON.stringify({ boom: true }))).toEqual({

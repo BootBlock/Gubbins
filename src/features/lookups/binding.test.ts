@@ -115,6 +115,15 @@ describe('bindLookupOutputs — the stored fieldMap override', () => {
     expect(bindings[0]!.target).toMatchObject({ kind: 'field', field: { id: 'f1' } });
   });
 
+  it('falls back to the built-in default when the mapped field no longer exists', () => {
+    // A built-in cannot go missing, so a stale map entry must not lose it. Without the fallback
+    // the key would look for a field literally named "builtin:name", find none, and report
+    // "there's no “builtin:name” field in this category" — a sentence with no meaning to a user.
+    const { bindings, problems } = bindLookupOutputs([OUTPUTS[0]!], [], { title: 'gone' });
+    expect(problems).toEqual([]);
+    expect(bindings[0]!.target).toEqual({ kind: 'builtin', target: 'builtin:name' });
+  });
+
   it('maps a key onto a built-in target', () => {
     const { bindings } = bindLookupOutputs([OUTPUTS[1]!], [], { director: 'builtin:description' });
     expect(bindings[0]!.target).toEqual({ kind: 'builtin', target: 'builtin:description' });

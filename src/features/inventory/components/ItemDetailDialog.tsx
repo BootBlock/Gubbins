@@ -34,7 +34,7 @@ import { KitEditor, LifecycleEditor, MaintenanceEditor } from '@/features/lifecy
 import { ActivityLog } from './ActivityLog';
 import { AttachmentManager } from './AttachmentManager';
 import { CapabilityEditor } from './CapabilityEditor';
-import { CategoryLookupPanel } from '@/features/lookups';
+import { CategoryLookupPanel, hasRunnableLookup } from '@/features/lookups';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
 import { AssetEditor } from './AssetEditor';
@@ -97,7 +97,19 @@ export function ItemDetailDialog({
   const hidesSomething = hidesAnyCapability(category?.hiddenCapabilities);
   const presence = useItemSectionPresence(item.id, hidesSomething);
 
-  const tabs = buildTabs(item, enabledFeatures, hiddenCapabilities, presence.data ?? NO_SECTION_PRESENCE);
+  // Whether this item's category offers a lookup this build can run (issue #616). The section is
+  // omitted entirely when it doesn't: `Section` draws its card — border, icon, title, help badge —
+  // before it reaches its children, so a panel that renders `null` would leave an empty card on
+  // every item rather than no card at all.
+  const offersLookup = hasRunnableLookup(category?.lookupSources);
+
+  const tabs = buildTabs(
+    item,
+    enabledFeatures,
+    hiddenCapabilities,
+    presence.data ?? NO_SECTION_PRESENCE,
+    offersLookup,
+  );
 
   // Collector-card rarity (Appearance flair): a decorative gem in the dialog's top-right for the
   // ~5% of items that are collectors. Gated to match the card frame — shown only when the
@@ -348,7 +360,8 @@ const SECTION_HINT_LOOKUP =
   'on your behalf.\n' +
   '- You then **review** every value before anything is written, and your own entries are never ' +
   'overwritten unless you tick them.\n\n' +
-  '> This only appears when the item’s category has a database attached to it.';
+  '> This section appears only for categories that have a database attached — set that up in the ' +
+  '**category editor**.';
 
 const SECTION_HINT_ACTIVITY =
   'A dated **history** of everything that’s happened to this item — moves, quantity changes, ' +
@@ -375,12 +388,19 @@ const SECTION_HINT_ACTIVITY =
  *
  * `presence` is the data-presence probe for the item, or {@link NO_SECTION_PRESENCE} while it
  * is still loading or when nothing is hidden and it was never asked for.
+ *
+ * `offersLookup` is the one gate that is not a capability: the "Fill from a database" section is
+ * omitted outright unless the item's category has a lookup provider this build can run. Every
+ * other section owns an editor that is useful empty, so it can render its card and let the editor
+ * say "nothing yet"; that one renders nothing at all, and an empty card promising a feature the
+ * category hasn't got would be worse than no card.
  */
 export function buildTabs(
   item: Item,
   enabled: ReadonlySet<FeatureId>,
   hidden: ReadonlySet<FeatureId> = EMPTY_HIDDEN,
   presence: ItemSectionPresence = NO_SECTION_PRESENCE,
+  offersLookup = false,
 ): readonly TabDef[] {
   // The variants block lives inside LifecycleEditor and is gated there by both axes, so the
   // section heading has to ask the same question rather than only the device's.
@@ -612,15 +632,19 @@ export function buildTabs(
         // Filling those fields from an open database (issue #616). Sits directly under them
         // because it answers the follow-up question — "do I have to type all this?" — and is gated
         // by `scraping` ("Product & supplier lookup"), the same capability the barcode and supplier
-        // lookups live under. The panel itself renders nothing unless the item's category actually
-        // has a provider attached, so the section is empty far more often than not.
-        {
-          title: 'Fill from a database',
-          icon: <DatabaseIcon />,
-          content: <CategoryLookupPanel item={item} />,
-          hint: SECTION_HINT_LOOKUP,
-          feature: 'scraping',
-        },
+        // lookups live under. Present only when the category actually offers a lookup: unlike every
+        // other section, this one has nothing to show without one.
+        ...(offersLookup
+          ? [
+              {
+                title: 'Fill from a database',
+                icon: <DatabaseIcon />,
+                content: <CategoryLookupPanel item={item} />,
+                hint: SECTION_HINT_LOOKUP,
+                feature: 'scraping' as const,
+              },
+            ]
+          : []),
       ],
     },
     {

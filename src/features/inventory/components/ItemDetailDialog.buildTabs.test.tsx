@@ -4,6 +4,9 @@ import { NO_SECTION_PRESENCE } from '@/db/repositories';
 import { ALL_FEATURE_IDS, type FeatureId } from '@/features/modules/feature-registry';
 import { buildTabs } from './ItemDetailDialog';
 
+/** The category hides nothing — the shape `buildTabs` defaults to, spelled out where it matters. */
+const NOTHING_HIDDEN: ReadonlySet<FeatureId> = new Set<FeatureId>();
+
 /**
  * Phase 6 — the item-detail tabs gate their capability sections by the enabled feature set.
  * `buildTabs` is a pure seam (it takes the resolved set, never a hook), so its gating is
@@ -79,12 +82,7 @@ describe('buildTabs — feature gating (Phase 6)', () => {
       'Maintenance',
     ]);
     expect(sectionTitles(tabs, 'kit')).toEqual(['Kit components']);
-    expect(sectionTitles(tabs, 'classification')).toEqual([
-      'Tags',
-      'Capabilities',
-      'Custom fields',
-      'Fill from a database',
-    ]);
+    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
     expect(sectionTitles(tabs, 'media')).toEqual(['Images', 'Datasheets']);
   });
 
@@ -116,28 +114,42 @@ describe('buildTabs — feature gating (Phase 6)', () => {
 
   it('drops Capabilities + Custom fields when custom-fields is off, keeping Tags', () => {
     const tabs = buildTabs(item, without('custom-fields'));
-    // "Fill from a database" survives: it is gated by `scraping`, not by `custom-fields`, and it
-    // can fill an item's built-in attributes as well as its category's fields.
-    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Fill from a database']);
+    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags']);
   });
 
   it('drops Tags + Datasheets when tags-attachments is off, keeping their tabs via core sections', () => {
     const tabs = buildTabs(item, without('tags-attachments'));
-    expect(sectionTitles(tabs, 'classification')).toEqual([
+    expect(sectionTitles(tabs, 'classification')).toEqual(['Capabilities', 'Custom fields']);
+    expect(sectionTitles(tabs, 'media')).toEqual(['Images']);
+  });
+
+  it('omits "Fill from a database" unless the category offers a lookup (issue #616)', () => {
+    // Every other section owns an editor that reads sensibly empty, so it can render its card and
+    // let the editor say "nothing yet". This one renders nothing at all when no provider is
+    // attached, and `Section` draws its card — border, icon, title, help badge — before it reaches
+    // its children. Emitting it unconditionally would put a permanently-empty card promising a
+    // feature the category hasn't got on the Classification tab of *every* item.
+    expect(sectionTitles(buildTabs(item, ALL), 'classification')).not.toContain('Fill from a database');
+    expect(
+      sectionTitles(buildTabs(item, ALL, NOTHING_HIDDEN, NO_SECTION_PRESENCE, false), 'classification'),
+    ).not.toContain('Fill from a database');
+  });
+
+  it('shows "Fill from a database" when the category does offer one, gated by scraping', () => {
+    const offered = buildTabs(item, ALL, NOTHING_HIDDEN, NO_SECTION_PRESENCE, true);
+    expect(sectionTitles(offered, 'classification')).toEqual([
+      'Tags',
       'Capabilities',
       'Custom fields',
       'Fill from a database',
     ]);
-    expect(sectionTitles(tabs, 'media')).toEqual(['Images']);
+    // Still a capability-gated section: switching the device's module off drops it again.
+    const scrapingOff = buildTabs(item, without('scraping'), NOTHING_HIDDEN, NO_SECTION_PRESENCE, true);
+    expect(sectionTitles(scrapingOff, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
   });
 
-  it('drops the "Fill from a database" section when scraping is off (issue #616)', () => {
-    const tabs = buildTabs(item, without('scraping'));
-    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
-  });
-
-  it('drops the Classification tab entirely once all three of its capabilities are off', () => {
-    const tabs = buildTabs(item, without('custom-fields', 'tags-attachments', 'scraping'));
+  it('drops the Classification tab entirely once both its capabilities are off', () => {
+    const tabs = buildTabs(item, without('custom-fields', 'tags-attachments'));
     expect(tabIds(tabs)).not.toContain('classification');
     // The dialog falls back to the first surviving tab — Details always leads and stays.
     expect(tabs[0]!.id).toBe('details');
@@ -145,7 +157,7 @@ describe('buildTabs — feature gating (Phase 6)', () => {
 
   it('never mutates the item it is given (gating hides UI, never touches stored data)', () => {
     const snapshot = structuredClone(item);
-    buildTabs(item, without('warranty', 'maintenance', 'custom-fields', 'tags-attachments', 'scraping'));
+    buildTabs(item, without('warranty', 'maintenance', 'custom-fields', 'tags-attachments'));
     expect(item).toEqual(snapshot);
   });
 });

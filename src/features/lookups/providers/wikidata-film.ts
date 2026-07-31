@@ -259,8 +259,14 @@ function parseDetailResponse(body: string): LookupResult<LookupValues> {
   if (!Array.isArray(bindings)) return { ok: false, failure: { code: 'UNREADABLE' } };
   // The query aggregates into exactly one row by construction, so a result with none means the
   // entity carried nothing at all — a legitimate "no data for this", not a malformed answer.
-  const row = bindings[0] as Readonly<Record<string, SparqlValue | undefined>> | undefined;
-  if (row === undefined) return { ok: false, failure: { code: 'NOT_FOUND' } };
+  // Checked for object-ness, not merely for presence: a `null` member would pass an
+  // `=== undefined` guard and then throw on the first property read, out of a seam the descriptor
+  // promises never throws. Every other primitive is harmless (`(42).imdbId` is `undefined`).
+  const first: unknown = bindings[0];
+  if (typeof first !== 'object' || first === null || Array.isArray(first)) {
+    return { ok: false, failure: { code: 'NOT_FOUND' } };
+  }
+  const row = first as Readonly<Record<string, SparqlValue | undefined>>;
 
   const imdbId = text(row.imdbId?.value);
   const values: LookupValues = {

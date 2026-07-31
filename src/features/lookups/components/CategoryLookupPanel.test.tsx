@@ -47,7 +47,10 @@ interface StubField {
   name: string;
   fieldType: string;
   options: string[] | null;
+  /** The *effective* value — stored, inherited, or the category default. */
   value: string | null;
+  /** True when {@link value} is the item's own, false when it is the category's default. */
+  hasStoredValue: boolean;
 }
 
 let featureOn = true;
@@ -118,7 +121,9 @@ const withProvider = () => [
 beforeEach(() => {
   featureOn = true;
   categoryRows = withProvider();
-  itemFields = [{ id: 'f-dir', name: 'Director', fieldType: 'TEXT', options: null, value: null }];
+  itemFields = [
+    { id: 'f-dir', name: 'Director', fieldType: 'TEXT', options: null, value: null, hasStoredValue: false },
+  ];
   bodies = [
     { match: 'wbsearchentities', body: SEARCH_BODY },
     { match: 'query.wikidata.org', body: detailBody() },
@@ -311,7 +316,14 @@ describe('CategoryLookupPanel — reviewing and applying', () => {
 
   it('withholds a conflicting value until that specific field is ticked', async () => {
     itemFields = [
-      { id: 'f-dir', name: 'Director', fieldType: 'TEXT', options: null, value: 'Denis Villeneuve' },
+      {
+        id: 'f-dir',
+        name: 'Director',
+        fieldType: 'TEXT',
+        options: null,
+        value: 'Denis Villeneuve',
+        hasStoredValue: true,
+      },
     ];
     await reachReview();
 
@@ -325,7 +337,9 @@ describe('CategoryLookupPanel — reviewing and applying', () => {
   it('offers no Apply when a category’s fields match nothing the source returned', async () => {
     // No field is named after any output key, and the item already carries the title, so there is
     // genuinely nothing to write — the dialog says so and refuses rather than writing an empty patch.
-    itemFields = [{ id: 'f-blurb', name: 'Blurb', fieldType: 'TEXT', options: null, value: null }];
+    itemFields = [
+      { id: 'f-blurb', name: 'Blurb', fieldType: 'TEXT', options: null, value: null, hasStoredValue: false },
+    ];
     await reachReview();
     expect(screen.getByTestId('lookup-review-apply')).toBeDisabled();
     // …and every unbindable key is named back to the user rather than dropped.
@@ -340,7 +354,7 @@ describe('CategoryLookupPanel — reviewing and applying', () => {
     ];
     await reachReview();
     expect(
-      screen.getByText(/“Release year” is a Text field, but this value is a Number/),
+      screen.getByText(/“Release year” is a text field, but this value is a number/),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('lookup-review-apply'));
     // The director still lands; one unusable key never blocks the rest.
@@ -361,6 +375,28 @@ describe('CategoryLookupPanel — reviewing and applying', () => {
         input: { name: 'Blade Runner: The Final Cut' },
       }),
     );
+  });
+
+  it('fills a field that is only showing its category default, rather than calling it a conflict', async () => {
+    // A resolved field's `value` is the *effective* one, so a category default arrives looking
+    // exactly like a value the user typed. Treating it as a conflict would break the dialog's own
+    // promise that "empty fields are filled automatically".
+    itemFields = [
+      {
+        id: 'f-dir',
+        name: 'Director',
+        fieldType: 'TEXT',
+        options: null,
+        value: 'Unknown',
+        hasStoredValue: false,
+      },
+    ];
+    await reachReview();
+    // No tick required — it is a FILL, so Apply is live immediately.
+    expect(screen.getByTestId('lookup-review-apply')).not.toBeDisabled();
+    expect(screen.queryByTestId('lookup-overwrite-director')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('lookup-review-apply'));
+    await waitFor(() => expect(setFieldValues).toHaveBeenCalledWith({ 'f-dir': 'Ridley Scott' }));
   });
 
   it('keeps the reviewed plan on screen when the write fails', async () => {
@@ -391,7 +427,16 @@ describe('CategoryLookupPanel — reviewing and applying', () => {
 
 describe('CategoryLookupPanel — the fieldMap override', () => {
   it('fills the mapped field rather than the one the provider names by default', async () => {
-    itemFields = [{ id: 'f-helm', name: 'Helmed by', fieldType: 'TEXT', options: null, value: null }];
+    itemFields = [
+      {
+        id: 'f-helm',
+        name: 'Helmed by',
+        fieldType: 'TEXT',
+        options: null,
+        value: null,
+        hasStoredValue: false,
+      },
+    ];
     categoryRows = [
       {
         id: 'cat-1',

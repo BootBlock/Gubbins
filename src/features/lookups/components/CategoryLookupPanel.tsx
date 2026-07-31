@@ -150,7 +150,7 @@ export function CategoryLookupPanel({
   const consentHosts = usePreferencesStore((s) => s.lookupConsentHosts);
   const setHostConsent = usePreferencesStore((s) => s.setLookupHostConsent);
   const { data: categories } = useCategories();
-  const { data: fields } = useItemFields(item.id);
+  const { data: fields, isLoading: fieldsLoading } = useItemFields(item.id);
   const setFieldValues = useSetItemFieldValues(item.id);
   const updateItem = useUpdateItem();
 
@@ -196,7 +196,14 @@ export function CategoryLookupPanel({
   }, [category, fields, item.name]);
 
   // Nothing to offer: render no control at all rather than a disabled one that can only fail.
-  if (!scrapingEnabled || item.categoryId === null || runnable.length === 0) return null;
+  //
+  // `fieldsLoading` is part of that test and not a nicety: the binding is resolved against the
+  // category's fields, so offering the button before they arrive would let a click capture a
+  // binding computed from an empty field list — and the review dialog would then report every one
+  // of the provider's keys as "there's no such field in this category".
+  if (!scrapingEnabled || item.categoryId === null || fieldsLoading || runnable.length === 0) {
+    return null;
+  }
 
   /**
    * The extension's privileged fetch, or undefined to fetch directly.
@@ -259,7 +266,13 @@ export function CategoryLookupPanel({
       return;
     }
     const plan = buildLookupFillPlan(lookup.binding.bindings, lookup.binding.problems, result.value, {
-      fieldValues: Object.fromEntries((fields ?? []).map((f) => [f.id, f.value])),
+      // A field's resolved `value` is its *effective* one — stored, inherited, or the category
+      // default — and only the first two are the user's. A field showing a category default is
+      // genuinely empty and should fill freely, so `hasStoredValue` decides: it is true for a
+      // stored literal *and* for a stored "inherit this from the location" intent (which must
+      // still be protected, since overwriting it silently converts the field to a literal), and
+      // false only when the value on screen is the category's own default.
+      fieldValues: Object.fromEntries((fields ?? []).map((f) => [f.id, f.hasStoredValue ? f.value : null])),
       builtins: { 'builtin:name': item.name, 'builtin:description': item.description },
     });
     setStage({ kind: 'reviewing', lookup, plan });
@@ -310,7 +323,7 @@ export function CategoryLookupPanel({
               <p className="text-sm text-muted-foreground">
                 {t('lookup.panel.description', { vars: { source: lookup.provider.sourceName } })}
               </p>
-              <Tooltip content={t('lookup.panel.tooltip')}>
+              <Tooltip content={t('lookup.panel.tooltip')} triggerTabIndex={-1}>
                 <Button
                   type="button"
                   variant="secondary"
