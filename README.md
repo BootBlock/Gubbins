@@ -264,7 +264,7 @@ version:
    - **Raw export** — export a `.sqlite` from **Cloud Sync & backups** and point the bridge at it.
 
 2. **Run the bridge** on a machine that can see that data and that Home Assistant can reach. From
-   a checkout of this repo (needs Node ≥ 24, or ≥ 22.16 LTS — but **not** any v23.x build; see
+   a checkout of this repo (needs Node ≥ 24, or ≥ 22.18 LTS — but **not** any v23.x build; see
    [Requirements](bridge/README.md#requirements) — or use the Docker image):
 
    ```sh
@@ -393,10 +393,12 @@ npm run test       # Vitest
 
 > **Node version:** the app's `engines` floor is **Node ≥ 24**. The app's `:memory:` test
 > driver and the companion bridge both use `node:sqlite`, and Gubbins' schema needs its FTS5
-> support — so the bridge accepts **Node ≥ 22.16** or **Node ≥ 24** (**not** any Node v23.x
-> build; FTS5 was never backported to that line). The bridge additionally runs TypeScript
-> directly via Node's built-in type-stripping. CI pins Node 25 for every job; use a recent
-> Node locally if you intend to run `npm run test`.
+> support — and the bridge additionally runs TypeScript directly via Node's built-in
+> type-stripping, which is unflagged only from **22.18**. So the bridge accepts
+> **Node ≥ 22.18** or **Node ≥ 24** (**not** any Node v23.x build; FTS5 was never backported
+> to that line), and checks that for itself on startup. CI pins Node 25 for every job apart
+> from one that boots the bridge on its declared floor; use a recent Node locally if you
+> intend to run `npm run test`.
 
 > **Cross-origin isolation:** the high-performance SQLite OPFS VFS requires `SharedArrayBuffer`, which the browser only permits under COOP/COEP. The dev server sets these headers directly; production (GitHub Pages) relies on the `coi-serviceworker` polyfill.
 

@@ -31,9 +31,14 @@
     "isolatedModules": true,
 
     // Type-check only; Node strips the types at runtime, so we never emit JS (see
-    // README.md -> Requirements for the real minimum Node version — not all of "23.6+"
-    // actually works, due to an FTS5 gap in the v23.x line).
+    // README.md -> Requirements for the real minimum Node version — the v23.x line is
+    // excluded outright by an FTS5 gap, however well it strips types).
     "noEmit": true,
+    // The `.mjs` bootstraps are part of the package, and `node-version.mjs` is imported by a
+    // test — without this its exports would be an implicit `any`. Left unchecked (`checkJs`
+    // off): their JSDoc is rich enough to type the seam, and turning full checking on would
+    // start policing hand-written bootstrap JS this project has never checked.
+    "allowJs": true,
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
@@ -46,6 +51,6 @@
   // Include the app's Vite env declaration so shared app modules that read `import.meta.env`
   // (e.g. the inventory OCR asset paths) type-check here too — the same reason the DOM/WebWorker
   // libs above are pulled in. The bridge never runs these code paths; this only types them.
-  "include": ["src/**/*.ts", "../src/vite-env.d.ts", "loader.mjs", "cli.mjs"],
+  "include": ["src/**/*.ts", "../src/vite-env.d.ts", "loader.mjs", "cli.mjs", "node-version.mjs"],
   "exclude": ["node_modules", "dist"]
 }

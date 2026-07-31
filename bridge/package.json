@@ -6,8 +6,9 @@
   "description": "Gubbins companion bridge — hydrates a gubbins-sync.json snapshot into a headless node:sqlite database and runs the app's own read-only search code. Optional, local-first, never part of the PWA / GitHub-Pages build.",
   "license": "MIT",
   "author": "Joe Cox <BootBlock@users.noreply.github.com>",
+  "//engines": "The floor at which the bridge is self-sufficient — no flags. v22.18.0 is where type-stripping stopped needing --experimental-strip-types, and the whole v23.x line is excluded because node:sqlite's FTS5 support was never backported to it. node-version.mjs enforces this at startup (a shade more permissively: it lets an older v22 through when the user supplies the flag), and a unit test keeps the two in step.",
   "engines": {
-    "node": ">=22.16.0 <23.0.0 || >=24.0.0"
+    "node": ">=22.18.0 <23.0.0 || >=24.0.0"
   },
   "scripts": {
     "cli": "node cli.mjs",
