@@ -65,8 +65,8 @@ const ROW_FIELD_CHIP_LIMIT = 5;
  * active scope as rows — each row the preset's name, description and a selection of the
  * custom fields it adds. On narrow screens the rail collapses to a horizontal chip row
  * above the list. Importing drives the ordinary create / add-field mutations; a preset
- * whose category already exists (case-insensitive) is marked "Added" and disabled, so
- * importing is idempotent and never makes a duplicate.
+ * whose category already exists (case-insensitive) — and whose fields have all landed —
+ * is marked "Added" and disabled, so importing is idempotent and never makes a duplicate.
  *
  * Search matches across the whole library ({@link categoryPresetMatches}), so typing
  * hops the scope to "All presets" and the rail shows live per-section match counts.
@@ -376,17 +376,25 @@ function PresetRows({
 }) {
   return (
     <ul className="space-y-2">
-      {presets.map((preset) => (
-        <li key={preset.id}>
-          <PresetRow
-            preset={preset}
-            added={hasCategoryNamed(existingNames, preset.name)}
-            importing={importingId === preset.id}
-            disabled={importingId !== null}
-            onImport={() => onImport(preset)}
-          />
-        </li>
-      ))}
+      {presets.map((preset) => {
+        const importing = importingId === preset.id;
+        return (
+          <li key={preset.id}>
+            <PresetRow
+              preset={preset}
+              // "Added" means the whole preset has landed, not merely that its category row
+              // exists: the seed writes the category first and then its fields one at a time,
+              // so `existingNames` carries the name while the fields are still being written.
+              // Holding the badge for the length of the import keeps the row's state honest —
+              // it reads "Adding…" until there is nothing left to add.
+              added={!importing && hasCategoryNamed(existingNames, preset.name)}
+              importing={importing}
+              disabled={importingId !== null}
+              onImport={() => onImport(preset)}
+            />
+          </li>
+        );
+      })}
     </ul>
   );
 }
