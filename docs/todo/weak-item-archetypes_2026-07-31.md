@@ -710,7 +710,9 @@ behaviour that does not exist.
 5. **A sale's COGS can leak a foreign currency** ([#687](https://github.com/BootBlock/Gubbins/issues/687)). The preferred-supplier subquery in
    `resolveOutboundDraw` ([item/stock.ts:422-423](../../src/db/repositories/item/stock.ts#L422-L423))
    has no `inBaseCurrencySql` guard, unlike every valuation read — so a ¥ supplier price can be
-   booked verbatim as base-currency cost.
+   booked verbatim as base-currency cost. ✅ **Fixed:** the guard and the preferred-supplier lookup
+   now live in one shared module (`db/repositories/supplier-cost-sql.ts`) that both the reports and
+   the sale path import, so a foreign price is declined on a sale exactly as it is in valuation.
 6. **Straight-line depreciation is orphaned, and the documentation says otherwise** ([#688](https://github.com/BootBlock/Gubbins/issues/688)). `currentValue()`
    ([asset-lifecycle.ts:120](../../src/features/inventory/asset-lifecycle.ts#L120)) has one
    production call site — the Asset editor. No report, export, card, bridge or schedule reads it:

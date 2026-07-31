@@ -24,6 +24,23 @@ So you can see which items are worth selling, and which barely cover their cost.
 > Margins are only as good as your **cost** figures. Keep [[unit costs|Items]] up to date (and
 > use [[supplier price history|Supplier-Parts-and-Price-History]]) so profit reflects reality.
 
+## Where the cost comes from
+
+The cost side of the margin is captured **at the moment you record the sale**, and it stays as it
+was — a later price edit never rewrites a sale you've already made. Gubbins takes the item's own
+**unit cost** if it has one, otherwise the **preferred supplier's** price.
+
+Two things follow from that:
+
+- **Set a unit cost before you sell.** An item with no cost of either kind sells for revenue with
+  no cost recorded, and the report says so: *"Margin excludes N sold units with no recorded cost."*
+- **A supplier price in another currency isn't used.** Gubbins holds no exchange rates and never
+  converts, so a part quoted in yen can't become a cost in pounds — the sale is counted as one of
+  those uncosted units instead of being booked at a wrong figure. The same rule applies to
+  [[valuation & spend|Valuation-and-Spend]] and the
+  [[insurance schedule|Insurance-and-Estate-Schedule]]. Give the item its own **unit cost**, in your
+  base currency, to have its sales counted in the margin.
+
 ## Related pages
 
 - **[[Sales & disposals|Sales-and-Disposals]]** — recording a sale.
