@@ -22,7 +22,7 @@ import { MoveIcon, PackageIcon } from '@/components/icons';
 import type { Item, ItemBatchPlacement } from '@/db/repositories';
 import { DbError } from '@/db/errors';
 import { isDefaultBatch } from '@/features/inventory/batches';
-import { useFeature } from '@/features/modules/useFeature';
+import { useItemSectionVisibility } from '@/features/inventory/useItemSectionVisibility';
 import { useLocations } from '@/features/inventory/queries';
 import { useFormatters } from '@/lib/useFormatters';
 import { useItemBatches, useItemStock, useTransferStock } from '../hooks';
@@ -61,7 +61,14 @@ export function StockBreakdown({ item }: { item: Item }) {
   // is the `batches` capability (modular-ui-plan §4, Phase 6). With it off, the per-location
   // stock breakdown and the transfer stay — only the lot-level facets disappear; a move
   // then simply uses the FEFO default. Stock and batch data underneath are untouched.
-  const batchesEnabled = useFeature('batches');
+  // Item-aware (issue #618): the item's category can also declare that its items are not
+  // batch-tracked. Any lot actually recorded still shows, so hiding never buries data —
+  // hence the presence test over the batches this item already has.
+  const isVisible = useItemSectionVisibility(item);
+  const batchesEnabled = isVisible(
+    'batches',
+    (batches ?? []).some((b) => !isDefaultBatch(b.batchKey)),
+  );
   const transfer = useTransferStock();
   const toast = useToast();
   const fmt = useFormatters();

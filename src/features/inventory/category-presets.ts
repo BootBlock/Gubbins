@@ -659,13 +659,19 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A signed piece is never serviced, carries no warranty, and doesn't expire or arrive in lots.
   {
     id: 'autograph',
     sectionId: 'collectibles',
     name: 'Autographs & signed memorabilia',
     description: 'Signed items — signer, authenticity and condition.',
     seed: {
-      category: { name: 'Autographs & signed memorabilia', glyph: '✍️', defaultTrackingMode: 'SERIALISED' },
+      category: {
+        name: 'Autographs & signed memorabilia',
+        glyph: '✍️',
+        defaultTrackingMode: 'SERIALISED',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Signed by', fieldType: 'TEXT' },
         { name: 'Item type', fieldType: 'TEXT' },
@@ -680,13 +686,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Cards are collected one by one — nothing to service, no warranty, no expiry, no lots.
   {
     id: 'baseball-card',
     sectionId: 'collectibles',
     name: 'Baseball cards',
     description: 'Sports cards — player, set, grade and rookie status.',
     seed: {
-      category: { name: 'Baseball cards', glyph: '⚾' },
+      category: {
+        name: 'Baseball cards',
+        glyph: '⚾',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Player', fieldType: 'TEXT' },
         { name: 'Set / year', fieldType: 'TEXT' },
@@ -719,13 +730,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A disc is never serviced, never expires, and isn't received in lots or built from parts.
   {
     id: 'blu-ray',
     sectionId: 'media',
     name: 'Blu-rays',
     description: 'Blu-ray discs — title, studio, region and format.',
     seed: {
-      category: { name: 'Blu-rays', glyph: '🎬' },
+      category: {
+        name: 'Blu-rays',
+        glyph: '🎬',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },
         { name: 'Director', fieldType: 'TEXT' },
@@ -740,13 +756,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Comics are collected individually — nothing to service, no warranty, no expiry, no lots.
   {
     id: 'comic-book',
     sectionId: 'collectibles',
     name: 'Comic books',
     description: 'Comics — title, issue, grade and key-issue status.',
     seed: {
-      category: { name: 'Comic books', glyph: '📚' },
+      category: {
+        name: 'Comic books',
+        glyph: '📚',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },
         { name: 'Publisher', fieldType: 'TEXT' },
@@ -778,13 +799,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A specimen is never serviced, carries no warranty, and doesn't expire or arrive in lots.
   {
     id: 'mineral-gemstone',
     sectionId: 'collectibles',
     name: 'Crystals, minerals & gemstones',
     description: 'Specimens — species, locality, weight and form.',
     seed: {
-      category: { name: 'Crystals, minerals & gemstones', glyph: '💎' },
+      category: {
+        name: 'Crystals, minerals & gemstones',
+        glyph: '💎',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Mineral / species', fieldType: 'TEXT' },
         { name: 'Origin / locality', fieldType: 'TEXT' },
@@ -799,13 +825,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Models are collected individually — nothing to service, no expiry, and no lots.
   {
     id: 'die-cast-car',
     sectionId: 'collectibles',
     name: 'Die-cast model cars',
     description: 'Die-cast vehicles — maker, scale and boxed condition.',
     seed: {
-      category: { name: 'Die-cast model cars', glyph: '🚗' },
+      category: {
+        name: 'Die-cast model cars',
+        glyph: '🚗',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Manufacturer', fieldType: 'TEXT' },
         { name: 'Model', fieldType: 'TEXT' },
@@ -820,13 +851,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A token has no physical stock — nothing to service or warranty, and nothing to expire or batch.
   {
     id: 'nft-digital-art',
     sectionId: 'collectibles',
     name: 'Digital & generative art (NFTs)',
     description: 'Tokenised art — artist, chain, token and marketplace.',
     seed: {
-      category: { name: 'Digital & generative art (NFTs)', glyph: '🖥️' },
+      category: {
+        name: 'Digital & generative art (NFTs)',
+        glyph: '🖥️',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Artist', fieldType: 'TEXT' },
         { name: 'Collection', fieldType: 'TEXT' },
@@ -842,13 +878,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A disc is never serviced, never expires, and isn't received in lots or built from parts.
   {
     id: 'dvd',
     sectionId: 'media',
     name: 'DVDs',
     description: 'DVD discs — title, studio and region.',
     seed: {
-      category: { name: 'DVDs', glyph: '📀' },
+      category: {
+        name: 'DVDs',
+        glyph: '📀',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },
         { name: 'Director', fieldType: 'TEXT' },
@@ -862,13 +903,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Pins are collected individually — nothing to service, no expiry, and no lots.
   {
     id: 'enamel-pin',
     sectionId: 'collectibles',
     name: 'Enamel pin badges',
     description: 'Pin badges — design, maker, type and edition.',
     seed: {
-      category: { name: 'Enamel pin badges', glyph: '📌' },
+      category: {
+        name: 'Enamel pin badges',
+        glyph: '📌',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Design / name', fieldType: 'TEXT' },
         { name: 'Maker', fieldType: 'TEXT' },
@@ -907,13 +953,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A specimen is never serviced, carries no warranty, and doesn't expire or arrive in lots.
   {
     id: 'fossil-meteorite',
     sectionId: 'collectibles',
     name: 'Fossils & meteorites',
     description: 'Natural specimens — type, locality, age and weight.',
     seed: {
-      category: { name: 'Fossils & meteorites', glyph: '🪨' },
+      category: {
+        name: 'Fossils & meteorites',
+        glyph: '🪨',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Type', fieldType: 'SELECT', options: ['Fossil', 'Meteorite', 'Tektite'] },
         { name: 'Species / classification', fieldType: 'TEXT' },
@@ -953,13 +1004,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Souvenir magnets are collected individually — nothing to service, no expiry, and no lots.
   {
     id: 'fridge-magnet',
     sectionId: 'collectibles',
     name: 'Fridge magnets',
     description: 'Souvenir magnets — theme, origin and material.',
     seed: {
-      category: { name: 'Fridge magnets', glyph: '🧲' },
+      category: {
+        name: 'Fridge magnets',
+        glyph: '🧲',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Theme / subject', fieldType: 'TEXT' },
         { name: 'Origin / place', fieldType: 'TEXT' },
@@ -976,13 +1032,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Figures are collected individually — nothing to service, no expiry, and no lots.
   {
     id: 'funko-pop',
     sectionId: 'collectibles',
     name: 'Funko Pop figures',
     description: 'Vinyl figures — character, number, exclusive and box.',
     seed: {
-      category: { name: 'Funko Pop figures', glyph: '🧸' },
+      category: {
+        name: 'Funko Pop figures',
+        glyph: '🧸',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Character', fieldType: 'TEXT' },
         { name: 'Series / franchise', fieldType: 'TEXT' },
@@ -1088,13 +1149,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Cards are collected one by one — nothing to service, no warranty, no expiry, no lots.
   {
     id: 'mtg-card',
     sectionId: 'collectibles',
     name: 'Magic: The Gathering cards',
     description: 'MTG cards — set, rarity, colour, foil and condition.',
     seed: {
-      category: { name: 'Magic: The Gathering cards', glyph: '🎴' },
+      category: {
+        name: 'Magic: The Gathering cards',
+        glyph: '🎴',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Card name', fieldType: 'TEXT' },
         { name: 'Set / expansion', fieldType: 'TEXT' },
@@ -1118,13 +1184,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Collected ephemera — nothing to service, no warranty, no expiry, and no lots or parts.
   {
     id: 'matchbook',
     sectionId: 'collectibles',
     name: 'Matchbooks & matchboxes',
     description: 'Phillumeny — advertiser, origin, type and completeness.',
     seed: {
-      category: { name: 'Matchbooks & matchboxes', glyph: '🔥' },
+      category: {
+        name: 'Matchbooks & matchboxes',
+        glyph: '🔥',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Brand / advertiser', fieldType: 'TEXT' },
         { name: 'Origin', fieldType: 'TEXT' },
@@ -1282,13 +1353,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Nobody services a postcard, a warranty on one is meaningless, and each is collected singly.
   {
     id: 'postcard',
     sectionId: 'collectibles',
     name: 'Postcards',
     description: 'Deltiology — subject, publisher, era and condition.',
     seed: {
-      category: { name: 'Postcards', glyph: '📮' },
+      category: {
+        name: 'Postcards',
+        glyph: '📮',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Subject / place', fieldType: 'TEXT' },
         { name: 'Publisher', fieldType: 'TEXT' },
@@ -1378,13 +1454,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Souvenir glasses are collected individually — nothing to service, no expiry, and no lots.
   {
     id: 'shot-glass',
     sectionId: 'collectibles',
     name: 'Shot glasses',
     description: 'Shot glasses — theme, material, design and condition.',
     seed: {
-      category: { name: 'Shot glasses', glyph: '🥃' },
+      category: {
+        name: 'Shot glasses',
+        glyph: '🥃',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Theme / origin', fieldType: 'TEXT' },
         {
@@ -1422,13 +1503,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Souvenir globes are collected individually — nothing to service, no expiry, and no lots.
   {
     id: 'snow-globe',
     sectionId: 'collectibles',
     name: 'Snow globes',
     description: 'Snow globes — theme, maker, musical and condition.',
     seed: {
-      category: { name: 'Snow globes', glyph: '❄️' },
+      category: {
+        name: 'Snow globes',
+        glyph: '❄️',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables'],
+      },
       fields: ordered([
         { name: 'Theme / origin', fieldType: 'TEXT' },
         { name: 'Maker', fieldType: 'TEXT' },
@@ -1441,13 +1527,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // Nobody services a stamp, a warranty on one is meaningless, and each is collected singly.
   {
     id: 'stamp',
     sectionId: 'collectibles',
     name: 'Stamps',
     description: 'Philately — country, denomination, catalogue and grade.',
     seed: {
-      category: { name: 'Stamps', glyph: '✉️' },
+      category: {
+        name: 'Stamps',
+        glyph: '✉️',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Country', fieldType: 'TEXT' },
         { name: 'Year', fieldType: 'NUMBER' },
@@ -1488,13 +1579,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A boxed game is never serviced, never expires, and isn't received in lots or built from parts.
   {
     id: 'video-game',
     sectionId: 'media',
     name: 'Video games (physical)',
     description: 'Physical games — platform, region and completeness.',
     seed: {
-      category: { name: 'Video games (physical)', glyph: '👾' },
+      category: {
+        name: 'Video games (physical)',
+        glyph: '👾',
+        hiddenCapabilities: ['maintenance', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },
         { name: 'Platform', fieldType: 'TEXT' },
@@ -1608,13 +1704,18 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  // A vintage poster has nothing to service, no warranty, no expiry, and no lots or parts.
   {
     id: 'movie-poster',
     sectionId: 'media',
     name: 'Vintage movie posters',
     description: 'Film posters — title, format, originality and condition.',
     seed: {
-      category: { name: 'Vintage movie posters', glyph: '🖼️' },
+      category: {
+        name: 'Vintage movie posters',
+        glyph: '🖼️',
+        hiddenCapabilities: ['maintenance', 'warranty', 'batches', 'perishables', 'kits'],
+      },
       fields: ordered([
         { name: 'Title', fieldType: 'TEXT' },
         { name: 'Year', fieldType: 'NUMBER' },

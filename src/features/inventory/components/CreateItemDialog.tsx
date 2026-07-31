@@ -52,6 +52,7 @@ import {
   type ScrapeResultPayload,
 } from '@/features/scraping';
 import { useCategories } from '../categories';
+import { useCategorySectionVisibility } from '../useItemSectionVisibility';
 import { ATTRITION_PERCENT_BOUNDS, isValidAttritionPercent } from '@/db/repositories/gauge';
 import {
   GAUGE_ATTRITION_HINT,
@@ -452,6 +453,15 @@ export function CreateItemDialog({
   // Soft, non-blocking heads-up when the chosen home is already at/over its capacity: the
   // add is still allowed (capacity is a guideline, not a hard cap), but the user is warned.
   const chosenLocationId = watch('locationId');
+  // The create form has always shown every lifecycle field regardless of the Modules
+  // screen, so warranty and batch boxes appeared even with those capabilities switched
+  // off. Gate them the same way the item detail dialog does — by the device's modules and
+  // by the chosen category (issue #618). A not-yet-created item holds nothing, so there is
+  // no existing data for hiding to bury.
+  const isVisible = useCategorySectionVisibility(watch('categoryId') || null);
+  const showExpiry = isVisible('perishables', false);
+  const showWarranty = isVisible('warranty', false);
+  const showBatches = isVisible('batches', false);
   const fullLocation = useMemo(() => {
     const loc = locations.find((l) => l.id === chosenLocationId);
     return loc && isLocationFull(loc.itemCount, loc.capacity) ? loc : null;
@@ -1317,16 +1327,18 @@ export function CreateItemDialog({
       >
         <Input type="date" data-testid="item-acquired" {...register('acquiredAt')} />
       </FormField>
-      <FormField
-        label="Expiry date (optional)"
-        hint={
-          'When this stock expires or is best used by. Items nearing expiry surface on the ' +
-          'dashboard **Soon to expire** widget so nothing quietly goes off.\n\nLeave blank for ' +
-          'non-perishables.'
-        }
-      >
-        <Input type="date" data-testid="item-expiry" {...register('expiryDate')} />
-      </FormField>
+      {showExpiry ? (
+        <FormField
+          label="Expiry date (optional)"
+          hint={
+            'When this stock expires or is best used by. Items nearing expiry surface on the ' +
+            'dashboard **Soon to expire** widget so nothing quietly goes off.\n\nLeave blank for ' +
+            'non-perishables.'
+          }
+        >
+          <Input type="date" data-testid="item-expiry" {...register('expiryDate')} />
+        </FormField>
+      ) : null}
       <Controller
         control={control}
         name="condition"
@@ -1350,47 +1362,53 @@ export function CreateItemDialog({
           />
         )}
       />
-      <FormField
-        label="Warranty (months, optional)"
-        hint={
-          'How long this item is under warranty, in **whole months**. On create this is turned ' +
-          'into a warranty **expiry date** measured from the *Acquired date* above (or today, if ' +
-          'that is blank) — so a *12* here on an item acquired today expires in a year.\n\n' +
-          'A category can pre-fill this for its items; leave blank for no warranty. You can set an ' +
-          'exact expiry date later from the item’s **Asset** details.'
-        }
-      >
-        <Input
-          type="number"
-          min={1}
-          step={1}
-          inputMode="numeric"
-          placeholder="e.g. 12"
-          data-testid="item-warranty-months"
-          {...register('warrantyMonths', {
-            // A manual edit disables the category-default soft prefill (backlog T2) from here on.
-            onChange: () => {
-              warrantyMonthsTouched.current = true;
-            },
-          })}
-        />
-      </FormField>
-      <FormField
-        label="Batch no. (optional)"
-        hint={
-          'A maker/supplier **batch** identifier for traceability.\n\n' +
-          '> Stock received under different batches is kept as separate lots and consumed ' +
-          '**oldest-first (FEFO)**.'
-        }
-      >
-        <Input placeholder="e.g. B-42" {...register('batchNumber')} />
-      </FormField>
-      <FormField
-        label="Lot no. (optional)"
-        hint="A finer **lot** identifier within a batch, when your supplier distinguishes the two. Optional — leave blank if you only track a batch."
-      >
-        <Input placeholder="e.g. L-7" {...register('lotNumber')} />
-      </FormField>
+      {showWarranty ? (
+        <FormField
+          label="Warranty (months, optional)"
+          hint={
+            'How long this item is under warranty, in **whole months**. On create this is turned ' +
+            'into a warranty **expiry date** measured from the *Acquired date* above (or today, if ' +
+            'that is blank) — so a *12* here on an item acquired today expires in a year.\n\n' +
+            'A category can pre-fill this for its items; leave blank for no warranty. You can set an ' +
+            'exact expiry date later from the item’s **Asset** details.'
+          }
+        >
+          <Input
+            type="number"
+            min={1}
+            step={1}
+            inputMode="numeric"
+            placeholder="e.g. 12"
+            data-testid="item-warranty-months"
+            {...register('warrantyMonths', {
+              // A manual edit disables the category-default soft prefill (backlog T2) from here on.
+              onChange: () => {
+                warrantyMonthsTouched.current = true;
+              },
+            })}
+          />
+        </FormField>
+      ) : null}
+      {showBatches ? (
+        <>
+          <FormField
+            label="Batch no. (optional)"
+            hint={
+              'A maker/supplier **batch** identifier for traceability.\n\n' +
+              '> Stock received under different batches is kept as separate lots and consumed ' +
+              '**oldest-first (FEFO)**.'
+            }
+          >
+            <Input placeholder="e.g. B-42" {...register('batchNumber')} />
+          </FormField>
+          <FormField
+            label="Lot no. (optional)"
+            hint="A finer **lot** identifier within a batch, when your supplier distinguishes the two. Optional — leave blank if you only track a batch."
+          >
+            <Input placeholder="e.g. L-7" {...register('lotNumber')} />
+          </FormField>
+        </>
+      ) : null}
     </div>
   );
 

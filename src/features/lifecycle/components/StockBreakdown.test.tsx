@@ -26,6 +26,12 @@ vi.mock('../hooks', () => ({
 vi.mock('@/features/inventory/queries', () => ({
   useLocations: () => ({ data: { rows: [{ id: 'loc-1', name: 'Shelf A' }] } }),
 }));
+// The batch gate is now item-aware (issue #618): it also consults the item's category, which is
+// read from the app-wide category list. This item has no category, so nothing is hidden by one
+// and the capability toggle below remains the only thing under test.
+vi.mock('@/features/inventory/categories', () => ({
+  useCategories: () => ({ data: { rows: [] } }),
+}));
 vi.mock('@/lib/useFormatters', () => ({
   useFormatters: () => ({ date: (n: number) => String(n), calendarDate: (n: number) => String(n) }),
 }));

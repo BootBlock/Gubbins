@@ -11,7 +11,7 @@ import { DueDateIcon, WarningIcon, AddIcon, PackageIcon, TruckIcon } from '@/com
 import type { Item } from '@/db/repositories';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
-import { useFeature } from '@/features/modules/useFeature';
+import { useItemSectionVisibility } from '@/features/inventory/useItemSectionVisibility';
 import { useUpdateItem } from '@/features/inventory/mutations';
 import { useFormatters } from '@/lib/useFormatters';
 import {
@@ -35,7 +35,13 @@ const EXPIRY_TONE: Record<ExpiryStatus, string> = {
 export function LifecycleEditor({ item }: { item: Item }) {
   const update = useUpdateItem();
   const fmt = useFormatters();
-  const variantsEnabled = useFeature('variants');
+  // Item-aware, not device-only: the item's category can also declare that its items have
+  // no expiry, no batch identity and no variants (issue #618). Each still shows when it
+  // actually holds something, so hiding never buries data.
+  const isVisible = useItemSectionVisibility(item);
+  const showVariants = isVisible('variants', item.hasVariants);
+  const showExpiry = isVisible('perishables', item.expiryDate !== null);
+  const showBatches = isVisible('batches', item.batchNumber !== null || item.lotNumber !== null);
   const [expiry, setExpiry] = useState(toDateInputValue(item.expiryDate));
   const [batch, setBatch] = useState(item.batchNumber ?? '');
   const [lot, setLot] = useState(item.lotNumber ?? '');
@@ -83,7 +89,7 @@ export function LifecycleEditor({ item }: { item: Item }) {
 
       <StockBreakdown item={item} />
 
-      {item.expiryDate !== null ? (
+      {showExpiry && item.expiryDate !== null ? (
         <p
           className={cn('flex items-center gap-1.5 text-sm font-medium [&_svg]:size-4', EXPIRY_TONE[status])}
         >
@@ -95,20 +101,22 @@ export function LifecycleEditor({ item }: { item: Item }) {
       ) : null}
 
       <div className="grid grid-cols-2 gap-3">
-        <LField
-          label="Expiry date"
-          hint={
-            'When this stock expires or is best used by. Items nearing expiry surface on the ' +
-            'dashboard **Soon to expire** widget. Changing it re-evaluates the expiry status shown above.'
-          }
-        >
-          <Input
-            type="date"
-            data-testid="detail-expiry"
-            value={expiry}
-            onChange={(e) => setExpiry(e.target.value)}
-          />
-        </LField>
+        {showExpiry ? (
+          <LField
+            label="Expiry date"
+            hint={
+              'When this stock expires or is best used by. Items nearing expiry surface on the ' +
+              'dashboard **Soon to expire** widget. Changing it re-evaluates the expiry status shown above.'
+            }
+          >
+            <Input
+              type="date"
+              data-testid="detail-expiry"
+              value={expiry}
+              onChange={(e) => setExpiry(e.target.value)}
+            />
+          </LField>
+        ) : null}
         {/* A custom listbox (not a native <select>) so each condition can be tinted by its
             severity — green Mint through to red Needs-repair. A role=combobox isn't a
             labelable control, so it is named via a sibling label span, matching LField. */}
@@ -134,18 +142,22 @@ export function LifecycleEditor({ item }: { item: Item }) {
             options={conditionSelectOptions('— Untracked —')}
           />
         </div>
-        <LField
-          label="Batch no."
-          hint="A maker/supplier **batch** identifier for traceability. Stock from different batches is kept as separate lots and consumed **oldest-first (FEFO)**."
-        >
-          <Input value={batch} onChange={(e) => setBatch(e.target.value)} placeholder="—" />
-        </LField>
-        <LField
-          label="Lot no."
-          hint="A finer **lot** identifier within a batch, when your supplier distinguishes the two."
-        >
-          <Input value={lot} onChange={(e) => setLot(e.target.value)} placeholder="—" />
-        </LField>
+        {showBatches ? (
+          <>
+            <LField
+              label="Batch no."
+              hint="A maker/supplier **batch** identifier for traceability. Stock from different batches is kept as separate lots and consumed **oldest-first (FEFO)**."
+            >
+              <Input value={batch} onChange={(e) => setBatch(e.target.value)} placeholder="—" />
+            </LField>
+            <LField
+              label="Lot no."
+              hint="A finer **lot** identifier within a batch, when your supplier distinguishes the two."
+            >
+              <Input value={lot} onChange={(e) => setLot(e.target.value)} placeholder="—" />
+            </LField>
+          </>
+        ) : null}
       </div>
       <div className="flex justify-end">
         <Button size="sm" onClick={save} disabled={update.isPending} data-testid="save-lifecycle">
@@ -153,7 +165,7 @@ export function LifecycleEditor({ item }: { item: Item }) {
         </Button>
       </div>
 
-      {variantsEnabled ? <VariantsSection item={item} /> : null}
+      {showVariants ? <VariantsSection item={item} /> : null}
     </div>
   );
 }
