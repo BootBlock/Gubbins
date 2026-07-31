@@ -624,8 +624,9 @@ editor, the category manager, the CSV export's column order, the bridge's `field
 the lookup panel's bindings all inherit one canonical order and cannot drift apart. The pure
 `field-def-prominence.ts` seam owns the vocabulary (the SQL interpolates its `KEY_FIELD_PROMINENCE`
 token, so the two cannot disagree about which string means "leads") and mirrors the ordering as a
-**stable partition** for the client side; a repository test asserts the two agree on the same
-fixture. Note what this made unnecessary: **no render surface changed at all.**
+**stable partition** — not as a second live ordering path (no render surface re-sorts) but as an
+independently-written counterpart that keeps `fieldsForCategory`'s documented contract honest, and
+that a repository test compares against a real read so the two cannot quietly disagree. Note what this made unnecessary: **no render surface changed at all.**
 
 `listAllFields` is the deliberate exception. It is a *catalog grouped by category*, not a rendered
 set — the card-field picker labels its rows "name · category" on the strength of that grouping — so

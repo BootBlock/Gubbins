@@ -120,7 +120,12 @@ export function isKeyField(value: string | null | undefined): boolean {
  * absence of a preference, and storing two spellings of it would make an LWW merge see an edit
  * where the user changed nothing. An unrecognised mode is *not* rejected — the column keeps
  * whatever a newer peer wrote, and {@link toFieldDefProminence} decides what this build renders.
- * This mirrors the category axis's `serialiseFieldProminence` exactly.
+ *
+ * The body is identical to the category axis's private `serialiseFieldProminence` in
+ * `CategoryRepository`, and the two are deliberately **not** shared. They canonicalise different
+ * columns holding different vocabularies that happen to agree on the `'default'` sentinel today;
+ * folding them together would mean a change to either axis's vocabulary silently altering the
+ * other's storage — the precise coupling this pair of settings exists to avoid.
  */
 export function serialiseFieldDefProminence(mode: string | null | undefined): string | null {
   if (mode == null) return null;
@@ -143,8 +148,13 @@ interface Rankable {
  * `category_fields.position` instead of overruling it.
  *
  * Returns the **same reference** when no field is key, so the overwhelmingly common case
- * allocates nothing and a memoised consumer sees a stable identity. This mirrors the SQL
- * `ORDER BY` that ranks the same fields in the repository; a test asserts the two agree.
+ * allocates nothing and a memoised consumer sees a stable identity.
+ *
+ * Note what this is *not*: no render surface re-sorts, because every rendered field set already
+ * arrives ranked from the SQL `ORDER BY`. This is the independently-written counterpart to that
+ * `ORDER BY`, which keeps {@link ../custom-fields.ts}'s `fieldsForCategory` honest about the
+ * ordering its contract promises to mirror — and which a repository test compares against a real
+ * read, so the two implementations cannot quietly disagree.
  */
 export function orderByFieldProminence<T extends Rankable>(fields: readonly T[]): readonly T[] {
   const leading: T[] = [];

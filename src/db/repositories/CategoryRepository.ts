@@ -110,8 +110,9 @@ const CATEGORY_FIELD_COLUMNS = `
  * Expressed in SQL rather than left to each caller so that one read produces the canonical order
  * for every consumer at once — the item editor, the category manager, the CSV export's column
  * order, the bridge's `fieldValues` array and the lookup panel's bindings all inherit it without
- * re-sorting, and therefore cannot drift apart. The pure `orderByFieldProminence` seam mirrors it
- * for the client side; a test asserts the two agree.
+ * re-sorting, and therefore cannot drift apart — no render surface applies a rank of its own. The
+ * pure `orderByFieldProminence` seam is the independently-written counterpart to this term rather
+ * than a second live ordering path; a test compares the two against one real read.
  *
  * The comparison is against {@link KEY_FIELD_PROMINENCE} verbatim, which makes it the exact SQL
  * counterpart of `toFieldDefProminence`: any other string — including one a peer on a newer
