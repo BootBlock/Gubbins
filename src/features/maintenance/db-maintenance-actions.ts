@@ -29,12 +29,12 @@
  *    aggregates still agree: `items.quantity` = `SUM(item_stock)` = `SUM(stock_batches)`
  *    per placement. Read-only — it reports drift, it never rewrites a total.
  *  - **Find missing image files** ({@link findMissingImageFiles}) is the inverse of the
- *    orphan sweep: `item_images` rows (not downgraded) whose OPFS file is absent on this
+ *    orphan sweep: photo rows (not downgraded) whose OPFS file is absent on this
  *    device. Read-only and non-destructive — a missing file is often a peer's photo not
  *    yet downloaded, never something to delete.
  *  - **Remove orphaned image files** ({@link sweepOrphanImages}) is the one true orphan
  *    class foreign keys cannot manage: raw OPFS `images/<uuid>.webp` files that no
- *    `item_images` row points at, left behind if a database write failed *after* the
+ *    photo row points at, left behind if a database write failed *after* the
  *    file landed (the media pipeline flags exactly this). It only ever deletes a file
  *    with **no** owning row; it never touches a row whose file is merely absent (that is
  *    a valid image synced from another device but not yet downloaded).
@@ -432,7 +432,11 @@ export interface DatabaseStats {
   readonly tables: readonly TableRowCount[];
   /** Sum of every user table's rows. */
   readonly totalRows: number;
-  /** `item_images` row count and the real OPFS bytes their full-res files occupy. */
+  /**
+   * How many photos exist across **every** image-owning table
+   * ({@link IMAGE_OWNING_TABLES}), so this counts the same set {@link imageBytes}
+   * measures — item photos *and* location photos both live in the one OPFS directory.
+   */
   readonly imageCount: number;
   /** Measured OPFS image bytes, or an estimate when OPFS cannot be measured. */
   readonly imageBytes: number;
@@ -447,6 +451,20 @@ export interface DatabaseStats {
 function isReportableTable(name: string): boolean {
   return !name.startsWith('sqlite_') && !name.includes('items_fts');
 }
+
+/**
+ * Every table whose rows own a full-res OPFS image file.
+ *
+ * Item photos and location photos share the one flat `images/` directory (see
+ * {@link sweepOrphanImages}), so any *count* reported beside a measurement of that
+ * directory has to span the same set — counting only `item_images` puts a small number
+ * next to a large size, and makes the fallback estimate treat location photos as
+ * weightless. It is also what `estimateTableBytes`'s `photos` input already asks for
+ * ("photo rows across every table that anchors an OPFS image"), and what Storage Triage
+ * counts. Any future image-owning table must be added here, and to the reference queries
+ * in {@link sweepOrphanImages} and {@link findMissingImageFiles}.
+ */
+const IMAGE_OWNING_TABLES: readonly string[] = ['item_images', 'location_photos'];
 
 /**
  * Gather a read-only snapshot of the database: file size, free space, per-table row
@@ -477,13 +495,15 @@ export async function gatherDatabaseStats(ports: MaintenancePorts): Promise<Data
     const row = await db.queryOne<{ n: number }>(`SELECT COUNT(*) AS n FROM "${table}";`);
     const rows = Number(row?.n ?? 0);
     totalRows += rows;
-    if (table === 'item_images') imageCount = rows;
+    if (IMAGE_OWNING_TABLES.includes(table)) imageCount += rows;
     if (rows > 0) tables.push({ table, rows });
   }
   tables.sort((a, b) => b.rows - a.rows || a.table.localeCompare(b.table));
 
   // Prefer the true OPFS bytes; fall back to the §7.6.2 row-count heuristic when OPFS
-  // cannot be measured (e.g. a browser without the async-iterable directory handle).
+  // cannot be measured (e.g. a browser without the async-iterable directory handle). The
+  // heuristic reads `imageCount`, so it only estimates every photo's bytes because that
+  // count spans every image-owning table.
   const measured = await ports.imagesBytesOnDisk();
   const imageBytesMeasured = measured !== null;
   const imageBytes =
