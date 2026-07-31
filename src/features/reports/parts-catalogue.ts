@@ -382,8 +382,20 @@ export interface CatalogueLine {
   readonly description: string | null;
   /** Primary thumbnail bytes for the optional Photo column, or null. */
   readonly thumbnail: Uint8Array | null;
+  /**
+   * The amount on hand — a count for most items, a gauge's contents for a gauge (issue #683).
+   * Rendered with {@link CatalogueLine.unitOfMeasure} beside it, so "400 g" and "3" are both
+   * unambiguous on the page.
+   */
   readonly quantity: number;
   readonly unitOfMeasure: string | null;
+  /**
+   * Whether {@link CatalogueLine.quantity} is a **measure** rather than a count — true only for
+   * a gauge. The "in stock" totals skip these lines: grams and millilitres are not a count, and
+   * adding them to one would make the figure a number of nothing (the same refusal the
+   * valuation report's unit total makes).
+   */
+  readonly measured: boolean;
   readonly condition: Condition | null;
   readonly serialNo: number | null;
   readonly mpn: string | null;
@@ -458,6 +470,7 @@ function toLine(item: CatalogueItemInput, now: number): CatalogueLine {
     thumbnail: item.thumbnail,
     quantity: qty,
     unitOfMeasure: item.unitOfMeasure,
+    measured: item.gauge != null,
     condition: item.condition,
     serialNo: item.serialNo,
     mpn: item.mpn,
@@ -514,7 +527,9 @@ function makeGroup(
 ): CatalogueGroup {
   const sorted = [...lines].sort(compare);
   const subtotal = sorted.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
-  const totalQuantity = sorted.reduce((sum, l) => sum + Math.max(0, l.quantity), 0);
+  // Measured lines are deliberately excluded: a group's "in stock" figure is a count of units,
+  // and a gauge holds grams or millilitres (issue #683).
+  const totalQuantity = sorted.reduce((sum, l) => sum + (l.measured ? 0 : Math.max(0, l.quantity)), 0);
   return { groupId, groupLabel, depth, lines: sorted, subtotal, totalQuantity };
 }
 

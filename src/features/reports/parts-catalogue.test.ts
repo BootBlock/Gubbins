@@ -104,6 +104,10 @@ describe('buildPartsCatalogue', () => {
     expect(line.unitCost).toBe(0.025);
     expect(line.lineValue).toBe(10);
     expect(catalogue.grandTotal).toBe(10);
+    // …but 400 grams is not 400 units: the "in stock" count must not absorb a measure.
+    expect(line.measured).toBe(true);
+    expect(catalogue.totalQuantity).toBe(0);
+    expect(catalogue.groups[0]!.totalQuantity).toBe(0);
   });
 
   it('reads an unpriced gauge as unpriced, never as a line worth zero', () => {
