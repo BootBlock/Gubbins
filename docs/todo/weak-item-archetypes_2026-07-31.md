@@ -349,9 +349,12 @@ does not make the app track anything better. None started.
 ## 5. Defects found while surveying
 
 These are not archetype gaps — they are existing behaviour that looks wrong, found incidentally.
-Recorded here so they are not lost; each wants its own issue.
+**All six are now filed as [#683](https://github.com/BootBlock/Gubbins/issues/683)–[#688](https://github.com/BootBlock/Gubbins/issues/688)**;
+each issue carries the full evidence, so treat those as the live record and this section as the
+summary of how they were found. Three of the six are documentation drift, where the wiki promises
+behaviour that does not exist.
 
-1. **Every `CONSUMABLE_GAUGE` item is valued at zero.** Valuation is `MAX(i.quantity, 0) ×
+1. **Every `CONSUMABLE_GAUGE` item is valued at zero** ([#683](https://github.com/BootBlock/Gubbins/issues/683)). Valuation is `MAX(i.quantity, 0) ×
    unit_value` ([ReportRepository.ts:404-413](../../src/db/repositories/ReportRepository.ts#L404-L413)),
    and a gauge's `quantity` is pinned at 0 by design, while `valuableItemFilter` does **not** exclude
    gauges. `current_net_value` appears in no valuation SQL. So a full argon cylinder contributes £0
@@ -370,19 +373,19 @@ Recorded here so they are not lost; each wants its own issue.
    offering Unit cost on every tracking mode with the help text that it "drives inventory
    valuation". Contrast the foreign-currency case, which is handled honestly: excluded stock is
    counted and surfaced by a notice rather than silently dropped.
-2. **Batch expiry never raises an alert** — §3.8 above. The stock-recompute triggers propagate
+2. **Batch expiry never raises an alert** ([#684](https://github.com/BootBlock/Gubbins/issues/684)) — §3.8 above. The stock-recompute triggers propagate
    quantity only, so nothing lifts a lot's expiry to the item. **The wiki asserts the opposite**
    under a section headed "Batches and expiry alerts": "Batch expiry dates feed the expiry tracking
    and the Alerts / Upcoming feeds, so a batch approaching its date surfaces before it lapses"
    ([Batches-and-Lots.md](../wiki/Batches-and-Lots.md)) — a second, user-facing defect alongside the
    behavioural one.
-3. **Consumption rate sums incommensurable units** into one `totalConsumed` scalar — grams,
+3. **Consumption rate sums incommensurable units** ([#685](https://github.com/BootBlock/Gubbins/issues/685)) into one `totalConsumed` scalar — grams,
    millilitres and screws added together
    ([ReportRepository.ts:869-879](../../src/db/repositories/ReportRepository.ts#L869-L879)). There
    is no `GROUP BY` and no join to `items`, so the mixed figure is the *entire* report: it is
    rendered on the Reports screen as both a daily rate and a total, and exported to CSV, with no
    unit and no qualifier.
-4. **Clearing an item's activity log can report it as dead stock the next day.** Dead-stock idle
+4. **Clearing an item's activity log can report it as dead stock the next day** ([#686](https://github.com/BootBlock/Gubbins/issues/686)). Dead-stock idle
    days derive from `MAX(item_history.created_at)` over rows carrying a delta
    ([ReportRepository.ts:1059-1061](../../src/db/repositories/ReportRepository.ts#L1059-L1061)),
    falling back to `items.created_at` when there is none
@@ -392,11 +395,11 @@ Recorded here so they are not lost; each wants its own issue.
    satisfy that predicate — a just-moved item falls back to its creation date and is judged stale.
    Note the direction: this is a false *positive*, the safe way round. Bulk `pruneHistoryBefore`
    deletes an older prefix (`created_at < cutoff`) and so cannot lower the `MAX` at all.
-5. **A sale's COGS can leak a foreign currency.** The preferred-supplier subquery in
+5. **A sale's COGS can leak a foreign currency** ([#687](https://github.com/BootBlock/Gubbins/issues/687)). The preferred-supplier subquery in
    `resolveOutboundDraw` ([item/stock.ts:422-423](../../src/db/repositories/item/stock.ts#L422-L423))
    has no `inBaseCurrencySql` guard, unlike every valuation read — so a ¥ supplier price can be
    booked verbatim as base-currency cost.
-6. **Straight-line depreciation is orphaned, and the documentation says otherwise.** `currentValue()`
+6. **Straight-line depreciation is orphaned, and the documentation says otherwise** ([#688](https://github.com/BootBlock/Gubbins/issues/688)). `currentValue()`
    ([asset-lifecycle.ts:120](../../src/features/inventory/asset-lifecycle.ts#L120)) has one
    production call site — the Asset editor. No report, export, card, bridge or schedule reads it:
    valuation resolves `unitCost` then the preferred supplier cost and nothing else
