@@ -214,6 +214,7 @@ describe('CategoryManagerDialog — the add-field form assembles the input', () 
             unit: null,
             minValue: null,
             maxValue: null,
+            precision: null,
             prominence: null,
           },
         },
@@ -1261,6 +1262,145 @@ describe('CategoryManagerDialog — a number field’s unit and range (W1b/W1c)'
         expect.objectContaining({
           input: expect.objectContaining({ unit: null, minValue: null, maxValue: null }),
         }),
+        expect.anything(),
+      ),
+    );
+  });
+});
+
+describe('CategoryManagerDialog — a number field’s decimal places (W1e)', () => {
+  it('offers the box on a NUMBER field only', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'TEXT' })];
+    const view = renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.queryByTestId('field-precision-f-1')).toBeNull();
+
+    h.fields = [field({ fieldType: 'NUMBER' })];
+    view.rerender(<CategoryManagerDialog open onClose={onClose} />);
+    expect(screen.getByTestId('field-precision-f-1')).toBeInTheDocument();
+  });
+
+  it('seeds the box from the stored definition, including a precision of 0', () => {
+    // `0` is "whole numbers only". Seeded through a truthiness test it would show an empty box —
+    // i.e. "as entered", the opposite of what the definition says.
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', precision: 0 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByTestId('field-precision-f-1')).toHaveValue('0');
+  });
+
+  it('saves a typed precision on blur, not per keystroke', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', precision: null })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const box = screen.getByTestId('field-precision-f-1');
+    fireEvent.change(box, { target: { value: '2' } });
+    expect(h.updateField).not.toHaveBeenCalled();
+
+    fireEvent.blur(box);
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { precision: 2 } },
+      expect.anything(),
+    );
+  });
+
+  it('clears the precision when the box is emptied — blank is “as entered”', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', precision: 2 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const box = screen.getByTestId('field-precision-f-1');
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.blur(box);
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { precision: null } },
+      expect.anything(),
+    );
+  });
+
+  it('clamps a pasted out-of-range precision rather than sending one the write seam refuses', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', precision: null })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const box = screen.getByTestId('field-precision-f-1');
+    fireEvent.change(box, { target: { value: '99' } });
+    fireEvent.blur(box);
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { precision: 6 } },
+      expect.anything(),
+    );
+    // …and the box shows what was stored, not what was typed.
+    expect(box).toHaveValue('6');
+  });
+
+  it('reverts an un-parseable precision instead of clearing the stored one', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', precision: 3 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const box = screen.getByTestId('field-precision-f-1');
+    fireEvent.change(box, { target: { value: 'x' } });
+    fireEvent.blur(box);
+    expect(h.updateField).not.toHaveBeenCalled();
+    expect(box).toHaveValue('3');
+  });
+
+  it('does not write when the blurred precision is unchanged', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', precision: 0 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.blur(screen.getByTestId('field-precision-f-1'));
+    expect(h.updateField).not.toHaveBeenCalled();
+  });
+
+  it('sends the add form’s precision, including 0, only for a NUMBER field', async () => {
+    h.categoryRows = [category()];
+    h.fields = [];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Number' }));
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Shelves' } });
+    fireEvent.change(screen.getByTestId('add-field-precision'), { target: { value: '0' } });
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ precision: 0 }) }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('retracts a typed precision when the type moves off Number', async () => {
+    h.categoryRows = [category()];
+    h.fields = [];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Number' }));
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Shelves' } });
+    fireEvent.change(screen.getByTestId('add-field-precision'), { target: { value: '0' } });
+
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Text' }));
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ precision: null }) }),
         expect.anything(),
       ),
     );

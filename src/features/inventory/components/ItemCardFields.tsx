@@ -1,7 +1,9 @@
 import { Fragment } from 'react';
 import { cn } from '@/lib/utils';
+import { assertExhaustive } from '@/lib/exhaustive';
 import { Money } from '@/components/foundry';
-import { TagIcon } from '@/components/icons';
+import { LinkIcon, LocalFileIcon, TagIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import type { ResolvedCardField } from '../card-fields';
 import { CONDITION_COLOR_CLASS, CONDITION_LABELS } from './inventory-ui';
 
@@ -15,6 +17,19 @@ import { CONDITION_COLOR_CLASS, CONDITION_LABELS } from './inventory-ui';
  * configuration), and a compact inline summary for the dense Data row (single truncated line,
  * empties omitted).
  */
+
+/**
+ * The box shared by the two icon-and-value arms (`link`, `pointer`).
+ *
+ * `max-w-full` is load-bearing, not belt-and-braces. Every other arm is a plain inline `<span>`,
+ * so the parent's own `truncate` ellipsises it; these two are `inline-flex`, an *atomic* inline
+ * whose shrink-to-fit width floors at its min-content width and which `text-overflow` cannot
+ * ellipsise. Three of the four surfaces hide that, because there the box is a flex *item* and
+ * shrinks anyway — but the table cell (`ItemTable`) is a block, where an uncapped box lays out
+ * at the full width of the address and is hard-clipped mid-character with no ellipsis. Capping
+ * it at the cell hands the truncation back to the inner span, which can do it.
+ */
+const VALUE_BOX = 'inline-flex min-w-0 max-w-full items-baseline gap-1';
 
 /** One resolved value as JSX. `location` is tinted with its swatch class when provided. */
 export function FieldValue({
@@ -33,6 +48,7 @@ export function FieldValue({
    */
   wrap?: boolean;
 }) {
+  const t = useT();
   const value = field.value;
   switch (value.kind) {
     case 'money':
@@ -74,6 +90,46 @@ export function FieldValue({
           <span className="text-muted-foreground"> {value.unit}</span>
         </span>
       );
+    case 'link':
+      // An openable `URL`/`FILE` value (W1f) — the smallest form of "a custom field you can act
+      // on". `target="_blank"` + `rel="noopener noreferrer"` matches the datasheet list, and the
+      // card/row/table bodies already ignore a click whose origin is an `<a>`
+      // (`isInteractiveDragOrigin`), so following the link never doubles as the card's own
+      // click-action or the start of a drag. `title` reveals an address the card truncates.
+      return (
+        <a
+          href={value.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={value.href}
+          className={cn(VALUE_BOX, 'text-primary hover:underline')}
+        >
+          <span aria-hidden className="shrink-0 self-center [&_svg]:size-3.5">
+            <LinkIcon />
+          </span>
+          {/* `min-w-0` so the address can be narrower than its own min-content width: without it
+              a flex item never shrinks below an unbreakable URL, and `break-words` gets no line
+              box narrow enough to break in. (`truncate`'s own `overflow: hidden` implies it.) */}
+          <span className={cn('min-w-0', wrap ? 'break-words' : 'truncate')}>{value.href}</span>
+          {/* The link's accessible name is the address itself; this appends the standard
+              new-tab warning, which AT users otherwise meet only after following it. */}
+          <span className="sr-only"> {t('inventory.field.link.newTab')}</span>
+        </a>
+      );
+    case 'pointer':
+      // A `FILE` value that is a path rather than a web address (W1f). Deliberately *not* an
+      // anchor: a browser cannot navigate an http(s) page to `file://` or `\\server\share`, so
+      // a link here would look live and do nothing. The icon says "file pointer" to sighted
+      // users and the sr-only label says it to AT — see the wiki for the whole story.
+      return (
+        <span title={value.text} className={VALUE_BOX}>
+          <span aria-hidden className="shrink-0 self-center text-muted-foreground [&_svg]:size-3.5">
+            <LocalFileIcon />
+          </span>
+          <span className="sr-only">{t('inventory.field.filePointer.label')} </span>
+          <span className={cn('min-w-0', wrap ? 'break-words' : 'truncate')}>{value.text}</span>
+        </span>
+      );
     case 'text':
       return (
         <span
@@ -87,6 +143,13 @@ export function FieldValue({
           {value.text}
         </span>
       );
+    default:
+      // A component has no declared return type to make the switch exhaustive on its own
+      // (issue #355), so the guard is explicit: adding a `CardFieldValue` arm without a case
+      // here stops compiling instead of silently rendering nothing. Out-of-band values still
+      // degrade rather than crash.
+      assertExhaustive(value);
+      return null;
   }
 }
 

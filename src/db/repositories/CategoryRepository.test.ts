@@ -903,6 +903,148 @@ describe('CategoryRepository', () => {
   });
 
   /**
+   * A NUMBER definition's decimal places (W1e). It lives beside the unit and range for the same
+   * storage reasons, and takes the same behavioural shape (a CHECK, gated on the type, cleared by
+   * a retype) because it too refuses a save — but `0` is a real setting here, which is the one
+   * hazard the two attributes above do not carry.
+   */
+  describe('a number field’s decimal places (W1e)', () => {
+    it('defaults to no precision — values are shown as entered', async () => {
+      const cat = await categories.create({ name: 'Fixings' });
+      const f = await categories.addField(cat.id, { name: 'Torque', fieldType: 'NUMBER' });
+      expect(f.precision).toBeNull();
+    });
+
+    it('round-trips a precision through add and the list read', async () => {
+      const cat = await categories.create({ name: 'Fixings' });
+      const f = await categories.addField(cat.id, {
+        name: 'Torque',
+        fieldType: 'NUMBER',
+        precision: 2,
+      });
+      expect(f.precision).toBe(2);
+      const listed = (await categories.listFields(cat.id)).find((x) => x.id === f.id);
+      expect(listed?.precision).toBe(2);
+    });
+
+    it('stores a precision of 0 as a setting, not as an absence', async () => {
+      // The whole reason W1e exists — "whole numbers only" is a rule no range can state — and
+      // the exact value a `??`/truthiness slip anywhere on the write path would turn into NULL.
+      const cat = await categories.create({ name: 'Shelving' });
+      const f = await categories.addField(cat.id, {
+        name: 'Shelves',
+        fieldType: 'NUMBER',
+        precision: 0,
+      });
+      expect(f.precision).toBe(0);
+      expect((await categories.listFields(cat.id))[0]?.precision).toBe(0);
+    });
+
+    it('refuses a precision on any type other than NUMBER', async () => {
+      const cat = await categories.create({ name: 'Docs' });
+      await expect(
+        categories.addField(cat.id, { name: 'Title', fieldType: 'TEXT', precision: 2 }),
+      ).rejects.toThrow(/Only a Number field can be given a number of decimal places/);
+    });
+
+    it('refuses a precision outside the permitted range, or a fractional one', async () => {
+      const cat = await categories.create({ name: 'Astro' });
+      await expect(
+        categories.addField(cat.id, { name: 'Parallax', fieldType: 'NUMBER', precision: 12 }),
+      ).rejects.toThrow(/whole number from 0 to 6/);
+      await expect(
+        categories.addField(cat.id, { name: 'Declination', fieldType: 'NUMBER', precision: 1.5 }),
+      ).rejects.toThrow(/whole number from 0 to 6/);
+    });
+
+    it('clears the precision when the field is retyped away from NUMBER', async () => {
+      const cat = await categories.create({ name: 'Shelving' });
+      const f = await categories.addField(cat.id, {
+        name: 'Shelves',
+        fieldType: 'NUMBER',
+        precision: 0,
+      });
+      // Retyped from a precision of 0 specifically: a truthiness test in the clearing branch
+      // would leave it behind for the CHECK to reject, with nothing on screen to explain it.
+      const retyped = await categories.updateField(f.id, { fieldType: 'TEXT' });
+      expect(retyped.precision).toBeNull();
+    });
+
+    it('accepts a precision set in the same edit that retypes to NUMBER', async () => {
+      const cat = await categories.create({ name: 'Fixings' });
+      const f = await categories.addField(cat.id, { name: 'Torque', fieldType: 'TEXT' });
+      const updated = await categories.updateField(f.id, { fieldType: 'NUMBER', precision: 1 });
+      expect(updated.precision).toBe(1);
+    });
+
+    it('clears the precision on an explicit null, restoring “as entered”', async () => {
+      const cat = await categories.create({ name: 'Fixings' });
+      const f = await categories.addField(cat.id, {
+        name: 'Torque',
+        fieldType: 'NUMBER',
+        precision: 2,
+      });
+      expect((await categories.updateField(f.id, { precision: null })).precision).toBeNull();
+    });
+
+    it('applies a precision to a reused definition but never clears one by omission', async () => {
+      const first = await categories.create({ name: 'Fixings' });
+      const second = await categories.create({ name: 'Bolts' });
+      await categories.addField(first.id, { name: 'Torque', fieldType: 'NUMBER', precision: 2 });
+      const reused = await categories.addField(second.id, { name: 'Torque', fieldType: 'NUMBER' });
+      expect(reused.precision).toBe(2);
+
+      // …and a reuse that opts the shared definition into whole numbers must take, `0` and all.
+      const third = await categories.create({ name: 'Nuts' });
+      const changed = await categories.addField(third.id, {
+        name: 'Torque',
+        fieldType: 'NUMBER',
+        precision: 0,
+      });
+      expect(changed.precision).toBe(0);
+      expect((await categories.listFields(first.id))[0]?.precision).toBe(0);
+    });
+
+    it('holds an item’s value to the definition’s precision', async () => {
+      const cat = await categories.create({ name: 'Shelving' });
+      const f = await categories.addField(cat.id, {
+        name: 'Shelves',
+        fieldType: 'NUMBER',
+        precision: 0,
+      });
+      const item = await items.create({ name: 'Unit', categoryId: cat.id });
+      await expect(categories.setItemFieldValues(item.id, { [f.id]: '2.5' })).rejects.toThrow(
+        /Shelves must be a whole number/,
+      );
+      await categories.setItemFieldValues(item.id, { [f.id]: '3' });
+      const stored = await categories.resolveItemFields(item.id);
+      expect(stored.find((x) => x.id === f.id)?.value).toBe('3');
+    });
+
+    it('holds a location’s value to the same precision, and carries it onto the read', async () => {
+      // A location's value feeds every item inheriting it, so it must not be the one place a
+      // precision can be dodged — and the panel that renders it needs the setting to write with.
+      const cat = await categories.create({ name: 'Shelving' });
+      const f = await categories.addField(cat.id, {
+        name: 'Load rating',
+        fieldType: 'NUMBER',
+        precision: 2,
+      });
+      const shelf = await new LocationRepository(driver).create({ name: 'Shelf' });
+      await expect(
+        categories.setLocationFieldValue(shelf.id, { defId: f.defId, value: '30.005', isInheritable: true }),
+      ).rejects.toThrow(/Load rating must have at most 2 decimal places/);
+      await categories.setLocationFieldValue(shelf.id, {
+        defId: f.defId,
+        value: '30',
+        isInheritable: true,
+      });
+      const values = await categories.listLocationFieldValues(shelf.id);
+      expect(values[0]?.precision).toBe(2);
+    });
+  });
+
+  /**
    * W1d - the per-definition **key-field** rank. Unlike the three settings above it applies to
    * every field type, carries no CHECK, and is never cleared by a retype; what it does is lift the
    * field to the front of every *rendered* field set, leaving `category_fields.position` to order

@@ -57,7 +57,7 @@ import { GoogleApiError } from './providers/google-drive-api';
 import { consumeGoogleAuthError } from './providers/google-oauth';
 import { getActiveProvider, getSyncDriver, setActiveProvider } from './runtime';
 import { runSync, type SyncResult } from './sync-engine';
-import { SyncRemoteMissingError } from './sync-errors';
+import { SyncPushFailedError, SyncRemoteMissingError } from './sync-errors';
 import { describeSyncOutcome } from './sync-status-format';
 import { httpTimeSource } from './time-source';
 import { useSyncConflictsStore } from './conflict-store';
@@ -261,6 +261,32 @@ export function SyncScreen() {
   }
 
   /**
+   * Adopt everything a completed merge has already written to the local database.
+   *
+   * Deliberately independent of whether the *push* succeeded (issue #638): `mergeSnapshot`
+   * applies the reconciliation plan and re-reads it, so by the time the upload is attempted the
+   * remote's upserts and deletions are durable here. Skipping this on a failed push discards the
+   * conflict records for good — the local edits they describe have already been overwritten, so
+   * no later sync can detect them again — and leaves every screen rendering rows the merge has
+   * just changed or removed.
+   */
+  async function adoptMergedState(outcome: SyncResult) {
+    // Issue #72: record any of the user's edits this sync overwrote, so they can review
+    // and recover them from the Conflicts section below rather than losing them silently.
+    useSyncConflictsStore.getState().add(outcome.conflicts);
+    // Issue #382: the merge has just resolved every shared preference against the other
+    // devices' timestamps, so adopt whichever values won. A failure here must not turn a
+    // successful data sync into an error — the settings simply stay as they were.
+    try {
+      const adopted = await applySharedSettings();
+      if (adopted > 0) setSettingsNotice(t('sync.settings.adopted', { vars: { count: adopted } }));
+    } catch (settingsError) {
+      console.error('[gubbins] could not apply shared settings', settingsError);
+    }
+    await client.invalidateQueries();
+  }
+
+  /**
    * Issue #196: `allowRemoteReset` republishes this device's data as a *new* shared copy
    * after the shared one has gone missing. Only ever passed from the confirm button below —
    * never on the ordinary "Sync now" path, where a missing remote must stop the sync.
@@ -296,35 +322,42 @@ export function SyncScreen() {
         setError(outcome.message ?? 'Sync was halted by the storage Hard Stop.');
       } else {
         auth.markSynced();
-        // Issue #72: record any of the user's edits this sync overwrote, so they can review
-        // and recover them from the Conflicts section below rather than losing them silently.
-        useSyncConflictsStore.getState().add(outcome.conflicts);
-        // Issue #382: the merge has just resolved every shared preference against the other
-        // devices' timestamps, so adopt whichever values won. A failure here must not turn a
-        // successful data sync into an error — the settings simply stay as they were.
-        try {
-          const adopted = await applySharedSettings();
-          if (adopted > 0) setSettingsNotice(t('sync.settings.adopted', { vars: { count: adopted } }));
-        } catch (settingsError) {
-          console.error('[gubbins] could not apply shared settings', settingsError);
-        }
-        await client.invalidateQueries();
+        await adoptMergedState(outcome);
       }
     } catch (err) {
+      // Issue #638: a push that failed *after* the merge committed carries what already landed
+      // locally. Adopt it before reporting, whichever branch below ends up explaining the
+      // failure — the conflict records it produced are the only trace of the edits it
+      // overwrote, and no later sync can re-detect them. `markSynced` deliberately does *not*
+      // run: the shared copy was never updated, so this device is not up to date with it.
+      const pushFailure = err instanceof SyncPushFailedError ? err : null;
+      if (pushFailure) {
+        setResult(pushFailure.localOutcome);
+        await adoptMergedState(pushFailure.localOutcome);
+      }
+      // Report on what actually went wrong: for a failed push that is the transport error the
+      // upload raised, so an expired token still reaches the reconnect path below rather than a
+      // dead-end "publishing failed" the user can do nothing about.
+      const cause = pushFailure ? pushFailure.cause : err;
+
       // A rejected/expired Google token drops us back to the reconnect path rather than a
       // bare error, so one click re-authorises and resumes.
-      if (err instanceof GoogleApiError && err.isAuthError) {
+      if (cause instanceof GoogleApiError && cause.isAuthError) {
         setActiveProvider(null);
         forgetGoogleDrive();
         setConnected(false);
         setGoogleReconnectable(true);
         setError('Your Google Drive sign-in expired. Reconnect to resume syncing.');
-      } else if (err instanceof SyncRemoteMissingError) {
+      } else if (cause instanceof SyncRemoteMissingError) {
         // The shared copy has vanished. Explain it, and offer the deliberate republish rather
         // than leaving the user with a sync that can never succeed again. The catalog copy is
         // used in preference to the error's own sentence so the whole banner is translated.
         setError(t('sync.remoteMissing.error'));
         setRemoteMissing(true);
+      } else if (pushFailure) {
+        // Say which half failed. "Sync failed" reads as "nothing happened", and the user's
+        // screens have in fact just changed underneath them.
+        setError(t('sync.pushFailed.error'));
       } else {
         setError(describeError(err, 'Sync failed.'));
       }

@@ -9,6 +9,7 @@ import {
   FormField,
   InfoHint,
   Input,
+  Modal,
   MoneyInput,
   RailModal,
   SelectField,
@@ -34,7 +35,12 @@ import {
   type Location,
   type LocationWithCount,
 } from '@/db/repositories';
-import { LOW_STOCK_GAUGE_SUGGESTED, LOW_STOCK_QTY_SUGGESTED } from '@/db/repositories/constants';
+import {
+  isValidSerialisedCount,
+  LOW_STOCK_GAUGE_SUGGESTED,
+  LOW_STOCK_QTY_SUGGESTED,
+  SERIALISED_COUNT_BOUNDS,
+} from '@/db/repositories/constants';
 import { valueForPolicy, type LowStockPolicy } from '../low-stock-policy';
 import { LowStockPolicyPicker } from './LowStockPolicyPicker';
 import { DEFAULT_AMAZON_MARKETPLACE, asinToUrl, marketplaceFromHost, parseAsin } from '../asin';
@@ -134,6 +140,20 @@ const schema = z
     isUnlimited: z.boolean().optional(),
   })
   .superRefine((v, ctx) => {
+    // The clone count is the one field that turns a single submit into N irreversible records
+    // (issue #677), so a supplied value must be a whole number inside the shared bounds — the
+    // same ones the repository enforces — reported on the field the way the gauge fields are.
+    // A blank box still means "just one", matching the field's own hint.
+    if (v.trackingMode === 'SERIALISED') {
+      const count = v.count?.trim();
+      if (count && !isValidSerialisedCount(Number(count))) {
+        ctx.addIssue({
+          path: ['count'],
+          code: 'custom',
+          message: `Enter a whole number between ${SERIALISED_COUNT_BOUNDS.min} and ${SERIALISED_COUNT_BOUNDS.max}.`,
+        });
+      }
+    }
     if (v.trackingMode === 'CONSUMABLE_GAUGE') {
       if (!v.unitOfMeasure?.trim()) {
         ctx.addIssue({ path: ['unitOfMeasure'], code: 'custom', message: 'Required for consumables.' });
@@ -165,6 +185,25 @@ const schema = z
   });
 
 type FormValues = z.infer<typeof schema>;
+
+/**
+ * Above how many records a serialised create pauses for confirmation (issue #677). Nothing
+ * undoes a bulk create in one step — bulk edit can remove a selection in one action, but every
+ * record has to be picked out first — so a batch big enough to be regretted is worth one extra
+ * click. Set comfortably above an everyday batch
+ * (a dozen identical drills goes straight through) and low enough that a slipped keystroke —
+ * `10` typed as `100` — always stops for a second look.
+ */
+const CONFIRM_SERIALISED_COUNT_ABOVE = 20;
+
+/**
+ * The number of instance records a serialised submit would create: the entered count, or 1 when
+ * the box is blank (its hint's "enter `1` for a single asset" default). Only ever called on
+ * values the schema has already accepted, so the parse cannot produce a surprise.
+ */
+function serialisedCount(values: FormValues): number {
+  return values.count?.trim() ? Number(values.count) : 1;
+}
 
 // Sentinel picker values for the inline "create it here" rows (never submitted).
 const CREATE_LOCATION_VALUE = '__create-location__';
@@ -294,6 +333,51 @@ function LowStockPolicyField({
   );
 }
 
+/**
+ * "Create N separate records?" — the confirmation a serialised create of more than
+ * {@link CONFIRM_SERIALISED_COUNT_ABOVE} records passes through (issue #677). A bulk create is
+ * the one submit in this form that cannot be undone in one step (undoing it means selecting the
+ * records again first), so the number is spelled out before it happens. Stacked on top of the
+ * still-open form, so "Go back" simply returns to it with everything typed intact.
+ */
+function ConfirmBulkSerialisedModal({
+  name,
+  count,
+  formatCount,
+  onCancel,
+  onConfirm,
+}: {
+  readonly name: string;
+  readonly count: number;
+  /** Locale-aware integer formatting — the shared `fmt.quantity` seam, never a hand-rolled one. */
+  readonly formatCount: (value: number) => string;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+}) {
+  const formatted = formatCount(count);
+  return (
+    <Modal open onClose={onCancel} title={`Create ${formatted} separate records?`}>
+      <p className="text-sm text-muted-foreground">
+        Serialised items are tracked individually, so this creates{' '}
+        <strong className="text-foreground">{formatted} separate records</strong> named “{name}”, numbered #1
+        to #{formatted} — each with its own location, history and check-out.
+      </p>
+      <p className="mt-3 text-sm text-muted-foreground">
+        There’s no one-step undo — removing them again means selecting each record first — so it’s worth
+        checking the number now.
+      </p>
+      <div className="mt-6 flex justify-end gap-2">
+        <Button type="button" variant="ghost" onClick={onCancel}>
+          Go back
+        </Button>
+        <Button type="button" data-testid="confirm-bulk-serialised" onClick={onConfirm}>
+          Create {formatted} records
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 export function CreateItemDialog({
   open,
   onClose,
@@ -341,6 +425,11 @@ export function CreateItemDialog({
   // choosing "＋ New location…"/"＋ New category…" in a picker opens it; the half-filled
   // item form underneath stays mounted, so nothing the user has typed is lost.
   const [inlineCreate, setInlineCreate] = useState<'location' | 'category' | null>(null);
+  // A serialised create of more than {@link CONFIRM_SERIALISED_COUNT_ABOVE} records, held here
+  // until the user confirms it (issue #677). The validated values are staged rather than
+  // re-read on confirm, so the create runs on exactly what was submitted; `null` means nothing
+  // is awaiting confirmation.
+  const [pendingBulk, setPendingBulk] = useState<FormValues | null>(null);
   // "Add by ASIN / Amazon URL" (single-item, extension-free): the raw box value, its
   // validation error, and the synthesised Amazon supplier part a valid ASIN produces. The
   // part rides to the create the same way an A2 active-tab scrape does (`persistAmazonSupplier`
@@ -620,7 +709,21 @@ export function CreateItemDialog({
     });
   };
 
+  /**
+   * A validated submit: either run it, or — for a serialised create big enough to regret
+   * (issue #677) — stage it behind a confirmation first. Staging happens *before* the
+   * re-entry guard is taken, so backing out of the confirmation leaves the form submittable.
+   */
   const onSubmit = (values: FormValues) => {
+    if (submittingRef.current) return;
+    if (values.trackingMode === 'SERIALISED' && serialisedCount(values) > CONFIRM_SERIALISED_COUNT_ABOVE) {
+      setPendingBulk(values);
+      return;
+    }
+    runSubmit(values);
+  };
+
+  const runSubmit = (values: FormValues) => {
     // Re-entry guard (issue #294): bail if a submit is already in flight, so a second click or a
     // double Enter can't kick off a parallel create-chain and duplicate the item. Set before any
     // async work so the check-and-set is atomic within a single synchronous call.
@@ -703,6 +806,7 @@ export function CreateItemDialog({
       warrantyMonthsTouched.current = false;
       setPendingAliases([]);
       setInlineCreate(null);
+      setPendingBulk(null);
       resetAsin();
       setActiveTab('details');
       setOcrOpen(false);
@@ -755,8 +859,9 @@ export function CreateItemDialog({
     };
 
     if (values.trackingMode === 'SERIALISED') {
-      // Auto-clone N distinct instance records sharing a name (spec §4).
-      const count = Math.max(1, Math.floor(Number(values.count) || 1));
+      // Auto-clone N distinct instance records sharing a name (spec §4). The schema has already
+      // bounded the count (issue #677), so it is a whole number the repository will accept.
+      const count = serialisedCount(values);
       createSerialised.mutate(
         { ...base, count },
         { onSuccess: (items) => finish(items[0]?.id ?? ''), onError },
@@ -817,6 +922,7 @@ export function CreateItemDialog({
     warrantyMonthsTouched.current = false;
     setPendingAliases([]);
     setInlineCreate(null);
+    setPendingBulk(null);
     resetAsin();
     setActiveTab('details');
     onClose();
@@ -1169,14 +1275,24 @@ export function CreateItemDialog({
       {trackingMode === 'SERIALISED' ? (
         <FormField
           label="How many (each becomes its own record)"
+          error={errors.count?.message}
           hint={
             'Serialised items are tracked **individually**. Entering `3` creates **three separate ' +
             'records** sharing this name (e.g. *Drill #1, #2, #3*), each independently located, ' +
             'checked out and maintained.\n\n' +
-            '> For a **single one-off asset** (e.g. a table saw), enter `1`.'
+            '> For a **single one-off asset** (e.g. a table saw), enter `1`.\n\n' +
+            `At most **${SERIALISED_COUNT_BOUNDS.max}** can be created at once, and anything ` +
+            `over **${CONFIRM_SERIALISED_COUNT_ABOVE}** asks you to confirm first — there is no ` +
+            'one-step undo once the records exist.'
           }
         >
-          <Input type="number" min={1} step={1} {...register('count')} />
+          <Input
+            type="number"
+            min={SERIALISED_COUNT_BOUNDS.min}
+            max={SERIALISED_COUNT_BOUNDS.max}
+            step={1}
+            {...register('count')}
+          />
         </FormField>
       ) : null}
 
@@ -1562,6 +1678,22 @@ export function CreateItemDialog({
           open
           onClose={() => setInlineCreate(null)}
           onCreated={(category: Category) => setValue('categoryId', category.id, { shouldDirty: true })}
+        />
+      ) : null}
+
+      {/* Bulk serialised create confirmation (issue #677), stacked on top of the form — which
+          stays mounted, so backing out loses nothing and the count can simply be corrected. */}
+      {pendingBulk ? (
+        <ConfirmBulkSerialisedModal
+          name={pendingBulk.name.trim()}
+          count={serialisedCount(pendingBulk)}
+          formatCount={fmt.quantity}
+          onCancel={() => setPendingBulk(null)}
+          onConfirm={() => {
+            const staged = pendingBulk;
+            setPendingBulk(null);
+            runSubmit(staged);
+          }}
         />
       ) : null}
 

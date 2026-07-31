@@ -22,7 +22,8 @@ Common fields at creation:
   the one choice worth getting right up front; see [[Tracking modes|Tracking-Modes]].
 - **Initial quantity** — how many you have now (Bulk items). Consumable items instead ask for a
   **unit**, a **full capacity** and a **tare** (empty weight); serialised items track units
-  individually.
+  individually and ask **how many** to create, one record each — see
+  [[tracking modes|Tracking-Modes]].
 - **Unit cost** and **acquired date** — used for valuation, spend and the
   [[insurance schedule|Insurance-and-Estate-Schedule]]. Type a plain figure like `8` and it
   tidies itself to your currency's decimal places when you move on (`8.00` for pounds, dollars

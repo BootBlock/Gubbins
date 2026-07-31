@@ -71,6 +71,34 @@ export const TRACKING_MODES = ['DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UN
 export type TrackingMode = (typeof TRACKING_MODES)[number];
 
 /**
+ * Inclusive bounds for a serialised auto-clone `count` — how many distinct instance records a
+ * single create may produce (issue #677). The floor is 1 (a create must create something); the
+ * ceiling is far above any realistic batch of individually-tracked assets, while keeping a
+ * slipped keystroke (`10` typed as `10000`) from committing thousands of records that then have
+ * to be selected by hand before they can be removed, and keeping an overflowed value (`1e400`,
+ * which is `Infinity` once parsed) out of the clone loop, where it would spin until the tab is
+ * killed.
+ *
+ * These live here, beside the tracking modes, rather than in the inventory feature: the
+ * repository is the shared entry point that enforces them, and the Add-item form validates
+ * against the same numbers so a rejected count is reported on the field rather than thrown.
+ */
+export const SERIALISED_COUNT_BOUNDS = { min: 1, max: 500 } as const;
+
+/**
+ * Whether a value is usable as a serialised clone count — a safe whole number inside
+ * {@link SERIALISED_COUNT_BOUNDS}. `Number.isSafeInteger` rejects `NaN`, `Infinity` and
+ * fractions in one go.
+ */
+export function isValidSerialisedCount(value: number): boolean {
+  return (
+    Number.isSafeInteger(value) &&
+    value >= SERIALISED_COUNT_BOUNDS.min &&
+    value <= SERIALISED_COUNT_BOUNDS.max
+  );
+}
+
+/**
  * The tracking modes whose stock is represented **identically** in storage — a plain
  * `quantity` plus its per-location `item_stock` ledger row (Phase 25) — and so can be
  * swapped for one another *in place* after creation with no data migration and no loss.
@@ -395,6 +423,31 @@ export const FIELD_UNIT_MAX_LENGTH = 16;
  * Interpolated into the `field_defs` CHECK, so the schema and the app clamp to the same range.
  */
 export const FIELD_NUMBER_BOUND_LIMIT = Number.MAX_SAFE_INTEGER;
+
+/**
+ * Bounds on `field_defs.precision` — a `NUMBER` custom field's **decimal places** (W1e).
+ *
+ * Unlike {@link FIELD_NUMBER_BOUND_LIMIT}, this is not a third bound of the same kind. A range
+ * only ever *refuses* a value; a precision also decides how a stored one is written — `5.5` on a
+ * 2-decimal field reads `5.50`. `NULL` means "as entered", which is what every existing field
+ * has and what keeps them rendering exactly as before.
+ *
+ * `0` is the case the setting most exists for: "whole numbers only" is a rule a range cannot
+ * express — no pair of bounds excludes `2.5` while admitting `2` and `3`.
+ *
+ * The cap is 6 because that is roughly where the setting stops meaning anything. Six places
+ * covers any realistic measurement (a micrometre written in metres is `0.000001`), and it stays
+ * far enough inside a double's ~15 significant digits that the round-trip test the validator
+ * makes — does writing the value at this precision lose anything? — still answers truthfully for
+ * values of everyday size. Note it says nothing about the *range*: a field bounded near
+ * {@link FIELD_NUMBER_BOUND_LIMIT} has already spent those digits on its integer part, and no
+ * decimal place is exact up there whatever this is set to.
+ *
+ * Interpolated into the `field_defs` CHECK, so the schema and the app clamp to the same range.
+ */
+export const FIELD_PRECISION_MIN = 0;
+/** Six decimal places — see {@link FIELD_PRECISION_MIN} for why the cap sits there. */
+export const FIELD_PRECISION_MAX = 6;
 
 /**
  * Attachment/datasheet kinds (spec §4 "Attachments & Datasheets"). `URL` is an

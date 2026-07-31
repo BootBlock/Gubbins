@@ -9,6 +9,12 @@ import { register } from 'node:module';
 import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
+import { assertSupportedNodeVersion } from '../node-version.mjs';
+
+// Same as the runnable entry points: this imports `.ts` directly, so say which Node is
+// needed rather than dying on a type annotation.
+assertSupportedNodeVersion();
+
 register('../loader.mjs', import.meta.url);
 
 const { openapiDocument } = await import('../src/openapi.ts');

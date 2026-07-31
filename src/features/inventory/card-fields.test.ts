@@ -283,6 +283,7 @@ describe('resolveCardFields — custom fields', () => {
     fieldType: 'TEXT',
     defaultValue: null,
     unit: null,
+    precision: null,
   };
   const customFields = new Map<string, CardCustomField>([['f1', field]]);
 
@@ -383,6 +384,64 @@ describe('resolveCardFields — custom fields', () => {
     expect(resolved[0].value).toEqual({ kind: 'text', text: '5' });
   });
 
+  it('writes a NUMBER to the definition’s decimal places, with its unit (W1e)', () => {
+    // The half W1c deferred: a two-decimal field must not still read "5.5" beside its unit.
+    const torque: CardCustomField = { ...field, fieldType: 'NUMBER', unit: 'Nm', precision: 2 };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', torque]]), customValues: new Map([['f1', '5.5']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'measure', text: '5.50', unit: 'Nm' });
+  });
+
+  it('writes a NUMBER to its decimal places without a unit too', () => {
+    const plain: CardCustomField = { ...field, fieldType: 'NUMBER', unit: null, precision: 3 };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', plain]]), customValues: new Map([['f1', '5']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: '5.000' });
+  });
+
+  it('honours a precision of 0 — the setting a truthiness check would drop', () => {
+    const shelves: CardCustomField = { ...field, fieldType: 'NUMBER', unit: null, precision: 0 };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', shelves]]), customValues: new Map([['f1', '12.6']]) }),
+    );
+    // Rounded rather than shown at a precision the field says it does not use. A value like this
+    // only arrives out of band — validation refuses it on the way in.
+    expect(resolved[0].value).toEqual({ kind: 'text', text: '13' });
+  });
+
+  it('does not apply a precision to a value of any other type', () => {
+    // NUMBER-only by schema CHECK, like the unit above it: a definition retyped in one client
+    // and not yet synced to another must not start padding a date.
+    const retyped: CardCustomField = { ...field, fieldType: 'DATE', precision: 2 };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', retyped]]), customValues: new Map([['f1', '2026-07-31']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: '2026-07-31' });
+  });
+
+  it('renders the value as entered when the catalog entry carries no precision at all', () => {
+    // Same hazard as the missing-unit case above: this file is excluded from `tsconfig.app.json`,
+    // so a hand-built entry omitting `precision` reaches the resolver as `undefined`.
+    const noPrecisionKey = { ...field, fieldType: 'NUMBER' } as CardCustomField;
+    delete (noPrecisionKey as { precision?: number | null }).precision;
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', noPrecisionKey]]), customValues: new Map([['f1', '5.5']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: '5.5' });
+  });
+
   it('renders an IMAGE custom field as a thumbnail of its data URL', () => {
     const imageField: CardCustomField = { ...field, fieldType: 'IMAGE' };
     const tinyImage = 'data:image/webp;base64,UklGRhoAAABXRUJQ';
@@ -431,5 +490,82 @@ describe('resolveCardFields — custom fields', () => {
   it('skips a custom field id absent from the catalog (defensive)', () => {
     const resolved = resolveCardFields([customCardFieldId('gone')], makeItem(), ctx({ customFields }));
     expect(resolved).toEqual([]);
+  });
+
+  /**
+   * W1f — a `URL`/`FILE` value that can be acted on. `URL` is validated http(s) on save, so it
+   * is always a link; `FILE` covers a local path, a UNC share *and* an `http(s)` URI, so its
+   * own string decides which arm it takes.
+   */
+  describe('URL / FILE values (W1f)', () => {
+    const resolveValue = (fieldType: CardCustomField['fieldType'], raw: string) =>
+      resolveCardFields(
+        [customCardFieldId('f1')],
+        makeItem({ categoryId: 'cat-1' }),
+        ctx({
+          customFields: new Map([['f1', { ...field, fieldType }]]),
+          customValues: new Map([['f1', raw]]),
+        }),
+      )[0].value;
+
+    it('renders a URL value as an openable link', () => {
+      expect(resolveValue('URL', 'https://example.com/datasheet.pdf')).toEqual({
+        kind: 'link',
+        href: 'https://example.com/datasheet.pdf',
+      });
+    });
+
+    it('renders a FILE value holding a web address as an openable link', () => {
+      // `FILE` is documented as accepting an `http(s)` URI as well as a path, so the type
+      // alone cannot decide this — only the value can.
+      expect(resolveValue('FILE', 'https://example.com/boiler-manual.pdf')).toEqual({
+        kind: 'link',
+        href: 'https://example.com/boiler-manual.pdf',
+      });
+    });
+
+    it('trims a link value, so the address opened is the one validation stored', () => {
+      expect(resolveValue('URL', '  https://example.com/a.pdf ')).toEqual({
+        kind: 'link',
+        href: 'https://example.com/a.pdf',
+      });
+    });
+
+    it.each([
+      ['a Windows path', 'C:\\Manuals\\boiler.pdf'],
+      ['a UNC share', '\\\\server\\share\\boiler.pdf'],
+      ['a POSIX path', '/srv/manuals/boiler.pdf'],
+      ['a file:// URI', 'file:///srv/manuals/boiler.pdf'],
+    ])('renders a FILE value holding %s as a pointer, not a link', (_label, raw) => {
+      expect(resolveValue('FILE', raw)).toEqual({ kind: 'pointer', text: raw });
+    });
+
+    /**
+     * The renderer puts a `link` href straight into an `<a href>`, so only an address a page
+     * can actually navigate to may become one. A `URL` value is validated on save, so a
+     * hostile string only arrives out of band — from a sync peer, an import, or a value left
+     * behind when the definition was retyped.
+     */
+    it.each([
+      ['URL' as const, 'javascript:alert(1)'],
+      ['URL' as const, 'data:text/html,<script>alert(1)</script>'],
+      ['URL' as const, 'not a url at all'],
+    ])('degrades an out-of-band %s value (%s) to plain text', (fieldType, hostile) => {
+      expect(resolveValue(fieldType, hostile)).toEqual({ kind: 'text', text: hostile });
+    });
+
+    it('never lets a FILE value carrying a script scheme become an href', () => {
+      // It takes the pointer arm rather than the text arm — a FILE value has no validation to
+      // fall short of, so "a path we cannot open" is the honest reading of anything non-http(s).
+      expect(resolveValue('FILE', 'javascript:alert(1)')).toEqual({
+        kind: 'pointer',
+        text: 'javascript:alert(1)',
+      });
+    });
+
+    it('renders empty for a blank URL/FILE value, like every other type', () => {
+      expect(resolveValue('URL', '   ')).toEqual({ kind: 'empty' });
+      expect(resolveValue('FILE', '')).toEqual({ kind: 'empty' });
+    });
   });
 });

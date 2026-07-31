@@ -23,6 +23,12 @@ To run the bridge you need three things:
 3. **Start it** — run the read-only HTTP server. By default it binds **loopback only**
    (`127.0.0.1`), so it isn't reachable from other machines unless you deliberately change that.
 
+> **ℹ️ Note**
+> The bridge needs a reasonably recent Node.js, and a couple of otherwise-newer versions won't
+> work either. It checks before it starts: on a version it can't use it stops straight away and
+> prints which version you have, which you need, and why — rather than failing with something
+> cryptic. The exact versions are in the bridge's `README`.
+
 Once it's up, you query it over HTTP with your token, or wire it into
 [[Home Assistant|Home-Assistant-Integration]], an [[AI assistant|AI-Assistant-Query-MCP]], your
 [[calendar|Webhooks-MQTT-and-iCal]], and more.

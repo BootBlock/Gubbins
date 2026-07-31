@@ -28,6 +28,8 @@ import {
   FIELD_DUE_LEAD_DAYS_DEFAULT,
   FIELD_DUE_LEAD_DAYS_MAX,
   FIELD_DUE_LEAD_DAYS_MIN,
+  FIELD_PRECISION_MAX,
+  FIELD_PRECISION_MIN,
   FIELD_TYPES,
   FIELD_UNIT_MAX_LENGTH,
   MAINTENANCE_BASES,
@@ -1397,6 +1399,28 @@ function resolveBound(raw: string): number | null | undefined {
 }
 
 /**
+ * What a typed precision means (W1e): a whole number of decimal places, `null` when the box is
+ * **empty** — "as entered", the default — or `undefined` for anything that is not a number, which
+ * means "leave the stored setting alone".
+ *
+ * Blank clears for the same reason a bound's does, and for the opposite reason to the due-date
+ * notice period: an empty box already states a legitimate setting here, so coercing it to a number
+ * would remove the only way to say "as entered".
+ *
+ * Unlike a bound, this one is *clamped* rather than passed on to be refused. A count of decimal
+ * places is a bounded whole number, exactly as a notice period is, so `2.5` settling to `3` and
+ * `9` settling to the cap is a predictable read of what was typed rather than a rejection the user
+ * has to act on. The control's `maxLength` of 1 narrows what can reach the clamp by typing to a
+ * single digit above the cap — `7`, `8` or `9`; anything further out has to be pasted.
+ */
+function resolvePrecision(raw: string): number | null | undefined {
+  if (raw.trim() === '') return null;
+  const typed = Number(raw);
+  if (!Number.isFinite(typed)) return undefined;
+  return Math.min(FIELD_PRECISION_MAX, Math.max(FIELD_PRECISION_MIN, Math.round(typed)));
+}
+
+/**
  * The **key-field** mark on an existing custom field (W1d), saved onto the shared dictionary
  * definition.
  *
@@ -1447,19 +1471,19 @@ function FieldKeyControl({ field }: { field: CategoryField }) {
 }
 
 /**
- * The **unit and range** of an existing `NUMBER` custom field (W1b/W1c), saved onto the shared
- * dictionary definition.
+ * The **unit, range and decimal places** of an existing `NUMBER` custom field (W1b/W1c/W1e),
+ * saved onto the shared dictionary definition.
  *
- * One control for all three rather than three independent ones: they share a row, a save
+ * One control for all four boxes rather than four independent ones: they share a row, a save
  * failure, and a definition, and separate controls would each fire their own mutation against
  * the same non-optimistic refetch. It offers nothing on any other field type, because only a
- * number has a unit or a range (the schema's CHECK says the same).
+ * number has a unit, a range or a number of decimal places (the schema's CHECKs say the same).
  *
  * There is no tick here, unlike the due-date opt-in. Each setting's *stored value is* the
- * opt-in — an empty unit is "unitless" and an empty bound is "unbounded that side" — so a tick
- * would only add a second way to say what an empty box already says. Everything commits on
- * **blur** for the reason W1a documents: the boxes are fed from server state, so writing per
- * keystroke races the refetch.
+ * opt-in — an empty unit is "unitless", an empty bound is "unbounded that side", and an empty
+ * decimals box is "as entered" — so a tick would only add a second way to say what an empty box
+ * already says. Everything commits on **blur** for the reason W1a documents: the boxes are fed
+ * from server state, so writing per keystroke races the refetch.
  */
 function FieldNumberOptionsControl({ field }: { field: CategoryField }) {
   const t = useT();
@@ -1472,9 +1496,13 @@ function FieldNumberOptionsControl({ field }: { field: CategoryField }) {
   const [unit, setUnit] = useState(field.unit ?? '');
   const [min, setMin] = useState(field.minValue == null ? '' : String(field.minValue));
   const [max, setMax] = useState(field.maxValue == null ? '' : String(field.maxValue));
+  // `== null` throughout, never falsiness: `precision` of 0 is the "whole numbers only" setting,
+  // and a truthy test would show its box empty — i.e. as "as entered", the opposite of what it says.
+  const [precision, setPrecision] = useState(field.precision == null ? '' : String(field.precision));
   useEffect(() => setUnit(field.unit ?? ''), [field.unit]);
   useEffect(() => setMin(field.minValue == null ? '' : String(field.minValue)), [field.minValue]);
   useEffect(() => setMax(field.maxValue == null ? '' : String(field.maxValue)), [field.maxValue]);
+  useEffect(() => setPrecision(field.precision == null ? '' : String(field.precision)), [field.precision]);
 
   const save = (input: UpdateCategoryFieldInput) => {
     setError(null);
@@ -1508,6 +1536,21 @@ function FieldNumberOptionsControl({ field }: { field: CategoryField }) {
     }
     setDraft(next == null ? '' : String(next));
     if (next !== stored) save({ [end]: next });
+  };
+
+  /**
+   * Commit the decimal places: write the resolved count, or put the stored one back when the box
+   * holds something that is not a number. The box is re-seated from the *resolved* value, so a
+   * clamped entry shows what was actually stored rather than what was typed.
+   */
+  const commitPrecision = () => {
+    const next = resolvePrecision(precision);
+    if (next === undefined) {
+      setPrecision(field.precision == null ? '' : String(field.precision));
+      return;
+    }
+    setPrecision(next == null ? '' : String(next));
+    if (next !== field.precision) save({ precision: next });
   };
 
   return (
@@ -1548,6 +1591,21 @@ function FieldNumberOptionsControl({ field }: { field: CategoryField }) {
         data-testid={`field-max-${field.id}`}
         className="h-8 w-24"
       />
+      {t('inventory.fields.number.precisionLabel')}
+      {/* A text box with a numeric keypad, for the same reason as the bounds above and one more:
+          the count is a whole number, so `inputMode="numeric"` matches the due-date notice period
+          rather than the decimal bounds. `maxLength` is 1 because the cap is a single digit, so a
+          typed value can only ever overshoot it by one digit — see {@link resolvePrecision}. */}
+      <Input
+        inputMode="numeric"
+        maxLength={1}
+        value={precision}
+        onChange={(e) => setPrecision(e.target.value)}
+        onBlur={commitPrecision}
+        aria-label={t('inventory.fields.number.precisionAria', { vars: { name: field.name } })}
+        data-testid={`field-precision-${field.id}`}
+        className="h-8 w-16"
+      />
       <InfoHint content={t('inventory.fields.number.hint')} />
       {error ? (
         <p role="alert" className="w-full text-destructive">
@@ -1573,12 +1631,13 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
   // tick decides whether anything is stored.
   const [isDueDate, setIsDueDate] = useState(false);
   const [dueLeadDays, setDueLeadDays] = useState(String(FIELD_DUE_LEAD_DAYS_DEFAULT));
-  // The unit and range of a NUMBER field (W1b/W1c). No tick to gate them, unlike the due-date
-  // opt-in: an empty box already says "unitless" / "unbounded that side", so a tick would only
-  // add a second way to say the same thing.
+  // The unit, range and decimal places of a NUMBER field (W1b/W1c/W1e). No tick to gate them,
+  // unlike the due-date opt-in: an empty box already says "unitless" / "unbounded that side" /
+  // "as entered", so a tick would only add a second way to say the same thing.
   const [unit, setUnit] = useState('');
   const [minValue, setMinValue] = useState('');
   const [maxValue, setMaxValue] = useState('');
+  const [precision, setPrecision] = useState('');
   const [defaultValue, setDefaultValue] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -1605,12 +1664,16 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           // A blank or un-parseable box falls back to the default rather than to `Number('')`,
           // which is 0 and would silently create the field as "notify on the day".
           dueLeadDays: fieldType === 'DATE' && isDueDate ? resolveLeadDays(dueLeadDays) : null,
-          // Only a NUMBER carries these. An empty or un-parseable box is `null` — "no unit" and
-          // "unbounded" respectively — so, unlike the notice period, there is no default to
-          // fall back to and nothing is invented for a box the user left alone.
+          // Only a NUMBER carries these. An empty or un-parseable box is `null` — "no unit",
+          // "unbounded" and "as entered" respectively — so, unlike the notice period, there is no
+          // default to fall back to and nothing is invented for a box the user left alone.
           unit: fieldType === 'NUMBER' ? unit.trim() || null : null,
           minValue: fieldType === 'NUMBER' ? (resolveBound(minValue) ?? null) : null,
           maxValue: fieldType === 'NUMBER' ? (resolveBound(maxValue) ?? null) : null,
+          // `?? null` folds "leave the stored setting alone" into "not set", which is the right
+          // read on a *create*: there is nothing to leave alone. It cannot swallow a `0` — that
+          // is a number, not nullish — so "whole numbers only" survives the collapse.
+          precision: fieldType === 'NUMBER' ? (resolvePrecision(precision) ?? null) : null,
           // Every type can carry this, so there is no type test. `null` rather than 'default'
           // when unticked, because on a name that resolves to an *existing* definition an
           // omission leaves it alone: adding a shared field here must not demote it elsewhere.
@@ -1631,6 +1694,7 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           setUnit('');
           setMinValue('');
           setMaxValue('');
+          setPrecision('');
         },
       },
     );
@@ -1673,12 +1737,13 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
             // The opt-in only exists on a date, so switching away from one retracts it rather
             // than leaving a tick set that the submit would silently discard.
             if (value !== 'DATE') setIsDueDate(false);
-            // Likewise the unit and range only exist on a number — clear them rather than leave
-            // typed values behind that the submit would drop without saying so.
+            // Likewise the unit, range and decimal places only exist on a number — clear them
+            // rather than leave typed values behind that the submit would drop without saying so.
             if (value !== 'NUMBER') {
               setUnit('');
               setMinValue('');
               setMaxValue('');
+              setPrecision('');
             }
           }}
           options={FIELD_TYPES.map((t) => ({ value: t, label: FIELD_TYPE_LABELS[t] }))}
@@ -1804,6 +1869,18 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
             aria-label={t('inventory.fields.number.addMaxLabel')}
             data-testid="add-field-max"
             className="h-8 w-24"
+          />
+          {t('inventory.fields.number.precisionLabel')}
+          {/* Numeric rather than decimal, matching the existing-field control: the count of
+              decimal places is itself a whole number. */}
+          <Input
+            inputMode="numeric"
+            maxLength={1}
+            value={precision}
+            onChange={(e) => setPrecision(e.target.value)}
+            aria-label={t('inventory.fields.number.addPrecisionLabel')}
+            data-testid="add-field-precision"
+            className="h-8 w-16"
           />
           <InfoHint content={t('inventory.fields.number.hint')} />
         </div>

@@ -28,8 +28,13 @@ import { labFlag } from '@/state/stores/useLabStore';
 import { measureClockOffset } from './clock';
 import { mergeSnapshot } from './merge';
 import type { CloudProvider } from './provider';
-import { REMOTE_MISSING_MESSAGE, SyncRemoteMissingError } from './sync-errors';
-import type { SyncConflict } from './types';
+import {
+  PUSH_FAILED_MESSAGE,
+  REMOTE_MISSING_MESSAGE,
+  SyncPushFailedError,
+  SyncRemoteMissingError,
+} from './sync-errors';
+import type { SyncConflict, SyncSnapshot } from './types';
 
 /**
  * §7.2 Tombstone TTL: 180 days in milliseconds.
@@ -39,7 +44,14 @@ import type { SyncConflict } from './types';
 export const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 
 export interface SyncResult {
-  readonly status: 'SYNCED' | 'PUBLISHED' | 'CLONED' | 'HARD_STOP';
+  /**
+   * `MERGED_NOT_PUBLISHED` is the half-completed pass (issue #638): the remote was pulled and
+   * merged into the local database, but uploading the merged snapshot failed. It never comes
+   * back as a *return* value — the pass still throws — it is what
+   * {@link import('./sync-errors').SyncPushFailedError} carries so the caller can report and
+   * adopt the half that did happen.
+   */
+  readonly status: 'SYNCED' | 'PUBLISHED' | 'CLONED' | 'HARD_STOP' | 'MERGED_NOT_PUBLISHED';
   /** Rows upserted locally from the remote. */
   readonly pulled: number;
   /** Rows deleted locally by winning remote tombstones. */
@@ -146,6 +158,10 @@ export interface RunSyncOptions {
 /**
  * Run one synchronisation pass against `provider`. Returns a {@link SyncResult};
  * never throws for the expected Hard-Stop case (returns `status: 'HARD_STOP'`).
+ *
+ * A push that fails *after* the merge committed throws a
+ * {@link import('./sync-errors').SyncPushFailedError} rather than the bare transport error, so
+ * the caller can still adopt the local half — see that class and {@link pushMerged} (issue #638).
  */
 export async function runSync(
   driver: IDatabaseDriver,
@@ -211,6 +227,8 @@ export async function runSync(
       mode: 'publish',
       remote: null,
     });
+    // Not wrapped as a half-completed pass (#638): `publish` mode only *reads* the local state,
+    // so a failed upload here genuinely leaves nothing changed — "sync failed" is the truth.
     await provider.pushSnapshot(merged);
     const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
     await writeSyncMeta(driver, effectiveNow, offset);
@@ -224,7 +242,9 @@ export async function runSync(
       mode: 'clone',
       remote: rawRemote,
     });
-    await provider.pushSnapshot(merged);
+    // The clone has already replaced this device's tables wholesale, so a failed push leaves
+    // local state changed — the caller has to know that even though there are no tallies (#638).
+    await pushMerged(provider, merged, { clockOffset: offset });
     const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
     await writeSyncMeta(driver, effectiveNow, offset);
     return result('CLONED', { prunedTombstones: pruned, clockOffset: offset });
@@ -241,24 +261,51 @@ export async function runSync(
     remote: rawRemote,
     conflictSince,
   });
-  await provider.pushSnapshot(outcome.merged);
-  const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
-  await writeSyncMeta(driver, effectiveNow, offset);
-
-  return result('SYNCED', {
+  // Everything the merge has *already committed* locally, named once so the failed-push path
+  // reports exactly what the success path would (issue #638) — the conflicts above all, since
+  // they describe local edits that no longer exist to be re-detected on a later pass.
+  const applied: Partial<SyncResult> = {
     pulled: outcome.pulled,
     deleted: outcome.deleted,
     reparented: outcome.reparented,
     rejectedCycles: outcome.rejectedCycles,
     serialisedLoansClosed: outcome.serialisedLoansClosed,
     bookingsCancelled: outcome.bookingsCancelled,
-    prunedTombstones: pruned,
     clockOffset: offset,
     historyInserted: outcome.historyInserted,
     tagEdgesAdded: outcome.tagEdgesAdded,
     tagEdgesRemoved: outcome.tagEdgesRemoved,
     conflicts: outcome.conflicts,
-  });
+  };
+  await pushMerged(provider, outcome.merged, applied);
+  const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
+  await writeSyncMeta(driver, effectiveNow, offset);
+
+  return result('SYNCED', { ...applied, prunedTombstones: pruned });
+}
+
+/**
+ * Push the merged snapshot, tagging any failure with what the merge already committed locally.
+ *
+ * Issue #638: by this point the pull has been applied and re-read, so the local database has
+ * changed whether or not the upload lands. Rethrowing as a {@link SyncPushFailedError} is what
+ * lets the caller keep the parts that do not depend on the push — the conflict records and a
+ * cache refresh — instead of discarding them with an unreturned outcome. `prunedTombstones` is
+ * deliberately absent from `applied`: the prune runs *after* the push, so a failed pass really
+ * did prune nothing, and the next attempt does it.
+ */
+async function pushMerged(
+  provider: CloudProvider,
+  merged: SyncSnapshot,
+  applied: Partial<SyncResult>,
+): Promise<void> {
+  try {
+    await provider.pushSnapshot(merged);
+  } catch (cause) {
+    throw new SyncPushFailedError(PUSH_FAILED_MESSAGE, result('MERGED_NOT_PUBLISHED', applied), {
+      cause,
+    });
+  }
 }
 
 /** §7.2 TTL prune of tombstones older than (now − ttl). */

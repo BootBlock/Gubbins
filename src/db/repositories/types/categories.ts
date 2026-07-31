@@ -218,6 +218,7 @@ export interface FieldDefRow {
   readonly unit: string | null;
   readonly min_value: number | null;
   readonly max_value: number | null;
+  readonly precision: number | null;
   readonly prominence: string | null;
   readonly updated_at: number;
 }
@@ -270,6 +271,19 @@ export interface FieldDef {
   /** The upper bound of a `NUMBER` field's accepted range; `null` is unbounded above. See {@link minValue}. */
   readonly maxValue: number | null;
   /**
+   * How many **decimal places** a `NUMBER` field is quoted to (W1e); `null` — the default, and
+   * the only legal value on any non-`NUMBER` type — means "as entered".
+   *
+   * Unlike {@link minValue}/{@link maxValue} this is not only a constraint. It refuses a value
+   * carrying more decimals than it allows *and* decides how a stored one is written wherever it
+   * is displayed, so a 2-decimal field shows `5.5` as `5.50`. The two halves are the same rule
+   * seen from either side — see `formatFieldNumber` / `fitsFieldPrecision`.
+   *
+   * `0` means whole numbers only, which is the case a range cannot express: no pair of bounds
+   * excludes `2.5` while admitting `2` and `3`.
+   */
+  readonly precision: number | null;
+  /**
    * How prominently this definition is presented among its siblings (W1d) — `'key'` makes it
    * **lead** every field set it appears in; `null` (the default) leaves it ranked by the
    * category's `position` and then by name.
@@ -305,6 +319,7 @@ export interface CategoryFieldRow {
   readonly unit: string | null;
   readonly min_value: number | null;
   readonly max_value: number | null;
+  readonly precision: number | null;
   readonly prominence: string | null;
   readonly position: number;
   readonly updated_at: number;
@@ -353,6 +368,12 @@ export interface CategoryField {
   readonly minValue: number | null;
   /** The definition's upper bound — see {@link FieldDef.maxValue}. Definition-wide, like {@link unit}. */
   readonly maxValue: number | null;
+  /**
+   * The definition's decimal places — see {@link FieldDef.precision}. Definition-wide, like
+   * {@link unit}: it is carried onto the category's view so the item editor can validate against
+   * it and every value surface can write the number to it without a second read.
+   */
+  readonly precision: number | null;
   /**
    * The definition's prominence rank — see {@link FieldDef.prominence}. Definition-wide, like
    * {@link unit}, so marking it here reorders the field in every category using it.
@@ -409,6 +430,14 @@ export interface CreateCategoryFieldInput {
   /** The upper bound of a `NUMBER` field's range; omit/null for unbounded above. See {@link minValue}. */
   readonly maxValue?: number | null;
   /**
+   * The decimal places a `NUMBER` field is quoted to (W1e); omit/null for "as entered". Applied
+   * on reuse and never cleared by omission, like {@link unit}.
+   *
+   * Note `0` is a *setting*, not an absence — "whole numbers only" — so the reuse rule tests for
+   * null rather than falsiness, or opting a shared field into whole numbers would never take.
+   */
+  readonly precision?: number | null;
+  /**
    * Mark the definition as a **key field** (W1d), so it leads its siblings wherever it appears;
    * omit/null for an ordinary field. Applies to any field type.
    *
@@ -454,6 +483,12 @@ export interface UpdateCategoryFieldInput {
   readonly minValue?: number | null;
   /** The upper bound of the accepted range; `null` leaves the field unbounded above. See {@link minValue}. */
   readonly maxValue?: number | null;
+  /**
+   * The decimal places the number is quoted to (W1e); `null` clears it, restoring "as entered".
+   * A *definition* attribute, so this reaches every category and location using the field.
+   * Rejected on a non-`NUMBER` field; retyping away from `NUMBER` clears it.
+   */
+  readonly precision?: number | null;
   /**
    * The prominence rank (W1d); `'default'`, `null` or a blank string all clear it. A *definition*
    * attribute, so this reaches every category and location using the field. Accepted on every
@@ -534,15 +569,18 @@ export interface LocationFieldValue {
   readonly options: string[] | null;
   readonly description: string | null;
   /**
-   * The definition's unit and range — see {@link FieldDef.unit} / {@link FieldDef.minValue}.
-   * Carried here for the same reason the identity half is: a location's value is edited and
-   * validated against the *definition*, so the editor must be able to label the control with
-   * its unit and the repository must be able to hold the value to the same range an item's is
-   * held to. Without them a location would be the one place a range could be side-stepped.
+   * The definition's unit, range and decimal places — see {@link FieldDef.unit} /
+   * {@link FieldDef.minValue} / {@link FieldDef.precision}. Carried here for the same reason the
+   * identity half is: a location's value is edited and validated against the *definition*, so the
+   * editor must be able to label the control with its unit and the repository must be able to
+   * hold the value to the same range and precision an item's is held to. Without them a location
+   * would be the one place either could be side-stepped — and a location feeds every item
+   * inheriting from it.
    */
   readonly unit: string | null;
   readonly minValue: number | null;
   readonly maxValue: number | null;
+  readonly precision: number | null;
   /**
    * The definition's prominence rank — see {@link FieldDef.prominence}. A location's field values
    * have **no `position` axis at all** (they are read in name order), so this is the only way one

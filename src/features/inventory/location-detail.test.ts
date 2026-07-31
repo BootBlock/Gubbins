@@ -13,7 +13,15 @@ import {
  */
 
 function field(overrides: Partial<LocationDetailField> = {}): LocationDetailField {
-  return { defId: 'def-1', name: 'Load rating', fieldType: 'TEXT', unit: null, value: '30 kg', ...overrides };
+  return {
+    defId: 'def-1',
+    name: 'Load rating',
+    fieldType: 'TEXT',
+    unit: null,
+    precision: null,
+    value: '30 kg',
+    ...overrides,
+  };
 }
 
 describe('resolveLocationDetailFields', () => {
@@ -23,6 +31,16 @@ describe('resolveLocationDetailFields', () => {
         field({ fieldType: 'NUMBER', name: 'Load rating', unit: 'kg', value: '30' }),
       ]),
     ).toEqual([{ id: 'def-1', label: 'Load rating', value: { kind: 'measure', text: '30', unit: 'kg' } }]);
+  });
+
+  it('writes a number to the definition’s decimal places, as an item card does (W1e)', () => {
+    // How a number is written belongs to the definition, so a location's value must not read
+    // "30" where an item's inheriting the same definition reads "30.00".
+    expect(
+      resolveLocationDetailFields([
+        field({ fieldType: 'NUMBER', name: 'Load rating', unit: 'kg', precision: 2, value: '30' }),
+      ]),
+    ).toEqual([{ id: 'def-1', label: 'Load rating', value: { kind: 'measure', text: '30.00', unit: 'kg' } }]);
   });
 
   it('resolves a value into the same descriptor an item card renders', () => {
@@ -56,6 +74,23 @@ describe('resolveLocationDetailFields', () => {
       field({ defId: 'i', name: 'Shelf photo', fieldType: 'IMAGE', value: src }),
     ]);
     expect(resolved?.value).toEqual({ kind: 'image', src });
+  });
+
+  it('renders a URL value as an openable link, as an item card does (W1f)', () => {
+    // The panel's own doc comment offers "a link to the boiler manual" as its worked example;
+    // this is the assertion that it really is one, and that it came from the shared seam
+    // rather than a second answer invented for locations.
+    const [resolved] = resolveLocationDetailFields([
+      field({ defId: 'u', name: 'Boiler manual', fieldType: 'URL', value: 'https://example.com/b.pdf' }),
+    ]);
+    expect(resolved?.value).toEqual({ kind: 'link', href: 'https://example.com/b.pdf' });
+  });
+
+  it('renders a FILE value that is a path as a pointer, not a link (W1f)', () => {
+    const [resolved] = resolveLocationDetailFields([
+      field({ defId: 'f', name: 'Wiring diagram', fieldType: 'FILE', value: '\\\\nas\\docs\\wiring.pdf' }),
+    ]);
+    expect(resolved?.value).toEqual({ kind: 'pointer', text: '\\\\nas\\docs\\wiring.pdf' });
   });
 
   it('preserves the order it is given', () => {

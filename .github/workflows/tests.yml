@@ -6,8 +6,11 @@ name: Tests
 # test and quality jobs both need a recent Node — the app's `:memory:` test driver and the bridge both use `node:sqlite`,
 # and Gubbins' schema needs `node:sqlite`'s FTS5 support (Node >= 22.16 or >= 24 — NOT any
 # v23.x build, FTS5 was never backported there). The bridge additionally runs TypeScript
-# directly via Node's built-in type-stripping — so all jobs pin Node 25, which satisfies the
-# requirement above and matches the local dev toolchain so the lockfile resolves identically.
+# directly via Node's built-in type-stripping, unflagged only from Node 22.18 — so these jobs
+# pin Node 25, which satisfies the requirement above and matches the local dev toolchain so the
+# lockfile resolves identically. One extra job (`bridge-min-node`) deliberately does not: it
+# boots the bridge on the exact floor `bridge/package.json` declares, so the declared minimum
+# is a version something actually runs rather than a number nobody exercises (issue #256).
 #
 # `workflow_call` also exposes this whole suite as a reusable gate: the Deploy workflow invokes
 # it (against the exact ref being published) and blocks its build on a green result, so the same
@@ -130,7 +133,7 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           # The bridge has no build step — it runs TypeScript directly, which needs
-          # Node >= 24 (or >= 22.16 LTS) for unflagged type-stripping and node:sqlite
+          # Node >= 24 (or >= 22.18 LTS) for unflagged type-stripping and node:sqlite
           # with FTS5 (the v23.x line never got FTS5). It has no deps of its own and
           # borrows the repo-root toolchain (Vitest/TypeScript).
           node-version: 25
@@ -148,5 +151,35 @@ jobs:
       # Boot-smoke both entry points under REAL Node (not esbuild/Vitest), so any
       # strip-only-incompatible TypeScript in the bridge's import graph — parameter
       # properties, enum, namespace — fails here rather than only at runtime.
+      - name: Boot-smoke the bridge
+        run: npm run smoke:bridge
+
+  # The floor, exercised. Everything else here runs on Node 25, so `bridge/package.json`'s
+  # `engines` range was previously just an assertion — it drifted below the version where
+  # Node's type-stripping is unflagged and nothing noticed, because no job ever ran the
+  # minimum (issue #256). This one boots both entry points on exactly that floor, so raising
+  # or lowering the declared minimum has to be true for CI to stay green.
+  bridge-min-node:
+    name: Bridge boot on the minimum Node
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Keep in step with the bottom of `bridge/package.json`'s `engines.node` range —
+          # the lowest Node the bridge claims to run on unaided. `npm ci` warns about the
+          # repo root's own `engines` (>=24, for the app's dev toolchain) and proceeds; only
+          # the bridge is under test here.
+          node-version: 22.18.0
+          cache: npm
+
+      - name: Install dependencies (repo-root toolchain)
+        run: npm ci
+
+      # The same boot-smoke as above. Passing here means the declared floor genuinely starts:
+      # type-stripping is on without a flag, and node:sqlite has the FTS5 the schema needs.
       - name: Boot-smoke the bridge
         run: npm run smoke:bridge
