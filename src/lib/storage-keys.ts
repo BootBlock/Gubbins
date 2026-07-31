@@ -70,6 +70,14 @@ export interface StorageKeyEntry {
 export const EMOJI_PICKER_SIZE_KEY = 'gubbins:emoji-picker-size';
 
 /**
+ * The heights of text boxes the user has dragged bigger (issue #615), keyed by the box's
+ * `sizeKey`. One key holds every box, for the same reason as the entry above: it is written
+ * directly by `foundry/textarea-size.ts` rather than through a Zustand `persist` name, and a
+ * key per control would leave the registry unable to name them.
+ */
+export const TEXTAREA_SIZES_KEY = 'gubbins:textarea-sizes';
+
+/**
  * Records the app version that already auto-reloaded this tab to recover from a code chunk the
  * host no longer serves (see `stale-chunk-reload.ts`), so a failed recovery can't loop. Defined
  * here for the same reason as the key above — it is written directly rather than through a
@@ -242,6 +250,15 @@ export const STORAGE_KEYS = [
     store: 'foundry/emoji-picker (usePersistedSize)',
     storage: 'local',
     eraseGroup: 'local-ui',
+    backupIncluded: false,
+  },
+  {
+    key: TEXTAREA_SIZES_KEY,
+    store: 'foundry/textarea-size',
+    storage: 'local',
+    eraseGroup: 'local-ui',
+    // Never backed up, for the same reason as the picker's panel size: a height that suits
+    // one screen is the wrong height on the next device.
     backupIncluded: false,
   },
   {

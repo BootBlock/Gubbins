@@ -257,6 +257,7 @@ export function ImportBomDialog({
         <ImportFileBanner read={fileRead} data-testid="bom-import-file-notice" />
 
         <Textarea
+          sizeKey="import.bom"
           value={text}
           onChange={(e) => {
             setFileRead(null);

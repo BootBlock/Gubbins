@@ -15,7 +15,8 @@ export { Surface, type SurfaceProps } from './surface';
 export { optionCardClassName } from './option-card';
 export { ReorderList, type ReorderListProps, type ReorderListItem } from './reorder-list';
 export { Spinner, type SpinnerProps } from './spinner';
-export { Input, Textarea, Checkbox, type InputProps } from './input';
+export { Input, Checkbox, type InputProps } from './input';
+export { Textarea, DEFAULT_TEXTAREA_MAX_ROWS, type TextareaProps } from './textarea';
 export { Radio } from './radio';
 export { NumberInput, type NumberInputProps } from './number-input';
 export {

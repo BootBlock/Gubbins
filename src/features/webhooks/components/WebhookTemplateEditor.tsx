@@ -90,6 +90,7 @@ export function WebhookTemplateEditor({ value, onChange, method }: WebhookTempla
           <label className="flex flex-col gap-field-gap-compact">
             <span className="text-xs text-muted-foreground">{t('webhooks.template.body')}</span>
             <Textarea
+              sizeKey="webhook.template"
               rows={6}
               value={value ?? ''}
               placeholder={t('webhooks.template.placeholder')}
