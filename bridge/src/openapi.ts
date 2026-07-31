@@ -2702,6 +2702,54 @@ export const openapiDocument: JsonValue = {
           },
         },
       },
+      LocationEventData: {
+        type: 'object',
+        description:
+          'The payload of a `location.*` event — a change to a storage *location* rather than to ' +
+          'an item. Deliberately flat: it carries no item, and no live location state (a ' +
+          '`location.removed` event has none left to read).',
+        required: ['locationId', 'locationName', 'action', 'label', 'detail'],
+        properties: {
+          locationId: {
+            type: 'string',
+            description:
+              'The location the change was about. Present on every location event including ' +
+              '`location.removed` — the activity record outlives the location it names, so an ' +
+              'automation keyed by location id is always told which one went.',
+            example: 'loc-workshop-shelf-b',
+          },
+          locationName: {
+            type: 'string',
+            description: 'The name the location carried when the change happened.',
+            example: 'Shelf B',
+          },
+          action: {
+            type: 'string',
+            // Deliberately **not** an enum, matching `BridgeEventData.action` above. The action
+            // column carries no CHECK, and a row synced from a newer peer can name an action this
+            // build has never heard of — `eventTypeForLocationAction` maps it to `location.changed`
+            // and the payload carries it verbatim. A closed enum here would make a generated
+            // validator reject that whole event (the `oneOf` would match no arm at all), which is
+            // the exact failure this schema exists to prevent.
+            description:
+              'The raw location activity action (e.g. `CREATED`, `RENAMED`, `RE_PARENTED`, ' +
+              '`ARCHIVED`, `RESTORED`, `DELETED`). Open-ended: a change made by a newer version of ' +
+              'Gubbins may name an action not in that list, and arrives as `location.changed`.',
+            example: 'RE_PARENTED',
+          },
+          label: {
+            type: 'string',
+            description: 'Short British-English action title.',
+            example: 'Moved',
+          },
+          detail: {
+            type: 'string',
+            nullable: true,
+            description: 'The stored human-readable note, or null.',
+            example: 'Moved from "Workshop" to "Garage".',
+          },
+        },
+      },
       LookupEventData: {
         type: 'object',
         required: ['query', 'itemIds', 'locationIds', 'matches'],
@@ -2784,9 +2832,13 @@ export const openapiDocument: JsonValue = {
           data: {
             description:
               'The payload, whose shape follows `type`: `LookupEventData` for `lookup.resolved`, ' +
-              '`BridgeEventData` for every ledger-derived event.',
+              '`LocationEventData` for every `location.*` event, `BridgeEventData` for every ' +
+              'item ledger-derived event. Discriminate on the payload rather than on `type`: ' +
+              '`events.truncated` is emitted by both ledgers and so arrives with either the item ' +
+              'or the location shape — the presence of `locationName` is what tells them apart.',
             oneOf: [
               { $ref: '#/components/schemas/BridgeEventData' },
+              { $ref: '#/components/schemas/LocationEventData' },
               { $ref: '#/components/schemas/LookupEventData' },
             ],
           },

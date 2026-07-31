@@ -692,13 +692,16 @@ behaviour that does not exist.
    and the Alerts / Upcoming feeds, so a batch approaching its date surfaces before it lapses"
    ([Batches-and-Lots.md](../wiki/Batches-and-Lots.md)) — a second, user-facing defect alongside the
    behavioural one.
-3. **Consumption rate summed incommensurable units** ([#685](https://github.com/BootBlock/Gubbins/issues/685)) into one `totalConsumed` scalar — grams,
-   millilitres and screws added together. There was no `GROUP BY` and no join to `items`, so the
-   mixed figure was the *entire* report: it rendered on the Reports screen as both a daily rate and
-   a total, and exported to CSV, with no unit and no qualifier. **Fixed:** the read now joins
-   `items`, the report is one line per unit of measure with no total across them, and the screen and
-   CSV label every figure.
-4. **Clearing an item's activity log can report it as dead stock the next day** ([#686](https://github.com/BootBlock/Gubbins/issues/686)). Dead-stock idle
+3. **Consumption rate sums incommensurable units** ([#685](https://github.com/BootBlock/Gubbins/issues/685)). ✅ **Fixed** — the read joins `items`
+   and the report is now one line per unit of measure, with no total across them; the Reports
+   screen, its per-unit panel and the CSV all label every figure. As found: grams, millilitres and
+   screws were added together into one `totalConsumed` scalar, with no `GROUP BY` and no join to
+   `items`, so the mixed figure was the *entire* report — rendered as both a daily rate and a total,
+   and exported to CSV, with no unit and no qualifier.
+4. **Clearing an item's activity log can report it as dead stock the next day** ([#686](https://github.com/BootBlock/Gubbins/issues/686)). ✅ **Fixed** — the
+   clear marker now counts as evidence, so an item is judged from the later of its last movement
+   and its last log clear, and only falls through to `items.created_at` when it has neither. As
+   found: dead-stock idle
    days derive from `MAX(item_history.created_at)` over rows carrying a delta
    ([ReportRepository.ts:1059-1061](../../src/db/repositories/ReportRepository.ts#L1059-L1061)),
    falling back to `items.created_at` when there is none
@@ -711,7 +714,9 @@ behaviour that does not exist.
 5. **A sale's COGS can leak a foreign currency** ([#687](https://github.com/BootBlock/Gubbins/issues/687)). The preferred-supplier subquery in
    `resolveOutboundDraw` ([item/stock.ts:422-423](../../src/db/repositories/item/stock.ts#L422-L423))
    has no `inBaseCurrencySql` guard, unlike every valuation read — so a ¥ supplier price can be
-   booked verbatim as base-currency cost.
+   booked verbatim as base-currency cost. ✅ **Fixed:** the guard and the preferred-supplier lookup
+   now live in one shared module (`db/repositories/supplier-cost-sql.ts`) that both the reports and
+   the sale path import, so a foreign price is declined on a sale exactly as it is in valuation.
 6. **Straight-line depreciation is orphaned, and the documentation says otherwise** ([#688](https://github.com/BootBlock/Gubbins/issues/688)). `currentValue()`
    ([asset-lifecycle.ts:120](../../src/features/inventory/asset-lifecycle.ts#L120)) has one
    production call site — the Asset editor. No report, export, card, bridge or schedule reads it:

@@ -890,6 +890,58 @@ describe('ReportRepository', () => {
       expect(report.consideredCount).toBe(1);
     });
 
+    // Clearing an item's Activity Log (issue #620) deletes its movement rows and leaves one
+    // marker carrying no deltas, so "last moved" goes unknown. Judging from `created_at` then
+    // aged the item by everything the clear erased (issue #686).
+    it("judges a cleared log from the clear, not the item's creation", async () => {
+      const now = Date.now();
+      const item = await idleItem('Cleared', undefined, now); // created 200 days ago
+      await driver.execute("UPDATE items SET dead_stock_mode = 'always' WHERE id = ?;", [item.id]);
+
+      await items.clearHistory(item.id, 'Device');
+
+      // Nothing is known before the clear, which just happened — so the item is not idle at all.
+      const report = await reports.deadStock(30, now);
+      expect(report.lines).toEqual([]);
+      expect(report.consideredCount).toBe(1);
+
+      // The ledger is append-only, so the marker's instant is read back rather than dictated.
+      const [marker] = await driver.query<{ created_at: number }>(
+        'SELECT created_at FROM item_history WHERE item_id = ?;',
+        [item.id],
+      );
+      const clearedAt = marker?.created_at ?? now;
+
+      // Sixty days on with no movement since, it is dead — but idle since the clear (60 days),
+      // not since its creation (260 by then).
+      const later = await reports.deadStock(30, clearedAt + 60 * MS_PER_DAY);
+      expect(later.lines.map((l) => l.name)).toEqual(['Cleared']);
+      expect(later.lines[0]?.idleDays).toBe(60);
+    });
+
+    it('lets a movement recorded after a clear override the clear', async () => {
+      const now = Date.now();
+      const item = await idleItem('Restocked', undefined, now);
+      await driver.execute("UPDATE items SET dead_stock_mode = 'always' WHERE id = ?;", [item.id]);
+      await items.clearHistory(item.id, 'Device');
+      const [marker] = await driver.query<{ created_at: number }>(
+        'SELECT created_at FROM item_history WHERE item_id = ?;',
+        [item.id],
+      );
+      const clearedAt = marker?.created_at ?? now;
+
+      // Stocked 50 days after the clear — the later of the two is what it is judged on.
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at) VALUES (?, ?, 'QUANTITY_CHANGE', 3, ?);`,
+        [crypto.randomUUID(), item.id, clearedAt + 50 * MS_PER_DAY],
+      );
+
+      // Sixty days after the clear is only ten days after that movement → still live.
+      const report = await reports.deadStock(30, clearedAt + 60 * MS_PER_DAY);
+      expect(report.lines).toEqual([]);
+      expect(report.consideredCount).toBe(1);
+    });
+
     it('reports the threshold each line was judged against', async () => {
       const now = Date.now();
       const bench = await locations.create({ name: 'Workbench' });

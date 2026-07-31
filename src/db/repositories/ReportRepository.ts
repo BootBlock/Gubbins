@@ -21,6 +21,7 @@ import {
   LOW_STOCK_QTY_THRESHOLD,
   UNASSIGNED_LOCATION_ID,
   type DeadStockMode,
+  type HistoryAction,
 } from './constants';
 import { addCalendarDays } from '@/lib/calendar-days';
 import { buildAncestorChain } from '@/features/inventory/location-inheritance';
@@ -84,6 +85,7 @@ import {
 } from '@/features/reports/parts-catalogue';
 import { THUMBNAIL_SUBQUERY } from './item/sql';
 import { notAVariantParentSql } from './item/attention-sql';
+import { inBaseCurrencySql, preferredSupplierCostSql } from './supplier-cost-sql';
 import { MONEY_STORAGE_DECIMALS, fromStoredMoney, roundMoney } from '@/lib/money';
 import {
   buildReorderPlan,
@@ -93,6 +95,13 @@ import {
 import { onOrderQtyForItemSql } from './PurchaseOrderRepository';
 import type { LowStockThresholds, Page, PageParams } from './types';
 import { nowMs } from '@/lib/clock';
+
+/**
+ * The action of the marker a cleared Activity Log leaves behind (issue #620), typed against the
+ * action vocabulary so a rename there breaks this build rather than silently turning the
+ * dead-stock query's clear-instant subselect into one that matches nothing.
+ */
+const HISTORY_CLEARED: HistoryAction = 'HISTORY_CLEARED';
 
 /** Default number of time buckets for the movement report (a fortnight of days fits well). */
 const DEFAULT_MOVEMENT_BUCKETS = 14;
@@ -176,53 +185,6 @@ function valuableStockFilter(itemAlias: string, stockAlias: string): string {
  * is a document that does not add up.
  */
 const SCHEDULE_ITEM_FILTER = valuableItemFilter('items');
-
-/**
- * SQL predicate matching a currency column denominated in the user's base currency, and therefore
- * summable into a total (issue #284; extended to purchase orders by issue #285).
- *
- * A `currency` — on a supplier part or on a purchase order — is free ISO-4217 text the user sets,
- * and it is stored and shown **verbatim — never converted**, because Gubbins holds no exchange
- * rates (no rate column, no rate-capture timestamp, nothing). Adding a ¥9,800 part to a £ total as
- * "9800" is not an approximation, it is a wrong number — and on the insurance schedule it is a
- * wrong number in a document a user may hand to an insurer. So a foreign-currency price is
- * excluded from valuation rather than silently mis-summed, mirroring the same refusal
- * `price-refresh` already makes when asked for the cheapest of mixed-currency quotes.
- *
- * `NULL`/blank means "base currency" (the columns' documented convention), so those always
- * match — blank is tested after `TRIM`, since a whitespace-only code names no currency and can
- * reach the column through a sync merge or an import, neither of which trims the way the entry
- * dialogs do. `baseCurrency` is null when unknown, which disables the filter entirely — an
- * unknown base cannot tell foreign from domestic, and failing open preserves the previous
- * behaviour rather than blanking every total.
- *
- * `col` is the qualified currency column to test (`sp.currency`, `po.currency`); passing one the
- * enclosing query does not expose fails loudly as an unknown-column error rather than quietly
- * matching nothing.
- */
-function inBaseCurrencySql(col: string, baseCurrency: string): string {
-  // `baseCurrency` is normalised to three ASCII letters by `BaseRepository.baseCurrency()`,
-  // so this interpolation carries no quoting or injection surface.
-  return `(${col} IS NULL OR TRIM(${col}) = '' OR UPPER(TRIM(${col})) = '${baseCurrency}')`;
-}
-
-/**
- * Correlated subquery yielding the **preferred** supplier part's `unit_cost` for an item
- * (NULL when none is marked, the preferred row is unpriced, or its price is in a currency
- * other than the base — see {@link inBaseCurrencySql}). Feeds the `preferredSupplierCost`
- * fallback so valuation honours the Phase-60 cost precedence — a manual `items.unit_cost` wins,
- * else the preferred supplier cost — resolved in one place by `effectiveUnitCost`
- * (`@/features/reports/reports`). `col` is the qualified item-id column to correlate on. At most
- * one preferred row exists per item (repository invariant); the `ORDER BY` is a defensive
- * tiebreak for a malformed multi-preferred state.
- */
-function preferredSupplierCostSql(col: string, baseCurrency: string | null): string {
-  return `(SELECT sp.unit_cost FROM supplier_parts sp
-             WHERE sp.item_id = ${col} AND sp.is_preferred = 1${
-               baseCurrency === null ? '' : ` AND ${inBaseCurrencySql('sp.currency', baseCurrency)}`
-             }
-             ORDER BY sp.updated_at DESC LIMIT 1)`;
-}
 
 /**
  * SQL expression for an item's **effective per-unit value** — the exact rule the pure
@@ -1052,10 +1014,26 @@ export class ReportRepository extends BaseRepository {
 
   /**
    * Dead stock (§3): items **opted in** to dead-stock reporting that have not moved within
-   * their idle threshold, with the capital tied up. "Last moved" is the most recent
-   * `item_history` entry that changed quantity or gauge value; an item that has never moved
-   * falls back to its `created_at`. The boundary is inclusive (idle for exactly the
-   * threshold qualifies); see `selectDeadStock`.
+   * their idle threshold, with the capital tied up. The instant an item is judged from is the
+   * most recent `item_history` entry that changed quantity or gauge value, **or** the most
+   * recent point its log was cleared — whichever is later; an item whose ledger offers neither
+   * falls back to its `created_at`. The boundary is inclusive (idle for exactly the threshold
+   * qualifies); see `selectDeadStock`.
+   *
+   * A cleared log counts because clearing one (issue #620) deletes the item's movement rows and
+   * leaves a single `HISTORY_CLEARED` marker carrying no deltas — so a movement-only read goes
+   * NULL for an item that has in fact been moving, and falling through to `created_at` reported
+   * an item stocked yesterday as idle since the day it was created (issue #686). The marker is
+   * as far back as the surviving evidence reaches, and a clear deletes everything older than
+   * itself, so taking the later of the two never prefers a movement the clear already erased.
+   *
+   * The marker rides the *same* subselect as the movement rows rather than a second one of its
+   * own. SQLite answers `MAX(created_at)` for an item by walking `idx_item_history_item_id`
+   * backwards and stopping at the first row that matches, so a predicate matching *more* rows
+   * can only stop at the same row or an earlier one: this widened arm never scans further than
+   * the movement-only read it replaces (it costs one more per-row comparison along the way).
+   * A dedicated marker subselect would instead scan the whole ledger of every never-cleared
+   * item, every time, to conclude there is nothing to find — `action` is not in the index.
    *
    * Reporting is opt-in (issue #92): an item is included only when its own `dead_stock_mode`
    * says `always`, or it defers (`inherit`) to a location in its ancestry that says so. Both
@@ -1073,7 +1051,7 @@ export class ReportRepository extends BaseRepository {
       unit_cost: number | null;
       preferred_supplier_cost: number | null;
       created_at: number;
-      last_moved_at: number | null;
+      last_known_movement_at: number | null;
       location_id: string;
       dead_stock_mode: DeadStockMode;
     }>(
@@ -1084,7 +1062,8 @@ export class ReportRepository extends BaseRepository {
               i.dead_stock_mode AS dead_stock_mode,
               ( SELECT MAX(h.created_at) FROM item_history h
                  WHERE h.item_id = i.id
-                   AND (h.quantity_delta IS NOT NULL OR h.net_value_delta IS NOT NULL) ) AS last_moved_at
+                   AND (h.quantity_delta IS NOT NULL OR h.net_value_delta IS NOT NULL
+                        OR h.action = '${HISTORY_CLEARED}') ) AS last_known_movement_at
          FROM items i
         WHERE ${valuableItemFilter('i')} AND i.quantity > 0;`,
     );
@@ -1106,7 +1085,7 @@ export class ReportRepository extends BaseRepository {
         // Stored in micro-units (issue #286); major units for the pure valuation seam.
         unitCost: fromStoredMoney(r.unit_cost),
         preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
-        lastMovedAt: r.last_moved_at,
+        lastKnownMovementAt: r.last_known_movement_at,
         createdAt: r.created_at,
         thresholdDays: policy.thresholdDays,
       });

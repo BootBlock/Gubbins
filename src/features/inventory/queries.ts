@@ -119,6 +119,9 @@ export const inventoryKeys = {
   locations: () => [...inventoryKeys.all, 'locations'] as const,
   locationTree: () => [...inventoryKeys.locations(), 'tree'] as const,
   locationList: () => [...inventoryKeys.locations(), 'list'] as const,
+  /** One location's activity record (issue #691). Under locations() so every location write —
+   *  which is exactly what appends to it — refreshes it by prefix. */
+  locationHistory: (id: string) => [...inventoryKeys.locations(), 'history', id] as const,
   // Phase 3 — categories, custom fields, tags, images & attachments.
   categories: () => [...inventoryKeys.all, 'categories'] as const,
   categoryList: () => [...inventoryKeys.categories(), 'list'] as const,
@@ -667,6 +670,28 @@ export function useItemHistory(id: string | undefined) {
  */
 export function readItemHistoryPage(id: string) {
   return (params: { limit: number; offset: number }) => getItemRepository().getHistory(id, params);
+}
+
+/**
+ * One location's activity record, newest first (issue #691) — the editor's History tab.
+ *
+ * Paged like the item Activity Log rather than read whole: the record grows every time the
+ * location is renamed, moved or archived, and a capped read presented as the whole set would be a
+ * lie about an audit trail.
+ */
+export function useLocationHistory(id: string | undefined) {
+  return useInfiniteQuery({
+    queryKey: inventoryKeys.locationHistory(id ?? ''),
+    enabled: Boolean(id),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      getLocationRepository().getHistory(id!, { limit: DEFAULT_PAGE_SIZE, offset: pageParam }),
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
+    // Deliberately **no** `maxPages` window, unlike the item Activity Log. That log is a
+    // virtualised, absolute-indexed list that can refetch a trimmed prefix as the user scrolls
+    // back up; this is a plain list behind a "Load more" button, so trimming the front would make
+    // entries the user is looking at disappear with no way to bring them back.
+  });
 }
 
 /** The full nested location hierarchy (powers the location sidebar/tree). */

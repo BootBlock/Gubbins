@@ -43,7 +43,7 @@ import { TagRepository } from '@/db/repositories/TagRepository.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import type { WebhookEventView } from '@/features/webhooks/event-view.ts';
 import { isLookupEvent } from './lookup.ts';
-import type { BridgeEvent, LedgerEvent } from './model.ts';
+import { isLocationEvent, type BridgeEvent, type LedgerEvent } from './model.ts';
 
 /**
  * Per-generation resolution context: the repositories plus the caches.
@@ -170,15 +170,16 @@ async function resolveTagIds(context: WebhookViewContext, itemId: string): Promi
 }
 
 /**
- * Is this a ledger-derived event (as opposed to the read-triggered `lookup.resolved`)?
+ * Is this an *item* ledger-derived event — as opposed to the read-triggered `lookup.resolved` or a
+ * location activity event (issue #691)?
  *
- * Uses the existing {@link isLookupEvent} predicate rather than sniffing `data` for an `action`
- * key: the union has exactly two arms, and `lookup.ts` already owns the one narrowing that is
- * sound (the ledger arm types its `type` as an open `string`, so the union cannot be discriminated
- * on `type` directly).
+ * Defined by elimination against the two predicates their own modules own, rather than by sniffing
+ * `data` here: the ledger arm types its `type` as an open `string`, so the union cannot be
+ * discriminated on `type` directly, and each of the other arms already has the one narrowing that
+ * is sound for it.
  */
 function isLedgerEvent(event: BridgeEvent): event is LedgerEvent {
-  return !isLookupEvent(event);
+  return !isLookupEvent(event) && !isLocationEvent(event);
 }
 
 /**
@@ -201,9 +202,12 @@ export async function buildWebhookEventView(
   };
 
   if (!isLedgerEvent(event)) {
-    // A lookup event concerns a *query*, not one item, and the view has deliberately no shape for
-    // it: `W3` treats "no item" as unconfirmable rather than pretending the first match is "the"
-    // item, which would let an item-scoped filter match on a coincidence.
+    // A lookup event concerns a *query*, and a location activity event concerns a *place*. Neither
+    // is about one item, and the view has deliberately no shape for either: `W3` treats "no item"
+    // as unconfirmable rather than pretending the first match is "the" item, which would let an
+    // item-scoped filter match on a coincidence. So an item-narrowing filter does not match one of
+    // these, and an `{{item.*}}` template placeholder renders empty — while `{{event.type}}` and
+    // the delivered payload still carry everything the event actually says.
     return { ...envelope, item: null, change: null };
   }
 

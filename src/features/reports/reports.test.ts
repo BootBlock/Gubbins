@@ -159,27 +159,34 @@ describe('selectDeadStock — dead-stock boundary', () => {
     const report = selectDeadStock(
       [
         // exactly 30 days idle → qualifies (boundary inclusive)
-        { id: 'a', name: 'Idle', quantity: 4, unitCost: 5, lastMovedAt: now - 30 * MS_PER_DAY, createdAt: 0 },
+        {
+          id: 'a',
+          name: 'Idle',
+          quantity: 4,
+          unitCost: 5,
+          lastKnownMovementAt: now - 30 * MS_PER_DAY,
+          createdAt: 0,
+        },
         // 29 days idle → still live, excluded
         {
           id: 'b',
           name: 'Fresh',
           quantity: 9,
           unitCost: 1,
-          lastMovedAt: now - 29 * MS_PER_DAY,
+          lastKnownMovementAt: now - 29 * MS_PER_DAY,
           createdAt: 0,
         },
-        // never moved; created 90 days ago → uses createdAt → qualifies
+        // nothing on the ledger; created 90 days ago → uses createdAt → qualifies
         {
           id: 'c',
           name: 'Never',
           quantity: 2,
           unitCost: 10,
-          lastMovedAt: null,
+          lastKnownMovementAt: null,
           createdAt: now - 90 * MS_PER_DAY,
         },
         // zero stock → excluded regardless of idleness
-        { id: 'd', name: 'Empty', quantity: 0, unitCost: 5, lastMovedAt: 0, createdAt: 0 },
+        { id: 'd', name: 'Empty', quantity: 0, unitCost: 5, lastKnownMovementAt: 0, createdAt: 0 },
       ],
       30,
       now,
