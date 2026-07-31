@@ -52,9 +52,11 @@ import {
   useSpendAnalytics,
   useStockAging,
   useTurnover,
+  useUnpricedGaugeCount,
   useValuationTrend,
 } from './queries';
 import { ForeignCurrencyNotice } from './components/ForeignCurrencyNotice';
+import { UnpricedGaugeNotice } from './components/UnpricedGaugeNotice';
 
 /**
  * The §3 Reports & valuation screen (inventory-depth Phase 61): headline value cards, a
@@ -76,6 +78,9 @@ export function ReportsScreen() {
   // Stock the valuation queries had to leave out because its price is quoted in another
   // currency — surfaced beneath the headline cards so the totals are never quietly short (#284).
   const excludedByCurrency = useForeignCurrencyCostCount();
+  // Gauge contents nothing prices — excluded for a different reason, so it gets its own
+  // notice rather than being folded into the unpriced count silently (#683).
+  const unpricedGauges = useUnpricedGaugeCount();
   const baseCurrency = usePreferencesStore((s) => s.baseCurrency);
   const consumption = useConsumptionRate();
   // Stock movement has its own selectable window (issue #86), matching the Spend and Sales
@@ -311,6 +316,7 @@ export function ReportsScreen() {
         </section>
 
         <ForeignCurrencyNotice count={excludedByCurrency.data} baseCurrency={baseCurrency} />
+        <UnpricedGaugeNotice count={unpricedGauges.data} />
 
         {/* Valuation breakdown */}
         <Reveal as="section" className="grid gap-6 lg:grid-cols-2">
@@ -370,7 +376,13 @@ export function ReportsScreen() {
                   <li key={line.id} className="flex items-center justify-between gap-3 py-2 text-sm">
                     <span className="min-w-0 truncate font-medium">{line.name}</span>
                     <span className="flex shrink-0 items-center gap-4 text-muted-foreground">
-                      <span>{f.quantity(line.quantity)} units</span>
+                      {/* A gauge is idle by its *contents*, not a unit count it does not
+                          have (issue #683) — "400g", not "0 units". */}
+                      <span>
+                        {line.measure
+                          ? f.measure(line.measure.amount, line.measure.unit)
+                          : `${f.quantity(line.quantity)} units`}
+                      </span>
                       {/* A location may set its own threshold, so a line can be flagged at a
                           figure other than the one in the panel heading — show it rather
                           than leave the row looking wrong. */}

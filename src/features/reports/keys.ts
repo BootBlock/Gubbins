@@ -66,4 +66,10 @@ export const reportKeys = {
 
   foreignCurrencyCostCount: (currency: string) =>
     [...reportKeys.all, 'foreign-currency-cost-count', currency] as const,
+
+  /**
+   * Keyed on the currency like its foreign-currency sibling, so a base-currency change
+   * re-reads it alongside the totals it qualifies (issue #683).
+   */
+  unpricedGaugeCount: (currency: string) => [...reportKeys.all, 'unpriced-gauge-count', currency] as const,
 } as const;

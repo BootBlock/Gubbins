@@ -19,6 +19,7 @@ import { BarcodeField } from './BarcodeField';
 import { dimensionToInput, resolveDimension } from '../measure-input';
 import { parseOptionalNumber, resolveMeasureDraft, type MeasureIssue } from './measure-draft';
 import { useCategories } from '../categories';
+import { gaugeCostHint } from '../gauge-field-copy';
 import { ITEM_NAME_EDIT_HINT } from '../item-field-copy';
 import { useUpdateItem } from '../mutations';
 import { useFieldSuggestions } from '../queries';
@@ -74,6 +75,11 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const [barcode, setBarcode] = useState(item.barcode ?? '');
   const [serialNumber, setSerialNumber] = useState(item.serialNumber ?? '');
   const [unitCost, setUnitCost] = useState(item.unitCost?.toString() ?? '');
+  // Gauge-only (issue #683): what one unit of *measure* of the contents costs, which is the
+  // only figure a gauge's stock can be valued from — its unit count is always 0.
+  const [costPerUnitOfMeasure, setCostPerUnitOfMeasure] = useState(
+    item.gauge?.costPerUnitOfMeasure?.toString() ?? '',
+  );
   const [categoryId, setCategoryId] = useState(item.categoryId ?? '');
   const [isUnlimited, setIsUnlimited] = useState(item.isUnlimited);
   // Weight is entered/shown in the user's chosen unit; the stored value is canonical grams.
@@ -101,6 +107,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     setBarcode(item.barcode ?? '');
     setSerialNumber(item.serialNumber ?? '');
     setUnitCost(item.unitCost?.toString() ?? '');
+    setCostPerUnitOfMeasure(item.gauge?.costPerUnitOfMeasure?.toString() ?? '');
     setCategoryId(item.categoryId ?? '');
     setIsUnlimited(item.isUnlimited);
     setWeight(weightToInput(item.weight, weightUnit));
@@ -135,6 +142,14 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   // A price is optional but, when entered, must be a usable non-negative number — the same
   // rule the measurements below follow, so two adjacent numeric fields behave alike.
   const unitCostEntry = parseOptionalNumber(unitCost);
+  const costPerUomEntry = parseOptionalNumber(costPerUnitOfMeasure);
+  // The column is CONSUMABLE_GAUGE-only (the repository rejects it for any other mode), so the
+  // field is only offered — and only enters the draft — when the item actually is one.
+  const isGauge = item.trackingMode === 'CONSUMABLE_GAUGE';
+  // The gauge's own unit names the cost field ("Cost per g"), so the label says what is being
+  // priced rather than leaving the reader to infer it. A gauge always has one; the fallback is
+  // only for a malformed row that reached the editor without gauge state.
+  const gaugeUnitLabel = item.gauge?.unitOfMeasure ?? 'unit';
   // Weight resolves its dirty flag + canonical-gram value in one go; each dimension does the
   // same against millimetres. An untouched field keeps its stored value, so re-saving another
   // field never nudges it by the conversion's floating-point error (e.g. 1600 g via ounces).
@@ -160,6 +175,14 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     barcode: text(barcode),
     serialNumber: text(serialNumber),
     unitCost: unitCostEntry.issue === null ? unitCostEntry.value : (item.unitCost ?? null),
+    ...(isGauge
+      ? {
+          costPerUnitOfMeasure:
+            costPerUomEntry.issue === null
+              ? costPerUomEntry.value
+              : (item.gauge?.costPerUnitOfMeasure ?? null),
+        }
+      : {}),
     weight: weightState.value,
     width: widthState.value,
     height: heightState.value,
@@ -179,6 +202,9 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     draft.serialNumber !== (item.serialNumber ?? null) ||
     draft.unitCost !== (item.unitCost ?? null) ||
     unitCostEntry.issue !== null ||
+    (isGauge &&
+      (costPerUomEntry.value !== (item.gauge?.costPerUnitOfMeasure ?? null) ||
+        costPerUomEntry.issue !== null)) ||
     weightState.dirty ||
     widthState.dirty ||
     heightState.dirty ||
@@ -197,6 +223,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const valid =
     draft.name.length > 0 &&
     unitCostEntry.issue === null &&
+    (!isGauge || costPerUomEntry.issue === null) &&
     weightState.issue === null &&
     widthState.issue === null &&
     heightState.issue === null &&
@@ -291,11 +318,30 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
           hint={
             'What **one unit** costs, in your base currency. Drives valuation and project ' +
             'costing.\n\nWhen set, this **manual** cost overrides the preferred supplier’s price; ' +
-            'leave it blank to use the preferred supplier from the **Supplier & ops** tab.'
+            'leave it blank to use the preferred supplier from the **Supplier & ops** tab.' +
+            // A gauge holds a measure rather than units, so this cost values nothing on it —
+            // saying so beats leaving the claim above standing (issue #683).
+            (isGauge
+              ? `\n\n> A gauge is **not** valued from this. Use *Cost per ${gaugeUnitLabel}* beside it.`
+              : '')
           }
         >
           <MoneyInput value={unitCost} onValueChange={setUnitCost} placeholder="0.00" />
         </FormField>
+        {isGauge ? (
+          <FormField
+            label={`Cost per ${gaugeUnitLabel} (optional)`}
+            error={measureIssue(costPerUomEntry.issue)}
+            hint={gaugeCostHint(gaugeUnitLabel)}
+          >
+            <MoneyInput
+              value={costPerUnitOfMeasure}
+              onValueChange={setCostPerUnitOfMeasure}
+              placeholder="0.00"
+              data-testid="item-details-cost-per-uom"
+            />
+          </FormField>
+        ) : null}
         <SelectField
           label="Category"
           hint="Groups the item and unlocks that category’s **custom fields**. *None* leaves it uncategorised."

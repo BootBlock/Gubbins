@@ -133,6 +133,32 @@ describe('ItemRepository', () => {
     expect(spool.gauge?.currentNetValue).toBe(1000); // defaults to full
     expect(spool.gauge?.percentageRemaining).toBe(100);
     expect(spool.gauge?.currentGrossWeight).toBe(1250);
+    // Unpriced by default — an ordinary state, distinct from "priced at nothing" (issue #683).
+    expect(spool.gauge?.costPerUnitOfMeasure).toBeNull();
+  });
+
+  // Issue #683 — the only figure a gauge's contents can be valued from. `unit_cost` prices one
+  // countable unit, and a gauge holds a measure, so it values a full spool at zero.
+  it('round-trips a gauge’s cost per unit of measure, and keeps it gauge-only', async () => {
+    const spool = await items.create({
+      name: 'PLA Filament',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, tareWeight: 0, costPerUnitOfMeasure: 0.025 },
+    });
+    expect(spool.gauge?.costPerUnitOfMeasure).toBe(0.025);
+
+    // Editable afterwards like any other price, and clearable back to unpriced.
+    const repriced = await items.update(spool.id, { costPerUnitOfMeasure: 0.03 });
+    expect(repriced.gauge?.costPerUnitOfMeasure).toBe(0.03);
+    expect(
+      (await items.update(spool.id, { costPerUnitOfMeasure: null })).gauge?.costPerUnitOfMeasure,
+    ).toBeNull();
+
+    // A counted item has no unit of measure to price, so it is refused with a message that
+    // names the field it should have used instead of a raw constraint failure.
+    const bolt = await items.create({ name: 'Bolt', quantity: 10 });
+    await expect(items.update(bolt.id, { costPerUnitOfMeasure: 1 })).rejects.toThrow(/unit cost/i);
+    await expect(items.update(spool.id, { costPerUnitOfMeasure: -1 })).rejects.toThrow(/non-negative/i);
   });
 
   it('stores and clears §4.1.1 operational metadata on any item (not just gauges)', async () => {

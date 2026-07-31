@@ -14,6 +14,7 @@
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { addCalendarDays } from '@/lib/calendar-days';
 import { effectiveUnitCost as resolveCostPrecedence } from '@/features/inventory/supplier-cost';
+import { effectiveUnitValue } from '@/features/inventory/valuation';
 
 import { inTimeWindow } from './window-membership';
 
@@ -49,6 +50,72 @@ export function effectiveUnitCost(unit: ValuedUnit): number {
     unit.preferredSupplierCost != null ? [{ unitCost: unit.preferredSupplierCost, isPreferred: true }] : [],
   );
   return resolved ?? 0;
+}
+
+// --- What a valuation multiplies (issue #683) ----------------------------------
+
+/**
+ * A CONSUMABLE_GAUGE item's valuation inputs (issue #683) — the material actually in the
+ * gauge and what one unit of measure of it costs.
+ *
+ * A gauge is priced along a different axis from everything else Gubbins values. Its
+ * `items.quantity` is pinned at 0 (it tracks a *measure*, not a count of units), so the
+ * ordinary `quantity × unit cost` product values a full argon cylinder at zero however
+ * carefully it was priced — the defect this type exists to close.
+ */
+export interface GaugeValuation {
+  /** Material currently held, in the item's unit of measure (`current_net_value`). */
+  readonly netValue: number;
+  /** Cost of one unit of measure, or `null` when the gauge is unpriced. */
+  readonly costPerUnitOfMeasure: number | null;
+}
+
+/**
+ * Everything the valuation rule needs to price one item's on-hand stock — the count-based
+ * inputs every item carries, plus the gauge branch when it has one.
+ *
+ * `gauge` is present **only** for a CONSUMABLE_GAUGE item, and its presence is what selects
+ * the axis: with it, value is `netValue × costPerUnitOfMeasure`; without it, the familiar
+ * `quantity × effectiveUnitValue`. Callers therefore never test a tracking mode themselves —
+ * they supply the gauge state (or don't) and let {@link valuedAmount} / {@link valuedUnitValue}
+ * decide, which is what keeps the SQL twins in {@link ReportRepository} honest.
+ */
+export interface ValuedStock extends ValuedUnit {
+  /** On-hand count. Ignored when {@link ValuedStock.gauge} is set (a gauge's is always 0). */
+  readonly quantity: number;
+  /** Manual per-unit mark-to-market value (`items.current_value`); wins over the cost. */
+  readonly currentValuePerUnit?: number | null;
+  /** Gauge state, for a CONSUMABLE_GAUGE item only; absent/null for every other mode. */
+  readonly gauge?: GaugeValuation | null;
+}
+
+/**
+ * The **amount** a valuation multiplies the per-unit value by: a gauge's material on hand,
+ * else the on-hand count. Floored at 0 — neither a count nor a measure can be negative, and a
+ * negative one would subtract from a total rather than simply not adding to it.
+ */
+export function valuedAmount(item: ValuedStock): number {
+  return Math.max(0, item.gauge ? item.gauge.netValue : item.quantity);
+}
+
+/**
+ * The **per-unit value** that amount is worth: for a gauge, the cost of one unit of measure
+ * (0 when unpriced); otherwise the ordinary precedence — a manual current value wins, else the
+ * effective replacement cost.
+ *
+ * A gauge deliberately does **not** fall back to `unit_cost`, `current_value` or a supplier
+ * price. All three price one *countable unit*, so applying any of them per gram would be a
+ * confident wrong number — off by whatever the capacity happens to be. An unpriced gauge is
+ * reported as unpriced instead, which is the same refusal the foreign-currency exclusion makes.
+ */
+export function valuedUnitValue(item: ValuedStock): number {
+  if (item.gauge) return Math.max(0, item.gauge.costPerUnitOfMeasure ?? 0);
+  return Math.max(0, effectiveUnitValue(item.currentValuePerUnit, effectiveUnitCost(item)));
+}
+
+/** The value of one item's on-hand stock: {@link valuedAmount} × {@link valuedUnitValue}. */
+export function stockValue(item: ValuedStock): number {
+  return valuedAmount(item) * valuedUnitValue(item);
 }
 
 // --- Inventory valuation -------------------------------------------------------
@@ -281,6 +348,13 @@ export interface DeadStockCandidate {
   readonly unitCost: number | null;
   readonly preferredSupplierCost?: number | null;
   /**
+   * Gauge state for a CONSUMABLE_GAUGE item (issue #683), else absent. Its `quantity` is always
+   * 0, so without this a full-but-idle cylinder would look like nothing to report.
+   */
+  readonly gauge?: GaugeValuation | null;
+  /** The gauge's unit of measure, for the line's amount caption; absent for counted items. */
+  readonly unitOfMeasure?: string | null;
+  /**
    * UNIX-ms of the furthest forward the item's ledger accounts for: its most recent stock
    * movement, or the most recent point its Activity Log was cleared if that is later
    * (issue #686 — a clear deletes the movement rows, so it is where the record stops and
@@ -302,9 +376,17 @@ export interface DeadStockLine {
   readonly id: string;
   readonly name: string;
   readonly quantity: number;
+  /**
+   * For a gauge line (issue #683): the material it holds and its unit, so the row can read
+   * "400 g" where a counted line reads a bare count. Null for every other tracking mode.
+   */
+  readonly measure: { readonly amount: number; readonly unit: string } | null;
   /** Days since the item last moved (or its log was cleared, or it was created), as of `now`. */
   readonly idleDays: number;
-  /** Capital tied up in the idle stock (`quantity * effectiveUnitCost`). */
+  /**
+   * Capital tied up in the idle stock: the on-hand count × `effectiveUnitCost`, or for a gauge
+   * its contents × its cost per unit of measure (issue #683).
+   */
   readonly value: number;
   /**
    * The idle threshold this line was judged against (issue #92) — the report-level
@@ -354,7 +436,10 @@ export function selectDeadStock(
   let totalValue = 0;
   let consideredCount = 0;
   for (const candidate of candidates) {
-    if (candidate.quantity <= 0) continue; // no stock ⇒ nothing dead to report
+    // A gauge holds a measure rather than a count (issue #683), so what decides "holds stock"
+    // — and what the tied-up capital is computed from — is its contents, not its quantity.
+    const amount = valuedAmount(candidate);
+    if (amount <= 0) continue; // no stock ⇒ nothing dead to report
     consideredCount += 1;
     const thresholdDays = candidate.thresholdDays ?? sinceDays;
     const reference = candidate.lastKnownMovementAt ?? candidate.createdAt;
@@ -362,12 +447,19 @@ export function selectDeadStock(
     // from now, so it does not slip an hour across a DST change.
     if (reference > addCalendarDays(now, -thresholdDays)) continue; // still live
     const idleDays = Math.max(0, Math.floor((now - reference) / MS_PER_DAY));
-    const value = Math.max(0, candidate.quantity) * effectiveUnitCost(candidate);
+    // Deliberately the *cost* seam, not `stockValue`: dead stock reports capital tied up in
+    // stock that is not moving, which is what it cost to acquire — a mark-to-market revaluation
+    // does not free up any of it. A gauge's cost per unit of measure is that same figure.
+    const unitValue = candidate.gauge
+      ? Math.max(0, candidate.gauge.costPerUnitOfMeasure ?? 0)
+      : effectiveUnitCost(candidate);
+    const value = amount * unitValue;
     totalValue += value;
     lines.push({
       id: candidate.id,
       name: candidate.name,
-      quantity: candidate.quantity,
+      quantity: candidate.gauge ? 0 : candidate.quantity,
+      measure: candidate.gauge && candidate.unitOfMeasure ? { amount, unit: candidate.unitOfMeasure } : null,
       idleDays,
       value,
       thresholdDays,

@@ -128,6 +128,8 @@ const queryState: Record<
   sales: { isLoading: true, isError: false },
   // Nothing excluded by default, so the currency notice stays out of every existing test.
   foreignCurrency: { isLoading: false, isError: false, data: 0 },
+  // Likewise no unpriced gauge contents by default, so that notice stays out too (#683).
+  unpricedGauges: { isLoading: false, isError: false, data: 0 },
 };
 
 function makeAllLoaded() {
@@ -254,6 +256,7 @@ vi.mock('./queries', () => ({
   },
   useSalesAnalytics: (_windowDays?: number, _options?: { enabled?: boolean }) => ({ ...queryState.sales }),
   useForeignCurrencyCostCount: () => ({ ...queryState.foreignCurrency }),
+  useUnpricedGaugeCount: () => ({ ...queryState.unpricedGauges }),
 }));
 
 // --------------------------------------------------------------------------

@@ -25,7 +25,6 @@ import {
 } from './constants';
 import { addCalendarDays } from '@/lib/calendar-days';
 import { buildAncestorChain } from '@/features/inventory/location-inheritance';
-import { effectiveUnitValue } from '@/features/inventory/valuation';
 import {
   resolveDeadStockPolicy,
   type DeadStockLocationPolicy,
@@ -38,10 +37,10 @@ import {
 } from '@/features/reports/data-hygiene';
 import {
   bucketMovement,
-  effectiveUnitCost,
   selectDeadStock,
   sortValueGroups,
   summariseConsumption,
+  valuedUnitValue,
   type ConsumptionRateReport,
   type DeadStockCandidate,
   type DeadStockReport,
@@ -133,6 +132,21 @@ function notUnlimited(col: string): string {
 }
 
 /**
+ * SQL predicate matching a CONSUMABLE_GAUGE item (issue #683) — the one tracking mode valued
+ * along a different axis from every other.
+ *
+ * A gauge holds a *measure*, not a count: its `items.quantity` is pinned at 0 and it never takes
+ * a positive `item_stock` row, so `quantity × unit cost` values a full cylinder at zero. Its value
+ * is `current_net_value × cost_per_unit_of_measure` instead — see {@link valuedAmountSql} and
+ * {@link effectiveUnitValueSql}, the SQL twins of the pure `valuedAmount` / `valuedUnitValue` seam.
+ *
+ * `alias` is the qualified `items` alias (`i`, `items`).
+ */
+function isGauge(alias: string): string {
+  return `${alias}.tracking_mode = 'CONSUMABLE_GAUGE'`;
+}
+
+/**
  * The single WHERE fragment for an **item-based on-hand valuation read**: an item counts as
  * valuable stock when it is active, is not an abstract variant **parent** (which holds no stock
  * of its own — {@link notAVariantParent}), and is not an unlimited source (whose `qty × value`
@@ -156,8 +170,9 @@ function valuableItemFilter(alias: string): string {
 /**
  * The ledger twin of {@link valuableItemFilter}: the single WHERE fragment for a **per-location
  * valuation read** that values the `item_stock` ledger where stock physically sits. Stock counts
- * when its item is active, not an abstract variant parent, and not unlimited, **and the placement
- * holds a positive quantity** (`s.quantity > 0`).
+ * when its item is active, not an abstract variant parent, not unlimited, **and the placement
+ * holds a positive quantity** (`s.quantity > 0`) — and is not a gauge, which the ledger cannot
+ * describe at all and which {@link valuableGaugeFilter}'s second arm picks up instead (#683).
  *
  * It carries `notAVariantParent` for the same reason its item-based twin does, not because the
  * join guarantees it: "a variant parent holds no stock of its own" is a convention, not an
@@ -172,7 +187,37 @@ function valuableItemFilter(alias: string): string {
  * agree on which stock is valued (issue #398).
  */
 function valuableStockFilter(itemAlias: string, stockAlias: string): string {
-  return `${itemAlias}.is_active = 1 AND ${notAVariantParent(`${itemAlias}.id`)} AND ${stockAlias}.quantity > 0 AND ${notUnlimited(`${itemAlias}.is_unlimited`)}`;
+  return `${itemAlias}.is_active = 1 AND ${notAVariantParent(`${itemAlias}.id`)} AND ${stockAlias}.quantity > 0 AND ${notUnlimited(`${itemAlias}.is_unlimited`)} AND NOT ${isGauge(itemAlias)}`;
+}
+
+/**
+ * The gauge arm of a per-location valuation read (issue #683): the WHERE for the gauges
+ * {@link valuableStockFilter} deliberately leaves behind.
+ *
+ * A gauge holds no `item_stock` row worth valuing — the ledger counts units and a gauge has
+ * none — so the ledger read can never see one, and without a second arm the location breakdown
+ * would omit stock the headline includes and the two would stop summing to the same total
+ * (the invariant issue #155 established). That arm reads `items` directly and attributes the
+ * gauge's contents to `items.location_id`, which is where a cylinder or a spool physically is.
+ *
+ * `alias` is the qualified `items` alias. Deliberately the *complement* of the ledger filter
+ * over the same three item predicates, so every item is valued exactly once across the two arms.
+ */
+function valuableGaugeFilter(alias: string): string {
+  return `${valuableItemFilter(alias)} AND ${isGauge(alias)}`;
+}
+
+/**
+ * SQL expression for the **amount** a valuation multiplies an item's per-unit value by — the
+ * twin of the pure `valuedAmount` seam (`@/features/reports/reports`): a gauge's material on
+ * hand (`current_net_value`), else the on-hand count. Floored at 0 in both branches, so a
+ * negative figure that reached the column through a sync merge cannot subtract from a total.
+ *
+ * `alias` is the qualified `items` alias.
+ */
+function valuedAmountSql(alias: string): string {
+  return `CASE WHEN ${isGauge(alias)} THEN MAX(COALESCE(${alias}.current_net_value, 0), 0)
+               ELSE MAX(${alias}.quantity, 0) END`;
 }
 
 /**
@@ -234,10 +279,17 @@ function preferredSupplierCostSql(col: string, baseCurrency: string | null): str
 
 /**
  * SQL expression for an item's **effective per-unit value** — the exact rule the pure
- * `effectiveUnitValue(currentValue, effectiveUnitCost(item))` seam applies in JavaScript, in the
- * order it applies it: a manual `current_value` wins (a 0 is a deliberate "worth nothing" mark),
- * else a manual `unit_cost`, else the preferred supplier cost, else 0 (genuinely unpriced). A
- * negative figure is not a usable price, matching `usablePrice`, so it falls through.
+ * `valuedUnitValue` seam applies in JavaScript, in the order it applies it: a manual
+ * `current_value` wins (a 0 is a deliberate "worth nothing" mark), else a manual `unit_cost`,
+ * else the preferred supplier cost, else 0 (genuinely unpriced). A negative figure is not a
+ * usable price, matching `usablePrice`, so it falls through.
+ *
+ * A **gauge** short-circuits all of that (issue #683): its per-unit value is the cost of one unit
+ * of *measure*, and it is never allowed to fall back to the three columns below, all of which
+ * price one countable unit. Reading `unit_cost` per gram would be wrong by whatever the capacity
+ * happens to be — a confident wrong number, which on an insurance schedule is worse than an
+ * omission — so an unpriced gauge yields 0 and is reported as unpriced by
+ * {@link ReportRepository.unpricedGaugeCount} instead.
  *
  * The one thing it does not restate is that helper's finiteness test: `normaliseUnitCost`,
  * `normaliseCurrentValue` and the supplier-part writer's `cleanCost` all reject a non-finite price
@@ -256,6 +308,7 @@ function preferredSupplierCostSql(col: string, baseCurrency: string | null): str
  */
 function effectiveUnitValueSql(alias: string, baseCurrency: string | null): string {
   return `CASE
+            WHEN ${isGauge(alias)} THEN MAX(COALESCE(${alias}.cost_per_unit_of_measure, 0), 0)
             WHEN ${alias}.current_value IS NOT NULL AND ${alias}.current_value >= 0 THEN ${alias}.current_value
             WHEN ${alias}.unit_cost IS NOT NULL AND ${alias}.unit_cost >= 0 THEN ${alias}.unit_cost
             ELSE MAX(COALESCE(${preferredSupplierCostSql(`${alias}.id`, baseCurrency)}, 0), 0)
@@ -291,7 +344,10 @@ function valuedItemColumns(alias: string, baseCurrency: string | null): string {
  * `SUM … GROUP BY` returns one row per room.
  *
  * The per-unit value from {@link effectiveUnitValueSql} is in stored **micro-units** (the ×10^6 money
- * scale, issue #286), so `quantity × value` is a line total in micro-units — already an exact integer.
+ * scale, issue #286), so `amount × value` is a line total in micro-units — an exact integer for a
+ * counted asset, and for a gauge a real-valued product, since `current_net_value` is a REAL measure
+ * rather than an integer count (issue #683). Either way the line is quantised to an integer count of
+ * minor units *before* it is summed, so the `SUM` below is exact and order-independent regardless.
  * Re-quantising it to the reporting currency's minor unit is therefore a **divide** by
  * `10^(storageDecimals − reportingDecimals)` (∈ {10^6, 10^4, 10^3} for 0/2/3dp currencies), rounded
  * half-up, rather than the multiply the major-unit REAL column needed. Two things make it match
@@ -312,8 +368,8 @@ function valuedItemColumns(alias: string, baseCurrency: string | null): string {
  * pins this against the pure seam over randomised fixtures at each supported minor unit (0dp, 2dp, 3dp).
  */
 function scheduleLineMinorUnitsSql(alias: string, baseCurrency: string | null, decimals: number): string {
-  // `quantity × effectiveUnitValue` in stored micro-units (issue #286).
-  const lineMicros = `MAX(${alias}.quantity, 0) * MAX(${effectiveUnitValueSql(alias, baseCurrency)}, 0)`;
+  // `amount × effectiveUnitValue` in stored micro-units (issue #286).
+  const lineMicros = `(${valuedAmountSql(alias)}) * MAX(${effectiveUnitValueSql(alias, baseCurrency)}, 0)`;
   // micro-units → the reporting currency's minor units: divide by 10^(6 − reportingDecimals).
   const divisor = 10 ** (MONEY_STORAGE_DECIMALS - decimals);
   return `CAST(CAST(printf('%.15g', (${lineMicros}) / ${divisor}.0) AS REAL) + 0.5 AS INTEGER)`;
@@ -373,6 +429,9 @@ export class ReportRepository extends BaseRepository {
    * lets the user fix it (set a manual cost, or re-quote the part in the base currency) instead
    * of trusting a total that quietly omits stock.
    *
+   * Gauges are outside this count entirely (issue #683): they are never valued from a supplier
+   * price, so no currency of one can exclude them. {@link unpricedGaugeCount} is their notice.
+   *
    * Returns 0 when the base currency is unknown, since nothing is excluded in that case.
    */
   async foreignCurrencyCostCount(): Promise<number> {
@@ -382,6 +441,7 @@ export class ReportRepository extends BaseRepository {
       `SELECT COUNT(*) AS n
          FROM items i
         WHERE ${valuableItemFilter('i')}
+          AND NOT ${isGauge('i')}
           AND i.unit_cost IS NULL AND i.current_value IS NULL
           AND EXISTS (SELECT 1 FROM supplier_parts sp
                        WHERE sp.item_id = i.id AND sp.is_preferred = 1 AND sp.unit_cost IS NOT NULL
@@ -391,11 +451,44 @@ export class ReportRepository extends BaseRepository {
   }
 
   /**
-   * Inventory valuation (§3): the overall `SUM(quantity × effectiveUnitCost)`, the count of
+   * How many **gauges hold material that nothing prices** (issue #683) — active, non-parent
+   * gauges with a positive `current_net_value` and no `cost_per_unit_of_measure`.
+   *
+   * A gauge is valued as `contents × cost per unit of measure` and is never allowed to fall back
+   * to `unit_cost`, `current_value` or a supplier price: those three price one *countable* unit,
+   * and applying one per gram would be wrong by whatever the capacity happens to be. So an
+   * unpriced gauge contributes nothing, and this is the number that says so — the gauge twin of
+   * {@link foreignCurrencyCostCount}, for the same reason. Reporting a confident £0 for a full
+   * argon cylinder is the failure this closes, worst of all on the insurance schedule, where the
+   * reader is a third party who cannot know the figure is short.
+   *
+   * An **empty** gauge is excluded whether or not it is priced: nothing is missing from a total
+   * that correctly contains nothing, and counting those would raise a false alarm about a figure
+   * that is in fact complete — the same restraint {@link foreignCurrencyCostCount} shows in
+   * skipping items that carry a value of their own.
+   */
+  async unpricedGaugeCount(): Promise<number> {
+    const row = await this.driver.queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n
+         FROM items i
+        WHERE ${valuableGaugeFilter('i')}
+          AND i.cost_per_unit_of_measure IS NULL
+          AND COALESCE(i.current_net_value, 0) > 0;`,
+    );
+    return row?.n ?? 0;
+  }
+
+  /**
+   * Inventory valuation (§3): the overall `SUM(amount × effectiveUnitValue)`, the count of
    * unpriced active items, and the value broken down **by category** and **by location**.
    * The headline + category breakdown read `items.quantity` (the item's whole on-hand
    * count); the location breakdown reads the per-location `item_stock` ledger so stock split
    * across drawers is valued where it physically sits. Active, non-parent items only.
+   *
+   * "Amount" rather than "quantity" because a CONSUMABLE_GAUGE item is valued from its contents
+   * (issue #683) — see {@link valuedAmountSql}. That also gives the location breakdown a second
+   * arm: a gauge takes no `item_stock` row, so the ledger read alone would omit stock the
+   * headline counts and the two would stop summing to the same total.
    *
    * Both breakdowns are summed **in SQL** (issue #170): the queries return one row per category
    * and per location — a few dozen — rather than one per item, so the report costs the same to
@@ -411,27 +504,41 @@ export class ReportRepository extends BaseRepository {
     // Headline + per-category: `items.quantity` (the whole on-hand count) grouped by category.
     // The unpriced count is per *item*, so it belongs to this query and not the location one —
     // an item split across three drawers is one unpriced item, not three.
+    //
+    // `qty` and `amount` are deliberately different columns (issue #683). `amount` is what the
+    // value is computed from — a gauge's material on hand, else the count — while `qty` is the
+    // **units** figure the screen shows, and a gauge contributes none: adding 400 (grams) to a
+    // count of screws would make the total a number of nothing.
     const categoryRows = await this.driver.query<ValuationGroupRow & { unpriced: number }>(
       `SELECT group_id, group_name,
-              SUM(qty) AS quantity, SUM(qty * unit_value) AS value,
+              SUM(qty) AS quantity, SUM(amount * unit_value) AS value,
               SUM(CASE WHEN unit_value > 0 THEN 0 ELSE 1 END) AS unpriced
          FROM (SELECT i.category_id AS group_id, c.name AS group_name,
-                      MAX(i.quantity, 0) AS qty, ${unitValue} AS unit_value
+                      CASE WHEN ${isGauge('i')} THEN 0 ELSE MAX(i.quantity, 0) END AS qty,
+                      ${valuedAmountSql('i')} AS amount, ${unitValue} AS unit_value
                  FROM items i
                  LEFT JOIN categories c ON c.id = i.category_id
                 WHERE ${valuableItemFilter('i')})
         GROUP BY group_id, group_name;`,
     );
 
-    // Per-location: the `item_stock` ledger (where stock actually sits), valued by the item.
+    // Per-location: the `item_stock` ledger (where stock actually sits), valued by the item —
+    // plus the gauge arm, whose contents sit at `items.location_id` because a gauge takes no
+    // ledger row (issue #683). Without it this breakdown would omit stock the headline counts.
     const locationRows = await this.driver.query<ValuationGroupRow>(
-      `SELECT group_id, group_name, SUM(qty) AS quantity, SUM(qty * unit_value) AS value
+      `SELECT group_id, group_name, SUM(qty) AS quantity, SUM(amount * unit_value) AS value
          FROM (SELECT s.location_id AS group_id, l.name AS group_name,
-                      MAX(s.quantity, 0) AS qty, ${unitValue} AS unit_value
+                      MAX(s.quantity, 0) AS qty, MAX(s.quantity, 0) AS amount, ${unitValue} AS unit_value
                  FROM item_stock s
                  JOIN items i ON i.id = s.item_id
                  LEFT JOIN locations l ON l.id = s.location_id
-                WHERE ${valuableStockFilter('i', 's')})
+                WHERE ${valuableStockFilter('i', 's')}
+               UNION ALL
+               SELECT i.location_id AS group_id, l.name AS group_name,
+                      0 AS qty, ${valuedAmountSql('i')} AS amount, ${unitValue} AS unit_value
+                 FROM items i
+                 LEFT JOIN locations l ON l.id = i.location_id
+                WHERE ${valuableGaugeFilter('i')})
         GROUP BY group_id, group_name;`,
     );
 
@@ -457,7 +564,9 @@ export class ReportRepository extends BaseRepository {
    * With `includeSubtree` the scope is the location **plus every descendant**, resolved up-front by
    * a recursive CTE (mirroring {@link catalogueScopeFilter}), so "the Garage" rolls up every shelf
    * beneath it. Active, on-hand, non-unlimited stock only — the same filter the location breakdown
-   * applies — and the base currency is resolved once so a mid-read change can never split a total.
+   * applies, gauge arm included ({@link valuableGaugeFilter}, issue #683), since a location total
+   * that omitted the cylinder on the shelf would no longer equal its row on that list — and the
+   * base currency is resolved once so a mid-read change can never split a total.
    *
    * Both figures are summed **in SQL**: the headline folds one row per distinct item (so an item
    * split across several shelves counts once and is valued once), and the category breakdown
@@ -487,7 +596,12 @@ export class ReportRepository extends BaseRepository {
           )
         ).map((r) => r.id)
       : [locationId];
-    const scopeClause = `s.location_id IN (${scopeIds.map(() => '?').join(', ')})`;
+    const placeholders = scopeIds.map(() => '?').join(', ');
+    const scopeClause = `s.location_id IN (${placeholders})`;
+    // The gauge arm reads `items` directly (a gauge holds no ledger row), so it scopes on the
+    // item's own location and binds the same ids a second time (issue #683).
+    const gaugeScopeClause = `i.location_id IN (${placeholders})`;
+    const scopedParams = [...scopeIds, ...scopeIds];
 
     // Headline: fold to one row per distinct item first (SUM its stock across the scoped
     // locations, valued once), then the outer aggregate counts and totals those items — so an
@@ -504,33 +618,52 @@ export class ReportRepository extends BaseRepository {
       // so an unmeasured item adds nothing to `used_volume` and isn't counted as measured, exactly
       // the convention the location tree's volume bar uses (issue #457).
       `SELECT COALESCE(SUM(qty), 0) AS quantity,
-              COALESCE(SUM(qty * unit_value), 0) AS value,
+              COALESCE(SUM(amount * unit_value), 0) AS value,
               COUNT(*) AS distinct_items,
               COUNT(CASE WHEN unit_value > 0 THEN 1 END) AS priced_items,
               COALESCE(SUM(CASE WHEN unit_volume IS NOT NULL THEN qty * unit_volume ELSE 0 END), 0) AS used_volume,
               COUNT(CASE WHEN unit_volume IS NOT NULL THEN 1 END) AS measured_items
-         FROM (SELECT MAX(SUM(s.quantity), 0) AS qty, ${unitValue} AS unit_value,
+         FROM (SELECT MAX(SUM(s.quantity), 0) AS qty, MAX(SUM(s.quantity), 0) AS amount,
+                      ${unitValue} AS unit_value,
                       (i.width * i.height * i.depth) AS unit_volume
                  FROM item_stock s
                  JOIN items i ON i.id = s.item_id
                 WHERE ${valuableStockFilter('i', 's')}
                   AND ${scopeClause}
-                GROUP BY s.item_id);`,
-      scopeIds,
+                GROUP BY s.item_id
+               UNION ALL
+               -- The gauge arm (issue #683): counted as an item held here and valued from its
+               -- contents, but contributing no *units* (grams are not a count) and — as before
+               -- this change — no volume, since what a container's footprint should add to a
+               -- location's fill is the volume bar's question (issue #457), not valuation's.
+               SELECT 0 AS qty, ${valuedAmountSql('i')} AS amount,
+                      ${unitValue} AS unit_value,
+                      NULL AS unit_volume
+                 FROM items i
+                WHERE ${valuableGaugeFilter('i')}
+                  AND ${gaugeScopeClause});`,
+      scopedParams,
     );
 
     // Value by category over the same scope — one row per category, ungrouped last.
     const categoryRows = await this.driver.query<ValuationGroupRow>(
-      `SELECT group_id, group_name, SUM(qty) AS quantity, SUM(qty * unit_value) AS value
+      `SELECT group_id, group_name, SUM(qty) AS quantity, SUM(amount * unit_value) AS value
          FROM (SELECT i.category_id AS group_id, c.name AS group_name,
-                      MAX(s.quantity, 0) AS qty, ${unitValue} AS unit_value
+                      MAX(s.quantity, 0) AS qty, MAX(s.quantity, 0) AS amount, ${unitValue} AS unit_value
                  FROM item_stock s
                  JOIN items i ON i.id = s.item_id
                  LEFT JOIN categories c ON c.id = i.category_id
                 WHERE ${valuableStockFilter('i', 's')}
-                  AND ${scopeClause})
+                  AND ${scopeClause}
+               UNION ALL
+               SELECT i.category_id AS group_id, c.name AS group_name,
+                      0 AS qty, ${valuedAmountSql('i')} AS amount, ${unitValue} AS unit_value
+                 FROM items i
+                 LEFT JOIN categories c ON c.id = i.category_id
+                WHERE ${valuableGaugeFilter('i')}
+                  AND ${gaugeScopeClause})
         GROUP BY group_id, group_name;`,
-      scopeIds,
+      scopedParams,
     );
 
     const distinctItemCount = headline?.distinct_items ?? 0;
@@ -637,6 +770,10 @@ export class ReportRepository extends BaseRepository {
       serial_no: number | null;
       condition: string | null;
       quantity: number;
+      tracking_mode: string;
+      unit_of_measure: string | null;
+      current_net_value: number | null;
+      cost_per_unit_of_measure: number | null;
       unit_cost: number | null;
       current_value: number | null;
       purchase_price: number | null;
@@ -648,6 +785,10 @@ export class ReportRepository extends BaseRepository {
     }>(
       `SELECT items.id AS id, items.name AS name, items.serial_no AS serial_no, items.condition AS condition,
               items.quantity AS quantity,
+              items.tracking_mode AS tracking_mode,
+              items.unit_of_measure AS unit_of_measure,
+              items.current_net_value AS current_net_value,
+              items.cost_per_unit_of_measure AS cost_per_unit_of_measure,
               ${valuedItemColumns('items', base)},
               items.purchase_price AS purchase_price,
               items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
@@ -669,6 +810,17 @@ export class ReportRepository extends BaseRepository {
           serialNo: r.serial_no,
           condition: (r.condition as ScheduleItemInput['condition']) ?? null,
           quantity: r.quantity,
+          // A gauge is valued from its contents, not its (always-zero) count — the same
+          // `stockValue` rule `scheduleLineMinorUnitsSql` reproduces for the totals above the
+          // page, so a line and the subtotal it sits under can never disagree (issue #683).
+          unitOfMeasure: r.unit_of_measure,
+          gauge:
+            r.tracking_mode === 'CONSUMABLE_GAUGE'
+              ? {
+                  netValue: r.current_net_value ?? 0,
+                  costPerUnitOfMeasure: fromStoredMoney(r.cost_per_unit_of_measure),
+                }
+              : null,
           acquiredAt: r.acquired_at,
           warrantyExpiresAt: r.warranty_expires_at,
           // Money columns are stored in micro-units (issue #286); back to major units at this boundary.
@@ -1068,6 +1220,10 @@ export class ReportRepository extends BaseRepository {
       id: string;
       name: string;
       quantity: number;
+      tracking_mode: string;
+      unit_of_measure: string | null;
+      current_net_value: number | null;
+      cost_per_unit_of_measure: number | null;
       unit_cost: number | null;
       preferred_supplier_cost: number | null;
       created_at: number;
@@ -1075,7 +1231,14 @@ export class ReportRepository extends BaseRepository {
       location_id: string;
       dead_stock_mode: DeadStockMode;
     }>(
-      `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
+      // "Holds stock" is `valuedAmountSql`, not `quantity > 0` (issue #683): a gauge's count is
+      // pinned at 0, so the plain test silently dropped every idle cylinder and spool out of the
+      // report — the same zero-quantity fact that used to value them at nothing.
+      `SELECT i.id AS id, i.name AS name, i.quantity AS quantity,
+              i.tracking_mode AS tracking_mode, i.unit_of_measure AS unit_of_measure,
+              i.current_net_value AS current_net_value,
+              i.cost_per_unit_of_measure AS cost_per_unit_of_measure,
+              i.unit_cost AS unit_cost,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               i.created_at AS created_at,
               i.location_id AS location_id,
@@ -1085,7 +1248,7 @@ export class ReportRepository extends BaseRepository {
                    AND (h.quantity_delta IS NOT NULL OR h.net_value_delta IS NOT NULL
                         OR h.action = '${HISTORY_CLEARED}') ) AS last_known_movement_at
          FROM items i
-        WHERE ${valuableItemFilter('i')} AND i.quantity > 0;`,
+        WHERE ${valuableItemFilter('i')} AND (${valuedAmountSql('i')}) > 0;`,
     );
 
     // The location tree decides the opt-in for every item still set to 'inherit' — which is
@@ -1102,6 +1265,14 @@ export class ReportRepository extends BaseRepository {
         id: r.id,
         name: r.name,
         quantity: r.quantity,
+        unitOfMeasure: r.unit_of_measure,
+        gauge:
+          r.tracking_mode === 'CONSUMABLE_GAUGE'
+            ? {
+                netValue: r.current_net_value ?? 0,
+                costPerUnitOfMeasure: fromStoredMoney(r.cost_per_unit_of_measure),
+              }
+            : null,
         // Stored in micro-units (issue #286); major units for the pure valuation seam.
         unitCost: fromStoredMoney(r.unit_cost),
         preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
@@ -1327,6 +1498,9 @@ export class ReportRepository extends BaseRepository {
       id: string;
       name: string;
       quantity: number;
+      tracking_mode: string;
+      current_net_value: number | null;
+      cost_per_unit_of_measure: number | null;
       unit_cost: number | null;
       current_value: number | null;
       preferred_supplier_cost: number | null;
@@ -1334,18 +1508,33 @@ export class ReportRepository extends BaseRepository {
       created_at: number;
       last_inbound_at: number | null;
     }>(
+      // As in {@link ReportRepository.deadStock}, "holds stock" and "was last topped up" both
+      // read the gauge's own axis (issue #683): its count never moves, so a `quantity_delta`
+      // test can neither find it nor date it — a refill is a positive `net_value_delta`.
       `SELECT i.id AS id, i.name AS name, i.quantity AS quantity,
+              i.tracking_mode AS tracking_mode,
+              i.current_net_value AS current_net_value,
+              i.cost_per_unit_of_measure AS cost_per_unit_of_measure,
               ${valuedItemColumns('i', base)},
               i.acquired_at AS acquired_at, i.created_at AS created_at,
               ( SELECT MAX(h.created_at) FROM item_history h
-                 WHERE h.item_id = i.id AND h.quantity_delta > 0 ) AS last_inbound_at
+                 WHERE h.item_id = i.id
+                   AND (CASE WHEN ${isGauge('i')} THEN h.net_value_delta ELSE h.quantity_delta END) > 0
+              ) AS last_inbound_at
          FROM items i
-        WHERE ${valuableItemFilter('i')} AND i.quantity > 0;`,
+        WHERE ${valuableItemFilter('i')} AND (${valuedAmountSql('i')}) > 0;`,
     );
     const inputs: AgingInput[] = rows.map((r) => ({
       id: r.id,
       name: r.name,
       quantity: r.quantity,
+      gauge:
+        r.tracking_mode === 'CONSUMABLE_GAUGE'
+          ? {
+              netValue: r.current_net_value ?? 0,
+              costPerUnitOfMeasure: fromStoredMoney(r.cost_per_unit_of_measure),
+            }
+          : null,
       // Stored in micro-units (issue #286); major units for the pure aging seam.
       unitCost: fromStoredMoney(r.unit_cost),
       currentValuePerUnit: fromStoredMoney(r.current_value),
@@ -1395,7 +1584,7 @@ export class ReportRepository extends BaseRepository {
     // headline (issue #170), so the right-hand endpoint lands exactly on the headline figure
     // beside it rather than merely near it.
     const anchor = await this.driver.queryOne<{ total: number | null }>(
-      `SELECT SUM(MAX(i.quantity, 0) * (${effectiveUnitValueSql('i', base)})) AS total
+      `SELECT SUM((${valuedAmountSql('i')}) * (${effectiveUnitValueSql('i', base)})) AS total
          FROM items i
         WHERE ${valuableItemFilter('i')};`,
     );
@@ -1403,37 +1592,50 @@ export class ReportRepository extends BaseRepository {
     const currentValue = fromStoredMoney(anchor?.total ?? 0);
 
     // Value-tagged ledger events inside the window (half-open at the start; inclusive of now).
+    //
+    // A gauge's movements are `net_value_delta`, never `quantity_delta` (its count never moves),
+    // so the two arms of the predicate are what keep the line consistent with the anchor above:
+    // now that a gauge contributes to the anchor (issue #683), omitting its draws would draw a
+    // line that is flat exactly where the inventory was being consumed.
     const eventRows = await this.driver.query<{
       created_at: number;
-      quantity_delta: number;
+      amount_delta: number;
+      tracking_mode: string;
+      cost_per_unit_of_measure: number | null;
       unit_cost: number | null;
       current_value: number | null;
       preferred_supplier_cost: number | null;
     }>(
-      `SELECT h.created_at AS created_at, h.quantity_delta AS quantity_delta,
+      `SELECT h.created_at AS created_at,
+              CASE WHEN ${isGauge('i')} THEN h.net_value_delta ELSE h.quantity_delta END AS amount_delta,
+              i.tracking_mode AS tracking_mode,
+              i.cost_per_unit_of_measure AS cost_per_unit_of_measure,
               ${valuedItemColumns('i', base)}
          FROM item_history h
          JOIN items i ON i.id = h.item_id
         WHERE h.created_at > ? AND h.created_at <= ?
-          AND h.quantity_delta IS NOT NULL AND h.quantity_delta <> 0
+          AND (CASE WHEN ${isGauge('i')} THEN h.net_value_delta ELSE h.quantity_delta END) IS NOT NULL
+          AND (CASE WHEN ${isGauge('i')} THEN h.net_value_delta ELSE h.quantity_delta END) <> 0
           AND ${valuableItemFilter('i')};`,
       [windowStart, now],
     );
     const events: ValuationEvent[] = eventRows.map((r) => ({
       createdAt: r.created_at,
       valueDelta:
-        r.quantity_delta *
-        // Same precedence as the anchor: a manual current value wins over the replacement cost,
-        // so reversing the ledger lands on a past total measured the same way as today's. The stored
-        // micro-unit costs are converted to major units first so the whole trend is in major units
-        // (issue #286).
-        effectiveUnitValue(
-          fromStoredMoney(r.current_value),
-          effectiveUnitCost({
-            unitCost: fromStoredMoney(r.unit_cost),
-            preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
-          }),
-        ),
+        r.amount_delta *
+        // Same rule as the anchor — the shared `valuedUnitValue` seam — so reversing the ledger
+        // lands on a past total measured the same way as today's. The stored micro-unit costs are
+        // converted to major units first so the whole trend is in major units (issue #286).
+        valuedUnitValue({
+          quantity: 0,
+          unitCost: fromStoredMoney(r.unit_cost),
+          preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
+          currentValuePerUnit: fromStoredMoney(r.current_value),
+          gauge:
+            r.tracking_mode === 'CONSUMABLE_GAUGE'
+              ? { netValue: 0, costPerUnitOfMeasure: fromStoredMoney(r.cost_per_unit_of_measure) }
+              : null,
+        }),
     }));
 
     return buildValuationTrend(currentValue, events, windowStart, now, points);
