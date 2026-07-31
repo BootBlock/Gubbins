@@ -1,6 +1,11 @@
 /**
  * Browser download helpers. Used by the Safe Mode rescue (spec §3) now, and by
  * the Export Wizard / backups in later phases.
+ *
+ * **Convenience exports only.** {@link downloadBlob} is fire-and-forget by construction — it
+ * cannot tell a completed save from one the browser refused, cancelled or dropped. Anything that
+ * goes on to *delete or overwrite* what it just copied must use `lib/save-file.ts` instead, which
+ * reports what actually happened (issue #502).
  */
 
 /** Trigger a client-side file download for a Blob. */

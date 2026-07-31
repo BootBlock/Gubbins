@@ -7,6 +7,7 @@
  * Every action is defensive — the database may be in a poor state.
  */
 import { downloadBlob, fileTimestamp } from '@/lib/download';
+import { saveBeforeDestroying, type SafeSave, type SaveFileKind } from '@/lib/save-file';
 import { resetAppShell } from '@/lib/app-shell-reset';
 import { getRescueDatabaseDriver, disposeDatabase } from '@/db/client';
 // From the leaf storage module, never `db/worker/sqlite-bootstrap` — that would pull the
@@ -88,7 +89,7 @@ export class StaleJournalError extends Error {
     super(
       'Your data was restored, but a leftover database file from the previous session could not ' +
         'be removed. Close any other Gubbins tabs and reload — if that does not help, restore ' +
-        'again from the copy that was just downloaded.',
+        'again from the copy that was just saved.',
       { cause },
     );
     this.name = 'StaleJournalError';
@@ -107,10 +108,30 @@ export interface RestoreOptions {
    * *possible*, never silent.
    */
   readonly force?: boolean;
+  /**
+   * Where the restore point goes, and how to confirm it landed on a browser that cannot say
+   * (issue #502). **Required**: this is the undo for an irreversible overwrite, so it must be
+   * reserved by the caller inside the user gesture that began the restore — the picker that can
+   * report a completed save will not run without one, and the pre-flight below spends far longer
+   * than a gesture survives.
+   */
+  readonly save: SafeSave;
+}
+
+/** How a raw database copy is offered in a save picker. */
+export const SQLITE_FILE_KIND: SaveFileKind = {
+  description: 'SQLite database',
+  mimeType: 'application/x-sqlite3',
+  extensions: ['.sqlite'],
+};
+
+/** The restore point's filename, needed before the bytes are read (issue #502). */
+export function restorePointFilename(): string {
+  return `gubbins-restore-point-${fileTimestamp()}.sqlite`;
 }
 
 /**
- * Download the current OPFS database as a restore point, immediately before something
+ * Save the current OPFS database as a restore point, immediately before something
  * overwrites it (issue #198).
  *
  * The undo for a destructive restore, mirroring what `BackupDialog` does before a Replace.
@@ -122,18 +143,20 @@ export interface RestoreOptions {
  *
  * Returns whether anything was captured — a device with no database yet has nothing to lose,
  * which is not a reason to block a restore. Throws when a database is present but unreadable:
- * that *is* a reason, since overwriting it would destroy data no copy exists of.
+ * that *is* a reason, since overwriting it would destroy data no copy exists of. Throws
+ * {@link RestorePointNotSavedError} when the copy could not be shown to have reached the user,
+ * which is the same reason wearing different clothes (issue #502).
  */
-export async function captureRestorePoint(): Promise<boolean> {
+export async function captureRestorePoint(save: SafeSave): Promise<boolean> {
   // Only *absence* is benign here. Anything else — a locked file, an I/O error — means data is
   // there and we could not copy it, so `readPlainDatabaseFile` lets the failure reach the
   // caller and stop the restore. Swallowing it would overwrite a database with no copy behind
   // it, which is the exact loss this function exists to prevent.
   const file = await readPlainDatabaseFile();
   if (file && file.size > 0) {
-    // The `File` is already a `Blob` over the OPFS bytes, so it downloads without ever
+    // The `File` is already a `Blob` over the OPFS bytes, so it saves without ever
     // materialising the whole database in memory.
-    return await downloadRestorePoint(file);
+    return await saveRestorePoint(file, save);
   }
   if (!(await hasSahPoolStore())) return false;
 
@@ -141,34 +164,34 @@ export async function captureRestorePoint(): Promise<boolean> {
   if (!bytes || bytes.length === 0) return false;
   // Copy into a standalone ArrayBuffer: bytes crossing from the worker can be
   // SharedArrayBuffer-backed, which `Blob` rejects.
-  return await downloadRestorePoint(new Blob([bytes.slice()], { type: 'application/x-sqlite3' }));
+  return await saveRestorePoint(new Blob([bytes.slice()], { type: 'application/x-sqlite3' }), save);
 }
 
-/** Save the captured bytes, then let the download commit before the caller overwrites. */
-async function downloadRestorePoint(blob: Blob): Promise<true> {
-  downloadBlob(`gubbins-restore-point-${fileTimestamp()}.sqlite`, blob);
-  // Let the browser commit the download before the caller overwrites the database and
-  // reloads — a reload in the same tick can cancel an in-flight save.
-  await new Promise((resolve) => setTimeout(resolve, RESTORE_POINT_SETTLE_MS));
+/**
+ * Write the captured bytes out, and refuse to return unless they provably arrived.
+ *
+ * There used to be a fixed 400 ms pause here instead, on the theory that a download needs a
+ * moment to commit before the caller overwrites and reloads. It was a guess standing in for a
+ * fact: it could not tell a completed save from one the browser silently dropped, and no delay
+ * is long enough for a multi-hundred-megabyte write. Either the save reports itself, or the
+ * user tells us they have the file — and by the time either answers, there is nothing left to
+ * wait for (issue #502).
+ */
+async function saveRestorePoint(blob: Blob, save: SafeSave): Promise<true> {
+  if (!(await saveBeforeDestroying(blob, save))) throw new RestorePointNotSavedError();
   return true;
 }
-
-/** How long to let a restore-point download settle before overwriting and reloading. */
-const RESTORE_POINT_SETTLE_MS = 400;
 
 /**
  * The steps every destructive restore shares (issue #198): prove the incoming database is
  * sound, then secure the current one. Ordered deliberately — a file that is going to be
  * rejected should not cost the user a download first.
  *
- * Throws {@link DamagedDatabaseError} or {@link IncompatibleDatabaseError} (unless forced), or
- * {@link RestorePointError}; in every case nothing has been written and the live database is
- * untouched.
+ * Throws {@link DamagedDatabaseError} or {@link IncompatibleDatabaseError} (unless forced),
+ * {@link RestorePointError}, or {@link RestorePointNotSavedError}; in every case nothing has been
+ * written and the live database is untouched.
  */
-export async function prepareDestructiveRestore(
-  sqlite: Uint8Array,
-  options: RestoreOptions = {},
-): Promise<void> {
+export async function prepareDestructiveRestore(sqlite: Uint8Array, options: RestoreOptions): Promise<void> {
   // Skipped entirely when forced: the user has already been shown the verdict and chosen to
   // proceed, so re-reading every page of a large file to discard the answer only delays them.
   if (!options.force) {
@@ -182,8 +205,11 @@ export async function prepareDestructiveRestore(
   }
 
   try {
-    await captureRestorePoint();
+    await captureRestorePoint(options.save);
   } catch (error) {
+    // Already the right sentence, and about a different failure — the copy was made and simply
+    // did not reach the user. Wrapping it would replace that with "could not be saved".
+    if (error instanceof RestorePointNotSavedError) throw error;
     throw new RestorePointError(error);
   }
 }
@@ -197,7 +223,7 @@ export async function prepareDestructiveRestore(
  * pre-flight checks, or `IncompatibleDatabaseError` for one built by another schema baseline — in
  * every failure case, before anything is overwritten.
  */
-export async function restoreRawSqlite(file: File, options: RestoreOptions = {}): Promise<void> {
+export async function restoreRawSqlite(file: File, options: RestoreOptions): Promise<void> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (!isSqliteFile(bytes)) {
     throw new InvalidRawSqliteError('That file is not a SQLite database (bad header).');
@@ -245,7 +271,7 @@ export class DamagedDatabaseError extends Error {
  * records onto the new schema rather than replacing the database file.
  *
  * Overridable through `force` like the damage report, because the boot refusal it predicts is
- * survivable (the restore point is downloaded first, and Safe Mode can put it back) and because a
+ * survivable (the restore point is saved first, and Safe Mode can put it back) and because a
  * user who has also rolled the *build* back may mean exactly what they asked for.
  */
 export class IncompatibleDatabaseError extends Error {
@@ -270,6 +296,23 @@ export class RestorePointError extends Error {
       { cause },
     );
     this.name = 'RestorePointError';
+  }
+}
+
+/**
+ * Thrown when the restore point was written out but never shown to have reached the user
+ * (issue #502) — the browser could not report the save, and the user did not confirm it.
+ *
+ * The sibling of {@link RestorePointError}: an unconfirmed copy is worth exactly as much as a
+ * missing one to the overwrite that was about to follow, so the restore stops in the same
+ * place, before anything is written.
+ */
+export class RestorePointNotSavedError extends Error {
+  constructor() {
+    super(
+      'The copy of your current database was not confirmed as saved, so the restore was cancelled and nothing has been changed.',
+    );
+    this.name = 'RestorePointNotSavedError';
   }
 }
 

@@ -14,7 +14,9 @@ import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { getItemRepository } from '@/db/repositories';
 import { estimateStorage } from '@/features/storage/storage-api';
-import { createBackup, type BackupResult } from './build-backup';
+import { useConfirmSaved } from '@/components/useConfirmSaved';
+import { prepareSave } from '@/lib/save-file';
+import { BACKUP_FILE_KIND, backupFilename, createBackup, type BackupResult } from './build-backup';
 import { readBackup, rememberRestoreNotice, restoreBackup, type RestoreMode } from './restore-backup';
 import { DEFAULT_BACKUP_SELECTION, type BackupSelection, type ParsedBackup } from './backup-format';
 import {
@@ -275,6 +277,8 @@ function RestorePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
+  // The Replace restore point's fallback proof-of-save, where the browser cannot give one (#502).
+  const { confirmSaved, confirmSavedDialog } = useConfirmSaved();
   // Live context for the Replace guards: how many items exist now, and the storage head-room.
   const [currentItems, setCurrentItems] = useState<number | null>(null);
   const [storage, setStorage] = useState<{ usage: number; quota: number; supported: boolean } | null>(null);
@@ -330,21 +334,33 @@ function RestorePanel({
     setBusy(true);
     setError(null);
     try {
-      // Safety net: capture the current data as a downloadable "restore point" *before* a
-      // destructive Replace overwrites it, so a wrong restore can be undone. Abort if it fails
-      // — never wipe without first securing what's there.
+      // Safety net: capture the current data as a saved "restore point" *before* a destructive
+      // Replace overwrites it, so a wrong restore can be undone. Abort unless the file provably
+      // reached the user — never wipe without first securing what's there (issue #502).
       if (mode === 'replace') {
+        // Reserved here, inside the click: the picker that can confirm a save needs the user
+        // gesture, and building the zip below takes far longer than that gesture survives.
+        const saver = await prepareSave(backupFilename('gubbins-restore-point'), BACKUP_FILE_KIND);
+        if (!saver) {
+          // The user closed the save dialog. That is an answer — nothing is restored.
+          setBusy(false);
+          return;
+        }
         try {
           // The restore point is the undo for a destructive Replace, so it captures *every*
           // settings group — including the device-specific one the create tab leaves off by
           // default. A safety net the user never chose the shape of must not have holes in it.
-          await createBackup(
+          const point = await createBackup(
             { ...DEFAULT_BACKUP_SELECTION, settingGroups: allSettingsGroups(true) },
-            { filenamePrefix: 'gubbins-restore-point' },
+            { save: { saver, confirmUnverified: confirmSaved } },
           );
-          // Let the browser commit the restore-point download before we overwrite the DB and
-          // (on the .sqlite path) reload — a reload in the same tick could cancel it.
-          await new Promise((resolve) => setTimeout(resolve, 400));
+          if (!point.secured) {
+            setError(
+              'The restore point was not confirmed as saved, so the restore was cancelled and your data is unchanged.',
+            );
+            setBusy(false);
+            return;
+          }
         } catch (err) {
           setError(
             `Could not save a safety backup of your current data, so the restore was cancelled. ${describeError(
@@ -466,8 +482,9 @@ function RestorePanel({
                   <>
                     <p>
                       This erases all current data on this device and restores the backup exactly, then
-                      reloads. <strong>A safety copy of your current data is downloaded first</strong> so this
-                      can be undone.
+                      reloads. <strong>A safety copy of your current data is saved first</strong> so this can
+                      be undone — you will be asked where to put it, and nothing is erased until it is safely
+                      there.
                     </p>
                     {impact ? (
                       <p data-testid="restore-impact">
@@ -577,6 +594,8 @@ function RestorePanel({
       <LiveRegion urgency="assertive" visuallyHidden data-testid="restore-error-live-region">
         {error ? <p>{error}</p> : null}
       </LiveRegion>
+      {/* Opens on top of this dialog only when the restore point's save could not be verified. */}
+      {confirmSavedDialog}
     </div>
   );
 }

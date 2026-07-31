@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getStorageRepository } from '@/db/repositories';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { imagesBytesOnDisk } from '@/features/images/opfs-images';
+import type { SafeSave } from '@/lib/save-file';
 import { archiveAndPruneHistory, downgradeImagesBefore } from './triage-actions';
 import { estimateTableBytes } from './triage';
 import { invalidateItems } from '@/features/inventory/invalidate';
@@ -68,6 +69,16 @@ function refreshAfterReclaim(client: ReturnType<typeof useQueryClient>): void {
 }
 
 /**
+ * What Workflow A needs to run: the window, and where its cold-storage archive goes. The
+ * destination is reserved by the dialog inside the click (issue #502), because the picker that
+ * can actually confirm a save needs the user gesture the mutation no longer has.
+ */
+export interface ArchiveAndPruneRequest {
+  readonly months: number;
+  readonly save: SafeSave;
+}
+
+/**
  * `now` is supplied by the caller (the dialog captures it once at mount) so the
  * executed prune/downgrade uses the *same* reference instant as the previewed
  * candidate counts — no drift between "12 entries affected" and what is removed.
@@ -75,7 +86,7 @@ function refreshAfterReclaim(client: ReturnType<typeof useQueryClient>): void {
 export function useArchiveAndPruneHistory(now: number) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (months: number) => archiveAndPruneHistory(months, now),
+    mutationFn: ({ months, save }: ArchiveAndPruneRequest) => archiveAndPruneHistory(months, now, save),
     onSettled: () => refreshAfterReclaim(client),
   });
 }

@@ -196,7 +196,8 @@ complete, that the data inside is intact, and that it came from a version of Gub
 open — so a half-finished download, a copy from a failing drive, or a copy from before an update
 changed the database's shape is caught and explained rather than quietly replacing good data. If you
 want to go ahead anyway, you can, after a second confirmation. And whichever you choose, a copy of
-your current database is downloaded first, so you can always get back to where you started. See
+your current database is saved first — and nothing is overwritten until that copy is confirmed — so
+you can always get back to where you started. See
 [[Backup & restore|Backup-and-Restore]].
 
 **Gubbins says "Device clock is wrong". What does that mean?**

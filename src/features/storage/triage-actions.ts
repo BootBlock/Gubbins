@@ -5,33 +5,56 @@
  * side-effects (JSON download, OPFS file deletion). Reads are paginated (≤100) and
  * looped to completion, mirroring the Export Wizard's full-table collection.
  *
- *  - Workflow A: collect the targeted `item_history` rows → download the cold-storage
- *    JSON archive *first* → only then DELETE them (the §7.6.3 audit-trail safeguard).
+ *  - Workflow A: collect the targeted `item_history` rows → save the cold-storage JSON
+ *    archive *first* and confirm it landed → only then DELETE them (the §7.6.3
+ *    audit-trail safeguard).
  *  - Workflow B: collect the stale full-resolution images → delete each raw OPFS file
  *    → mark the row downgraded (thumbnail retained). Local-only; never synced.
  */
 import { getStorageRepository } from '@/db/repositories';
 import type { DowngradableImage, ItemHistoryEntry } from '@/db/repositories';
 import { deleteImageFile } from '@/features/images/opfs-images';
-import { downloadBlob, fileTimestamp } from '@/lib/download';
+import { fileTimestamp } from '@/lib/download';
+import { saveBeforeDestroying, type SafeSave, type SaveFileKind } from '@/lib/save-file';
 import { buildHistoryArchive, pruneCutoff } from './triage';
 
 const PAGE = 100;
+
+/** How the cold-storage archive is offered in a save picker. */
+export const HISTORY_ARCHIVE_FILE_KIND: SaveFileKind = {
+  description: 'Gubbins history archive',
+  mimeType: 'application/json',
+  extensions: ['.json'],
+};
+
+/**
+ * The archive's filename, needed by the caller *before* the rows are read: the save
+ * destination is reserved inside the click that started the workflow (issue #502).
+ */
+export function historyArchiveFilename(now: number): string {
+  return `inventory_history_archive_${fileTimestamp(new Date(now))}.json`;
+}
 
 export interface PruneHistoryResult {
   readonly cutoff: number;
   readonly archived: number;
   readonly pruned: number;
+  /**
+   * False when the archive never reached the user, in which case **nothing was deleted** —
+   * `archived` and `pruned` are both zero and the history is exactly as it was.
+   */
+  readonly archiveSaved: boolean;
 }
 
 /**
- * Workflow A: archive then prune history older than `months`. Downloads
- * `inventory_history_archive_<stamp>.json` before deleting. Returns counts; a
- * zero-row window is a no-op (no empty file is downloaded).
+ * Workflow A: archive then prune history older than `months`. Saves
+ * `inventory_history_archive_<stamp>.json` through `save` and only deletes once that copy
+ * is confirmed. Returns counts; a zero-row window is a no-op (no empty file is saved).
  */
 export async function archiveAndPruneHistory(
   months: number,
-  now: number = Date.now(),
+  now: number,
+  save: SafeSave,
 ): Promise<PruneHistoryResult> {
   const repo = getStorageRepository();
   const cutoff = pruneCutoff(now, months);
@@ -43,16 +66,19 @@ export async function archiveAndPruneHistory(
     if (!page.hasMore) break;
   }
 
-  if (rows.length === 0) return { cutoff, archived: 0, pruned: 0 };
+  if (rows.length === 0) return { cutoff, archived: 0, pruned: 0, archiveSaved: true };
 
-  // Cold storage FIRST (§7.6.3): never delete before the audit trail is saved.
-  downloadBlob(
-    `inventory_history_archive_${fileTimestamp(new Date(now))}.json`,
+  // Cold storage FIRST (§7.6.3) — and *established*, not assumed (issue #502). The prune also
+  // advances the §7.6.3-A watermark, so peers will not re-supply these rows either: if the
+  // archive did not reach the user then this is the last copy of it, and nothing may go.
+  const archiveSaved = await saveBeforeDestroying(
     new Blob([buildHistoryArchive(rows, cutoff, now)], { type: 'application/json' }),
+    save,
   );
+  if (!archiveSaved) return { cutoff, archived: 0, pruned: 0, archiveSaved: false };
 
   const pruned = await repo.pruneHistoryBefore(cutoff);
-  return { cutoff, archived: rows.length, pruned };
+  return { cutoff, archived: rows.length, pruned, archiveSaved: true };
 }
 
 export interface DowngradeImagesResult {

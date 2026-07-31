@@ -10,6 +10,7 @@ import { getDatabaseDriver, getRescueDatabaseDriver } from '@/db/client';
 import { buildLocalSnapshot } from '@/features/sync/snapshot';
 import { readAllImages } from '@/features/images/opfs-images';
 import { downloadBlob, fileTimestamp } from '@/lib/download';
+import { saveBeforeDestroying, type SafeSave, type SaveFileKind } from '@/lib/save-file';
 import { APP_VERSION } from '@/lib/app-version';
 import type { VaultZipRequest, VaultZipResponse } from '@/features/export/export-vault.worker';
 import { BASELINE_REVISION, BASELINE_REVISION_KEY } from '@/db/migrations';
@@ -35,12 +36,42 @@ export interface BackupResult {
    * caller must say so rather than report plain success.
    */
   readonly skipped: readonly string[];
+  /**
+   * True only when this backup is **known** to have reached the user, and therefore safe to
+   * destroy the original on the strength of (issue #502). Requires a {@link CreateBackupOptions.save};
+   * an ordinary download is never `secured`, because an `<a download>` cannot report back — that
+   * is not a failure for the Create tab, which is not about to delete anything.
+   */
+  readonly secured: boolean;
+}
+
+/** How a backup is offered in a save picker. */
+export const BACKUP_FILE_KIND: SaveFileKind = {
+  description: 'Gubbins backup',
+  mimeType: 'application/zip',
+  extensions: ['.zip'],
+};
+
+/**
+ * The name a backup takes, needed up front by a caller reserving its destination before the
+ * zip exists (issue #502).
+ */
+export function backupFilename(prefix = 'gubbins-backup'): string {
+  return `${prefix}-${fileTimestamp()}.zip`;
 }
 
 /** Options for {@link createBackup}. */
 export interface CreateBackupOptions {
   /** Filename stem, e.g. `gubbins-restore-point` for a pre-restore safety copy. */
   readonly filenamePrefix?: string;
+  /**
+   * Save through a destination reserved by the caller, and report in {@link BackupResult.secured}
+   * whether the file provably landed (issue #502). Set by a caller that is about to destroy what
+   * this backup copies; omitted, the zip is handed to the browser's downloads and nothing is
+   * claimed about where it went. Takes precedence over {@link filenamePrefix}, since the
+   * destination was named when it was reserved.
+   */
+  readonly save?: SafeSave;
   /**
    * Build the backup from a database this build cannot open normally (issue #197).
    *
@@ -116,9 +147,15 @@ export async function createBackup(
   });
 
   const zip = await zipInWorker(files, assets);
-  const filename = `${options.filenamePrefix ?? 'gubbins-backup'}-${fileTimestamp()}.zip`;
-  downloadBlob(filename, new Blob([zip as BlobPart], { type: 'application/zip' }));
-  return { filename, size: zip.byteLength, manifest, skipped };
+  const blob = new Blob([zip as BlobPart], { type: 'application/zip' });
+  const filename = options.save?.saver.filename ?? backupFilename(options.filenamePrefix);
+  let secured = false;
+  if (options.save) {
+    secured = await saveBeforeDestroying(blob, options.save);
+  } else {
+    downloadBlob(filename, blob);
+  }
+  return { filename, size: zip.byteLength, manifest, skipped, secured };
 }
 
 /**

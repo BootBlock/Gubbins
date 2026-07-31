@@ -32,6 +32,19 @@ vi.mock('./safe-mode-actions', () => ({
       this.name = 'IncompatibleDatabaseError';
     }
   },
+  RestorePointNotSavedError: class RestorePointNotSavedError extends Error {
+    constructor() {
+      super('The copy of your current database was not confirmed as saved.');
+      this.name = 'RestorePointNotSavedError';
+    }
+  },
+  // Where the restore point goes (issue #502) — pure naming, so the mock keeps it faithful.
+  restorePointFilename: () => 'gubbins-restore-point-20260101-000000.sqlite',
+  SQLITE_FILE_KIND: {
+    description: 'SQLite database',
+    mimeType: 'application/x-sqlite3',
+    extensions: ['.sqlite'],
+  },
 }));
 
 vi.mock('@/features/archive/restore-archive', () => ({ restoreArchive: vi.fn() }));
@@ -45,6 +58,21 @@ vi.mock('@/features/errors', () => ({
 
 const actions = await import('./safe-mode-actions');
 const { createRescueBackup } = await import('@/features/backup/build-backup');
+
+/**
+ * The restore point's destination, reserved in the click and threaded into the restore
+ * (issue #502). Asserted rather than waved through with `objectContaining`, because a restore
+ * that quietly lost it would go back to overwriting on the strength of an unobserved download.
+ * jsdom has no File System Access API, so this is always the anchor route.
+ */
+const RESTORE_POINT_SAVE = {
+  saver: {
+    filename: 'gubbins-restore-point-20260101-000000.sqlite',
+    verifiable: false,
+    save: expect.any(Function),
+  },
+  confirmUnverified: expect.any(Function),
+};
 
 /** A successful rescue backup, with whatever counts / omissions a test needs. */
 function backupResult(overrides: { items?: number; images?: number; skipped?: readonly string[] } = {}) {
@@ -165,7 +193,22 @@ describe('RescueActions', () => {
       render(<RescueActions />);
       await chooseSqliteFile(user);
 
-      expect(screen.getByText(/copy of your current database is downloaded first/i)).toBeInTheDocument();
+      // "saved", not "downloaded": the restore now waits on the copy actually landing (#502).
+      expect(screen.getByText(/copy of your current database is saved first/i)).toBeInTheDocument();
+    });
+
+    it('keeps the chosen file when the restore point was not confirmed as saved (issue #502)', async () => {
+      // Nothing was written, and another go at saving the copy is the obvious next move — so
+      // this must not throw the user back to the file picker as an ordinary failure does.
+      vi.mocked(actions.restoreRawSqlite).mockRejectedValue(new actions.RestorePointNotSavedError());
+      const user = userEvent.setup();
+      render(<RescueActions />);
+      await chooseSqliteFile(user);
+
+      await user.click(screen.getByTestId('confirm-archive-restore'));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/not confirmed as saved/i);
+      expect(screen.getByTestId('confirm-archive-restore')).toBeInTheDocument();
     });
 
     it('shows what is wrong instead of silently overwriting good data', async () => {
@@ -195,9 +238,15 @@ describe('RescueActions', () => {
       await screen.findByRole('alert');
 
       // The same button, now re-labelled — and only this second press forces the restore.
-      expect(actions.restoreRawSqlite).toHaveBeenLastCalledWith(expect.any(File), { force: false });
+      expect(actions.restoreRawSqlite).toHaveBeenLastCalledWith(expect.any(File), {
+        force: false,
+        save: RESTORE_POINT_SAVE,
+      });
       await user.click(screen.getByRole('button', { name: /restore anyway/i }));
-      expect(actions.restoreRawSqlite).toHaveBeenLastCalledWith(expect.any(File), { force: true });
+      expect(actions.restoreRawSqlite).toHaveBeenLastCalledWith(expect.any(File), {
+        force: true,
+        save: RESTORE_POINT_SAVE,
+      });
     });
 
     it('drops the damage report when a different file is chosen', async () => {
@@ -265,7 +314,10 @@ describe('RescueActions', () => {
       // The button has to name *this* risk, not the damage report's "may lose records".
       const override = screen.getByRole('button', { name: /restore anyway — Gubbins may not start/i });
       await user.click(override);
-      expect(actions.restoreRawSqlite).toHaveBeenLastCalledWith(expect.any(File), { force: true });
+      expect(actions.restoreRawSqlite).toHaveBeenLastCalledWith(expect.any(File), {
+        force: true,
+        save: RESTORE_POINT_SAVE,
+      });
     });
   });
 

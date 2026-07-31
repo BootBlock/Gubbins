@@ -3436,14 +3436,52 @@ try {
       }
     });
 
-    await step('prunes old history after a cold-storage JSON download (§7.6.3 A)', async () => {
+    // Issue #502: the archive now has to be *shown* to have reached the user before a single
+    // row is deleted. `showSaveFilePicker` is removed for the rest of this run so the flow takes
+    // the route Firefox / Safari / iOS take — the anchor download plus the acknowledgement that
+    // stands in for a completion signal — which is the one that used to lose data silently.
+    // (Removing it also keeps the run deterministic: a native save dialog is not driveable.)
+    // Applied twice on purpose — `evaluate` reaches the page that is already open, while the
+    // init script covers every navigation after it.
+    const dropSaveFilePicker = () => {
+      delete (/** @type {any} */ (window).showSaveFilePicker);
+    };
+    await page.addInitScript(dropSaveFilePicker);
+    await page.evaluate(dropSaveFilePicker);
+
+    await step(
+      'refuses to prune when the cold-storage archive is not confirmed (§7.6.3 A, #502)',
+      async () => {
+        const dialog = page.getByRole('dialog', { name: 'Storage triage' });
+        // Wait for the candidate count to load so the button enables (avoids arming the
+        // download listener against a still-disabled control).
+        const pruneBtn = dialog.getByTestId('prune-history');
+        for (let i = 0; i < 40 && (await pruneBtn.isDisabled()); i += 1) await page.waitForTimeout(150);
+        if (await pruneBtn.isDisabled()) throw new Error('no prunable history was detected');
+        const before = await dialog.getByText(/entries? affected/).innerText();
+
+        await pruneBtn.click();
+        const confirmBtn = dialog.getByTestId('prune-confirm');
+        await confirmBtn.waitFor({ state: 'visible', timeout: 4000 });
+        const download = page.waitForEvent('download', { timeout: 8000 });
+        await confirmBtn.click();
+        await download;
+
+        // Saying the file never arrived must leave the history exactly as it was.
+        await page.getByTestId('confirm-saved-cancel').click();
+        await page.getByText('Nothing was deleted').waitFor({ state: 'visible', timeout: 5000 });
+        const after = await dialog.getByText(/entries? affected/).innerText();
+        if (after !== before) {
+          throw new Error(`history was pruned despite an unconfirmed archive: "${before}" → "${after}"`);
+        }
+      },
+    );
+
+    await step('prunes old history once the cold-storage archive is confirmed (§7.6.3 A)', async () => {
       const dialog = page.getByRole('dialog', { name: 'Storage triage' });
-      // Wait for the candidate count to load so the button enables (avoids arming the
-      // download listener against a still-disabled control).
       const pruneBtn = dialog.getByTestId('prune-history');
       for (let i = 0; i < 40 && (await pruneBtn.isDisabled()); i += 1) await page.waitForTimeout(150);
       if (await pruneBtn.isDisabled()) throw new Error('no prunable history was detected');
-      // Phase 12: a confirm-before-delete step now guards the action.
       await pruneBtn.click();
       const confirmBtn = dialog.getByTestId('prune-confirm');
       await confirmBtn.waitFor({ state: 'visible', timeout: 4000 });
@@ -3457,6 +3495,7 @@ try {
       if (!file.suggestedFilename().endsWith('.json')) {
         throw new Error(`archive is not JSON: ${file.suggestedFilename()}`);
       }
+      await page.getByTestId('confirm-saved-continue').click();
       await page.getByText('History archived & pruned').waitFor({ state: 'visible', timeout: 5000 });
     });
 
