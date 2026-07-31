@@ -3,7 +3,9 @@
 > **Status:** 🟢 ACTIVE — research complete. `N1` and `N2` shipped together (2026-07-31), along with
 > both §9 defects ([#689](https://github.com/BootBlock/Gubbins/issues/689),
 > [#690](https://github.com/BootBlock/Gubbins/issues/690) — both closed). `N6`
-> ([#691](https://github.com/BootBlock/Gubbins/issues/691)) shipped 2026-07-31 — see §11.5. `N3` is
+> ([#691](https://github.com/BootBlock/Gubbins/issues/691)) shipped 2026-07-31 — see §11.5 — and its
+> cross-location reader follow-on ([#693](https://github.com/BootBlock/Gubbins/issues/693)) with it.
+> `N3` is
 > **resolved without building it** — see §11.4. `N4`, `N5` and `N7` remain open and unstarted, as
 > does the deferred `locations_fts` table.
 
@@ -271,6 +273,12 @@ resolved without being built (§11.4); `N4`, `N5` and `N7` are unstarted.
   follow-on and is deliberately not in this pass. Geometry, colour, capacity, walk order and policy
   edits record nothing. §11.5 records the three places the entry above turned out to be wrong about
   the shape of it.
+  *Follow-on, since shipped:* that cross-location view is now built
+  ([#693](https://github.com/BootBlock/Gubbins/issues/693), 2026-07-31) as a second **lane** on the
+  existing Activity screen, selected by an Items/Locations switch — so the honest limitation §11.5
+  records (a deleted location's entries having no in-app reader) no longer holds. The lanes are
+  switched between rather than interleaved; a genuine chronological merge of the two ledgers stays
+  deliberately unbuilt.
 - **`N4` — Location attachments (links and local pointers).** Mirror `item_attachments` on a
   location: the boiler manual, the wiring diagram, the certificate. Be honest about the case — a
   `URL` custom field already does most of this, so what a table buys is **several of them, ordered
