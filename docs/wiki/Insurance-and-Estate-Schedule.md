@@ -53,6 +53,13 @@ figure.
 > Give such an item its own **unit cost** to bring it back into the total. See
 > [[valuation & spend|Valuation-and-Spend]].
 
+A [[gauge item|Low-Stock-and-Gauges]] — a gas cylinder, a spool, a bottle of resin — is scheduled
+at **what it holds × its cost per unit of measure**, and its line is captioned with the amount
+(`6m³`) in place of a quantity. Set *Cost per …* on the item; its **unit cost** prices one whole
+unit and doesn't value a gauge. A gauge with contents but no such cost is **left out and named** by
+a second notice at the top of the schedule, on the same principle as the currency one — a reader
+who can't see an omission has no way to know the total is short.
+
 ## Printing
 
 The schedule is **print-styled**: printing it drops the app's on-screen chrome, switches to a clean

@@ -13,6 +13,11 @@ The **valuation** report totals what your inventory is worth, broken down **by c
 **by location**, so you can see where the value sits — which room holds the most, which category
 dominates.
 
+With a lot of categories or locations, each breakdown opens on the highest-value dozen and says how
+many there are in total — **Show more** brings the rest in, a batch at a time. The headline total
+above always covers every one of them, listed or not. See
+[[long lists in a report|Reports-Overview]].
+
 Each item is valued through Gubbins' valuation logic: a manual
 **[[current value|Current-Value-and-Revaluation]]** where you've set one, otherwise purchase price
 less [[depreciation|Warranty-and-Depreciation]]. So the total reflects *today's* worth, not just
@@ -29,6 +34,29 @@ through your stock movements, valuing each one by the same rules — so the two 
 > the headline actually read on each past day. If you [[revalue an item|Current-Value-and-Revaluation]]
 > partway through the window, that jump isn't drawn as a step; the earlier movements are simply priced
 > at the new value.
+
+## Gauges are valued by what they hold
+
+A [[gauge item|Low-Stock-and-Gauges]] — a filament spool, a gas cylinder, a bottle of resin —
+tracks a **measure**, not a count of units. It has no quantity to multiply a unit cost by, so it
+is valued a different way: **what's in it × its cost per unit of measure**.
+
+That cost is a field on the item itself, next to **Unit cost**, and it's labelled with the gauge's
+own unit — *Cost per g*, *Cost per ml*. A spool with 400 g left at `0.025` per gram is worth
+`£10.00`, and that figure flows into the headline total, both breakdowns, the valuation trend,
+[[stock aging and dead stock|ABC-Turnover-and-Aging]], and the
+[[insurance schedule|Insurance-and-Estate-Schedule]].
+
+> **⚠️ Heads-up**
+> **Unit cost doesn't value a gauge.** Unit cost prices *one unit* of a countable item, and a gauge
+> counts nothing — so a gauge priced only by unit cost contributes nothing to your totals. Set
+> *Cost per …* instead.
+
+A gauge with contents but no cost per unit of measure is **reported, not guessed**: a notice above
+the breakdown (and on the insurance schedule) says how many gauges were left out, exactly as it does
+for a price in another currency below. Gubbins won't read a per-unit price as a per-gram one — that
+would be wrong by however much the container holds, which on an insurance document is worse than an
+honest omission.
 
 ## Spend
 

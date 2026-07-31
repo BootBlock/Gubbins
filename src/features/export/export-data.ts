@@ -181,6 +181,9 @@ const CATALOG_CSV_COLUMNS = [
   'grossCapacity',
   'tareWeight',
   'currentNetValue',
+  // The figure a gauge's stock is valued from (issue #683) — without it a catalogue that
+  // round-trips comes back unpriced, and the inventory total drops by every gauge's contents.
+  'costPerUnitOfMeasure',
   'manufacturer',
   'unitCost',
   // Canonical grams (issue #25); round-trips back through the `weight` import synonym.
@@ -211,6 +214,7 @@ const GAUGE_CSV_COLUMNS = [
   'grossCapacity',
   'tareWeight',
   'currentNetValue',
+  'costPerUnitOfMeasure',
 ] as const satisfies readonly ScalarKeys<GaugeState>[];
 
 type GaugeCsvColumn = (typeof GAUGE_CSV_COLUMNS)[number];

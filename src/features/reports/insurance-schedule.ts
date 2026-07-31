@@ -9,20 +9,20 @@
  * isolation. `ReportRepository` pulls the minimal raw rows from SQLite and hands them here;
  * the screen renders the resulting DTO with `useFormatters` / `<Money>`.
  *
- * Valuation flows through the single {@link effectiveUnitCost} seam (manual cost wins, else
- * the preferred supplier cost, else 0). Each input line also carries an optional
- * {@link ScheduleItemInput.currentValuePerUnit} override that, when set, *wins* over the
- * replacement cost — the clean forward-hook for G9 (manual current / market value) so an
- * appreciating asset can be scheduled at today's worth. Until G9 lands nothing populates
- * it and valuation falls back to the replacement-cost seam.
+ * Valuation flows through the single {@link stockValue} seam shared with the valuation reports,
+ * so a document handed to an insurer and the totals on screen can never disagree: a manual
+ * {@link ScheduleItemInput.currentValuePerUnit} wins over the replacement cost (G9, so an
+ * appreciating asset is scheduled at today's worth), else the manual cost, else the preferred
+ * supplier cost, else 0. A CONSUMABLE_GAUGE asset is valued from its contents and its cost per
+ * unit of measure instead (issue #683) — it holds a measure rather than units, so the counted
+ * product would schedule a full cylinder at zero however carefully it was priced.
  *
  * **The figures add up as printed** (issue #288). A schedule is a document someone checks with a
  * calculator, so each rung is quantised through `@/lib/money` and sums the rung below it in its
  * rounded form: line → location subtotal → grand total.
  */
-import { effectiveUnitCost, type ValuedUnit } from './reports';
+import { stockValue, type ValuedStock } from './reports';
 import { MONEY_DECIMALS, roundMoney, sumMoney } from '@/lib/money';
-import { effectiveUnitValue } from '@/features/inventory/valuation';
 import { warrantyStatus, type WarrantyStatus } from '@/features/inventory/asset-lifecycle';
 import type { Condition } from '@/db/repositories/constants';
 
@@ -35,18 +35,26 @@ export interface ScheduleLocationInput {
 
 /**
  * One catalogued asset to place on the schedule — a minimal, structural slice of `Item`
- * (extends {@link ValuedUnit} so it flows through {@link effectiveUnitCost}). Only the
+ * (extends {@link ValuedStock} so it flows through the shared {@link stockValue} rule). Only the
  * fields the document actually shows or values are carried, keeping the helper testable.
  */
-export interface ScheduleItemInput extends ValuedUnit {
+export interface ScheduleItemInput extends ValuedStock {
   readonly id: string;
   readonly name: string;
   /** SERIALISED instance number (1..N), or null for a non-serialised item. */
   readonly serialNo: number | null;
   /** Operational condition (Mint/Good/…), or null when untracked. */
   readonly condition: Condition | null;
-  /** On-hand quantity; the line value is `quantity × per-unit value`. */
+  /**
+   * On-hand quantity; the line value is `quantity × per-unit value`. A CONSUMABLE_GAUGE asset
+   * carries 0 here and is valued from {@link ScheduleItemInput.gauge} instead (issue #683).
+   */
   readonly quantity: number;
+  /**
+   * The unit of measure a gauge's contents are held in (`g`, `m³`), for the line's amount
+   * caption; null for every other tracking mode, which counts units instead (issue #683).
+   */
+  readonly unitOfMeasure?: string | null;
   /** ISO date (`YYYY-MM-DD`) the asset was acquired, or null when untracked. */
   readonly acquiredAt: string | null;
   /** ISO date the warranty expires, or null; drives the derived warranty status. */
@@ -57,7 +65,7 @@ export interface ScheduleItemInput extends ValuedUnit {
   readonly locationId: string | null;
   /**
    * Optional manual current / market value **per unit** (G9 forward-hook). When non-null it
-   * wins over {@link effectiveUnitCost} so an appreciating asset is scheduled at today's
+   * wins over the effective replacement cost so an appreciating asset is scheduled at today's
    * worth rather than its depreciated replacement cost.
    */
   readonly currentValuePerUnit?: number | null;
@@ -72,10 +80,18 @@ export interface ScheduleLine {
   readonly serialNo: number | null;
   readonly condition: Condition | null;
   readonly quantity: number;
+  /**
+   * For a gauge asset (issue #683): how much material it holds and in what unit, so the line
+   * can print "6 m³" where a counted asset prints "Qty 3". Null for every other tracking mode.
+   *
+   * A gauge's {@link ScheduleLine.quantity} is 0 — it holds a measure, not units — so without
+   * this the document would caption a full argon cylinder "Qty 0" beside a real value.
+   */
+  readonly measure: { readonly amount: number; readonly unit: string } | null;
   readonly acquiredAt: string | null;
   readonly purchasePrice: number | null;
   readonly warranty: WarrantyStatus;
-  /** `quantity × per-unit value` (manual current value if set, else effective replacement cost). */
+  /** The asset's on-hand value (manual current value if set, else effective replacement cost). */
   readonly replacementValue: number;
   readonly thumbnail: Uint8Array | null;
 }
@@ -181,13 +197,10 @@ export function flattenLocationHierarchy(locations: readonly ScheduleLocationInp
 }
 
 /** The fields a line's value depends on — everything else on a line is presentation. */
-export interface ScheduleValuationInput extends ValuedUnit {
-  readonly quantity: number;
-  readonly currentValuePerUnit?: number | null;
-}
+export type ScheduleValuationInput = ValuedStock;
 
 /**
- * The replacement value of one asset: `quantity × per-unit value`, quantised to the currency's
+ * The replacement value of one asset: `amount × per-unit value`, quantised to the currency's
  * minor unit (issue #292) — the line is the bottom rung of a column an insurer adds up by hand,
  * so it must be a figure that currency can actually be written in, not a flat 2dp.
  *
@@ -195,13 +208,15 @@ export interface ScheduleValuationInput extends ValuedUnit {
  * and nothing else (issue #163): resolving a full display line per row would derive a warranty
  * status a total never reads. One expression, two callers, no chance of the totals and the
  * printed lines diverging.
+ *
+ * Which amount, and which per-unit value, is the shared {@link stockValue} seam's decision — a
+ * gauge's contents against its cost per unit of measure, else the count against the manual
+ * current value or the effective replacement cost (issue #683). Before that seam existed a gauge
+ * scheduled at £0 with nothing on the document to say so, which is the one error a schedule must
+ * not make: a reader cannot tell an asset worth nothing from one that was silently omitted.
  */
 export function scheduleLineValue(item: ScheduleValuationInput, decimals: number): number {
-  const qty = Math.max(0, item.quantity);
-  // Manual current value (G9) wins; otherwise the effective replacement cost per unit. The
-  // override precedence is the single `effectiveUnitValue` seam shared with the valuation report.
-  const unitValue = effectiveUnitValue(item.currentValuePerUnit, effectiveUnitCost(item));
-  return roundMoney(qty * Math.max(0, unitValue), decimals);
+  return roundMoney(stockValue(item), decimals);
 }
 
 /**
@@ -218,10 +233,16 @@ export function toScheduleLine(item: ScheduleItemInput, now: number, decimals: n
     serialNo: item.serialNo,
     condition: item.condition,
     quantity: item.quantity,
+    // A gauge captions its contents rather than a unit count (issue #683); the unit is required
+    // for the caption to mean anything, so a gauge missing one falls back to the count.
+    measure:
+      item.gauge && item.unitOfMeasure
+        ? { amount: Math.max(0, item.gauge.netValue), unit: item.unitOfMeasure }
+        : null,
     acquiredAt: item.acquiredAt,
     purchasePrice: item.purchasePrice,
     // Only `warrantyExpiresAt` drives the status; the rest of the slice is unused here
-    // (depreciation is never applied — value flows through `effectiveUnitCost`).
+    // (depreciation is never applied — value flows through `stockValue`).
     warranty: warrantyStatus(
       {
         acquiredAt: item.acquiredAt,

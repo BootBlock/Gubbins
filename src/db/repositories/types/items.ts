@@ -21,6 +21,11 @@ export interface ItemRow {
   readonly tare_weight: number | null;
   readonly current_net_value: number | null;
   readonly attrition_percent: number | null;
+  /**
+   * Cost of one unit of measure of a gauge's contents, in stored micro-units (issue #683);
+   * null when the gauge is unpriced. Gauge-only, like the four fields above it.
+   */
+  readonly cost_per_unit_of_measure: number | null;
   readonly operational_metadata: string | null;
   readonly serial_no: number | null;
   /** Manufacturer Part Number — a BOM auto-match key (spec §4 BOM Ingress, v4). */
@@ -117,6 +122,16 @@ export interface GaugeState {
    * fields above.
    */
   readonly attritionPercent: number | null;
+  /**
+   * What **one unit of measure** of the contents costs, in the base currency (issue #683), or
+   * `null` when the gauge is unpriced. Persisted, like {@link GaugeState.attritionPercent}.
+   *
+   * This is the only figure a gauge's contents can be valued from: `items.unit_cost` prices one
+   * *countable unit*, and a gauge holds a measure rather than units, so `quantity × unit_cost`
+   * values a full cylinder at zero however carefully it was priced. Valuation multiplies this by
+   * {@link GaugeState.currentNetValue}; an unpriced gauge is reported as unpriced, never as 0.
+   */
+  readonly costPerUnitOfMeasure: number | null;
 }
 
 export interface Item {
@@ -276,6 +291,11 @@ export interface GaugeInput {
    * Omitted or `null` means no attrition, which is the default.
    */
   readonly attritionPercent?: number | null;
+  /**
+   * What one unit of measure of the contents costs, in the base currency (issue #683).
+   * Omitted or `null` leaves the gauge unpriced, which is the default.
+   */
+  readonly costPerUnitOfMeasure?: number | null;
   readonly operationalMetadata?: Record<string, unknown> | null;
 }
 
@@ -370,6 +390,12 @@ export interface UpdateItemInput {
   /** Intrinsic serial number (issue #90); null clears it; omit to leave untouched. */
   readonly serialNumber?: string | null;
   readonly unitCost?: number | null;
+  /**
+   * What one unit of measure of a gauge's contents costs (issue #683); null clears it, leaving
+   * the gauge unpriced. CONSUMABLE_GAUGE only — supplying it for any other tracking mode is
+   * rejected, since an item that counts units is priced by {@link UpdateItemInput.unitCost}.
+   */
+  readonly costPerUnitOfMeasure?: number | null;
   readonly expiryDate?: number | null;
   readonly batchNumber?: string | null;
   readonly lotNumber?: string | null;

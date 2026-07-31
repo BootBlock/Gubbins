@@ -32,6 +32,23 @@ Bringing a shelf full of consumables in from a spreadsheet works too. Mark the r
 wizard — and give the file a **Unit of measure** and a **Gross capacity** column (optionally
 **Tare weight** and **Net remaining**); then [[import|Export-and-Import]] it like any other list.
 
+## What a gauge is worth
+
+A gauge holds a measure, not a count, so there's no quantity for a **unit cost** to multiply. Give
+it a **cost per unit of measure** instead — the field sits beside *Unit cost* on the item and is
+labelled with the gauge's own unit (*Cost per g*, *Cost per ml*). Gubbins then values the item at
+**what's in it × that cost**, so a spool with 400 g left at `0.025` per gram is worth `£10.00`.
+
+That figure feeds the [[valuation reports|Valuation-and-Spend]], the
+[[insurance schedule|Insurance-and-Estate-Schedule]] and the aging and dead-stock reports, and it
+falls as you use the material up.
+
+> **⚠️ Heads-up**
+> Leave the cost blank and the gauge's contents are **reported as unpriced** rather than counted as
+> worth nothing — a notice on the Reports screen and the insurance schedule says how many gauges
+> that applies to. Unit cost won't stand in for it: Gubbins won't read the price of a whole spool as
+> the price of a gram.
+
 ## Attrition — when using some costs more than you use
 
 Some materials cost you more than you actually use. Take 100 g of flour out of the bag and

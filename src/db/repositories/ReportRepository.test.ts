@@ -347,6 +347,172 @@ describe('ReportRepository', () => {
     });
   });
 
+  // Issue #683 — a CONSUMABLE_GAUGE item is valued along a different axis: its `quantity` is
+  // pinned at 0 and it never takes an `item_stock` row, so `quantity × unit cost` reported a
+  // full argon cylinder as a confident £0 — in the headline, both breakdowns, the trend, the
+  // aging and dead-stock reports, and on the printed insurance schedule.
+  describe('gauge valuation (issue #683)', () => {
+    /** A gauge holding `net` of `capacity`, priced at `costPerUnitOfMeasure` per unit. */
+    async function makeGauge(opts: {
+      name: string;
+      locationId?: string;
+      categoryId?: string;
+      capacity?: number;
+      net: number;
+      costPerUnitOfMeasure?: number | null;
+      unitCost?: number | null;
+    }) {
+      return items.create({
+        name: opts.name,
+        locationId: opts.locationId,
+        categoryId: opts.categoryId,
+        trackingMode: 'CONSUMABLE_GAUGE',
+        unitCost: opts.unitCost ?? null,
+        gauge: {
+          unitOfMeasure: 'g',
+          grossCapacity: opts.capacity ?? 1000,
+          tareWeight: 0,
+          currentNetValue: opts.net,
+          ...(opts.costPerUnitOfMeasure !== undefined
+            ? { costPerUnitOfMeasure: opts.costPerUnitOfMeasure }
+            : {}),
+        },
+      });
+    }
+
+    it('values a gauge from its contents, and agrees across headline, category and location', async () => {
+      const filament = await categories.create({ name: 'Filament' });
+      const shelf = await locations.create({ name: 'Shelf A' });
+      // 400 g left at £0.025/g = £10.
+      await makeGauge({
+        name: 'PLA spool',
+        locationId: shelf.id,
+        categoryId: filament.id,
+        net: 400,
+        costPerUnitOfMeasure: 0.025,
+      });
+      // An ordinary counted item alongside it, so the totals mix both axes.
+      await items.create({ name: 'Nozzle', locationId: shelf.id, quantity: 3, unitCost: 5 });
+
+      const report = await reports.inventoryValue();
+      expect(report.totalValue).toBe(25); // £10 of filament + 3 × £5
+      // The gauge contributes no *units*: 400 grams is not a count, and adding it to the
+      // nozzles would make the figure a number of nothing.
+      expect(report.totalQuantity).toBe(3);
+      expect(report.unpricedItemCount).toBe(0);
+
+      expect(report.byCategory.find((g) => g.name === 'Filament')?.value).toBe(10);
+      // The location breakdown reads the `item_stock` ledger, which a gauge never appears in —
+      // so it needs its own arm, or the two totals silently stop agreeing (the #155 invariant).
+      expect(report.byLocation.find((g) => g.id === shelf.id)?.value).toBe(25);
+      expect(report.byLocation.reduce((sum, g) => sum + g.value, 0)).toBe(report.totalValue);
+
+      // `locationStats` values the same stock, so its total must equal that breakdown row.
+      const stats = await reports.locationStats(shelf.id);
+      expect(stats.totalValue).toBe(25);
+      expect(stats.distinctItemCount).toBe(2);
+      expect(stats.unpricedItemCount).toBe(0);
+      expect(stats.byCategory.find((g) => g.name === 'Filament')?.value).toBe(10);
+    });
+
+    it('never prices a gauge from unit cost — an unpriced gauge is reported, not zeroed', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      // A per-*unit* cost of £25 (what the whole spool cost) must not be read per gram: doing
+      // so would schedule 400 g as £10,000. It is not a usable price here, so the gauge is
+      // unpriced — and says so rather than quietly contributing nothing.
+      await makeGauge({ name: 'Priced by the spool', locationId: shelf.id, net: 400, unitCost: 25 });
+
+      const report = await reports.inventoryValue();
+      expect(report.totalValue).toBe(0);
+      expect(report.unpricedItemCount).toBe(1);
+      expect(await reports.unpricedGaugeCount()).toBe(1);
+    });
+
+    it('counts only gauges whose contents are actually missing from a total', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      await makeGauge({ name: 'Priced', locationId: shelf.id, net: 400, costPerUnitOfMeasure: 0.01 });
+      // Empty: nothing is missing from a total that correctly contains nothing.
+      await makeGauge({ name: 'Empty', locationId: shelf.id, net: 0 });
+      // Soft-deleted stock is outside every valuation read, so it cannot be "excluded" from one.
+      const gone = await makeGauge({ name: 'Gone', locationId: shelf.id, net: 500 });
+      await items.softDelete(gone.id);
+      const unpriced = await makeGauge({ name: 'Unpriced', locationId: shelf.id, net: 250 });
+
+      expect(await reports.unpricedGaugeCount()).toBe(1);
+
+      // A gauge is never valued from a supplier price, so no currency of one can exclude it —
+      // it must not also be counted by the foreign-currency notice, whose only remedy ("give
+      // the item its own unit cost") does nothing for a gauge. Needs a base currency to be
+      // resolvable *and* a foreign preferred part, or the count returns 0 for unrelated reasons
+      // and could not tell the exclusion apart from its absence.
+      await supplierParts.create(unpriced.id, {
+        supplier: { supplierName: 'Akihabara Denshi' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+      const gbp = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      expect(await gbp.foreignCurrencyCostCount()).toBe(0);
+      // The same part on a *counted* item is excluded, proving the read is live either way.
+      const scope = await items.create({ name: 'Oscilloscope', locationId: shelf.id, quantity: 1 });
+      await supplierParts.create(scope.id, {
+        supplier: { supplierName: 'Akihabara Denshi' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+      expect(await gbp.foreignCurrencyCostCount()).toBe(1);
+    });
+
+    it('schedules a gauge at its contents, and captions the line with the measure', async () => {
+      const garage = await locations.create({ name: 'Garage' });
+      await makeGauge({
+        name: 'Argon cylinder',
+        locationId: garage.id,
+        capacity: 10,
+        net: 6,
+        costPerUnitOfMeasure: 6,
+      });
+
+      const summary = await reports.insuranceScheduleSummary();
+      expect(summary.grandTotal).toBe(36); // 6 × £6 — not the £0 a unit count would give
+      expect(summary.groups.find((g) => g.locationId === garage.id)?.subtotal).toBe(36);
+
+      const page = await reports.insuranceScheduleGroupPage(garage.id, { limit: 10 });
+      const line = page.rows.find((l) => l.name === 'Argon cylinder')!;
+      expect(line.replacementValue).toBe(36);
+      // "Qty 0" beside a £36 line reads as a mistake; the document says what it holds.
+      expect(line.measure).toEqual({ amount: 6, unit: 'g' });
+    });
+
+    it('ages an idle gauge and reports it as dead stock, by its contents', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const gauge = await makeGauge({
+        name: 'Resin',
+        locationId: shelf.id,
+        net: 500,
+        costPerUnitOfMeasure: 0.04,
+      });
+      // Backdate creation past the idle threshold; the gauge has never moved. Dead-stock
+      // reporting is opt-in (issue #92), so the item has to ask to be watched.
+      await driver.execute("UPDATE items SET created_at = ?, dead_stock_mode = 'always' WHERE id = ?;", [
+        Date.now() - 400 * MS_PER_DAY,
+        gauge.id,
+      ]);
+
+      const dead = await reports.deadStock(90);
+      const line = dead.lines.find((l) => l.name === 'Resin')!;
+      expect(line.value).toBe(20); // 500 × £0.04
+      expect(line.measure).toEqual({ amount: 500, unit: 'g' });
+      expect(dead.totalValue).toBe(20);
+
+      // Stock aging values the same contents, but a gauge adds no units to a bucket's quantity.
+      const aging = await reports.stockAging();
+      expect(aging.totalValue).toBe(20);
+      expect(aging.totalQuantity).toBe(0);
+    });
+  });
+
   // Issue #458 — aggregate statistics for a single location's contents. The figures read the same
   // per-location `item_stock` ledger and value it by the same seam as `inventoryValue`'s location
   // breakdown, so a location's total here must equal its row there.

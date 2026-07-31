@@ -156,6 +156,8 @@ export function rowToItem(row: ItemRow): Item {
       percentageRemaining: percentageRemaining(net, gross),
       currentGrossWeight: currentGrossWeight(net, tare),
       attritionPercent: row.attrition_percent,
+      // Money column: stored as integer micro-units (issue #286), major units in the app.
+      costPerUnitOfMeasure: fromStoredMoney(row.cost_per_unit_of_measure),
     };
   }
 

@@ -16,6 +16,7 @@
 import { assertExhaustive } from '@/lib/exhaustive';
 import type { Item, TrackingMode } from '@/db/repositories';
 import type { Condition } from '@/db/repositories/constants';
+import { itemTotalValue } from './item-total-value';
 
 /**
  * What an item card's top-right badge slot shows:
@@ -23,9 +24,9 @@ import type { Condition } from '@/db/repositories/constants';
  *   historic behaviour and the shipped default; available for every item.
  * - `unitPrice` — the item's singular unit cost, via the Money control. Available whenever a
  *   unit cost is set.
- * - `totalValue` — the item's combined stock value (`unitCost × quantity`), via Money.
- *   Available only for a *countable* priced item (a plain/serialised count) — an unlimited or
- *   gauge item has no meaningful unit total, matching the `value` card field.
+ * - `totalValue` — the item's combined stock value, via Money. Available whenever
+ *   {@link itemTotalValue} yields one: a priced, non-unlimited item — a gauge counts, valued from
+ *   its contents rather than a unit count (issue #683) — matching the `value` card field exactly.
  * - `condition` — the item's tracked condition (Mint / Good / …), tinted with its condition
  *   token. Available only when a condition is set.
  * - `none` — the slot is empty (nothing is drawn). As a *fallback*, "no fallback".
@@ -97,13 +98,11 @@ function badgeFor(content: CardBadgeContent, item: Item): ResolvedCardBadge | nu
     case 'unitPrice':
       return isPriced(item) ? { kind: 'money', amount: item.unitCost!, scope: 'unit' } : null;
     case 'totalValue': {
-      // Total value = unit cost × on-hand count, so it needs a real count: an unlimited item's
-      // quantity is ∞-ignored and a gauge tracks a measure (not units), so for either the
-      // product is meaningless — matching how the `value` card field declines those.
-      const countable = !item.isUnlimited && item.trackingMode !== 'CONSUMABLE_GAUGE';
-      return countable && isPriced(item)
-        ? { kind: 'money', amount: item.unitCost! * item.quantity, scope: 'total' }
-        : null;
+      // Shares {@link itemTotalValue} with the `value` card field, so the badge and the field on
+      // the same card can never disagree: an unlimited or unpriced item has no meaningful total
+      // (null → the fallback badge), and a gauge is valued from its contents (issue #683).
+      const total = itemTotalValue(item);
+      return total === null ? null : { kind: 'money', amount: total, scope: 'total' };
     }
     case 'condition':
       return item.condition != null ? { kind: 'condition', condition: item.condition } : null;

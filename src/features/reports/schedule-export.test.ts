@@ -20,6 +20,7 @@ function line(id: string, overrides: Partial<ScheduleLine> = {}): ScheduleLine {
     serialNo: null,
     condition: null,
     quantity: 1,
+    measure: null,
     acquiredAt: null,
     purchasePrice: null,
     warranty: 'none',
@@ -66,6 +67,7 @@ describe('scheduleExportColumns', () => {
       'Item',
       'Serial',
       'Quantity',
+      'Unit',
       'Purchase price',
       'Acquired',
       'Warranty',
@@ -79,7 +81,22 @@ describe('scheduleExportColumns', () => {
     const row = { room: 'Garage', line: line('Drill', { quantity: 3, replacementValue: 12.5 }) };
     const valueOf = (header: string) => columns.find((c) => c.header === header)!.value(row);
     expect(valueOf('Quantity')).toBe(3);
+    expect(valueOf('Unit')).toBeNull(); // a plain count carries no unit
     expect(valueOf('Replacement value')).toBe(12.5);
+  });
+
+  it('exports a gauge asset by its measure, not its always-zero count (issue #683)', () => {
+    // A reader re-totalling the file must not see "0" beside a real replacement value; the
+    // amount goes in Quantity and Unit says what it is measured in.
+    const columns = scheduleExportColumns();
+    const row = {
+      room: 'Garage',
+      line: line('Argon', { quantity: 0, measure: { amount: 6, unit: 'm³' }, replacementValue: 36 }),
+    };
+    const valueOf = (header: string) => columns.find((c) => c.header === header)!.value(row);
+    expect(valueOf('Quantity')).toBe(6);
+    expect(valueOf('Unit')).toBe('m³');
+    expect(valueOf('Replacement value')).toBe(36);
   });
 
   it('renders warranty and condition as their human labels', () => {

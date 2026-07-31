@@ -82,6 +82,59 @@ describe('buildPartsCatalogue', () => {
     expect(line.lineValue).toBe(8);
   });
 
+  // Issue #683 — a gauge's count is always 0, so the catalogue would print "0 g" against a
+  // line value of nothing and quietly under-total the document by every consumable on it.
+  it('quantifies and values a gauge line by its contents, not its always-zero count', () => {
+    const catalogue = buildPartsCatalogue(
+      [
+        item({
+          id: 'spool',
+          locationId: 'garage',
+          quantity: 0,
+          unitOfMeasure: 'g',
+          unitCost: null,
+          gauge: { netValue: 400, costPerUnitOfMeasure: 0.025 },
+        }),
+      ],
+      LOCATIONS,
+      NOW,
+    );
+    const line = catalogue.groups[0]!.lines[0]!;
+    expect(line.quantity).toBe(400);
+    expect(line.unitCost).toBe(0.025);
+    expect(line.lineValue).toBe(10);
+    expect(catalogue.grandTotal).toBe(10);
+    // …but 400 grams is not 400 units: the "in stock" count must not absorb a measure.
+    expect(line.measured).toBe(true);
+    expect(catalogue.totalQuantity).toBe(0);
+    expect(catalogue.groups[0]!.totalQuantity).toBe(0);
+  });
+
+  it('reads an unpriced gauge as unpriced, never as a line worth zero', () => {
+    // A unit cost prices one countable unit, so it must not stand in per gram — that would be
+    // wrong by the container's whole capacity.
+    const catalogue = buildPartsCatalogue(
+      [
+        item({
+          id: 'cylinder',
+          locationId: 'garage',
+          quantity: 0,
+          unitOfMeasure: 'g',
+          unitCost: 25,
+          preferredSupplierCost: 30,
+          gauge: { netValue: 500, costPerUnitOfMeasure: null },
+        }),
+      ],
+      LOCATIONS,
+      NOW,
+    );
+    const line = catalogue.groups[0]!.lines[0]!;
+    expect(line.quantity).toBe(500);
+    expect(line.unitCost).toBeNull();
+    expect(line.lineValue).toBeNull();
+    expect(catalogue.hasValue).toBe(false);
+  });
+
   it('falls back to the preferred supplier cost when there is no manual cost', () => {
     const catalogue = buildPartsCatalogue(
       [item({ id: 'a', locationId: 'garage', quantity: 3, unitCost: null, preferredSupplierCost: 5 })],

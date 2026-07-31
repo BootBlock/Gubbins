@@ -327,15 +327,20 @@ you can see a location's worth and contents at a glance without opening the full
 
 - **Total value** — the combined value of all the stock physically held here, in your base
   currency. It uses the same valuation as [[Valuation & spend|Valuation-and-Spend]] (an item's
-  manual current value, else its cost, else its preferred supplier's price), so a location's figure
-  here always matches its row on that report's *value by location* breakdown.
-- **Items** — how many distinct items have stock here.
-- **Units** — the total on-hand quantity across those items.
+  manual current value, else its cost, else its preferred supplier's price — or, for a
+  [[consumable gauge|Low-Stock-and-Gauges]], what it holds × its *cost per unit of measure*), so a
+  location's figure here always matches its row on that report's *value by location* breakdown.
+- **Items** — how many distinct items have stock here. A consumable holding material counts, even
+  though it has no unit count.
+- **Units** — the total on-hand quantity across those items. Consumables add nothing here: they
+  hold a measure, so their grams and millilitres are not a count and are never added to one.
 - **Space used** — the physical volume the contents occupy, worked out from each item's
   dimensions (width × height × depth) times the number held. If the location has an internal size
   of its own (see [[Capacity & fullness|#capacity--fullness]] and its *Dimensions* / *Usable
   volume* fields), it also shows how full that is — e.g. *20% of 60 L*.
-- **Value by category** — where that value sits, broken down by category, largest first.
+- **Value by category** — where that value sits, broken down by category, largest first. With more
+  categories than fit, it says how many of how many it is showing and offers **Show more** — the
+  same behaviour as [[long lists in a report|Reports-Overview]].
 
 ![The Statistics tab of a location's Edit dialog: Total value, Items, Units and Space used tiles above a value-by-category breakdown](images/location-statistics.png)
 

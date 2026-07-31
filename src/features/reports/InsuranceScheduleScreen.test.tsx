@@ -92,6 +92,7 @@ vi.mock('./queries', () => ({
   useInsuranceScheduleSummary: () => ({ ...summaryState }),
   useInsuranceSchedulePage: () => ({ ...pageState }),
   useForeignCurrencyCostCount: () => ({ data: 0 }),
+  useUnpricedGaugeCount: () => ({ data: 0 }),
   loadFullScheduleLines: (...args: unknown[]) => loadFullScheduleLines(...args),
 }));
 

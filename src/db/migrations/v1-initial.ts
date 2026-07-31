@@ -584,6 +584,13 @@ const baselineStatements: SqlStatement[] = [
           tare_weight          REAL,
           current_net_value    REAL,
           attrition_percent    REAL,
+          -- What one unit of measure costs (issue #683). Money, so an INTEGER count of
+          -- micro-units like every other monetary column — see the money convention comment
+          -- below. A gauge holds a *measure*, not units, so quantity × unit_cost values it at
+          -- zero however it is priced; this is the only per-item figure a gauge's contents can
+          -- be valued from (current_net_value × cost_per_unit_of_measure). Optional: NULL
+          -- means the gauge is unpriced, and valuation reports it as such rather than as 0.
+          cost_per_unit_of_measure INTEGER,
           operational_metadata TEXT,
           is_active            INTEGER NOT NULL DEFAULT 1,
           is_unlimited         INTEGER NOT NULL DEFAULT 0,
@@ -619,7 +626,12 @@ const baselineStatements: SqlStatement[] = [
           -- its own CHECK rather than joining the mandatory block. The 0–100 ceiling bounds a
           -- draw at double the requested amount, so a mistyped rate cannot empty a gauge.
           CHECK (attrition_percent IS NULL OR (attrition_percent >= 0 AND attrition_percent <= 100)),
-          CHECK (attrition_percent IS NULL OR tracking_mode = 'CONSUMABLE_GAUGE')
+          CHECK (attrition_percent IS NULL OR tracking_mode = 'CONSUMABLE_GAUGE'),
+          -- Cost per unit of measure (issue #683) is optional in the same way, and gauge-only
+          -- for the same reason: an item that counts units has no unit of measure to price.
+          -- Non-negativity mirrors every other money column's CHECK (issue #349).
+          CHECK (cost_per_unit_of_measure IS NULL OR cost_per_unit_of_measure >= 0),
+          CHECK (cost_per_unit_of_measure IS NULL OR tracking_mode = 'CONSUMABLE_GAUGE')
         ) STRICT;
       `,
   },

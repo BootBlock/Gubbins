@@ -50,6 +50,14 @@ export {
   type PageWindowItem,
   type PageWindowOptions,
 } from './pagination-window';
+// The honest footer for a list that renders only the head of a set it holds in full, plus the
+// counting hook it pairs with (issue #609).
+export { ShowMore, type ShowMoreProps } from './show-more';
+export {
+  useProgressiveReveal,
+  type ProgressiveReveal,
+  type ProgressiveRevealOptions,
+} from './use-progressive-reveal';
 export { Money, type MoneyProps } from './money';
 export { MoneyInput, type MoneyInputProps } from './money-input';
 export { AnimatedNumber, type AnimatedNumberProps } from './animated-number';

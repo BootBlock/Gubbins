@@ -42,7 +42,12 @@ export function scheduleExportColumns(): readonly TabularColumn<ScheduleExportRo
     { header: 'Room', value: (r) => r.room },
     { header: 'Item', value: (r) => r.line.name },
     { header: 'Serial', value: (r) => r.line.serialNo },
-    { header: 'Quantity', value: (r) => r.line.quantity },
+    // A gauge asset is held as a *measure*, so its count is always 0 (issue #683). Exporting
+    // that beside a real replacement value would give a reader re-totalling the file the same
+    // "0 of something worth £36" contradiction the printed line avoids — so the column carries
+    // the amount, and `Unit` says what the amount is in. Blank unit ⇒ a plain count.
+    { header: 'Quantity', value: (r) => r.line.measure?.amount ?? r.line.quantity },
+    { header: 'Unit', value: (r) => r.line.measure?.unit ?? null },
     { header: 'Purchase price', value: (r) => r.line.purchasePrice },
     { header: 'Acquired', value: (r) => r.line.acquiredAt },
     { header: 'Warranty', value: (r) => WARRANTY_STATUS_LABEL[r.line.warranty] },

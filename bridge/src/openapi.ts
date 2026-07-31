@@ -2386,6 +2386,7 @@ export const openapiDocument: JsonValue = {
           'percentageRemaining',
           'currentGrossWeight',
           'attritionPercent',
+          'costPerUnitOfMeasure',
         ],
         properties: {
           unitOfMeasure: { type: 'string', example: 'g' },
@@ -2398,6 +2399,15 @@ export const openapiDocument: JsonValue = {
             type: 'number',
             nullable: true,
             description: 'Proportional waste a draw costs on top of the amount asked for; null for none.',
+          },
+          costPerUnitOfMeasure: {
+            type: 'number',
+            nullable: true,
+            description:
+              'What one unit of measure of the contents costs, in the base currency; null when ' +
+              'unpriced. A gauge holds a measure rather than units, so this — not the item’s ' +
+              'unitCost — is what its stock is valued from (currentNetValue × this).',
+            example: 0.025,
           },
         },
       },

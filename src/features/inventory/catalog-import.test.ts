@@ -451,6 +451,30 @@ describe('applyCatalogImportPlan — :memory: DB', () => {
     expect(result.rows[0]!.error).toMatch(/suspended/i);
   });
 
+  // Issue #683 — a gauge's stock is valued from its cost per unit of measure, so a catalogue
+  // that round-trips without the column comes back unpriced and the inventory total drops by
+  // every consumable's contents. `Unit cost` cannot stand in: it prices one countable unit.
+  it('carries a gauge’s cost per unit of measure through an import', async () => {
+    const csv =
+      'name,Type,unitOfMeasure,grossCapacity,currentNetValue,costPerUnitOfMeasure\r\n' +
+      'PLA filament,Consumable,g,1000,400,0.025\r\n';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    const result = await applyCatalogImportPlan(plan, repo);
+
+    expect(result.created).toBe(1);
+    const page = await repo.list({ limit: 10 });
+    expect(page.rows[0]!.gauge).toMatchObject({ currentNetValue: 400, costPerUnitOfMeasure: 0.025 });
+  });
+
+  it('leaves a gauge unpriced when the cost column is absent, rather than worth nothing', async () => {
+    const csv = 'name,Type,unitOfMeasure,grossCapacity\r\nResin,Consumable,ml,500\r\n';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    await applyCatalogImportPlan(plan, repo);
+
+    const page = await repo.list({ limit: 10 });
+    expect(page.rows[0]!.gauge?.costPerUnitOfMeasure).toBeNull();
+  });
+
   it('creates a gauge-tracked item with its configuration intact (issue #341)', async () => {
     const csv =
       'name,Type,unitOfMeasure,grossCapacity,tareWeight,currentNetValue\r\nPLA filament,Consumable,g,1000,200,750\r\n';

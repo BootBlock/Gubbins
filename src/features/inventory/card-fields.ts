@@ -16,6 +16,7 @@ import type { Condition, FieldType } from '@/db/repositories/constants';
 import { isImageDataUrl } from '@/lib/image-data-url';
 import { isExternalHref } from './external-href';
 import { UNLIMITED_GLYPH } from './unlimited';
+import { itemTotalValue } from './item-total-value';
 
 /** The built-in (always-available) card fields — those derivable from the item row itself. */
 export type BuiltinCardFieldId =
@@ -319,16 +320,15 @@ function resolveOne(id: string, item: Item, ctx: CardFieldContext): ResolvedCard
         value: item.condition ? { kind: 'condition', condition: item.condition } : EMPTY,
       };
     case 'value': {
-      // Total value = unit cost × on-hand count, so it needs a *real* count. An unlimited
-      // item's quantity is ∞-ignored and a gauge tracks a measure (not units), so for either
-      // the product is meaningless (it would read £0.00) — show em-dash, matching how the
-      // `quantity` field itself declines to show those (see {@link quantityValue}).
-      const countable = !item.isUnlimited && item.trackingMode !== 'CONSUMABLE_GAUGE';
-      const priced = countable && item.unitCost != null && Number.isFinite(item.unitCost);
+      // One rule for every card surface ({@link itemTotalValue}): a gauge is valued from its
+      // contents, an unlimited or unpriced item has no meaningful total and shows em-dash —
+      // matching how the `quantity` field declines an ∞ count (see {@link quantityValue}), and
+      // never printing a confident £0.00 for "no price recorded".
+      const total = itemTotalValue(item);
       return {
         id,
         label: 'Total value',
-        value: priced ? { kind: 'money', amount: item.unitCost! * item.quantity } : EMPTY,
+        value: total === null ? EMPTY : { kind: 'money', amount: total },
       };
     }
     case 'quantity':

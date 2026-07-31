@@ -45,6 +45,7 @@ import {
   normaliseReorderInt,
   normaliseReorderPercent,
   normaliseText,
+  normaliseCostPerUnitOfMeasure,
   normaliseUnitCost,
   normaliseWeight,
   normaliseDimension,
@@ -498,6 +499,26 @@ export class ItemCoreRepository extends BaseRepository {
       sets.push('unit_cost = ?');
       params.push(unitCost);
       trackMoney('unitCost', 'unit cost', existing.unitCost, unitCost);
+    }
+    if (input.costPerUnitOfMeasure !== undefined) {
+      // Gauge-only, mirroring the v1 CHECK with a legible message rather than letting a raw
+      // SQLITE_CONSTRAINT surface: an item that counts units has no unit of measure to price,
+      // and its `unit_cost` is already the right field (issue #683).
+      if (existing.trackingMode !== 'CONSUMABLE_GAUGE') {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          'Cost per unit of measure applies only to CONSUMABLE_GAUGE items; use unit cost instead.',
+        );
+      }
+      const costPerUnitOfMeasure = normaliseCostPerUnitOfMeasure(input.costPerUnitOfMeasure);
+      sets.push('cost_per_unit_of_measure = ?');
+      params.push(costPerUnitOfMeasure);
+      trackMoney(
+        'costPerUnitOfMeasure',
+        'cost per unit of measure',
+        existing.gauge?.costPerUnitOfMeasure ?? null,
+        costPerUnitOfMeasure,
+      );
     }
     if (input.expiryDate !== undefined) {
       const expiryDate = normaliseExpiry(input.expiryDate);

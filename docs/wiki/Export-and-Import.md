@@ -133,13 +133,15 @@ going through the item importer first.
 > **ℹ️ Note**
 > A [[consumable item|Tracking-Modes]] is measured by a **fill gauge**, not a count, so a row
 > marked *Consumable* needs two more columns: a **Unit of measure** (`g`, `ml`, `m`) and a
-> **Gross capacity** — how much a full one holds. **Tare weight** and **Net remaining** are
-> optional: leave them out and the item starts full with no container weight. A consumable row
-> that's missing its unit or capacity — or whose net remaining is more than a full one holds — is
-> flagged in the review, with the rest of the file still importable, rather than costing you the
-> whole import.
+> **Gross capacity** — how much a full one holds. **Tare weight**, **Net remaining** and
+> **Cost per unit of measure** are optional: leave them out and the item starts full, with no
+> container weight and unpriced. A consumable row that's missing its unit or capacity — or whose
+> net remaining is more than a full one holds — is flagged in the review, with the rest of the
+> file still importable, rather than costing you the whole import.
 >
-> The **Catalogue CSV** export carries all four, so consumables survive a spreadsheet round-trip.
+> The **Catalogue CSV** export carries all five, so consumables survive a spreadsheet round-trip
+> with their [[valuation|Valuation-and-Spend]] intact — *Unit cost* does not value a consumable,
+> so without the cost-per-unit-of-measure column they would come back worth nothing.
 > Coming back in they only apply when a row *creates* a consumable: an existing item's gauge is
 > re-based from the item itself (see [[low stock & gauges|Low-Stock-and-Gauges]]), so those
 > columns are ignored on a row that updates one, and on any row that isn't a consumable at all.

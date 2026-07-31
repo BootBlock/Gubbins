@@ -1,6 +1,10 @@
-import { Money } from '@/components/foundry';
+import { Money, ShowMore, useProgressiveReveal } from '@/components/foundry';
+import { useT } from '@/features/i18n';
 import type { Formatters } from '@/lib/format';
 import type { TurnoverReport } from '../turnover';
+
+/** How many item rows the table opens with, and how many each "show more" adds. */
+export const TURNOVER_INITIAL_ROWS = 12;
 
 /**
  * Format a turnover ratio as `2.4×` (one decimal place), or an em dash when there is no value to
@@ -20,8 +24,16 @@ function formatDays(value: number | null, formatters: Formatters): string {
  * A token-styled inventory-turnover panel: the portfolio headline (turnover ratio + days of
  * cover) over a per-item table sorted fastest-movers-first. Pure presentation — all maths is in
  * the `summariseTurnover` seam — composed with Tailwind + tokens only (no chart dependency).
+ *
+ * The table opens on the leading {@link TURNOVER_INITIAL_ROWS} items, but never presents them as
+ * the whole set (issue #609): the `ShowMore` footer counts what is held back and reveals it a
+ * chunk at a time. The headline figures above are portfolio-wide either way — they are summed
+ * over every line, not over the rows on screen.
  */
 export function TurnoverTable({ report, formatters }: { report: TurnoverReport; formatters: Formatters }) {
+  const t = useT();
+  const reveal = useProgressiveReveal(report.lines.length, { initial: TURNOVER_INITIAL_ROWS });
+
   if (report.lines.length === 0) {
     return <p className="py-6 text-center text-sm text-muted-foreground">No stock to analyse yet.</p>;
   }
@@ -61,7 +73,7 @@ export function TurnoverTable({ report, formatters }: { report: TurnoverReport; 
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {report.lines.slice(0, 12).map((line) => (
+            {report.lines.slice(0, reveal.limit).map((line) => (
               <tr key={line.id}>
                 <td className="w-full max-w-0 truncate py-1.5 pr-3 font-medium">{line.name}</td>
                 <td className="py-1.5 px-3 text-right tabular-nums">{formatRatio(line.turnover)}</td>
@@ -76,6 +88,16 @@ export function TurnoverTable({ report, formatters }: { report: TurnoverReport; 
           </tbody>
         </table>
       </div>
+
+      <ShowMore
+        shown={reveal.limit}
+        total={report.lines.length}
+        label={t('common.rows.items')}
+        expanded={reveal.expanded}
+        onShowMore={reveal.showMore}
+        onShowLess={reveal.showLess}
+        data-testid="turnover-more"
+      />
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { historyStatement } from './history';
 import {
   normaliseCurrentValue,
   normaliseExpiry,
+  normaliseCostPerUnitOfMeasure,
   normaliseIsoDate,
   normalisePurchasePrice,
   normaliseDepreciationMonths,
@@ -65,6 +66,8 @@ export interface ResolvedCreate {
   readonly tareWeight: number | null;
   readonly netValue: number | null;
   readonly attritionPercent: number | null;
+  /** Gauge cost per unit of measure, in stored micro-units (issue #683); null when unpriced. */
+  readonly costPerUnitOfMeasure: number | null;
   readonly operationalMetadata: string | null;
 }
 
@@ -99,6 +102,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
   let tareWeight: number | null = null;
   let netValue: number | null = null;
   let attritionPercent: number | null = null;
+  let costPerUnitOfMeasure: number | null = null;
   let operationalMetadata: string | null = null;
 
   if (trackingMode === 'CONSUMABLE_GAUGE') {
@@ -128,6 +132,10 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
       }
       attritionPercent = gauge.attritionPercent;
     }
+    // Cost per unit of measure (issue #683) is optional in the same way — an unpriced gauge is a
+    // perfectly ordinary gauge — and is validated through the shared money normaliser so the
+    // create path stores exactly what the update path does.
+    costPerUnitOfMeasure = normaliseCostPerUnitOfMeasure(gauge.costPerUnitOfMeasure);
     operationalMetadata = gauge.operationalMetadata ? JSON.stringify(gauge.operationalMetadata) : null;
   }
 
@@ -167,6 +175,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     tareWeight,
     netValue,
     attritionPercent,
+    costPerUnitOfMeasure,
     operationalMetadata,
   };
 }
@@ -189,11 +198,12 @@ export function buildInsert(
     {
       sql: `INSERT INTO items
               (id, name, description, notes, location_id, category_id, tracking_mode, quantity, serial_no,
-               unit_of_measure, gross_capacity, tare_weight, current_net_value, attrition_percent, operational_metadata,
+               unit_of_measure, gross_capacity, tare_weight, current_net_value, attrition_percent,
+               cost_per_unit_of_measure, operational_metadata,
                mpn, manufacturer, barcode, serial_number, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited, is_favourite,
                reorder_point, reorder_gauge_percent, reorder_qty, parent_id,
                acquired_at, warranty_expires_at, purchase_price, depreciation_months, weight, width, height, depth, current_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
@@ -209,6 +219,7 @@ export function buildInsert(
         r.tareWeight,
         r.netValue,
         r.attritionPercent,
+        r.costPerUnitOfMeasure,
         r.operationalMetadata,
         r.mpn,
         r.manufacturer,

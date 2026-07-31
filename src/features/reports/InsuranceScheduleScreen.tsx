@@ -31,11 +31,13 @@ import { TabularExportMenu } from '@/features/export/TabularExportMenu';
 import { buildScheduleExport, scheduleExportFilename } from './schedule-export';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ForeignCurrencyNotice } from './components/ForeignCurrencyNotice';
+import { UnpricedGaugeNotice } from './components/UnpricedGaugeNotice';
 import {
   loadFullScheduleLines,
   useForeignCurrencyCostCount,
   useInsuranceSchedulePage,
   useInsuranceScheduleSummary,
+  useUnpricedGaugeCount,
 } from './queries';
 import {
   PRINT_FULL_LIMIT,
@@ -333,6 +335,7 @@ function ScheduleHeader({
 }) {
   const f = formatters;
   const excluded = useForeignCurrencyCostCount();
+  const unpricedGauges = useUnpricedGaugeCount();
   const baseCurrency = usePreferencesStore((s) => s.baseCurrency);
   return (
     <>
@@ -356,6 +359,7 @@ function ScheduleHeader({
           executor who has no way of knowing that stock priced in another currency was left out
           of the grand total, so the caveat has to travel with the paper (#284). */}
       <ForeignCurrencyNotice count={excluded.data} baseCurrency={baseCurrency} />
+      <UnpricedGaugeNotice count={unpricedGauges.data} />
     </>
   );
 }
@@ -515,7 +519,13 @@ function ScheduleRow({
       ) : null}
       <td className="py-2 pr-3 font-medium">
         {line.name}
-        {line.quantity !== 1 ? (
+        {/* A gauge asset is captioned with what it holds, since its unit count is always 0
+            and "Qty 0" beside a real replacement value reads as a mistake (issue #683). */}
+        {line.measure ? (
+          <span className="block text-xs font-normal text-muted-foreground">
+            {f.measure(line.measure.amount, line.measure.unit)}
+          </span>
+        ) : line.quantity !== 1 ? (
           <span className="block text-xs font-normal text-muted-foreground">
             Qty {f.quantity(line.quantity)}
           </span>

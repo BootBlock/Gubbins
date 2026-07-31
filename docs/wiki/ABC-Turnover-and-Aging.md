@@ -23,6 +23,11 @@ careful stock control.
 **Turnover** measures how fast stock moves — how often it's used and replaced. High turnover is
 healthy; very low turnover points at overstocking or things you don't really need.
 
+The table opens on the fastest movers and says how many items there are altogether; **Show more**
+works down towards the slowest. The portfolio figures beside it cover your whole inventory either
+way. The dead-stock list behaves the same, so a long worklist never looks shorter than it is — see
+[[long lists in a report|Reports-Overview]].
+
 ## Stock aging & dead stock
 
 **Aging** buckets stock by how long it's sat untouched, and **dead-stock detection** surfaces the

@@ -42,3 +42,27 @@ export const GAUGE_ATTRITION_HINT =
   'Extra material lost every time you use some — trimmings, spillage, dust. At `10%`, ' +
   'recording `100` used takes `110` off the gauge. Leave blank if nothing is wasted. ' +
   'Only applies when you record an amount used; a weigh-in already measures what is left.';
+
+/**
+ * InfoHint copy for the optional cost per unit of measure (issue #683), named after the gauge's
+ * own unit so the field says what it prices rather than leaving it to be inferred.
+ *
+ * This is the **only** figure a gauge's stock can be valued from. *Unit cost* prices one
+ * countable unit, and a gauge holds a measure rather than units — its quantity is always 0 — so
+ * the ordinary `count × unit cost` product values a full cylinder at nothing however carefully it
+ * was priced. The last line matters as much as the first: an unpriced gauge is *reported* as
+ * unpriced, not quietly totalled as worthless, and the hint says which of the two is happening.
+ *
+ * A function rather than a constant because the unit varies per item; everything else about the
+ * copy is fixed, for the same reason the constants above are shared — a user who reads one
+ * explanation at creation and another at edit has been told two things about one column.
+ */
+export function gaugeCostHint(unit: string): string {
+  return (
+    `What **one ${unit}** of the contents costs, in your base currency.\n\n` +
+    'This is what drives valuation for a gauge: it holds a *measure*, not a count of units, so ' +
+    'its stock is worth **what is in it × this cost**.\n\n' +
+    '> Leave it blank and the contents are reported as unpriced, rather than counted as worth ' +
+    'nothing.'
+  );
+}
