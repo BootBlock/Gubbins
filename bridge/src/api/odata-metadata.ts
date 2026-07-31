@@ -141,6 +141,9 @@ const GAUGE_PROPERTIES: readonly EdmProperty[] = [
   p('currentGrossWeight', 'Edm.Double', false),
   // Nullable: an item with no attrition rate reports null rather than zero.
   p('attritionPercent', 'Edm.Double', true),
+  // Nullable for the same reason (issue #683): an unpriced gauge reports null, not zero —
+  // "nothing prices this" and "this is worth nothing" are different facts.
+  p('costPerUnitOfMeasure', 'Edm.Double', true),
 ];
 
 const LOCATION_PROPERTIES: readonly EdmProperty[] = [

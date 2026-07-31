@@ -27,6 +27,23 @@ export function normaliseUnitCost(value: number | null | undefined): number | nu
 }
 
 /**
+ * Validate a gauge's optional cost per unit of measure (issue #683): null clears it, leaving the
+ * gauge unpriced; otherwise it must be ≥ 0. Returned in integer **micro-units** like every other
+ * money value crossing the write boundary (issue #286).
+ *
+ * Separate from {@link normaliseUnitCost} only for its message — the two price different things
+ * (one countable unit versus one unit of measure), so naming the wrong one in the error would
+ * send a user to the wrong control.
+ */
+export function normaliseCostPerUnitOfMeasure(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new DbError('SQLITE_CONSTRAINT', 'Cost per unit of measure must be a non-negative number.');
+  }
+  return toStoredMoney(value);
+}
+
+/**
  * Validate an optional integer reorder threshold/quantity (Phase 59): null clears it
  * (fall back to the global default); otherwise it must be a non-negative integer.
  */

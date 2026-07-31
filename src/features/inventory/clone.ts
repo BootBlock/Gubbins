@@ -76,6 +76,9 @@ export function planItemClone(source: Item, options: { readonly nameSuffix?: str
         // Attrition is configuration, not state — a second spool of the same filament wastes
         // the same proportion — so it is copied rather than reset alongside the level.
         attritionPercent: source.gauge.attritionPercent,
+        // Likewise configuration, not state (issue #683): the same material costs the same per
+        // gram whichever spool it is on, so the clone starts empty but correctly priced.
+        costPerUnitOfMeasure: source.gauge.costPerUnitOfMeasure,
       },
     };
   }

@@ -36,7 +36,13 @@ export function DeadStockList({
           <li key={line.id} className="flex items-center justify-between gap-3 py-2 text-sm">
             <span className="min-w-0 truncate font-medium">{line.name}</span>
             <span className="flex shrink-0 items-center gap-4 text-muted-foreground">
-              <span>{formatters.quantity(line.quantity)} units</span>
+              {/* A gauge is idle by its *contents*, not a unit count it does not have
+                  (issue #683) — "400g", not "0 units". */}
+              <span>
+                {line.measure
+                  ? formatters.measure(line.measure.amount, line.measure.unit)
+                  : `${formatters.quantity(line.quantity)} units`}
+              </span>
               {/* A location may set its own threshold, so a line can be flagged at a
                   figure other than the one in the panel heading — show it rather
                   than leave the row looking wrong. */}

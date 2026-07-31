@@ -100,8 +100,18 @@ export function buildMovementCsv(report: MovementReport, formatDate: ReportDateF
 
 /** Dead-stock CSV: one row per idle item, most idle first. */
 export function buildDeadStockCsv(report: DeadStockReport): string {
-  const rows: unknown[][] = report.lines.map((l) => [l.name, l.quantity, l.idleDays, l.value]);
-  return toCsv(['item', 'quantity', 'idleDays', 'value'], rows);
+  // A gauge line reports the material it holds rather than a unit count, which is always 0 for
+  // one (issue #683) — so the amount goes in `quantity` and `unit` says what it is measured in,
+  // exactly as the schedule export does. Writing the bare 0 would put "no stock" beside real
+  // tied-up capital, in a file whose whole purpose is to be re-totalled elsewhere.
+  const rows: unknown[][] = report.lines.map((l) => [
+    l.name,
+    l.measure?.amount ?? l.quantity,
+    l.measure?.unit ?? null,
+    l.idleDays,
+    l.value,
+  ]);
+  return toCsv(['item', 'quantity', 'unit', 'idleDays', 'value'], rows);
 }
 
 /** ABC CSV: one row per item, ranked A→C, with its annual value and cumulative share. */

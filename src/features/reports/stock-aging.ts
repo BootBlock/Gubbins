@@ -7,18 +7,16 @@
  * via {@link acquiredAtReportInstant} — and hands them to {@link bucketStockAging}, and the UI
  * formats the resulting DTO with `useFormatters`.
  *
- * The report is a read-only projection over data already stored — there is no schema
- * change in this phase. Valuation reuses the same shared seams as the "Inventory value"
- * headline — a manual `current_value` wins ({@link effectiveUnitValue}), else the
- * "effective unit cost" precedence ({@link effectiveUnitCost}: manual cost, else preferred
- * supplier cost, else unpriced → 0) — so the two figures value the same stock identically
- * (issue #397).
+ * The report is a read-only projection over data already stored. Valuation reuses the same
+ * shared {@link stockValue} seam as the "Inventory value" headline — a manual `current_value`
+ * wins, else the "effective unit cost" precedence (manual cost, else preferred supplier cost,
+ * else unpriced → 0), and a gauge is valued from its contents and its cost per unit of measure
+ * (issue #683) — so the two figures value the same stock identically (issue #397).
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
-import { effectiveUnitValue } from '@/features/inventory/valuation';
 import { utcDayToLocalDay } from '@/lib/calendar-days';
 
-import { effectiveUnitCost, type ValuedUnit } from './reports';
+import { stockValue, valuedAmount, type ValuedStock } from './reports';
 
 /** Default bucket boundaries (inclusive upper bounds, in days): 0–30 / 31–90 / 91–180 / 180+. */
 const DEFAULT_BOUNDS: readonly number[] = [30, 90, 180];
@@ -27,24 +25,16 @@ const DEFAULT_BOUNDS: readonly number[] = [30, 90, 180];
 const EN_DASH = '–';
 
 /**
- * A minimal item shape for stock aging — extends the {@link ValuedUnit} valuation seam
- * with the on-hand quantity, a manual current value, and the candidate reference instants
- * in precedence order. Kept structural (not the full `Item`) so the repository selects a
- * narrow projection and these helpers stay trivially testable.
+ * A minimal item shape for stock aging — extends the {@link ValuedStock} valuation seam
+ * with the candidate reference instants in precedence order. Kept structural (not the full
+ * `Item`) so the repository selects a narrow projection and these helpers stay trivially
+ * testable.
  */
-export interface AgingInput extends ValuedUnit {
+export interface AgingInput extends ValuedStock {
   /** Stable item id. */
   readonly id: string;
   /** Human-readable item name. */
   readonly name: string;
-  /** On-hand quantity; only items with `quantity > 0` are aged. */
-  readonly quantity: number;
-  /**
-   * The item's manual current value per unit (`items.current_value`); null/absent when unset.
-   * Wins over the effective cost when valuing a line, exactly as the "Inventory value" headline
-   * does ({@link effectiveUnitValue}) — a revalued collectible is worth its mark, not its cost.
-   */
-  readonly currentValuePerUnit?: number | null;
   /**
    * UNIX-ms of the most recent inbound (positive-quantity) movement, or null when the item
    * has had no inbound movement. The highest-precedence reference instant for age.
@@ -198,7 +188,8 @@ export function bucketStockAging(
   let totalQuantity = 0;
   let totalValue = 0;
   for (const item of items) {
-    if (item.quantity <= 0) continue;
+    // A gauge is aged on the material it holds, not its (always-zero) count (issue #683).
+    if (valuedAmount(item) <= 0) continue;
     const reference = item.lastInboundAt ?? item.acquiredAtMs ?? item.historyClearedAt ?? item.createdAt;
     const ageDays = Math.max(0, Math.floor((now - reference) / MS_PER_DAY));
 
@@ -208,8 +199,10 @@ export function bucketStockAging(
       buckets.find((b) => b.maxDays === null || ageDays <= b.maxDays) ??
       (buckets[buckets.length - 1] as (typeof buckets)[number]);
 
-    const qty = item.quantity;
-    const value = Math.max(0, qty) * effectiveUnitValue(item.currentValuePerUnit, effectiveUnitCost(item));
+    // A gauge contributes value but no *units*: its contents are grams or litres, and adding
+    // those to a count of screws would make the bucket's quantity a number of nothing (#683).
+    const qty = item.gauge ? 0 : Math.max(0, item.quantity);
+    const value = stockValue(item);
     bucket.itemCount += 1;
     bucket.quantity += qty;
     bucket.value += value;

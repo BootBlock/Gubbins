@@ -5,8 +5,11 @@ import {
   effectiveUnitCost,
   selectDeadStock,
   sortValueGroups,
+  stockValue,
   summariseConsumption,
   UNGROUPED_LABEL,
+  valuedAmount,
+  valuedUnitValue,
 } from './reports';
 
 describe('effectiveUnitCost — the single cost-precedence seam', () => {
@@ -30,6 +33,62 @@ describe('effectiveUnitCost — the single cost-precedence seam', () => {
   it('treats a negative cost as unset (the shared precedence helper rejects it)', () => {
     expect(effectiveUnitCost({ unitCost: -5, preferredSupplierCost: 2 })).toBe(2);
     expect(effectiveUnitCost({ unitCost: null, preferredSupplierCost: -1 })).toBe(0);
+  });
+});
+
+// Issue #683 — a gauge is valued along a different axis: it holds a *measure*, so its
+// `quantity` is always 0 and `quantity × unit cost` reported a full cylinder as a confident £0.
+describe('stockValue — which amount, and which per-unit value', () => {
+  const counted = { quantity: 4, unitCost: 2.5 } as const;
+  const gauge = {
+    quantity: 0,
+    unitCost: null,
+    gauge: { netValue: 400, costPerUnitOfMeasure: 0.025 },
+  } as const;
+
+  it('multiplies the count by the effective unit value for an ordinary item', () => {
+    expect(valuedAmount(counted)).toBe(4);
+    expect(valuedUnitValue(counted)).toBe(2.5);
+    expect(stockValue(counted)).toBe(10);
+  });
+
+  it('multiplies a gauge’s contents by its cost per unit of measure', () => {
+    expect(valuedAmount(gauge)).toBe(400);
+    expect(valuedUnitValue(gauge)).toBe(0.025);
+    expect(stockValue(gauge)).toBe(10);
+  });
+
+  it('never prices a gauge from a per-unit figure, however tempting', () => {
+    // `unitCost`, a manual current value and a supplier quote all price one *countable* unit.
+    // Reading any of them per gram would be wrong by whatever the capacity happens to be —
+    // here, 1000× — so an unpriced gauge stays unpriced rather than becoming a wrong number.
+    const spoolPriced = {
+      quantity: 0,
+      unitCost: 25,
+      currentValuePerUnit: 30,
+      preferredSupplierCost: 27,
+      gauge: { netValue: 400, costPerUnitOfMeasure: null },
+    };
+    expect(valuedUnitValue(spoolPriced)).toBe(0);
+    expect(stockValue(spoolPriced)).toBe(0);
+  });
+
+  it('floors a negative amount or price rather than subtracting from a total', () => {
+    // Neither can be reached through the UI, but a sync merge writes columns directly.
+    expect(valuedAmount({ quantity: -3, unitCost: 1 })).toBe(0);
+    expect(
+      valuedAmount({ quantity: 0, unitCost: null, gauge: { netValue: -5, costPerUnitOfMeasure: 1 } }),
+    ).toBe(0);
+    expect(
+      valuedUnitValue({ quantity: 0, unitCost: null, gauge: { netValue: 5, costPerUnitOfMeasure: -2 } }),
+    ).toBe(0);
+  });
+
+  it('keeps the ordinary precedence intact when there is no gauge', () => {
+    expect(valuedUnitValue({ quantity: 1, unitCost: 10, currentValuePerUnit: 25 })).toBe(25);
+    expect(valuedUnitValue({ quantity: 1, unitCost: null, preferredSupplierCost: 3 })).toBe(3);
+    // A deliberate "worth nothing" mark still wins over the cost.
+    expect(valuedUnitValue({ quantity: 1, unitCost: 8, currentValuePerUnit: 0 })).toBe(0);
   });
 });
 

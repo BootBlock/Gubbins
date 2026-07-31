@@ -13,11 +13,12 @@
  *
  * Location grouping, hierarchy ordering and the trailing "Unassigned" bucket are shared with
  * the insurance schedule via {@link flattenLocationHierarchy}, so the two documents order
- * rooms identically. Per-unit cost flows through the same {@link effectiveUnitCost} seam as
- * every other valuation (a manual cost wins, else the preferred supplier cost); an item with
- * neither is *unpriced* — its cost and line value read as "—" rather than a misleading £0.
+ * rooms identically. Per-unit cost flows through the same {@link valuedUnitValue} seam as every
+ * other valuation (a manual cost wins, else the preferred supplier cost — or, for a gauge, its
+ * cost per unit of measure, since it holds a measure rather than countable units); an item with
+ * none of those is *unpriced* — its cost and line value read as "—" rather than a misleading £0.
  */
-import { effectiveUnitCost, type ValuedUnit } from './reports';
+import { valuedAmount, valuedUnitValue, type ValuedStock } from './reports';
 import {
   flattenLocationHierarchy,
   PRINT_FULL_LIMIT,
@@ -329,10 +330,11 @@ export type CatalogueScope =
 
 /**
  * One item to place on the catalogue — a minimal, structural slice of `Item` (extends
- * {@link ValuedUnit} so it flows through {@link effectiveUnitCost}). Only the fields the
- * document can show are carried, keeping the helper testable.
+ * {@link ValuedStock} so it flows through the shared {@link valuedAmount} / {@link
+ * valuedUnitValue} seams). Only the fields the document can show are carried, keeping the
+ * helper testable.
  */
-export interface CatalogueItemInput extends ValuedUnit {
+export interface CatalogueItemInput extends ValuedStock {
   readonly id: string;
   readonly name: string;
   /** The home location the item is grouped under; null/unknown → the "Unassigned" group. */
@@ -343,7 +345,10 @@ export interface CatalogueItemInput extends ValuedUnit {
   readonly description: string | null;
   /** Primary thumbnail bytes (opaque passthrough to the UI), or null when the item has no photo. */
   readonly thumbnail: Uint8Array | null;
-  /** On-hand quantity; the line value is `quantity × unit cost`. */
+  /**
+   * On-hand quantity; the line value is `quantity × unit cost`. A CONSUMABLE_GAUGE item carries
+   * 0 here and is both counted and valued from its contents instead (issue #683).
+   */
   readonly quantity: number;
   /** Unit of measure (e.g. `ml`) appended to the quantity, or null. */
   readonly unitOfMeasure: string | null;
@@ -377,8 +382,20 @@ export interface CatalogueLine {
   readonly description: string | null;
   /** Primary thumbnail bytes for the optional Photo column, or null. */
   readonly thumbnail: Uint8Array | null;
+  /**
+   * The amount on hand — a count for most items, a gauge's contents for a gauge (issue #683).
+   * Rendered with {@link CatalogueLine.unitOfMeasure} beside it, so "400 g" and "3" are both
+   * unambiguous on the page.
+   */
   readonly quantity: number;
   readonly unitOfMeasure: string | null;
+  /**
+   * Whether {@link CatalogueLine.quantity} is a **measure** rather than a count — true only for
+   * a gauge. The "in stock" totals skip these lines: grams and millilitres are not a count, and
+   * adding them to one would make the figure a number of nothing (the same refusal the
+   * valuation report's unit total makes).
+   */
+  readonly measured: boolean;
   readonly condition: Condition | null;
   readonly serialNo: number | null;
   readonly mpn: string | null;
@@ -424,18 +441,25 @@ export interface PartsCatalogue {
   readonly generatedAt: number;
 }
 
-/** An item is priced when it has a manual unit cost or a preferred supplier cost. */
+/**
+ * An item is priced when a figure exists to value it by — a manual unit cost or a preferred
+ * supplier cost, or for a gauge its cost per unit of measure (issue #683). A gauge is never
+ * priced from the first two: they price one *countable* unit, and it holds a measure.
+ */
 function isPriced(item: CatalogueItemInput): boolean {
+  if (item.gauge) return item.gauge.costPerUnitOfMeasure != null;
   return item.unitCost != null || item.preferredSupplierCost != null;
 }
 
 /** Resolve a single item input to its display line, valuing it through the cost seam. */
 function toLine(item: CatalogueItemInput, now: number): CatalogueLine {
-  const qty = Math.max(0, item.quantity);
+  // A gauge's count is always 0, so its line is quantified and valued by its contents — the
+  // same `valuedAmount` seam the valuation reports and the schedule use (issue #683).
+  const qty = valuedAmount(item);
   // Only priced items get a cost/line value; an unpriced item reads "—" rather than £0 so the
-  // catalogue never implies a real zero price. `effectiveUnitCost` returns 0 when unpriced,
-  // so gate on `isPriced` first.
-  const unitCost = isPriced(item) ? effectiveUnitCost(item) : null;
+  // catalogue never implies a real zero price. The value seams return 0 when unpriced, so gate
+  // on `isPriced` first.
+  const unitCost = isPriced(item) ? valuedUnitValue(item) : null;
   const lineValue = unitCost != null ? qty * unitCost : null;
   return {
     id: item.id,
@@ -444,8 +468,9 @@ function toLine(item: CatalogueItemInput, now: number): CatalogueLine {
     category: item.category,
     description: item.description,
     thumbnail: item.thumbnail,
-    quantity: item.quantity,
+    quantity: qty,
     unitOfMeasure: item.unitOfMeasure,
+    measured: item.gauge != null,
     condition: item.condition,
     serialNo: item.serialNo,
     mpn: item.mpn,
@@ -502,7 +527,9 @@ function makeGroup(
 ): CatalogueGroup {
   const sorted = [...lines].sort(compare);
   const subtotal = sorted.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
-  const totalQuantity = sorted.reduce((sum, l) => sum + Math.max(0, l.quantity), 0);
+  // Measured lines are deliberately excluded: a group's "in stock" figure is a count of units,
+  // and a gauge holds grams or millilitres (issue #683).
+  const totalQuantity = sorted.reduce((sum, l) => sum + (l.measured ? 0 : Math.max(0, l.quantity)), 0);
   return { groupId, groupLabel, depth, lines: sorted, subtotal, totalQuantity };
 }
 

@@ -693,7 +693,14 @@ each issue carries the full evidence, so treat those as the live record and this
 summary of how they were found. Three of the six are documentation drift, where the wiki promises
 behaviour that does not exist.
 
-1. **Every `CONSUMABLE_GAUGE` item is valued at zero** ([#683](https://github.com/BootBlock/Gubbins/issues/683)). Valuation is `MAX(i.quantity, 0) ×
+1. **Every `CONSUMABLE_GAUGE` item is valued at zero** ([#683](https://github.com/BootBlock/Gubbins/issues/683)). ✅ **Fixed** — a gauge now carries a
+   `cost_per_unit_of_measure`, and every valuation read multiplies its `current_net_value` by that
+   instead of its (always-zero) count: the headline, both breakdowns, `locationStats`, the trend,
+   stock aging, dead stock and the insurance schedule. It is deliberately never priced from
+   `unit_cost`, a manual current value or a supplier quote — all three price one *countable* unit,
+   so reading one per gram would be wrong by whatever the capacity is — and a gauge holding
+   unpriced material is surfaced by its own notice beside the foreign-currency one rather than
+   totalled as nothing. As found: valuation is `MAX(i.quantity, 0) ×
    unit_value` ([ReportRepository.ts:404-413](../../src/db/repositories/ReportRepository.ts#L404-L413)),
    and a gauge's `quantity` is pinned at 0 by design, while `valuableItemFilter` does **not** exclude
    gauges. `current_net_value` appears in no valuation SQL. So a full argon cylinder contributes £0

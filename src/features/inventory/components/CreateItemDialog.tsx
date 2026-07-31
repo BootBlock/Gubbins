@@ -59,6 +59,7 @@ import {
   GAUGE_CAPACITY_HINT,
   GAUGE_TARE_HINT,
   GAUGE_UNIT_HINT,
+  gaugeCostHint,
 } from '../gauge-field-copy';
 import { gaugeTareWeightUnit, tareFieldValue } from '../tare-presets';
 import { TarePresetPickerButton } from './TarePresetPickerButton';
@@ -121,6 +122,8 @@ const schema = z
     tareWeight: z.string().optional(),
     currentNetValue: z.string().optional(),
     attritionPercent: z.string().optional(),
+    /** Gauge-only price (issue #683): what one unit of measure of the contents costs. */
+    costPerUnitOfMeasure: z.string().optional(),
     // Low-stock alert policy: follow the global default, a custom trigger, or never alert.
     // Only a 'custom' floor / 'never' exemption is submitted; 'default' leaves it unset.
     lowStockPolicy: z.enum(['default', 'custom', 'never']).optional(),
@@ -146,6 +149,16 @@ const schema = z
           path: ['attritionPercent'],
           code: 'custom',
           message: `Enter a value between ${ATTRITION_PERCENT_BOUNDS.min} and ${ATTRITION_PERCENT_BOUNDS.max}.`,
+        });
+      }
+      // Likewise optional (an unpriced gauge is an ordinary gauge), but a supplied price must
+      // be a usable non-negative number — the same rule the DB CHECK enforces (issue #683).
+      const costPerUom = v.costPerUnitOfMeasure?.trim();
+      if (costPerUom && !(Number.isFinite(Number(costPerUom)) && Number(costPerUom) >= 0)) {
+        ctx.addIssue({
+          path: ['costPerUnitOfMeasure'],
+          code: 'custom',
+          message: 'Enter a non-negative amount.',
         });
       }
     }
@@ -186,6 +199,7 @@ const FIELD_TAB: Record<string, CreateTabId> = {
   tareWeight: 'details',
   currentNetValue: 'details',
   attritionPercent: 'details',
+  costPerUnitOfMeasure: 'details',
   isUnlimited: 'details',
   notes: 'details',
   lowStockPolicy: 'details',
@@ -384,6 +398,7 @@ export function CreateItemDialog({
       tareWeight: '0',
       currentNetValue: '',
       attritionPercent: '',
+      costPerUnitOfMeasure: '',
       lowStockPolicy: 'default',
       reorderPoint: '',
       reorderQty: '',
@@ -397,6 +412,9 @@ export function CreateItemDialog({
   // and so the pre-fill it offers tracks whatever is currently in the tare box.
   const tareWeightDraft = watch('tareWeight') ?? '';
   const gaugeTareUnit = gaugeTareWeightUnit(watch('unitOfMeasure'));
+  // Names the cost field after the unit the user just typed ("Cost per g"), falling back to a
+  // neutral word until they have (issue #683).
+  const gaugeUnitLabel = watch('unitOfMeasure')?.trim() || 'unit';
   const lowStockPolicy = watch('lowStockPolicy') ?? 'default';
   const isUnlimited = watch('isUnlimited') ?? false;
 
@@ -757,6 +775,9 @@ export function CreateItemDialog({
     } else if (values.trackingMode === 'CONSUMABLE_GAUGE') {
       const net = values.currentNetValue?.trim() ? Number(values.currentNetValue) : undefined;
       const attrition = values.attritionPercent?.trim() ? Number(values.attritionPercent) : undefined;
+      const costPerUom = values.costPerUnitOfMeasure?.trim()
+        ? Number(values.costPerUnitOfMeasure)
+        : undefined;
       input = {
         ...base,
         gauge: {
@@ -765,6 +786,7 @@ export function CreateItemDialog({
           tareWeight: Number(values.tareWeight) || 0,
           ...(net !== undefined ? { currentNetValue: net } : {}),
           ...(attrition !== undefined ? { attritionPercent: attrition } : {}),
+          ...(costPerUom !== undefined ? { costPerUnitOfMeasure: costPerUom } : {}),
         },
       };
     }
@@ -1056,7 +1078,12 @@ export function CreateItemDialog({
         label="Unit cost (optional)"
         hint={
           'What **one unit** costs, in your base currency. Drives inventory valuation and ' +
-          'project costing.\n\n> Enter the price *per unit*, not the total for a pack.'
+          'project costing.\n\n> Enter the price *per unit*, not the total for a pack.' +
+          // A gauge holds a measure rather than units, so this cost values nothing on it — and
+          // "drives inventory valuation" would simply be untrue whatever is typed (issue #683).
+          (trackingMode === 'CONSUMABLE_GAUGE'
+            ? `\n\n> A gauge is **not** valued from this — use *Cost per ${gaugeUnitLabel}* below.`
+            : '')
         }
       >
         <Controller
@@ -1208,6 +1235,32 @@ export function CreateItemDialog({
           >
             <Input type="number" min={0} step="any" placeholder="full" {...register('currentNetValue')} />
           </FormField>
+          {/* What the contents are worth per unit of measure — the only figure a gauge can be
+              valued from, since its unit count is always 0 (issue #683). It sits with the gauge's
+              own fields rather than beside Unit cost above, which prices one *countable* unit and
+              so values nothing here. */}
+          <div className="col-span-2">
+            <FormField
+              label={`Cost per ${gaugeUnitLabel} (optional)`}
+              error={errors.costPerUnitOfMeasure?.message}
+              hint={gaugeCostHint(gaugeUnitLabel)}
+            >
+              <Controller
+                control={control}
+                name="costPerUnitOfMeasure"
+                render={({ field }) => (
+                  <MoneyInput
+                    ref={field.ref}
+                    value={field.value ?? ''}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                    placeholder="0.00"
+                    data-testid="create-item-cost-per-uom"
+                  />
+                )}
+              />
+            </FormField>
+          </div>
           {/* Spans the row: attrition is the one optional, rarely-set field here, and pairing
               it with a blank cell reads as a missing input rather than a deliberate extra. */}
           <div className="col-span-2">

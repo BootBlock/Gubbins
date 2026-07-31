@@ -8,6 +8,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { discreteStockLevel, shortfall, type StockLevel } from '../reorder-policy';
 import { resolveVisualCardMetric } from '../visual-card-metric';
 import { CONDITION_COLOR_CLASS, CONDITION_LABELS } from './inventory-ui';
+import { itemTotalValue } from '../item-total-value';
 
 /**
  * The Visual card's hero slot for a plain DISCRETE item (spec §3). The card's ± stepper
@@ -82,15 +83,17 @@ function StockHealthMetric({ item }: { item: Item }) {
 }
 
 function ValueMetric({ item }: { item: Item }) {
-  const priced = item.unitCost != null && Number.isFinite(item.unitCost);
+  // The same {@link itemTotalValue} rule that decides whether this metric is *available*
+  // (`metricHasContent`), so the gate and the figure can never state different rules.
+  const total = itemTotalValue(item);
   return (
     <div className="flex items-center justify-between gap-2">
-      {priced ? (
-        <Money value={item.unitCost! * item.quantity} className="text-2xl font-bold" />
-      ) : (
+      {total === null ? (
         <span className="text-2xl font-bold text-muted-foreground">—</span>
+      ) : (
+        <Money value={total} className="text-2xl font-bold" />
       )}
-      <span className="text-xs text-muted-foreground">{priced ? 'total value' : 'unpriced'}</span>
+      <span className="text-xs text-muted-foreground">{total === null ? 'unpriced' : 'total value'}</span>
     </div>
   );
 }

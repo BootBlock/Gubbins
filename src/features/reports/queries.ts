@@ -425,3 +425,17 @@ export function useForeignCurrencyCostCount() {
     queryFn: () => getReportRepository().foreignCurrencyCostCount(),
   });
 }
+
+/**
+ * How many gauges hold material that nothing prices (issue #683) — they have no cost per unit
+ * of measure, and a gauge is never valued from a per-unit price. Drives the notice on the
+ * valuation card and the insurance schedule, so contents left out of a total are visible
+ * rather than reported as a confident zero.
+ */
+export function useUnpricedGaugeCount() {
+  const currency = useValuationCurrency();
+  return useQuery({
+    queryKey: reportKeys.unpricedGaugeCount(currency),
+    queryFn: () => getReportRepository().unpricedGaugeCount(),
+  });
+}

@@ -63,6 +63,7 @@ export type CatalogField =
   | 'grossCapacity'
   | 'tareWeight'
   | 'currentNetValue'
+  | 'costPerUnitOfMeasure'
   | 'mpn'
   | 'manufacturer'
   | 'unitCost'
@@ -99,6 +100,7 @@ export const CATALOG_FIELDS: readonly CatalogField[] = [
   'grossCapacity',
   'tareWeight',
   'currentNetValue',
+  'costPerUnitOfMeasure',
   'mpn',
   'manufacturer',
   'unitCost',
@@ -132,6 +134,7 @@ export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
   grossCapacity: 'Gross capacity',
   tareWeight: 'Tare weight',
   currentNetValue: 'Net remaining',
+  costPerUnitOfMeasure: 'Cost per unit of measure',
   mpn: 'Manufacturer part number',
   manufacturer: 'Manufacturer',
   unitCost: 'Unit cost',
@@ -238,6 +241,8 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
   ['tareweight', 'tareWeight'],
   ['currentnetvalue', 'currentNetValue'],
   ['netremaining', 'currentNetValue'],
+  ['costperunitofmeasure', 'costPerUnitOfMeasure'],
+  ['costperunit', 'costPerUnitOfMeasure'],
   ['manufacturer', 'manufacturer'],
   ['mfr', 'manufacturer'],
   ['unitcost', 'unitCost'],
@@ -288,6 +293,7 @@ const GAUGE_FIELDS: ReadonlySet<CatalogField> = new Set<CatalogField>([
   'grossCapacity',
   'tareWeight',
   'currentNetValue',
+  'costPerUnitOfMeasure',
 ]);
 
 /**
@@ -368,6 +374,11 @@ const catalogRowSchema = z.object({
   grossCapacity: z.number().min(0, 'Gross capacity cannot be negative.').optional().nullable(),
   tareWeight: z.number().min(0, 'Tare weight cannot be negative.').optional().nullable(),
   currentNetValue: z.number().min(0, 'Net remaining cannot be negative.').optional().nullable(),
+  costPerUnitOfMeasure: z
+    .number()
+    .min(0, 'Cost per unit of measure cannot be negative.')
+    .optional()
+    .nullable(),
   mpn: z.string().trim().optional().nullable(),
   manufacturer: z.string().trim().optional().nullable(),
   unitCost: z.number().min(0, 'Unit cost cannot be negative.').optional().nullable(),
@@ -572,6 +583,7 @@ type NumericCatalogField = Extract<
   | 'grossCapacity'
   | 'tareWeight'
   | 'currentNetValue'
+  | 'costPerUnitOfMeasure'
 >;
 
 /**
@@ -664,6 +676,7 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CoercedRo
       grossCapacity: gaugeNum('grossCapacity'),
       tareWeight: gaugeNum('tareWeight'),
       currentNetValue: gaugeNum('currentNetValue'),
+      costPerUnitOfMeasure: gaugeNum('costPerUnitOfMeasure'),
       mpn: raw.mpn,
       manufacturer: raw.manufacturer,
       unitCost: num('unitCost'),
@@ -759,6 +772,11 @@ function toGaugeInput(data: CatalogRowData): { gauge: GaugeInput } | undefined {
       ...(data.currentNetValue === undefined || data.currentNetValue === null
         ? {}
         : { currentNetValue: data.currentNetValue }),
+      // Absent leaves the gauge unpriced, which is its own valid state (issue #683) — so an
+      // omitted column must not be defaulted to 0, which would read as "worth nothing".
+      ...(data.costPerUnitOfMeasure === undefined || data.costPerUnitOfMeasure === null
+        ? {}
+        : { costPerUnitOfMeasure: data.costPerUnitOfMeasure }),
     },
   };
 }

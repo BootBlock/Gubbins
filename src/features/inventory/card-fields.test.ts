@@ -49,6 +49,19 @@ const BASE: Item = {
 };
 const makeItem = (overrides: Partial<Item> = {}): Item => ({ ...BASE, ...overrides });
 
+/** A full 1000 g gauge, with the fields a test cares about overridable (issue #683). */
+const gaugeState = (overrides: Partial<NonNullable<Item['gauge']>> = {}): NonNullable<Item['gauge']> => ({
+  unitOfMeasure: 'g',
+  grossCapacity: 1000,
+  tareWeight: 0,
+  currentNetValue: 1000,
+  percentageRemaining: 100,
+  currentGrossWeight: 1000,
+  attritionPercent: null,
+  costPerUnitOfMeasure: null,
+  ...overrides,
+});
+
 const fmt = { quantity: (n: number) => String(n), relativeTime: (ms: number) => `t-${ms}` };
 
 function ctx(overrides: Partial<CardFieldContext> = {}): CardFieldContext {
@@ -209,19 +222,41 @@ describe('resolveCardFields — built-ins', () => {
     });
   });
 
-  it('shows em-dash for total value when the count is meaningless (unlimited or gauge)', () => {
-    // An unlimited item's quantity is ∞-ignored, a gauge tracks a measure — unitCost × quantity
-    // would read as a misleading £0.00, so both decline to a value like the quantity field does.
+  it('shows em-dash for total value when the count is meaningless (unlimited or unpriced gauge)', () => {
+    // An unlimited item's quantity is ∞-ignored, so unitCost × quantity would read as a
+    // misleading £0.00 — it declines to a value like the quantity field does.
     expect(
       resolveCardFields(['value'], makeItem({ isUnlimited: true, unitCost: 5, quantity: 0 }), ctx())[0].value,
     ).toEqual({ kind: 'empty' });
+    // A gauge is never valued from unit cost — that prices one countable unit — so a gauge with
+    // only a unit cost is unpriced, and says so rather than reading £0.00 (issue #683).
     expect(
       resolveCardFields(
         ['value'],
-        makeItem({ trackingMode: 'CONSUMABLE_GAUGE', unitCost: 5, quantity: 0 }),
+        makeItem({
+          trackingMode: 'CONSUMABLE_GAUGE',
+          unitCost: 5,
+          quantity: 0,
+          gauge: gaugeState({ costPerUnitOfMeasure: null }),
+        }),
         ctx(),
       )[0].value,
     ).toEqual({ kind: 'empty' });
+  });
+
+  it('values a priced gauge from its contents (issue #683)', () => {
+    // 400 g at £0.025/g = £10 — the same figure the valuation reports and the schedule total.
+    expect(
+      resolveCardFields(
+        ['value'],
+        makeItem({
+          trackingMode: 'CONSUMABLE_GAUGE',
+          quantity: 0,
+          gauge: gaugeState({ currentNetValue: 400, costPerUnitOfMeasure: 0.025 }),
+        }),
+        ctx(),
+      )[0].value,
+    ).toEqual({ kind: 'money', amount: 10 });
   });
 
   it('shows the unlimited glyph for an unlimited item and em-dash for a gauge quantity', () => {
