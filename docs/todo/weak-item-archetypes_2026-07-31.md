@@ -1,8 +1,9 @@
 # What Gubbins is weakest at tracking — archetype audit (2026-07-31)
 
 > **Status:** 🟢 ACTIVE — research complete. `W1a` (custom-field due dates), `W1b`/`W1c` (a
-> number's unit and range) and `W1d` (the key-field rank) have shipped; the deferred `W1e`, the
-> newly-split `W1f` (an actionable `URL`/`FILE` value) and `W2`–`W10` remain open.
+> number's unit and range), `W1d` (the key-field rank) and `W1f` (an actionable `URL`/`FILE`
+> value) have shipped; the deferred `W1e`, the newly-split `W1g` (a `FILE` value's origin
+> device) and `W2`–`W10` remain open.
 
 Answers issue [#621](https://github.com/BootBlock/Gubbins/issues/621): *which items, or types of
 item, is Gubbins weakest at tracking or managing?*
@@ -309,8 +310,8 @@ says so), so it belongs here as context, not as a gap.
 
 Ranked by *(breadth of archetypes unlocked) ÷ (cost)*. Deliberately weighted toward fixing a **cause**
 rather than adding a domain's fields, because the preset library already proves that adding fields
-does not make the app track anything better. `W1a`–`W1d` have shipped; `W1e`, `W1f` and `W2`–`W10`
-are open.
+does not make the app track anything better. `W1a`–`W1d` and `W1f` have shipped; `W1e`, `W1g` and
+`W2`–`W10` are open.
 
 - **`W1` — Make custom fields live.** The single highest-leverage change in the list: give
   `field_defs` a unit, a min/max, and a "surface this" flag, and teach the alert/agenda feeds to
@@ -318,8 +319,8 @@ are open.
   dates, substrate-decay dates and curing windows **at once**, and turns the existing 72 presets
   from decoration into behaviour. Addresses C1. Note the split: the "surface this" half is adjacent
   to issue [#619](https://github.com/BootBlock/Gubbins/issues/619) (which is purely presentational),
-  but the load-bearing half — feeds reading `DATE` fields — is untouched by it. All four have now
-  shipped; `W1e` (precision) and the newly-split `W1f` (an actionable link) remain.
+  but the load-bearing half — feeds reading `DATE` fields — is untouched by it. Five have now
+  shipped; `W1e` (precision) and the newly-split `W1g` (a `FILE` value's origin device) remain.
   - **`W1a` — DATE fields as due dates. ✅ Shipped** (see [§4.1](#41-w1a--the-due-date-opt-in-shipped)).
   - **`W1b` — a per-definition unit** on `field_defs`, so a `NUMBER` field carries one.
     ✅ **Shipped** (see [§4.2](#42-w1bw1c--a-numbers-unit-and-range-shipped)).
@@ -336,7 +337,11 @@ are open.
     one is per *definition* and chooses **which member leads** the set. §4.3 records why they cannot
     fight, and why an ordering rank belongs on `field_defs` even though ordering is otherwise
     category policy.
-  - **`W1f` — a `URL`/`FILE` value that can be acted on.** Open, and split out of the `N4`
+  - **`W1f` — a `URL`/`FILE` value that can be acted on.** ✅ **Shipped** — part **(i)** below,
+    the link arm, over both subjects at once; part **(ii)**, the origin attribution, was scoped
+    and split out as `W1g` (see [§4.4](#44-w1f--an-actionable-urlfile-value-shipped) for the
+    reasoning and for what building it proved wrong about the description that follows). Split
+    out of the `N4`
     reassessment (§11.7 of [non-items on a Location](location-non-items_2026-07-31.md)), which
     refused a `location_attachments` table partly *because* this is the cheaper fix and covers both
     subjects at once. `C1`'s "readable but never actionable" in its smallest form: `CardFieldValue`
@@ -357,6 +362,22 @@ are open.
     not purely presentational for a `FILE`: a `file://`, UNC or bare-path string is not safe to hand
     to an `<a href>`, so the arm must decide what is openable — the same judgement
     `resolveAttachmentLink` already encodes, so reuse that seam rather than restating it.
+  - **`W1g` — a `FILE` value's origin device.** Open, split out of `W1f`'s part **(ii)** for
+    the reasons in [§4.4](#44-w1f--an-actionable-urlfile-value-shipped). Neither
+    `item_field_values` nor `location_field_values` carries an `origin_device_id`, so a `FILE`
+    value synced from another device is shown honestly as *a path* (`W1f`) but not
+    *specifically* — nothing says it came from elsewhere, and nothing offers the **Re-link** /
+    **Use URL** flow `item_attachments` has had since v18
+    ([AttachmentManager.tsx:186-232](../../src/features/inventory/components/AttachmentManager.tsx#L186-L232)).
+    Materially larger than `W1f` and a different kind of task: a column on **two synced tables**
+    — migration folded into the v1 baseline plus a snapshot regen, the effective-value view, the
+    LWW merge and restore paths, the row-shape guards, and the bridge's `ITEM_FIELD_VALUE_KEYS`
+    vocabulary — plus a re-homing *editing* flow, which the read-only card/row/table/panel
+    surfaces have nowhere to put. Scope it before starting on two questions §4.4 could not
+    settle from the read side: whether an origin is stamped on **every** field value or only a
+    `FILE` one, and where the re-link flow lives given that these surfaces do not edit.
+    Concrete target: **after `W1e`**, and before `W2` — it shares `W2`'s two-subject shape and
+    the same two tables, so doing it first keeps `W2`'s migration from having to carry it.
 - **`W2` — A repeating (table-valued) field.** Removes the `UNIQUE (item_id, def_id)` ceiling for
   opted-in definitions. Unlocks telemetry logs, per-position measurements, prior owners, lineage
   notes — every archetype whose data is a *series*. Addresses C1. Larger and schema-visible; do
@@ -684,6 +705,83 @@ orders by hand anyway.
   opt-in. Still one change, now covering **four** attributes, gated by the OpenAPI and
   field-vocabulary drift tests. (The bridge does already inherit the new *order* of `fieldValues`,
   since it reads through `resolveItemFields`.)
+
+### 4.4 `W1f` — an actionable `URL`/`FILE` value (shipped)
+
+A `URL` custom-field value, and a `FILE` one that holds a web address, now render as a **link that
+opens in a new tab** — on the item card, the dense row, the table cell and the location detail
+panel alike. A `FILE` value that holds a path instead is marked as the **file pointer** it is
+rather than sitting as anonymous text. One arm pair in the shared `customFieldValue` seam reached
+all four surfaces and both subjects; **no render surface but `FieldValue` changed**, which is the
+claim §11.7 made when it refused `location_attachments`, now demonstrated rather than asserted.
+
+**Scope: part (i) shipped, part (ii) split out as `W1g`, and the split is not a deferral of the
+same charge.** §11.7's case against a `FILE` value was that a synced path *"is shown as a dead
+string with no explanation"*. Part (i) removes the *"with no explanation"* half outright and
+without any schema change — the value carries a file icon, an assistive-technology label naming it
+as a path, and a wiki section saying what a path can and cannot do. What is genuinely left is the
+*specific* half — **this** path came from **another** device, and here is how to re-home it — and
+that is a different size and shape of task: a column on two synced tables (with the migration,
+snapshot, merge and bridge-vocabulary work that implies) plus a re-linking *editing* flow that the
+read-only surfaces this change touched have nowhere to put. Splitting it is the same call `N4`
+got, made for the same reason: the cheap fix and the structural one were bundled by the research,
+and only one of them is a display decision.
+
+**What building it proved wrong about the description above.**
+
+1. **It is not "one union arm plus one `switch` case" — a `FILE` value is not one thing.** Both
+   §11.7 and the `W1f` entry wrote the fix as a single `link` arm. But `FILE` is defined as *"a
+   local path, a UNC share, or a `file://` / `http(s)` URI"*
+   ([constants.ts:318-321](../../src/db/repositories/constants.ts#L318-L321)) — so a `FILE`
+   holding a web address is exactly as openable as a `URL` field, and one holding a share is not
+   openable at all. The **type cannot decide**; only the value can. So the arms follow the
+   *values*: `link` (an address) and `pointer` (a path). A single arm carrying a nullable href
+   would have let a renderer silently forget the un-openable case, which is the failure mode the
+   discriminated union exists to prevent.
+2. **"Reuse `resolveAttachmentLink`" is reuse of half of it — and the other half is precisely
+   `W1g`.** That seam answers two questions at once: *is this an address?* (read from the stored
+   `kind` column) and *is this pointer foreign?* (computed from `origin_device_id`). A field value
+   has **neither column**, and part (i) needs only the first question — computed from the string,
+   not read from a column. So what was extracted is `isExternalHref`, exported from
+   `attachment-link.ts` so a datasheet recorded as an attachment and one recorded as a field value
+   are decided by one rule; `resolveAttachmentLink` itself was left untouched. Calling it with a
+   synthetic `{kind, originDeviceId: null}` and a placeholder device id would have been ceremony —
+   with a null origin it reduces to exactly the branch already taken, and it would have threaded a
+   device id through two pure seams that ignore it.
+3. **Openability is a security gate, not a formatting choice — and nothing above said so.** A
+   `URL` value is validated as http(s) *at the point of save*, but nothing revalidates one that
+   arrived by sync, by import, or that was left behind when a definition was retyped — and `FILE`
+   has no validation to fall short of at all. So `isExternalHref` admits `http:`/`https:` only,
+   which is what stops a stored `javascript:` or `data:text/html` string ever reaching an `href`.
+   This is the same rule, reached independently, that the `IMAGE` arm already states for
+   `isImageDataUrl`: *only a value of exactly that shape becomes a `src`*. An out-of-band `URL`
+   value degrades to plain **text** rather than to `pointer`, because "this is a file path" is a
+   claim about it that nothing has established.
+4. **No new click plumbing was needed, and that was not obvious enough to assume.** The item card,
+   the dense row and the table row are all click-actionable bodies (`useCardClickAction`) that also
+   start a pointer drag, so an anchor inside one could plausibly have followed the link *and*
+   popped the card's own dialog. It does not: both gestures share `isInteractiveDragOrigin`, whose
+   selector already lists `a`. Worth recording, because it is the fact that made a link safe to put
+   on a card at all — and it would have been a real obstacle had it gone the other way.
+5. **`FieldValue` had no exhaustiveness guard, and a component cannot get one for free.** Its
+   `switch` ended without a `default:`, so a new `CardFieldValue` arm would have compiled while
+   rendering nothing — the #355 hazard exactly, in the "a component has no return type to protect
+   it" form. It now ends in `assertExhaustive`, so the *next* arm cannot be half-added.
+
+**Deliberately not in scope:**
+
+- **The editors.** A `URL` field's control is an `Input type="url"` and a `FILE` field's a text
+  box ([TypedFieldControl.tsx:94,158](../../src/features/inventory/components/TypedFieldControl.tsx#L94)),
+  neither offering a way to open what you just typed. That is a coherent small addition, but it is
+  a different surface with a different question (an editor is for *setting* a value), and it is not
+  what `C1`'s "readable but never actionable" charge is about.
+- **The bridge.** It publishes the raw string and always has — the DTO comment already offers *"a
+  datasheet URL"* as its worked example
+  ([dto.ts:84-92](../../bridge/src/api/dto.ts#L84-L92)) — so a consumer's own renderer decides
+  openability. Nothing to expose; this is a presentation change on our side only. (The standing
+  bridge gap is still the **four** definition attributes `W1a`–`W1d` added, unchanged by this.)
+- **Search and export.** A link is still a string to both, correctly: `field:` comparisons match on
+  the stored text, and an exported cell holds the address a spreadsheet will linkify itself.
 
 ## 5. Defects found while surveying
 

@@ -99,6 +99,56 @@ describe('LocationDetailCard', () => {
     expect(screen.queryByTestId('location-detail-card')).not.toBeInTheDocument();
   });
 
+  /**
+   * W1f — the panel's doc comment offers "a link to the boiler manual" as its worked example.
+   * These assert it really is one, through the *shared* `FieldValue` renderer, so the item card,
+   * the dense row and the table cell get the same behaviour from the same assertions.
+   */
+  describe('URL / FILE values (W1f)', () => {
+    it('renders a URL value as a link that opens safely in a new tab', () => {
+      fieldValues.current = [
+        makeField({ name: 'Boiler manual', fieldType: 'URL', value: 'https://example.com/boiler.pdf' }),
+      ];
+      render(<LocationDetailCard location={makeLocation({ description: null })} />);
+      const link = screen.getByRole('link', { name: /example\.com\/boiler\.pdf/ });
+      expect(link).toHaveAttribute('href', 'https://example.com/boiler.pdf');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+      // The new-tab warning reaches assistive technology, which otherwise meets it only after
+      // the tab has already opened.
+      expect(link).toHaveAccessibleName(/opens in a new tab/);
+    });
+
+    it('renders a FILE value holding a path as text, never as a link', () => {
+      fieldValues.current = [
+        makeField({ name: 'Wiring diagram', fieldType: 'FILE', value: '\\\\nas\\docs\\wiring.pdf' }),
+      ];
+      render(<LocationDetailCard location={makeLocation({ description: null })} />);
+      // A browser cannot navigate an http(s) page to a UNC share, so an anchor here would look
+      // live and do nothing. The value is still shown, and named as the file path it is.
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      expect(screen.getByText('\\\\nas\\docs\\wiring.pdf')).toBeInTheDocument();
+      expect(screen.getByText('File path:')).toBeInTheDocument();
+    });
+
+    it('renders a FILE value holding a web address as a link', () => {
+      fieldValues.current = [
+        makeField({ name: 'Datasheet', fieldType: 'FILE', value: 'https://example.com/ds.pdf' }),
+      ];
+      render(<LocationDetailCard location={makeLocation({ description: null })} />);
+      expect(screen.getByRole('link')).toHaveAttribute('href', 'https://example.com/ds.pdf');
+    });
+
+    it('never turns an out-of-band script value into a link', () => {
+      fieldValues.current = [
+        makeField({ name: 'Boiler manual', fieldType: 'URL', value: 'javascript:alert(1)' }),
+      ];
+      render(<LocationDetailCard location={makeLocation({ description: null })} />);
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      expect(screen.getByText('javascript:alert(1)')).toBeInTheDocument();
+    });
+  });
+
   it('renders on field values alone, with no description', () => {
     fieldValues.current = [makeField()];
     render(<LocationDetailCard location={makeLocation({ description: '   ' })} />);

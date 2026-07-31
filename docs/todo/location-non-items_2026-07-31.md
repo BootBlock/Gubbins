@@ -628,4 +628,6 @@ already **equivalent in kind**, and because what it is genuinely missing is miss
 thing here that a table is the answer to.
 
 That leaves `N5` (which belongs to `W1`) and the deferred `locations_fts` as the only open work in
-this document.
+this document. (Since written: `W1f`'s link half has shipped — a location's `URL`/`FILE` value is
+now openable on the `N1` panel, from the shared seam — and its origin-attribution half was split
+out there as `W1g`. See §4.4 of the [archetypes audit](weak-item-archetypes_2026-07-31.md).)

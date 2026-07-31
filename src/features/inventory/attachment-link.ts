@@ -14,6 +14,10 @@
  * current device. A NULL origin is a legacy (pre-v18) pointer that cannot be attributed —
  * it is treated as `local` so a pre-existing pointer never spuriously degrades. Mirrors the
  * small-pure-mapping seams (`resolveMode` / `liveRegionAttrs` / `describeHistoryEntry`).
+ *
+ * It is also the home of {@link isExternalHref} — the "may this string be an `href`?" half of
+ * the same judgement, shared with the `URL`/`FILE` custom-field link arm (W1f) so a datasheet
+ * recorded as an attachment and one recorded as a field value are decided by one rule.
  */
 import type { AttachmentKind } from '@/db/repositories';
 
@@ -36,6 +40,30 @@ export interface ResolvableAttachment {
   readonly kind: AttachmentKind;
   readonly value: string;
   readonly originDeviceId: string | null;
+}
+
+/**
+ * Is this stored string safe — and useful — to hand to an `<a href>`?
+ *
+ * Exactly the judgement the `URL` attachment *kind* stands for, extracted so the one answer
+ * serves both mechanisms (W1f). An attachment carries its answer in a column, validated as
+ * http(s) on the way in ({@link import('@/db/repositories').AttachmentRepository}); a `URL` /
+ * `FILE` **custom-field value** carries it only in the string, because `FILE` is defined as
+ * *"a local path, a UNC share, or a `file://` / `http(s)` URI"* — one type covering both of
+ * the attachment kinds — so the value's own shape has to decide.
+ *
+ * Only `http:` and `https:` qualify. That is not merely a usefulness test: a browser refuses
+ * to navigate from an http(s) page to `file://` or a bare Windows path, so linking one would
+ * be a dead control that *looks* live — and it is the gate that stops a stored `javascript:`
+ * string ever reaching an `href`, the same defence `isImageDataUrl` gives the IMAGE arm.
+ */
+export function isExternalHref(value: string): boolean {
+  try {
+    const { protocol } = new URL(value.trim());
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false; // not an absolute URI at all — a path, a UNC share, or free text
+  }
 }
 
 export function resolveAttachmentLink(

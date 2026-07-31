@@ -660,6 +660,8 @@
   "inventory.location.fields.saving": "Saving…",
   "inventory.location.fields.emptyNoFields": "No custom fields exist yet. Create one under Categories & schemas, then set its value here to record it against this location.",
   "inventory.location.detail.region": "Details for {name}",
+  "inventory.field.link.newTab": "(opens in a new tab)",
+  "inventory.field.filePointer.label": "File path:",
   "hotkeys.section": "Keyboard shortcuts",
   "hotkeys.enabled.label": "Keyboard shortcuts",
   "hotkeys.enabled.description": "Jump straight to a screen, or open the command palette, with a single key press.",
