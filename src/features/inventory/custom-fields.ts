@@ -14,6 +14,7 @@
 import { assertExhaustive } from '@/lib/exhaustive';
 import { isImageDataUrl } from '@/lib/image-data-url';
 import type { CategoryField, FieldType } from '@/db/repositories';
+import { orderByFieldProminence } from './field-def-prominence';
 
 /**
  * The minimum a value can be validated against: the definition's identity plus whether
@@ -284,18 +285,22 @@ function isLeapYear(year: number): boolean {
 }
 
 /**
- * The custom-field definitions belonging to a category, in the repository's
- * display order (`ORDER BY position ASC, name COLLATE NOCASE ASC`).
+ * The custom-field definitions belonging to a category, in the repository's display order
+ * (key definitions first, then `ORDER BY position ASC, name COLLATE NOCASE ASC`).
  *
  * **Categories are flat** — there is no `parent_id` on `CategoryRow`, so there is
  * **no ancestor resolution**: a field belongs to exactly the one category it names
  * (flat model). This mirrors `CategoryRepository.listFields`'s ordering so the
- * editor and any CSV column mapping see fields in the same sequence the DB does.
+ * editor and any CSV column mapping see fields in the same sequence the DB does —
+ * including the W1d prominence rank, which is applied as a stable partition *after* the
+ * position/name sort for exactly the reason the SQL puts it first in the `ORDER BY`: it is a
+ * coarser key layered over the existing one, not a replacement for it.
  */
 export function fieldsForCategory(defs: readonly CategoryField[], categoryId: string): CategoryField[] {
-  return defs
+  const ordered = defs
     .filter((d) => d.categoryId === categoryId)
     .sort(
       (a, b) => a.position - b.position || a.name.localeCompare(b.name, undefined, { sensitivity: 'accent' }),
     );
+  return [...orderByFieldProminence(ordered)];
 }

@@ -155,6 +155,31 @@ terms you set the field up in.
 > Number, both are cleared along with it. A range can't be set back-to-front either: a smallest
 > value above the largest would accept nothing at all, so Gubbins refuses it.
 
+### Marking a field as a key field
+
+Some fields matter more than the others beside them. A watch's *Movement* and *Reference* are what
+you look for; its *Bracelet* and *Anti-magnetic* are detail. Tick **Key field** under a field in
+**Categories & schemas** and it moves to the **front** of the list everywhere it appears — on every
+item that has it, on a location that holds a value for it, and in the category's own field list.
+
+Tick it on as many fields as you like. Key fields lead, in their usual order among themselves;
+everything else follows, also in its usual order. Nothing else changes: the field is not renamed,
+re-typed or moved to another tab, and it still saves, syncs, exports and searches exactly as before.
+
+> **ℹ️ Note**
+> Like the field's name and type — and like the due-date, unit and range settings above — this
+> belongs to the **field itself**, not to one category. Mark *Serial number* as a key field and it
+> leads in every category that uses it, and on values
+> [[inherited from a location|#inheriting-a-value-from-a-location]]. That is also what makes it work
+> on a location, whose fields have no order of their own to arrange.
+
+> **💡 Tip**
+> This setting and [**Where the custom fields go**](#bringing-a-categorys-fields-forward) answer two
+> different questions, and work together rather than against each other. That one decides *which tab*
+> the whole set of fields lives in; this one decides *which field leads* once you are looking at
+> them. Give a category's fields their own tab **and** mark the one that matters most, and you get
+> both.
+
 ### Fields on a location
 
 A location can hold field values of its own, exactly as an item can — a shelf's load rating, a

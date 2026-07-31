@@ -15,7 +15,9 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 const h = vi.hoisted(() => ({
   categoryRows: [] as CategoryWithFieldCount[],
-  fields: [] as CategoryField[],
+  // `undefined` is a state the dialog must handle, not just a missing value — it is what
+  // `useCategoryFields` reports while the query is in flight.
+  fields: [] as CategoryField[] | undefined,
   createCategory: vi.fn(),
   createCategoryAsync: vi.fn(),
   updateCategory: vi.fn(),
@@ -66,6 +68,7 @@ const field = (overrides: Partial<CategoryField> = {}): CategoryField => ({
   unit: null,
   minValue: null,
   maxValue: null,
+  prominence: null,
   position: 0,
   updatedAt: 0,
   ...overrides,
@@ -92,6 +95,7 @@ const category = (overrides: Partial<CategoryWithFieldCount> = {}): CategoryWith
   defaultMaintenanceIntervalDays: null,
   defaultMaintenanceIntervalUsage: null,
   hiddenCapabilities: [],
+  lookupSources: [],
   fieldProminence: null,
   fieldTabLabel: null,
   updatedAt: 0,
@@ -210,6 +214,7 @@ describe('CategoryManagerDialog — the add-field form assembles the input', () 
             unit: null,
             minValue: null,
             maxValue: null,
+            prominence: null,
           },
         },
         expect.anything(),
@@ -1259,5 +1264,293 @@ describe('CategoryManagerDialog — a number field’s unit and range (W1b/W1c)'
         expect.anything(),
       ),
     );
+  });
+});
+
+/**
+ * W1d - the per-definition key-field mark. Offered on every field type, unlike the due-date
+ * opt-in and the number settings, and saved straight onto the shared dictionary definition.
+ */
+describe('CategoryManagerDialog - the key-field mark (W1d)', () => {
+  it('offers the tick on every field type, not just one', () => {
+    h.categoryRows = [category()];
+    for (const fieldType of ['TEXT', 'DATE', 'NUMBER', 'SELECT'] as const) {
+      h.fields = [field({ fieldType, options: fieldType === 'SELECT' ? ['A'] : null })];
+      const view = renderDialog();
+      selectCategory(/Resistors/);
+      expect(screen.getByTestId('field-key-toggle-f-1')).toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it('reflects the stored rank, reading an unrecognised mode as unticked', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ prominence: 'key' })];
+    const view = renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByTestId('field-key-toggle-f-1')).toBeChecked();
+
+    h.fields = [field({ prominence: 'trailing' })];
+    view.rerender(<CategoryManagerDialog open onClose={onClose} />);
+    expect(screen.getByTestId('field-key-toggle-f-1')).not.toBeChecked();
+  });
+
+  it('saves the mark immediately - a tick has no half-typed state to race the refetch', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ prominence: null })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByTestId('field-key-toggle-f-1'));
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { prominence: 'key' } },
+      expect.anything(),
+    );
+  });
+
+  it("clears the mark as 'default' rather than as a bare null", () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ prominence: 'key' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByTestId('field-key-toggle-f-1'));
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { prominence: 'default' } },
+      expect.anything(),
+    );
+  });
+
+  it('adds a new field marked, and sends null rather than a demotion when unticked', async () => {
+    // `null` on the add path matters: the name may resolve to a definition another category
+    // already marked, and an omission leaves that alone where 'default' would clear it.
+    h.categoryRows = [category()];
+    h.fields = [];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Movement' } });
+    fireEvent.click(addFieldButton());
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ prominence: null }) }),
+        expect.anything(),
+      ),
+    );
+
+    h.addField.mockClear();
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Reference' } });
+    fireEvent.click(screen.getByTestId('add-field-key'));
+    fireEvent.click(addFieldButton());
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ prominence: 'key' }) }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('keeps the mark across a type change, because it is not gated on the type', async () => {
+    // The contrast with the unit and the range, which the type Select deliberately clears.
+    h.categoryRows = [category()];
+    h.fields = [];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Movement' } });
+    fireEvent.click(screen.getByTestId('add-field-key'));
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Date' }));
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ prominence: 'key' }) }),
+        expect.anything(),
+      ),
+    );
+  });
+});
+
+/**
+ * Attaching an open database to a category (issue #616, phase L2).
+ *
+ * This picker is the *only* thing that makes the lookup feature reachable — nothing below it
+ * renders for an item whose category has no provider attached — so its two storage invariants are
+ * worth pinning: a provider id this build doesn't recognise survives a round-trip through the
+ * picker, and "no field-map overrides" stores as `null` rather than an empty object (the column
+ * syncs LWW, so a write must not look like an edit when the user changed nothing).
+ */
+describe('CategoryManagerDialog — filling from an open database', () => {
+  /** The Movie preset's lookup-relevant fields, so the provider binds with no configuration. */
+  const movieFields = (): CategoryField[] => [
+    field({ id: 'f-dir', name: 'Director', fieldType: 'TEXT' }),
+    field({ id: 'f-cast', name: 'Cast', fieldType: 'LONG_TEXT' }),
+    field({ id: 'f-genre', name: 'Genre', fieldType: 'TEXT' }),
+    field({ id: 'f-year', name: 'Release year', fieldType: 'NUMBER' }),
+    field({ id: 'f-run', name: 'Runtime (min)', fieldType: 'NUMBER' }),
+    field({ id: 'f-studio', name: 'Studio', fieldType: 'TEXT' }),
+    field({ id: 'f-ref', name: 'Reference (IMDb/TMDB)', fieldType: 'URL' }),
+  ];
+
+  const providerTick = () => screen.getByTestId('category-lookup-wikidata-film');
+  const openMapping = () => fireEvent.click(screen.getByTestId('category-lookup-map-toggle-wikidata-film'));
+
+  it('offers the registered databases, unticked, naming what each one fills', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.getByText('Fill from an open database')).toBeInTheDocument();
+    expect(providerTick()).not.toBeChecked();
+    expect(screen.getByText('Wikidata')).toBeInTheDocument();
+    // Derived from the provider's own outputs, so a built-in target reads as its label.
+    expect(screen.getByText(/Fills: Name, Director, Cast/)).toBeInTheDocument();
+  });
+
+  it('attaches the provider with no field map when ticked', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    fireEvent.click(providerTick());
+
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] },
+    });
+  });
+
+  it('detaching leaves a provider this build does not recognise untouched', () => {
+    // A peer on a newer version attached something this build has no entry for. Dropping it here
+    // would silently discard that device's choice the next time this row was written back.
+    h.categoryRows = [
+      category({
+        lookupSources: [
+          { providerId: 'wikidata-film', fieldMap: null },
+          { providerId: 'some-future-provider', fieldMap: null },
+        ],
+      }),
+    ];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(providerTick()).toBeChecked();
+
+    fireEvent.click(providerTick());
+
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { lookupSources: [{ providerId: 'some-future-provider', fieldMap: null }] },
+    });
+  });
+
+  it('says how many values have nowhere to go, and says nothing once they all land', () => {
+    h.categoryRows = [category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    // A resistor category has none of a film's fields; only the title binds (to the item's name).
+    expect(screen.getByTestId('category-lookup-problems-wikidata-film')).toHaveTextContent(
+      '7 values have nowhere to go',
+    );
+
+    h.fields = movieFields();
+    cleanup();
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.queryByTestId('category-lookup-problems-wikidata-film')).toBeNull();
+  });
+
+  it('names what the run-time name match would actually do for each value', () => {
+    h.fields = movieFields();
+    h.categoryRows = [category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    openMapping();
+
+    expect(screen.getByRole('combobox', { name: 'Director' })).toHaveTextContent('Match by name — Director');
+    // The item's own name is a legitimate target, and reads as its label rather than its raw id.
+    expect(screen.getByRole('combobox', { name: 'Name' })).toHaveTextContent('Match by name — Name');
+  });
+
+  it('stores an override, and drops the map back to null when the last one is cleared', () => {
+    h.fields = [...movieFields(), field({ id: 'f-helmed', name: 'Helmed by', fieldType: 'TEXT' })];
+    h.categoryRows = [category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    openMapping();
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Director' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Helmed by' }));
+    expect(h.updateCategory).toHaveBeenLastCalledWith({
+      id: 'cat-1',
+      input: { lookupSources: [{ providerId: 'wikidata-film', fieldMap: { director: 'f-helmed' } }] },
+    });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Director' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Match by name — Director' }));
+    expect(h.updateCategory).toHaveBeenLastCalledWith({
+      id: 'cat-1',
+      input: { lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] },
+    });
+  });
+
+  it('only offers fields of the value’s own type', () => {
+    h.fields = movieFields();
+    h.categoryRows = [category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    openMapping();
+
+    // A type mismatch is something the binder *reports* rather than coerces, so the picker must
+    // offer no way to create one: the number-valued runtime sees only the NUMBER fields.
+    fireEvent.click(screen.getByRole('combobox', { name: 'Runtime (min)' }));
+    expect(screen.getByRole('option', { name: 'Release year' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Director' })).toBeNull();
+  });
+
+  it('reads an override whose field is gone as the name match, exactly as the binder does', () => {
+    // A map entry the binder cannot resolve falls back to the name match rather than failing, so
+    // the value still lands — on `Director`, here. Showing the dangling id would tell the user a
+    // working binding is broken, and would disagree with the problem banner right above it.
+    h.fields = movieFields();
+    h.categoryRows = [
+      category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: { director: 'f-gone' } }] }),
+    ];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.queryByTestId('category-lookup-problems-wikidata-film')).toBeNull();
+    openMapping();
+    expect(screen.getByRole('combobox', { name: 'Director' })).toHaveTextContent('Match by name — Director');
+  });
+
+  it('keeps an override whose field has been retyped visible, marked as the wrong kind', () => {
+    // Retyping is the case the binder *does* honour — it reports a TYPE_MISMATCH rather than
+    // ignoring the entry — so the choice has to stay on screen to be fixable, even though the
+    // type filter would otherwise hide it.
+    h.fields = [...movieFields(), field({ id: 'f-note', name: 'Production note', fieldType: 'LONG_TEXT' })];
+    h.categoryRows = [
+      category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: { director: 'f-note' } }] }),
+    ];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.getByTestId('category-lookup-problems-wikidata-film')).toHaveTextContent(
+      '1 value has nowhere to go',
+    );
+    openMapping();
+    expect(screen.getByRole('combobox', { name: 'Director' })).toHaveTextContent(
+      'Production note — no longer the right kind of field',
+    );
+  });
+
+  it('says the fields are still loading rather than reporting them all as missing', () => {
+    // `undefined` fields and an empty list bind identically, so collapsing the two would announce
+    // "8 values have nowhere to go" on a category where every one of them lands.
+    h.fields = undefined;
+    h.categoryRows = [category({ lookupSources: [{ providerId: 'wikidata-film', fieldMap: null }] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.getByTestId('category-lookup-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('category-lookup-problems-wikidata-film')).toBeNull();
+    expect(screen.queryByTestId('category-lookup-map-toggle-wikidata-film')).toBeNull();
   });
 });

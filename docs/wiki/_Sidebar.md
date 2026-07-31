@@ -18,6 +18,7 @@
 - [[Kits & bundles|Kits-and-Bundles]]
 - [[Tags, attachments & related|Tags-Attachments-and-Related-Items]]
 - [[Custom fields & capabilities|Custom-Fields-and-Capabilities]]
+- [[Filling fields from a database|Filling-Fields-from-a-Database]]
 - [[Low stock & gauges|Low-Stock-and-Gauges]]
 - [[Counting by weight|Counting-by-Weight]]
 - [[Container weights|Container-Weights]]

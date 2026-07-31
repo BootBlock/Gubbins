@@ -711,6 +711,22 @@ const baselineStatements: SqlStatement[] = [
     // name carry two *types*, letting the unit fork per category would reintroduce exactly the
     // ambiguity that guard exists to prevent — the same number reading as millimetres on one
     // item and inches on another, with nothing on screen to explain why.
+    //
+    // `prominence` (W1d) is the fourth, and sits here for a third reason on top of those two:
+    // `category_fields.position` — the obvious alternative home, beside the rest of a category's
+    // policy — simply cannot reach a **location's** field values, which have no `category_fields`
+    // row at all and can therefore only be ordered by name. It is also a different claim from
+    // `position`: that is an *arrangement* within one category, this is "this field matters most,
+    // wherever it appears". The rank sorts ahead of `position` rather than replacing it.
+    //
+    // Note the shape it does *not* share with the three above: no CHECK, and no `field_type`
+    // term. Those three are behavioural — a lead time gates an alert, a bound refuses a save — so
+    // a value they cannot honour must be refused at the storage boundary. A rank is presentational,
+    // so the right failure mode is the opposite one, exactly as `categories.field_prominence`
+    // already argues: keep whatever a newer peer wrote and let the render boundary narrow it,
+    // rather than fail that peer's entire sync apply over a display preference. And unlike a unit
+    // or a lead time, *any* field type can be the one that matters most, so nothing is cleared on
+    // a retype.
     sql: `
         CREATE TABLE field_defs (
           id            TEXT    PRIMARY KEY NOT NULL,
@@ -722,6 +738,7 @@ const baselineStatements: SqlStatement[] = [
           unit          TEXT,                          -- NUMBER only: unit of measure; NULL = unitless
           min_value     REAL,                          -- NUMBER only: lower bound; NULL = unbounded below
           max_value     REAL,                          -- NUMBER only: upper bound; NULL = unbounded above
+          prominence    TEXT,                          -- any type: 'key' leads its siblings; NULL = ordinary
           updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (field_type IN (${fieldTypeList})),
           -- Only a DATE can be a deadline, and the notice period is bounded. The write seam

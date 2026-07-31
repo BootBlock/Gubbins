@@ -17,11 +17,16 @@ import { bindLookupOutputs, type BindableField } from './binding';
 import { WIKIDATA_FILM_PROVIDER } from './providers/wikidata-film';
 import type { LookupProvider } from './types';
 
+/** The preset with this id, or a failure naming what has gone missing. */
+function preset(presetId: string) {
+  const found = CATEGORY_PRESETS.find((candidate) => candidate.id === presetId);
+  if (found === undefined) throw new Error(`no "${presetId}" preset — has it been renamed?`);
+  return found;
+}
+
 /** The preset's declared fields, in the shape the binder takes. Ids stand in for real rows. */
 function presetFields(presetId: string): readonly BindableField[] {
-  const preset = CATEGORY_PRESETS.find((candidate) => candidate.id === presetId);
-  if (preset === undefined) throw new Error(`no "${presetId}" preset — has it been renamed?`);
-  return preset.seed.fields.map((field, index) => ({
+  return preset(presetId).seed.fields.map((field, index) => ({
     id: `field-${index}`,
     name: field.name,
     fieldType: field.fieldType,
@@ -29,12 +34,7 @@ function presetFields(presetId: string): readonly BindableField[] {
   }));
 }
 
-/**
- * The preset each provider's default field names are lifted from.
- *
- * Attaching a provider to a preset is phase L2's job; this only asserts the *names* line up, so
- * the day the attachment lands it works with no configuration.
- */
+/** The preset each provider's default field names are lifted from, and which attaches it. */
 const PROVIDER_PRESETS: ReadonlyArray<{ provider: LookupProvider; presetId: string }> = [
   { provider: WIKIDATA_FILM_PROVIDER, presetId: 'movie' },
 ];
@@ -42,6 +42,16 @@ const PROVIDER_PRESETS: ReadonlyArray<{ provider: LookupProvider; presetId: stri
 describe.each(PROVIDER_PRESETS)(
   '$provider.id binds the $presetId preset with no configuration',
   ({ provider, presetId }) => {
+    it('is attached by the preset, with no field map to maintain', () => {
+      // The attachment is what makes the lookup reachable at all: without it the preset creates a
+      // category whose items show no "Fill from a database" affordance. `fieldMap: null` is the
+      // zero-config claim the rest of this file exists to keep true — a map here would mean the
+      // names below had stopped lining up and someone had papered over it.
+      expect(preset(presetId).seed.category.lookupSources).toEqual([
+        { providerId: provider.id, fieldMap: null },
+      ]);
+    });
+
     it('binds every output key', () => {
       const { bindings, problems } = bindLookupOutputs(provider.outputs, presetFields(presetId), null);
       // Named individually so a failure says *which* key drifted, not just that one did.
