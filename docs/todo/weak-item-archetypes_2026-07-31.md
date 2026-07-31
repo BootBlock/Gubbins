@@ -748,20 +748,24 @@ and only one of them is a display decision.
    have been ceremony: with a null origin it reduces to exactly the branch already taken, while
    threading a device id through two pure seams that ignore it.
 
-   So the rule had to be **written** rather than borrowed, and the honest place for it is
-   `lib/external-href.ts`, beside `lib/image-data-url.ts` — its exact structural counterpart, the
-   render-side gate for `<img src>` as this is for `<a href>`, homed in `lib/` for the reason that
-   file states: one definition, so two callers cannot drift. Note what this is **not**: it does
-   not unify the http(s) checks in `validateFieldValue` and `AttachmentRepository`, which stay
-   where they are. Those are *write-time* validators whose job is to explain a refusal in the
-   user's words; this one only has to answer yes or no, about a string that may have arrived from
-   a sync peer, a backup or an import with nothing having checked it. Same rule, different jobs —
-   and an earlier draft of this change claimed the seam was shared when it was not, which review
-   caught.
+   So the rule had to be **written** rather than borrowed: `inventory/external-href.ts`. It stays
+   inside the feature deliberately. `lib/` is where this repo keeps a rule that is genuinely
+   cross-feature — `image-data-url.ts` says exactly that of itself, and has callers in inventory
+   *and* reports to show for it — whereas this one is a rule about a custom-field value with a
+   single consumer. Lift it when a second feature needs it, not on the strength of a resemblance.
+
+   Note what it is **not**: it does not unify the http(s) checks in `validateFieldValue` and
+   `AttachmentRepository`, which stay where they are. Those are *write-time* validators whose job
+   is to explain a refusal in the user's words, each differently; this one only has to answer yes
+   or no. Nor is the split the one that `image-data-url.ts` models — `isImageDataUrl` is used at
+   **both** times, inside `validateFieldValue` as well as at the renderer. The reason this rule is
+   render-only is narrower and specific to `FILE`: there *is* no write-time answer to copy,
+   because a `FILE` value is stored verbatim with no validation at all.
 3. **Openability is a security gate, not a formatting choice — and nothing above said so.** A
-   `URL` value is validated as http(s) *at the point of save*, but nothing revalidates one that
-   arrived by sync, by import, or that was left behind when a definition was retyped — and `FILE`
-   has no validation to fall short of at all. So `isExternalHref` admits `http:`/`https:` only,
+   `URL` value is validated as http(s) at the point of save — and on import, which runs the same
+   seam — but **nothing revalidates a value merged from a sync peer or restored from a backup**,
+   nor one left behind when a definition was retyped. And `FILE` has no validation to fall short
+   of at all. So `isExternalHref` admits `http:`/`https:` only,
    which is what stops a stored `javascript:` or `data:text/html` string ever reaching an `href`.
    This is the same rule, reached independently, that the `IMAGE` arm already states for
    `isImageDataUrl`: *only a value of exactly that shape becomes a `src`*. An out-of-band `URL`

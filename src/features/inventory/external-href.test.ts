@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { isExternalHref } from './external-href';
 
 /**
- * The render-time gate deciding whether a stored string may become an `<a href>` (W1f). Its
- * inputs are untrusted by construction — a value can arrive from a sync peer, a restored
- * backup or an import — so the rejections matter as much as the acceptances.
+ * The gate deciding whether a stored custom-field value may become an `<a href>` (W1f). Its
+ * inputs are untrusted by construction — a value merged from a sync peer or read out of a
+ * restored backup reaches the renderer without ever meeting `validateFieldValue` — so the
+ * rejections matter as much as the acceptances.
  */
 describe('isExternalHref', () => {
   it('accepts http and https, the only schemes a page can navigate to', () => {
@@ -24,8 +25,8 @@ describe('isExternalHref', () => {
   });
 
   it('rejects a scheme that would execute rather than navigate', () => {
-    // The gate that stops a stored string ever reaching an `href` as script — the render-side
-    // counterpart of what `isImageDataUrl` does for an `<img src>`.
+    // The gate that stops a stored string ever reaching an `href` as script, the way
+    // `isImageDataUrl` stops one reaching an `<img src>`.
     expect(isExternalHref('javascript:alert(1)')).toBe(false);
     expect(isExternalHref('JavaScript:alert(1)')).toBe(false);
     expect(isExternalHref('data:text/html,<script>alert(1)</script>')).toBe(false);
