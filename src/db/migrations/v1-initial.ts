@@ -533,15 +533,18 @@ const baselineStatements: SqlStatement[] = [
     //  - `actor_user_id` mirrors `item_history` exactly, including the DEFAULT that exists for the
     //    FK action rather than for callers (see that table for the full reasoning).
     //
-    // Deliberately **no immutability trigger**, unlike `item_history`. This table is an ordinary
-    // LWW leaf in `SYNC_TABLES` (see `tombstone.ts`) rather than a bespoke union-by-id section, so
-    // the merge engine reaches it through the shared `ON CONFLICT(id) DO UPDATE … WHERE
-    // excluded.updated_at > updated_at` upsert. For an append-only row that predicate is always
-    // false and nothing is written — but a corrupt or hostile snapshot claiming a newer timestamp
-    // for an id we already hold would make a trigger ABORT the whole restore rather than no-op it.
-    // Append-only is enforced where it is actually written (the repository has no UPDATE path),
-    // matching the project's other synced append-only logs — `revaluations`, `test_records` and
-    // `supplier_part_price_history` all take this shape.
+    // Deliberately **no immutability trigger**, unlike `item_history`. That ledger can be strictly
+    // immutable because it is a bespoke union-by-id snapshot section: a merge only ever
+    // `INSERT OR IGNORE`s into it, so no UPDATE is ever attempted. This table is instead an ordinary
+    // LWW leaf in `SYNC_TABLES` (see `tombstone.ts`), and the shared upsert it goes through is an
+    // unconditional `ON CONFLICT(id) DO UPDATE SET …` (`merge.ts`) — the LWW comparison happens in
+    // JavaScript, and a byte-identical winner is skipped before any statement is built
+    // (`upsertWouldNoOp` in `reconcile.ts`). So an ordinary re-sync writes nothing, but any row that
+    // *does* differ from the copy we hold — a corrupt or hostile snapshot, or a restore, which has
+    // no LWW gate at all — would fire the UPDATE, and a trigger there would ABORT the whole
+    // transaction rather than let it through. Append-only is therefore enforced where it is actually
+    // written (the repository has no UPDATE path), matching the project's other synced append-only
+    // logs: `revaluations`, `test_records` and `supplier_part_price_history` all take this shape.
     sql: `
         CREATE TABLE location_history (
           id            TEXT    PRIMARY KEY NOT NULL,

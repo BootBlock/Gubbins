@@ -30,8 +30,8 @@ Press **Add webhook** and fill in:
 - **URL** — the address the bridge calls. Must start with `http://` or `https://`.
 - **Method** — `POST`, `GET`, `PUT` or `PATCH`. `POST` is what most receivers expect.
 - **Events** — tick the changes you care about, grouped by kind (items, stock levels, location,
-  storage locations, loans & reservations, condition & upkeep). **Every event** also picks up any
-  events added by future versions of Gubbins.
+  storage locations, loans & reservations, condition & upkeep, and other). **Every event** also
+  picks up any events added by future versions of Gubbins.
 - **Filter** *(optional)* — narrow it further to a particular location, category, tag, specific
   items, or a quantity threshold.
 - **Payload** *(optional)* — send Gubbins' standard event, a preset shaped for Discord, Slack or

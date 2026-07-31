@@ -9,14 +9,16 @@
  * ## Why this is hand-maintained rather than generated
  *
  * It would be neater to derive the catalogue from `ACTION_EVENT_TYPE`, and an early draft of the
- * plan assumed we could. We cannot: the emitted set comes from **four** places, and one of them is
+ * plan assumed we could. We cannot: the emitted set comes from **six** places, and two of them are
  * open-ended.
  *
- *   1. `ACTION_EVENT_TYPE` — the ledger-action mapping.
+ *   1. `ACTION_EVENT_TYPE` — the item ledger-action mapping.
  *   2. The unknown-action fallback (`item.changed`), which is reachable from *any* future action a
  *      newer peer syncs, so the reverse direction ("which actions produce this?") is not derivable.
- *   3. The derived stock-status types, computed in `statusEvent` rather than mapped from an action.
- *   4. The two types declared outside the ledger path entirely — `events.truncated` and
+ *   3. `LOCATION_ACTION_EVENT_TYPE` — the same mapping for the location activity record (#691).
+ *   4. Its own unknown-action fallback, `location.changed`, open-ended for the same reason as (2).
+ *   5. The derived stock-status types, computed in `statusEvent` rather than mapped from an action.
+ *   6. The two types declared outside the ledger path entirely — `events.truncated` and
  *      `lookup.resolved`.
  *
  * So a human writes the copy, and {@link KNOWN_EVENT_TYPES} pins the *coverage*: a test asserts the

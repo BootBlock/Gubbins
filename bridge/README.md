@@ -1404,9 +1404,10 @@ Every event is `{ id, type, occurredAt, data }`:
 - **`occurredAt`** — the ledger row's timestamp, ISO-8601.
 - **`data`** — for an item event, the change plus the item's current summary (the same
   `ItemSummary` shape the REST API uses). For a `location.*` event, a flat
-  `{ locationId, locationName, action, label, detail }` — `locationId` is `null` when the location
-  was already deleted (the ledger keeps the entry and its `locationName`), and no live location
-  state is resolved, because `location.removed` has none left to read.
+  `{ locationId, locationName, action, label, detail }`. `locationId` is **always** present,
+  `location.removed` included — the activity record's subject column carries no foreign key, so it
+  outlives the location it names and an automation keyed by location id is always told which one
+  went. No live location state is resolved, because `location.removed` has none left to read.
 
 > **Discriminate a location event on its payload, not its `type`.** `events.truncated` is the one
 > type that arrives with either shape — the location pass emits its own summary when a generation's

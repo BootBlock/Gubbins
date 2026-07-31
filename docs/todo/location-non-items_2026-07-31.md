@@ -264,10 +264,13 @@ resolved without being built (§11.4); `N4`, `N5` and `N7` are unstarted.
   This is the strongest answer to the issue's "what else can be improved", and it is what would make
   [#565](https://github.com/BootBlock/Gubbins/issues/565) diagnosable.
   *As built:* a `location_history` sibling table, appended from `LocationRepository` for create,
-  rename, re-parent, archive/restore and delete; a `location.*` event slice reaching the feed, the
-  webhook picker and the bridge; and a **History** tab on the location editor. Geometry, colour,
-  capacity, walk order and policy edits deliberately record nothing. §11.5 records the three places
-  the entry above turned out to be wrong about the shape of it.
+  rename, re-parent, archive/restore and delete (and on each sub-location a delete promotes); a
+  `location.*` event slice reaching the webhook subscription picker and the bridge's event stream;
+  and a **History** tab on the location editor. It does **not** reach the app's global Activity
+  feed, which still reads `item_history` alone — a cross-location activity view is the obvious
+  follow-on and is deliberately not in this pass. Geometry, colour, capacity, walk order and policy
+  edits record nothing. §11.5 records the three places the entry above turned out to be wrong about
+  the shape of it.
 - **`N4` — Location attachments (links and local pointers).** Mirror `item_attachments` on a
   location: the boiler manual, the wiring diagram, the certificate. Be honest about the case — a
   `URL` custom field already does most of this, so what a table buys is **several of them, ordered
@@ -409,12 +412,15 @@ against relaxing `item_history.item_id`'s `NOT NULL`. Three details of the *shap
    `location_history` did not need that plumbing: it is an ordinary **LWW leaf** in `SYNC_TABLES`,
    like the project's other synced append-only logs (`revaluations`, `test_records`,
    `supplier_part_price_history`). Because the repository only appends, an id a peer already holds
-   always presents an identical row, so the shared `ON CONFLICT(id) DO UPDATE … WHERE
-   excluded.updated_at > updated_at` upsert resolves to a no-op — union-by-id in effect, with none
-   of the bespoke snapshot, reconcile, clone, restore and backup code the ledger needs. Adding the
-   trigger on top would have turned a *corrupt or hostile* snapshot claiming a newer timestamp for
-   a known id from a silent no-op into an **ABORT of the whole restore transaction**. Append-only
-   is therefore enforced where it is written, not by a trigger.
+   always presents an identical row, and `upsertWouldNoOp` (`reconcile.ts`) drops a byte-identical
+   winner before a statement is even built — union-by-id in effect, with none of the bespoke
+   snapshot, reconcile, clone, restore and backup code the ledger needs. What that leaves is the
+   reason the trigger had to go, and it is broader than "a hostile peer": the upsert the merge
+   *does* build is an **unconditional** `ON CONFLICT(id) DO UPDATE SET …` (`merge.ts`) — there is no
+   `WHERE excluded.updated_at > updated_at` guard in the SQL, the LWW comparison having happened in
+   JavaScript — and `restoreSnapshot` has no LWW gate at all. So any row that differs from the copy
+   held locally fires a real UPDATE, and a trigger there would **ABORT the whole transaction**.
+   Append-only is therefore enforced where it is written, not by a trigger.
 2. **"Re-attribute rather than erase" applies to the *subject*, not only the actor — and neither
    of `item_history`'s two FK behaviours is the right one for it.** The issue read that ledger's
    deleted-*user* handling (`ON DELETE SET DEFAULT` → System) as the precedent to copy, and it was,

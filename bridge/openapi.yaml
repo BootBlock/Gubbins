@@ -5860,14 +5860,7 @@ components:
           example: "Shelf B"
         action:
           type: "string"
-          description: "The raw location activity action."
-          enum:
-          - "CREATED"
-          - "RENAMED"
-          - "RE_PARENTED"
-          - "ARCHIVED"
-          - "RESTORED"
-          - "DELETED"
+          description: "The raw location activity action (e.g. `CREATED`, `RENAMED`, `RE_PARENTED`, `ARCHIVED`, `RESTORED`, `DELETED`). Open-ended: a change made by a newer version of Gubbins may name an action not in that list, and arrives as `location.changed`."
           example: "RE_PARENTED"
         label:
           type: "string"

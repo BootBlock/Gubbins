@@ -12,7 +12,6 @@
  */
 
 import { KNOWN_EVENT_TYPES } from '@/features/events/event-types.ts';
-import { LOCATION_HISTORY_ACTIONS } from '@/db/repositories/constants.ts';
 import { ITEM_STATUS_FILTERS } from '@/db/repositories/item/status-filter.ts';
 import { ITEM_FIELD_REGISTRY } from './api/item-view.ts';
 import { LOCATION_FIELD_REGISTRY } from './api/location-view.ts';
@@ -2726,8 +2725,16 @@ export const openapiDocument: JsonValue = {
           },
           action: {
             type: 'string',
-            description: 'The raw location activity action.',
-            enum: [...LOCATION_HISTORY_ACTIONS],
+            // Deliberately **not** an enum, matching `BridgeEventData.action` above. The action
+            // column carries no CHECK, and a row synced from a newer peer can name an action this
+            // build has never heard of — `eventTypeForLocationAction` maps it to `location.changed`
+            // and the payload carries it verbatim. A closed enum here would make a generated
+            // validator reject that whole event (the `oneOf` would match no arm at all), which is
+            // the exact failure this schema exists to prevent.
+            description:
+              'The raw location activity action (e.g. `CREATED`, `RENAMED`, `RE_PARENTED`, ' +
+              '`ARCHIVED`, `RESTORED`, `DELETED`). Open-ended: a change made by a newer version of ' +
+              'Gubbins may name an action not in that list, and arrives as `location.changed`.',
             example: 'RE_PARENTED',
           },
           label: {
