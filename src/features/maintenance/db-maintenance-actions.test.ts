@@ -215,6 +215,47 @@ describe('Database Maintenance engine', () => {
       expect(stats.imageBytes).toBeGreaterThan(0);
     });
 
+    // Regression (issue #690): the photo count and the byte figure are rendered as one line
+    // ("Photos: N · X on disk"), so they have to measure the same set. The bytes are the
+    // whole OPFS `images/` directory, which item photos and location photos share — a count
+    // taken from `item_images` alone reads small beside a large size.
+    it('counts photos from every image-owning table, matching what the byte figure measures', async () => {
+      const item = await items.create({ name: 'Camera' });
+      await images.add({ itemId: item.id, thumbnailBlob: null, fullResOpfsPath: 'images/a.webp' });
+      const location = await locations.create({ name: 'Workshop' });
+      await locationPhotos.addPhoto({
+        locationId: location.id,
+        thumbnailBlob: null,
+        fullResOpfsPath: 'images/shelf.webp',
+        naturalWidth: 1200,
+        naturalHeight: 800,
+      });
+
+      const stats = await gatherDatabaseStats(fullPorts({ imagesBytesOnDisk: async () => 8192 }));
+
+      expect(stats.imageCount).toBe(2);
+      expect(stats.imageBytes).toBe(8192);
+    });
+
+    // The other arm of the same defect: with OPFS unmeasurable the bytes are derived from
+    // the count, so an item-only count estimated every location photo at zero bytes.
+    it('estimates location photos too when OPFS bytes cannot be measured', async () => {
+      const location = await locations.create({ name: 'Workshop' });
+      await locationPhotos.addPhoto({
+        locationId: location.id,
+        thumbnailBlob: null,
+        fullResOpfsPath: 'images/shelf.webp',
+        naturalWidth: 1200,
+        naturalHeight: 800,
+      });
+
+      const stats = await gatherDatabaseStats(fullPorts({ imagesBytesOnDisk: async () => null }));
+
+      expect(stats.imageCount).toBe(1);
+      expect(stats.imageBytesMeasured).toBe(false);
+      expect(stats.imageBytes).toBeGreaterThan(0);
+    });
+
     it('reports the measured OPFS bytes verbatim when available', async () => {
       const item = await items.create({ name: 'Camera' });
       await images.add({ itemId: item.id, thumbnailBlob: null, fullResOpfsPath: 'images/a.webp' });
