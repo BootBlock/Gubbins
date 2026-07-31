@@ -1209,6 +1209,45 @@ describe('ReportRepository', () => {
       expect(report.totalValue).toBe(15);
     });
 
+    // Clearing an item's Activity Log (issue #620) deletes the inbound rows this ages from, so
+    // without the clear instant the item would be aged from the day its row was created — which
+    // dates the row, not the stock (the sibling of issue #686).
+    it("ages a cleared log from the clear rather than the item's creation", async () => {
+      const now = Date.now();
+      const item = await items.create({ name: 'Restocked', quantity: 5, unitCost: 1 });
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [
+        now - 200 * MS_PER_DAY,
+        item.id,
+      ]);
+      await addHistory(item.id, 5, now - 150 * MS_PER_DAY);
+
+      await items.clearHistory(item.id, 'Device');
+
+      // The inbound is gone with the rest of the log; the clear just happened, so the stock is
+      // aged from there — not from a creation date 200 days back.
+      const report = await reports.stockAging(now);
+      const byLabel = Object.fromEntries(report.buckets.map((b) => [b.label, b.itemCount]));
+      expect(byLabel['0–30 days']).toBe(1);
+      expect(byLabel['180+ days']).toBe(0);
+    });
+
+    it('keeps a recorded acquisition date ahead of a cleared log', async () => {
+      const now = Date.now();
+      const item = await items.create({ name: 'Heirloom', quantity: 1, unitCost: 1 });
+      await driver.execute('UPDATE items SET acquired_at = ? WHERE id = ?;', [
+        new Date(now - 400 * MS_PER_DAY).toISOString(),
+        item.id,
+      ]);
+
+      await items.clearHistory(item.id, 'Device');
+
+      // The acquisition date survives the clear and still describes the stock, so it wins.
+      const report = await reports.stockAging(now);
+      const byLabel = Object.fromEntries(report.buckets.map((b) => [b.label, b.itemCount]));
+      expect(byLabel['180+ days']).toBe(1);
+      expect(byLabel['0–30 days']).toBe(0);
+    });
+
     it('values on-hand stock the same way as the valuation headline (issue #397)', async () => {
       const now = Date.now();
       // A revalued collectible: the manual current value wins over its cost, on both figures.
