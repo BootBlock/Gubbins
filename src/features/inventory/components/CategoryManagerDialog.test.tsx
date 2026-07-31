@@ -918,6 +918,20 @@ describe('CategoryManagerDialog — opting an existing DATE field in', () => {
     expect((input as HTMLInputElement).value).toBe('30');
   });
 
+  it('re-seats the box when the stored value changes underneath it', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ name: 'Renewal date', fieldType: 'DATE', dueLeadDays: 14 })];
+    const view = renderDialog();
+    selectCategory(/Resistors/);
+    expect((screen.getByTestId('field-due-days-f-1') as HTMLInputElement).value).toBe('14');
+
+    // Another category editing the shared definition, or a peer's sync.
+    h.fields = [field({ name: 'Renewal date', fieldType: 'DATE', dueLeadDays: 60 })];
+    view.rerender(<CategoryManagerDialog open onClose={onClose} />);
+
+    expect((screen.getByTestId('field-due-days-f-1') as HTMLInputElement).value).toBe('60');
+  });
+
   it('does not write when the blurred value is unchanged', () => {
     h.categoryRows = [category()];
     h.fields = [field({ name: 'Renewal date', fieldType: 'DATE', dueLeadDays: 14 })];

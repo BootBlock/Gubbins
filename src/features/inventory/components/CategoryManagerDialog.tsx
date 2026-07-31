@@ -904,14 +904,14 @@ function FieldDueDateControl({ field }: { field: CategoryField }) {
   // Seeded from the definition and re-seeded whenever it changes underneath us (another
   // category sharing this field, or a peer's sync) — `key` on the id would not do it, since
   // the row survives the change.
+  // The box is fed from server state and re-seats whenever the stored value moves — this save's
+  // own refetch, another category editing the shared definition, a peer's sync. A concurrent
+  // change can therefore land over something half-typed; that is what "fed from server state"
+  // means, it is self-correcting (the new value is on screen to retype from), and guarding it
+  // would trade a rare, visible overwrite for a focus-tracking state machine that can push a
+  // *stale* value back on blur instead — quietly, and over the newer one.
   const [draft, setDraft] = useState(String(field.dueLeadDays ?? FIELD_DUE_LEAD_DAYS_DEFAULT));
-  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    // Never while the user is mid-edit: the save below invalidates and refetches, so the new
-    // value lands moments later — and if they have already clicked back in to change it again,
-    // re-seeding here would replace what they are typing with what they typed before. The same
-    // applies to a value arriving from a peer's sync.
-    if (document.activeElement === inputRef.current) return;
     setDraft(String(field.dueLeadDays ?? FIELD_DUE_LEAD_DAYS_DEFAULT));
   }, [field.dueLeadDays]);
 
@@ -963,7 +963,6 @@ function FieldDueDateControl({ field }: { field: CategoryField }) {
               and it keeps this a real `type="number"` box, so `min`/`max` are native constraints
               rather than inert attributes on the calculator control's text field. */}
           <Input
-            ref={inputRef}
             type="number"
             calc={false}
             min={FIELD_DUE_LEAD_DAYS_MIN}

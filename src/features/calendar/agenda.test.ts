@@ -395,7 +395,7 @@ describe('buildAgenda — custom-field due-date lane (W1a)', () => {
     expect(event.kind).toBe('field-due');
   });
 
-  it('anchors at the stored day and always carries a date (unlike reorder/usage lanes)', () => {
+  it('carries a real date, unlike the reorder and due-USAGE lanes', () => {
     const [event] = buildAgenda({ ...EMPTY, fieldDue: [source] }, NOW, fmtDate);
     expect(event.dueAt).toBe(utcDayToLocalDay(source.dueAt));
     expect(event.hasDate).toBe(true);
@@ -424,13 +424,20 @@ describe('buildAgenda — custom-field due-date lane (W1a)', () => {
     expect(event.target).toEqual({ route: '/inventory', itemId: 'i1' });
   });
 
-  it('re-anchors the stored midnight-UTC day onto the local calendar', () => {
+  it('re-anchors the stored day onto the local calendar, at the day start', () => {
     // The value is stored at midnight UTC (issue #320) but everything downstream reads the
     // event's `dueAt` locally — the bucketer against `startOfLocalDay`, the card through the
     // locale formatter. West of UTC the raw instant is the *previous* local day, so a date due
     // today would bucket Overdue and render a day early (issue #323), while the alert centre
     // graded the same row due-soon.
-    const [event] = buildAgenda({ ...EMPTY, fieldDue: [{ ...source, dueAt: storedDay(0) }] }, NOW, fmtDate);
+    //
+    // The fixture is deliberately **off** a UTC midnight, and that is the whole point of it:
+    // `utcDayToLocalDay` is the identity function in UTC, so a midnight-UTC fixture is
+    // indistinguishable from the un-anchored result exactly where this suite runs in CI — the
+    // guard would pass with the transform deleted. An off-midnight instant makes the assertion
+    // bite in every zone, since only the anchoring collapses it to the day start.
+    const offMidnight = storedDay(0) + 13 * 60 * 60 * 1000;
+    const [event] = buildAgenda({ ...EMPTY, fieldDue: [{ ...source, dueAt: offMidnight }] }, NOW, fmtDate);
     expect(event.dueAt).toBe(SOD);
     expect(bucketForDueAt(event.dueAt, NOW)).toBe('today');
   });
