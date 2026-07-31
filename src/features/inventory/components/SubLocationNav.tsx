@@ -38,9 +38,9 @@ export function describeLocationContents(itemCount: number, subLocationCount: nu
  *
  * A child that carries a **description** shows a one-line, plain-text preview of it beneath the
  * summary (issue #617): choosing which of several bins to open is exactly the moment the note a
- * user wrote about a place is worth reading, and until now it appeared only as a hover tooltip in
- * the tree. It is a preview, not the note — the full Markdown renders in the detail panel once
- * the location is open, so the card keeps a fixed height.
+ * user wrote about a place is worth reading, and reading it otherwise meant hovering that row in
+ * the tree or opening the location first. It is a preview, not the note — the full Markdown
+ * renders in the detail panel once the location is open, so the card keeps a fixed height.
  */
 export function SubLocationNav({
   childLocations,
