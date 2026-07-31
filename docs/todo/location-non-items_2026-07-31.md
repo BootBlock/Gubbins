@@ -264,9 +264,13 @@ because §5 is the finding: the mechanism is built and nobody can see it. None s
 
 ## 9. Defects found while surveying
 
-Not part of the ask — existing behaviour that looks wrong, found on the way.
+Not part of the ask — existing behaviour that looks wrong, found on the way. **Both are now filed
+as [#689](https://github.com/BootBlock/Gubbins/issues/689) and
+[#690](https://github.com/BootBlock/Gubbins/issues/690)**; those issues carry the full evidence and
+are the live record, so treat this section as the summary of how they were found.
 
-1. **A location's own detail lives under a heading that says it is for something else.** The
+1. **A location's own detail lives under a heading that says it is for something else**
+   ([#689](https://github.com/BootBlock/Gubbins/issues/689)). The
    custom-field panel in the Edit dialog is titled *"Inheritable fields"*
    ([en.json:615](../../src/features/i18n/catalogs/en.json#L615)), but a **non**-inheritable value is
    an explicitly supported and documented use: the checkbox hint says "When off, the value is kept
@@ -275,9 +279,11 @@ Not part of the ask — existing behaviour that looks wrong, found on the way.
    [LocationFieldsEditor.tsx:16-23](../../src/features/inventory/components/LocationFieldsEditor.tsx#L16));
    and the wiki repeats the same note. So the panel is named after its *optional* behaviour rather
    than its content, and a user looking for where to record a fact about a place is told this isn't
-   it. Both the heading and the wiki section title need to change together.
+   it. Both the heading and the wiki section titles — there are two pages carrying it — need to
+   change together.
 2. **Database Maintenance reports a photo count and a byte figure that don't measure the same
-   thing.** The stats panel renders *"Photos: N · X on disk"*
+   thing** ([#690](https://github.com/BootBlock/Gubbins/issues/690)). The stats panel renders
+   *"Photos: N · X on disk"*
    ([DatabaseMaintenanceDialog.tsx:499-503](../../src/features/maintenance/DatabaseMaintenanceDialog.tsx#L499)),
    where `N` is `COUNT(*)` over **`item_images` only**
    ([db-maintenance-actions.ts:480](../../src/features/maintenance/db-maintenance-actions.ts#L480))
