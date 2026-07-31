@@ -1462,26 +1462,41 @@ function rejectParentCycles(local: SyncSnapshot, localUpserts: TableRow[], table
 }
 
 /**
- * Tolerance for the gauge ledger-completeness check below. A gauge's value and its deltas are
- * REALs summed in floating point, so an exactly-reconstructing ledger can still miss by an ULP
- * or two after a few hundred adjustments. Far below any real measurement (a millionth of a gram
- * or millilitre), so it admits genuine rounding without admitting a missing entry.
+ * Tolerance for the gauge ledger-completeness check below, **relative to the capacity**.
+ *
+ * A gauge's value and its deltas are REALs summed in floating point. Each individual delta is
+ * recorded exactly, but a long running sum sitting near `−gross` accumulates error on the order
+ * of `n × ulp(gross)` — so the drift scales with the *capacity*, not with the size of the
+ * movements. A fixed absolute tolerance therefore holds for a 1 kg spool and fails for the same
+ * spool expressed in milligrams. Scaling by the capacity keeps it a millionth of the gauge's own
+ * span either way: far below any real measurement, and far above the rounding.
  */
 const GAUGE_REPLAY_EPSILON = 1e-6;
 
 /**
  * Whether one side's gauge ledger reconstructs the value that side actually stores — i.e. it
- * still holds every delta since the gauge was filled, and replaying it loses no baseline.
+ * still holds every delta since the gauge was last at capacity, so replaying it loses no
+ * baseline.
  *
  * A side whose ledger was **deliberately emptied** does not: the §7.6.3-A retention prune, the
  * Danger-Zone "activity history" erase and the per-item Activity Log clear (issue #620) all
  * delete `GAUGE_UPDATE` rows while leaving `current_net_value` untouched, so replaying what
  * remains reconstructs `gross + 0` — a half-empty bottle that reports itself full.
+ *
+ * Nor does a gauge that never had a complete ledger to begin with: one **created part-full**
+ * (or cloned, which resets the value) has no opening delta to be its baseline, and one whose
+ * **capacity was reconfigured** carries deltas measured against the old span. Those are not
+ * emptied ledgers but they are equally baseline-less, and this check cannot tell them apart —
+ * nor does it need to. All of them fall back to Last-Write-Wins, which is what the value on the
+ * row already is; only a gauge whose whole history is present keeps the delta replay.
  */
 function gaugeLedgerReconstructs(row: SqlRow, deltas: readonly GaugeHistoryDelta[]): boolean {
   const gross = num(row.gross_capacity);
-  if (!Number.isFinite(gross)) return false;
-  return Math.abs(replayGaugeValue(gross, deltas) - num(row.current_net_value)) <= GAUGE_REPLAY_EPSILON;
+  const stored = num(row.current_net_value);
+  // A row missing either figure describes no gauge this can check — refuse rather than compare
+  // against a coerced NULL, which would quietly read as "is the replay zero?".
+  if (!Number.isFinite(gross) || !Number.isFinite(stored)) return false;
+  return Math.abs(replayGaugeValue(gross, deltas) - stored) <= GAUGE_REPLAY_EPSILON * Math.max(1, gross);
 }
 
 /**
@@ -1493,10 +1508,12 @@ function gaugeLedgerReconstructs(row: SqlRow, deltas: readonly GaugeHistoryDelta
  *  1. **Contested** — only a gauge both devices hold can have diverged; a one-sided one keeps
  *     the LWW value the merge upsert already carried.
  *  2. **Ledger complete on both sides** — the deltas only reconstruct the value when every
- *     movement since the gauge was filled is present. A side whose ledger was emptied on
- *     purpose is *baseline-less*, and replaying it would converge both devices on a wrong
- *     figure — `gross + 0`, i.e. a full gauge — and then propagate it. Such a side falls back
- *     to LWW, which is never worse than the value the row already carries.
+ *     movement since the gauge was last at capacity is present. A *baseline-less* side (see
+ *     {@link gaugeLedgerReconstructs} for how one comes about) would otherwise converge both
+ *     devices on a figure the ledger cannot support — `gross + 0`, i.e. a full gauge — and then
+ *     propagate it. Such a side falls back to LWW, which is never worse than the value the row
+ *     already carries. Each side is checked against its **own** stored row, since the whole
+ *     question is whether *that* device's ledger explains *that* device's value.
  */
 function reconcileGauges(
   local: SyncSnapshot,
@@ -1519,8 +1536,7 @@ function reconcileGauges(
     if (!Number.isFinite(gross)) continue;
     const localSide = localDeltas.get(id) ?? [];
     const remoteSide = remoteDeltas.get(id) ?? [];
-    // (2) Each side is checked against its **own** stored row and capacity: a device that
-    // reconfigured the capacity still has a complete ledger for the gauge it is describing.
+    // (2) Each side against its own stored row — see the note on the function.
     if (!gaugeLedgerReconstructs(localRow, localSide)) continue;
     if (!gaugeLedgerReconstructs(remoteRow, remoteSide)) continue;
     const netValue = reconcileGauge(gross, localSide, remoteSide);

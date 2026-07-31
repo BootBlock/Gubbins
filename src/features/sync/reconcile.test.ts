@@ -496,6 +496,35 @@ describe('reconcile (§7.3 / §7.5)', () => {
     expect(reconcile(local, remote, opts).gaugeResolutions).toEqual([]);
   });
 
+  it('§7.3 Delta-CRDT tolerates float drift in proportion to the gauge’s own capacity', () => {
+    // A fine-grained capacity (10 kg in milligrams) with thousands of fractional movements
+    // accumulates a running-sum error on the order of n × ulp(gross) — which is drift, not a
+    // missing entry. A fixed absolute tolerance would read it as a broken ledger and switch the
+    // CRDT off for the item permanently.
+    const gross = 1e7;
+    const drift = 5e-7 * gross; // millions of times an absolute 1e-6, half a millionth of capacity
+    const gauge = {
+      id: 'vat',
+      name: 'Resin',
+      location_id: UNASSIGNED_LOCATION_ID,
+      tracking_mode: 'CONSUMABLE_GAUGE',
+      gross_capacity: gross,
+      updated_at: 10,
+    };
+    const local = snapshot({
+      tables: { items: [{ ...gauge, current_net_value: gross - 100 + drift }] },
+      gaugeHistory: [{ id: 'hA', itemId: 'vat', netValueDelta: -100, createdAt: 1 }],
+    });
+    const remote = snapshot({
+      tables: { items: [{ ...gauge, current_net_value: gross - 40 - drift, updated_at: 20 }] },
+      gaugeHistory: [{ id: 'hB', itemId: 'vat', netValueDelta: -40, createdAt: 2 }],
+    });
+    // Both usages still survive the merge: 1e7 − 100 − 40.
+    expect(reconcile(local, remote, opts).gaugeResolutions).toEqual([
+      { itemId: 'vat', netValue: gross - 140 },
+    ]);
+  });
+
   describe('§4 alias-text collision (UNIQUE(alias) safety)', () => {
     it('downloads a non-colliding remote alias normally', () => {
       const remote = snapshot({
