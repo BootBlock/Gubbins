@@ -208,6 +208,7 @@ export function useLinkItemToRegion(photoId: string) {
         : getLocationPhotoRepository().unlinkItem(itemId, regionId),
     onSettled: (_d, _e, { itemId, regionId }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemPlacements(itemId) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) });
       void client.invalidateQueries({ queryKey: inventoryKeys.photoRegions(photoId) });
       void client.invalidateQueries({
         queryKey: inventoryKeys.regionItems(regionId),
@@ -251,6 +252,7 @@ export function useSetItemPlacement() {
     },
     onSettled: (_d, _e, { itemId, from, to }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemPlacements(itemId) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) });
       for (const end of [from, to]) {
         if (!end) continue;
         void client.invalidateQueries({ queryKey: inventoryKeys.photoRegions(end.photoId) });

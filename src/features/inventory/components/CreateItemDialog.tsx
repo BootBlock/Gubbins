@@ -52,6 +52,7 @@ import {
   type ScrapeResultPayload,
 } from '@/features/scraping';
 import { useCategories } from '../categories';
+import { useCategorySectionVisibility } from '../useItemSectionVisibility';
 import { ATTRITION_PERCENT_BOUNDS, isValidAttritionPercent } from '@/db/repositories/gauge';
 import {
   GAUGE_ATTRITION_HINT,
@@ -452,6 +453,14 @@ export function CreateItemDialog({
   // Soft, non-blocking heads-up when the chosen home is already at/over its capacity: the
   // add is still allowed (capacity is a guideline, not a hard cap), but the user is warned.
   const chosenLocationId = watch('locationId');
+  // Which lifecycle fields this form offers, on the same two axes as the item detail dialog:
+  // the device's enabled modules, then the chosen category's own hidden set (issue #618). A
+  // not-yet-created item holds nothing, so there is no existing data for hiding to bury —
+  // which is also why each guards its *write* below, not just its rendering.
+  const isVisible = useCategorySectionVisibility(watch('categoryId') || null);
+  const showExpiry = isVisible('perishables', false);
+  const showWarranty = isVisible('warranty', false);
+  const showBatches = isVisible('batches', false);
   const fullLocation = useMemo(() => {
     const loc = locations.find((l) => l.id === chosenLocationId);
     return loc && isLocationFull(loc.itemCount, loc.capacity) ? loc : null;
@@ -626,9 +635,17 @@ export function CreateItemDialog({
 
     // Warranty window → absolute expiry (backlog T2): a whole-month window is measured from the
     // acquired-on date (else today), matching the category-template default's "N-month warranty".
-    const warrantyExpiresAt = values.warrantyMonths?.trim()
-      ? warrantyExpiryFromWindow(values.acquiredAt?.trim() || null, Number(values.warrantyMonths), Date.now())
-      : null;
+    // `showWarranty` guards the derivation as well as the field: a value typed before the
+    // category was chosen survives in form state after the box unmounts, and turning that into
+    // an expiry the user can no longer see would make hiding write data rather than just hide it.
+    const warrantyExpiresAt =
+      showWarranty && values.warrantyMonths?.trim()
+        ? warrantyExpiryFromWindow(
+            values.acquiredAt?.trim() || null,
+            Number(values.warrantyMonths),
+            Date.now(),
+          )
+        : null;
 
     const base = {
       name: values.name.trim(),
@@ -645,9 +662,14 @@ export function CreateItemDialog({
       // Acquisition date (§4, v24) — an ISO `YYYY-MM-DD` string; pre-fillable from a scanned receipt.
       ...(values.acquiredAt?.trim() ? { acquiredAt: values.acquiredAt.trim() } : {}),
       // Phase 9 perishables & condition (§4) — all optional.
-      ...(values.expiryDate?.trim() ? { expiryDate: fromDateInputValue(values.expiryDate) } : {}),
-      ...(values.batchNumber?.trim() ? { batchNumber: values.batchNumber.trim() } : {}),
-      ...(values.lotNumber?.trim() ? { lotNumber: values.lotNumber.trim() } : {}),
+      // Same guard as the warranty derivation above: a value typed before a hiding category was
+      // chosen stays in form state after its box unmounts, and submitting it would let hiding
+      // *write* rather than merely hide.
+      ...(showExpiry && values.expiryDate?.trim()
+        ? { expiryDate: fromDateInputValue(values.expiryDate) }
+        : {}),
+      ...(showBatches && values.batchNumber?.trim() ? { batchNumber: values.batchNumber.trim() } : {}),
+      ...(showBatches && values.lotNumber?.trim() ? { lotNumber: values.lotNumber.trim() } : {}),
       ...(values.condition ? { condition: values.condition as CreateItemInput['condition'] } : {}),
       // Warranty expiry derived from the months window above (backlog T2) — omitted when unset.
       ...(warrantyExpiresAt ? { warrantyExpiresAt } : {}),
@@ -949,7 +971,16 @@ export function CreateItemDialog({
               if (cat && !conditionTouched.current && cat.defaultCondition) {
                 setValue('condition', cat.defaultCondition);
               }
-              if (cat && !warrantyMonthsTouched.current && cat.defaultWarrantyMonths != null) {
+              // Only pre-fill a field the user can actually see. React Hook Form keeps the
+              // value of an unmounted field, so pre-filling a hidden Warranty box would stamp
+              // an expiry date onto the item that never appeared on screen and — with the
+              // module off — could not be found or cleared afterwards.
+              if (
+                cat &&
+                !warrantyMonthsTouched.current &&
+                cat.defaultWarrantyMonths != null &&
+                isVisible('warranty', false)
+              ) {
                 setValue('warrantyMonths', String(cat.defaultWarrantyMonths));
               }
             }}
@@ -1317,16 +1348,18 @@ export function CreateItemDialog({
       >
         <Input type="date" data-testid="item-acquired" {...register('acquiredAt')} />
       </FormField>
-      <FormField
-        label="Expiry date (optional)"
-        hint={
-          'When this stock expires or is best used by. Items nearing expiry surface on the ' +
-          'dashboard **Soon to expire** widget so nothing quietly goes off.\n\nLeave blank for ' +
-          'non-perishables.'
-        }
-      >
-        <Input type="date" data-testid="item-expiry" {...register('expiryDate')} />
-      </FormField>
+      {showExpiry ? (
+        <FormField
+          label="Expiry date (optional)"
+          hint={
+            'When this stock expires or is best used by. Items nearing expiry surface on the ' +
+            'dashboard **Soon to expire** widget so nothing quietly goes off.\n\nLeave blank for ' +
+            'non-perishables.'
+          }
+        >
+          <Input type="date" data-testid="item-expiry" {...register('expiryDate')} />
+        </FormField>
+      ) : null}
       <Controller
         control={control}
         name="condition"
@@ -1350,47 +1383,53 @@ export function CreateItemDialog({
           />
         )}
       />
-      <FormField
-        label="Warranty (months, optional)"
-        hint={
-          'How long this item is under warranty, in **whole months**. On create this is turned ' +
-          'into a warranty **expiry date** measured from the *Acquired date* above (or today, if ' +
-          'that is blank) — so a *12* here on an item acquired today expires in a year.\n\n' +
-          'A category can pre-fill this for its items; leave blank for no warranty. You can set an ' +
-          'exact expiry date later from the item’s **Asset** details.'
-        }
-      >
-        <Input
-          type="number"
-          min={1}
-          step={1}
-          inputMode="numeric"
-          placeholder="e.g. 12"
-          data-testid="item-warranty-months"
-          {...register('warrantyMonths', {
-            // A manual edit disables the category-default soft prefill (backlog T2) from here on.
-            onChange: () => {
-              warrantyMonthsTouched.current = true;
-            },
-          })}
-        />
-      </FormField>
-      <FormField
-        label="Batch no. (optional)"
-        hint={
-          'A maker/supplier **batch** identifier for traceability.\n\n' +
-          '> Stock received under different batches is kept as separate lots and consumed ' +
-          '**oldest-first (FEFO)**.'
-        }
-      >
-        <Input placeholder="e.g. B-42" {...register('batchNumber')} />
-      </FormField>
-      <FormField
-        label="Lot no. (optional)"
-        hint="A finer **lot** identifier within a batch, when your supplier distinguishes the two. Optional — leave blank if you only track a batch."
-      >
-        <Input placeholder="e.g. L-7" {...register('lotNumber')} />
-      </FormField>
+      {showWarranty ? (
+        <FormField
+          label="Warranty (months, optional)"
+          hint={
+            'How long this item is under warranty, in **whole months**. On create this is turned ' +
+            'into a warranty **expiry date** measured from the *Acquired date* above (or today, if ' +
+            'that is blank) — so a *12* here on an item acquired today expires in a year.\n\n' +
+            'A category can pre-fill this for its items; leave blank for no warranty. You can set an ' +
+            'exact expiry date later from the item’s **Asset** details.'
+          }
+        >
+          <Input
+            type="number"
+            min={1}
+            step={1}
+            inputMode="numeric"
+            placeholder="e.g. 12"
+            data-testid="item-warranty-months"
+            {...register('warrantyMonths', {
+              // A manual edit disables the category-default soft prefill (backlog T2) from here on.
+              onChange: () => {
+                warrantyMonthsTouched.current = true;
+              },
+            })}
+          />
+        </FormField>
+      ) : null}
+      {showBatches ? (
+        <>
+          <FormField
+            label="Batch no. (optional)"
+            hint={
+              'A maker/supplier **batch** identifier for traceability.\n\n' +
+              '> Stock received under different batches is kept as separate lots and consumed ' +
+              '**oldest-first (FEFO)**.'
+            }
+          >
+            <Input placeholder="e.g. B-42" {...register('batchNumber')} />
+          </FormField>
+          <FormField
+            label="Lot no. (optional)"
+            hint="A finer **lot** identifier within a batch, when your supplier distinguishes the two. Optional — leave blank if you only track a batch."
+          >
+            <Input placeholder="e.g. L-7" {...register('lotNumber')} />
+          </FormField>
+        </>
+      ) : null}
     </div>
   );
 

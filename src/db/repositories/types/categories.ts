@@ -22,6 +22,11 @@ export interface CategoryRow {
   readonly default_maintenance_interval_days: number | null;
   /** USAGE interval in units for the default maintenance schedule (backlog T2a); null otherwise. */
   readonly default_maintenance_interval_usage: number | null;
+  /**
+   * Capabilities this category's items don't have (issue #618) — a JSON array of `FeatureId`
+   * strings, or null when nothing is hidden. Parsed tolerantly at the mapper boundary.
+   */
+  readonly hidden_capabilities: string | null;
   readonly updated_at: number;
 }
 
@@ -61,6 +66,19 @@ export interface Category {
   readonly defaultMaintenanceIntervalDays: number | null;
   /** USAGE interval in units (backlog T2a); non-null only when the basis is USAGE and set. */
   readonly defaultMaintenanceIntervalUsage: number | null;
+  /**
+   * Capabilities this category's items don't have (issue #618) — the ids of module
+   * capabilities whose item-detail sections this category suppresses. Empty when nothing is
+   * hidden; a malformed stored value reads as empty rather than throwing.
+   *
+   * Deliberately `string[]` rather than `FeatureId[]`: this layer is imported by the bridge,
+   * and the feature registry that owns `FeatureId` drags in icons and route types. Ids are
+   * also kept **verbatim**, including any this build doesn't recognise — a peer on a newer
+   * version may hide a capability that doesn't exist here yet, and narrowing on read would
+   * quietly discard its choice the next time this device writes the row back. Recognition is
+   * the render boundary's job, not storage's.
+   */
+  readonly hiddenCapabilities: readonly string[];
   readonly updatedAt: number;
 }
 
@@ -85,6 +103,8 @@ export interface CreateCategoryInput {
   readonly defaultMaintenanceIntervalDays?: number | null;
   /** USAGE interval in units for the default maintenance schedule (backlog T2a); omit/null for none. */
   readonly defaultMaintenanceIntervalUsage?: number | null;
+  /** Capabilities this category's items don't have (issue #618); omit/empty for none. */
+  readonly hiddenCapabilities?: readonly string[] | null;
 }
 
 export interface UpdateCategoryInput {
@@ -103,6 +123,8 @@ export interface UpdateCategoryInput {
   readonly defaultMaintenanceIntervalDays?: number | null;
   /** USAGE interval in units for the default maintenance schedule (backlog T2a); null clears it. */
   readonly defaultMaintenanceIntervalUsage?: number | null;
+  /** Capabilities this category's items don't have (issue #618); null or `[]` clears it. */
+  readonly hiddenCapabilities?: readonly string[] | null;
 }
 
 // --- Category custom fields (spec §4 "Categories & Schema Evolution") -----------

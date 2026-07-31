@@ -106,13 +106,27 @@ interface ResolvedFieldRow extends CategoryFieldRow {
 const SELECT_WITH_FIELD_COUNT = `
   SELECT c.id, c.name, c.glyph, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
          c.default_maintenance_basis, c.default_maintenance_interval_days,
-         c.default_maintenance_interval_usage,
+         c.default_maintenance_interval_usage, c.hidden_capabilities,
          c.updated_at, COUNT(f.id) AS field_count
   FROM categories c
   LEFT JOIN category_fields f ON f.category_id = c.id
   GROUP BY c.id
   ORDER BY c.name COLLATE NOCASE ASC
 `;
+
+/**
+ * Serialise a category's hidden-capability set (issue #618) for storage.
+ *
+ * "Nothing hidden" is stored as NULL and never as `"[]"` or `"null"`, so the column has one
+ * canonical empty form and an LWW merge can't see two spellings of the same choice as a
+ * change. Ids are trimmed, de-duplicated and order-stabilised for the same reason: an editor
+ * that reorders the picker must not produce a write that looks like an edit.
+ */
+function serialiseHiddenCapabilities(ids: readonly string[] | null | undefined): string | null {
+  if (ids == null) return null;
+  const unique = [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))].sort();
+  return unique.length > 0 ? JSON.stringify(unique) : null;
+}
 
 export class CategoryRepository extends BaseRepository {
   async getById(id: string): Promise<Category | undefined> {
@@ -158,8 +172,9 @@ export class CategoryRepository extends BaseRepository {
     await this.driver.execute(
       `INSERT INTO categories
          (id, name, glyph, default_tracking_mode, default_condition, default_warranty_months,
-          default_maintenance_basis, default_maintenance_interval_days, default_maintenance_interval_usage)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          default_maintenance_basis, default_maintenance_interval_days, default_maintenance_interval_usage,
+          hidden_capabilities)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         name,
@@ -170,6 +185,7 @@ export class CategoryRepository extends BaseRepository {
         input.defaultMaintenanceBasis ?? null,
         input.defaultMaintenanceIntervalDays ?? null,
         input.defaultMaintenanceIntervalUsage ?? null,
+        serialiseHiddenCapabilities(input.hiddenCapabilities),
       ],
     );
     return (await this.getById(id))!;
@@ -219,6 +235,10 @@ export class CategoryRepository extends BaseRepository {
     if (input.defaultMaintenanceIntervalUsage !== undefined) {
       sets.push('default_maintenance_interval_usage = ?');
       params.push(input.defaultMaintenanceIntervalUsage);
+    }
+    if (input.hiddenCapabilities !== undefined) {
+      sets.push('hidden_capabilities = ?');
+      params.push(serialiseHiddenCapabilities(input.hiddenCapabilities));
     }
     if (sets.length > 0) {
       params.push(id);

@@ -198,6 +198,10 @@ export function useSetItemTags(itemId: string) {
     tagsKey: inventoryKeys.itemTags(itemId),
     headingKey: 'inventory.writeError.heading.tagsItem',
     write: (names) => getTagRepository().setForItem(itemId, names),
+    // Gaining a first tag must un-hide the Tags section for a category that hides it (issue
+    // #618); the presence probe is a deeper key than `itemTags`, so no prefix sweep reaches it.
+    invalidateExtra: (client) =>
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) }),
   });
 }
 

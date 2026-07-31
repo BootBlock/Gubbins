@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -26,8 +26,10 @@ import {
   type TrackingMode,
 } from '@/db/repositories';
 import { useT } from '@/features/i18n';
+import type { FeatureId } from '@/features/modules/feature-registry';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
 import { builtInFieldNameClash } from '../builtin-field-names';
+import { HIDEABLE_CAPABILITIES, toggleHiddenCapability } from '../category-capabilities';
 import {
   useAddCategoryField,
   useCategories,
@@ -362,7 +364,117 @@ function CategoryDetail({
       <AddFieldForm categoryId={category.id} />
 
       <CategoryDefaultsSection category={category} />
+
+      <CategoryHiddenSectionsPanel category={category} />
     </div>
+  );
+}
+
+/**
+ * Which sections this category's items don't need (issue #618).
+ *
+ * Deliberately a separate box from "Defaults for new items": those pre-fill a *new* item and
+ * never touch existing ones, whereas this changes what **every** item in the category shows,
+ * now and in future. Presenting them together would imply the wrong scope.
+ *
+ * Ticking hides — the question is "what doesn't this kind of thing have?", which is the way
+ * round a user thinks about a Movie having no service schedule. Saving is immediate, matching
+ * every other control in this dialog; a set toggle is never transiently invalid, so unlike the
+ * warranty and interval fields it needs no local buffer.
+ */
+function CategoryHiddenSectionsPanel({ category }: { category: CategoryWithFieldCount }) {
+  const t = useT();
+  const updateCategory = useUpdateCategory();
+
+  // Unlike every other control in this dialog, this one writes a *set* held in a single column,
+  // so each toggle is a read-modify-write of the whole value. Reading the base from the query
+  // cache would lose ticks: the write is not optimistic, so a second toggle made before the
+  // refetch lands would compute from the pre-first-toggle array and silently drop it — and
+  // since the column is synced LWW, that discard would propagate to other devices. Ticking
+  // several boxes in a row is exactly how this control gets used, so the local draft is the
+  // base, reseeded when a different category is selected (the buffer idiom used above).
+  const [draft, setDraft] = useState<readonly string[]>(category.hiddenCapabilities);
+  const seededFor = useRef(category.id);
+  useEffect(() => {
+    if (seededFor.current !== category.id) {
+      seededFor.current = category.id;
+      setDraft(category.hiddenCapabilities);
+    }
+  }, [category.id, category.hiddenCapabilities]);
+
+  const hidden = new Set(draft);
+
+  const toggle = (id: FeatureId, hide: boolean) => {
+    const next = toggleHiddenCapability(draft, id, hide);
+    setDraft(next);
+    updateCategory.mutate({ id: category.id, input: { hiddenCapabilities: next } });
+  };
+
+  // A category that both *applies* a maintenance schedule to every new item and hides the
+  // section showing it would be quietly contradictory — the schedule would be created and then
+  // made invisible. Rather than silently dropping either half of the user's stated intent, say
+  // so and offer the fix; clearing stored configuration behind their back would be worse.
+  const maintenanceConflict = hidden.has('maintenance') && category.defaultMaintenanceBasis !== null;
+
+  return (
+    <fieldset className="space-y-field-gap-compact rounded-lg border border-border bg-secondary/10 p-2.5">
+      {/* The legend *is* the visible heading: a sr-only legend beside an identical <h4> would
+          name the group twice to a screen reader for no visual gain. */}
+      <legend className="flex items-center gap-1.5 text-sm font-semibold">
+        {t('category.hiddenSections.title')}
+        <InfoHint content={t('category.hiddenSections.hint')} />
+      </legend>
+      <p className="text-xs text-muted-foreground">{t('category.hiddenSections.blurb')}</p>
+
+      <div className="space-y-1">
+        {HIDEABLE_CAPABILITIES.map((feature) => (
+          // eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested checkbox is correctly associated; the label's text is the feature's registry name, which the linter cannot resolve to a static string.
+          <label
+            key={feature.id}
+            className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-secondary/40"
+          >
+            <Checkbox
+              checked={hidden.has(feature.id)}
+              onChange={(e) => toggle(feature.id, e.target.checked)}
+              className="mt-0.5"
+              data-testid={`category-hide-${feature.id}`}
+            />
+            <span className="flex-1">
+              <span className="block text-xs font-medium">{feature.label}</span>
+              <span className="block text-xs text-muted-foreground">{feature.description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      {maintenanceConflict ? (
+        <Banner
+          tone="warning"
+          icon={<WarningIcon aria-hidden />}
+          action={
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="category-hide-maintenance-conflict-clear"
+              onClick={() =>
+                updateCategory.mutate({
+                  id: category.id,
+                  input: {
+                    defaultMaintenanceBasis: null,
+                    defaultMaintenanceIntervalDays: null,
+                    defaultMaintenanceIntervalUsage: null,
+                  },
+                })
+              }
+            >
+              {t('category.hiddenSections.maintenanceConflictAction')}
+            </Button>
+          }
+        >
+          {t('category.hiddenSections.maintenanceConflict')}
+        </Banner>
+      ) : null}
+    </fieldset>
   );
 }
 

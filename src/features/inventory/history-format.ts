@@ -43,6 +43,7 @@ const ACTION_LABELS: Record<HistoryAction, string> = {
   REVALUED: 'Revalued',
   TESTED: 'Test recorded',
   ATTRIBUTES_CHANGED: 'Details changed',
+  HISTORY_CLEARED: 'Activity log cleared',
 };
 
 /**

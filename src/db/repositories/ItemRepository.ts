@@ -26,6 +26,7 @@ import { withCycleCount } from './item/cycle-count';
 import { withRevaluations } from './item/revaluations';
 import { withRelations } from './item/relations';
 import { withTestRecords } from './item/test-records';
+import { withSectionPresence } from './item/section-presence';
 
 export type { ItemListFilters, ItemSeek } from './item/core';
 export type { ItemSort, ItemSortField } from './item/sql';
@@ -43,6 +44,7 @@ export type { SearchByAstParams } from './item/search';
 export type { LocationStockLine, ItemBatchPlacement, LocationBatchLine } from './item/stock';
 export type { KitComponent, AssembleOptions } from './item/kits';
 export type { ItemStatusCount } from './item/feeds';
+export { NO_SECTION_PRESENCE, type ItemSectionPresence } from './item/section-presence';
 
 /**
  * The complete item repository: the CRUD core with every concern mixin layered on.
@@ -57,7 +59,9 @@ export class ItemRepository extends withStock(
           withVariants(
             withKits(
               withDashboardFeeds(
-                withCycleCount(withRevaluations(withRelations(withTestRecords(ItemCoreRepository)))),
+                withCycleCount(
+                  withRevaluations(withRelations(withTestRecords(withSectionPresence(ItemCoreRepository)))),
+                ),
               ),
             ),
           ),

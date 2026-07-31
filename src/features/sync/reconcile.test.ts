@@ -473,6 +473,58 @@ describe('reconcile (§7.3 / §7.5)', () => {
     expect(plan.gaugeResolutions).toEqual([{ itemId: 'spool', netValue: 945 }]);
   });
 
+  it('§7.3 Delta-CRDT keeps the LWW value when a side’s gauge ledger was emptied', () => {
+    // The local device cleared or pruned its ledger: the row still says 400 of 1000, but the
+    // deltas that explain it are gone. Replaying what is left would reconstruct `1000 + 0` and
+    // report a nearly-empty bottle as full — on both devices, permanently.
+    const localItems = [
+      {
+        id: 'spool',
+        name: 'PLA',
+        location_id: UNASSIGNED_LOCATION_ID,
+        tracking_mode: 'CONSUMABLE_GAUGE',
+        gross_capacity: 1000,
+        current_net_value: 400,
+        updated_at: 10,
+      },
+    ];
+    const local = snapshot({ tables: { items: localItems }, gaugeHistory: [] });
+    const remote = snapshot({
+      tables: { items: [{ ...localItems[0]!, current_net_value: 400, updated_at: 20 }] },
+      gaugeHistory: [{ id: 'hA', itemId: 'spool', netValueDelta: -600, createdAt: 1 }],
+    });
+    expect(reconcile(local, remote, opts).gaugeResolutions).toEqual([]);
+  });
+
+  it('§7.3 Delta-CRDT tolerates float drift in proportion to the gauge’s own capacity', () => {
+    // A fine-grained capacity (10 kg in milligrams) with thousands of fractional movements
+    // accumulates a running-sum error on the order of n × ulp(gross) — which is drift, not a
+    // missing entry. A fixed absolute tolerance would read it as a broken ledger and switch the
+    // CRDT off for the item permanently.
+    const gross = 1e7;
+    const drift = 5e-7 * gross; // millions of times an absolute 1e-6, half a millionth of capacity
+    const gauge = {
+      id: 'vat',
+      name: 'Resin',
+      location_id: UNASSIGNED_LOCATION_ID,
+      tracking_mode: 'CONSUMABLE_GAUGE',
+      gross_capacity: gross,
+      updated_at: 10,
+    };
+    const local = snapshot({
+      tables: { items: [{ ...gauge, current_net_value: gross - 100 + drift }] },
+      gaugeHistory: [{ id: 'hA', itemId: 'vat', netValueDelta: -100, createdAt: 1 }],
+    });
+    const remote = snapshot({
+      tables: { items: [{ ...gauge, current_net_value: gross - 40 - drift, updated_at: 20 }] },
+      gaugeHistory: [{ id: 'hB', itemId: 'vat', netValueDelta: -40, createdAt: 2 }],
+    });
+    // Both usages still survive the merge: 1e7 − 100 − 40.
+    expect(reconcile(local, remote, opts).gaugeResolutions).toEqual([
+      { itemId: 'vat', netValue: gross - 140 },
+    ]);
+  });
+
   describe('§4 alias-text collision (UNIQUE(alias) safety)', () => {
     it('downloads a non-colliding remote alias normally', () => {
       const remote = snapshot({
@@ -587,6 +639,90 @@ describe('reconcile (§7.3 / §7.5)', () => {
       });
       const plan = reconcile(local, remote, opts);
       expect(plan.historyInserts[0]).not.toHaveProperty('future_col');
+    });
+
+    describe('issue #620 — a per-item clear survives the union', () => {
+      /** The entry a clear leaves behind, at `at`. */
+      const clearedAt = (at: number, id = `cleared-${at}`) => ({
+        id,
+        item_id: 'i1',
+        action: 'HISTORY_CLEARED',
+        created_at: at,
+      });
+
+      it('refuses to re-import the entries a local clear removed', () => {
+        // This device cleared at 200; the peer still holds the entries from before it.
+        const local = snapshot({ tables: { items: [item] }, itemHistory: [clearedAt(200)] });
+        const remote = snapshot({
+          tables: { items: [item] },
+          itemHistory: [
+            { id: 'h1', item_id: 'i1', action: 'CREATED', created_at: 100 },
+            { id: 'h2', item_id: 'i1', action: 'ADJUSTED', created_at: 300 },
+          ],
+        });
+        const plan = reconcile(local, remote, opts);
+        // Only the entry recorded *after* the clear comes across.
+        expect(plan.historyInserts.map((r) => r.id)).toEqual(['h2']);
+        // Nothing local to remove — this device already cleared.
+        expect(plan.historyClears).toHaveLength(0);
+      });
+
+      it('adopts a peer’s clear, deleting the entries this device still holds', () => {
+        const local = snapshot({
+          tables: { items: [item] },
+          itemHistory: [
+            { id: 'h1', item_id: 'i1', action: 'CREATED', created_at: 100 },
+            { id: 'h2', item_id: 'i1', action: 'ADJUSTED', created_at: 300 },
+          ],
+        });
+        const remote = snapshot({ tables: { items: [item] }, itemHistory: [clearedAt(200)] });
+        const plan = reconcile(local, remote, opts);
+        // The marker itself unions in, and everything before it goes.
+        expect(plan.historyInserts.map((r) => r.id)).toEqual(['cleared-200']);
+        expect(plan.historyClears).toEqual([{ itemId: 'i1', before: 200 }]);
+      });
+
+      it('takes the newest clear when both devices cleared, converging on one marker', () => {
+        const local = snapshot({ tables: { items: [item] }, itemHistory: [clearedAt(200, 'local')] });
+        const remote = snapshot({ tables: { items: [item] }, itemHistory: [clearedAt(500, 'remote')] });
+        const plan = reconcile(local, remote, opts);
+        expect(plan.historyInserts.map((r) => r.id)).toEqual(['remote']);
+        // The earlier marker is itself older than the newest clear, so it goes too.
+        expect(plan.historyClears).toEqual([{ itemId: 'i1', before: 500 }]);
+      });
+
+      it('scopes a clear to its own item', () => {
+        const other = { ...item, id: 'i2' };
+        const local = snapshot({
+          tables: { items: [item, other] },
+          itemHistory: [{ id: 'h1', item_id: 'i2', action: 'CREATED', created_at: 100 }],
+        });
+        const remote = snapshot({ tables: { items: [item, other] }, itemHistory: [clearedAt(200)] });
+        const plan = reconcile(local, remote, opts);
+        expect(plan.historyClears).toHaveLength(0);
+      });
+
+      it('emits nothing when the two devices already agree', () => {
+        const cleared = clearedAt(200);
+        const local = snapshot({ tables: { items: [item] }, itemHistory: [cleared] });
+        const remote = snapshot({ tables: { items: [item] }, itemHistory: [cleared] });
+        const plan = reconcile(local, remote, opts);
+        expect(plan.historyInserts).toHaveLength(0);
+        expect(plan.historyClears).toHaveLength(0);
+      });
+
+      it('skips a clear for an item that will not survive the merge', () => {
+        const local = snapshot({
+          tables: { items: [item] },
+          itemHistory: [{ id: 'h1', item_id: 'i1', action: 'CREATED', created_at: 100 }],
+        });
+        const remote = snapshot({
+          tombstones: [{ tableName: 'items', id: 'i1', deletedAt: 50 }],
+          itemHistory: [clearedAt(200)],
+        });
+        const plan = reconcile(local, remote, opts);
+        expect(plan.historyClears).toHaveLength(0);
+      });
     });
   });
 

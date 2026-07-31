@@ -12,17 +12,44 @@ import {
 import { restoreArchive } from '@/features/archive/restore-archive';
 import { createRescueBackup } from '@/features/backup/build-backup';
 import { useErrorMessage } from '@/features/errors';
+import { assertExhaustive } from '@/lib/exhaustive';
 import {
   DamagedDatabaseError,
   downloadJsonDump,
   downloadRawSqlite,
   hardResetLocalData,
+  IncompatibleDatabaseError,
   resetServiceWorkerOnly,
   restoreRawSqlite,
 } from './safe-mode-actions';
 
 /** A restore awaiting confirmation: a raw `.sqlite` binary or a full `.zip` archive. */
 type PendingRestore = { kind: 'sqlite' | 'archive'; file: File };
+
+/**
+ * Why a restore was refused, held so the user can read it and — if they still choose to —
+ * override. `damaged` carries what `integrity_check` said; `incompatible` has nothing to list,
+ * because a schema fingerprint means nothing to a reader (issue #501).
+ */
+type RestoreRefusal =
+  { readonly kind: 'damaged'; readonly problems: readonly string[] } | { readonly kind: 'incompatible' };
+
+/**
+ * The confirm button's wording — it must name the risk the user is accepting, which differs per
+ * refusal. Guarded so a third refusal kind cannot quietly inherit "this may lose records".
+ */
+function confirmRestoreLabel(refusal: RestoreRefusal | null): string {
+  if (refusal === null) return 'Confirm — restore & reload';
+  switch (refusal.kind) {
+    case 'damaged':
+      return 'Restore anyway — this may lose records';
+    case 'incompatible':
+      return 'Restore anyway — Gubbins may not start';
+    default:
+      assertExhaustive(refusal);
+      return 'Restore anyway';
+  }
+}
 
 export interface RescueActionsProps {
   /**
@@ -34,8 +61,8 @@ export interface RescueActionsProps {
    */
   readonly allowHardReset?: boolean;
   /**
-   * Show *only* the two restores (and, once a file is chosen, the confirmation and damage
-   * report). For the one caller whose database is not in trouble but empty: the data-loss notice
+   * Show *only* the two restores (and, once a file is chosen, the confirmation and whichever
+   * refusal applies). For the one caller whose database is not in trouble but empty: the data-loss notice
    * (issue #505), where the browser has already cleared the user's data and this fresh, healthy
    * database replaced it. There, every other action is worse than absent — a backup would
    * capture the empty database, the two diagnostic copies would hand the user a file of nothing,
@@ -58,12 +85,12 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
   const [pending, setPending] = useState<PendingRestore | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   /**
-   * The problems a rejected restore reported (issue #198). Non-null means the chosen file is a
-   * real SQLite database but a damaged one — held in state so the user can read *what* is wrong
-   * and, if they choose, override. Safe Mode must never dead-end a user whose only remaining
-   * copy is an imperfect one.
+   * Why the pre-flight refused the chosen file (issues #198, #501). Non-null means it is a real
+   * SQLite database that Gubbins will not restore as-is — damaged, or built by a schema this build
+   * cannot open — held in state so the user can read *why* and, if they choose, override. Safe
+   * Mode must never dead-end a user whose only remaining copy is an imperfect one.
    */
-  const [damage, setDamage] = useState<readonly string[] | null>(null);
+  const [refusal, setRefusal] = useState<RestoreRefusal | null>(null);
   /** What the rescue backup actually captured, once one has been taken (issue #197). */
   const [backupNote, setBackupNote] = useState<string | null>(null);
   const describeError = useErrorMessage();
@@ -118,13 +145,13 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
     const file = event.target.files?.[0] ?? null;
     event.target.value = '';
     setActionError(null);
-    setDamage(null);
+    setRefusal(null);
     setPending(file ? { kind, file } : null);
   };
 
   /**
    * Run the chosen restore. `force` re-runs one the pre-flight checks rejected, and is reachable
-   * only from the second confirmation shown after those problems have been displayed.
+   * only from the second confirmation shown after the reason has been displayed.
    */
   const confirmRestore = async (force = false) => {
     if (!pending) return;
@@ -137,17 +164,23 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
       else await restoreRawSqlite(pending.file, { force });
     } catch (error) {
       console.error('[gubbins] rescue action failed', error);
+      // Keep the file pending for either refusal: the whole point is to offer the override on the
+      // same screen. The refusal panel is the `role="alert"` here, so no second copy of the same
+      // news below.
       if (error instanceof DamagedDatabaseError) {
-        // Keep the file pending: the whole point is to offer the override on the same screen. The
-        // damage panel is the `role="alert"` here, so no second copy of the same news below.
-        setDamage(error.problems);
+        setRefusal({ kind: 'damaged', problems: error.problems });
+        setBusy(null);
+        return;
+      }
+      if (error instanceof IncompatibleDatabaseError) {
+        setRefusal({ kind: 'incompatible' });
         setBusy(null);
         return;
       }
       setActionError(describeError(error, 'Restore failed.'));
       setBusy(null);
       setPending(null);
-      setDamage(null);
+      setRefusal(null);
     }
   };
 
@@ -159,8 +192,8 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
            * The restorable rescue (issue #197), first and solid because it is the only one of these
            * downloads the app can read back in. The two below it are diagnostic copies: after the
            * hard reset this screen recommends, a `.sqlite` from the old schema is refused by the
-           * restore guard and the JSON dump has no importer at all — so leading with either would
-           * send the user into a purge holding a file that cannot bring their data back.
+           * baseline check (issue #501) and the JSON dump has no importer at all — so leading with
+           * either would send the user into a purge holding a file that cannot bring their data back.
            */}
           <Button variant="primary" onClick={takeBackup} disabled={busy !== null}>
             <ArchiveIcon /> Back up everything (.zip)
@@ -226,16 +259,16 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
             <strong>A copy of your current database is downloaded first</strong> so this can be undone.
           </p>
           {/*
-           * The damage report (issue #198). Shown only after the checks have rejected the file,
-           * and it replaces the ordinary confirm button with an explicit "restore anyway" — the
-           * user has to read what is wrong before they can act on it.
+           * The refusal report (issues #198, #501). Shown only after the checks have rejected the
+           * file, and it replaces the ordinary confirm button with an explicit "restore anyway" —
+           * the user has to read what is wrong before they can act on it.
            */}
-          {damage ? (
+          {refusal?.kind === 'damaged' ? (
             <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-2">
               <p className="font-medium">This database file is damaged — nothing has been changed:</p>
               <ul className="mt-1 list-disc ps-5">
                 {/* Indexed keys: integrity_check happily reports the same message twice. */}
-                {damage.map((problem, index) => (
+                {refusal.problems.map((problem, index) => (
                   <li key={index}>{problem}</li>
                 ))}
               </ul>
@@ -245,22 +278,45 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
               </p>
             </div>
           ) : null}
-          <div className="flex gap-2">
+          {/*
+           * The other refusal (issue #501): the file is intact, but was written by a version of
+           * Gubbins whose database shape this one cannot open — so restoring it swaps a working
+           * database for one that will not start. Points at the route that *does* work rather than
+           * only saying no.
+           */}
+          {refusal?.kind === 'incompatible' ? (
+            <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-2">
+              <p className="font-medium">
+                This file was made by a different version of Gubbins — nothing has been changed.
+              </p>
+              <p className="mt-1">
+                Gubbins is pre-release and cannot open a database built by another version, so restoring this
+                one would leave it unable to start. Use{' '}
+                <span className="font-medium">Back up everything (.zip)</span> above instead, then restore
+                that with <span className="font-medium">Merge</span> once Gubbins is running — that brings
+                your records across a change of database shape.
+              </p>
+            </div>
+          ) : null}
+          {/*
+           * Stacked, not a row: a `Button` label cannot wrap, and every "restore anyway" wording
+           * is wider than the half-row this panel can spare — so side by side, the risk the user
+           * is accepting was clipped mid-word on the one screen where it matters most.
+           */}
+          <div className="flex flex-col gap-2">
             <Button
               variant="destructive"
-              className="flex-1"
               data-testid="confirm-archive-restore"
-              onClick={() => void confirmRestore(damage !== null)}
+              onClick={() => void confirmRestore(refusal !== null)}
               disabled={busy !== null}
             >
-              <RestoreIcon />{' '}
-              {damage ? 'Restore anyway — this may lose records' : 'Confirm — restore & reload'}
+              <RestoreIcon /> {confirmRestoreLabel(refusal)}
             </Button>
             <Button
               variant="ghost"
               onClick={() => {
                 setPending(null);
-                setDamage(null);
+                setRefusal(null);
               }}
               disabled={busy !== null}
             >

@@ -27,7 +27,7 @@ import type {
   PageParams,
   UpdateItemInput,
 } from '../types';
-import { historyStatement } from './history';
+import { clearHistoryStatements, historyStatement } from './history';
 import {
   buildSeekPredicate,
   extractCursor,
@@ -753,6 +753,29 @@ export class ItemCoreRepository extends BaseRepository {
       [itemId, limit, offset],
     );
     return this.toPage(rows.map(rowToHistoryEntry), limit, offset);
+  }
+
+  /**
+   * Clear one item's Activity Log (issue #620), leaving a single `HISTORY_CLEARED` entry
+   * that records who cleared it and how many entries went. The ledger is append-only, and
+   * this is the only operation that removes **one item's** entries — the §7.6.3-A retention
+   * prune ({@link StorageRepository.pruneHistoryBefore}) and the Danger-Zone "activity
+   * history" erase both cut across the whole table. See {@link clearHistoryStatements} for
+   * why the marker is written before the delete.
+   *
+   * Gated on `audit:delete`, the same permission the storage-triage history prune uses:
+   * both destroy an audit trail, which is a strictly bigger deal than editing the item it
+   * belongs to. Deliberately **not** gated on the storage Hard Stop, for the same reason
+   * that prune is not — the operation reclaims space, and refusing it would trap the very
+   * user a locked device leaves stuck.
+   *
+   * `clearedBy` is the display label recorded in the entry's note: the signed-in user when
+   * the users module is on, otherwise a marker for the device that asked. The authoritative
+   * attribution is the entry's `actor_user_id`, written from the current actor as usual.
+   */
+  async clearHistory(id: string, clearedBy: string): Promise<void> {
+    this.assertPermission('audit:delete');
+    await this.driver.transaction(clearHistoryStatements(id, this.actorId(), clearedBy));
   }
 
   /** Fetch an item or throw a constraint error — the shared mutation precondition. */

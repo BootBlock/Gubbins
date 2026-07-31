@@ -60,6 +60,49 @@ export function historyStatement(
 }
 
 /**
+ * The two statements that clear one item's Activity Log (issue #620), for one atomic
+ * transaction. The ledger is emptied, but never to nothing: a single `HISTORY_CLEARED`
+ * entry replaces it, recording who ordered the clear and how much it destroyed.
+ *
+ * Order matters, and so does the shape:
+ *
+ *  - the marker is written **first**, so its `COUNT(*)` sees the pre-clear ledger and the
+ *    figure in its note is the exact number of entries that are about to go — no separate
+ *    count read that a concurrent write could invalidate between reading and deleting;
+ *  - the DELETE then removes everything for the item **except** that marker.
+ *
+ * The `INSERT … SELECT` is safe where the sibling {@link gaugeDeltaHistoryStatement} avoids
+ * one: it selects from a bare aggregate, which always yields exactly one row, so this can
+ * never quietly insert nothing. `item_id` stays a bound parameter, leaving `item_history`'s
+ * foreign key free to reject a clear aimed at an item that is not there.
+ *
+ * `clearedBy` is a display label for the person or device that asked (the caller's own
+ * wording — the machine-readable answer is `actor_user_id`, recorded alongside it).
+ */
+export function clearHistoryStatements(
+  itemId: string,
+  actorUserId: string,
+  clearedBy: string,
+): SqlStatement[] {
+  const markerId = crypto.randomUUID();
+  return [
+    {
+      sql: `INSERT INTO item_history (id, item_id, action, quantity_delta, net_value_delta, note, metadata, actor_user_id)
+            SELECT ?, ?, 'HISTORY_CLEARED', NULL, NULL,
+                   'Activity log cleared by ' || ? || '. ' || n ||
+                   CASE WHEN n = 1 THEN ' earlier entry was removed.' ELSE ' earlier entries were removed.' END,
+                   NULL, ?
+              FROM (SELECT COUNT(*) AS n FROM item_history WHERE item_id = ?);`,
+      params: [markerId, itemId, clearedBy, actorUserId, itemId],
+    },
+    {
+      sql: 'DELETE FROM item_history WHERE item_id = ? AND id <> ?;',
+      params: [itemId, markerId],
+    },
+  ];
+}
+
+/**
  * A gauge's net value *after* a write, as a SQL expression over the item's live row
  * (issue #297) — never a number computed in JavaScript from an earlier read.
  *

@@ -22,7 +22,7 @@ import { BUILTIN_USER_IDS, SYSTEM_USER_ID } from '@/db/repositories/constants';
 // now runs inside the database worker (issue #173), and the barrel wires the repository layer
 // to the main thread's session/preferences stores — pulling those into the worker would give
 // it a second, never-updated copy of state it has no business holding.
-import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
+import { UNASSIGNED_LOCATION_ID, type HistoryAction } from '@/db/repositories/constants';
 import {
   SYNC_TABLES,
   ITEM_HISTORY_TABLE,
@@ -40,7 +40,7 @@ import type { SqlRow } from '@/db/rpc/driver';
 import { resolveBookingConflicts, type BookingWindow } from '@/features/bookings/booking-overlap';
 import { applyOffset } from './clock';
 import { buildConflict, detectsConflicts, nonLwwColumns } from './conflict-detect';
-import { reconcileGauge, reconcileStockQuantity } from './delta-crdt';
+import { reconcileGauge, reconcileStockQuantity, replayGaugeValue } from './delta-crdt';
 import { FK_REFS } from './fk-refs';
 import { resolveLww } from './lww';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
@@ -52,6 +52,7 @@ import type {
   FlagRepair,
   GaugeHistoryDelta,
   GaugeResolution,
+  HistoryClear,
   StockQuantityDelta,
   StockResolution,
   ItemTagEdge,
@@ -107,6 +108,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   flagRepairs: [],
   defaultLocationWinnerId: null,
   historyInserts: [],
+  historyClears: [],
   stockDeltaInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
@@ -289,6 +291,9 @@ export function reconcile(
   for (const loserId of userRekeys.keys()) finalUserIds.delete(loserId);
   for (const builtin of BUILTIN_USER_IDS) finalUserIds.add(builtin);
 
+  // Issue #620: the per-item ledger-clear marks, read from both sides' ledgers before the union
+  // below, so a clear on either device removes the same era of entries on both.
+  const clearMarks = historyClearMarks([local.itemHistory, remote.itemHistory]);
   const historyInserts = reconcileHistory(
     local,
     remote,
@@ -297,7 +302,9 @@ export function reconcile(
     finalItemIds,
     finalUserIds,
     userRekeys,
+    clearMarks,
   );
+  const historyClears = reconcileHistoryClears(local, clearMarks, finalItemIds);
   // Issue #188: the discrete-stock convergence ledger, unioned by id like the history ledger.
   const stockDeltaInserts = reconcileStockDeltas(
     local,
@@ -346,6 +353,7 @@ export function reconcile(
     flagRepairs,
     defaultLocationWinnerId,
     historyInserts,
+    historyClears,
     stockDeltaInserts,
     itemTagUpserts,
     itemTagDeletes,
@@ -1039,12 +1047,58 @@ function survivingIds(
 }
 
 /**
+ * The action marking a deliberately cleared per-item ledger (issue #620) — see
+ * {@link historyClearMarks} for what the engine does with it.
+ *
+ * Typed as a {@link HistoryAction} so it is checked against the ledger's vocabulary: renaming
+ * or dropping the action would fail to compile here rather than silently leaving the engine
+ * matching a string nothing writes any more.
+ */
+const HISTORY_CLEARED_ACTION: HistoryAction = 'HISTORY_CLEARED';
+
+/**
+ * The instant each item's Activity Log was last cleared, across **both** snapshots
+ * (issue #620) — the per-item counterpart to the global §7.6.3-A prune watermark.
+ *
+ * Clearing an item's log deletes its entries and writes one `HISTORY_CLEARED` entry in
+ * their place. That marker is an ordinary ledger row, so it unions across to every peer
+ * like any other — and reading the newest one per item, from local and remote together,
+ * gives both devices the same cut-off without either needing to know which side cleared:
+ * entries older than it are neither imported ({@link reconcileHistory}) nor kept
+ * ({@link reconcileHistoryClears}). Clear on one device, sync twice, and both agree.
+ *
+ * Earlier markers are themselves older than the newest one, so a log cleared twice
+ * converges on the single most recent marker rather than accumulating one per clear.
+ *
+ * The comparison is on `created_at`, which `shiftSnapshotTimestamps` never shifts, so it
+ * means the same instant on both sides. A device whose clock runs ahead therefore clears
+ * slightly into a peer's future — the same clock-skew exposure the global prune watermark
+ * has always carried, and the reason a clear is worded as "everything up to now".
+ *
+ * Takes the ledgers rather than the snapshots so the clone-and-salvage path can pass the
+ * two halves it holds separately (see `cloneWithSalvage`).
+ */
+export function historyClearMarks(ledgers: readonly (readonly SqlRow[] | undefined)[]): Map<string, number> {
+  const marks = new Map<string, number>();
+  for (const rows of ledgers) {
+    for (const r of rows ?? []) {
+      if (r.action !== HISTORY_CLEARED_ACTION) continue;
+      const itemId = String(r.item_id);
+      const at = num(r.created_at);
+      if (at > (marks.get(itemId) ?? 0)) marks.set(itemId, at);
+    }
+  }
+  return marks;
+}
+
+/**
  * Append-only Activity Ledger reconciliation (§7.3, Phase 11). The ledger is immutable,
  * so the same event has the same UUID everywhere: simply INSERT any remote row missing
- * locally (**union-by-id**, never LWW). Two guards: a row older than the §7.6.3-A prune
- * watermark is skipped (the device deliberately reclaimed that space), and a row whose
+ * locally (**union-by-id**, never LWW). Three guards: a row older than the §7.6.3-A prune
+ * watermark is skipped (the device deliberately reclaimed that space), a row whose
  * `item_id` will not survive the merge is skipped (its FK parent is gone — it would
- * cascade away anyway).
+ * cascade away anyway), and a row from before its item's newest clear mark is skipped
+ * (issue #620 — importing it would undo the clear).
  */
 function reconcileHistory(
   local: SyncSnapshot,
@@ -1054,6 +1108,7 @@ function reconcileHistory(
   finalItemIds: ReadonlySet<string>,
   finalUserIds: ReadonlySet<string>,
   userRekeys: ReadonlyMap<string, string>,
+  clearMarks: ReadonlyMap<string, number>,
 ): SqlRow[] {
   const localIds = new Set((local.itemHistory ?? []).map((r) => String(r.id)));
   const inserts: SqlRow[] = [];
@@ -1061,10 +1116,40 @@ function reconcileHistory(
     if (localIds.has(String(r.id))) continue;
     if (num(r.created_at) < prunedBefore) continue;
     if (!finalItemIds.has(String(r.item_id))) continue;
+    if (num(r.created_at) < (clearMarks.get(String(r.item_id)) ?? 0)) continue;
     const row = allowedCols ? sanitiseRow(r, allowedCols) : r;
     inserts.push(resolveActor(row, finalUserIds, userRekeys));
   }
   return inserts;
+}
+
+/**
+ * The per-item ledger clears this device has to adopt (issue #620): an item whose newest
+ * clear mark post-dates entries this device still holds.
+ *
+ * The mirror of {@link reconcileHistory}'s clear guard — that one refuses to *import* a
+ * cleared entry, this one deletes one already stored, which is what makes a peer's clear
+ * land here rather than only stopping the traffic in one direction. Only items with
+ * something to delete are listed, so a merge between two devices that already agree emits
+ * nothing. Items that will not survive the merge are skipped: their ledger cascades away
+ * with them anyway.
+ */
+function reconcileHistoryClears(
+  local: SyncSnapshot,
+  clearMarks: ReadonlyMap<string, number>,
+  finalItemIds: ReadonlySet<string>,
+): HistoryClear[] {
+  if (clearMarks.size === 0) return [];
+  // One pass over the ledger rather than one per marked item: the ledger is the largest
+  // section of the snapshot, and a device that has cleared many items would otherwise
+  // re-scan all of it for each of them.
+  const stale = new Set<string>();
+  for (const r of local.itemHistory ?? []) {
+    const itemId = String(r.item_id);
+    if (stale.has(itemId) || !finalItemIds.has(itemId)) continue;
+    if (num(r.created_at) < (clearMarks.get(itemId) ?? 0)) stale.add(itemId);
+  }
+  return [...stale].map((itemId) => ({ itemId, before: clearMarks.get(itemId)! }));
 }
 
 /**
@@ -1376,7 +1461,60 @@ function rejectParentCycles(local: SyncSnapshot, localUpserts: TableRow[], table
   return rejected;
 }
 
-/** §7.3 Delta-CRDT: replay merged gauge deltas for items present on both sides. */
+/**
+ * Tolerance for the gauge ledger-completeness check below, **relative to the capacity**.
+ *
+ * A gauge's value and its deltas are REALs summed in floating point. Each individual delta is
+ * recorded exactly, but a long running sum sitting near `−gross` accumulates error on the order
+ * of `n × ulp(gross)` — so the drift scales with the *capacity*, not with the size of the
+ * movements. A fixed absolute tolerance therefore holds for a 1 kg spool and fails for the same
+ * spool expressed in milligrams. Scaling by the capacity keeps it a millionth of the gauge's own
+ * span either way: far below any real measurement, and far above the rounding.
+ */
+const GAUGE_REPLAY_EPSILON = 1e-6;
+
+/**
+ * Whether one side's gauge ledger reconstructs the value that side actually stores — i.e. it
+ * still holds every delta since the gauge was last at capacity, so replaying it loses no
+ * baseline.
+ *
+ * A side whose ledger was **deliberately emptied** does not: the §7.6.3-A retention prune, the
+ * Danger-Zone "activity history" erase and the per-item Activity Log clear (issue #620) all
+ * delete `GAUGE_UPDATE` rows while leaving `current_net_value` untouched, so replaying what
+ * remains reconstructs `gross + 0` — a half-empty bottle that reports itself full.
+ *
+ * Nor does a gauge that never had a complete ledger to begin with: one **created part-full**
+ * (or cloned, which resets the value) has no opening delta to be its baseline, and one whose
+ * **capacity was reconfigured** carries deltas measured against the old span. Those are not
+ * emptied ledgers but they are equally baseline-less, and this check cannot tell them apart —
+ * nor does it need to. All of them fall back to Last-Write-Wins, which is what the value on the
+ * row already is; only a gauge whose whole history is present keeps the delta replay.
+ */
+function gaugeLedgerReconstructs(row: SqlRow, deltas: readonly GaugeHistoryDelta[]): boolean {
+  const gross = num(row.gross_capacity);
+  const stored = num(row.current_net_value);
+  // A row missing either figure describes no gauge this can check — refuse rather than compare
+  // against a coerced NULL, which would quietly read as "is the replay zero?".
+  if (!Number.isFinite(gross) || !Number.isFinite(stored)) return false;
+  return Math.abs(replayGaugeValue(gross, deltas) - stored) <= GAUGE_REPLAY_EPSILON * Math.max(1, gross);
+}
+
+/**
+ * §7.3 Delta-CRDT: replay merged gauge deltas for items present on both sides.
+ *
+ * Two guards, matching {@link reconcileStock}'s (1) and (2) — they are the same rules, and the
+ * gauge is the older half of the same idea:
+ *
+ *  1. **Contested** — only a gauge both devices hold can have diverged; a one-sided one keeps
+ *     the LWW value the merge upsert already carried.
+ *  2. **Ledger complete on both sides** — the deltas only reconstruct the value when every
+ *     movement since the gauge was last at capacity is present. A *baseline-less* side (see
+ *     {@link gaugeLedgerReconstructs} for how one comes about) would otherwise converge both
+ *     devices on a figure the ledger cannot support — `gross + 0`, i.e. a full gauge — and then
+ *     propagate it. Such a side falls back to LWW, which is never worse than the value the row
+ *     already carries. Each side is checked against its **own** stored row, since the whole
+ *     question is whether *that* device's ledger explains *that* device's value.
+ */
 function reconcileGauges(
   local: SyncSnapshot,
   remote: SyncSnapshot,
@@ -1390,11 +1528,18 @@ function reconcileGauges(
 
   for (const [id, row] of finalItems) {
     if (String(row.tracking_mode) !== 'CONSUMABLE_GAUGE') continue;
-    // Only the concurrent case needs delta replay; a one-sided gauge keeps its LWW value.
-    if (!localItems.has(id) || !remoteItems.has(id)) continue;
+    // (1) Only the concurrent case needs delta replay; a one-sided gauge keeps its LWW value.
+    const localRow = localItems.get(id);
+    const remoteRow = remoteItems.get(id);
+    if (!localRow || !remoteRow) continue;
     const gross = num(row.gross_capacity);
     if (!Number.isFinite(gross)) continue;
-    const netValue = reconcileGauge(gross, localDeltas.get(id) ?? [], remoteDeltas.get(id) ?? []);
+    const localSide = localDeltas.get(id) ?? [];
+    const remoteSide = remoteDeltas.get(id) ?? [];
+    // (2) Each side against its own stored row — see the note on the function.
+    if (!gaugeLedgerReconstructs(localRow, localSide)) continue;
+    if (!gaugeLedgerReconstructs(remoteRow, remoteSide)) continue;
+    const netValue = reconcileGauge(gross, localSide, remoteSide);
     resolutions.push({ itemId: id, netValue });
   }
   return resolutions;

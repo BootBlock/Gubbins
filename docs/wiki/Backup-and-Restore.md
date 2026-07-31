@@ -131,6 +131,29 @@ replacing the database file.
 > **[[Cloud sync|Cloud-Sync]]** folder shared with other people — anyone who can write to it can put
 > a file there for your devices to pick up.
 
+## A copy from another version is refused, not restored
+
+A `.sqlite` copy or a `.zip` archive can be perfectly intact and still be one this version of Gubbins
+cannot open — because it was written before an update changed the shape of the database. That's the
+ordinary situation while Gubbins is pre-1.0, and it matters most for the weekly archive below, where
+the file you reach for may be several releases old.
+
+So every restore that replaces the database file outright also checks *which version made it*, and
+stops there if it doesn't match: your current database is left exactly as it was. Gubbins then says
+what to do instead — take **Back up everything (.zip)** from the recovery screen and restore that
+with **Merge**, which re-applies your records onto the new database shape rather than putting the old
+database file back.
+
+As with a damaged file, you can still override it after a second, deliberate confirmation — and a
+copy of your current database is downloaded first either way, so you can get straight back to where
+you were.
+
+> **ℹ️ Note**
+> This is the same check that makes **Replace everything** decline a backup whose exact database copy
+> came from a different version. It now applies to **Restore raw .sqlite binary** and **Restore full
+> archive (.zip)** on the recovery screen too, which previously went ahead and left Gubbins unable to
+> start on the next load.
+
 ## The weekly reminder (mobile)
 
 On a phone or tablet **without [[Cloud sync|Cloud-Sync]] connected**, Gubbins shows a *"Time for a

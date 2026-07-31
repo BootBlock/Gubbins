@@ -35,6 +35,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   flagRepairs: [],
   defaultLocationWinnerId: null,
   historyInserts: [],
+  historyClears: [],
   stockDeltaInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],

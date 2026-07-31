@@ -85,6 +85,7 @@ const category = (overrides: Partial<CategoryWithFieldCount> = {}): CategoryWith
   defaultMaintenanceBasis: null,
   defaultMaintenanceIntervalDays: null,
   defaultMaintenanceIntervalUsage: null,
+  hiddenCapabilities: [],
   updatedAt: 0,
   fieldCount: 1,
   ...overrides,
@@ -645,5 +646,113 @@ describe('CategoryManagerDialog — unused field definitions (#97 follow-up)', (
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove unused field Legacy code' }));
     expect(h.deleteUnusedFieldDef).toHaveBeenCalledWith('def-2');
+  });
+});
+
+/**
+ * Issue #618 — a category can declare the capabilities its items don't have, so those sections
+ * stop cluttering every item of that kind. Ticking hides; the writes must be exact, because the
+ * stored array is what every item in the category is then rendered against.
+ */
+describe('CategoryManagerDialog — sections a category hides', () => {
+  const hideMaintenance = () => screen.getByTestId('category-hide-maintenance');
+
+  it('offers a row per hideable capability, unticked when the category hides nothing', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByText('Sections these items don’t need')).toBeInTheDocument();
+    expect(hideMaintenance()).not.toBeChecked();
+  });
+
+  it('writes the capability into the hidden set when ticked', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    fireEvent.click(hideMaintenance());
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['maintenance'] },
+    });
+  });
+
+  it('removes just that capability when unticked, leaving the others alone', () => {
+    h.categoryRows = [category({ hiddenCapabilities: ['kits', 'maintenance'] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(hideMaintenance()).toBeChecked();
+
+    fireEvent.click(hideMaintenance());
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['kits'] },
+    });
+  });
+
+  it('says nothing about a maintenance conflict when the category adds no schedule', () => {
+    h.categoryRows = [category({ hiddenCapabilities: ['maintenance'] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.queryByTestId('category-hide-maintenance-conflict-clear')).toBeNull();
+  });
+
+  it('flags the contradiction when the category both adds a schedule and hides it', () => {
+    // Left alone, this would create a schedule on every new item and immediately hide it.
+    h.categoryRows = [
+      category({
+        hiddenCapabilities: ['maintenance'],
+        defaultMaintenanceBasis: 'TIME',
+        defaultMaintenanceIntervalDays: 365,
+      }),
+    ];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.getByText(/also gives every new item a maintenance schedule/)).toBeInTheDocument();
+
+    // The offered fix clears the schedule default rather than un-hiding the section, because
+    // hiding it is the choice the user just made explicitly.
+    fireEvent.click(screen.getByTestId('category-hide-maintenance-conflict-clear'));
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: {
+        defaultMaintenanceBasis: null,
+        defaultMaintenanceIntervalDays: null,
+        defaultMaintenanceIntervalUsage: null,
+      },
+    });
+  });
+});
+
+/**
+ * Regression: the hidden-sections panel writes a *set* held in one column, so each toggle is a
+ * read-modify-write of the whole value. Reading the base from the query cache lost ticks — the
+ * write isn't optimistic, so a second toggle made before the refetch landed computed from the
+ * pre-first-toggle array and silently dropped it. On a synced LWW column that discard would
+ * propagate to other devices.
+ */
+describe('CategoryManagerDialog — hidden sections accumulate across quick toggles', () => {
+  it('keeps the first tick when a second lands before the refetch', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByTestId('category-hide-maintenance'));
+    // `h.categoryRows` is deliberately NOT updated: this is exactly the window where the cache
+    // still holds the pre-click value.
+    fireEvent.click(screen.getByTestId('category-hide-kits'));
+
+    expect(h.updateCategory).toHaveBeenLastCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['kits', 'maintenance'] },
+    });
+  });
+
+  it('reseeds from the category when a different one is selected', () => {
+    h.categoryRows = [category(), category({ id: 'cat-2', name: 'Movies', hiddenCapabilities: ['kits'] })];
+    renderDialog();
+
+    selectCategory(/Resistors/);
+    expect(screen.getByTestId('category-hide-kits')).not.toBeChecked();
+
+    selectCategory(/Movies/);
+    expect(screen.getByTestId('category-hide-kits')).toBeChecked();
   });
 });

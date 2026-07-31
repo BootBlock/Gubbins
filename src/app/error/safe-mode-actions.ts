@@ -161,8 +161,9 @@ const RESTORE_POINT_SETTLE_MS = 400;
  * sound, then secure the current one. Ordered deliberately — a file that is going to be
  * rejected should not cost the user a download first.
  *
- * Throws {@link DamagedDatabaseError} (unless forced) or {@link RestorePointError}; in
- * either case nothing has been written and the live database is untouched.
+ * Throws {@link DamagedDatabaseError} or {@link IncompatibleDatabaseError} (unless forced), or
+ * {@link RestorePointError}; in every case nothing has been written and the live database is
+ * untouched.
  */
 export async function prepareDestructiveRestore(
   sqlite: Uint8Array,
@@ -174,6 +175,9 @@ export async function prepareDestructiveRestore(
     const assessment = await inspectRestoreCandidate(sqlite);
     if (assessment.status === 'damaged') {
       throw new DamagedDatabaseError(assessment.problems);
+    }
+    if (assessment.status === 'incompatible') {
+      throw new IncompatibleDatabaseError();
     }
   }
 
@@ -189,8 +193,9 @@ export async function prepareDestructiveRestore(
  * {@link downloadRawSqlite}). **Destructive** — the caller must confirm first. Checks the
  * incoming database is sound and downloads a restore point of the current one, then replaces
  * the stored database and reloads so the worker re-opens the new one. Throws
- * `InvalidRawSqliteError` for a non-SQLite file, or `DamagedDatabaseError` for one that fails
- * the pre-flight checks — in every failure case, before anything is overwritten.
+ * `InvalidRawSqliteError` for a non-SQLite file, `DamagedDatabaseError` for one that fails the
+ * pre-flight checks, or `IncompatibleDatabaseError` for one built by another schema baseline — in
+ * every failure case, before anything is overwritten.
  */
 export async function restoreRawSqlite(file: File, options: RestoreOptions = {}): Promise<void> {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -225,6 +230,31 @@ export class DamagedDatabaseError extends Error {
     super('That database file is damaged, so restoring it would replace your data with a broken copy.');
     this.name = 'DamagedDatabaseError';
     this.problems = problems;
+  }
+}
+
+/**
+ * Thrown when the incoming database is intact but was **built by a different schema baseline**
+ * than this build expects (issue #501) — so this build would refuse it at the next boot with
+ * `SCHEMA_STALE`.
+ *
+ * The sibling of {@link DamagedDatabaseError}, and refused for the same reason at the same point:
+ * the app already knows the restore cannot succeed, so performing it would replace a working
+ * database with one that will not open. Gubbins is pre-release and does not migrate data across a
+ * baseline change; the way across is a `.zip` backup restored with **Merge**, which re-applies the
+ * records onto the new schema rather than replacing the database file.
+ *
+ * Overridable through `force` like the damage report, because the boot refusal it predicts is
+ * survivable (the restore point is downloaded first, and Safe Mode can put it back) and because a
+ * user who has also rolled the *build* back may mean exactly what they asked for.
+ */
+export class IncompatibleDatabaseError extends Error {
+  constructor() {
+    super(
+      'That database was made by a different version of Gubbins, so this version cannot open it — ' +
+        'restoring it would leave Gubbins unable to start.',
+    );
+    this.name = 'IncompatibleDatabaseError';
   }
 }
 

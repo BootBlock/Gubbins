@@ -74,6 +74,10 @@ export const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
   // changed fields ride the entry's note, so consumers can still tell what happened without the
   // public vocabulary (and the OpenAPI enum) having to grow a type per column.
   ATTRIBUTES_CHANGED: 'item.changed',
+  // The item's ledger was cleared (issue #620). Nothing about the *item* changed, but a
+  // subscriber watching the audit trail should still see that the trail was emptied, so it maps
+  // to the same generic type rather than being silently unpublished.
+  HISTORY_CLEARED: 'item.changed',
 };
 
 /**

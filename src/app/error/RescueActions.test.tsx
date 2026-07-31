@@ -26,6 +26,12 @@ vi.mock('./safe-mode-actions', () => ({
       this.problems = problems;
     }
   },
+  IncompatibleDatabaseError: class IncompatibleDatabaseError extends Error {
+    constructor() {
+      super('That database was made by a different version of Gubbins.');
+      this.name = 'IncompatibleDatabaseError';
+    }
+  },
 }));
 
 vi.mock('@/features/archive/restore-archive', () => ({ restoreArchive: vi.fn() }));
@@ -208,6 +214,58 @@ describe('RescueActions', () => {
 
       await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
       expect(screen.getByRole('button', { name: /confirm — restore/i })).toBeInTheDocument();
+    });
+  });
+
+  describe('restoring a database from another version (issue #501)', () => {
+    async function chooseSqliteFile(user: ReturnType<typeof userEvent.setup>) {
+      const file = new File(['irrelevant'], 'rescue.sqlite', { type: 'application/x-sqlite3' });
+      await user.upload(screen.getByTestId('restore-sqlite-input'), file);
+      return file;
+    }
+
+    beforeEach(() => {
+      vi.mocked(actions.restoreRawSqlite).mockRejectedValue(new actions.IncompatibleDatabaseError());
+    });
+
+    it('explains that the file is intact but unopenable, and points at what does work', async () => {
+      const user = userEvent.setup();
+      render(<RescueActions />);
+      await chooseSqliteFile(user);
+
+      await user.click(screen.getByTestId('confirm-archive-restore'));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/made by a different version of Gubbins/i);
+      expect(alert).toHaveTextContent(/nothing has been changed/i);
+      // Saying only "no" on a crash screen is what sends a user to the purge; the way across is
+      // the `.zip` restored with Merge.
+      expect(alert).toHaveTextContent(/Merge/);
+    });
+
+    it('does not claim the file is damaged — it is not', async () => {
+      const user = userEvent.setup();
+      render(<RescueActions />);
+      await chooseSqliteFile(user);
+
+      await user.click(screen.getByTestId('confirm-archive-restore'));
+      const alert = await screen.findByRole('alert');
+
+      expect(alert).not.toHaveTextContent(/damaged/i);
+    });
+
+    it('warns that the override risks a Gubbins that will not start, then forces it', async () => {
+      const user = userEvent.setup();
+      render(<RescueActions />);
+      await chooseSqliteFile(user);
+
+      await user.click(screen.getByTestId('confirm-archive-restore'));
+      await screen.findByRole('alert');
+
+      // The button has to name *this* risk, not the damage report's "may lose records".
+      const override = screen.getByRole('button', { name: /restore anyway — Gubbins may not start/i });
+      await user.click(override);
+      expect(actions.restoreRawSqlite).toHaveBeenLastCalledWith(expect.any(File), { force: true });
     });
   });
 

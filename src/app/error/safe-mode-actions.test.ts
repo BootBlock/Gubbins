@@ -1,6 +1,7 @@
 /**
- * The destructive raw-`.sqlite` restore (spec §3) and the guards added in issue #198: prove
- * the incoming database is sound, and secure the current one, *before* anything is overwritten.
+ * The destructive raw-`.sqlite` restore (spec §3) and the guards added in issues #198 and #501:
+ * prove the incoming database is sound *and* that this build can actually open it, and secure the
+ * current one, before anything is overwritten.
  *
  * Also the fallback-VFS half of issue #255: under `opfs-sahpool` the database is *not* a file
  * any directory handle can reach, so every one of these actions has to notice that and go
@@ -29,6 +30,7 @@ vi.mock('@/lib/app-shell-reset', () => ({ resetAppShell: vi.fn() }));
 
 import {
   DamagedDatabaseError,
+  IncompatibleDatabaseError,
   RestorePointError,
   captureRestorePoint,
   downloadJsonDump,
@@ -236,6 +238,30 @@ describe('restoreRawSqlite (issue #198)', () => {
     const json = new File(['{"formatVersion":1}'], 'backup.json');
     await expect(restoreRawSqlite(json)).rejects.toThrow(/not a SQLite database/);
     expect(inspectRestoreCandidate).not.toHaveBeenCalled();
+  });
+});
+
+describe('restoreRawSqlite — schema baseline (issue #501)', () => {
+  it('refuses an intact database built by another version and touches nothing', async () => {
+    // The bug this closes: the file passes every structural check, so the old code overwrote a
+    // healthy database with one the next boot would refuse outright.
+    inspectRestoreCandidate.mockResolvedValue({ status: 'incompatible', problems: [] });
+
+    await expect(restoreRawSqlite(sqliteFile())).rejects.toBeInstanceOf(IncompatibleDatabaseError);
+
+    expect(disposeDatabase).not.toHaveBeenCalled();
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('proceeds when forced, but still saves a restore point first', async () => {
+    // A boot refusal is survivable, so the override stays available — the restore point is what
+    // makes it so, and it must still be taken.
+    inspectRestoreCandidate.mockResolvedValue({ status: 'incompatible', problems: [] });
+
+    await restoreRawSqlite(sqliteFile(), { force: true });
+
+    expect(downloadBlob).toHaveBeenCalledOnce();
+    expect(disposeDatabase).toHaveBeenCalledOnce();
   });
 });
 

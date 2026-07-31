@@ -213,6 +213,7 @@ export function useSetItemFieldValues(itemId: string) {
     onError: reportFailure,
     onSettled: () => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemFields(itemId) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) });
       // Refresh the on-card custom-field values (E1) — each resident window keys its read on
       // its own item ids, so the shared prefix is what reaches all of them at once.
       void client.invalidateQueries({ queryKey: inventoryKeys.itemFieldValuesAll() });

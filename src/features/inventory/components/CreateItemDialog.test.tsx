@@ -47,6 +47,15 @@ vi.mock('../categories', () => ({
           defaultCondition: 'GOOD',
           defaultWarrantyMonths: 12,
         },
+        // A category that declares its items have no expiry, batch identity or warranty
+        // (issue #618) — and sets a warranty window anyway, which must not be pre-filled into
+        // a box the user cannot see.
+        {
+          id: 'cat-movies',
+          name: 'Movies',
+          defaultWarrantyMonths: 24,
+          hiddenCapabilities: ['perishables', 'batches'],
+        },
       ],
     },
   }),
@@ -587,5 +596,70 @@ describe('CreateItemDialog', () => {
     expect(await screen.findByText('Please enter a name.')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
     expect(spies.createItem).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Issue #618 — the create form offers only the lifecycle fields the chosen category's items
+ * actually have. Two things matter here: the boxes disappear, and — the part that would make
+ * hiding *write* rather than merely hide — a category default is never stamped into a box the
+ * user cannot see. React Hook Form keeps the value of an unmounted field, so this needs
+ * guarding at the write, not just at the render.
+ */
+describe('CreateItemDialog — lifecycle fields a category hides', () => {
+  const chooseCategory = (name: string) => {
+    fireEvent.click(screen.getByRole('combobox', { name: 'Category (optional)' }));
+    fireEvent.click(screen.getByRole('option', { name }));
+  };
+  /** The lifecycle facets live on their own rail tab, and only the active panel is mounted. */
+  const openLifecycleTab = () => fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
+
+  it('shows expiry and batch boxes for a category that hides nothing', () => {
+    renderDialog();
+    chooseCategory('Resistors');
+    openLifecycleTab();
+    expect(screen.getByTestId('item-expiry')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Batch no\./)).toBeInTheDocument();
+  });
+
+  it('drops them for a category whose items have no expiry or batch identity', () => {
+    renderDialog();
+    chooseCategory('Movies');
+    openLifecycleTab();
+    expect(screen.queryByTestId('item-expiry')).toBeNull();
+    expect(screen.queryByLabelText(/Batch no\./)).toBeNull();
+    expect(screen.queryByLabelText(/Lot no\./)).toBeNull();
+  });
+
+  it('still pre-fills the warranty window when the box is visible', () => {
+    renderDialog();
+    chooseCategory('Tools');
+    openLifecycleTab();
+    expect(screen.getByTestId('item-warranty-months')).toHaveValue('12');
+  });
+
+  it('never submits a value from a box the category hid after it was typed', async () => {
+    // Type an expiry and a batch first, *then* pick a category that hides both. React Hook Form
+    // keeps an unmounted field's value, so without the write-side guard these would be stored
+    // on an item that never showed them — hiding would write rather than merely hide.
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Blade Runner' } });
+    openLifecycleTab();
+    fireEvent.change(screen.getByTestId('item-expiry'), { target: { value: '2027-03-01' } });
+    fireEvent.change(screen.getByLabelText(/Batch no\./), { target: { value: 'B-1' } });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+    chooseCategory('Movies');
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    const submitted = spies.createItem.mock.calls[0][0];
+    expect(submitted).toMatchObject({ name: 'Blade Runner' });
+    expect(submitted).not.toHaveProperty('expiryDate');
+    expect(submitted).not.toHaveProperty('batchNumber');
+    // Warranty is deliberately *not* category-hideable — its section also holds the purchase
+    // record — so the category's 24-month window still pre-fills a visible box and is derived
+    // as normal. Its guard is the device's module, tested separately.
+    expect(submitted.warrantyExpiresAt).not.toBeNull();
   });
 });
