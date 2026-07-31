@@ -88,7 +88,9 @@ of materials whose assembly consumes its members (reversibly — `DISASSEMBLED` 
 preset library ships four container archetypes — Tool bag, Storage tote, Gridfinity bin, First aid
 kit — as *categories of item*, and three of the four fall back to a `Contents` `LONG_TEXT` field of
 prose. (Open issue [#617](https://github.com/BootBlock/Gubbins/issues/617) meets the same table
-boundary from the other side, though it asks the opposite question.)
+boundary from the other side, though it asks the opposite question — researched separately in
+[non-items on a Location](location-non-items_2026-07-31.md), which finds that the boundary is not
+what constrains it.)
 
 **C5 — Ownership is unmodelled; custody is one-directional.**
 A scan of all 55 tables finds no `owner`, tenure or share column — the only user references are
@@ -322,7 +324,9 @@ does not make the app track anything better. None started.
   itself a place). Unlocks §3.7 outright and improves §3.1 and kits. Addresses C4. Adjacent to
   [#617](https://github.com/BootBlock/Gubbins/issues/617) — same table boundary, opposite direction
   (that asks for non-items *on* a location; this asks for an item that *is* one), so neither implies
-  the other. Structurally the largest item here.
+  the other. Structurally the largest item here. See
+  [non-items on a Location](location-non-items_2026-07-31.md), whose `N5` is `W1` with a location as
+  the subject, and whose `N3` defers to `W2` rather than duplicating it.
 - **`W4` — Dimensional stock and remnants.** A length/area tracking mode, or a gauge that splits
   into a tracked remainder. Unlocks §3.1. Consider `pack_qty` on the item at the same time.
 - **`W5` — Ownership and tenure.** An `owned | borrowed | rented | leased | shared` field plus an
