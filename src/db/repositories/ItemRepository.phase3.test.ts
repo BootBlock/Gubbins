@@ -4,6 +4,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { ItemRepository } from './ItemRepository';
 import { ImageRepository } from './ImageRepository';
+import { SERIALISED_COUNT_BOUNDS } from './constants';
 
 describe('ItemRepository — Phase 3 (serialised clone + list thumbnails)', () => {
   let driver: MemoryDriver;
@@ -51,6 +52,33 @@ describe('ItemRepository — Phase 3 (serialised clone + list thumbnails)', () =
     const created = await items.createSerialised({ name: 'Scope', trackingMode: 'SERIALISED' });
     expect(created).toHaveLength(1);
     expect(created[0]?.serialNo).toBe(1);
+  });
+
+  // Issue #677: the clone count is the one input that multiplies a single call into N
+  // irreversible records, so it is bounded at the shared entry point rather than clamped.
+  it.each([
+    ['above the ceiling', SERIALISED_COUNT_BOUNDS.max + 1],
+    ['zero', 0],
+    ['negative', -5],
+    ['fractional', 2.5],
+    ['infinite (an overflowed input, which would otherwise loop forever)', Infinity],
+    ['not a number', Number.NaN],
+  ])('rejects a serialised count that is %s', async (_label, count) => {
+    await expect(
+      items.createSerialised({ name: 'Drill', trackingMode: 'SERIALISED', count }),
+    ).rejects.toMatchObject({ code: 'SQLITE_CONSTRAINT' });
+    // Nothing was written — the guard runs before any statement is built.
+    expect((await items.list()).rows).toHaveLength(0);
+  });
+
+  it('creates right up to the serialised count ceiling', async () => {
+    const created = await items.createSerialised({
+      name: 'Drill',
+      trackingMode: 'SERIALISED',
+      count: SERIALISED_COUNT_BOUNDS.max,
+    });
+    expect(created).toHaveLength(SERIALISED_COUNT_BOUNDS.max);
+    expect(created.at(-1)?.serialNo).toBe(SERIALISED_COUNT_BOUNDS.max);
   });
 
   it('includes the primary thumbnail in list reads but never the full-res path (§4.2.4)', async () => {

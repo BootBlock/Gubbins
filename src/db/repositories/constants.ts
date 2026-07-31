@@ -71,6 +71,34 @@ export const TRACKING_MODES = ['DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UN
 export type TrackingMode = (typeof TRACKING_MODES)[number];
 
 /**
+ * Inclusive bounds for a serialised auto-clone `count` — how many distinct instance records a
+ * single create may produce (issue #677). The floor is 1 (a create must create something); the
+ * ceiling is far above any realistic batch of individually-tracked assets, while keeping a
+ * slipped keystroke (`10` typed as `10000`) from committing thousands of records that then have
+ * to be selected by hand before they can be removed, and keeping an overflowed value (`1e400`,
+ * which is `Infinity` once parsed) out of the clone loop, where it would spin until the tab is
+ * killed.
+ *
+ * These live here, beside the tracking modes, rather than in the inventory feature: the
+ * repository is the shared entry point that enforces them, and the Add-item form validates
+ * against the same numbers so a rejected count is reported on the field rather than thrown.
+ */
+export const SERIALISED_COUNT_BOUNDS = { min: 1, max: 500 } as const;
+
+/**
+ * Whether a value is usable as a serialised clone count — a safe whole number inside
+ * {@link SERIALISED_COUNT_BOUNDS}. `Number.isSafeInteger` rejects `NaN`, `Infinity` and
+ * fractions in one go.
+ */
+export function isValidSerialisedCount(value: number): boolean {
+  return (
+    Number.isSafeInteger(value) &&
+    value >= SERIALISED_COUNT_BOUNDS.min &&
+    value <= SERIALISED_COUNT_BOUNDS.max
+  );
+}
+
+/**
  * The tracking modes whose stock is represented **identically** in storage — a plain
  * `quantity` plus its per-location `item_stock` ledger row (Phase 25) — and so can be
  * swapped for one another *in place* after creation with no data migration and no loss.

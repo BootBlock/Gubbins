@@ -25,6 +25,16 @@ unit is tracked **separately by serial number**, so you can record which specifi
 out, serviced, or calibrated. Serialised items unlock per-unit
 [[test & calibration records|Test-and-Calibration-Records]].
 
+Bought several of the same thing? **How many** in the Add item dialog creates that many records
+in one go — enter `3` and you get *Drill #1, #2 and #3*, each with its own location, history and
+check-out. Enter `1` (or leave it) for a single one-off asset.
+
+> **⚠️ Heads-up**
+> A batch of more than **20** asks you to confirm the number first, and **500** at a time is the
+> most Gubbins will create. There's no one-step undo: tidying up a batch you didn't mean means
+> selecting the records and removing them with [[bulk edit|Bulk-Edit-and-Clone]]. A stray digit is
+> easy to type, so it's worth a second look at the number before you go ahead.
+
 ### Consumable
 
 For things measured by how **full** they are rather than a whole count — filament spools,

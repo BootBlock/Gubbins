@@ -389,6 +389,80 @@ describe('CreateItemDialog', () => {
     expect(screen.queryByLabelText(/How many/)).toBeNull();
   });
 
+  // Issue #677: "How many" is the one field that turns a single submit into N irreversible
+  // records, so it is bounded — and a big batch stops for confirmation first.
+  it('reports an out-of-range serialised count on the field instead of creating it', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Drill' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Tracking' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Serialised' }));
+
+    // A slipped keystroke — 10 typed as 10000.
+    fireEvent.change(screen.getByLabelText(/How many/), { target: { value: '10000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    expect(await screen.findByText('Enter a whole number between 1 and 500.')).toBeInTheDocument();
+    expect(spies.createSerialised).not.toHaveBeenCalled();
+  });
+
+  // An overflowed value is `Infinity` once parsed — the case that used to spin the create loop
+  // until the tab was killed. Checked from a clean form (not after another rejected submit) so
+  // the error must be re-derived, and asserting the confirmation never opens: without the
+  // schema guard `Infinity` clears the confirmation threshold and would stage a bulk create.
+  it('rejects an overflowed serialised count rather than staging a create', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Drill' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Tracking' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Serialised' }));
+
+    fireEvent.change(screen.getByLabelText(/How many/), { target: { value: '1e400' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    expect(await screen.findByText('Enter a whole number between 1 and 500.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /separate records/ })).toBeNull();
+    expect(spies.createSerialised).not.toHaveBeenCalled();
+  });
+
+  it('confirms a bulk serialised create before making the records', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Drill' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Tracking' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Serialised' }));
+    fireEvent.change(screen.getByLabelText(/How many/), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    // Nothing is created yet — the confirmation stacks on top of the still-filled form.
+    const confirm = within(await screen.findByRole('dialog', { name: 'Create 50 separate records?' }));
+    expect(spies.createSerialised).not.toHaveBeenCalled();
+
+    // Backing out returns to the form with everything intact, so the count can be corrected.
+    fireEvent.click(confirm.getByRole('button', { name: 'Go back' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /separate records/ })).toBeNull());
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Drill');
+    expect(spies.createSerialised).not.toHaveBeenCalled();
+
+    // Confirming creates exactly what was submitted.
+    fireEvent.click(itemDialog().getByRole('button', { name: 'Create item' }));
+    fireEvent.click(await screen.findByTestId('confirm-bulk-serialised'));
+    await waitFor(() => expect(spies.createSerialised).toHaveBeenCalledTimes(1));
+    expect(spies.createSerialised.mock.calls[0][0]).toMatchObject({
+      name: 'Drill',
+      trackingMode: 'SERIALISED',
+      count: 50,
+    });
+  });
+
+  it('creates an everyday serialised batch without a confirmation step', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Drill' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Tracking' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Serialised' }));
+    fireEvent.change(screen.getByLabelText(/How many/), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    await waitFor(() => expect(spies.createSerialised).toHaveBeenCalledTimes(1));
+    expect(spies.createSerialised.mock.calls[0][0]).toMatchObject({ name: 'Drill', count: 3 });
+    expect(screen.queryByRole('dialog', { name: /separate records/ })).toBeNull();
+  });
+
   it('soft-prefills condition and warranty window from the selected category default (backlog T2)', async () => {
     renderDialog();
     // Set the name and choose the "Tools" category on the Details tab (it carries T2 defaults)

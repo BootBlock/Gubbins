@@ -12,7 +12,7 @@ import { isShortItemCode } from '@/features/scanner/scan-payload';
 import { DbError } from '../../errors';
 import type { SqlStatement, SqlValue } from '../../rpc/driver';
 import { buildFtsMatch } from '../../search/fts';
-import { isConvertibleTrackingChange } from '../constants';
+import { isConvertibleTrackingChange, isValidSerialisedCount, SERIALISED_COUNT_BOUNDS } from '../constants';
 import { BaseRepository } from '../base';
 import { consolidateStockStatements } from '../stock';
 import { tombstoneStatement } from '../tombstone';
@@ -301,11 +301,23 @@ export class ItemCoreRepository extends BaseRepository {
    * "Serialised" auto-clone). Each record gets quantity 1 and a serial number
    * 1..N, and logs its own CREATED entry, all in one atomic transaction. A `count`
    * of 1 (or omitted) yields a single instance #1. Write-gated.
+   *
+   * The count is **bounded** ({@link SERIALISED_COUNT_BOUNDS}, issue #677): this is the one
+   * input that multiplies a single call into N irreversible records, so an out-of-range,
+   * fractional or non-finite value is rejected here rather than clamped — quietly creating 500
+   * records when 10,000 were asked for would be as surprising as creating 10,000, and an
+   * `Infinity` (an overflowed `1e400` from a text box) would spin the loop below forever.
    */
   async createSerialised(input: CreateItemInput): Promise<Item[]> {
     this.assertPermission('items:write');
     this.assertWritable();
-    const count = Math.max(1, Math.floor(input.count ?? 1));
+    const count = input.count ?? 1;
+    if (!isValidSerialisedCount(count)) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        `Between ${SERIALISED_COUNT_BOUNDS.min} and ${SERIALISED_COUNT_BOUNDS.max} serialised records can be created at a time.`,
+      );
+    }
     const resolved = resolveCreate({ ...input, trackingMode: 'SERIALISED' });
 
     const ids: string[] = [];
