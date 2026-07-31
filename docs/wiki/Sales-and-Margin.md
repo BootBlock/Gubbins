@@ -32,14 +32,15 @@ was — a later price edit never rewrites a sale you've already made. Gubbins ta
 
 Two things follow from that:
 
-- **Set a unit cost before you sell.** An item with no cost of either kind sells for revenue with
-  no cost recorded, and the report says so: *"Margin excludes N sold units with no recorded cost."*
+- **Set a unit cost before you sell.** An item with no cost of either kind still counts its
+  revenue, but contributes no cost — so it reads as pure profit. The report flags how much of it
+  you're looking at: *"Margin excludes N sold units with no recorded cost."*
 - **A supplier price in another currency isn't used.** Gubbins holds no exchange rates and never
   converts, so a part quoted in yen can't become a cost in pounds — the sale is counted as one of
   those uncosted units instead of being booked at a wrong figure. The same rule applies to
   [[valuation & spend|Valuation-and-Spend]] and the
   [[insurance schedule|Insurance-and-Estate-Schedule]]. Give the item its own **unit cost**, in your
-  base currency, to have its sales counted in the margin.
+  base currency, so its sales carry a real cost into the margin.
 
 ## Related pages
 

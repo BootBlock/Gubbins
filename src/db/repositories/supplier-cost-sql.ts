@@ -1,6 +1,7 @@
 /**
- * The **base-currency guard** and the **preferred-supplier cost lookup**, shared by every read
- * that resolves an item's cost from `supplier_parts`.
+ * The **base-currency guard** and the **preferred-supplier cost lookup** used wherever a supplier
+ * price becomes a figure denominated in the user's own currency — the valuation reads, the
+ * insurance schedule, and the sale/write-off cost snapshot.
  *
  * They live here rather than in {@link file://./ReportRepository.ts} because the reporting screens
  * are not the only consumer: a sale or a write-off snapshots the same cost into the `item_history`
