@@ -27,6 +27,8 @@ import {
   FIELD_DUE_LEAD_DAYS_MAX,
   FIELD_DUE_LEAD_DAYS_MIN,
   FIELD_NUMBER_BOUND_LIMIT,
+  FIELD_PRECISION_MAX,
+  FIELD_PRECISION_MIN,
   FIELD_UNIT_MAX_LENGTH,
   type FieldType,
 } from './constants';
@@ -100,7 +102,7 @@ function normaliseGlyph(glyph: string | null | undefined): string | null {
 const CATEGORY_FIELD_COLUMNS = `
   cf.id, cf.category_id, cf.def_id, cf.is_required, cf.default_value, cf.position, cf.updated_at,
   fd.name, fd.field_type, fd.options, fd.description, fd.due_lead_days,
-  fd.unit, fd.min_value, fd.max_value, fd.prominence
+  fd.unit, fd.min_value, fd.max_value, fd.precision, fd.prominence
 `;
 
 /**
@@ -515,6 +517,7 @@ export class CategoryRepository extends BaseRepository {
       unit?: string | null;
       minValue?: number | null;
       maxValue?: number | null;
+      precision?: number | null;
       prominence?: string | null;
     },
     statements: SqlStatement[],
@@ -551,6 +554,10 @@ export class CategoryRepository extends BaseRepository {
       applyOnReuse('unit', input.unit, existing.unit);
       applyOnReuse('min_value', input.minValue, existing.min_value);
       applyOnReuse('max_value', input.maxValue, existing.max_value);
+      // `applyOnReuse` tests `!= null` rather than falsiness, which is what makes `precision = 0`
+      // reach a shared definition: "whole numbers only" is the setting this exists for, and a
+      // truthiness test would be the one value it silently dropped.
+      applyOnReuse('precision', input.precision, existing.precision);
       // Prominence follows the same set-but-never-clear rule, and for the same reason read the
       // other way round: adding a shared field to a second category must not quietly demote it
       // in the first. `serialiseFieldDefProminence` has already folded "ordinary" to null, so an
@@ -567,8 +574,9 @@ export class CategoryRepository extends BaseRepository {
     const id = crypto.randomUUID();
     statements.push({
       sql: `INSERT INTO field_defs
-              (id, name, field_type, options, description, due_lead_days, unit, min_value, max_value, prominence)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+              (id, name, field_type, options, description, due_lead_days, unit, min_value, max_value,
+               precision, prominence)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         input.name,
@@ -579,6 +587,7 @@ export class CategoryRepository extends BaseRepository {
         input.unit ?? null,
         input.minValue ?? null,
         input.maxValue ?? null,
+        input.precision ?? null,
         input.prominence ?? null,
       ],
     });
@@ -711,6 +720,7 @@ export class CategoryRepository extends BaseRepository {
     const unit = this.validateUnit(input.unit, fieldType);
     const minValue = this.validateNumberBound(input.minValue, fieldType, 'minimum');
     const maxValue = this.validateNumberBound(input.maxValue, fieldType, 'maximum');
+    const precision = this.validatePrecision(input.precision, fieldType);
     this.assertRangeOrdered(minValue, maxValue);
     // No validation beyond canonicalisation: prominence is presentational and applies to every
     // field type, so there is no type to check it against and no bound to clamp it to.
@@ -729,6 +739,7 @@ export class CategoryRepository extends BaseRepository {
         unit,
         minValue,
         maxValue,
+        precision,
         prominence,
       },
       statements,
@@ -824,11 +835,11 @@ export class CategoryRepository extends BaseRepository {
         defSets.push('due_lead_days = ?');
         defParams.push(null);
       }
-      // Retyping away from NUMBER takes the unit and the range with it, for exactly the same
-      // reason: the CHECK forbids either on any other type, so leaving them behind would fail
-      // the user's edit on a constraint they cannot see. Each is skipped when the caller set
-      // it in the same edit, so the explicit set below is not overwritten — and so the column
-      // never appears twice in one `SET`.
+      // Retyping away from NUMBER takes the unit, the range and the precision with it, for
+      // exactly the same reason: the CHECK forbids any of them on another type, so leaving one
+      // behind would fail the user's edit on a constraint they cannot see. Each is skipped when
+      // the caller set it in the same edit, so the explicit set below is not overwritten — and so
+      // the column never appears twice in one `SET`.
       if (validated.fieldType !== 'NUMBER') {
         if (existing.unit != null && input.unit === undefined) {
           defSets.push('unit = ?');
@@ -840,6 +851,12 @@ export class CategoryRepository extends BaseRepository {
         }
         if (existing.maxValue != null && input.maxValue === undefined) {
           defSets.push('max_value = ?');
+          defParams.push(null);
+        }
+        // `!= null` again, not falsiness: a field set to whole numbers holds `0`, and testing
+        // truthiness here would leave that behind on a retype for the CHECK to reject.
+        if (existing.precision != null && input.precision === undefined) {
+          defSets.push('precision = ?');
           defParams.push(null);
         }
       }
@@ -854,9 +871,9 @@ export class CategoryRepository extends BaseRepository {
       defSets.push('due_lead_days = ?');
       defParams.push(this.validateDueLeadDays(input.dueLeadDays, validated.fieldType));
     }
-    // The unit and range are validated against the *effective* type too, so setting one while
-    // retyping to Number in the same edit is accepted and setting one on any other type is
-    // refused with a readable message.
+    // The unit, range and precision are validated against the *effective* type too, so setting
+    // one while retyping to Number in the same edit is accepted and setting one on any other type
+    // is refused with a readable message.
     if (input.unit !== undefined) {
       defSets.push('unit = ?');
       defParams.push(this.validateUnit(input.unit, validated.fieldType));
@@ -868,6 +885,10 @@ export class CategoryRepository extends BaseRepository {
     if (input.maxValue !== undefined) {
       defSets.push('max_value = ?');
       defParams.push(this.validateNumberBound(input.maxValue, validated.fieldType, 'maximum'));
+    }
+    if (input.precision !== undefined) {
+      defSets.push('precision = ?');
+      defParams.push(this.validatePrecision(input.precision, validated.fieldType));
     }
     // Prominence is not gated on the field type and so is never cleared by a retype — any type
     // can be the field that matters most. Canonicalised rather than validated: an unrecognised
@@ -1157,11 +1178,12 @@ export class CategoryRepository extends BaseRepository {
         unit: string | null;
         min_value: number | null;
         max_value: number | null;
+        precision: number | null;
         prominence: string | null;
       }
     >(
       `SELECT lfv.*, fd.name, fd.field_type, fd.options, fd.description,
-              fd.unit, fd.min_value, fd.max_value, fd.prominence
+              fd.unit, fd.min_value, fd.max_value, fd.precision, fd.prominence
        FROM location_field_values lfv
        JOIN field_defs fd ON fd.id = lfv.def_id
        WHERE lfv.location_id = ?
@@ -1380,6 +1402,36 @@ export class CategoryRepository extends BaseRepository {
       throw new DbError(
         'SQLITE_CONSTRAINT',
         `A field's ${label} must be a number between -${FIELD_NUMBER_BOUND_LIMIT} and ${FIELD_NUMBER_BOUND_LIMIT}.`,
+      );
+    }
+    return value;
+  }
+
+  /**
+   * Validate a `precision` against the field type it is being set on, returning the value to
+   * store (W1e). Only a `NUMBER` is written to a number of decimal places, and the count is a
+   * whole number within {@link FIELD_PRECISION_MIN}–{@link FIELD_PRECISION_MAX}.
+   *
+   * `null` is the only spelling of "as entered". `0` is a genuine setting — whole numbers only —
+   * so this guards on `== null` rather than falsiness, which is the trap this whole attribute
+   * invites: every other optional number here is meaningless at zero, and this one is not.
+   *
+   * Reported in the app's voice rather than left to the table CHECK, which would surface as a raw
+   * SQLite constraint failure naming no rule.
+   */
+  private validatePrecision(value: number | null | undefined, fieldType: FieldType): number | null {
+    if (value == null) return null;
+    if (fieldType !== 'NUMBER') {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'Only a Number field can be given a number of decimal places. Change the field to Number ' +
+          'first, or clear the decimal places.',
+      );
+    }
+    if (!Number.isInteger(value) || value < FIELD_PRECISION_MIN || value > FIELD_PRECISION_MAX) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        `Decimal places must be a whole number from ${FIELD_PRECISION_MIN} to ${FIELD_PRECISION_MAX}.`,
       );
     }
     return value;

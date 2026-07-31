@@ -15,6 +15,7 @@ import { assertExhaustive } from '@/lib/exhaustive';
 import { isImageDataUrl } from '@/lib/image-data-url';
 import type { CategoryField, FieldType } from '@/db/repositories';
 import { orderByFieldProminence } from './field-def-prominence';
+import { fitsFieldPrecision } from './field-number-format';
 
 /**
  * The minimum a value can be validated against: the definition's identity plus whether
@@ -46,6 +47,15 @@ export interface ValidatableField {
    */
   readonly minValue?: number | null;
   readonly maxValue?: number | null;
+  /**
+   * A `NUMBER` field's decimal places (W1e), enforced below. Optional for the same reason the
+   * range is: this is the *minimum* a value can be validated against, so a caller with nothing to
+   * say about precision says nothing.
+   *
+   * `0` is a real setting — whole numbers only — so every test against it here is `== null`, never
+   * a truthiness check. That is the specific hazard this attribute carries and the range does not.
+   */
+  readonly precision?: number | null;
 }
 
 /**
@@ -97,9 +107,13 @@ function isBlank(raw: string | null | undefined): boolean {
  *   via `String(n)` (so `'1.50'` → `'1.5'`, `'01'` → `'1'`); rejects `'1.2.3'`,
  *   `'abc'`, `'Infinity'`, `'NaN'`, blank-after-sign, etc. Must also fall inside the
  *   definition's range where it sets one — either end independently (W1c, see
- *   {@link rangeError}). This is the *only* gate on the range: a NUMBER value box is the
- *   Foundry calculator input, a `type="text"` field, so `min`/`max` attributes on it would
- *   be inert rather than enforcing.
+ *   {@link rangeError}) — and be expressible at its decimal places where it sets those
+ *   (W1e, see {@link precisionError}). This is the *only* gate on either: a NUMBER value box
+ *   is the Foundry calculator input, a `type="text"` field, so `min`/`max`/`step` attributes
+ *   on it would be inert rather than enforcing. Note what precision does **not** change here:
+ *   the stored form stays the canonical `String(n)`, so a 2-decimal field stores `5.5` and the
+ *   *display* pads it — which is what lets a precision changed later reformat every existing
+ *   value, instead of leaving a mixture of old and new spellings in the column.
  * - **RATING** ⇒ a whole number from 1 to 5.
  * - **BOOLEAN** / **ON_OFF** ⇒ normalised to `'true'` / `'false'` (case-insensitive
  *   in, plus the checkbox's own `'true'`/`'false'` output); anything else is
@@ -153,6 +167,8 @@ export function validateFieldValue(
       }
       const range = rangeError(def, n);
       if (range !== null) return { ok: false, error: range };
+      const precision = precisionError(def, n);
+      if (precision !== null) return { ok: false, error: precision };
       return { ok: true, value: String(n) };
     }
 
@@ -250,6 +266,31 @@ function rangeError(def: ValidatableField, n: number): string | null {
   if (min !== null && n < min) return `${def.name} must be at least ${min}${unit}.`;
   if (max !== null && n > max) return `${def.name} must be at most ${max}${unit}.`;
   return null;
+}
+
+/**
+ * The reason a `NUMBER` value carries more decimal places than its definition allows (W1e), or
+ * `null` when it does not.
+ *
+ * `precision = 0` gets its own wording — "a whole number" — rather than "at most 0 decimal
+ * places", because that is the case the setting most exists for and the one a range cannot state:
+ * no pair of bounds excludes `2.5` while admitting `2` and `3`. The phrasing deliberately matches
+ * the `RATING` message above it, which says the same thing about a different rule.
+ *
+ * Judged on the **parsed** number rather than the typed text, so `5.50` is a legal one-decimal
+ * value written long — see {@link fitsFieldPrecision}. The value is never silently rounded to fit:
+ * this seam also runs the CSV import, where quietly altering a figure the file states would be a
+ * worse outcome than declining the row and saying why.
+ *
+ * The copy is English rather than a `t()` lookup for the same reason {@link rangeError}'s is — see
+ * the note there; routing this file's messages through the catalog is one change for all sixteen.
+ */
+function precisionError(def: ValidatableField, n: number): string | null {
+  const precision = def.precision ?? null;
+  if (precision === null || fitsFieldPrecision(n, precision)) return null;
+  return precision === 0
+    ? `${def.name} must be a whole number.`
+    : `${def.name} must have at most ${precision} decimal place${precision === 1 ? '' : 's'}.`;
 }
 
 /**

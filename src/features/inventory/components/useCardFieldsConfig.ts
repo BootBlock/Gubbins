@@ -63,6 +63,7 @@ export function useCardFieldsConfig(): CardFieldsConfigBundle {
         fieldType: f.fieldType,
         defaultValue: f.defaultValue,
         unit: f.unit,
+        precision: f.precision,
       });
     }
     return map;

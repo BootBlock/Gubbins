@@ -283,6 +283,7 @@ describe('resolveCardFields — custom fields', () => {
     fieldType: 'TEXT',
     defaultValue: null,
     unit: null,
+    precision: null,
   };
   const customFields = new Map<string, CardCustomField>([['f1', field]]);
 
@@ -381,6 +382,64 @@ describe('resolveCardFields — custom fields', () => {
       ctx({ customFields: new Map([['f1', noUnitKey]]), customValues: new Map([['f1', '5']]) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'text', text: '5' });
+  });
+
+  it('writes a NUMBER to the definition’s decimal places, with its unit (W1e)', () => {
+    // The half W1c deferred: a two-decimal field must not still read "5.5" beside its unit.
+    const torque: CardCustomField = { ...field, fieldType: 'NUMBER', unit: 'Nm', precision: 2 };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', torque]]), customValues: new Map([['f1', '5.5']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'measure', text: '5.50', unit: 'Nm' });
+  });
+
+  it('writes a NUMBER to its decimal places without a unit too', () => {
+    const plain: CardCustomField = { ...field, fieldType: 'NUMBER', unit: null, precision: 3 };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', plain]]), customValues: new Map([['f1', '5']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: '5.000' });
+  });
+
+  it('honours a precision of 0 — the setting a truthiness check would drop', () => {
+    const shelves: CardCustomField = { ...field, fieldType: 'NUMBER', unit: null, precision: 0 };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', shelves]]), customValues: new Map([['f1', '12.6']]) }),
+    );
+    // Rounded rather than shown at a precision the field says it does not use. A value like this
+    // only arrives out of band — validation refuses it on the way in.
+    expect(resolved[0].value).toEqual({ kind: 'text', text: '13' });
+  });
+
+  it('does not apply a precision to a value of any other type', () => {
+    // NUMBER-only by schema CHECK, like the unit above it: a definition retyped in one client
+    // and not yet synced to another must not start padding a date.
+    const retyped: CardCustomField = { ...field, fieldType: 'DATE', precision: 2 };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', retyped]]), customValues: new Map([['f1', '2026-07-31']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: '2026-07-31' });
+  });
+
+  it('renders the value as entered when the catalog entry carries no precision at all', () => {
+    // Same hazard as the missing-unit case above: this file is excluded from `tsconfig.app.json`,
+    // so a hand-built entry omitting `precision` reaches the resolver as `undefined`.
+    const noPrecisionKey = { ...field, fieldType: 'NUMBER' } as CardCustomField;
+    delete (noPrecisionKey as { precision?: number | null }).precision;
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', noPrecisionKey]]), customValues: new Map([['f1', '5.5']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: '5.5' });
   });
 
   it('renders an IMAGE custom field as a thumbnail of its data URL', () => {

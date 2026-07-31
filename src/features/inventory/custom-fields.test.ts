@@ -15,6 +15,8 @@ function def(over: Partial<CategoryField> & { fieldType: FieldType }): CategoryF
     unit: over.unit ?? null,
     minValue: over.minValue ?? null,
     maxValue: over.maxValue ?? null,
+    // `?? null` would swallow the `0` that means "whole numbers only", so this one is `== null`.
+    precision: over.precision == null ? null : over.precision,
     position: over.position ?? 0,
     updatedAt: over.updatedAt ?? 0,
   };
@@ -225,6 +227,84 @@ describe('validateFieldValue — NUMBER range (W1c)', () => {
     // must not start rejecting values that type has always accepted.
     const d = def({ fieldType: 'TEXT', name: 'Notes', minValue: 5, maxValue: 6 });
     expect(validateFieldValue(d, 'anything at all')).toEqual({ ok: true, value: 'anything at all' });
+  });
+});
+
+describe('validateFieldValue — NUMBER precision (W1e)', () => {
+  it('accepts any number when the definition sets no precision', () => {
+    const d = def({ fieldType: 'NUMBER' });
+    expect(validateFieldValue(d, '5.123456789')).toEqual({ ok: true, value: '5.123456789' });
+  });
+
+  it('refuses more decimal places than the definition allows, naming the field', () => {
+    const d = def({ fieldType: 'NUMBER', name: 'Torque', precision: 2 });
+    expect(validateFieldValue(d, '5.555')).toEqual({
+      ok: false,
+      error: 'Torque must have at most 2 decimal places.',
+    });
+    expect(validateFieldValue(d, '5.55')).toEqual({ ok: true, value: '5.55' });
+  });
+
+  it('says "a whole number" at precision 0 rather than "at most 0 decimal places"', () => {
+    // The case a range cannot express, and the reason W1e exists at all — so it gets wording of
+    // its own, matching the RATING message rather than a degenerate reading of the plural one.
+    const d = def({ fieldType: 'NUMBER', name: 'Shelves', precision: 0 });
+    expect(validateFieldValue(d, '2.5')).toEqual({
+      ok: false,
+      error: 'Shelves must be a whole number.',
+    });
+    expect(validateFieldValue(d, '3')).toEqual({ ok: true, value: '3' });
+  });
+
+  it('says "1 decimal place" in the singular', () => {
+    const d = def({ fieldType: 'NUMBER', name: 'Depth', precision: 1 });
+    expect(validateFieldValue(d, '1.25')).toEqual({
+      ok: false,
+      error: 'Depth must have at most 1 decimal place.',
+    });
+  });
+
+  it('accepts a value written long that parses to the allowed precision', () => {
+    // `5.50` *is* a one-decimal value; refusing it would be pedantry about the typing, not the
+    // number. Storage stays canonical, and the display pads it back out.
+    const d = def({ fieldType: 'NUMBER', precision: 1 });
+    expect(validateFieldValue(d, '5.50')).toEqual({ ok: true, value: '5.5' });
+  });
+
+  it('checks the range before the precision, so an out-of-range value says so', () => {
+    const d = def({ fieldType: 'NUMBER', name: 'Voltage', maxValue: 24, precision: 0 });
+    expect(validateFieldValue(d, '30.5')).toEqual({
+      ok: false,
+      error: 'Voltage must be at most 24.',
+    });
+  });
+
+  it('lets a blank clear an optional field regardless of its precision', () => {
+    const d = def({ fieldType: 'NUMBER', precision: 0, isRequired: false });
+    expect(validateFieldValue(d, '')).toEqual({ ok: true, value: null });
+  });
+
+  it('enforces the precision against the narrowest shape the seam accepts', () => {
+    // Same guarantee the range gets: a location's value goes through this seam with only the
+    // `ValidatableField` members, so a location cannot be the one place a precision is dodged.
+    const narrow = {
+      name: 'Shelves',
+      fieldType: 'NUMBER' as const,
+      options: null,
+      isRequired: false,
+      precision: 0,
+    };
+    expect(validateFieldValue(narrow, '2.5')).toEqual({
+      ok: false,
+      error: 'Shelves must be a whole number.',
+    });
+  });
+
+  it('ignores a precision on any type other than NUMBER', () => {
+    // NUMBER-only by schema CHECK; a stale object carrying one on another type must not start
+    // rejecting values that type has always accepted.
+    const d = def({ fieldType: 'TEXT', name: 'Notes', precision: 0 });
+    expect(validateFieldValue(d, '2.5')).toEqual({ ok: true, value: '2.5' });
   });
 });
 

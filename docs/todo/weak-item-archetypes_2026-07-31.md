@@ -1,9 +1,9 @@
 # What Gubbins is weakest at tracking — archetype audit (2026-07-31)
 
 > **Status:** 🟢 ACTIVE — research complete. `W1a` (custom-field due dates), `W1b`/`W1c` (a
-> number's unit and range), `W1d` (the key-field rank) and `W1f` (an actionable `URL`/`FILE`
-> value) have shipped; the deferred `W1e`, the newly-split `W1g` (a `FILE` value's origin
-> device) and `W2`–`W10` remain open.
+> number's unit and range), `W1d` (the key-field rank), `W1e` (a number's decimal places) and
+> `W1f` (an actionable `URL`/`FILE` value) have shipped; `W1g` (a `FILE` value's origin device)
+> and `W2`–`W10` remain open.
 
 Answers issue [#621](https://github.com/BootBlock/Gubbins/issues/621): *which items, or types of
 item, is Gubbins weakest at tracking or managing?*
@@ -310,8 +310,8 @@ says so), so it belongs here as context, not as a gap.
 
 Ranked by *(breadth of archetypes unlocked) ÷ (cost)*. Deliberately weighted toward fixing a **cause**
 rather than adding a domain's fields, because the preset library already proves that adding fields
-does not make the app track anything better. `W1a`–`W1d` and `W1f` have shipped; `W1e`, `W1g` and
-`W2`–`W10` are open.
+does not make the app track anything better. `W1a`–`W1f` have shipped; `W1g` and `W2`–`W10` are
+open.
 
 - **`W1` — Make custom fields live.** The single highest-leverage change in the list: give
   `field_defs` a unit, a min/max, and a "surface this" flag, and teach the alert/agenda feeds to
@@ -319,8 +319,8 @@ does not make the app track anything better. `W1a`–`W1d` and `W1f` have shippe
   dates, substrate-decay dates and curing windows **at once**, and turns the existing 72 presets
   from decoration into behaviour. Addresses C1. Note the split: the "surface this" half is adjacent
   to issue [#619](https://github.com/BootBlock/Gubbins/issues/619) (which is purely presentational),
-  but the load-bearing half — feeds reading `DATE` fields — is untouched by it. Five have now
-  shipped; `W1e` (precision) and the newly-split `W1g` (a `FILE` value's origin device) remain.
+  but the load-bearing half — feeds reading `DATE` fields — is untouched by it. Six have now
+  shipped; the newly-split `W1g` (a `FILE` value's origin device) remains.
   - **`W1a` — DATE fields as due dates. ✅ Shipped** (see [§4.1](#41-w1a--the-due-date-opt-in-shipped)).
   - **`W1b` — a per-definition unit** on `field_defs`, so a `NUMBER` field carries one.
     ✅ **Shipped** (see [§4.2](#42-w1bw1c--a-numbers-unit-and-range-shipped)).
@@ -328,9 +328,13 @@ does not make the app track anything better. `W1a`–`W1d` and `W1f` have shippe
     existing `validateFieldValue` seam. ✅ **Shipped** with `W1b` — same surface, one migration
     (see [§4.2](#42-w1bw1c--a-numbers-unit-and-range-shipped)). **Precision was considered and
     deliberately deferred** as `W1e`; §4.2 records why.
-  - **`W1e` — decimal precision on a `NUMBER` definition.** Open, split out of `W1c`. Not a third
-    bound of the same kind: min/max are pure *constraints*, while precision is half constraint
-    ("at most 2 decimal places") and half *display format* ("show `5.5` as `5.50`"). See §4.2.
+  - **`W1e` — decimal precision on a `NUMBER` definition.** ✅ **Shipped**, split out of `W1c`
+    (see [§4.5](#45-w1e--a-numbers-decimal-places-shipped)). Not a third bound of the same kind:
+    min/max are pure *constraints*, while precision is half constraint ("at most 2 decimal
+    places") and half *display format* ("show `5.5` as `5.50`"). **Both halves shipped** — §4.2's
+    argument that the constraint half alone would read as broken was accepted rather than
+    deferred again — and §4.5 records the design fork the display half forced (whether a custom
+    number joins the locale-formatted `useFormatters`/`Money` world) and why it was answered *no*.
   - **`W1d` — the "surface this" prominence flag.** ✅ **Shipped** as the **key-field** rank
     (see [§4.3](#43-w1d--the-key-field-rank-shipped)). Designed against #619 rather than beside it:
     that setting is per *category* and chooses **which tab** the whole field set sits in, while this
@@ -377,8 +381,9 @@ does not make the app track anything better. `W1a`–`W1d` and `W1f` have shippe
     surfaces have nowhere to put. Scope it before starting on two questions §4.4 could not
     settle from the read side: whether an origin is stamped on **every** field value or only a
     `FILE` one, and where the re-link flow lives given that these surfaces do not edit.
-    Concrete target: **after `W1e`**, and before `W2` — it shares `W2`'s two-subject shape and
-    the same two tables, so doing it first keeps `W2`'s migration from having to carry it.
+    Concrete target: **next** — `W1e` has now shipped, and `W1g` still goes before `W2` for the
+    reason recorded when it was split: it shares `W2`'s two-subject shape and the same two
+    tables, so doing it first keeps `W2`'s migration from having to carry it.
 - **`W2` — A repeating (table-valued) field.** Removes the `UNIQUE (item_id, def_id)` ceiling for
   opted-in definitions. Unlocks telemetry logs, per-position measurements, prior owners, lineage
   notes — every archetype whose data is a *series*. Addresses C1. Larger and schema-visible; do
@@ -796,6 +801,106 @@ and only one of them is a display decision.
   bridge gap is still the **four** definition attributes `W1a`–`W1d` added, unchanged by this.)
 - **Search and export.** A link is still a string to both, correctly: `field:` comparisons match on
   the stored text, and an exported cell holds the address a spreadsheet will linkify itself.
+
+### 4.5 `W1e` — a number's decimal places (shipped)
+
+A custom `NUMBER` definition can carry a number of **decimal places**. A value with more than it
+allows is refused at the point of save, and a stored value is *written* to it wherever it is shown
+— `5.5` on a two-decimal field reads `5.50` on the item card, the dense row, the table cell and the
+location detail panel. Optional, per definition, and a field without it behaves exactly as before.
+
+**Both halves shipped, and that was the decision — not a re-deferral.** §4.2 deferred this on the
+grounds that the constraint half alone would read as broken ("someone who sets 2 dp and still sees
+`5.5` will call it a bug") and that the display half forces a question about locale formatting. That
+argument was accepted rather than restated: shipping half of it was never a real option, so the
+locale question had to be answered.
+
+**The design fork: a custom number does *not* join the locale-formatted world.** The app has a
+whole `useFormatters` / Foundry `Money` seam for numbers that are — `quantity` groups, `currency`
+takes the locale's decimal separator — and a custom `NUMBER` deliberately stays outside it. Three
+reasons, each checkable rather than a preference:
+
+1. **Grouping would be wrong as often as right.** `Formatters.quantity` groups because it formats a
+   *count*. A custom number is whatever the user made it, and the preset library is full of ones
+   that are not counts. A definition named "Year built" holding `2026` would render `2,026`. There
+   is nothing on the definition that could tell the two apart, so enrolling them all would trade a
+   cosmetic gain on some fields for a plainly wrong number on others.
+2. **There would be no locale-aware way to type one back in.** Nothing on the entry path reads a
+   locale decimal separator. The calculator behind the value box scans a number as digits, an
+   optional `.`, digits, and returns `null` on any character it does not recognise
+   ([evaluate-expression.ts:83-98](../../src/components/foundry/evaluate-expression.ts#L83-L98));
+   below it `validateFieldValue` parses with a bare `Number(text)`, for which `'5,50'` is `NaN`.
+   So under a German locale a card would read `5,50` and *neither* layer of the control that set
+   it would take that string back. Money can afford the locale because it owns **both** ends —
+   `Money` renders and `snapMoneyInput` + `decimalSeparatorForLocale` parse. Adopting only the
+   render half here would take the risk without the mechanism that makes it safe.
+3. **Every other surface publishes the stored string verbatim.** `field:` search comparisons match
+   on it, the CSV export writes it, and the bridge serves it. A grouped or comma-separated card
+   would be the one surface of five spelling the value differently.
+
+So the display is a fixed-decimal rendering of the canonical form, in the same non-locale terms the
+value is already stored and already shown in — not an `Intl.NumberFormat` call. **Rejected:**
+enrolling custom numbers in `useFormatters`, and the half-way position of a locale decimal separator
+without grouping (which keeps reason 2 and most of reason 3 while gaining almost nothing).
+
+**What building it proved wrong, or made concrete, about the description above.**
+
+1. **It is not "a constraint plus a formatter" — it is one call used twice.** §4.2 wrote the two
+   halves as separate jobs. They collapse: the constraint is *"does writing this value at this
+   precision lose anything?"*, which is literally `Number(n.toFixed(p)) === n` — the display call,
+   compared back. So `field-number-format.ts` exports the pair, and the property that falls out is
+   the one the whole design rests on: **a value the validator accepted is one the renderer only
+   ever pads.** Rounding is reserved for a value that never met the validator — merged from a peer,
+   restored from a backup, or left behind when the precision was tightened afterwards.
+   Counting the digits in `String(n)` instead would have been the obvious implementation and a
+   wrong one: `String(1e-7)` is `'1e-7'`, which a split on `.` reads as zero decimal places.
+2. **The precision is applied on the way *out*, not baked into storage — and that is load-bearing.**
+   A `NUMBER` is still stored as the canonical `String(n)`, so a two-decimal field stores `5.5`.
+   That is what lets a precision *changed later* reformat every existing value at once, instead of
+   leaving a column holding a mixture of old and new spellings that nothing could tell apart. It
+   also keeps search, export and the bridge reading exactly what they read before.
+3. **`0` is a setting, and it is the one value the surrounding idioms would have dropped.** Every
+   other optional number on `field_defs` is meaningless at zero, so the codebase's habits — `??`,
+   truthiness — are safe on all of them and wrong on this one. `precision: 0` had to survive the
+   reuse path's `applyOnReuse` (which tests `!= null`, so it does), the retype-clearing branch, the
+   editor's seeding of its box, the add form's `?? null` collapse (safe: `0` is not nullish), and
+   the render arm. Each is now asserted by a test naming `0` specifically, because a truthiness
+   slip at any one of them would silently turn "whole numbers only" into "as entered" — the exact
+   opposite — with nothing on screen to explain it.
+4. **`0` also needed its own message, not a degenerate plural.** "Shelves must have at most 0
+   decimal places" is technically true and reads as a bug. The `precision = 0` case says *"Shelves
+   must be a whole number."*, matching the `RATING` message beside it, which says the same thing
+   about a different rule. The copy stays English rather than a `t()` lookup for the reason
+   `rangeError` already records — the seam is dependency-free and runs in the repository and the
+   CSV import, neither of which has a translator in scope — so routing it through the catalog is
+   one change for all sixteen of that file's messages, not three of them.
+5. **A blank guard was needed in the formatter even though every caller drops blanks first.**
+   `Number('')` and `Number(' ')` are both `0`, so without it an empty value would render as a
+   confident `0.00`. A test caught it. This is the same trap `validateFieldValue` and `resolveBound`
+   already write around, met a third time.
+6. **The editor's box clamps rather than refusing, unlike the range boxes beside it.** A count of
+   decimal places is a bounded whole number — the shape of `due_lead_days`, not of a bound — so
+   `9` settles to the cap and `2.5` to `3`, and the control has no error path at all. Its `maxLength`
+   is 1 (the cap is a single digit), which keeps the clamp a paste-only path. It is still a text
+   input with `inputMode="numeric"` rather than `type="number"`, for the reason §4.2's last
+   paragraph gives, and `numeric` rather than `decimal` because the count itself is whole.
+
+**Deliberately not in scope:**
+
+- **The editors do not pad.** The value box holds `5.5` while the card reads `5.50`, and that is
+  correct rather than inconsistent: the box holds the number you type (and calculator expressions
+  on the way to it), and validation only ever refuses *too many* decimals — never too few — so what
+  the box holds is always a legal value. Snapping on blur, as `snapMoneyInput` does for money, would
+  add a second write path for no gain.
+- **Search and export stay raw**, exactly as `W1f` left links: an exported cell holds the number a
+  spreadsheet will format itself, and `field:x > 5.5` matches the stored text.
+- **Bridge exposure.** `ITEM_FIELD_VALUE_KEYS` and `CategoryFieldDto`/`toCategoryField` still
+  describe the pre-`W1a` shape, so a consumer cannot see a precision, a rank, a unit, a range or the
+  due-date opt-in. Still one change, now covering **five** attributes, gated by the OpenAPI and
+  field-vocabulary drift tests.
+- **The preset library sets none.** Same call as `W1b`'s and `W1d`'s: seeding precisions would
+  reformat existing users' values on adoption. It pairs with the preset unit-renaming work `W1b`
+  deferred.
 
 ## 5. Defects found while surveying
 

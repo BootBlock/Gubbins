@@ -13,7 +13,15 @@ import {
  */
 
 function field(overrides: Partial<LocationDetailField> = {}): LocationDetailField {
-  return { defId: 'def-1', name: 'Load rating', fieldType: 'TEXT', unit: null, value: '30 kg', ...overrides };
+  return {
+    defId: 'def-1',
+    name: 'Load rating',
+    fieldType: 'TEXT',
+    unit: null,
+    precision: null,
+    value: '30 kg',
+    ...overrides,
+  };
 }
 
 describe('resolveLocationDetailFields', () => {
@@ -23,6 +31,16 @@ describe('resolveLocationDetailFields', () => {
         field({ fieldType: 'NUMBER', name: 'Load rating', unit: 'kg', value: '30' }),
       ]),
     ).toEqual([{ id: 'def-1', label: 'Load rating', value: { kind: 'measure', text: '30', unit: 'kg' } }]);
+  });
+
+  it('writes a number to the definition’s decimal places, as an item card does (W1e)', () => {
+    // How a number is written belongs to the definition, so a location's value must not read
+    // "30" where an item's inheriting the same definition reads "30.00".
+    expect(
+      resolveLocationDetailFields([
+        field({ fieldType: 'NUMBER', name: 'Load rating', unit: 'kg', precision: 2, value: '30' }),
+      ]),
+    ).toEqual([{ id: 'def-1', label: 'Load rating', value: { kind: 'measure', text: '30.00', unit: 'kg' } }]);
   });
 
   it('resolves a value into the same descriptor an item card renders', () => {
