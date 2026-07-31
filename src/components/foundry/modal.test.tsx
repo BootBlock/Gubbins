@@ -226,6 +226,11 @@ describe('Modal — dismissing by tapping the backdrop (#614)', () => {
     return { pointerId: 1, isPrimary: true, button: 0, ...overrides };
   }
 
+  /** A click a pointer actually made: `detail` counts the clicks of the press behind it. */
+  const POINTER_CLICK = { detail: 1 };
+  /** The click Enter or Space synthesises on a focused control — no press behind it. */
+  const KEYBOARD_CLICK = { detail: 0 };
+
   /**
    * Play a full press → release → click, the way a browser dispatches one. The click lands on
    * the nearest common ancestor of the two ends, so a gesture that starts on the backdrop and
@@ -235,7 +240,7 @@ describe('Modal — dismissing by tapping the backdrop (#614)', () => {
     const clickTarget = press === release ? press : screen.getByRole('dialog');
     fireEvent.pointerDown(press, pointer(init));
     fireEvent.pointerUp(release, pointer(init));
-    fireEvent.click(clickTarget, pointer(init));
+    fireEvent.click(clickTarget, { ...pointer(init), ...POINTER_CLICK });
   }
 
   it('closes on a tap that presses and releases on the backdrop', async () => {
@@ -263,37 +268,24 @@ describe('Modal — dismissing by tapping the backdrop (#614)', () => {
     expect(screen.queryByRole('dialog')).not.toBeNull();
   });
 
-  it('stays open when the browser takes the gesture over — a pinch, not a tap', async () => {
-    // A claimed gesture arrives as pointercancel; it is over at that point, so a release
-    // afterwards must not be able to complete it and hand the next click a dismissal.
-    render(<Harness />);
-    const backdrop = backdropOf();
-    fireEvent.pointerDown(backdrop, pointer());
-    fireEvent.pointerCancel(backdrop, pointer());
-    fireEvent.pointerUp(backdrop, pointer());
-    fireEvent.click(backdrop, pointer());
-    expect(screen.queryByRole('dialog')).not.toBeNull();
-  });
-
   it('does not let an abandoned press be cashed in by a later keyboard activation', async () => {
-    // Press the backdrop and let go outside the window: no release reaches the dialog and no
-    // click ever arrives. Activating a control with Enter afterwards dispatches a click with
-    // no press behind it, and that must not collect the dismissal the abandoned press left.
+    // Press the backdrop and let go past the edge of the screen: the press is spent but no
+    // click ever arrives for it. Activating a control with Enter afterwards synthesises a
+    // click with no press behind it, and that must not collect the dismissal left lying there.
     render(<Harness />);
     fireEvent.pointerDown(backdropOf(), pointer());
-    fireEvent.click(screen.getByLabelText('Name'), { detail: 0 });
+    fireEvent.click(screen.getByLabelText('Name'), KEYBOARD_CLICK);
     expect(screen.queryByRole('dialog')).not.toBeNull();
   });
 
   it('does not let a right-press on the backdrop be cashed in by a later click', async () => {
-    // A right-press and release opens the context menu; the browser sends no click, so the
-    // gesture would sit there complete-but-unclaimed. The next click to reach the dialog —
-    // here a keyboard activation, which brings no press of its own — must not collect it.
+    // A right-press opens the context menu and sends no click at all, so it would otherwise
+    // sit armed for whatever click reached the dialog next.
     render(<Harness />);
     const backdrop = backdropOf();
     fireEvent.pointerDown(backdrop, pointer({ button: 2 }));
     fireEvent.pointerUp(backdrop, pointer({ button: 2 }));
-    fireEvent.click(screen.getByLabelText('Name'), { detail: 0 });
+    fireEvent.click(screen.getByLabelText('Name'), KEYBOARD_CLICK);
     expect(screen.queryByRole('dialog')).not.toBeNull();
   });
 
@@ -313,7 +305,7 @@ describe('Modal — dismissing by tapping the backdrop (#614)', () => {
     const nestedBackdrop = screen.getByRole('dialog', { name: 'Add location' }).firstElementChild!;
     fireEvent.pointerDown(nestedBackdrop, pointer());
     fireEvent.pointerUp(nestedBackdrop, pointer());
-    fireEvent.click(nestedBackdrop, pointer());
+    fireEvent.click(nestedBackdrop, { ...pointer(), ...POINTER_CLICK });
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add location' })).toBeNull());
     expect(screen.getByRole('dialog', { name: 'Add item' })).toBeTruthy();

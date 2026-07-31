@@ -50,6 +50,8 @@ describe('Drawer — dialog semantics', () => {
 describe('Drawer — every route out works', () => {
   /** One end of a pointer gesture, as a real pointing device reports it. */
   const POINTER = { pointerId: 1, isPrimary: true, button: 0 };
+  /** A click a pointer actually made: `detail` counts the clicks of the press behind it. */
+  const POINTER_CLICK = { ...POINTER, detail: 1 };
 
   /** Renders a drawer that actually unmounts on close, so we assert the real user outcome. */
   function Harness() {
@@ -79,7 +81,7 @@ describe('Drawer — every route out works', () => {
     expect(backdrop).toBeTruthy();
     fireEvent.pointerDown(backdrop!, POINTER);
     fireEvent.pointerUp(backdrop!, POINTER);
-    fireEvent.click(backdrop!, POINTER);
+    fireEvent.click(backdrop!, POINTER_CLICK);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
@@ -91,7 +93,7 @@ describe('Drawer — every route out works', () => {
     const dialog = screen.getByRole('dialog');
     fireEvent.pointerDown(dialog.firstElementChild!, POINTER);
     fireEvent.pointerUp(screen.getByRole('button', { name: 'Shelf A' }), POINTER);
-    fireEvent.click(dialog, POINTER);
+    fireEvent.click(dialog, POINTER_CLICK);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
