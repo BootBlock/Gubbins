@@ -308,7 +308,7 @@ says so), so it belongs here as context, not as a gap.
 
 Ranked by *(breadth of archetypes unlocked) ÷ (cost)*. Deliberately weighted toward fixing a **cause**
 rather than adding a domain's fields, because the preset library already proves that adding fields
-does not make the app track anything better. `W1a`–`W1c` have shipped; everything else is open.
+does not make the app track anything better. `W1a`–`W1d` have shipped; `W1e` and `W2`–`W10` are open.
 
 - **`W1` — Make custom fields live.** The single highest-leverage change in the list: give
   `field_defs` a unit, a min/max, and a "surface this" flag, and teach the alert/agenda feeds to

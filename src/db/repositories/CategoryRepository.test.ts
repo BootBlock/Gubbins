@@ -1073,13 +1073,24 @@ describe('CategoryRepository', () => {
       // "name - category" on the strength of that grouping, so the rank must not break it.
       const a = await categories.create({ name: 'AAA' });
       const b = await categories.create({ name: 'BBB' });
-      await categories.addField(a.id, { name: 'Plain', fieldType: 'TEXT' });
-      await categories.addField(b.id, { name: 'Leading', fieldType: 'TEXT', prominence: 'key' });
+      await categories.addField(a.id, { name: 'Solo', fieldType: 'TEXT' });
+      await categories.addField(b.id, { name: 'Plain', fieldType: 'TEXT', position: 0 });
+      await categories.addField(b.id, {
+        name: 'Leading',
+        fieldType: 'TEXT',
+        position: 1,
+        prominence: 'key',
+      });
       const all = await categories.listAllFields();
-      // Compared against the ids in *id* order, which is what `ORDER BY cf.category_id ASC`
-      // actually produces — the ids are UUIDs, so it is unrelated to the categories' names and
-      // to which of them holds the key field.
-      expect(all.map((f) => f.categoryId)).toEqual([a.id, b.id].sort());
+
+      // Grouping intact: each category's rows are contiguous. Asserted *without* naming which
+      // category id comes first — the ids are UUIDs, so an expectation derived from the same key
+      // the read sorts by could not tell a rank leak from the other coin flip.
+      const runs = all.map((f) => f.categoryId).filter((id, i, ids) => id !== ids[i - 1]);
+      expect(new Set(runs).size).toBe(runs.length);
+      // And inside the category that holds one, the key field has *not* been hoisted: `position`
+      // still decides. This is the assertion that fails if the rank ever reaches this read.
+      expect(all.filter((f) => f.categoryId === b.id).map((f) => f.name)).toEqual(['Plain', 'Leading']);
     });
   });
 });
