@@ -5,6 +5,7 @@ import {
   CapabilityIcon,
   CategoryIcon,
   CostIcon,
+  DatabaseIcon,
   DatasheetIcon,
   DueDateIcon,
   EditIcon,
@@ -41,6 +42,7 @@ import { KitEditor, LifecycleEditor, MaintenanceEditor } from '@/features/lifecy
 import { ActivityLog } from './ActivityLog';
 import { AttachmentManager } from './AttachmentManager';
 import { CapabilityEditor } from './CapabilityEditor';
+import { CategoryLookupPanel, hasRunnableLookup } from '@/features/lookups';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
 import { AssetEditor } from './AssetEditor';
@@ -103,6 +105,12 @@ export function ItemDetailDialog({
   const hidesSomething = hidesAnyCapability(category?.hiddenCapabilities);
   const presence = useItemSectionPresence(item.id, hidesSomething);
 
+  // Whether this item's category offers a lookup this build can run (issue #616). The section is
+  // omitted entirely when it doesn't: `Section` draws its card — border, icon, title, help badge —
+  // before it reaches its children, so a panel that renders `null` would leave an empty card on
+  // every item rather than no card at all.
+  const offersLookup = hasRunnableLookup(category?.lookupSources);
+
   // Third axis (issue #619): where the category's *custom fields* sit. Position, unlike the two
   // axes above, is not about what exists — every tab here is still reachable in every mode.
   //
@@ -123,6 +131,7 @@ export function ItemDetailDialog({
     hiddenCapabilities,
     presence.data ?? NO_SECTION_PRESENCE,
     prominence,
+    offersLookup,
   );
 
   // Collector-card rarity (Appearance flair): a decorative gem in the dialog's top-right for the
@@ -390,6 +399,14 @@ const SECTION_HINT_CUSTOM_FIELDS =
   '- Here you just fill in this item’s **values**.\n\n' +
   '> Give an item a category on the **Details** tab to unlock its custom fields.';
 
+const SECTION_HINT_LOOKUP =
+  'Fill this item’s fields from an **open database** — the one the category is set up to use.\n\n' +
+  '- You always **pick which entry** is yours from a list of matches; a search hit is never applied ' +
+  'on your behalf.\n' +
+  '- You then **review** every value before anything is written, and your own entries are never ' +
+  'overwritten unless you tick them.\n\n' +
+  '> This section appears only for categories that have a database attached.';
+
 const SECTION_HINT_ACTIVITY =
   'A dated **history** of everything that’s happened to this item — moves, quantity changes, ' +
   'condition updates, maintenance, kit builds and more.\n\n' +
@@ -420,6 +437,13 @@ const SECTION_HINT_ACTIVITY =
  * whether they appear. It is applied last, and deliberately cannot resurrect anything the two
  * visibility axes dropped: when the Custom fields section would not be shown at all, the
  * position reverts to the default rather than promoting a tab that no longer holds them.
+ *
+ * `offersLookup` (issue #616) is the one gate that is not a capability: the "Fill from a database"
+ * section is omitted outright unless the item's category has a lookup provider this build can run.
+ * Every other section owns an editor that is useful empty, so it can render its card and let the
+ * editor say "nothing yet"; that one renders nothing at all, and an empty card promising a feature
+ * the category hasn't got would be worse than no card. It moves with the custom fields under
+ * `prominence`, since those are the fields it fills.
  */
 export function buildTabs(
   item: Item,
@@ -427,6 +451,7 @@ export function buildTabs(
   hidden: ReadonlySet<FeatureId> = EMPTY_HIDDEN,
   presence: ItemSectionPresence = NO_SECTION_PRESENCE,
   prominence: FieldProminence = DEFAULT_PROMINENCE,
+  offersLookup = false,
 ): readonly TabDef[] {
   // The variants block lives inside LifecycleEditor and is gated there by both axes, so the
   // section heading has to ask the same question rather than only the device's.
@@ -446,6 +471,27 @@ export function buildTabs(
     feature: 'custom-fields',
     hasData: presence.customFields,
   };
+
+  // Filling those fields from an open database (issue #616). Sits directly under them wherever
+  // they end up — it answers the follow-up question, "do I have to type all this?" — so it moves
+  // into the break-out tab with them rather than being stranded in Classification.
+  //
+  // Gated on `scraping` ("Product & supplier lookup"), the capability the barcode and supplier
+  // lookups already live under, but resolved **here** rather than left to the section filter
+  // below: the `own-tab` tab is assembled after that filter has run, so a section carried into it
+  // would otherwise skip the gate entirely. Present at all only when the category actually offers
+  // a lookup — unlike every other section, this one has nothing to show without one.
+  const lookupSections: readonly SectionDef[] =
+    offersLookup && isCapabilityVisible('scraping', enabled, hidden, false) !== 'hidden'
+      ? [
+          {
+            title: 'Fill from a database',
+            icon: <DatabaseIcon />,
+            content: <CategoryLookupPanel item={item} />,
+            hint: SECTION_HINT_LOOKUP,
+          },
+        ]
+      : [];
   const tabs: readonly TabDef[] = [
     {
       id: 'details',
@@ -661,9 +707,10 @@ export function buildTabs(
           feature: 'custom-fields',
           hasData: presence.capabilities,
         },
-        // In `own-tab` mode the fields leave Classification entirely and are inserted below as a
-        // tab of their own; Tags and Capabilities keep this one.
-        ...(prominenceMode === 'own-tab' ? [] : [customFieldsSection]),
+        // In `own-tab` mode the fields — and the lookup that fills them — leave Classification
+        // entirely and are inserted below as a tab of their own; Tags and Capabilities keep this
+        // one.
+        ...(prominenceMode === 'own-tab' ? [] : [customFieldsSection, ...lookupSections]),
       ],
     },
     {
@@ -710,6 +757,8 @@ export function buildTabs(
           customFieldsVerdict === 'shown-despite-hidden'
             ? { ...customFieldsSection, shownDespiteHidden: true }
             : customFieldsSection,
+          // Already gated above, since this tab is built past the section filter (issue #616).
+          ...lookupSections,
         ],
       },
       'details',

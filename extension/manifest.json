@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Gubbins Supplier Scraper",
-  "version": "1.3.0",
-  "description": "Companion browser extension for Gubbins — scrapes supplier part data, looks up retail barcodes, and adds items from your live Amazon tab, bridging all three to the PWA over the secure §9 Content-Script protocol.",
+  "version": "1.4.0",
+  "description": "Companion browser extension for Gubbins — scrapes supplier part data, looks up retail barcodes, fills a category’s fields from an open database, and adds items from your live Amazon tab, bridging them all to the PWA over the secure §9 Content-Script protocol.",
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -28,6 +28,7 @@
     "https://*.rs-online.com/*",
     "https://*.adafruit.com/*",
     "https://*.sparkfun.com/*",
-    "https://*.openfoodfacts.org/*"
+    "https://*.openfoodfacts.org/*",
+    "https://*.wikidata.org/*"
   ]
 }

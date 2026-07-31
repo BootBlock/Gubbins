@@ -96,13 +96,43 @@ export function isAllowedLookupUrl(rawUrl: string): boolean {
 }
 
 /**
- * The full set of host patterns the extension manifest must grant — suppliers plus the
- * product-lookup provider. `host-permissions.test.ts` pins `extension/manifest.json` to
- * this, so neither list can drift from the manifest.
+ * Host allowlist for the **category data-lookup** providers (issue #616) — the open databases a
+ * category's fields can be filled from.
+ *
+ * Kept as a third list rather than folded into either above, because the three answer different
+ * questions and gate different fetches: a *supplier* page is scraped for a part, a *barcode* is
+ * resolved against a product database, and a *category* is filled from a subject database. One
+ * combined list would let a URL cleared for one purpose be fetched for another.
+ *
+ * `*.wikidata.org` covers both hosts the `wikidata-film` provider reaches — `www.wikidata.org`
+ * for entity search and `query.wikidata.org` for the SPARQL detail query — since the leading
+ * `*.` matches the apex and any subdomain, mirroring MV3 semantics.
+ */
+export const DATA_LOOKUP_HOST_PERMISSIONS: readonly string[] = ['https://*.wikidata.org/*'];
+
+const ALLOWED_DATA_LOOKUP_DOMAINS: readonly string[] = DATA_LOOKUP_HOST_PERMISSIONS.map((pattern) =>
+  pattern
+    .replace(/^https:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/^\*\./, '')
+    .toLowerCase(),
+);
+
+/** Whether a category data-lookup target is an allowed open-database host (issue #616). */
+export function isAllowedDataLookupUrl(rawUrl: string): boolean {
+  return isAllowedUrlForDomains(rawUrl, ALLOWED_DATA_LOOKUP_DOMAINS);
+}
+
+/**
+ * The full set of host patterns the extension manifest must grant — suppliers, the
+ * product-lookup provider, and the category data-lookup providers.
+ * `host-permissions.test.ts` pins `extension/manifest.json` to this, so no list can drift
+ * from the manifest.
  *
  * @internal Exported for unit tests only.
  */
 export const ALL_EXTENSION_HOST_PERMISSIONS: readonly string[] = [
   ...EXTENSION_HOST_PERMISSIONS,
   ...PRODUCT_LOOKUP_HOST_PERMISSIONS,
+  ...DATA_LOOKUP_HOST_PERMISSIONS,
 ];
