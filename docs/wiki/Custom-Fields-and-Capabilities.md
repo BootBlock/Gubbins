@@ -55,7 +55,8 @@ Each custom field has a **type** that decides how you enter and how Gubbins show
 - **Date** — a calendar date.
 - **Choice** — a value picked from a list of options you define.
 - **URL / Link** — a web address, shown as a
-  [[clickable link|#opening-a-link-or-file-field]] wherever the value appears.
+  [[clickable link|#opening-a-link-or-file-field]] on the item card, the list rows and a
+  location's detail panel.
 - **File link** — a pointer to a file that lives *outside* Gubbins: a path on your
   computer, a network share (`\\server\share\movie.mkv`) or a `file://` link. Gubbins stores
   the **link**, not the file — so the file is never copied, never synced, and never included

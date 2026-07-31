@@ -362,6 +362,7 @@ does not make the app track anything better. `W1a`–`W1d` and `W1f` have shippe
     not purely presentational for a `FILE`: a `file://`, UNC or bare-path string is not safe to hand
     to an `<a href>`, so the arm must decide what is openable — the same judgement
     `resolveAttachmentLink` already encodes, so reuse that seam rather than restating it.
+    (§4.4 point 2 records why that last instruction turned out not to be followable.)
   - **`W1g` — a `FILE` value's origin device.** Open, split out of `W1f`'s part **(ii)** for
     the reasons in [§4.4](#44-w1f--an-actionable-urlfile-value-shipped). Neither
     `item_field_values` nor `location_field_values` carries an `origin_device_id`, so a `FILE`
@@ -738,16 +739,25 @@ and only one of them is a display decision.
    *values*: `link` (an address) and `pointer` (a path). A single arm carrying a nullable href
    would have let a renderer silently forget the un-openable case, which is the failure mode the
    discriminated union exists to prevent.
-2. **"Reuse `resolveAttachmentLink`" is reuse of half of it — and the other half is precisely
-   `W1g`.** That seam answers two questions at once: *is this an address?* (read from the stored
-   `kind` column) and *is this pointer foreign?* (computed from `origin_device_id`). A field value
-   has **neither column**, and part (i) needs only the first question — computed from the string,
-   not read from a column. So what was extracted is `isExternalHref`, exported from
-   `attachment-link.ts` so a datasheet recorded as an attachment and one recorded as a field value
-   are decided by one rule; `resolveAttachmentLink` itself was left untouched. Calling it with a
-   synthetic `{kind, originDeviceId: null}` and a placeholder device id would have been ceremony —
-   with a null origin it reduces to exactly the branch already taken, and it would have threaded a
-   device id through two pure seams that ignore it.
+2. **`resolveAttachmentLink` could not be reused at all — and the reason is precisely `W1g`.**
+   The `W1f` entry above says to reuse that seam rather than restate its judgement, and on
+   inspection there is no judgement there to reuse. It answers two questions: *is this an
+   address?* — which it does not compute, it **reads** it from the stored `kind` column — and *is
+   this pointer foreign?*, computed from `origin_device_id`. A field value has **neither column**.
+   Calling it with a synthetic `{kind, originDeviceId: null}` and a placeholder device id would
+   have been ceremony: with a null origin it reduces to exactly the branch already taken, while
+   threading a device id through two pure seams that ignore it.
+
+   So the rule had to be **written** rather than borrowed, and the honest place for it is
+   `lib/external-href.ts`, beside `lib/image-data-url.ts` — its exact structural counterpart, the
+   render-side gate for `<img src>` as this is for `<a href>`, homed in `lib/` for the reason that
+   file states: one definition, so two callers cannot drift. Note what this is **not**: it does
+   not unify the http(s) checks in `validateFieldValue` and `AttachmentRepository`, which stay
+   where they are. Those are *write-time* validators whose job is to explain a refusal in the
+   user's words; this one only has to answer yes or no, about a string that may have arrived from
+   a sync peer, a backup or an import with nothing having checked it. Same rule, different jobs —
+   and an earlier draft of this change claimed the seam was shared when it was not, which review
+   caught.
 3. **Openability is a security gate, not a formatting choice — and nothing above said so.** A
    `URL` value is validated as http(s) *at the point of save*, but nothing revalidates one that
    arrived by sync, by import, or that was left behind when a definition was retyped — and `FILE`

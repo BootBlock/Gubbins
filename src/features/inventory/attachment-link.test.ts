@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isExternalHref, resolveAttachmentLink } from './attachment-link';
+import { resolveAttachmentLink } from './attachment-link';
 
 const localOn = (originDeviceId: string | null) =>
   ({ kind: 'LOCAL_POINTER', value: 'C:\\Datasheets\\NE555.pdf', originDeviceId }) as const;
@@ -34,38 +34,5 @@ describe('resolveAttachmentLink', () => {
 
   it('preserves the literal path/value verbatim', () => {
     expect(resolveAttachmentLink(localOn('dev-A'), 'dev-B').value).toBe('C:\\Datasheets\\NE555.pdf');
-  });
-});
-
-describe('isExternalHref', () => {
-  it('accepts http and https, the only schemes a page can navigate to', () => {
-    expect(isExternalHref('https://example.com/manual.pdf')).toBe(true);
-    expect(isExternalHref('http://example.test/manual.pdf')).toBe(true);
-  });
-
-  it('tolerates the surrounding whitespace a pasted address carries', () => {
-    expect(isExternalHref('  https://example.com/manual.pdf  ')).toBe(true);
-  });
-
-  it('rejects a local path, a UNC share and a file:// URI — a page cannot navigate to any', () => {
-    expect(isExternalHref('C:\\Datasheets\\NE555.pdf')).toBe(false);
-    expect(isExternalHref('\\\\server\\share\\boiler-manual.pdf')).toBe(false);
-    expect(isExternalHref('/home/user/manual.pdf')).toBe(false);
-    expect(isExternalHref('file:///home/user/manual.pdf')).toBe(false);
-  });
-
-  it('rejects a scheme that would execute rather than navigate', () => {
-    // The gate that stops a stored string ever reaching an `href` as script — the same
-    // defence `isImageDataUrl` gives the IMAGE arm. A FILE value is stored verbatim, so a
-    // synced or imported row is the untrusted input this guards.
-    expect(isExternalHref('javascript:alert(1)')).toBe(false);
-    expect(isExternalHref('JavaScript:alert(1)')).toBe(false);
-    expect(isExternalHref('data:text/html,<script>alert(1)</script>')).toBe(false);
-  });
-
-  it('rejects free text and the empty string', () => {
-    expect(isExternalHref('see the folder on the NAS')).toBe(false);
-    expect(isExternalHref('')).toBe(false);
-    expect(isExternalHref('   ')).toBe(false);
   });
 });

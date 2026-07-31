@@ -13,8 +13,8 @@
  */
 import type { Item } from '@/db/repositories';
 import type { Condition, FieldType } from '@/db/repositories/constants';
+import { isExternalHref } from '@/lib/external-href';
 import { isImageDataUrl } from '@/lib/image-data-url';
-import { isExternalHref } from './attachment-link';
 import { UNLIMITED_GLYPH } from './unlimited';
 
 /** The built-in (always-available) card fields — those derivable from the item row itself. */
@@ -226,7 +226,7 @@ export type CardFieldValue =
    * An openable http(s) address (W1f) — a `URL` field's value, or a `FILE` field's when what
    * the user pointed at happens to be a web address. Named `href` rather than `text` because
    * that is the load-bearing part: only a value approved by
-   * {@link import('./attachment-link').isExternalHref} may take this arm, and the renderer
+   * {@link import('@/lib/external-href').isExternalHref} may take this arm, and the renderer
    * shows the address itself, exactly as the datasheet list does for an unlabelled link.
    */
   | { readonly kind: 'link'; readonly href: string }
@@ -380,8 +380,9 @@ export function customFieldValue(type: FieldType, raw: string | null, unit: stri
   if (type === 'NUMBER' && unit) return { kind: 'measure', text: raw, unit };
   // A URL/FILE value becomes something the user can act on (W1f). Which of the two arms it
   // takes is decided by the string, not the type, because `FILE` covers a local path, a UNC
-  // share *and* an `http(s)` URI — see {@link isExternalHref}, the one seam that answers this
-  // for an attachment too, so a datasheet reads the same however it was recorded.
+  // share *and* an `http(s)` URI — so only the value can say which it is. {@link isExternalHref}
+  // is the render-side gate that decides, and refusing anything but http(s) is what keeps a
+  // stored string from becoming an href the app would act on.
   //
   // Trimmed like IMAGE, so the address opened is exactly the one validation stored, and a
   // stray space can never be the difference between a link and a dead string.

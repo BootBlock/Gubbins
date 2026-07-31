@@ -18,6 +18,19 @@ import { CONDITION_COLOR_CLASS, CONDITION_LABELS } from './inventory-ui';
  * empties omitted).
  */
 
+/**
+ * The box shared by the two icon-and-value arms (`link`, `pointer`).
+ *
+ * `max-w-full` is load-bearing, not belt-and-braces. Every other arm is a plain inline `<span>`,
+ * so the parent's own `truncate` ellipsises it; these two are `inline-flex`, an *atomic* inline
+ * whose shrink-to-fit width floors at its min-content width and which `text-overflow` cannot
+ * ellipsise. Three of the four surfaces hide that, because there the box is a flex *item* and
+ * shrinks anyway — but the table cell (`ItemTable`) is a block, where an uncapped box lays out
+ * at the full width of the address and is hard-clipped mid-character with no ellipsis. Capping
+ * it at the cell hands the truncation back to the inner span, which can do it.
+ */
+const VALUE_BOX = 'inline-flex min-w-0 max-w-full items-baseline gap-1';
+
 /** One resolved value as JSX. `location` is tinted with its swatch class when provided. */
 export function FieldValue({
   field,
@@ -89,7 +102,7 @@ export function FieldValue({
           target="_blank"
           rel="noopener noreferrer"
           title={value.href}
-          className="inline-flex min-w-0 items-baseline gap-1 text-primary hover:underline"
+          className={cn(VALUE_BOX, 'text-primary hover:underline')}
         >
           <span aria-hidden className="shrink-0 self-center [&_svg]:size-3.5">
             <LinkIcon />
@@ -109,7 +122,7 @@ export function FieldValue({
       // a link here would look live and do nothing. The icon says "file pointer" to sighted
       // users and the sr-only label says it to AT — see the wiki for the whole story.
       return (
-        <span title={value.text} className="inline-flex min-w-0 items-baseline gap-1">
+        <span title={value.text} className={VALUE_BOX}>
           <span aria-hidden className="shrink-0 self-center text-muted-foreground [&_svg]:size-3.5">
             <LocalFileIcon />
           </span>
