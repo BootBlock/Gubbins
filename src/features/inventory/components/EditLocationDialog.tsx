@@ -15,6 +15,7 @@ import {
   ArchiveRestoreIcon,
   DeleteIcon,
   EditIcon,
+  HistoryIcon,
   ImageIcon,
   PackageIcon,
   MoveIcon,
@@ -50,6 +51,7 @@ import { LocationKindPicker } from './LocationKindPicker';
 import { LocationKindIcon } from './LocationKindIcon';
 import { LocationTagEditor } from './TagEditor';
 import { LocationFieldsEditor } from './LocationFieldsEditor';
+import { LocationActivityLog } from './LocationActivityLog';
 import { LocationStats } from './LocationStats';
 import { useLocationFullness } from '../use-location-fullness';
 import { LocationFullnessBar } from './LocationFullnessBar';
@@ -63,9 +65,10 @@ import { useErrorMessage } from '@/features/errors';
  * are never edited, so this dialog is only opened for mutable rows.
  *
  * Presented as a {@link RailModal}, mirroring `ItemDetailDialog`: **Details** is the whole
- * pre-existing form, unchanged field-for-field, and **Photos** (issue #81) is the location's
- * photo grid and the way into the region editor. The rail mounts only the active tab's panel,
- * so the photo queries never run for a user who is merely renaming a shelf.
+ * pre-existing form, unchanged field-for-field, **History** (issue #691) is the record of what has
+ * been done to this location, and **Photos** (issue #81) is the location's photo grid and the way
+ * into the region editor. The rail mounts only the active tab's panel, so neither the activity nor
+ * the photo queries ever run for a user who is merely renaming a shelf.
  *
  * The footer — delete, cancel, save — is pinned below the panel rather than living inside
  * Details, because it acts on the location as a whole, not on one tab's fields.
@@ -511,6 +514,14 @@ export function EditLocationDialog({
       // The rail mounts only the active panel, so the aggregate queries never run until the
       // user opens this tab — a rename of a shelf pays nothing for it.
       content: <LocationStats location={location} hasChildren={childCount > 0} />,
+    },
+    {
+      id: 'history',
+      label: t('inventory.locationActivity.tab'),
+      icon: <HistoryIcon />,
+      // Like Stats above, the rail mounts only the active panel — so a rename pays nothing for
+      // the activity read, and the record is only paged in when somebody asks to see it.
+      content: <LocationActivityLog locationId={location.id} />,
     },
     ...(enabledFeatures.has('location-photos')
       ? [

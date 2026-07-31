@@ -172,6 +172,28 @@ export const HISTORY_ACTIONS = [
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 
+/**
+ * Location activity-record action types (issue #691) — the `location_history` counterpart of
+ * {@link HISTORY_ACTIONS}, and deliberately a **separate, much smaller** vocabulary rather than a
+ * reuse of it. The two ledgers describe different subjects, and the overlap is only apparent:
+ * an item's `RE_PARENTED` means "its location was removed under it", while a location's means
+ * "it was moved under a different parent".
+ *
+ * Kept to the lifecycle changes that reshape the hierarchy, which is what nobody could audit.
+ * Geometry, colour, capacity and policy edits deliberately record **nothing** in this first pass —
+ * they change how a place is described, not where anything is. Later phases append (never
+ * repurpose) values, exactly as {@link HISTORY_ACTIONS} does.
+ */
+export const LOCATION_HISTORY_ACTIONS = [
+  'CREATED', // the location was added to the hierarchy
+  'RENAMED', // its name changed
+  'RE_PARENTED', // it was moved under a different parent (or out to the root)
+  'ARCHIVED', // it was hidden from the tree and the pickers
+  'RESTORED', // an archived location was brought back
+  'DELETED', // it was removed; its contents were re-homed and its children promoted
+] as const;
+export type LocationHistoryAction = (typeof LOCATION_HISTORY_ACTIONS)[number];
+
 // --- Perishables, condition & maintenance (spec §4, §4.3, Phase 9) --------------
 
 /**

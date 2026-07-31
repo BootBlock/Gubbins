@@ -5749,6 +5749,13 @@ components:
           - "item.restored"
           - "item.supplier_data_applied"
           - "item.tracking_changed"
+          - "location.archived"
+          - "location.changed"
+          - "location.created"
+          - "location.moved"
+          - "location.removed"
+          - "location.renamed"
+          - "location.restored"
           - "lookup.resolved"
           - "stock.adjusted"
         outcome:
@@ -5833,6 +5840,37 @@ components:
           allOf:
           -
             $ref: "#/components/schemas/ItemSummary"
+    LocationEventData:
+      type: "object"
+      description: "The payload of a `location.*` event — a change to a storage *location* rather than to an item. Deliberately flat: it carries no item, and no live location state (a `location.removed` event has none left to read)."
+      required:
+      - "locationId"
+      - "locationName"
+      - "action"
+      - "label"
+      - "detail"
+      properties:
+        locationId:
+          type: "string"
+          description: "The location the change was about. Present on every location event including `location.removed` — the activity record outlives the location it names, so an automation keyed by location id is always told which one went."
+          example: "loc-workshop-shelf-b"
+        locationName:
+          type: "string"
+          description: "The name the location carried when the change happened."
+          example: "Shelf B"
+        action:
+          type: "string"
+          description: "The raw location activity action (e.g. `CREATED`, `RENAMED`, `RE_PARENTED`, `ARCHIVED`, `RESTORED`, `DELETED`). Open-ended: a change made by a newer version of Gubbins may name an action not in that list, and arrives as `location.changed`."
+          example: "RE_PARENTED"
+        label:
+          type: "string"
+          description: "Short British-English action title."
+          example: "Moved"
+        detail:
+          type: "string"
+          nullable: true
+          description: "The stored human-readable note, or null."
+          example: "Moved from \"Workshop\" to \"Garage\"."
     LookupEventData:
       type: "object"
       required:
@@ -5926,6 +5964,13 @@ components:
           - "item.restored"
           - "item.supplier_data_applied"
           - "item.tracking_changed"
+          - "location.archived"
+          - "location.changed"
+          - "location.created"
+          - "location.moved"
+          - "location.removed"
+          - "location.renamed"
+          - "location.restored"
           - "lookup.resolved"
           - "stock.adjusted"
           example: "item.low_stock"
@@ -5935,9 +5980,11 @@ components:
           description: "When the event occurred, as ISO-8601 — the ledger row’s created_at for a ledger-derived event, or the moment the lookup resolved for `lookup.resolved`."
           example: "2025-06-27T06:13:20.000Z"
         data:
-          description: "The payload, whose shape follows `type`: `LookupEventData` for `lookup.resolved`, `BridgeEventData` for every ledger-derived event."
+          description: "The payload, whose shape follows `type`: `LookupEventData` for `lookup.resolved`, `LocationEventData` for every `location.*` event, `BridgeEventData` for every item ledger-derived event. Discriminate on the payload rather than on `type`: `events.truncated` is emitted by both ledgers and so arrives with either the item or the location shape — the presence of `locationName` is what tells them apart."
           oneOf:
           -
             $ref: "#/components/schemas/BridgeEventData"
+          -
+            $ref: "#/components/schemas/LocationEventData"
           -
             $ref: "#/components/schemas/LookupEventData"

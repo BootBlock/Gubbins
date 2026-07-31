@@ -66,6 +66,7 @@ think they're separate jobs.
 | **Categories & schemas** | Every [[category\|Custom-Fields-and-Capabilities]] and the custom fields assigned to it, plus the matching values on items. Items stay but become uncategorised. The field dictionary and any values set on locations are kept. |
 | **Custom field dictionary** | Every custom field *definition*, and with it the values stored against items **and** locations. This removes the vocabulary itself, not just the values. |
 | **Empty custom locations** | Your empty custom [[locations\|Locations-and-Stock]] only. Built-in system locations, and any location still holding items or stock, are kept — empty those first if you want the location gone. |
+| **Location history** | The record of what has been done to your [[locations\|Locations-and-Stock]] — renames, moves, archiving and deletions. The locations themselves, and everything stored in them, are kept. |
 
 > **ℹ️ Note**
 > **Custom field values** and **Custom field dictionary** are deliberately different. The first

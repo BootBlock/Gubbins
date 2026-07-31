@@ -44,6 +44,7 @@ export type EraseTargetId =
   | 'categories'
   | 'field-dictionary'
   | 'locations'
+  | 'location-history'
   | 'location-photos'
   | 'projects'
   | 'purchase-orders'
@@ -483,6 +484,24 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
       statements.push({
         sql: `DELETE FROM locations WHERE id IN (SELECT l.id FROM locations l WHERE ${LOCATION_EMPTY_PREDICATE});`,
       });
+      return statements;
+    },
+  },
+  {
+    id: 'location-history',
+    section: 'organisation',
+    label: 'Location history',
+    tooltip:
+      'Clears the record of what has been done to your locations — renames, moves, archiving and deletions. The locations themselves and everything stored in them are kept.',
+    scope: 'db',
+    countSql: 'SELECT COUNT(*) AS n FROM location_history',
+    buildStatements: ({ tombstone }) => {
+      const statements: SqlStatement[] = [];
+      // Unlike `item-history` above, this ledger is an ordinary LWW synced table (issue #691), so
+      // it is tombstoned rather than watermarked — without that a peer would simply hand every
+      // cleared entry straight back on the next sync.
+      if (tombstone) statements.push(tombstoneSelect('location_history', 'FROM location_history'));
+      statements.push({ sql: 'DELETE FROM location_history;' });
       return statements;
     },
   },
