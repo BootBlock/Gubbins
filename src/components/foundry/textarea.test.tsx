@@ -50,7 +50,6 @@ afterEach(() => {
 
 /** Drag the resize handle to `to` pixels — the browser applies the height, we react to it. */
 function dragResizeTo(box: HTMLElement, to: number): void {
-  fireEvent.pointerEnter(box);
   fireEvent.pointerDown(box);
   box.style.height = `${to}px`;
   fireEvent.pointerUp(window);
@@ -58,7 +57,6 @@ function dragResizeTo(box: HTMLElement, to: number): void {
 
 /** Click into the box to place the caret — the same pointer gesture, resizing nothing. */
 function clickInto(box: HTMLElement): void {
-  fireEvent.pointerEnter(box);
   fireEvent.pointerDown(box);
   fireEvent.pointerUp(window);
 }
@@ -143,9 +141,9 @@ describe('Textarea size memory', () => {
   });
 
   it('still recognises the default height for a box that had no layout at mount', () => {
-    // A box that mounts inside something collapsed, hidden or off-screen measures zero.
-    // Without a later measurement the "shrink it back down" rule silently stops working and
-    // whatever the default happens to be today gets pinned instead.
+    // The default height is measured when the drag ends, not when the box mounts. A box that
+    // was unmeasurable at mount would otherwise have recorded a zero and lost the "shrink it
+    // back down and it is forgotten" rule for the rest of its life.
     rememberHeight('item.notes', 260);
     laidOut = false;
     render(<Textarea aria-label="Notes" sizeKey="item.notes" />);
@@ -205,6 +203,44 @@ describe('Textarea auto-grow', () => {
     );
 
     expect(textarea().style.height).toBe('182px');
+  });
+
+  it('takes the padding off instead when the box is content-box', () => {
+    // The mirror of the case above: a content-box `height` is the content alone, so the
+    // padding `scrollHeight` includes has to come back off — and the default height, which
+    // was measured as an `offsetHeight`, has to be converted before it can act as the floor.
+    contentHeight = 180;
+
+    render(
+      <Textarea
+        aria-label="Notes"
+        autoGrow
+        style={{ boxSizing: 'content-box', paddingTop: '8px', paddingBottom: '8px' }}
+        value="a long note"
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(textarea().style.height).toBe('164px');
+  });
+
+  it('converts the default height into the same units before using it as the floor', () => {
+    // Content shorter than the default, so the floor is what decides the height. The default
+    // was measured as an `offsetHeight` (100, border-box); left unconverted it would set a
+    // content height of 100 here and render the box 16px taller than its own default.
+    contentHeight = 50;
+
+    render(
+      <Textarea
+        aria-label="Notes"
+        autoGrow
+        style={{ boxSizing: 'content-box', paddingTop: '8px', paddingBottom: '8px' }}
+        value="short"
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(textarea().style.height).toBe('84px');
   });
 
   it('stops at the maxRows ceiling', () => {

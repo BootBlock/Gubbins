@@ -84,12 +84,15 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   );
 
   /**
-   * Note the height the box has with nothing of ours applied, once that can be measured.
+   * Note the height the box has with nothing of ours applied — the app's current default for
+   * it — by briefly taking our height off and measuring what CSS gives it.
    *
-   * Deliberately re-attempted rather than measured once at mount: a box that mounts inside a
-   * container with no layout — collapsed, hidden, or off-screen — measures zero, and a zero
-   * here would silently disable "shrink it back down and it is forgotten". Cheap and
-   * idempotent: the first successful measurement is the last.
+   * Called lazily, at the two moments the figure is actually wanted, rather than once at
+   * mount: both of those moments are ones the box has demonstrably been laid out for (the
+   * user has just dragged it, or it has content to fit), whereas a mount-time measurement
+   * would quietly record a zero for a box that had no layout yet and leave "shrink it back
+   * down and it is forgotten" broken for the rest of that box's life. Idempotent — the first
+   * successful measurement is the last.
    */
   const captureDefaultHeight = useCallback(() => {
     const element = elementRef.current;
@@ -105,19 +108,19 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   const fitToContent = useCallback(() => {
     const element = elementRef.current;
     if (!element || !autoGrow || chosenHeightRef.current !== null) return;
+    captureDefaultHeight();
     // Measuring the content needs the box at its natural height first, or last render's
     // height would be its own floor and it could only ever grow.
     element.style.height = '';
     // No layout to measure (the test environment, or a hidden container) — leave the height
     // to CSS rather than pinning the box to a meaningless zero.
     if (element.scrollHeight <= 0) return;
-    if (defaultHeightRef.current === null && element.offsetHeight > 0) {
-      defaultHeightRef.current = element.offsetHeight;
-    }
     const box = boxMetrics(element);
-    const floor = defaultHeightRef.current ?? 0;
+    // The default height came from `offsetHeight`, which is always a border-box figure —
+    // convert it into whatever `height` means for this box before comparing the two.
+    const floor = asHeight(defaultHeightRef.current ?? 0, box);
     element.style.height = `${Math.round(Math.min(Math.max(contentFittingHeight(element, box), floor), ceilingHeight(box, maxRows)))}px`;
-  }, [autoGrow, maxRows]);
+  }, [autoGrow, maxRows, captureDefaultHeight]);
 
   /** Apply, store or forget a height the user dragged the box to. */
   const applyChosenHeight = useCallback(
@@ -145,29 +148,17 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     [sizeKey, fitToContent],
   );
 
-  // Measure the default height, then restore any height this box was last dragged to.
-  // Keyed on `sizeKey` alone: re-running it for any other reason would discard a size the
-  // user chose during this session.
+  // Restore whatever height this box was last dragged to. Keyed on `sizeKey` alone:
+  // re-running it for any other reason would discard a size the user chose this session.
   useLayoutEffect(() => {
     const element = elementRef.current;
     if (!element) return;
     element.style.height = '';
     defaultHeightRef.current = null;
-    captureDefaultHeight();
     const remembered = sizeKey ? readRememberedHeight(sizeKey) : null;
     chosenHeightRef.current = remembered;
     if (remembered !== null) element.style.height = `${remembered}px`;
-    // A box that mounts with no layout — inside something collapsed, hidden or off-screen —
-    // measures zero above, and both the default height and the content fit depend on a real
-    // measurement. Retry on the next frame, by which point a container that opens as part of
-    // the same commit has done so.
-    if (typeof requestAnimationFrame !== 'function') return;
-    const frame = requestAnimationFrame(() => {
-      captureDefaultHeight();
-      fitToContent();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [sizeKey, captureDefaultHeight, fitToContent]);
+  }, [sizeKey]);
 
   // Re-fit whenever the content changes from outside (a dialog opening onto an existing
   // note, a form reset). Typing is handled by the change wrapper below, since an
@@ -184,12 +175,6 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     if (!element) return;
     let heightAtPointerDown: number | null = null;
 
-    // The pointer has to arrive over the box before it can grab the handle, which makes this
-    // the last safe moment to measure the default height — by `pointerdown` the browser has
-    // already taken its own baseline for the drag.
-    const onPointerEnter = () => {
-      captureDefaultHeight();
-    };
     const onPointerDown = () => {
       heightAtPointerDown = element.offsetHeight;
     };
@@ -199,17 +184,19 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       if (before === null || before <= 0) return;
       const height = Math.round(element.offsetHeight);
       if (height <= 0 || Math.abs(height - before) < 1) return;
+      // Only now, with the drag over and the box certainly laid out, is the default height
+      // both needed and safe to measure — doing it any earlier in the gesture would put a
+      // height of ours on the box while the browser was still sizing it.
+      captureDefaultHeight();
       applyChosenHeight(height);
     };
 
-    element.addEventListener('pointerenter', onPointerEnter);
     element.addEventListener('pointerdown', onPointerDown);
     // On the window, not the element: a drag routinely ends with the pointer outside the
     // box it started in.
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerUp);
     return () => {
-      element.removeEventListener('pointerenter', onPointerEnter);
       element.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
@@ -266,6 +253,11 @@ function boxMetrics(element: HTMLTextAreaElement): BoxMetrics {
 /** The `height` that makes `element` exactly tall enough for what it currently holds. */
 function contentFittingHeight(element: HTMLTextAreaElement, box: BoxMetrics): number {
   return box.borderBox ? element.scrollHeight + box.border : element.scrollHeight - box.padding;
+}
+
+/** An `offsetHeight` (always border-box) expressed as a CSS `height` for this box. */
+function asHeight(offsetHeight: number, box: BoxMetrics): number {
+  return box.borderBox ? offsetHeight : offsetHeight - box.padding - box.border;
 }
 
 /** The `height` at which the box stops growing and starts scrolling instead. */
