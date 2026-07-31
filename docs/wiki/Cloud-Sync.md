@@ -141,6 +141,22 @@ devices.
 > the middle. The Google Drive option uses Google's own sign-in and stays within an app-private
 > folder. See [[Privacy & security|Privacy-and-Security]].
 
+## When your changes can't be published
+
+Syncing happens in two halves: Gubbins reads the shared copy and merges it into this device, then
+publishes the merged result back. If your connection drops — or the folder's cloud drive goes
+away — in between, the first half has already happened and the second hasn't.
+
+Gubbins says so plainly rather than reporting a blanket failure, because the difference matters:
+this device **is** now up to date with your others; it's your others that haven't caught up. The
+summary tells you what was brought in, the screens refresh to show it, and any
+[[overwritten edits|#reviewing-overwritten-edits]] are listed for review exactly as they would be
+after a complete sync. Nothing is lost — syncing again publishes your changes.
+
+> **ℹ️ Note**
+> Until that next sync succeeds, your other devices won't see the changes made on this one. If
+> you're about to move to another device, sync again first.
+
 ## Sharing your settings too
 
 By default sync carries your **records** — items, locations, loans and the rest — and leaves each

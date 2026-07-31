@@ -100,6 +100,45 @@ describe('describeSyncOutcome', () => {
     );
   });
 
+  it('says the merge landed but the publish did not, rather than "sync failed" (#638)', () => {
+    // The half-completed pass: local data *has* changed, so the copy must not read as
+    // "nothing happened" — and it still has to report what it brought in.
+    const quiet = describeSyncOutcome(makeResult({ status: 'MERGED_NOT_PUBLISHED' }));
+    expect(quiet).toBe(
+      'Merged on this device, but publishing to the sync location failed — your changes will publish next time you sync.',
+    );
+
+    const withChanges = describeSyncOutcome(
+      makeResult({ status: 'MERGED_NOT_PUBLISHED', pulled: 3, deleted: 1 }),
+    );
+    expect(withChanges).toContain('brought in 3 updates and removed 1 item');
+    expect(withChanges).toContain('publishing to the sync location failed');
+    expect(withChanges).not.toMatch(/^Synced/);
+  });
+
+  it('still flags overwritten edits when the publish failed (#638)', () => {
+    // The whole point of carrying the outcome out on the error: these are unrecoverable
+    // otherwise, so they must be as visible here as on a completed sync.
+    const text = describeSyncOutcome(
+      makeResult({
+        status: 'MERGED_NOT_PUBLISHED',
+        conflicts: [
+          {
+            id: 'x',
+            tableName: 'contacts',
+            rowId: 'x',
+            kind: 'UPDATE',
+            localVersion: { id: 'x' },
+            remoteVersion: { id: 'x' },
+            entityLabel: 'x',
+            detectedAt: 1,
+          },
+        ],
+      }),
+    );
+    expect(text).toContain('1 of your edits was overwritten — review to keep or restore it.');
+  });
+
   it('passes a HARD_STOP message through', () => {
     expect(describeSyncOutcome(makeResult({ status: 'HARD_STOP', message: 'Storage nearly full.' }))).toBe(
       'Storage nearly full.',
