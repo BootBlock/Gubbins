@@ -697,7 +697,10 @@ behaviour that does not exist.
    is no `GROUP BY` and no join to `items`, so the mixed figure is the *entire* report: it is
    rendered on the Reports screen as both a daily rate and a total, and exported to CSV, with no
    unit and no qualifier.
-4. **Clearing an item's activity log can report it as dead stock the next day** ([#686](https://github.com/BootBlock/Gubbins/issues/686)). Dead-stock idle
+4. **Clearing an item's activity log can report it as dead stock the next day** ([#686](https://github.com/BootBlock/Gubbins/issues/686)). ✅ **Fixed** — the
+   clear marker now counts as evidence, so an item is judged from the later of its last movement
+   and its last log clear, and only falls through to `items.created_at` when it has neither. As
+   found: dead-stock idle
    days derive from `MAX(item_history.created_at)` over rows carrying a delta
    ([ReportRepository.ts:1059-1061](../../src/db/repositories/ReportRepository.ts#L1059-L1061)),
    falling back to `items.created_at` when there is none

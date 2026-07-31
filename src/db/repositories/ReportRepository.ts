@@ -21,6 +21,7 @@ import {
   LOW_STOCK_QTY_THRESHOLD,
   UNASSIGNED_LOCATION_ID,
   type DeadStockMode,
+  type HistoryAction,
 } from './constants';
 import { addCalendarDays } from '@/lib/calendar-days';
 import { buildAncestorChain } from '@/features/inventory/location-inheritance';
@@ -93,6 +94,13 @@ import {
 import { onOrderQtyForItemSql } from './PurchaseOrderRepository';
 import type { LowStockThresholds, Page, PageParams } from './types';
 import { nowMs } from '@/lib/clock';
+
+/**
+ * The action of the marker a cleared Activity Log leaves behind (issue #620), typed against the
+ * action vocabulary so a rename there breaks this build rather than silently turning the
+ * dead-stock query's clear-instant subselect into one that matches nothing.
+ */
+const HISTORY_CLEARED: HistoryAction = 'HISTORY_CLEARED';
 
 /** Default number of time buckets for the movement report (a fortnight of days fits well). */
 const DEFAULT_MOVEMENT_BUCKETS = 14;
@@ -1026,10 +1034,26 @@ export class ReportRepository extends BaseRepository {
 
   /**
    * Dead stock (§3): items **opted in** to dead-stock reporting that have not moved within
-   * their idle threshold, with the capital tied up. "Last moved" is the most recent
-   * `item_history` entry that changed quantity or gauge value; an item that has never moved
-   * falls back to its `created_at`. The boundary is inclusive (idle for exactly the
-   * threshold qualifies); see `selectDeadStock`.
+   * their idle threshold, with the capital tied up. The instant an item is judged from is the
+   * most recent `item_history` entry that changed quantity or gauge value, **or** the most
+   * recent point its log was cleared — whichever is later; an item whose ledger offers neither
+   * falls back to its `created_at`. The boundary is inclusive (idle for exactly the threshold
+   * qualifies); see `selectDeadStock`.
+   *
+   * A cleared log counts because clearing one (issue #620) deletes the item's movement rows and
+   * leaves a single `HISTORY_CLEARED` marker carrying no deltas — so a movement-only read goes
+   * NULL for an item that has in fact been moving, and falling through to `created_at` reported
+   * an item stocked yesterday as idle since the day it was created (issue #686). The marker is
+   * as far back as the surviving evidence reaches, and a clear deletes everything older than
+   * itself, so taking the later of the two never prefers a movement the clear already erased.
+   *
+   * The marker rides the *same* subselect as the movement rows rather than a second one of its
+   * own. SQLite answers `MAX(created_at)` for an item by walking `idx_item_history_item_id`
+   * backwards and stopping at the first row that matches, so a predicate matching *more* rows
+   * can only stop at the same row or an earlier one: this widened arm never scans further than
+   * the movement-only read it replaces (it costs one more per-row comparison along the way).
+   * A dedicated marker subselect would instead scan the whole ledger of every never-cleared
+   * item, every time, to conclude there is nothing to find — `action` is not in the index.
    *
    * Reporting is opt-in (issue #92): an item is included only when its own `dead_stock_mode`
    * says `always`, or it defers (`inherit`) to a location in its ancestry that says so. Both
@@ -1047,7 +1071,7 @@ export class ReportRepository extends BaseRepository {
       unit_cost: number | null;
       preferred_supplier_cost: number | null;
       created_at: number;
-      last_moved_at: number | null;
+      last_known_movement_at: number | null;
       location_id: string;
       dead_stock_mode: DeadStockMode;
     }>(
@@ -1058,7 +1082,8 @@ export class ReportRepository extends BaseRepository {
               i.dead_stock_mode AS dead_stock_mode,
               ( SELECT MAX(h.created_at) FROM item_history h
                  WHERE h.item_id = i.id
-                   AND (h.quantity_delta IS NOT NULL OR h.net_value_delta IS NOT NULL) ) AS last_moved_at
+                   AND (h.quantity_delta IS NOT NULL OR h.net_value_delta IS NOT NULL
+                        OR h.action = '${HISTORY_CLEARED}') ) AS last_known_movement_at
          FROM items i
         WHERE ${valuableItemFilter('i')} AND i.quantity > 0;`,
     );
@@ -1080,7 +1105,7 @@ export class ReportRepository extends BaseRepository {
         // Stored in micro-units (issue #286); major units for the pure valuation seam.
         unitCost: fromStoredMoney(r.unit_cost),
         preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
-        lastMovedAt: r.last_moved_at,
+        lastKnownMovementAt: r.last_known_movement_at,
         createdAt: r.created_at,
         thresholdDays: policy.thresholdDays,
       });

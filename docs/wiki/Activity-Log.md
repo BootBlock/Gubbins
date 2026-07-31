@@ -94,6 +94,10 @@ device it was done on if you don't.
 The item itself is untouched. Its stock, photos, custom fields and everything else stay exactly as
 they were; only the record of how it got there goes.
 
+Reports that read the log adjust accordingly. [[Dead-stock detection|ABC-Turnover-and-Aging]] counts
+an item's idle time from its last recorded movement, so once that record is gone it counts from the
+clear instead — the item starts fresh rather than being reported as idle since the day you added it.
+
 > **⚠️ Heads-up**
 > Clearing cannot be undone, and it travels: your other devices drop the same entries on their next
 > [[sync|Cloud-Sync]]. Take an **Export** first if there is any chance you will want the history
