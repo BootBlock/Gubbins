@@ -1831,5 +1831,6 @@
   "lookup.fieldType.date": "date",
   "lookup.fieldType.select": "choice",
   "lookup.fieldType.file": "file link",
-  "lookup.fieldType.image": "image"
+  "lookup.fieldType.image": "image",
+  "lookup.panel.loading": "Loading this category’s fields…"
 }

@@ -197,12 +197,25 @@ export function CategoryLookupPanel({
 
   // Nothing to offer: render no control at all rather than a disabled one that can only fail.
   //
-  // `fieldsLoading` is part of that test and not a nicety: the binding is resolved against the
-  // category's fields, so offering the button before they arrive would let a click capture a
-  // binding computed from an empty field list — and the review dialog would then report every one
-  // of the provider's keys as "there's no such field in this category".
-  if (!scrapingEnabled || item.categoryId === null || fieldsLoading || runnable.length === 0) {
-    return null;
+  // These three tests must stay in step with the ones the item detail dialog uses to decide
+  // whether to emit the section *card* at all (`scraping` + `hasRunnableLookup`), because the card
+  // is drawn before its children: any state where the card appears and this returns `null` is an
+  // empty card promising a feature that isn't there. An item's name is trimmed and rejected empty
+  // on both create and update, so `canSearch` — the fourth term, inside `runnable` — cannot be the
+  // one that diverges.
+  if (!scrapingEnabled || item.categoryId === null || runnable.length === 0) return null;
+
+  // The item's fields are still arriving. Say so rather than returning `null` (which would leave
+  // that empty card) and rather than offering the button (whose binding is resolved against the
+  // category's fields — a click now would capture a binding computed from an empty field list, and
+  // the review dialog would then report every one of the provider's keys as "there's no such field
+  // in this category"). The sibling custom-fields editor on this same tab does exactly this.
+  if (fieldsLoading) {
+    return (
+      <div className={className} data-testid="category-lookup-panel">
+        <p className="text-xs text-muted-foreground">{t('lookup.panel.loading')}</p>
+      </div>
+    );
   }
 
   /**

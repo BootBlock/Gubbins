@@ -56,12 +56,13 @@ interface StubField {
 let featureOn = true;
 let categoryRows: Array<{ id: string; lookupSources: Array<{ providerId: string; fieldMap: null }> }> = [];
 let itemFields: StubField[] = [];
+let itemFieldsLoading = false;
 const setFieldValues = vi.fn(async () => undefined);
 const updateItem = vi.fn(async () => undefined);
 
 vi.mock('@/features/inventory/categories', () => ({
   useCategories: () => ({ data: { rows: categoryRows } }),
-  useItemFields: () => ({ data: itemFields }),
+  useItemFields: () => ({ data: itemFields, isLoading: itemFieldsLoading }),
   useSetItemFieldValues: () => ({ mutateAsync: setFieldValues }),
 }));
 vi.mock('@/features/inventory/mutations', () => ({
@@ -124,6 +125,7 @@ beforeEach(() => {
   itemFields = [
     { id: 'f-dir', name: 'Director', fieldType: 'TEXT', options: null, value: null, hasStoredValue: false },
   ];
+  itemFieldsLoading = false;
   bodies = [
     { match: 'wbsearchentities', body: SEARCH_BODY },
     { match: 'query.wikidata.org', body: detailBody() },
@@ -189,6 +191,17 @@ describe('CategoryLookupPanel — when it renders nothing at all', () => {
     // An unnamed item cannot be searched for, and an offer that can only fail is worse than none.
     render(<CategoryLookupPanel item={{ ...item, name: '  ' } as Item} runner={testRunner()} />);
     expect(screen.queryByTestId('category-lookup-panel')).not.toBeInTheDocument();
+  });
+
+  it('says it is loading — never nothing — while the category’s fields arrive', async () => {
+    // The item detail dialog draws this section's card (border, icon, title, help badge) before it
+    // reaches this component, so returning `null` here would leave an empty card promising a
+    // feature that isn't there. And the button must not be offered yet: its binding is resolved
+    // against the fields, so a click now would bind against an empty list.
+    itemFieldsLoading = true;
+    render(<CategoryLookupPanel item={item} runner={testRunner()} />);
+    expect(screen.getByTestId('category-lookup-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('lookup-start-wikidata-film')).not.toBeInTheDocument();
   });
 
   it('renders the control when everything lines up', () => {

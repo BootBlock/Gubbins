@@ -360,8 +360,7 @@ const SECTION_HINT_LOOKUP =
   'on your behalf.\n' +
   '- You then **review** every value before anything is written, and your own entries are never ' +
   'overwritten unless you tick them.\n\n' +
-  '> This section appears only for categories that have a database attached — set that up in the ' +
-  '**category editor**.';
+  '> This section appears only for categories that have a database attached.';
 
 const SECTION_HINT_ACTIVITY =
   'A dated **history** of everything that’s happened to this item — moves, quantity changes, ' +
