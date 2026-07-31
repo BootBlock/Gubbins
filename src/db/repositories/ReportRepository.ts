@@ -824,23 +824,49 @@ export class ReportRepository extends BaseRepository {
   }
 
   /**
-   * Consumption rate (§3) over the trailing `windowDays`: the total units consumed and the
-   * mean per-day, drawn from `item_history` **negative** quantity deltas (a stock-out) and
-   * gauge net-value reductions. `windowEnd` defaults to `now`.
+   * Consumption rate (§3) over the trailing `windowDays`: what was consumed and the mean
+   * per-day, drawn from `item_history` **negative** quantity deltas (a stock-out) and gauge
+   * net-value reductions. `windowEnd` defaults to `now`.
+   *
+   * Reported **per unit of measure** and never as one figure (issue #685). The two deltas are
+   * different dimensions — `quantity_delta` is a count of things, `net_value_delta` a gauge's
+   * measure in `items.unit_of_measure` — and the items themselves differ again: grams,
+   * millilitres, metres and screws all reduce a stock. Adding them produced a number of nothing,
+   * so each row carries its item's unit and {@link summariseConsumption} groups on it.
+   *
+   * The `UNION ALL` emits a row per *delta*, not per ledger entry, so an entry that carried both
+   * changes contributes each magnitude on its own row rather than having them added together
+   * before anything knows what they measure.
+   *
+   * A gauge's `unit_of_measure` describes **what is inside it**, never the containers themselves,
+   * so a `quantity_delta` on a gauge item is a bare count and takes no unit — the `CASE` is what
+   * stops "3 cylinders" being counted as 3 of the litres those cylinders hold. (A gauge is not
+   * supposed to carry a quantity at all, but nothing in the schema forbids it, and an import or a
+   * check-out can put one there.)
+   *
+   * Joining `items` cannot drop history — `item_history.item_id` is a `NOT NULL` FK that cascades
+   * on delete — so the set of counted deltas is exactly what it was before.
    */
   async consumptionRate(windowDays: number, now: number = nowMs()): Promise<ConsumptionRateReport> {
     const windowStart = addCalendarDays(now, -Math.max(1, windowDays));
-    const rows = await this.driver.query<{ created_at: number; consumed: number }>(
-      `SELECT created_at,
-              ( COALESCE(-MIN(quantity_delta, 0), 0)
-              + COALESCE(-MIN(net_value_delta, 0), 0) ) AS consumed
-         FROM item_history
-        WHERE created_at >= ? AND created_at < ?
-          AND (quantity_delta < 0 OR net_value_delta < 0);`,
-      [windowStart, now],
+    const rows = await this.driver.query<{
+      created_at: number;
+      unit: string | null;
+      consumed: number;
+    }>(
+      `SELECT h.created_at AS created_at,
+              CASE WHEN i.tracking_mode = 'CONSUMABLE_GAUGE' THEN NULL ELSE i.unit_of_measure END AS unit,
+              -h.quantity_delta AS consumed
+         FROM item_history h JOIN items i ON i.id = h.item_id
+        WHERE h.created_at >= ? AND h.created_at < ? AND h.quantity_delta < 0
+        UNION ALL
+       SELECT h.created_at, i.unit_of_measure, -h.net_value_delta
+         FROM item_history h JOIN items i ON i.id = h.item_id
+        WHERE h.created_at >= ? AND h.created_at < ? AND h.net_value_delta < 0;`,
+      [windowStart, now, windowStart, now],
     );
     return summariseConsumption(
-      rows.map((r) => ({ createdAt: r.created_at, consumed: r.consumed })),
+      rows.map((r) => ({ createdAt: r.created_at, unit: r.unit, consumed: r.consumed })),
       windowStart,
       now,
     );

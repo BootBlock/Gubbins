@@ -673,6 +673,41 @@ try {
   console.warn(`  ✗ category-lookup-sources.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
+// Draw a little stock down, so the Reports screen has something to report a consumption rate
+// for — it is reported per unit of measure (grams from the gauge, bare units from the screws),
+// and with nothing consumed its panel photographs as an empty state. Deliberately placed *after*
+// the `item-card-gauge` capture above so that image still shows a full gauge. Tolerant like every
+// other step here: a failure costs the data, not the run.
+try {
+  await gotoInventory();
+  const filamentCard = page
+    .locator('#main-content')
+    .getByRole('heading', { name: 'PLA Filament — Galaxy Black' })
+    .locator('xpath=ancestor::div[contains(@class,"select-none")][1]')
+    .first();
+  await filamentCard.getByRole('button', { name: 'Update gauge' }).click();
+  const gaugeDialog = page.getByRole('dialog');
+  await gaugeDialog.getByLabel(/Amount used/).fill('150');
+  await gaugeDialog.getByTestId('gauge-apply').click();
+  await gaugeDialog.waitFor({ state: 'hidden', timeout: 8000 });
+  await waitForToastsToClear();
+
+  const screwCard = page
+    .locator('#main-content')
+    .getByRole('heading', { name: 'M3 × 10 Socket Screws' })
+    .locator('xpath=ancestor::div[contains(@class,"select-none")][1]')
+    .first();
+  // Two clicks, not a handful: every one is its own Activity Log row, and the activity capture
+  // below should read as a varied log rather than a column of identical decrements.
+  for (let i = 0; i < 2; i += 1) {
+    await screwCard.getByRole('button', { name: 'Decrease quantity' }).click();
+    await page.waitForTimeout(150);
+  }
+  await waitForToastsToClear();
+} catch (err) {
+  console.warn(`  ! consumption seed skipped — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // ── Data-dependent screens (need the seed above) ─────────────────────────────
 async function screenShot(name, path) {
   try {
