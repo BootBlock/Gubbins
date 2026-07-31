@@ -614,6 +614,8 @@ export function CatalogueScreen() {
 
               <FormField label="Address / contact" hint={ORG_DETAILS_HINT}>
                 <Textarea
+                  sizeKey="catalogue.org-details"
+                  autoGrow
                   value={branding.orgDetails}
                   onChange={(e) => setCatalogueOrgDetails(e.target.value)}
                   rows={3}

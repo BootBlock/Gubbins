@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ALL_EXTENSION_HOST_PERMISSIONS,
   EXTENSION_HOST_PERMISSIONS,
+  isAllowedDataLookupUrl,
   isAllowedLookupUrl,
   isAllowedSupplierUrl,
 } from './suppliers';
@@ -30,9 +31,10 @@ describe('extension host_permissions (§9 / §4 hardening)', () => {
     expect(manifest.host_permissions).toEqual([...ALL_EXTENSION_HOST_PERMISSIONS]);
   });
 
-  it('still carries every supplier host, and the product-lookup host', () => {
+  it('still carries every supplier host, the product-lookup host, and the data-lookup host', () => {
     for (const host of EXTENSION_HOST_PERMISSIONS) expect(manifest.host_permissions).toContain(host);
     expect(manifest.host_permissions).toContain('https://*.openfoodfacts.org/*');
+    expect(manifest.host_permissions).toContain('https://*.wikidata.org/*');
   });
 
   it('covers every background-fetch parser (Amazon deliberately excepted — active-tab only)', () => {
@@ -102,5 +104,32 @@ describe('isAllowedLookupUrl (product-lookup fetch gate, point 2)', () => {
     expect(isAllowedLookupUrl('http://world.openfoodfacts.org/x')).toBe(false);
     expect(isAllowedLookupUrl('https://www.digikey.com/x')).toBe(false);
     expect(isAllowedLookupUrl('https://openfoodfacts.org.evil.test/x')).toBe(false);
+  });
+
+  it('does not admit a category data-lookup host — the three gates are separate', () => {
+    // A URL cleared for one purpose must not be fetchable for another, which is the whole reason
+    // the data-lookup allow-list is a third list rather than folded into this one.
+    expect(isAllowedLookupUrl('https://www.wikidata.org/w/api.php')).toBe(false);
+  });
+});
+
+describe('isAllowedDataLookupUrl (category data-lookup fetch gate, issue #616)', () => {
+  it('allows both Wikidata hosts the film provider reaches', () => {
+    expect(isAllowedDataLookupUrl('https://www.wikidata.org/w/api.php?action=wbsearchentities')).toBe(true);
+    expect(isAllowedDataLookupUrl('https://query.wikidata.org/sparql?query=x')).toBe(true);
+    expect(isAllowedDataLookupUrl('https://wikidata.org/x')).toBe(true);
+  });
+
+  it('rejects non-https, a look-alike host, a userinfo disguise, and unparseable input', () => {
+    expect(isAllowedDataLookupUrl('http://www.wikidata.org/x')).toBe(false);
+    expect(isAllowedDataLookupUrl('https://wikidata.org.evil.test/x')).toBe(false);
+    expect(isAllowedDataLookupUrl('https://notwikidata.org/x')).toBe(false);
+    expect(isAllowedDataLookupUrl('https://www.wikidata.org@evil.test/x')).toBe(false);
+    expect(isAllowedDataLookupUrl('not a url')).toBe(false);
+  });
+
+  it('does not admit a supplier or product-lookup host', () => {
+    expect(isAllowedDataLookupUrl('https://www.digikey.com/x')).toBe(false);
+    expect(isAllowedDataLookupUrl('https://world.openfoodfacts.org/x')).toBe(false);
   });
 });

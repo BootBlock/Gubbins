@@ -176,6 +176,61 @@ describe('ACTIVE_TAB_* — Amazon active-tab enrichment (Path A2)', () => {
   });
 });
 
+describe('DATA_FETCH_* — category data lookups (issue #616)', () => {
+  it('accepts a request for an absolute URL, and refuses anything that is not one', () => {
+    const good = makeMessage('DATA_FETCH_REQUEST', { url: 'https://www.wikidata.org/w/api.php' }, 'df-1');
+    expect(parseExtensionMessage(good, ctx)?.type).toBe('DATA_FETCH_REQUEST');
+    for (const url of ['', 'not a url', '/w/api.php']) {
+      const bad = makeMessage('DATA_FETCH_REQUEST', { url }, 'df-2');
+      expect(parseExtensionMessage(bad, ctx), url).toBeNull();
+    }
+  });
+
+  it('carries the fetched body back **unparsed**, with the URL it came from', () => {
+    // Deliberately raw: the provider that built the URL is the only thing that knows how to read
+    // the answer, and it lives in the PWA — so the extension never needs a copy of it.
+    const msg = makeMessage(
+      'DATA_FETCH_RESULT',
+      { url: 'https://query.wikidata.org/sparql?query=x', body: '{"results":{"bindings":[]}}' },
+      'df-3',
+    );
+    const parsed = parseExtensionMessage(msg, ctx);
+    expect(parsed?.type === 'DATA_FETCH_RESULT' && parsed.payload.body).toContain('bindings');
+  });
+
+  it('accepts an empty body but never a missing one', () => {
+    const empty = makeMessage('DATA_FETCH_RESULT', { url: 'https://x.test/a', body: '' }, 'df-4');
+    expect(parseExtensionMessage(empty, ctx)?.type).toBe('DATA_FETCH_RESULT');
+    const missing = {
+      source: EXTENSION_SOURCE,
+      type: 'DATA_FETCH_RESULT',
+      requestId: 'df-5',
+      payload: { url: 'https://x.test/a' },
+    };
+    expect(parseExtensionMessage(missing, ctx)).toBeNull();
+  });
+
+  it('reuses the §9.4.2 error taxonomy, so a refused host reads as BLOCKED', () => {
+    const msg = makeMessage(
+      'DATA_FETCH_ERROR',
+      { domain: 'evil.test', error_type: 'BLOCKED', reason: 'URL is not an allowed data-lookup host.' },
+      'df-6',
+    );
+    expect(parseExtensionMessage(msg, ctx)?.type).toBe('DATA_FETCH_ERROR');
+  });
+
+  it('still requires a non-blank requestId and a trusted origin', () => {
+    const noId = {
+      source: EXTENSION_SOURCE,
+      type: 'DATA_FETCH_RESULT',
+      payload: { url: 'https://x.test/a', body: '{}' },
+    };
+    expect(parseExtensionMessage(noId, ctx)).toBeNull();
+    const msg = makeMessage('DATA_FETCH_RESULT', { url: 'https://x.test/a', body: '{}' }, 'df-7');
+    expect(parseExtensionMessage(msg, { origin: 'https://evil.test', trustedOrigins: [TRUSTED] })).toBeNull();
+  });
+});
+
 describe('makeMessage', () => {
   it('stamps the mandatory source signature and the requestId', () => {
     const msg = makeMessage('SCRAPE_REQUEST', { url: 'https://www.mouser.co.uk/x' }, 'req-42');

@@ -157,6 +157,8 @@ export function SupplierFormDialog({ supplier, onClose, onMerge, onAnnounce }: S
 
         <FormField label={t('suppliers.form.note')}>
           <Textarea
+            sizeKey="supplier.note"
+            autoGrow
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder={t('suppliers.form.note.placeholder')}

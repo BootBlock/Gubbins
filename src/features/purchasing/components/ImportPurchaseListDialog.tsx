@@ -308,6 +308,7 @@ export function ImportPurchaseListDialog({
         <ImportFileBanner read={fileRead} data-testid="purchase-import-file-notice" />
 
         <Textarea
+          sizeKey="import.purchase-list"
           value={text}
           onChange={(e) => {
             setFileRead(null);

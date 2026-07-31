@@ -1126,6 +1126,8 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
         hint="An optional note about this field. When set, an **(i)** info badge appears beside the field on each item, showing this text — a handy place for guidance such as *where to read the value from* or *which units to use*. Supports Markdown."
       >
         <Textarea
+          sizeKey="category-field.description"
+          autoGrow
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="e.g. Read from the label on the base — in volts."

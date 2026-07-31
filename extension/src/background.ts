@@ -19,7 +19,11 @@ import type {
   ScrapeResultPayload,
 } from '../../src/features/scraping/protocol';
 import { classifyHttpStatus } from '../../src/features/scraping/scrape-errors';
-import { isAllowedLookupUrl, isAllowedSupplierUrl } from '../../src/features/scraping/parsers/suppliers';
+import {
+  isAllowedDataLookupUrl,
+  isAllowedLookupUrl,
+  isAllowedSupplierUrl,
+} from '../../src/features/scraping/parsers/suppliers';
 import { buildProductLookupUrl, parseOpenFoodFactsProduct } from '../../src/features/scraping/product-lookup';
 import { isAmazonHost } from '../../src/features/inventory/asin';
 import { parseGtin } from '../../src/features/scanner/gtin';
@@ -35,11 +39,21 @@ interface LookupRequest {
   gtin: string;
 }
 
+/** A category data-lookup fetch (issue #616) — an open-database URL built by the PWA. */
+interface DataFetchRequest {
+  kind: 'DATA_FETCH';
+  url: string;
+}
+
 type FetchResponse = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
 
 type LookupResponse =
   | { ok: true; product: ProductLookupResultPayload }
   | { ok: false; errorType: ScrapeErrorType; reason: string };
+
+/** The raw body of a data-lookup fetch — parsed by the PWA's own provider, never here. */
+type DataFetchResponse =
+  { ok: true; body: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
 
 const FETCH_TIMEOUT_MS = 15000;
 
@@ -60,7 +74,7 @@ declare const chrome: {
         cb: (
           message: unknown,
           sender: { tab?: Tab },
-          sendResponse: (r: FetchResponse | LookupResponse) => void,
+          sendResponse: (r: FetchResponse | LookupResponse | DataFetchResponse) => void,
         ) => boolean | void,
       ) => void;
     };
@@ -147,6 +161,46 @@ async function fetchProduct(gtin: string): Promise<LookupResponse> {
     const parsed = parseOpenFoodFactsProduct(await res.text(), normalised);
     if (!parsed.ok) return { ok: false, errorType: 'NOT_FOUND', reason: parsed.reason };
     return { ok: true, product: parsed.payload };
+  } catch (err) {
+    const aborted = err instanceof DOMException && err.name === 'AbortError';
+    return {
+      ok: false,
+      errorType: 'NETWORK_TIMEOUT',
+      reason: aborted ? 'Request timed out.' : `Network error: ${String(err)}`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Fetch one **category data-lookup** URL (issue #616) and return its raw body.
+ *
+ * The URL is built by the PWA's provider descriptor, so the parsing stays there — this worker
+ * only performs the request the page cannot always make itself. Gated by the extension's own
+ * data-lookup allow-list before the call, the same defence-in-depth `fetchPage` applies above the
+ * manifest's `host_permissions`: a page driving the bridge cannot turn this into a fetch proxy for
+ * an arbitrary origin, and an off-list target is reported as a refusal (`BLOCKED`).
+ *
+ * `credentials: 'omit'` matters here as much as for a scrape: an open database must never see the
+ * user's cookies for its own site.
+ */
+async function fetchDataUrl(url: string): Promise<DataFetchResponse> {
+  if (!isAllowedDataLookupUrl(url)) {
+    return { ok: false, errorType: 'BLOCKED', reason: 'URL is not an allowed data-lookup host.' };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      credentials: 'omit',
+      redirect: 'follow',
+      headers: { Accept: 'application/json' },
+    });
+    const failure = classifyHttpStatus(res.status);
+    if (failure) return { ok: false, errorType: failure.errorType, reason: failure.reason };
+    return { ok: true, body: await res.text() };
   } catch (err) {
     const aborted = err instanceof DOMException && err.name === 'AbortError';
     return {
@@ -312,13 +366,17 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  const req = message as Partial<FetchRequest & LookupRequest> | null;
+  const req = message as Partial<FetchRequest & LookupRequest & DataFetchRequest> | null;
   if (req?.kind === 'FETCH' && typeof req.url === 'string') {
     void fetchPage(req.url).then(sendResponse);
     return true; // keep the message channel open for the async response
   }
   if (req?.kind === 'LOOKUP' && typeof req.gtin === 'string') {
     void fetchProduct(req.gtin).then(sendResponse);
+    return true;
+  }
+  if (req?.kind === 'DATA_FETCH' && typeof req.url === 'string') {
+    void fetchDataUrl(req.url).then(sendResponse);
     return true;
   }
   // The injected active-tab bundle reporting a live-DOM scrape outcome (Path A2).

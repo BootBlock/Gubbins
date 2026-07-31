@@ -72,6 +72,12 @@ up to sit directly after **Details**, or giving the fields a tab of their own th
 the category chooses. That is why a `Movie` opens with a **Film details** tab where a `Fastener`
 has none.
 
+> **💡 Tip**
+> **Description** and **Notes** grow as you type, and you can drag the handle at a box's
+> bottom-right corner to make it taller still. Gubbins remembers the height you drag to and
+> reopens that box at your size next time; shrink it right back down to return it to the
+> standard size.
+
 Also set on an item: **Condition** — a structured grade (Mint / Good / Needs Repair / Out for
 Calibration); see [[Condition grading|Condition-Grading]].
 

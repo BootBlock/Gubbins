@@ -746,6 +746,7 @@ function TextInputPanel({ text, onTextChange }: { text: string; onTextChange: (t
         automatically — override it with “Interpret as” below.
       </p>
       <Textarea
+        sizeKey="import.items"
         id={inputId}
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
