@@ -44,6 +44,22 @@ gives you the span you've selected on screen, so the file always covers the same
 figures you were looking at. Reports with a fixed span — **ABC analysis** (always annual),
 **consumption rate** and **data hygiene** — have no selector and export over their own set period.
 
+## Long lists in a report
+
+Some reports have more rows than usefully fit in a panel — a hundred categories in the valuation
+breakdown, or every idle item in dead stock. Those panels open on the most important rows and say
+so underneath: *"Showing 12 of 40 categories"*, with **Show more** to bring the next batch in and
+**Show fewer** to fold it back up.
+
+The count is always the truth about the whole set, so you can tell at a glance whether you're
+looking at all of something or the head of a longer list. Nothing is quietly left out — and the
+headline figures (total value, portfolio turnover, the capital tied up in dead stock) are always
+computed over **every** row, not just the ones on screen.
+
+> **💡 Tip**
+> For a long list you want to work through properly — dead stock especially — the **CSV export**
+> gives you every row at once, ready to sort and tick off in a spreadsheet.
+
 ## Consumption rate
 
 The **consumption rate** looks at everything that left your stock over the last 30 days — items
