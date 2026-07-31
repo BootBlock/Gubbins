@@ -33,6 +33,35 @@ import type {
   UpdateLocationInput,
 } from './types';
 
+/**
+ * Filters for the cross-location activity feed (issue #693) — the mirror of the item feed's
+ * `ActivityFeedFilters`, over the much smaller {@link LOCATION_HISTORY_ACTIONS} vocabulary.
+ */
+export interface LocationHistoryFeedFilters extends PageParams {
+  /**
+   * Restrict the feed to these actions. Omitted (`undefined`) = the full feed, so the common
+   * "show everything" case never builds an `IN (…)`; an **explicit empty array** matches nothing,
+   * so de-selecting every filter chip shows an empty feed rather than silently falling back to
+   * everything. The same unambiguous sentinel the item feed uses.
+   */
+  readonly actions?: readonly LocationHistoryAction[];
+}
+
+/**
+ * The action predicate shared by the location activity feed and its count, so the two can never
+ * drift apart and start disagreeing about how many rows the filter matches. The unfiltered feed
+ * (`undefined`, the common case) yields the always-true `1` rather than dropping the `WHERE`
+ * altogether: that keeps both callers' SQL a template whose interpolated span is a valid
+ * sub-expression, which is what lets `query-row-shape.test.ts` actually prepare them and check
+ * their projections instead of writing them off as unverifiable.
+ *
+ * Callers handle the explicit-empty-array case before reaching here — it means "match nothing",
+ * which is an early return rather than a clause.
+ */
+function locationHistoryActionFilter(actions: readonly LocationHistoryAction[] | undefined): string {
+  return actions && actions.length > 0 ? `action IN (${actions.map(() => '?').join(', ')})` : '1';
+}
+
 interface LocationCountRow extends LocationRow {
   readonly item_count: number;
   readonly used_volume: number;
@@ -638,17 +667,43 @@ export class LocationRepository extends BaseRepository {
    * Entries about a location that has since been deleted are deliberately included — a `DELETED`
    * entry is precisely the one an automation most wants — and they still carry both the id and the
    * name the place had, because `location_id` is a historical coordinate rather than a foreign key
-   * (see the table's schema note).
+   * (see the table's schema note). That is also what makes this the *only* in-app reader a deleted
+   * location's trail can have: the History tab is opened from a location, and there is no longer a
+   * location to open (issue #693).
+   *
+   * `actions` restricts the feed to a subset of actions for the Activity screen's filter chips,
+   * with the same empty-array sentinel the item feed uses — see
+   * {@link LocationHistoryFeedFilters}.
    */
-  async getHistoryFeed(params: PageParams = {}): Promise<Page<LocationHistoryEntry>> {
-    const { limit, offset } = this.resolvePage(params);
+  async getHistoryFeed(filters: LocationHistoryFeedFilters = {}): Promise<Page<LocationHistoryEntry>> {
+    const { limit, offset } = this.resolvePage(filters);
+    const actions = filters.actions;
+    // An explicit empty filter list means "match nothing" — return early without a query.
+    if (actions !== undefined && actions.length === 0) return this.toPage([], limit, offset);
     const rows = await this.driver.query<LocationHistoryRow>(
       `SELECT * FROM location_history
+       WHERE (${locationHistoryActionFilter(actions)})
        ORDER BY created_at DESC, rowid DESC
        LIMIT ? OFFSET ?;`,
-      [limit, offset],
+      [...(actions ?? []), limit, offset],
     );
     return this.toPage(rows.map(rowToLocationHistoryEntry), limit, offset);
+  }
+
+  /**
+   * Total number of {@link getHistoryFeed} rows under the same `actions` filter — the denominator
+   * the Activity screen's paginated mode needs to size its page count (issue #693). Mirrors the
+   * feed's `WHERE` exactly, so the count can never disagree with the pages it sizes; an explicit
+   * empty `actions` array is "match nothing" → 0.
+   */
+  async countHistoryFeed(filters: Pick<LocationHistoryFeedFilters, 'actions'> = {}): Promise<number> {
+    const actions = filters.actions;
+    if (actions !== undefined && actions.length === 0) return 0;
+    const row = await this.driver.queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM location_history WHERE (${locationHistoryActionFilter(actions)});`,
+      [...(actions ?? [])],
+    );
+    return Number(row?.n ?? 0);
   }
 
   // --- internals -----------------------------------------------------------------

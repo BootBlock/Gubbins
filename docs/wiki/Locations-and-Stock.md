@@ -317,6 +317,9 @@ dimensions, walk order and the settings below describe the place rather than mov
 aren't logged. See [[Activity log|Activity-Log]] for the full rules, and for the separate ledger
 that covers the items *inside* a location.
 
+To read every location's record at once — including places you have since deleted, which no longer
+have an **Edit** dialog to open — switch the **Activity** screen to its **Locations** view.
+
 ## Statistics for a location
 
 Every location's **Edit** dialog has a **Statistics** tab that adds up what's stored there, so
@@ -381,6 +384,23 @@ the container's location.
 > set number of slots shows its fullness gauge, so you can see at a glance whether it's fully
 > stocked before you head out.
 
+## Taking the list with you
+
+The Locations pane has its own **Export** button, beside the button that adds a location. It saves
+the whole tree as a **CSV**, **TSV**, an **Excel workbook (.xlsx)**, **JSON**, a **Markdown**
+table, a printable **HTML** page or **plain text** — one row per location, carrying its full path
+(so *"Drawer 3"* still means something outside Gubbins), its type and description, how many items
+it holds, its capacity, size, walk order and dead-stock setting.
+
+The file always covers **every** location, including archived ones and anything a tag chip or the
+search box happens to be hiding at the time — it is a record of the whole place, not of the view
+you're looking at.
+
+> **💡 Tip** A location's description and details also travel in two of the
+> [[whole-inventory exports|Export-and-Import]]: the **JSON data export** carries the locations
+> alongside the items, so an item's location resolves to a real place rather than an opaque
+> reference, and the **Markdown vault** gives every location folder a page of its own.
+
 ## Going deeper: batches
 
 Beneath each location, stock can be split further into [[batches & lots|Batches-and-Lots]] —
@@ -396,3 +416,5 @@ oldest first.
   match reality, location by location.
 - **[[ABC, turnover & aging|ABC-Turnover-and-Aging]]** — dead-stock reporting, and how a
   location's setting passes down to the items inside it.
+- **[[Export & import|Export-and-Import]]** — every file format Gubbins writes, and what each one
+  carries about a location.

@@ -141,7 +141,13 @@ function makeAllLoaded() {
   queryState.consumption = {
     isLoading: false,
     isError: false,
-    data: { perDay: 1, totalConsumed: 5, windowDays: 30 },
+    data: {
+      windowDays: 30,
+      lines: [
+        { unit: 'g', totalConsumed: 30, perDay: 1 },
+        { unit: null, totalConsumed: 5, perDay: 0.2 },
+      ],
+    },
   };
   queryState.movement = {
     isLoading: false,
@@ -473,5 +479,41 @@ describe('ReportsScreen — stock-movement window (issue #86)', () => {
     // Each section remembers its own window independently.
     const analyticsGroup = screen.getByRole('group', { name: 'Analytics window' });
     expect(analyticsGroup.querySelector('[aria-pressed="true"]')?.textContent).toContain('90');
+  });
+});
+
+describe('ReportsScreen — consumption is reported per unit of measure (issue #685)', () => {
+  it('labels the headline tile with the largest unit and counts the others', () => {
+    makeAllLoaded();
+    render(<ReportsScreen />);
+    // The test id sits on the value itself; the sub-label is its sibling in the card.
+    const card = screen.getByTestId('stat-consumption').parentElement!;
+    // The rate carries its unit, and the tile says the figure is not the whole story.
+    // (The figure itself animates up from 0, so only the unit is asserted here.)
+    expect(card.textContent).toContain('g/day');
+    expect(card.textContent).toContain('30g total, plus 1 other unit');
+  });
+
+  it('lists every unit separately, with no total across them', () => {
+    makeAllLoaded();
+    render(<ReportsScreen />);
+    const list = screen.getByTestId('consumption-breakdown');
+    const rows = Array.from(list.querySelectorAll('li')).map((li) => li.textContent ?? '');
+    expect(rows).toHaveLength(2);
+    // A real unit prints through the shared `measure` formatter, exactly as a gauge does.
+    expect(rows[0]).toContain('30g total');
+    expect(rows[0]).toContain('1g/day');
+    // Items with no unit of measure read as a plain count of units.
+    expect(rows[1]).toContain('5 units total');
+    expect(rows[1]).toContain('0.2 units/day');
+  });
+
+  it('says nothing was consumed rather than showing a zero rate', () => {
+    makeAllLoaded();
+    queryState.consumption = { isLoading: false, isError: false, data: { windowDays: 30, lines: [] } };
+    render(<ReportsScreen />);
+    const card = screen.getByTestId('stat-consumption').parentElement!;
+    expect(card.textContent).toContain('Nothing consumed');
+    expect(screen.queryByTestId('consumption-breakdown')).toBeNull();
   });
 });

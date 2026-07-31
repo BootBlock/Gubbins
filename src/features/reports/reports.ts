@@ -13,6 +13,7 @@
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { addCalendarDays } from '@/lib/calendar-days';
+import { foldName } from '@/lib/name-fold';
 import { effectiveUnitCost as resolveCostPrecedence } from '@/features/inventory/supplier-cost';
 import { effectiveUnitValue } from '@/features/inventory/valuation';
 
@@ -224,8 +225,27 @@ export function sortValueGroups(groups: readonly ValueGroupTotals[]): ValueGroup
 export interface ConsumptionEvent {
   /** UNIX-ms of the ledger entry. */
   readonly createdAt: number;
-  /** Net units consumed (a positive magnitude — already absolute). */
+  /**
+   * The consuming item's `unit_of_measure` as the user typed it, or `null` when it has none
+   * (a bare count of things). This is the *dimension* the magnitude below is measured in, and
+   * the only thing that makes two events addable.
+   */
+  readonly unit: string | null;
+  /** Net amount consumed in that unit (a positive magnitude — already absolute). */
   readonly consumed: number;
+}
+
+/** One unit of measure's consumption over the window. */
+export interface ConsumptionUnitLine {
+  /**
+   * The unit of measure, in the first spelling seen for it; `null` is the unitless line —
+   * items that count bare things and name no unit.
+   */
+  readonly unit: string | null;
+  /** Total consumed inside the window, **in this unit**. */
+  readonly totalConsumed: number;
+  /** Mean consumed per day across the window, in this unit. */
+  readonly perDay: number;
 }
 
 /** The consumption-rate report over a trailing window. */
@@ -236,16 +256,28 @@ export interface ConsumptionRateReport {
   readonly windowEnd: number;
   /** Whole days spanned by the window (≥ 1). */
   readonly windowDays: number;
-  /** Total units consumed inside the window. */
-  readonly totalConsumed: number;
-  /** Mean units consumed per day across the window. */
-  readonly perDay: number;
+  /**
+   * One line per unit of measure, largest total first. There is deliberately **no** overall
+   * total: the lines are incommensurable, so nothing may add them together (issue #685).
+   */
+  readonly lines: readonly ConsumptionUnitLine[];
 }
 
 /**
- * Sum the consumed magnitudes that fall inside `[windowStart, windowEnd)` and derive the
- * mean daily rate. Events outside the window are ignored. `windowDays` is clamped to ≥ 1
- * so a sub-day window never divides by zero.
+ * Bucket the consumed magnitudes that fall inside `[windowStart, windowEnd)` **by unit of
+ * measure**, and derive each unit's mean daily rate. Events outside the window are ignored.
+ * `windowDays` is clamped to ≥ 1 so a sub-day window never divides by zero.
+ *
+ * **Units are never added together** (issue #685). This used to return a single scalar, which
+ * summed grams, millilitres and screws — a figure whose dimension was not merely unlabelled but
+ * undefined, presented as both a total and a daily rate. Grouping is the same refusal the
+ * valuation reads make of foreign-currency prices: report each dimension as itself rather than
+ * convert (or, here, conflate) without a basis for it.
+ *
+ * Two events share a line when their units match under {@link foldName} — the app's natural-key
+ * fold — so `g`, `G` and ` g ` are one unit, as they are everywhere else a user-typed name is an
+ * identity. Anything else stays apart: `unit_of_measure` is free text with no conversion layer,
+ * so `g` and `kg` are as distinct here as `g` and `screws`.
  */
 export function summariseConsumption(
   events: readonly ConsumptionEvent[],
@@ -253,18 +285,29 @@ export function summariseConsumption(
   windowEnd: number,
 ): ConsumptionRateReport {
   const windowDays = Math.max(1, Math.round((windowEnd - windowStart) / MS_PER_DAY));
-  let totalConsumed = 0;
+  // Keyed by the folded unit (`null` for the unitless line); the value keeps the first spelling
+  // seen so the report shows the user's own capitalisation rather than a folded one.
+  const byUnit = new Map<string | null, { unit: string | null; totalConsumed: number }>();
   for (const event of events) {
     if (!inTimeWindow(event.createdAt, windowStart, windowEnd)) continue;
-    if (event.consumed > 0) totalConsumed += event.consumed;
+    if (!(event.consumed > 0)) continue;
+    const unit = event.unit?.trim() ? event.unit.trim() : null;
+    const key = unit === null ? null : foldName(unit);
+    const line = byUnit.get(key);
+    if (line) line.totalConsumed += event.consumed;
+    else byUnit.set(key, { unit, totalConsumed: event.consumed });
   }
-  return {
-    windowStart,
-    windowEnd,
-    windowDays,
-    totalConsumed,
-    perDay: totalConsumed / windowDays,
-  };
+  // Biggest total first, ties broken by unit for a stable order. Unlike `sortValueGroups` the
+  // unitless line is *not* forced last: it is the ordinary case (most items name no unit), not
+  // a residual bucket, so demoting it would bury the figure most users came for.
+  const lines = [...byUnit.values()]
+    .sort((a, b) => b.totalConsumed - a.totalConsumed || (a.unit ?? '').localeCompare(b.unit ?? ''))
+    .map((line) => ({
+      unit: line.unit,
+      totalConsumed: line.totalConsumed,
+      perDay: line.totalConsumed / windowDays,
+    }));
+  return { windowStart, windowEnd, windowDays, lines };
 }
 
 // --- Stock movement over time buckets ------------------------------------------

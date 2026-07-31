@@ -8,6 +8,10 @@ individual item.
 
 ![The Activity ledger, newest first](images/activity.png)
 
+The Activity screen has two views, chosen with the **Items / Locations** switch above the list:
+what happened to the things you own, and what happened to the places you keep them in. Each has its
+own filters and its own **Export**.
+
 ## What gets recorded
 
 Just about every meaningful change is logged: creating and editing items, stock adjustments,
@@ -40,8 +44,11 @@ that have always been logged.
 
 ## A location's own history
 
-Locations keep a record too, separate from the items inside them. Open a location's **Edit** dialog
-and pick the **History** tab to see it.
+Locations keep a record too, separate from the items inside them. There are two ways to read it:
+
+- the **Locations** view on the Activity screen, which shows every location's record together,
+  newest first — including places that have since been deleted;
+- the **History** tab in a single location's **Edit** dialog, for just that one place.
 
 It covers the changes that reshape where things live — the ones that are hardest to explain after
 the fact:
@@ -60,13 +67,20 @@ isn't recorded. Nor is a save that didn't actually change anything.
 
 > **ℹ️ Note**
 > Deleting a location doesn't erase its record. The entries are kept with the name the place had, so
-> a deletion still travels to your other devices and still appears in a backup — even though there
-> is no longer a location to open and read it in.
+> a deletion still travels to your other devices and still appears in a backup. Because there is no
+> longer a location to open, those entries are read from the **Locations** view on the Activity
+> screen — that's where to look to answer *"what happened to the top shelf?"* after the shelf is
+> gone.
+
+Names in the Locations view are shown as plain text rather than links, and are the name the place
+carried **at the time** — a record of what happened, not a route to somewhere that may since have
+been renamed or removed.
 
 > **💡 Tip**
 > The Activity log is the fastest way to answer *"what changed, and when did that happen?"* — if a
 > count looks wrong, its item's history usually shows exactly what led to it. For *"why is this
-> shelf suddenly under a different room?"*, it's the location's own **History** tab you want.
+> shelf suddenly under a different room?"*, switch the Activity screen to **Locations**, or open
+> that location's own **History** tab.
 
 > **ℹ️ Note**
 > The log can grow large over time. If you need to reclaim space, old history can be pruned (with
@@ -76,13 +90,15 @@ isn't recorded. Nor is a save that didn't actually change anything.
 ## Exporting a log
 
 **Export** saves a log as a spreadsheet or a table — handy for an audit trail, a handover, or
-working out where a month's stock went. It sits on the Activity screen for the whole-inventory
-feed, and above an item's own **Activity** tab for just that item.
+working out where a month's stock went. It sits on the Activity screen (exporting whichever of
+**Items** or **Locations** you are looking at), and above an item's own **Activity** tab for just
+that item.
 
-Either way the file covers the **whole** log — the global feed under whichever kinds you have
-selected, or every entry for the item — not just what is on screen. The usual formats are offered:
-CSV, TSV, an Excel workbook, JSON, Markdown, printable HTML or plain text. See
-[[Export & import|Export-and-Import]].
+Either way the file covers the **whole** log under whatever you have filtered it to — not just what
+is on screen. An items file carries the timestamp, the item, the kind and action, the detail and the
+quantity and value changes; a locations file carries the timestamp, the location, the action and the
+detail. The usual formats are offered: CSV, TSV, an Excel workbook, JSON, Markdown, printable HTML
+or plain text. See [[Export & import|Export-and-Import]].
 
 ## Clearing an item's log
 
@@ -97,6 +113,8 @@ they were; only the record of how it got there goes.
 Reports that read the log adjust accordingly. [[Dead-stock detection|ABC-Turnover-and-Aging]] counts
 an item's idle time from its last recorded movement, so once that record is gone it counts from the
 clear instead — the item starts fresh rather than being reported as idle since the day you added it.
+[[Stock aging|ABC-Turnover-and-Aging]] does the same, except that an item's **Acquired** date, which
+the clear doesn't touch, still takes precedence if you recorded one.
 
 > **⚠️ Heads-up**
 > Clearing cannot be undone, and it travels: your other devices drop the same entries on their next

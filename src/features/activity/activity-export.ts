@@ -19,6 +19,7 @@ import {
   type TabularExportResult,
 } from '@/features/export/tabular-export';
 import { isoTimestamp, listExportFilename } from '@/features/export/export-every-page';
+import { plural } from '@/lib/plural';
 import { describeHistoryEntry, historyActionLabel } from '@/features/inventory/history-format';
 import type { ActivityFeedEntry, ItemHistoryEntry } from '@/db/repositories';
 import { ACTIVITY_KIND_LABEL, activityKindForAction } from './activity-kind';
@@ -72,9 +73,15 @@ export function itemActivityExportColumns(): readonly TabularColumn<ItemHistoryE
   return [WHEN_COLUMN, ...EVENT_COLUMNS];
 }
 
-/** How an export of `n` events captions its document formats. */
-function eventCaption(n: number): string {
-  return `${n} event${n === 1 ? '' : 's'}`;
+/**
+ * How an export of `n` events captions its document formats — shared with the location activity
+ * export (issue #693) so all three activity exports caption identically by construction rather
+ * than by copies of one ternary that happen to agree today.
+ *
+ * @internal Exported for the sibling location export only.
+ */
+export function eventCaption(n: number): string {
+  return `${n} ${plural(n, 'event')}`;
 }
 
 /** Serialise the activity feed to the chosen format via the shared exporter. */

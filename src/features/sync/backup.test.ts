@@ -32,7 +32,7 @@ describe('backup parse/validate (§2)', () => {
   // and no `tables`, so it would otherwise parse as a valid *empty* snapshot and import
   // nothing while reporting success.
   it('issue #153: refuses a JSON data export by name instead of importing nothing', () => {
-    const dataExport = buildJsonExport({ items: [], contacts: [], checkouts: [] });
+    const dataExport = buildJsonExport({ items: [], contacts: [], checkouts: [], locations: [] });
     expect(() => parseBackupJson(dataExport)).toThrow(/data export, not a backup/i);
   });
 

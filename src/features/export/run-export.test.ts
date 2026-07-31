@@ -20,7 +20,16 @@ const reportRepo = {
   inventoryValue: vi.fn(async () => ({ totalValue: 0, itemCount: 0, byCategory: [], byLocation: [] })),
   consumptionRate: vi.fn(async (...args: unknown[]) => {
     calls.consumptionRate = args;
-    return { windowStart: 0, windowEnd: 0, windowDays: 0, totalConsumed: 0, perDay: 0 };
+    // Two units, because the report is per unit of measure and must never be summed across them.
+    return {
+      windowStart: 0,
+      windowEnd: 0,
+      windowDays: 30,
+      lines: [
+        { unit: 'g', totalConsumed: 400, perDay: 40 },
+        { unit: null, totalConsumed: 6, perDay: 0.6 },
+      ],
+    };
   }),
   movement: vi.fn(async (...args: unknown[]) => {
     calls.movement = args;
@@ -64,15 +73,23 @@ const itemRepo = {
   })),
 };
 
+/** Two locations, one nested under the other — the JSON export's `locations` array. */
+const locationRepo = {
+  listAll: vi.fn(async () => [
+    { id: 'l1', name: 'Workshop', parentId: null, description: 'The good bench' },
+    { id: 'l2', name: 'Cabinet A', parentId: 'l1', description: null },
+  ]),
+};
+
 vi.mock('@/db/repositories', () => ({
   getReportRepository: () => reportRepo,
   getAttachmentRepository: () => ({}),
-  getCheckoutRepository: () => ({}),
+  getCheckoutRepository: () => ({ listForItem: async () => ({ rows: [], hasMore: false }) }),
   getCategoryRepository: () => ({}),
-  getContactRepository: () => ({}),
+  getContactRepository: () => ({ list: async () => ({ rows: [], hasMore: false }) }),
   getImageRepository: () => ({}),
   getItemRepository: () => itemRepo,
-  getLocationRepository: () => ({}),
+  getLocationRepository: () => locationRepo,
   getProjectRepository: () => ({}),
 }));
 
@@ -142,6 +159,17 @@ describe('report CSV export — selected window reaches the repository', () => {
     expect(calls.spendAnalytics?.[0]).toBe(DEFAULT_ANALYTICS_WINDOW);
   });
 
+  it('CONSUMPTION exports one labelled row per unit of measure (issue #685)', async () => {
+    await runExport('REPORTS', { includeInactive: false, reportKind: 'CONSUMPTION' });
+    const [blob] = downloadSpy.mock.calls[0]! as [Blob, string];
+    const rows = (await blob.text()).split('\r\n');
+    expect(rows[0]).toContain('unit');
+    // One row per unit, each carrying its own total — never one figure across the two.
+    expect(rows).toHaveLength(3);
+    expect(rows[1]).toContain(',g,400,40');
+    expect(rows[2]).toContain(',,6,0.6');
+  });
+
   it('leaves fixed-span reports on their constants', async () => {
     usePreferencesStore.setState({
       reportsAnalyticsWindow: PICKED,
@@ -198,5 +226,22 @@ describe('items export — the chosen file format reaches the download', () => {
   it('reads every page of items, not just the first', async () => {
     await exportItems('csv');
     expect(itemRepo.list).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Issue #617 (`N7`): the JSON payload was `{ items, contacts, checkouts }`, so an exported item
+ * carried a bare `locationId` UUID that resolved to nothing in the file.
+ */
+describe('JSON export — locations travel with the items', () => {
+  it('carries the whole location hierarchy alongside the items', async () => {
+    await runExport('JSON', { includeInactive: false, scope: 'ALL' });
+    const [blob] = downloadSpy.mock.calls[0]! as [Blob, string];
+    const payload = JSON.parse(await blob.text());
+    expect(payload.locations).toHaveLength(2);
+    // Read whole through `listAll`, so a `parentId` chain never dangles.
+    expect(locationRepo.listAll).toHaveBeenCalled();
+    expect(payload.locations.map((l: { id: string }) => l.id)).toEqual(['l1', 'l2']);
+    expect(payload.locations[0].description).toBe('The good bench');
   });
 });
