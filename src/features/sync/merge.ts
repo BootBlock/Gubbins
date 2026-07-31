@@ -42,13 +42,14 @@ import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/d
 import { decodeRowForTable } from './blob-codec';
 import { defaultLocationWinner } from './location-default-flag';
 import { forceLwwTies } from './lww-tie-override';
-import { reconcile } from './reconcile';
+import { historyClearMarks, reconcile } from './reconcile';
 import { supplierPartFlagClears } from './supplier-part-flags';
 import { buildSchemaDictionary } from './schema-dictionary';
 import {
   applyPlan,
   buildCloneStatements,
   buildLocalSnapshot,
+  historyClearStatement,
   historyInsertStatement,
   requireColumns,
   shiftSnapshotTimestamps,
@@ -337,6 +338,13 @@ async function cloneWithSalvage(
 
   for (const row of salvage.itemHistory) {
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
+  }
+  // Issue #620: a per-item ledger clear is marked *inside* the ledger, so the clone and the
+  // re-union above can each carry entries the other side has already cleared. Apply both
+  // sides' marks over the merged result — the same rule `applyPlan` applies to an ordinary
+  // merge, so adopting a remote wholesale cannot quietly resurrect a cleared log.
+  for (const [itemId, before] of historyClearMarks([salvage.itemHistory, remote.itemHistory])) {
+    statements.push(historyClearStatement(itemId, before));
   }
   // Issue #188: re-union the offline-only stock-delta rows the wholesale clone did not carry,
   // the direct sibling of the item_history re-union above. With capture disabled around the whole

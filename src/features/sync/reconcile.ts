@@ -22,7 +22,7 @@ import { BUILTIN_USER_IDS, SYSTEM_USER_ID } from '@/db/repositories/constants';
 // now runs inside the database worker (issue #173), and the barrel wires the repository layer
 // to the main thread's session/preferences stores — pulling those into the worker would give
 // it a second, never-updated copy of state it has no business holding.
-import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
+import { UNASSIGNED_LOCATION_ID, type HistoryAction } from '@/db/repositories/constants';
 import {
   SYNC_TABLES,
   ITEM_HISTORY_TABLE,
@@ -52,6 +52,7 @@ import type {
   FlagRepair,
   GaugeHistoryDelta,
   GaugeResolution,
+  HistoryClear,
   StockQuantityDelta,
   StockResolution,
   ItemTagEdge,
@@ -107,6 +108,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   flagRepairs: [],
   defaultLocationWinnerId: null,
   historyInserts: [],
+  historyClears: [],
   stockDeltaInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
@@ -289,6 +291,9 @@ export function reconcile(
   for (const loserId of userRekeys.keys()) finalUserIds.delete(loserId);
   for (const builtin of BUILTIN_USER_IDS) finalUserIds.add(builtin);
 
+  // Issue #620: the per-item ledger-clear marks, read from both sides' ledgers before the union
+  // below, so a clear on either device removes the same era of entries on both.
+  const clearMarks = historyClearMarks([local.itemHistory, remote.itemHistory]);
   const historyInserts = reconcileHistory(
     local,
     remote,
@@ -297,7 +302,9 @@ export function reconcile(
     finalItemIds,
     finalUserIds,
     userRekeys,
+    clearMarks,
   );
+  const historyClears = reconcileHistoryClears(local, clearMarks, finalItemIds);
   // Issue #188: the discrete-stock convergence ledger, unioned by id like the history ledger.
   const stockDeltaInserts = reconcileStockDeltas(
     local,
@@ -346,6 +353,7 @@ export function reconcile(
     flagRepairs,
     defaultLocationWinnerId,
     historyInserts,
+    historyClears,
     stockDeltaInserts,
     itemTagUpserts,
     itemTagDeletes,
@@ -1039,12 +1047,58 @@ function survivingIds(
 }
 
 /**
+ * The action marking a deliberately cleared per-item ledger (issue #620) — see
+ * {@link historyClearMarks} for what the engine does with it.
+ *
+ * Typed as a {@link HistoryAction} so it is checked against the ledger's vocabulary: renaming
+ * or dropping the action would fail to compile here rather than silently leaving the engine
+ * matching a string nothing writes any more.
+ */
+const HISTORY_CLEARED_ACTION: HistoryAction = 'HISTORY_CLEARED';
+
+/**
+ * The instant each item's Activity Log was last cleared, across **both** snapshots
+ * (issue #620) — the per-item counterpart to the global §7.6.3-A prune watermark.
+ *
+ * Clearing an item's log deletes its entries and writes one `HISTORY_CLEARED` entry in
+ * their place. That marker is an ordinary ledger row, so it unions across to every peer
+ * like any other — and reading the newest one per item, from local and remote together,
+ * gives both devices the same cut-off without either needing to know which side cleared:
+ * entries older than it are neither imported ({@link reconcileHistory}) nor kept
+ * ({@link reconcileHistoryClears}). Clear on one device, sync twice, and both agree.
+ *
+ * Earlier markers are themselves older than the newest one, so a log cleared twice
+ * converges on the single most recent marker rather than accumulating one per clear.
+ *
+ * The comparison is on `created_at`, which `shiftSnapshotTimestamps` never shifts, so it
+ * means the same instant on both sides. A device whose clock runs ahead therefore clears
+ * slightly into a peer's future — the same clock-skew exposure the global prune watermark
+ * has always carried, and the reason a clear is worded as "everything up to now".
+ *
+ * Takes the ledgers rather than the snapshots so the clone-and-salvage path can pass the
+ * two halves it holds separately (see `cloneWithSalvage`).
+ */
+export function historyClearMarks(ledgers: readonly (readonly SqlRow[] | undefined)[]): Map<string, number> {
+  const marks = new Map<string, number>();
+  for (const rows of ledgers) {
+    for (const r of rows ?? []) {
+      if (r.action !== HISTORY_CLEARED_ACTION) continue;
+      const itemId = String(r.item_id);
+      const at = num(r.created_at);
+      if (at > (marks.get(itemId) ?? 0)) marks.set(itemId, at);
+    }
+  }
+  return marks;
+}
+
+/**
  * Append-only Activity Ledger reconciliation (§7.3, Phase 11). The ledger is immutable,
  * so the same event has the same UUID everywhere: simply INSERT any remote row missing
- * locally (**union-by-id**, never LWW). Two guards: a row older than the §7.6.3-A prune
- * watermark is skipped (the device deliberately reclaimed that space), and a row whose
+ * locally (**union-by-id**, never LWW). Three guards: a row older than the §7.6.3-A prune
+ * watermark is skipped (the device deliberately reclaimed that space), a row whose
  * `item_id` will not survive the merge is skipped (its FK parent is gone — it would
- * cascade away anyway).
+ * cascade away anyway), and a row from before its item's newest clear mark is skipped
+ * (issue #620 — importing it would undo the clear).
  */
 function reconcileHistory(
   local: SyncSnapshot,
@@ -1054,6 +1108,7 @@ function reconcileHistory(
   finalItemIds: ReadonlySet<string>,
   finalUserIds: ReadonlySet<string>,
   userRekeys: ReadonlyMap<string, string>,
+  clearMarks: ReadonlyMap<string, number>,
 ): SqlRow[] {
   const localIds = new Set((local.itemHistory ?? []).map((r) => String(r.id)));
   const inserts: SqlRow[] = [];
@@ -1061,10 +1116,40 @@ function reconcileHistory(
     if (localIds.has(String(r.id))) continue;
     if (num(r.created_at) < prunedBefore) continue;
     if (!finalItemIds.has(String(r.item_id))) continue;
+    if (num(r.created_at) < (clearMarks.get(String(r.item_id)) ?? 0)) continue;
     const row = allowedCols ? sanitiseRow(r, allowedCols) : r;
     inserts.push(resolveActor(row, finalUserIds, userRekeys));
   }
   return inserts;
+}
+
+/**
+ * The per-item ledger clears this device has to adopt (issue #620): an item whose newest
+ * clear mark post-dates entries this device still holds.
+ *
+ * The mirror of {@link reconcileHistory}'s clear guard — that one refuses to *import* a
+ * cleared entry, this one deletes one already stored, which is what makes a peer's clear
+ * land here rather than only stopping the traffic in one direction. Only items with
+ * something to delete are listed, so a merge between two devices that already agree emits
+ * nothing. Items that will not survive the merge are skipped: their ledger cascades away
+ * with them anyway.
+ */
+function reconcileHistoryClears(
+  local: SyncSnapshot,
+  clearMarks: ReadonlyMap<string, number>,
+  finalItemIds: ReadonlySet<string>,
+): HistoryClear[] {
+  if (clearMarks.size === 0) return [];
+  // One pass over the ledger rather than one per marked item: the ledger is the largest
+  // section of the snapshot, and a device that has cleared many items would otherwise
+  // re-scan all of it for each of them.
+  const stale = new Set<string>();
+  for (const r of local.itemHistory ?? []) {
+    const itemId = String(r.item_id);
+    if (stale.has(itemId) || !finalItemIds.has(itemId)) continue;
+    if (num(r.created_at) < (clearMarks.get(itemId) ?? 0)) stale.add(itemId);
+  }
+  return [...stale].map((itemId) => ({ itemId, before: clearMarks.get(itemId)! }));
 }
 
 /**

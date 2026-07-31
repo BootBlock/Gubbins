@@ -44,6 +44,7 @@ import {
   type UpdateSupplierPartInput,
 } from '@/db/repositories';
 import { currentGrossWeight, percentageRemaining, type GaugeConfigChange } from '@/db/repositories/gauge';
+import { activityKeys } from '@/features/activity/queries';
 import { checkoutKeys } from '@/features/contacts/keys';
 import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
@@ -484,6 +485,35 @@ export function useReconfigureGauge() {
     onSettled: (_d, _e, { id }) => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
+    },
+  });
+}
+
+/**
+ * Clear one item's Activity Log (issue #620), leaving the single entry that records the
+ * clear. Invalidation-based: the log is a read-only projection of the ledger, so there is
+ * nothing to patch optimistically — and guessing at the marker entry the repository writes
+ * would show copy that has not been saved yet.
+ *
+ * `clearedBy` is the label the marker entry names: the signed-in user, or the device when
+ * the users module is off. The caller resolves it — the session lives in the UI, not here.
+ *
+ * No {@link useReportWriteFailure} here, unlike its invalidation-based neighbours (issue #389):
+ * the clear is only reachable from a confirmation dialog that stays open and shows the failure
+ * inline, so a toast on top would report the same failure twice. This is the same call the
+ * tare-preset deletion makes, for the same reason.
+ *
+ * The global activity feed is swept too: it shows these same ledger rows, and unlike an
+ * ordinary write (which only *adds* to it) a clear removes rows already on screen.
+ */
+export function useClearItemHistory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, clearedBy }: { id: string; clearedBy: string }) =>
+      getItemRepository().clearHistory(id, clearedBy),
+    onSettled: (_d, _e, { id }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
+      void client.invalidateQueries({ queryKey: activityKeys.all });
     },
   });
 }

@@ -266,6 +266,20 @@ export interface FlagRepair {
   readonly winnerId: string;
 }
 
+/**
+ * One item's Activity-Log clear, adopted from the merged ledger (issue #620).
+ *
+ * `item_history` is unioned by id, so a clear needs a mark *inside* the ledger or a peer
+ * would simply hand the cleared entries back. The `HISTORY_CLEARED` entry is that mark:
+ * whichever device wrote the newest one for an item, every entry older than it is out —
+ * not imported from the peer, and deleted here if this device still holds it.
+ */
+export interface HistoryClear {
+  readonly itemId: string;
+  /** Instant of the newest `HISTORY_CLEARED` entry for the item; entries before it go. */
+  readonly before: number;
+}
+
 export interface ReconciliationPlan {
   /** Rows to UPSERT locally (remote won LWW, or are new), already sanitised + re-parented. */
   readonly localUpserts: readonly TableRow[];
@@ -304,6 +318,8 @@ export interface ReconciliationPlan {
   readonly defaultLocationWinnerId: string | null;
   /** Phase 11: remote `item_history` rows missing locally (union-by-id), to INSERT. */
   readonly historyInserts: readonly SqlRow[];
+  /** Issue #620: per-item ledger clears to adopt — drop local entries older than the mark. */
+  readonly historyClears: readonly HistoryClear[];
   /** Issue #188: remote `stock_deltas` rows missing locally (union-by-id), to INSERT. */
   readonly stockDeltaInserts: readonly SqlRow[];
   /** Phase 11: `item_tags` edges to add locally (membership union). */

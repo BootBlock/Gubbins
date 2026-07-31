@@ -620,6 +620,18 @@ export function useItemHistory(id: string | undefined) {
   });
 }
 
+/**
+ * One page of an item's Activity Log, for the export's read-everything walk (issue #620).
+ *
+ * The export cannot serialise what the log is holding on screen — that is a trimmed
+ * virtual window over a heavily-used item's ledger — so it re-reads from the start through
+ * `exportEveryPage`, which pairs this with the `readAllPages` ceiling. Not a hook: it is
+ * called from the export's `build` callback, outside React's render.
+ */
+export function readItemHistoryPage(id: string) {
+  return (params: { limit: number; offset: number }) => getItemRepository().getHistory(id, params);
+}
+
 /** The full nested location hierarchy (powers the location sidebar/tree). */
 export function useLocationTree() {
   return useQuery({
