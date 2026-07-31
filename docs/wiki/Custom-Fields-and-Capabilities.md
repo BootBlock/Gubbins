@@ -54,7 +54,9 @@ Each custom field has a **type** that decides how you enter and how Gubbins show
 - **Yes / No** and **On / Off** — a simple two-state toggle.
 - **Date** — a calendar date.
 - **Choice** — a value picked from a list of options you define.
-- **URL / Link** — a web address.
+- **URL / Link** — a web address, shown as a
+  [[clickable link|#opening-a-link-or-file-field]] on the item card, the list rows and a
+  location's detail panel.
 - **File link** — a pointer to a file that lives *outside* Gubbins: a path on your
   computer, a network share (`\\server\share\movie.mkv`) or a `file://` link. Gubbins stores
   the **link**, not the file — so the file is never copied, never synced, and never included
@@ -76,6 +78,30 @@ Each custom field has a **type** that decides how you enter and how Gubbins show
 > text — isn't a picture, so Gubbins tells you it can't be shown and offers to replace it
 > rather than trying to load it. On the item's card that field simply reads `—` until you
 > choose a picture.
+
+### Opening a link or file field
+
+A **URL / Link** field isn't just text you can read — its value is a **link you can click**,
+wherever the field is shown: on an item's card, in the dense list and table rows, and on a
+[[location's own detail panel|#fields-on-a-location]]. It opens in a new tab, so you keep your
+place in Gubbins. So a *Datasheet*, a *Manual* or a *Product page* field is one click away
+rather than something to copy out and paste into the address bar.
+
+A **File link** field behaves the same way *when what you pointed at is a web address* — the
+type accepts one, and Gubbins notices. Point it at anything else and the value is shown with a
+small file icon beside it instead, because a browser can't open a path on your disc or a network
+share from a web page. The path is still there to read, copy, or paste into your file manager.
+
+> **ℹ️ Note**
+> A link only ever opens a plain `http://` or `https://` address. Anything else — a `file://`
+> link, a network share, or a value that isn't an address at all — is shown as text, never as a
+> link that would do nothing when clicked.
+
+> **💡 Tip**
+> A File link travels between your devices but the file itself doesn't, so a path that works on
+> your desktop won't resolve on your phone. If you want a document reachable from everywhere,
+> put it somewhere with a web address and use a **URL / Link** field — or attach it as a
+> [[datasheet|Tags-Attachments-and-Related-Items]] on the item.
 
 ### Turning a date into a deadline
 

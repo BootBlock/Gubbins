@@ -432,4 +432,81 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields([customCardFieldId('gone')], makeItem(), ctx({ customFields }));
     expect(resolved).toEqual([]);
   });
+
+  /**
+   * W1f — a `URL`/`FILE` value that can be acted on. `URL` is validated http(s) on save, so it
+   * is always a link; `FILE` covers a local path, a UNC share *and* an `http(s)` URI, so its
+   * own string decides which arm it takes.
+   */
+  describe('URL / FILE values (W1f)', () => {
+    const resolveValue = (fieldType: CardCustomField['fieldType'], raw: string) =>
+      resolveCardFields(
+        [customCardFieldId('f1')],
+        makeItem({ categoryId: 'cat-1' }),
+        ctx({
+          customFields: new Map([['f1', { ...field, fieldType }]]),
+          customValues: new Map([['f1', raw]]),
+        }),
+      )[0].value;
+
+    it('renders a URL value as an openable link', () => {
+      expect(resolveValue('URL', 'https://example.com/datasheet.pdf')).toEqual({
+        kind: 'link',
+        href: 'https://example.com/datasheet.pdf',
+      });
+    });
+
+    it('renders a FILE value holding a web address as an openable link', () => {
+      // `FILE` is documented as accepting an `http(s)` URI as well as a path, so the type
+      // alone cannot decide this — only the value can.
+      expect(resolveValue('FILE', 'https://example.com/boiler-manual.pdf')).toEqual({
+        kind: 'link',
+        href: 'https://example.com/boiler-manual.pdf',
+      });
+    });
+
+    it('trims a link value, so the address opened is the one validation stored', () => {
+      expect(resolveValue('URL', '  https://example.com/a.pdf ')).toEqual({
+        kind: 'link',
+        href: 'https://example.com/a.pdf',
+      });
+    });
+
+    it.each([
+      ['a Windows path', 'C:\\Manuals\\boiler.pdf'],
+      ['a UNC share', '\\\\server\\share\\boiler.pdf'],
+      ['a POSIX path', '/srv/manuals/boiler.pdf'],
+      ['a file:// URI', 'file:///srv/manuals/boiler.pdf'],
+    ])('renders a FILE value holding %s as a pointer, not a link', (_label, raw) => {
+      expect(resolveValue('FILE', raw)).toEqual({ kind: 'pointer', text: raw });
+    });
+
+    /**
+     * The renderer puts a `link` href straight into an `<a href>`, so only an address a page
+     * can actually navigate to may become one. A `URL` value is validated on save, so a
+     * hostile string only arrives out of band — from a sync peer, an import, or a value left
+     * behind when the definition was retyped.
+     */
+    it.each([
+      ['URL' as const, 'javascript:alert(1)'],
+      ['URL' as const, 'data:text/html,<script>alert(1)</script>'],
+      ['URL' as const, 'not a url at all'],
+    ])('degrades an out-of-band %s value (%s) to plain text', (fieldType, hostile) => {
+      expect(resolveValue(fieldType, hostile)).toEqual({ kind: 'text', text: hostile });
+    });
+
+    it('never lets a FILE value carrying a script scheme become an href', () => {
+      // It takes the pointer arm rather than the text arm — a FILE value has no validation to
+      // fall short of, so "a path we cannot open" is the honest reading of anything non-http(s).
+      expect(resolveValue('FILE', 'javascript:alert(1)')).toEqual({
+        kind: 'pointer',
+        text: 'javascript:alert(1)',
+      });
+    });
+
+    it('renders empty for a blank URL/FILE value, like every other type', () => {
+      expect(resolveValue('URL', '   ')).toEqual({ kind: 'empty' });
+      expect(resolveValue('FILE', '')).toEqual({ kind: 'empty' });
+    });
+  });
 });

@@ -58,6 +58,23 @@ describe('resolveLocationDetailFields', () => {
     expect(resolved?.value).toEqual({ kind: 'image', src });
   });
 
+  it('renders a URL value as an openable link, as an item card does (W1f)', () => {
+    // The panel's own doc comment offers "a link to the boiler manual" as its worked example;
+    // this is the assertion that it really is one, and that it came from the shared seam
+    // rather than a second answer invented for locations.
+    const [resolved] = resolveLocationDetailFields([
+      field({ defId: 'u', name: 'Boiler manual', fieldType: 'URL', value: 'https://example.com/b.pdf' }),
+    ]);
+    expect(resolved?.value).toEqual({ kind: 'link', href: 'https://example.com/b.pdf' });
+  });
+
+  it('renders a FILE value that is a path as a pointer, not a link (W1f)', () => {
+    const [resolved] = resolveLocationDetailFields([
+      field({ defId: 'f', name: 'Wiring diagram', fieldType: 'FILE', value: '\\\\nas\\docs\\wiring.pdf' }),
+    ]);
+    expect(resolved?.value).toEqual({ kind: 'pointer', text: '\\\\nas\\docs\\wiring.pdf' });
+  });
+
   it('preserves the order it is given', () => {
     const resolved = resolveLocationDetailFields([
       field({ defId: 'a', name: 'Access code' }),

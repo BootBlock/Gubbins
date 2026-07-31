@@ -14,6 +14,7 @@
 import type { Item } from '@/db/repositories';
 import type { Condition, FieldType } from '@/db/repositories/constants';
 import { isImageDataUrl } from '@/lib/image-data-url';
+import { isExternalHref } from './external-href';
 import { UNLIMITED_GLYPH } from './unlimited';
 import { itemTotalValue } from './item-total-value';
 
@@ -222,6 +223,22 @@ export type CardFieldValue =
    * take the muted token beside the value it qualifies instead of being baked into it here.
    */
   | { readonly kind: 'measure'; readonly text: string; readonly unit: string }
+  /**
+   * An openable http(s) address (W1f) — a `URL` field's value, or a `FILE` field's when what
+   * the user pointed at happens to be a web address. Named `href` rather than `text` because
+   * that is the load-bearing part: only a value approved by
+   * {@link import('./external-href').isExternalHref} may take this arm, and the renderer
+   * shows the address itself, exactly as the datasheet list does for an unlabelled link.
+   */
+  | { readonly kind: 'link'; readonly href: string }
+  /**
+   * A `FILE` field's value that is **not** an http(s) address — a local path, a UNC share, a
+   * `file://` URI (W1f). Its own arm rather than plain `text` so the renderer can mark it as
+   * the pointer it is: a browser can neither verify nor navigate to it, and only a device that
+   * can reach that path will find anything there, so presenting it as a link would be a
+   * control that looks live and does nothing.
+   */
+  | { readonly kind: 'pointer'; readonly text: string }
   | { readonly kind: 'money'; readonly amount: number }
   | { readonly kind: 'condition'; readonly condition: Condition }
   | { readonly kind: 'tags'; readonly tags: readonly string[] }
@@ -347,7 +364,8 @@ function quantityValue(item: Item, fmt: CardFieldFormatters): CardFieldValue {
  * Shared with the location detail panel (`location-detail.ts`), so a custom field reads the same
  * whether it is a fact about an item or about the place it sits in (issue #617) — including the
  * unit a NUMBER definition carries (W1b), which is a property of the definition and so is the
- * same in both places.
+ * same in both places — and, since W1f, the openability of a `URL`/`FILE` value, so a link to
+ * the boiler manual is clickable on the place that holds it exactly as on an item inside it.
  */
 export function customFieldValue(type: FieldType, raw: string | null, unit: string | null): CardFieldValue {
   if (raw === null || raw.trim() === '') return EMPTY;
@@ -360,6 +378,23 @@ export function customFieldValue(type: FieldType, raw: string | null, unit: stri
   // number instead of "5 undefined". Types alone don't guarantee it is present, because this
   // file's tests are excluded from `tsconfig.app.json` and build the catalog by hand.
   if (type === 'NUMBER' && unit) return { kind: 'measure', text: raw, unit };
+  // A URL/FILE value becomes something the user can act on (W1f). Which of the two arms it
+  // takes is decided by the string, not the type, because `FILE` covers a local path, a UNC
+  // share *and* an `http(s)` URI — so only the value can say which it is. {@link isExternalHref}
+  // is the render-side gate that decides, and refusing anything but http(s) is what keeps a
+  // stored string from becoming an href the app would act on.
+  //
+  // Trimmed like IMAGE, so the address opened is exactly the one validation stored, and a
+  // stray space can never be the difference between a link and a dead string.
+  if (type === 'URL' || type === 'FILE') {
+    const trimmed = raw.trim();
+    if (isExternalHref(trimmed)) return { kind: 'link', href: trimmed };
+    // A URL value is validated http(s) on save, so one that isn't only arrives out of band (a
+    // peer on a newer build, an import, a hand-edited backup). It degrades to plain text
+    // rather than to `pointer`, whose "this is a file path" framing would be a claim about it
+    // that nothing has established.
+    return type === 'FILE' ? { kind: 'pointer', text: trimmed } : { kind: 'text', text: trimmed };
+  }
   // An IMAGE value is an image `data:` URL — render it as a thumbnail, not its base64 text.
   // Only a value of exactly that shape becomes a `src` (see {@link isImageDataUrl}); anything
   // else is em-dash, so a stored string can never become a URL the card fetches. Tested (and
