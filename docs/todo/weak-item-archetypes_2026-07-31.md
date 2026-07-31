@@ -64,6 +64,11 @@ tool" cannot inherit "Tool", which is why *Manufacturer*, *Brand* and *Condition
 dozens of presets. The single NFT preset models a non-physical thing by adding seven inert fields and
 switching three physical capabilities off; that is the whole vocabulary available to an archetype.
 
+The [category-lookups plan](category-lookups_2026-07-31.md) reaches the same diagnosis from the
+opposite end — it opens by noting that a category is "just a collection of custom fields, with
+nowhere for behaviour to live." That plan gives a category a way to *fill* its fields; this audit is
+about giving them a way to *do* something once filled. They are complementary halves of C1/C2.
+
 **C3 — Four tracking modes, all of which assume a body.**
 `DISCRETE | SERIALISED | CONSUMABLE_GAUGE | UNTRACKED`
 ([constants.ts:70](../../src/db/repositories/constants.ts#L70)) — count it, serialise it, weigh it,
