@@ -5,6 +5,25 @@ import { Modal } from './modal';
 
 afterEach(cleanup);
 
+// A nested dialog always opens *after* its parent is mounted (a control inside the parent
+// opens it), so this harness opens it via a click — matching the real flow the modal stack is
+// ordered by. Shared by the stack tests below, which cover both routes out of a stacked
+// dialog: Escape and a backdrop tap.
+function StackHarness() {
+  const [parentOpen, setParentOpen] = useState(true);
+  const [nestedOpen, setNestedOpen] = useState(false);
+  return (
+    <Modal open={parentOpen} onClose={() => setParentOpen(false)} title="Add item">
+      <button onClick={() => setNestedOpen(true)}>Open nested</button>
+      {nestedOpen ? (
+        <Modal open onClose={() => setNestedOpen(false)} title="Add location">
+          <button>Nested control</button>
+        </Modal>
+      ) : null}
+    </Modal>
+  );
+}
+
 describe('Modal — accessible focus management', () => {
   it('moves focus into the dialog when it opens', () => {
     render(
@@ -87,24 +106,6 @@ describe('Modal — accessible focus management', () => {
     fireEvent.keyDown(document, { key: 'Tab' });
     expect(document.activeElement).toBe(confirm);
   });
-
-  // A nested dialog always opens *after* its parent is mounted (a control inside the
-  // parent opens it), so these harnesses open it via a click — matching the real flow
-  // the modal stack is ordered by.
-  function StackHarness() {
-    const [parentOpen, setParentOpen] = useState(true);
-    const [nestedOpen, setNestedOpen] = useState(false);
-    return (
-      <Modal open={parentOpen} onClose={() => setParentOpen(false)} title="Add item">
-        <button onClick={() => setNestedOpen(true)}>Open nested</button>
-        {nestedOpen ? (
-          <Modal open onClose={() => setNestedOpen(false)} title="Add location">
-            <button>Nested control</button>
-          </Modal>
-        ) : null}
-      </Modal>
-    );
-  }
 
   it('Escape closes only the topmost dialog of a stack, then the parent', async () => {
     render(<StackHarness />);
@@ -199,5 +200,108 @@ describe('Modal — accessible focus management', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     // On close, focus returns to the control that opened it.
     await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+});
+
+describe('Modal — dismissing by tapping the backdrop (#614)', () => {
+  /** A dialog that really unmounts on close, so each gesture is judged on the user's outcome. */
+  function Harness() {
+    const [open, setOpen] = useState(true);
+    return (
+      <Modal open={open} onClose={() => setOpen(false)} title="Add item">
+        <input aria-label="Name" />
+      </Modal>
+    );
+  }
+
+  /** The backdrop is the dialog container's first child — the dimmed layer behind the panel. */
+  function backdropOf(): Element {
+    const backdrop = screen.getByRole('dialog').firstElementChild;
+    expect(backdrop).toBeTruthy();
+    return backdrop!;
+  }
+
+  /** One end of a pointer gesture, as a real pointing device reports it. */
+  function pointer(overrides: Record<string, unknown> = {}) {
+    return { pointerId: 1, isPrimary: true, button: 0, ...overrides };
+  }
+
+  /**
+   * Play a full press → release → click, the way a browser dispatches one. The click lands on
+   * the nearest common ancestor of the two ends, so a gesture that starts on the backdrop and
+   * lifts on the panel is clicked on the *container* — which is the whole bug.
+   */
+  function gesture(press: Element, release: Element = press, init: Record<string, unknown> = {}) {
+    const clickTarget = press === release ? press : screen.getByRole('dialog');
+    fireEvent.pointerDown(press, pointer(init));
+    fireEvent.pointerUp(release, pointer(init));
+    fireEvent.click(clickTarget, pointer(init));
+  }
+
+  it('closes on a tap that presses and releases on the backdrop', async () => {
+    render(<Harness />);
+    gesture(backdropOf());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('closes on a tap that rolls off the backdrop onto the panel as the finger lifts', async () => {
+    render(<Harness />);
+    gesture(backdropOf(), screen.getByLabelText('Name'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('stays open when a press inside the panel is dragged out onto the backdrop', async () => {
+    // Selecting text in a field and releasing outside must not close the dialog under it.
+    render(<Harness />);
+    gesture(screen.getByLabelText('Name'), backdropOf());
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+  });
+
+  it('stays open when a click begins and ends inside the panel', async () => {
+    render(<Harness />);
+    gesture(screen.getByLabelText('Name'));
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+  });
+
+  it('stays open when the browser takes the gesture over — a pinch, not a tap', async () => {
+    // A claimed gesture arrives as pointercancel and produces no click; the press must not
+    // stay armed for whatever click comes next.
+    render(<Harness />);
+    const backdrop = backdropOf();
+    fireEvent.pointerDown(backdrop, pointer());
+    fireEvent.pointerCancel(backdrop, pointer());
+    fireEvent.click(screen.getByLabelText('Name'), pointer());
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+  });
+
+  it('does not let a right-press on the backdrop arm the next click', async () => {
+    // Right-clicking the backdrop opens the browser's context menu rather than dismissing, so
+    // the click the user makes afterwards — anywhere — must not close the dialog either.
+    render(<Harness />);
+    fireEvent.pointerDown(backdropOf(), pointer({ button: 2 }));
+    fireEvent.click(screen.getByLabelText('Name'), pointer());
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+  });
+
+  it('ignores a non-primary pointer — the second finger of a pinch', async () => {
+    render(<Harness />);
+    const backdrop = backdropOf();
+    gesture(backdrop, backdrop, { pointerId: 2, isPrimary: false });
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+  });
+
+  it('closes only the topmost dialog of a stack', async () => {
+    render(<StackHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open nested' }));
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Add location' })).toBeTruthy());
+
+    // The nested dialog's own backdrop covers its parent's, so a tap there dismisses it alone.
+    const nestedBackdrop = screen.getByRole('dialog', { name: 'Add location' }).firstElementChild!;
+    fireEvent.pointerDown(nestedBackdrop, pointer());
+    fireEvent.pointerUp(nestedBackdrop, pointer());
+    fireEvent.click(nestedBackdrop, pointer());
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add location' })).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'Add item' })).toBeTruthy();
   });
 });

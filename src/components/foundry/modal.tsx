@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { Surface } from './surface';
 import { CloseButton } from './close-button';
+import { useBackdropDismiss } from './backdrop-dismiss';
 import { useDialogBehaviour } from './use-dialog-behaviour';
 import { useReducedMotion } from './useReducedMotion';
 
@@ -65,6 +66,14 @@ export function Modal({
   // initial focus, Tab trap, Escape, scroll lock and focus restore. Shared with {@link Drawer}.
   useDialogBehaviour(open, onClose, dialogRef, initialFocusRef);
 
+  // Tap-the-backdrop-to-close (#614). The handlers sit on the container rather than the
+  // backdrop because that is where the browser dispatches the click of a tap that starts on
+  // one and lifts on the other; the press decides whether it dismisses. See
+  // `backdrop-dismiss.ts`. It is a redundant pointer affordance — keyboard users dismiss via
+  // Escape (handled by `useDialogBehaviour`) or the Close button — so it carries no keyboard
+  // handler of its own.
+  const { backdropRef, containerProps } = useBackdropDismiss(onClose);
+
   if (!open) return null;
 
   return createPortal(
@@ -75,11 +84,11 @@ export function Modal({
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      {...containerProps}
     >
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- the backdrop's click-to-dismiss is a redundant pointer affordance; keyboard users dismiss via Escape (handled in the effect above) or the Close button, so no keyboard handler belongs on this decorative overlay. */}
       <div
+        ref={backdropRef}
         className={cn('absolute inset-0 bg-black/60 backdrop-blur-sm', !reducedMotion && 'animate-fade-in')}
-        onClick={onClose}
       />
       <Surface
         className={cn(
