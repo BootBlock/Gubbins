@@ -849,6 +849,8 @@ export function CreateItemDialog({
         }
       >
         <Textarea
+          sizeKey="item.description"
+          autoGrow
           placeholder="e.g. Single bipolar timer IC, DIP-8"
           data-testid="item-description"
           {...register('description')}
@@ -1262,6 +1264,8 @@ export function CreateItemDialog({
         }
       >
         <Textarea
+          sizeKey="item.notes"
+          autoGrow
           placeholder="Anything worth remembering about this item."
           data-testid="item-notes"
           {...register('notes')}

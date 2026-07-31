@@ -220,6 +220,8 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
         hint="What the item **is** — factual, display-worthy copy (e.g. a one-line datasheet summary). Searchable."
       >
         <Textarea
+          sizeKey="item.description"
+          autoGrow
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="e.g. Single bipolar timer IC, DIP-8"
@@ -232,6 +234,8 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
         hint="Your **own remarks** — provenance, quirks, reminders (e.g. *bought at the swap meet; pin 3 is bent*). Searchable."
       >
         <Textarea
+          sizeKey="item.notes"
+          autoGrow
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Anything worth remembering about this item."

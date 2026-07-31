@@ -104,7 +104,17 @@ export function TypedFieldControl({
       );
     case 'LONG_TEXT':
       return (
-        <Textarea value={value} onChange={(e) => onChange(e.target.value)} {...naming} {...controlProps} />
+        // One remembered size for every long-text custom field rather than one per field:
+        // this control is rendered several layers below whoever knows the field's name, and
+        // a user who wants a roomier box for long text wants it on all of them.
+        <Textarea
+          sizeKey="custom-field.long-text"
+          autoGrow
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          {...naming}
+          {...controlProps}
+        />
       );
     case 'DATE':
       return (

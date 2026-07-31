@@ -66,6 +66,12 @@ The tabs you see depend on which [[modules|Modular-UI]] you have enabled:
 > described here, the relevant module may be switched off on the [[Modular UI|Modular-UI]]
 > screen — turning it back on restores the tab and any data it held.
 
+> **💡 Tip**
+> **Description** and **Notes** grow as you type, and you can drag the handle at a box's
+> bottom-right corner to make it taller still. Gubbins remembers the height you drag to and
+> reopens that box at your size next time; shrink it right back down to return it to the
+> standard size.
+
 Also set on an item: **Condition** — a structured grade (Mint / Good / Needs Repair / Out for
 Calibration); see [[Condition grading|Condition-Grading]].
 

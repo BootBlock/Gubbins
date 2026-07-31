@@ -38,7 +38,7 @@ import { useExportStore } from '@/features/export/useExportStore';
 import { usePwaUpdateSnoozeStore } from '@/components/foundry/usePwaUpdateSnoozeStore';
 import { useLocationExpansionStore } from '@/features/inventory/useLocationExpansionStore';
 import { useAuditSessionStore } from '@/features/lifecycle/useAuditSessionStore';
-import { EMOJI_PICKER_SIZE_KEY, LAST_ORPHAN_SWEEP_KEY } from '@/lib/storage-keys';
+import { EMOJI_PICKER_SIZE_KEY, LAST_ORPHAN_SWEEP_KEY, TEXTAREA_SIZES_KEY } from '@/lib/storage-keys';
 
 /** The slice of a Zustand store API this module needs — narrow enough to fake in a test. */
 interface ResettableStore<T> {
@@ -92,6 +92,10 @@ export const LOCAL_STORE_RESETS: Readonly<Record<string, (() => void) | null>> =
 
   // Read once when the picker mounts; the next open picks up the default size.
   [EMOJI_PICKER_SIZE_KEY]: null,
+
+  // Read once when each text box mounts, for the same reason as the picker above: a box already
+  // on screen keeps the height it opened at, and the next one opens at the default size.
+  [TEXTAREA_SIZES_KEY]: null,
 
   // Read from storage on demand each time the automatic sweep is considered; there is no live
   // store, and losing the timestamp just makes the next launch sweep once (harmless).
