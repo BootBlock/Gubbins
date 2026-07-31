@@ -1873,5 +1873,22 @@
   "lookup.fieldType.select": "Auswahl",
   "lookup.fieldType.file": "Dateiverknüpfung",
   "lookup.fieldType.image": "Bild",
-  "lookup.panel.loading": "Felder dieser Kategorie werden geladen…"
+  "lookup.panel.loading": "Felder dieser Kategorie werden geladen…",
+  "category.lookupSources.title": "Aus einer offenen Datenbank füllen",
+  "category.lookupSources.blurb": "Lassen Sie Objekte dieser Kategorie aus einer freien, offenen Datenbank füllen – Sie wählen den passenden Treffer und prüfen jeden Wert vorher.",
+  "category.lookupSources.hint": "Manche Dinge sind in einer öffentlichen Datenbank bereits beschrieben – es gibt also keinen Grund, abzutippen, was jemand längst festgehalten hat.\n\nWählen Sie hier eine Datenbank aus, und jedes Objekt dieser Kategorie erhält die Schaltfläche **Aus einer Datenbank füllen**. Sie sucht nach dem Namen des Objekts, fragt Sie, **welcher** Eintrag der richtige ist, und zeigt Ihnen dann genau, was wohin geschrieben würde – **Ihre eigenen Eingaben werden nie überschrieben**, außer Sie haken sie an.\n\nEs wird nichts gesendet, bevor Sie die Schaltfläche drücken, und beim ersten Mal werden Sie um Ihre Zustimmung zur Adresse dieser Datenbank gebeten. Diese Zustimmung können Sie später unter **Einstellungen → Scannen & Etiketten** widerrufen.",
+  "category.lookupSources.fills": "Füllt: {fields}",
+  "category.lookupSources.mapping": "Wohin die einzelnen Werte gehen",
+  "category.lookupSources.autoBound": "Nach Namen zuordnen – {name}",
+  "category.lookupSources.autoUnbound": "Nach Namen zuordnen – kein Feld „{name}“",
+  "category.lookupSources.autoMismatch": "Nach Namen zuordnen – „{name}“ hat den falschen Typ",
+  "category.lookupSources.wrongType": "{name} – nicht mehr die richtige Feldart",
+  "category.lookupSources.problems.one": "{count} Wert hat in dieser Kategorie kein Ziel. Wählen Sie unten ein Feld dafür aus oder legen Sie das fehlende Feld oben an.",
+  "category.lookupSources.problems.other": "{count} Werte haben in dieser Kategorie kein Ziel. Wählen Sie unten Felder dafür aus oder legen Sie die fehlenden Felder oben an.",
+  "settings.lookupConsent.section": "Datenbankabfragen",
+  "settings.lookupConsent.label": "Zugestimmte Seiten",
+  "settings.lookupConsent.description": "Die offenen Datenbanken, die dieses Gerät kontaktieren darf, wenn Sie die Felder eines Objekts daraus füllen. Entfernen Sie eine, um erneut gefragt zu werden.",
+  "settings.lookupConsent.hint": "Eine Kategorie kann so eingerichtet werden, dass sie **die Felder eines Objekts aus einer offenen Datenbank füllt**. Bevor dieses Gerät eine solche Datenbank zum ersten Mal kontaktiert, fragt Gubbins um Ihre Erlaubnis und nennt die genaue Seite.\n\nJeder Seite wird **einzeln** zugestimmt – ja zu einer Filmdatenbank ist kein Ja zu allem – und übertragen wird immer nur der Name des Objekts, und nur wenn Sie die Schaltfläche drücken.\n\nEine Seite hier zu entfernen **widerruft** diese Zustimmung: Es wird nichts kontaktiert, bis Sie erneut zustimmen. Diese Entscheidung bleibt auf **diesem Gerät**: Sie wird nie über die Einstellungssynchronisierung geteilt, und eine Sicherung stellt sie nur wieder her, wenn Sie die Gruppe *Dieses Gerät* einbeziehen.",
+  "settings.lookupConsent.empty": "Sie haben bisher keiner zugestimmt.",
+  "settings.lookupConsent.withdraw": "Zustimmung für {host} widerrufen"
 }
