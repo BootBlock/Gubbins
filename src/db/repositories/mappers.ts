@@ -490,6 +490,25 @@ export function rowToActivityFeedEntry(row: ActivityFeedRow): ActivityFeedEntry 
   };
 }
 
+/**
+ * Parse the `categories.hidden_capabilities` JSON array (issue #618).
+ *
+ * Softens rather than throws — a malformed or non-array payload from a peer costs this one
+ * field, not the whole sync apply. Unlike {@link parseStringArray} it *drops* non-string
+ * members instead of coercing them, so a stray `null` can't round-trip back to storage as
+ * the literal id `"null"`. Ids this build doesn't recognise are kept deliberately: a newer
+ * peer may hide a capability that doesn't exist here yet.
+ */
+function parseHiddenCapabilities(value: string | null): readonly string[] {
+  if (value == null) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 export function rowToCategory(row: CategoryRow): Category {
   return {
     id: row.id,
@@ -501,6 +520,7 @@ export function rowToCategory(row: CategoryRow): Category {
     defaultMaintenanceBasis: row.default_maintenance_basis,
     defaultMaintenanceIntervalDays: row.default_maintenance_interval_days,
     defaultMaintenanceIntervalUsage: row.default_maintenance_interval_usage,
+    hiddenCapabilities: parseHiddenCapabilities(row.hidden_capabilities),
     updatedAt: row.updated_at,
   };
 }

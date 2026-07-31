@@ -397,6 +397,22 @@ const baselineStatements: SqlStatement[] = [
           default_maintenance_basis          TEXT,
           default_maintenance_interval_days  INTEGER,
           default_maintenance_interval_usage REAL,
+          -- Capabilities this category's items don't have (issue #618): a JSON array of
+          -- FeatureId strings. A Movie has no maintenance schedule and no warranty, so
+          -- surfacing those sections on every film is noise the Modules screen cannot remove
+          -- without also stripping them from the power tools in the same inventory.
+          --
+          -- Strictly a *narrowing* of the device's module set, never a widening: a category
+          -- may hide what the device shows, but must never re-enable what the device has
+          -- switched off, or the Modules screen stops being the truth about this device.
+          -- Presentation only — hidden sections keep their data, keep syncing it, and keep
+          -- raising their alerts, and a section that *holds* data is shown regardless.
+          --
+          -- Opaque TEXT with no json_valid() CHECK, for the same reason as the webhook
+          -- columns below: the mapper parses tolerantly and drops members that are not
+          -- strings, so a malformed value from a peer costs this one field instead of
+          -- failing the whole sync apply. Nullable (nothing hidden).
+          hidden_capabilities                TEXT,
           updated_at              INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (default_tracking_mode IS NULL OR default_tracking_mode IN (${trackingModeList})),
           CHECK (default_condition IS NULL OR default_condition IN (${conditionList})),

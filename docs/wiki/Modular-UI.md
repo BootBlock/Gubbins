@@ -56,6 +56,18 @@ untouched.
 > your own machine has everything — same data, different surface. This is why a feature described
 > in this wiki might not be visible for you: it may simply be switched off here.
 
+## Hiding something for one kind of thing only
+
+Modules are all-or-nothing for the whole device, which is the wrong tool when a capability
+matters for *some* of what you own but not the rest — maintenance is essential for your power
+tools and meaningless on your film collection.
+
+For that, a **category** can hide the sections its own items don't need. See
+[[Hiding the sections a category doesn't need|Custom-Fields-and-Capabilities]].
+
+The two work together, and always in the same direction: a module switched off here is off
+everywhere, and a category can only hide **further**, never bring one back.
+
 ## Related pages
 
 - **[[Quick start|First-Run-and-Quick-Start]]** — the first-run module chooser.
@@ -64,3 +76,5 @@ untouched.
   display.
 - **[[Users & accounts|Users-and-Accounts]]** — the opt-in module for sharing a device with other
   people.
+- **[[Custom fields & capabilities|Custom-Fields-and-Capabilities]]** — hiding sections for one
+  category rather than the whole device.

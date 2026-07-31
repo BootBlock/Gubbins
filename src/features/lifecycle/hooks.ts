@@ -93,8 +93,12 @@ export function useAddKitComponent() {
       componentItemId: string;
       quantity: number;
     }) => getItemRepository().addKitComponent(kitId, componentItemId, quantity),
-    onSettled: (_d, _e, { kitId }) =>
-      void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) }),
+    onSettled: (_d, _e, { kitId }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) });
+      // Kit membership decides whether the Kit tab survives a category that hides it
+      // (issue #618); the presence probe sits deeper than `itemKit`, so name it too.
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(kitId) });
+    },
   });
 }
 
@@ -109,8 +113,12 @@ export function useUpdateKitComponentQty() {
       getItemRepository().updateKitComponentQty(id, quantity),
     // Surface a rejected component-quantity change rather than letting it fail silently (#389).
     onError: reportFailure,
-    onSettled: (_d, _e, { kitId }) =>
-      void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) }),
+    onSettled: (_d, _e, { kitId }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) });
+      // Kit membership decides whether the Kit tab survives a category that hides it
+      // (issue #618); the presence probe sits deeper than `itemKit`, so name it too.
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(kitId) });
+    },
   });
 }
 
@@ -124,8 +132,12 @@ export function useRemoveKitComponent() {
     mutationFn: ({ id }: { id: string; kitId: string }) => getItemRepository().removeKitComponent(id),
     // Surface a rejected component removal rather than letting it fail silently (#389).
     onError: reportFailure,
-    onSettled: (_d, _e, { kitId }) =>
-      void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) }),
+    onSettled: (_d, _e, { kitId }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) });
+      // Kit membership decides whether the Kit tab survives a category that hides it
+      // (issue #618); the presence probe sits deeper than `itemKit`, so name it too.
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(kitId) });
+    },
   });
 }
 
@@ -352,6 +364,10 @@ function invalidateMaintenance(client: ReturnType<typeof useQueryClient>, itemId
   // creating, logging, accruing usage against or removing a schedule all move a due date on
   // screen, and without this the lane kept showing the pre-write one (issue #374).
   void client.invalidateQueries({ queryKey: agendaKeys.all });
+  // A section the item's category hides is shown anyway once it holds data (issue #618),
+  // and the probe answering that is a *deeper* key than anything swept above, so no
+  // prefix match reaches it. Name it explicitly or the section stays hidden.
+  void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) });
 }
 
 export function useCreateMaintenance() {

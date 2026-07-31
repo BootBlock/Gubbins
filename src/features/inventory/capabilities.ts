@@ -34,6 +34,7 @@ export function useSetCapability(itemId: string) {
     onError: reportFailure,
     onSettled: () => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemCapabilities(itemId) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) });
       void client.invalidateQueries({ queryKey: inventoryKeys.search() });
     },
   });
@@ -51,6 +52,7 @@ export function useRemoveCapability(itemId: string) {
     onError: reportFailure,
     onSettled: () => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemCapabilities(itemId) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) });
       void client.invalidateQueries({ queryKey: inventoryKeys.search() });
     },
   });

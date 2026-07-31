@@ -1,8 +1,9 @@
 # Category-scoped capability hiding — feasibility study & plan (issue #618)
 
-> **Status:** 🟢 ACTIVE — investigation complete, verdict **yes (scoped)**; no phase implemented
-> yet. Phase 1 (schema + gating seam) is next. Three product decisions in §6 are open; (a) and (c)
-> should be settled before phase 2 starts, (b) before phase 3.
+> **Status:** ✅ COMPLETE — all four phases shipped. The verdict was **yes (scoped)**, and the
+> three §6 decisions were settled as recommended: a populated section is shown with a note, the
+> create form was brought in scope, and the contradictory-defaults case is flagged in the editor.
+> §9 records where the delivered work deliberately departs from the plan below.
 
 ## The question
 
@@ -32,10 +33,10 @@ open questions are behavioural, not structural, and are listed in §6.
 
 ## 1. Why the gap is real
 
-Gubbins already answers *"I never use maintenance"* — that is [Modular UI](../wiki/Modular-UI.md):
+Gubbins already answers *"I never use maintenance"* — that is [Modular UI](../../wiki/Modular-UI.md):
 `maintenance`, `warranty`, `batches`, `perishables`, `variants`, `kits`, `cycle-counts`,
 `tags-attachments`, `custom-fields`, `location-photos`, `sales` and friends are all toggleable
-capabilities ([`feature-registry.ts`](../../src/features/modules/feature-registry.ts)).
+capabilities ([`feature-registry.ts`](../../../src/features/modules/feature-registry.ts)).
 
 What it cannot answer is *"maintenance matters for my **Tools** but is noise on my **Movies**"* —
 because the axis is **global and per-device**. A mixed inventory is exactly where that fails, and
@@ -48,11 +49,11 @@ but not by *what kind of thing an item is* — even though the category already 
 ## 2. Why the category is the right carrier
 
 An item has exactly one, nullable, `categoryId`
-([`types/items.ts`](../../src/db/repositories/types/items.ts)), so a single category resolves the
+([`types/items.ts`](../../../src/db/repositories/types/items.ts)), so a single category resolves the
 question unambiguously — no merge or precedence problem between competing sources.
 
 A category is *already* the carrier for per-category shape decisions — it holds six template
-defaults plus a glyph today ([`types/categories.ts`](../../src/db/repositories/types/categories.ts)):
+defaults plus a glyph today ([`types/categories.ts`](../../../src/db/repositories/types/categories.ts)):
 
 | Column | Effect |
 | --- | --- |
@@ -72,7 +73,7 @@ materialisation path** (`applyCategoryStarterSeed` → `createCategory` → `add
 
 The detail dialog builds its tabs in a pure, exported, already-unit-tested function,
 `buildTabs(item, enabled)`
-([`ItemDetailDialog.tsx`](../../src/features/inventory/components/ItemDetailDialog.tsx)), and
+([`ItemDetailDialog.tsx`](../../../src/features/inventory/components/ItemDetailDialog.tsx)), and
 filters in exactly one place:
 
 ```ts
@@ -205,5 +206,53 @@ Recorded so a later reader can re-test the verdict rather than inherit it:
 - **If the preset defaults get opinionated.** The value is in the *mechanism*; aggressive
   out-of-the-box hiding turns a curated preset into a guessing game about where a field went.
 - **If it becomes a permission system.** This is presentation only. The moment "hidden" starts to
-  mean "cannot be set", it collides with [Roles & permissions](../wiki/Roles-and-Permissions.md),
+  mean "cannot be set", it collides with [Roles & permissions](../../wiki/Roles-and-Permissions.md),
   which is the subsystem that genuinely owns that question.
+
+## 9. What shipped, and where it departed from this plan
+
+Recorded because the sections above are the plan as *written*, not as *built* — a later reader
+following §7 as a recipe would otherwise be misled.
+
+**Settled as recommended.** (a) a section the category hides is shown anyway when it holds data,
+carrying a note naming the category. (b) the create form was brought into scope. (c) a category
+that both applies a maintenance schedule and hides the section shows a warning offering to stop
+adding the schedule — the editor does not silently clear either half of the contradiction.
+
+**Where phase 3 differs from §7.** The plan proposed tagging the ungated sections — Lifecycle,
+Supplier & ops, Related, Substitutions — with an owning `FeatureId`. Only the Lifecycle case was
+actionable, and not in that form:
+
+- **Lifecycle is a composite**, not a section with one owner. It holds expiry (`perishables`),
+  batch and lot (`batches`), variants (`variants`) *and* condition, which no capability gates.
+  Tagging the section wholesale would have hidden condition along with the rest. The narrowing
+  was therefore pushed **inside** the editor, per field, which is what makes the `Movie` case
+  actually work — the expiry date disappears while condition stays.
+- **Supplier & ops, Related and Substitutions were left ungated.** No registered capability owns
+  them, and minting `FeatureId`s to create one would have widened the Modules screen's public,
+  persisted vocabulary as a side effect of this issue. They remain hideable only by the device.
+
+**Scope trimmed deliberately.** `sales` and `cycle-counts` are *not* hideable per category. Both
+gate behaviour rather than an item-detail section — `sales` is a menu action, and a hidden
+`cycle-counts` would imply an exclusion from stock takes that this presentation-only feature does
+not deliver. `scanner`, `nfc`, `labels` and `scraping` are excluded as device concerns.
+
+**`warranty` was dropped from the hideable set during review**, having been in the first cut.
+The capability gates the whole **Asset details** section, which also holds the acquired-on date,
+purchase price and depreciation term — so hiding it per category is one of two wrong things. It
+either buries an item's purchase record along with the warranty, or, once "shown when it holds
+data" rescues it, does nothing whatever for any item that records what it cost, which is most of
+them. Worse, the create form's category default would have stamped an invisible warranty expiry
+onto every new item. Splitting acquisition from warranty is the prerequisite for hiding either,
+and that is a change to the section rather than to this list — worth its own issue.
+
+**Write-side guards, not just render-side.** React Hook Form retains the value of an unmounted
+field, so gating the create form's expiry, batch, lot and warranty boxes on rendering alone let a
+value typed before the category was chosen reach the created item. Each is now guarded at the
+submit as well, because a feature that is presentation-only must not be able to write.
+
+**Left undone, deliberately.** The Modules screen and the feature registry are still untranslated
+English, so the picker shows translated chrome around English capability names. Converting
+`FEATURE_REGISTRY` to `labelKey`/`descriptionKey` would touch the Modules screen, the cascade
+modal, the module guard, first-run and their tests — a Modules-subsystem i18n conversion, not part
+of this issue. Worth its own issue.
