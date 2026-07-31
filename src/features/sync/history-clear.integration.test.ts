@@ -112,6 +112,38 @@ describe('Activity Log clear across devices (issue #620)', () => {
     expect(Number(row?.quantity)).toBe(4);
   });
 
+  it('leaves a gauge reading where it was, rather than reporting it full again', async () => {
+    // The ledger is not only the audit trail: a gauge's `GAUGE_UPDATE` deltas are what §7.3
+    // reconciliation replays to reconstruct its value. Clearing them without care converges both
+    // devices on `gross + 0` — a nearly-empty bottle that reports itself full, permanently.
+    const item = await itemsA.create({
+      name: 'Resin',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, tareWeight: 0 },
+    });
+    await itemsA.adjustGauge(item.id, { delta: -600 });
+    await sync(a, b);
+
+    await itemsA.clearHistory(item.id, 'Ada');
+    // Several rounds: the clear propagates on the first, and the replay that would refill the
+    // gauge only becomes possible once both ledgers are empty of deltas.
+    await sync(b, a);
+    await sync(a, b);
+    await sync(b, a);
+    await sync(a, b);
+
+    const netValue = async (driver: MemoryDriver) =>
+      Number(
+        (
+          await driver.queryOne<{ v: number }>('SELECT current_net_value AS v FROM items WHERE id = ?;', [
+            item.id,
+          ])
+        )?.v,
+      );
+    expect(await netValue(a)).toBe(400);
+    expect(await netValue(b)).toBe(400);
+  });
+
   it('survives adopting the peer wholesale, not just a delta merge', async () => {
     const item = await itemsA.create({ name: 'Wholesale' });
     await itemsA.update(item.id, { name: 'Wholesale v2' });

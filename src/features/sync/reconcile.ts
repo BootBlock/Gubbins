@@ -40,7 +40,7 @@ import type { SqlRow } from '@/db/rpc/driver';
 import { resolveBookingConflicts, type BookingWindow } from '@/features/bookings/booking-overlap';
 import { applyOffset } from './clock';
 import { buildConflict, detectsConflicts, nonLwwColumns } from './conflict-detect';
-import { reconcileGauge, reconcileStockQuantity } from './delta-crdt';
+import { reconcileGauge, reconcileStockQuantity, replayGaugeValue } from './delta-crdt';
 import { FK_REFS } from './fk-refs';
 import { resolveLww } from './lww';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
@@ -1461,7 +1461,43 @@ function rejectParentCycles(local: SyncSnapshot, localUpserts: TableRow[], table
   return rejected;
 }
 
-/** §7.3 Delta-CRDT: replay merged gauge deltas for items present on both sides. */
+/**
+ * Tolerance for the gauge ledger-completeness check below. A gauge's value and its deltas are
+ * REALs summed in floating point, so an exactly-reconstructing ledger can still miss by an ULP
+ * or two after a few hundred adjustments. Far below any real measurement (a millionth of a gram
+ * or millilitre), so it admits genuine rounding without admitting a missing entry.
+ */
+const GAUGE_REPLAY_EPSILON = 1e-6;
+
+/**
+ * Whether one side's gauge ledger reconstructs the value that side actually stores — i.e. it
+ * still holds every delta since the gauge was filled, and replaying it loses no baseline.
+ *
+ * A side whose ledger was **deliberately emptied** does not: the §7.6.3-A retention prune, the
+ * Danger-Zone "activity history" erase and the per-item Activity Log clear (issue #620) all
+ * delete `GAUGE_UPDATE` rows while leaving `current_net_value` untouched, so replaying what
+ * remains reconstructs `gross + 0` — a half-empty bottle that reports itself full.
+ */
+function gaugeLedgerReconstructs(row: SqlRow, deltas: readonly GaugeHistoryDelta[]): boolean {
+  const gross = num(row.gross_capacity);
+  if (!Number.isFinite(gross)) return false;
+  return Math.abs(replayGaugeValue(gross, deltas) - num(row.current_net_value)) <= GAUGE_REPLAY_EPSILON;
+}
+
+/**
+ * §7.3 Delta-CRDT: replay merged gauge deltas for items present on both sides.
+ *
+ * Two guards, matching {@link reconcileStock}'s (1) and (2) — they are the same rules, and the
+ * gauge is the older half of the same idea:
+ *
+ *  1. **Contested** — only a gauge both devices hold can have diverged; a one-sided one keeps
+ *     the LWW value the merge upsert already carried.
+ *  2. **Ledger complete on both sides** — the deltas only reconstruct the value when every
+ *     movement since the gauge was filled is present. A side whose ledger was emptied on
+ *     purpose is *baseline-less*, and replaying it would converge both devices on a wrong
+ *     figure — `gross + 0`, i.e. a full gauge — and then propagate it. Such a side falls back
+ *     to LWW, which is never worse than the value the row already carries.
+ */
 function reconcileGauges(
   local: SyncSnapshot,
   remote: SyncSnapshot,
@@ -1475,11 +1511,19 @@ function reconcileGauges(
 
   for (const [id, row] of finalItems) {
     if (String(row.tracking_mode) !== 'CONSUMABLE_GAUGE') continue;
-    // Only the concurrent case needs delta replay; a one-sided gauge keeps its LWW value.
-    if (!localItems.has(id) || !remoteItems.has(id)) continue;
+    // (1) Only the concurrent case needs delta replay; a one-sided gauge keeps its LWW value.
+    const localRow = localItems.get(id);
+    const remoteRow = remoteItems.get(id);
+    if (!localRow || !remoteRow) continue;
     const gross = num(row.gross_capacity);
     if (!Number.isFinite(gross)) continue;
-    const netValue = reconcileGauge(gross, localDeltas.get(id) ?? [], remoteDeltas.get(id) ?? []);
+    const localSide = localDeltas.get(id) ?? [];
+    const remoteSide = remoteDeltas.get(id) ?? [];
+    // (2) Each side is checked against its **own** stored row and capacity: a device that
+    // reconfigured the capacity still has a complete ledger for the gauge it is describing.
+    if (!gaugeLedgerReconstructs(localRow, localSide)) continue;
+    if (!gaugeLedgerReconstructs(remoteRow, remoteSide)) continue;
+    const netValue = reconcileGauge(gross, localSide, remoteSide);
     resolutions.push({ itemId: id, netValue });
   }
   return resolutions;

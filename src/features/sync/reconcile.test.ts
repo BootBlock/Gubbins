@@ -473,6 +473,29 @@ describe('reconcile (§7.3 / §7.5)', () => {
     expect(plan.gaugeResolutions).toEqual([{ itemId: 'spool', netValue: 945 }]);
   });
 
+  it('§7.3 Delta-CRDT keeps the LWW value when a side’s gauge ledger was emptied', () => {
+    // The local device cleared or pruned its ledger: the row still says 400 of 1000, but the
+    // deltas that explain it are gone. Replaying what is left would reconstruct `1000 + 0` and
+    // report a nearly-empty bottle as full — on both devices, permanently.
+    const localItems = [
+      {
+        id: 'spool',
+        name: 'PLA',
+        location_id: UNASSIGNED_LOCATION_ID,
+        tracking_mode: 'CONSUMABLE_GAUGE',
+        gross_capacity: 1000,
+        current_net_value: 400,
+        updated_at: 10,
+      },
+    ];
+    const local = snapshot({ tables: { items: localItems }, gaugeHistory: [] });
+    const remote = snapshot({
+      tables: { items: [{ ...localItems[0]!, current_net_value: 400, updated_at: 20 }] },
+      gaugeHistory: [{ id: 'hA', itemId: 'spool', netValueDelta: -600, createdAt: 1 }],
+    });
+    expect(reconcile(local, remote, opts).gaugeResolutions).toEqual([]);
+  });
+
   describe('§4 alias-text collision (UNIQUE(alias) safety)', () => {
     it('downloads a non-colliding remote alias normally', () => {
       const remote = snapshot({

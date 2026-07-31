@@ -9,9 +9,13 @@
  * IP to record, and a device id is the only stable marker of "which of my machines did this".
  *
  * The id is shortened because the label is read, not resolved: eight hex characters distinguish
- * one of a handful of household devices at a glance, where a full UUID would only be noise. It
- * identifies a browser profile, never a person, and it is already device-local (never synced),
- * so nothing here reveals more than the device that did the clearing.
+ * one of a handful of household devices at a glance, where a full UUID would only be noise.
+ *
+ * The label does travel — it is written into the ledger entry, which syncs to the user's other
+ * devices like any other entry, and that is the point: "which of my machines cleared this?" is
+ * only answerable if the answer goes with the record. What travels is a prefix of an opaque
+ * random id that identifies a browser profile rather than a person, and only ever to the same
+ * user's own devices.
  */
 
 /** How much of the device id the marker shows — enough to tell devices apart, no more. */

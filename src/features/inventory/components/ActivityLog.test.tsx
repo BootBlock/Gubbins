@@ -115,7 +115,11 @@ describe('ActivityLog controls — availability', () => {
   });
 
   it('disables both while the first page is still loading, not just when it is empty', () => {
-    h.entries = [];
+    // Entries present *and* still loading, so only the loading guard can be what disables them —
+    // an empty fixture here would pass on the empty branch alone and prove nothing. The state is
+    // reachable: an invalidated log refetches with the previous page still in the cache, and a
+    // toolbar live at that moment would export a half-read ledger.
+    h.entries = [entry()];
     h.isLoading = true;
     renderLog();
     expect(h.exportDisabled).toBe(true);

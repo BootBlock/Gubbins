@@ -757,9 +757,11 @@ export class ItemCoreRepository extends BaseRepository {
 
   /**
    * Clear one item's Activity Log (issue #620), leaving a single `HISTORY_CLEARED` entry
-   * that records who cleared it and how many entries went. The ledger is append-only, so
-   * this is the one operation that removes from it — see {@link clearHistoryStatements}
-   * for why the marker is written before the delete.
+   * that records who cleared it and how many entries went. The ledger is append-only, and
+   * this is the only operation that removes **one item's** entries — the §7.6.3-A retention
+   * prune ({@link StorageRepository.pruneHistoryBefore}) and the Danger-Zone "activity
+   * history" erase both cut across the whole table. See {@link clearHistoryStatements} for
+   * why the marker is written before the delete.
    *
    * Gated on `audit:delete`, the same permission the storage-triage history prune uses:
    * both destroy an audit trail, which is a strictly bigger deal than editing the item it
