@@ -36,6 +36,7 @@ import type { FeatureId } from '@/features/modules/feature-registry';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
 import { clampFieldDueLeadDays } from '@/features/lifecycle/field-due';
 import { builtInFieldNameClash } from '../builtin-field-names';
+import { isKeyField, KEY_FIELD_PROMINENCE } from '../field-def-prominence';
 import { HIDEABLE_CAPABILITIES, toggleHiddenCapability } from '../category-capabilities';
 import {
   FIELD_PROMINENCE_MODES,
@@ -375,6 +376,10 @@ function CategoryDetail({
                   <CloseIcon className="text-glyph-danger" />
                 </button>
               </div>
+              {/* Unlike the two below, this one is on every field: a unit means nothing on a date
+                  and a notice period means nothing on a number, but any type can be the field that
+                  matters most. */}
+              <FieldKeyControl field={field} />
               {/* Only a date can be a deadline, so the control appears on nothing else. It sits
                   on the *existing* field rather than only on the add form because a date field is
                   usually already there by the time its deadline-ness matters — the preset library
@@ -1023,6 +1028,56 @@ function resolveBound(raw: string): number | null | undefined {
 }
 
 /**
+ * The **key-field** mark on an existing custom field (W1d), saved onto the shared dictionary
+ * definition.
+ *
+ * Offered on every field type, unlike its two neighbours below: a unit belongs to a number and a
+ * notice period to a date, but any field can be the one that matters most.
+ *
+ * A bare tick with no value beside it — there is nothing here for a stored value to *be*, so the
+ * tick is the whole setting and cannot disagree with anything it gates (the rule W1a's single
+ * `due_lead_days` column was really about). It saves immediately rather than on blur for the same
+ * reason: a checkbox has no half-typed state to race the refetch with.
+ */
+function FieldKeyControl({ field }: { field: CategoryField }) {
+  const t = useT();
+  const updateField = useUpdateCategoryField();
+  const describeError = useErrorMessage();
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+      <label className="flex items-center gap-1.5">
+        <Checkbox
+          checked={isKeyField(field.prominence)}
+          onChange={(e) => {
+            setError(null);
+            updateField.mutate(
+              {
+                fieldId: field.id,
+                // 'default' rather than null so the intent is stated in the vocabulary's own
+                // terms; the write seam folds it to NULL either way.
+                input: { prominence: e.target.checked ? KEY_FIELD_PROMINENCE : 'default' },
+              },
+              { onError: (err) => setError(describeError(err, t('inventory.fields.key.saveFailed'))) },
+            );
+          }}
+          aria-label={t('inventory.fields.key.toggleLabel', { vars: { name: field.name } })}
+          data-testid={`field-key-toggle-${field.id}`}
+        />
+        {t('inventory.fields.key.label')}
+      </label>
+      <InfoHint content={t('inventory.fields.key.hint')} />
+      {error ? (
+        <p role="alert" className="w-full text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The **unit and range** of an existing `NUMBER` custom field (W1b/W1c), saved onto the shared
  * dictionary definition.
  *
@@ -1141,6 +1196,9 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
   const [fieldType, setFieldType] = useState<FieldType>('TEXT');
   const [options, setOptions] = useState('');
   const [isRequired, setIsRequired] = useState(false);
+  // The key-field mark (W1d). Not gated on the field type, so it needs no clearing when the type
+  // changes, unlike the two settings below.
+  const [isKey, setIsKey] = useState(false);
   // The due-date opt-in (W1a). Kept as a tick plus a draft string rather than one nullable
   // number so clearing the box does not lose the notice period the user just typed; only the
   // tick decides whether anything is stored.
@@ -1184,6 +1242,10 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           unit: fieldType === 'NUMBER' ? unit.trim() || null : null,
           minValue: fieldType === 'NUMBER' ? (resolveBound(minValue) ?? null) : null,
           maxValue: fieldType === 'NUMBER' ? (resolveBound(maxValue) ?? null) : null,
+          // Every type can carry this, so there is no type test. `null` rather than 'default'
+          // when unticked, because on a name that resolves to an *existing* definition an
+          // omission leaves it alone: adding a shared field here must not demote it elsewhere.
+          prominence: isKey ? KEY_FIELD_PROMINENCE : null,
         },
       },
       {
@@ -1194,6 +1256,7 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           setDefaultValue('');
           setDescription('');
           setIsRequired(false);
+          setIsKey(false);
           setIsDueDate(false);
           setDueLeadDays(String(FIELD_DUE_LEAD_DAYS_DEFAULT));
           setUnit('');
@@ -1299,6 +1362,15 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           Required
         </label>
         <InfoHint content="When on, an item in this category must have a value for this field before its custom fields can be saved." />
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Checkbox
+            checked={isKey}
+            onChange={(e) => setIsKey(e.target.checked)}
+            data-testid="add-field-key"
+          />
+          {t('inventory.fields.key.label')}
+        </label>
+        <InfoHint content={t('inventory.fields.key.hint')} />
       </div>
       {fieldType === 'DATE' ? (
         <div className="flex flex-wrap items-center gap-1.5">

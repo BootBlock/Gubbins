@@ -218,6 +218,7 @@ export interface FieldDefRow {
   readonly unit: string | null;
   readonly min_value: number | null;
   readonly max_value: number | null;
+  readonly prominence: string | null;
   readonly updated_at: number;
 }
 
@@ -268,6 +269,20 @@ export interface FieldDef {
   readonly minValue: number | null;
   /** The upper bound of a `NUMBER` field's accepted range; `null` is unbounded above. See {@link minValue}. */
   readonly maxValue: number | null;
+  /**
+   * How prominently this definition is presented among its siblings (W1d) — `'key'` makes it
+   * **lead** every field set it appears in; `null` (the default) leaves it ranked by the
+   * category's `position` and then by name.
+   *
+   * Deliberately a raw `string | null` rather than the `FieldDefProminence` union, exactly as
+   * `Category.fieldProminence` is: storage keeps whatever a peer on a newer version wrote, and
+   * `toFieldDefProminence` is the boundary where that tolerance turns into a rendering decision.
+   * Typing it as the union here would assert a guarantee the column does not make.
+   *
+   * Unlike {@link dueLeadDays} and {@link unit} this is **not** gated on a field type — any type
+   * can be the field that matters most — so nothing clears it on a retype.
+   */
+  readonly prominence: string | null;
   readonly updatedAt: number;
 }
 
@@ -290,6 +305,7 @@ export interface CategoryFieldRow {
   readonly unit: string | null;
   readonly min_value: number | null;
   readonly max_value: number | null;
+  readonly prominence: string | null;
   readonly position: number;
   readonly updated_at: number;
 }
@@ -337,6 +353,15 @@ export interface CategoryField {
   readonly minValue: number | null;
   /** The definition's upper bound — see {@link FieldDef.maxValue}. Definition-wide, like {@link unit}. */
   readonly maxValue: number | null;
+  /**
+   * The definition's prominence rank — see {@link FieldDef.prominence}. Definition-wide, like
+   * {@link unit}, so marking it here reorders the field in every category using it.
+   *
+   * Note the pairing with {@link position}, which they are often mistaken for: `position` is this
+   * *category's* arrangement of its own fields, while this is a claim about the field itself. The
+   * rank sorts ahead of `position`; `position` still orders within each rank.
+   */
+  readonly prominence: string | null;
   readonly position: number;
   readonly updatedAt: number;
 }
@@ -383,6 +408,15 @@ export interface CreateCategoryFieldInput {
   readonly minValue?: number | null;
   /** The upper bound of a `NUMBER` field's range; omit/null for unbounded above. See {@link minValue}. */
   readonly maxValue?: number | null;
+  /**
+   * Mark the definition as a **key field** (W1d), so it leads its siblings wherever it appears;
+   * omit/null for an ordinary field. Applies to any field type.
+   *
+   * Follows the same reuse rule as {@link dueLeadDays}: a value here is *applied* to an existing
+   * definition, but null/omitted never clears one that is already marked — adding a shared field
+   * to a second category must not silently demote it in the first.
+   */
+  readonly prominence?: string | null;
   readonly position?: number;
 }
 
@@ -420,6 +454,12 @@ export interface UpdateCategoryFieldInput {
   readonly minValue?: number | null;
   /** The upper bound of the accepted range; `null` leaves the field unbounded above. See {@link minValue}. */
   readonly maxValue?: number | null;
+  /**
+   * The prominence rank (W1d); `'default'`, `null` or a blank string all clear it. A *definition*
+   * attribute, so this reaches every category and location using the field. Accepted on every
+   * field type, and never cleared by a retype.
+   */
+  readonly prominence?: string | null;
   readonly position?: number;
 }
 
@@ -503,6 +543,13 @@ export interface LocationFieldValue {
   readonly unit: string | null;
   readonly minValue: number | null;
   readonly maxValue: number | null;
+  /**
+   * The definition's prominence rank — see {@link FieldDef.prominence}. A location's field values
+   * have **no `position` axis at all** (they are read in name order), so this is the only way one
+   * of them can be made to lead — which is the specific reason W1d sits on the definition rather
+   * than beside a category's policy.
+   */
+  readonly prominence: string | null;
   readonly value: string | null;
   /** Opt-in: when false the value is the location's own metadata and is not offered. */
   readonly isInheritable: boolean;
