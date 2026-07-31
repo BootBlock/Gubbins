@@ -640,6 +640,39 @@ try {
   console.warn(`  ✗ item-inherited-field.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
+// The category manager's "Fill from an open database" panel (issue #616), photographed on the
+// `Movie` preset — the one preset that ships with a database already attached, so the shot shows
+// the feature in the state a user first meets it rather than an empty tick-box.
+try {
+  await gotoInventory();
+  await page.getByRole('button', { name: 'More inventory actions' }).click();
+  await page.getByRole('menuitem', { name: 'Categories', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Categories & schemas' });
+  await dialog.waitFor({ state: 'visible', timeout: 8000 });
+
+  await dialog.getByRole('button', { name: /Add from a preset/ }).click();
+  const picker = page.getByRole('dialog', { name: 'Add a category from a preset' });
+  await picker.waitFor({ state: 'visible', timeout: 8000 });
+  await picker.getByRole('textbox', { name: 'Search presets' }).fill('Movie');
+  await picker.getByRole('button', { name: 'Add Movie preset' }).click();
+  await picker.waitFor({ state: 'hidden', timeout: 20000 });
+
+  // Wait for the preset's *last* field, not for the category row: the seed creates the category
+  // first and then adds its sixteen fields one at a time, and the panel below resolves each of the
+  // database's values against those fields — captured too early it would report them as missing.
+  await dialog.getByText('Watched', { exact: true }).waitFor({ state: 'visible', timeout: 30000 });
+
+  await shot('category-lookup-sources', dialog.getByRole('group', { name: /Fill from an open database/ }), {
+    settle: 500,
+  });
+  await page.keyboard.press('Escape').catch(() => {});
+  await dialog.waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});
+  await waitForToastsToClear();
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ category-lookup-sources.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // ── Data-dependent screens (need the seed above) ─────────────────────────────
 async function screenShot(name, path) {
   try {

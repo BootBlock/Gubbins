@@ -1,8 +1,10 @@
 # Category data lookups — filling a category's fields from an open database
 
-> **Status:** 🟢 ACTIVE — phases L0 and L1 shipped (the pure seam, the `lookup_sources` column,
-> the runner and the whole UI, wired to `wikidata-film`); L2 is next. Nothing is user-reachable
-> yet: no category can have a provider attached until L2 adds the picker and seeds the preset.
+> **Status:** 🟢 ACTIVE — phases L0–L2 shipped: the pure seam, the `lookup_sources` column, the
+> runner and the whole UI (wired to `wikidata-film`), plus the category manager's provider picker,
+> the `Movie` preset's attachment, the Settings consent-withdrawal control and the wiki page. The
+> feature is user-reachable and complete for films; L3 (Open Library, MusicBrainz, folding in Open
+> Food Facts) and L4 are what remain.
 
 Issue [#616](https://github.com/BootBlock/Gubbins/issues/616) asks for "Get from IMDb" on the
 `Movie` category, and correctly identifies why that is awkward: a `Category` is *just a
@@ -206,7 +208,7 @@ renders at all, exactly as `ProductLookupPanel` degrades today.
 | --- | --- |
 | **L0** ✅ | The pure seam: provider descriptor + registry, the `lookup_sources` column and its tolerant parse, name/`fieldMap` binding, and the generic no-overwrite plan builder. No UI, no network. Fully unit-tested. |
 | **L1** ✅ | The runner and the UI: match picker → detail fetch → review dialog → apply. One provider (`wikidata-film`). CSP + extension host allow-list + per-host consent. |
-| **L2** | Attach it: the category manager's provider picker, the `Movie` preset seeding `wikidata-film`, and the wiki page. Also the **Settings control to withdraw a host's consent** — L1 grants it at the point of use with no way back, which is only acceptable while the feature is unreachable. |
+| **L2** ✅ | Attach it: the category manager's provider picker (with the per-value `fieldMap` override, so a renamed field has a way back), the `Movie` preset seeding `wikidata-film`, the Settings control to withdraw a host's consent, and the wiki page. |
 | **L3** | Generalise: Open Library (`Book`), MusicBrainz (`Vinyl record`); fold the existing Open Food Facts barcode lookup into the same registry. |
 | **L4** | Optional follow-ons: barcode → disc release lookup; re-running a lookup to refresh stale fields. |
 

@@ -83,6 +83,53 @@ describe('SettingsDialog — Online product lookup placement (issue #59)', () =>
   });
 });
 
+/**
+ * Withdrawing a category lookup's per-host consent (issue #616, phase L2).
+ *
+ * Consent is granted at the point of use, one host at a time, and this is the only way back out —
+ * so the cases that matter are that a granted host is *listed*, that removing it actually clears
+ * the stored permission, and that the section cannot become unreachable while a permission is
+ * still stored.
+ */
+describe('SettingsDialog — withdrawing a database-lookup consent (issue #616)', () => {
+  beforeEach(() => {
+    usePreferencesStore.setState({ lookupConsentHosts: [] });
+  });
+  afterEach(() => {
+    usePreferencesStore.setState({ lookupConsentHosts: [] });
+  });
+
+  it('says so plainly when no host has been agreed to', () => {
+    renderTab('Scanning & labels');
+    expect(screen.getByTestId('setting-lookup-consent-empty')).toBeInTheDocument();
+  });
+
+  it('lists each agreed host and withdraws the one asked for', () => {
+    usePreferencesStore.setState({ lookupConsentHosts: ['query.wikidata.org', 'www.wikidata.org'] });
+    renderTab('Scanning & labels');
+
+    expect(screen.getByTestId('setting-lookup-consent-withdraw-www.wikidata.org')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('setting-lookup-consent-withdraw-www.wikidata.org'));
+
+    expect(usePreferencesStore.getState().lookupConsentHosts).toEqual(['query.wikidata.org']);
+    expect(screen.queryByTestId('setting-lookup-consent-withdraw-www.wikidata.org')).toBeNull();
+  });
+
+  it('stays reachable while a permission is stored, even with supplier scraping off', () => {
+    // A permission the user granted must never become unrevokable because the section offering it
+    // was hidden with the capability it belongs to.
+    useModulesStore.getState().setFeatureIntent('scraping', false);
+    usePreferencesStore.setState({ lookupConsentHosts: ['www.wikidata.org'] });
+    renderTab('Scanning & labels');
+    expect(screen.getByTestId('setting-lookup-consent-withdraw-www.wikidata.org')).toBeInTheDocument();
+
+    cleanup();
+    usePreferencesStore.setState({ lookupConsentHosts: [] });
+    renderTab('Scanning & labels');
+    expect(screen.queryByTestId('setting-lookup-consent-empty')).toBeNull();
+  });
+});
+
 describe('SettingsDialog — Live camera scanning off', () => {
   it('drops the whole Scanner section, leaving Labels & QR codes intact', () => {
     useModulesStore.getState().setFeatureIntent('scanner', false);
