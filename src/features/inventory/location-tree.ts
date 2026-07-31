@@ -12,6 +12,13 @@ export interface FlatNode {
   readonly id: string;
   readonly name: string;
   readonly parentId: string | null;
+  /**
+   * The location's own free-text description, searched alongside its ancestry path
+   * ({@link locationsMatchingQuery}, issue #617 `N2`). Optional because the tree/ancestry helpers
+   * here don't need it and several callers construct a bare `{ id, name, parentId }`; the flat
+   * list the sidebar passes carries it already, so surfacing it costs no extra read.
+   */
+  readonly description?: string | null;
 }
 
 /**
@@ -136,14 +143,34 @@ export function flattenVisibleTree<T extends { id: string; children: T[] }>(
 /**
  * Ids of the locations matching a free-text query (issue #129), using the shared
  * whitespace-splits-into-AND-ed-substrings model (`lib/text-terms`) that every searchable
- * picker uses. Each location is matched against its **full ancestry path**, not just its own
- * name, so `shed 3` finds `Shed / Bin 3` — the point of the box is finding a deeply nested bin
- * without expanding branches by hand. An empty query matches nothing (the caller treats that as
- * "no filter" rather than "no results"). Pair with {@link matchingWithAncestors} so a match keeps
- * its parent context. Paths are memoised per call, so this is linear in the tree, and a broken or
- * cyclic parent chain simply stops the walk.
+ * picker uses. An empty query matches nothing (the caller treats that as "no filter" rather than
+ * "no results"). Pair with {@link matchingWithAncestors} so a match keeps its parent context.
+ * Paths are memoised per call, so this is linear in the tree, and a broken or cyclic parent chain
+ * simply stops the walk.
+ *
+ * Each location is matched against three pieces of its own text, taken together:
+ *
+ * - its **full ancestry path**, not just its own name, so `shed 3` finds `Shed / Bin 3` — the
+ *   point of the box is finding a deeply nested bin without expanding branches by hand;
+ * - its own **description** — free text a user wrote *about the place*, which until now could be
+ *   typed in and then never retrieved from anywhere in the app (issue #617, `N2`);
+ * - the text of the **custom-field values** it holds, passed in as `fieldText` because those come
+ *   from a different read than the flat list (see `useLocationFieldSearchText`). Omit it and
+ *   matching simply falls back to path + description.
+ *
+ * The three are joined with newlines rather than searched separately, so a query may draw one
+ * term from each — `garage damp` finds the *Garage* whose description mentions damp. Newlines are
+ * whitespace and terms are split on whitespace, so no term can straddle the join and match text
+ * the location doesn't hold.
+ *
+ * Description and field text are each the location's **own**; unlike the path, they are never
+ * inherited down the tree. A child does not match because its parent's note does.
  */
-export function locationsMatchingQuery(flat: readonly FlatNode[], query: string): Set<string> {
+export function locationsMatchingQuery(
+  flat: readonly FlatNode[],
+  query: string,
+  fieldText?: ReadonlyMap<string, string>,
+): Set<string> {
   const matches = new Set<string>();
   const terms = splitSearchTerms(query);
   if (terms.length === 0) return matches;
@@ -165,7 +192,8 @@ export function locationsMatchingQuery(flat: readonly FlatNode[], query: string)
   };
 
   for (const node of flat) {
-    if (includesAllTerms(pathOf(node.id), terms)) matches.add(node.id);
+    const haystack = [pathOf(node.id), node.description ?? '', fieldText?.get(node.id) ?? ''].join('\n');
+    if (includesAllTerms(haystack, terms)) matches.add(node.id);
   }
   return matches;
 }

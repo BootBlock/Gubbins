@@ -42,6 +42,9 @@ vi.mock('../tags', () => ({
 vi.mock('../categories', () => ({
   useFieldDefs: () => ({ data: [] }),
   useLocationFieldValues: () => ({ data: [], isLoading: false }),
+  // The sidebar search's field-value haystack (issue #617). Undefined means "not loaded", which
+  // leaves matching on the path + description the flat list already carries.
+  useLocationFieldSearchText: () => ({ data: undefined }),
   useSetLocationFieldValue: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveLocationFieldValue: () => ({ mutate: vi.fn(), isPending: false }),
 }));

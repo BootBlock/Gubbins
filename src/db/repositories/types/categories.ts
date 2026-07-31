@@ -28,6 +28,12 @@ export interface CategoryRow {
    */
   readonly hidden_capabilities: string | null;
   /**
+   * The open databases this category's fields can be filled from (issue #616) — a JSON array
+   * of `{ providerId, fieldMap? }` entries, or null when no lookup is attached. Parsed
+   * tolerantly at the mapper boundary.
+   */
+  readonly lookup_sources: string | null;
+  /**
    * Where this category's custom fields sit in the item dialog (issue #619) — one of
    * `default` / `promoted` / `own-tab`, or null for the default. Stored verbatim and narrowed
    * at the render boundary, so a mode a newer peer invented survives a round-trip.
@@ -36,6 +42,27 @@ export interface CategoryRow {
   /** Label for the `own-tab` break-out tab (issue #619); null falls back to the built-in one. */
   readonly field_tab_label: string | null;
   readonly updated_at: number;
+}
+
+/**
+ * One open database attached to a category (issue #616): the provider to run, and optionally
+ * where its values should land.
+ *
+ * `providerId` names an entry in the app's curated lookup registry. It is **not** narrowed to
+ * the ids this build knows, for the same reason `hiddenCapabilities` isn't: a peer on a newer
+ * version may attach a provider that doesn't exist here yet, and narrowing on read would
+ * quietly discard its choice the next time this device writes the row back.
+ */
+export interface CategoryLookupSource {
+  /** The registry id of the provider to run (`wikidata-film`). */
+  readonly providerId: string;
+  /**
+   * Explicit output-key → target overrides, for a category whose field has been renamed or
+   * re-purposed so the provider's default name match no longer finds it. Each value is a
+   * `category_fields.id`, or one of the reserved `builtin:` target ids. Null (the common case)
+   * means every key binds by name.
+   */
+  readonly fieldMap: Readonly<Record<string, string>> | null;
 }
 
 export interface Category {
@@ -88,6 +115,15 @@ export interface Category {
    */
   readonly hiddenCapabilities: readonly string[];
   /**
+   * The open databases this category's fields can be filled from (issue #616). Empty when no
+   * lookup is attached; a malformed stored value reads as empty rather than throwing.
+   *
+   * Entries are kept **verbatim**, unrecognised provider ids included — see
+   * {@link CategoryLookupSource}. Resolving an id to a provider (and therefore deciding
+   * whether this build can offer the lookup at all) is the feature layer's job, not storage's.
+   */
+  readonly lookupSources: readonly CategoryLookupSource[];
+  /**
    * Where this category's custom fields sit in the item dialog (issue #619): `default` leaves
    * them inside **Classification**, `promoted` moves that tab up to sit directly after
    * **Details**, and `own-tab` breaks the custom fields out into a tab of their own there.
@@ -131,6 +167,8 @@ export interface CreateCategoryInput {
   readonly defaultMaintenanceIntervalUsage?: number | null;
   /** Capabilities this category's items don't have (issue #618); omit/empty for none. */
   readonly hiddenCapabilities?: readonly string[] | null;
+  /** Open databases this category's fields can be filled from (issue #616); omit/empty for none. */
+  readonly lookupSources?: readonly CategoryLookupSource[] | null;
   /** Where this category's custom fields sit (issue #619); omit/null for the default position. */
   readonly fieldProminence?: string | null;
   /** Label for the `own-tab` break-out tab (issue #619); omit/null for the built-in label. */
@@ -155,6 +193,8 @@ export interface UpdateCategoryInput {
   readonly defaultMaintenanceIntervalUsage?: number | null;
   /** Capabilities this category's items don't have (issue #618); null or `[]` clears it. */
   readonly hiddenCapabilities?: readonly string[] | null;
+  /** Open databases this category's fields can be filled from (issue #616); null or `[]` clears it. */
+  readonly lookupSources?: readonly CategoryLookupSource[] | null;
   /** Where this category's custom fields sit (issue #619); null restores the default position. */
   readonly fieldProminence?: string | null;
   /** Label for the `own-tab` break-out tab (issue #619); null restores the built-in label. */

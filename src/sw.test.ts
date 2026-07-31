@@ -375,7 +375,7 @@ describe('src/sw.ts — the registered bridge origin reaches both delivered CSP 
     const html = await response.text();
 
     expect(response.headers.get('Content-Security-Policy')).toContain(
-      "connect-src 'self' https://www.googleapis.com https://world.openfoodfacts.org;",
+      "connect-src 'self' https://www.googleapis.com https://world.openfoodfacts.org https://www.wikidata.org https://query.wikidata.org;",
     );
     // Nothing to add, so the shell is passed through as precached rather than re-serialised.
     expect(html).toContain(SHELL_META);

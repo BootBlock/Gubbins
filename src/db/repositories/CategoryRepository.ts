@@ -35,6 +35,7 @@ import type {
   Category,
   CategoryField,
   CategoryFieldRow,
+  CategoryLookupSource,
   CategoryRow,
   CategoryWithFieldCount,
   CreateCategoryFieldInput,
@@ -114,7 +115,7 @@ interface ResolvedFieldRow extends CategoryFieldRow {
 const SELECT_WITH_FIELD_COUNT = `
   SELECT c.id, c.name, c.glyph, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
          c.default_maintenance_basis, c.default_maintenance_interval_days,
-         c.default_maintenance_interval_usage, c.hidden_capabilities,
+         c.default_maintenance_interval_usage, c.hidden_capabilities, c.lookup_sources,
          c.field_prominence, c.field_tab_label,
          c.updated_at, COUNT(f.id) AS field_count
   FROM categories c
@@ -135,6 +136,42 @@ function serialiseHiddenCapabilities(ids: readonly string[] | null | undefined):
   if (ids == null) return null;
   const unique = [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))].sort();
   return unique.length > 0 ? JSON.stringify(unique) : null;
+}
+
+/**
+
+ * Serialise a category's attached lookup providers (issue #616) for storage.
+ *
+ * Canonicalised for the same reason {@link serialiseHiddenCapabilities} is: "no lookups" is
+ * always NULL and never `"[]"`, entries are de-duplicated by provider and ordered by id, and
+ * an empty `fieldMap` is written as an omitted key rather than `{}`. A picker that reordered
+ * its rows must not produce a write that LWW sync reads as an edit.
+ *
+ * Provider ids are **not** filtered against the registry here. An id this build doesn't
+ * recognise came from a peer on a newer version, and dropping it on write would silently
+ * discard that peer's choice the moment an older device touched the row.
+ */
+function serialiseLookupSources(sources: readonly CategoryLookupSource[] | null | undefined): string | null {
+  if (sources == null) return null;
+  const byProvider = new Map<string, CategoryLookupSource>();
+  for (const source of sources) {
+    const providerId = source.providerId.trim();
+    if (providerId.length === 0 || byProvider.has(providerId)) continue;
+    byProvider.set(providerId, { providerId, fieldMap: source.fieldMap });
+  }
+  if (byProvider.size === 0) return null;
+  const entries = [...byProvider.values()]
+    .sort((a, b) => (a.providerId < b.providerId ? -1 : a.providerId > b.providerId ? 1 : 0))
+    .map(({ providerId, fieldMap }) => {
+      // Key order is canonicalised too: `JSON.stringify` emits insertion order, so two
+      // pickers that set the same overrides in a different sequence would otherwise store
+      // two different strings for one choice.
+      const pairs = Object.entries(fieldMap ?? {})
+        .filter(([, target]) => target.length > 0)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      return pairs.length > 0 ? { providerId, fieldMap: Object.fromEntries(pairs) } : { providerId };
+    });
+  return JSON.stringify(entries);
 }
 
 /**
@@ -196,8 +233,8 @@ export class CategoryRepository extends BaseRepository {
       `INSERT INTO categories
          (id, name, glyph, default_tracking_mode, default_condition, default_warranty_months,
           default_maintenance_basis, default_maintenance_interval_days, default_maintenance_interval_usage,
-          hidden_capabilities, field_prominence, field_tab_label)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          hidden_capabilities, lookup_sources, field_prominence, field_tab_label)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         name,
@@ -209,6 +246,7 @@ export class CategoryRepository extends BaseRepository {
         input.defaultMaintenanceIntervalDays ?? null,
         input.defaultMaintenanceIntervalUsage ?? null,
         serialiseHiddenCapabilities(input.hiddenCapabilities),
+        serialiseLookupSources(input.lookupSources),
         serialiseFieldProminence(input.fieldProminence),
         normaliseFieldTabLabel(input.fieldTabLabel),
       ],
@@ -264,6 +302,10 @@ export class CategoryRepository extends BaseRepository {
     if (input.hiddenCapabilities !== undefined) {
       sets.push('hidden_capabilities = ?');
       params.push(serialiseHiddenCapabilities(input.hiddenCapabilities));
+    }
+    if (input.lookupSources !== undefined) {
+      sets.push('lookup_sources = ?');
+      params.push(serialiseLookupSources(input.lookupSources));
     }
     if (input.fieldProminence !== undefined) {
       sets.push('field_prominence = ?');
@@ -1067,6 +1109,44 @@ export class CategoryRepository extends BaseRepository {
       [locationId],
     );
     return rows.map(rowToLocationFieldValue);
+  }
+
+  /**
+   * Every location's field values as one searchable text blob per location, so the sidebar's
+   * free-text search can find a place by something recorded *about* it and not only by its
+   * ancestry path (issue #617, `N2`).
+   *
+   * Text rather than rows because that is all the caller does with it, and because it is what
+   * keeps the read small: the alternative — hydrating every location's full `LocationFieldValue`
+   * list to concatenate it in the UI — pulls the dictionary join and every unused column across
+   * the worker boundary for a haystack.
+   *
+   * `IMAGE` values are excluded in **SQL**, not afterwards: the stored value *is* the picture (a
+   * base64 `data:` URL), so a vault with a few image fields would otherwise ship megabytes of
+   * base64 into a search index where it can only produce nonsense matches. Blank values are
+   * dropped for the same reason they contribute nothing.
+   *
+   * Bounded by the location × field count — the same "physical hierarchy, not the 100k+ item
+   * set" reasoning as {@link LocationRepository.listAll} — so it reads whole rather than paging.
+   */
+  async listLocationFieldSearchText(): Promise<Map<string, string>> {
+    const rows = await this.driver.query<{ location_id: string; value: string }>(
+      `SELECT lfv.location_id, lfv.value
+       FROM location_field_values lfv
+       JOIN field_defs fd ON fd.id = lfv.def_id
+       WHERE fd.field_type <> 'IMAGE'
+         AND lfv.value IS NOT NULL
+         AND TRIM(lfv.value) <> ''
+       ORDER BY lfv.location_id ASC, fd.name COLLATE NOCASE ASC;`,
+    );
+    const byLocation = new Map<string, string>();
+    for (const row of rows) {
+      const existing = byLocation.get(row.location_id);
+      // Newline-joined so no search term — which is split on whitespace — can straddle two
+      // values and match text the location does not actually hold.
+      byLocation.set(row.location_id, existing === undefined ? row.value : `${existing}\n${row.value}`);
+    }
+    return byLocation;
   }
 
   /**

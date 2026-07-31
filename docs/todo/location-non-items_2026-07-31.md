@@ -1,7 +1,8 @@
 # Non-items attached to a Location — what the ask really is (2026-07-31)
 
-> **Status:** 🟢 ACTIVE — research complete; the ranked candidates `N1`–`N7` are an open backlog,
-> none started.
+> **Status:** 🟢 ACTIVE — research complete. `N1` and `N2` shipped together (2026-07-31), along
+> with [#689](https://github.com/BootBlock/Gubbins/issues/689) from §9; `N3`–`N7` remain an open
+> backlog, none started.
 
 Answers issue [#617](https://github.com/BootBlock/Gubbins/issues/617): *is there a valid use for
 attaching an "item" to a `Location` that isn't an actual `Item` — a Note, say — and what else can be
@@ -213,9 +214,10 @@ Recorded so they aren't folded in and used to inflate the scope.
 ## 8. Candidates, ranked
 
 Ranked by *(what it unlocks) ÷ (cost)*, and deliberately weighted toward **surfacing what exists**,
-because §5 is the finding: the mechanism is built and nobody can see it. None started.
+because §5 is the finding: the mechanism is built and nobody can see it. `N1` and `N2` shipped
+together on 2026-07-31 (see §11 for what building them proved wrong); `N3`–`N7` are unstarted.
 
-- **`N1` — Give a location's own detail somewhere to appear.** Render a location's
+- **`N1` — Give a location's own detail somewhere to appear. ✅ SHIPPED.** Render a location's
   non-inheritable field values, alongside its description, where a location is actually looked
   at — the `LocationInfoCard` strip above the item list, and/or the `SubLocationNav` cards — rather
   than only inside the Edit dialog. Rename the *"Inheritable fields"* panel to name what it holds
@@ -223,11 +225,18 @@ because §5 is the finding: the mechanism is built and nobody can see it. None s
   (true today) and "a location's note is worth writing" (not yet). Adjacent to
   [#619](https://github.com/BootBlock/Gubbins/issues/619), which asks the same question for items
   and does not cover locations.
-- **`N2` — Make a location's own text findable.** Extend `locationsMatchingQuery` to match
+  *As built:* the existing description block above the item list became a **detail panel**
+  (`LocationDetailCard`) carrying both halves, the compact strip was left alone, and the
+  `SubLocationNav` cards gained a one-line plain-text preview of a child's description. The panel
+  shows **every** value the location holds, not only the non-inheritable ones — see §11.1 for why
+  the scope above turned out to be wrong.
+- **`N2` — Make a location's own text findable. ✅ SHIPPED.** Extend `locationsMatchingQuery` to match
   `description` — and, once `N1` lands, its field values — alongside the ancestry path. Cheap,
   client-side, and it is what turns an attached note from write-only into retrievable. The larger
   version is a `locations_fts` table so the global search box can return a *place* and not only its
-  contents; scope that separately.
+  contents; scope that separately — **still deferred, and still unstarted.**
+  *As built:* `description` rides on the flat list the sidebar already reads; field values come
+  from one bounded `listLocationFieldSearchText()` read that is deferred until the user types.
 - **`N5` — A date on a location that can raise something.** The only candidate here that needs the
   feed layer rather than the schema: a `DATE` value on a location is already recordable and fires
   nothing, because no alert lane or agenda lane reads `location_field_values` — or
@@ -267,7 +276,8 @@ because §5 is the finding: the mechanism is built and nobody can see it. None s
 Not part of the ask — existing behaviour that looks wrong, found on the way. **Both are now filed
 as [#689](https://github.com/BootBlock/Gubbins/issues/689) and
 [#690](https://github.com/BootBlock/Gubbins/issues/690)**; those issues carry the full evidence and
-are the live record, so treat this section as the summary of how they were found.
+are the live record, so treat this section as the summary of how they were found. **#689 was fixed
+alongside `N1`** (the panel is now titled *"Fields"*); #690 is still open.
 
 1. **A location's own detail lives under a heading that says it is for something else**
    ([#689](https://github.com/BootBlock/Gubbins/issues/689)). The
@@ -302,3 +312,34 @@ see it and find it.** Only after that is it possible to tell whether `N3`/`N4` a
 the existing field mechanism was sufficient all along and simply invisible. `N5` should be folded
 into `W1` when that is picked up, and `N6` is worth filing on its own merits regardless of what
 happens to the rest of this document.
+
+## 11. What building `N1`/`N2` proved wrong (2026-07-31)
+
+Recorded because the research above is otherwise a snapshot of `d4d8d385` and would keep reading as
+live guidance. Three corrections, one of which changed the design.
+
+1. **"Non-inheritable field values" was the wrong scope for the panel — it now shows them all.**
+   §5's asymmetry argument is sound as far as it goes, but it misses that `LocationFieldsEditor`
+   **seeds a newly-added value as inheritable** — deliberately, with a comment saying so
+   ([:141](../../src/features/inventory/components/LocationFieldsEditor.tsx#L141)). A panel showing
+   only the non-inheritable half would therefore be empty for anyone who took the default, and `N1`
+   would have appeared to do nothing. The flag says "*also* offer this downward", not "this is not
+   about the place": what it changes is who **else** reads the value, never whether the location
+   does. So the panel — and the `N2` search — take every value the location holds. This is the same
+   argument [#689](https://github.com/BootBlock/Gubbins/issues/689) makes about the heading, applied
+   to the read surface.
+2. **A location's *description* already had a surface; only the field half was missing.** §5.2 says
+   "a location's own detail renders in exactly one place", but `LocationDescriptionCard` had been
+   rendering the description above the item list since #108 — §3's own table says so. The accurate
+   statement is narrower and is what shipped: the **field values** rendered nowhere outside the Edit
+   dialog. That existing block became the detail panel rather than a new one being invented.
+3. **`FlatNode` needed no new read for the description, and one bounded read for the values.**
+   `useLocations()` returns `LocationWithCount`, which already carries `description`, so `N2`'s
+   first half is pure threading. The field values did need a read, and it is deliberately **deferred
+   until the user types** and excludes `IMAGE` values in SQL — the stored value there is a base64
+   `data:` URL, so indexing it would ship megabytes into a haystack where it can only produce
+   nonsense matches.
+
+`N3` remains conditional on exactly the evidence `N1` was meant to produce, and that evidence is now
+gatherable: the panel shows what a location holds, so whether one free-text field is enough is
+answerable rather than speculative.

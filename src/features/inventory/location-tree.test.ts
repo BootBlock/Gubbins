@@ -276,4 +276,46 @@ describe('locationsMatchingQuery', () => {
     ];
     expect(locationsMatchingQuery(cyclic, 'yacht')).toEqual(new Set(['x', 'y']));
   });
+
+  // Issue #617 (`N2`): a location's own text — its description and its custom-field values — is
+  // searched alongside the ancestry path, so a note a user wrote about a place can be retrieved.
+  describe("a location's own text", () => {
+    const described: FlatNode[] = [
+      { id: 'garage', name: 'Garage', parentId: null, description: 'Damp in winter — no paper here' },
+      { id: 'shed', name: 'Shed', parentId: null, description: null },
+      { id: 'bin', name: 'Bin 3', parentId: 'shed' },
+    ];
+
+    it('matches a word from the description', () => {
+      expect(locationsMatchingQuery(described, 'damp')).toEqual(new Set(['garage']));
+    });
+
+    it('lets one term come from the name and another from the description', () => {
+      expect(locationsMatchingQuery(described, 'garage winter')).toEqual(new Set(['garage']));
+    });
+
+    it('never inherits a description down the tree', () => {
+      const nested: FlatNode[] = [
+        { id: 'shed', name: 'Shed', parentId: null, description: 'Unventilated' },
+        { id: 'bin', name: 'Bin 3', parentId: 'shed' },
+      ];
+      expect(locationsMatchingQuery(nested, 'unventilated')).toEqual(new Set(['shed']));
+    });
+
+    it('matches a custom-field value when the field text is supplied', () => {
+      const fieldText = new Map([['bin', 'M6 stainless']]);
+      expect(locationsMatchingQuery(described, 'stainless', fieldText)).toEqual(new Set(['bin']));
+    });
+
+    it('falls back to path + description when the field text has not loaded', () => {
+      expect(locationsMatchingQuery(described, 'stainless')).toEqual(new Set());
+      expect(locationsMatchingQuery(described, 'damp', undefined)).toEqual(new Set(['garage']));
+    });
+
+    it('cannot match a term straddling the join between two pieces of text', () => {
+      const fieldText = new Map([['garage', 'dry']]);
+      // "hereDry" spans the description/field-value boundary and is text the location doesn't hold.
+      expect(locationsMatchingQuery(described, 'heredry', fieldText)).toEqual(new Set());
+    });
+  });
 });

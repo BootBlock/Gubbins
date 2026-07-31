@@ -6,7 +6,10 @@
  * messages: it asks the background worker to fetch the supplier HTML (bypassing
  * CORS), parses it here with the **shared, unit-tested Strategy parsers** (this
  * context has a DOM; the service worker does not), and posts back a strictly-typed
- * SCRAPE_RESULT or an explicit SCRAPE_ERROR (§9.4.2).
+ * SCRAPE_RESULT or an explicit SCRAPE_ERROR (§9.4.2). It also services
+ * PRODUCT_LOOKUP_REQUEST (a barcode) and DATA_FETCH_REQUEST (a category data
+ * lookup, issue #616) — the latter returning the **raw body**, because the
+ * provider that knows how to read it lives in the PWA, not here.
  *
  * Every inbound message is validated through the same {@link parseExtensionMessage}
  * the PWA uses — origin-verified, signature-checked, schema-valid — so a hostile
@@ -15,6 +18,7 @@
 import {
   makeMessage,
   parseExtensionMessage,
+  type DataFetchRequestMessage,
   type ProductLookupRequestMessage,
   type ProductLookupResultPayload,
   type ScrapeErrorPayload,
@@ -26,13 +30,14 @@ import { detectChallengePage } from '../../src/features/scraping/scrape-errors';
 import { OPEN_FOOD_FACTS_HOST } from '../../src/features/scraping/product-lookup';
 import type { ScrapeErrorType } from '../../src/features/scraping/protocol';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const trustedOrigins = [window.location.origin];
 
 type FetchReply = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
 type LookupReply =
   | { ok: true; product: ProductLookupResultPayload }
   | { ok: false; errorType: ScrapeErrorType; reason: string };
+type DataFetchReply = { ok: true; body: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
 
 /** An active-tab scrape outcome the background worker delivers to this PWA tab (Path A2). */
 type ActiveTabOutcome = { ok: true; payload: ScrapeResultPayload } | { ok: false; error: ScrapeErrorPayload };
@@ -138,11 +143,52 @@ async function handleLookup(msg: ProductLookupRequestMessage): Promise<void> {
   }
 }
 
+/**
+ * Service a **category data lookup** fetch (issue #616): delegate the request to the background
+ * worker (which holds the host permissions and its own allow-list gate) and post the **raw body**
+ * back for the PWA's provider parser to read. Nothing is parsed here — the descriptor that built
+ * the URL is the only thing that knows how to read the answer, and it lives in the PWA.
+ *
+ * The URL is echoed on the reply so the PWA can confirm the body belongs to the request it made,
+ * on top of the correlation id.
+ */
+async function handleDataFetch(msg: DataFetchRequestMessage): Promise<void> {
+  const { url } = msg.payload;
+  const { requestId } = msg;
+  let domain = '';
+  try {
+    domain = new URL(url).hostname;
+  } catch {
+    /* domain stays empty */
+  }
+  try {
+    const fetched = await chrome.runtime.sendMessage<DataFetchReply>({ kind: 'DATA_FETCH', url });
+    post(
+      fetched.ok
+        ? makeMessage('DATA_FETCH_RESULT', { url, body: fetched.body }, requestId)
+        : makeMessage(
+            'DATA_FETCH_ERROR',
+            { domain, error_type: fetched.errorType, reason: fetched.reason },
+            requestId,
+          ),
+    );
+  } catch (err) {
+    post(
+      makeMessage(
+        'DATA_FETCH_ERROR',
+        { domain, error_type: 'NETWORK_TIMEOUT', reason: String(err) },
+        requestId,
+      ),
+    );
+  }
+}
+
 window.addEventListener('message', (event: MessageEvent) => {
   const msg = parseExtensionMessage(event.data, { origin: event.origin, trustedOrigins });
   // §9.1: only act on a validated *_REQUEST from the PWA; everything else is dropped/ignored.
   if (msg?.type === 'SCRAPE_REQUEST') void handleScrape(msg);
   else if (msg?.type === 'PRODUCT_LOOKUP_REQUEST') void handleLookup(msg);
+  else if (msg?.type === 'DATA_FETCH_REQUEST') void handleDataFetch(msg);
 });
 
 /**

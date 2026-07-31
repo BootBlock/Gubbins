@@ -49,8 +49,16 @@ export const CSP_DIRECTIVES: ReadonlyArray<readonly [name: string, value: string
   // Drive REST endpoint for the optional cloud-sync provider. The Open Food Facts origin is the
   // open, key-less product database an opt-in barcode lookup queries directly when the companion
   // extension isn't present (issue #59) — reached only after the user consents, never on load.
+  // The two Wikidata origins serve the category data lookups (issue #616): `www` for entity
+  // search and `query` for the SPARQL detail query, likewise only after per-host consent. They
+  // are named exactly rather than as `https://*.wikidata.org`, so the allowance stays as narrow
+  // as the two endpoints a provider actually reaches.
   // The OAuth consent step is a top-level navigation, not a fetch, so it needs no allowance here.
-  ['connect-src', "'self' https://www.googleapis.com https://world.openfoodfacts.org"],
+  [
+    'connect-src',
+    "'self' https://www.googleapis.com https://world.openfoodfacts.org " +
+      'https://www.wikidata.org https://query.wikidata.org',
+  ],
   ['manifest-src', "'self'"],
   ['object-src', "'none'"],
   ['base-uri', "'self'"],

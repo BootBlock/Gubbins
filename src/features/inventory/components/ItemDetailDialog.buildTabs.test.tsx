@@ -4,6 +4,12 @@ import { NO_SECTION_PRESENCE } from '@/db/repositories';
 import { ALL_FEATURE_IDS, type FeatureId } from '@/features/modules/feature-registry';
 import { buildTabs, type FieldProminence } from './ItemDetailDialog';
 
+/** The category hides nothing — the shape `buildTabs` defaults to, spelled out where it matters. */
+const NOTHING_HIDDEN: ReadonlySet<FeatureId> = new Set<FeatureId>();
+
+/** Custom fields stay where they are — likewise the default, named so a call reads positionally. */
+const DEFAULT_PROMINENCE: FieldProminence = { mode: 'default', tabLabel: 'Custom fields' };
+
 /**
  * Phase 6 — the item-detail tabs gate their capability sections by the enabled feature set.
  * `buildTabs` is a pure seam (it takes the resolved set, never a hook), so its gating is
@@ -118,6 +124,67 @@ describe('buildTabs — feature gating (Phase 6)', () => {
     const tabs = buildTabs(item, without('tags-attachments'));
     expect(sectionTitles(tabs, 'classification')).toEqual(['Capabilities', 'Custom fields']);
     expect(sectionTitles(tabs, 'media')).toEqual(['Images']);
+  });
+
+  it('omits "Fill from a database" unless the category offers a lookup (issue #616)', () => {
+    // Every other section owns an editor that reads sensibly empty, so it can render its card and
+    // let the editor say "nothing yet". This one renders nothing at all when no provider is
+    // attached, and `Section` draws its card — border, icon, title, help badge — before it reaches
+    // its children. Emitting it unconditionally would put a permanently-empty card promising a
+    // feature the category hasn't got on the Classification tab of *every* item.
+    expect(sectionTitles(buildTabs(item, ALL), 'classification')).not.toContain('Fill from a database');
+    expect(
+      sectionTitles(
+        buildTabs(item, ALL, NOTHING_HIDDEN, NO_SECTION_PRESENCE, DEFAULT_PROMINENCE, false),
+        'classification',
+      ),
+    ).not.toContain('Fill from a database');
+  });
+
+  it('shows "Fill from a database" when the category does offer one, gated by scraping', () => {
+    const offered = buildTabs(item, ALL, NOTHING_HIDDEN, NO_SECTION_PRESENCE, DEFAULT_PROMINENCE, true);
+    expect(sectionTitles(offered, 'classification')).toEqual([
+      'Tags',
+      'Capabilities',
+      'Custom fields',
+      'Fill from a database',
+    ]);
+    // Still a capability-gated section: switching the device's module off drops it again.
+    const scrapingOff = buildTabs(
+      item,
+      without('scraping'),
+      NOTHING_HIDDEN,
+      NO_SECTION_PRESENCE,
+      DEFAULT_PROMINENCE,
+      true,
+    );
+    expect(sectionTitles(scrapingOff, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
+  });
+
+  it('moves "Fill from a database" into the break-out tab with the fields it fills (#616 × #619)', () => {
+    // The lookup exists to fill the custom fields, so stranding it in Classification while they
+    // move away would separate the button from what it acts on. The break-out tab is assembled
+    // past the section filter, so this also pins that the `scraping` gate is still applied.
+    const ownTab = buildTabs(
+      item,
+      ALL,
+      NOTHING_HIDDEN,
+      NO_SECTION_PRESENCE,
+      { mode: 'own-tab', tabLabel: 'Film details' },
+      true,
+    );
+    expect(sectionTitles(ownTab, 'classification')).toEqual(['Tags', 'Capabilities']);
+    expect(sectionTitles(ownTab, 'custom-fields')).toEqual(['Custom fields', 'Fill from a database']);
+
+    const scrapingOff = buildTabs(
+      item,
+      without('scraping'),
+      NOTHING_HIDDEN,
+      NO_SECTION_PRESENCE,
+      { mode: 'own-tab', tabLabel: 'Film details' },
+      true,
+    );
+    expect(sectionTitles(scrapingOff, 'custom-fields')).toEqual(['Custom fields']);
   });
 
   it('drops the Classification tab entirely once both its capabilities are off', () => {

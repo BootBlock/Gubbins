@@ -20,6 +20,12 @@ import { TypedFieldControl } from './TypedFieldControl';
  * location often records a detail about itself (a shelf's load rating, a room's humidity)
  * that no item inside should silently adopt. Requiring the explicit opt-in is what stops
  * every field a location touches from leaking into everything it contains.
+ *
+ * The panel is titled after what it *holds* rather than after that optional behaviour (issue
+ * #689): it was "Inheritable fields", which told a user looking for somewhere to record a fact
+ * about a shelf that this panel was for something else — directly above a checkbox whose own
+ * hint says the opposite is supported. The per-row "Offer to items here" tick carries the
+ * inheritance story on its own.
  */
 export function LocationFieldsEditor({ locationId }: { locationId: string }) {
   const t = useT();

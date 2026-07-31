@@ -29,6 +29,15 @@ export const EXTENSION_SOURCE = 'HARDWARE_TRACKER_EXT' as const;
  * a scrape does (the §9 parser is reused verbatim), with an *extension-generated* `requestId`
  * so the PWA can dedupe re-delivery. There is no `ACTIVE_TAB_REQUEST`: the request originates
  * outside the page, in the extension, on an explicit user gesture.
+ *
+ * The `DATA_FETCH_*` trio is the **category data lookup** (issue #616): the extension fetches an
+ * open database's JSON on the PWA's behalf, returning the **raw body** for the PWA's own pure
+ * provider parser to read. Deliberately *not* a `PRODUCT_LOOKUP`-shaped message that names a
+ * provider and a search term: the URL builders and parsers live in the PWA's provider registry,
+ * so adding a provider must not require shipping a new extension build — and duplicating them
+ * into the extension would guarantee the two drifted. It carries a page-supplied URL exactly as
+ * `SCRAPE_REQUEST` does, and is gated by the same kind of allow-list check in the privileged
+ * worker (`isAllowedDataLookupUrl`), which is what keeps it from being a general fetch proxy.
  */
 export const EXTENSION_MESSAGE_TYPES = [
   'EXTENSION_READY',
@@ -40,6 +49,9 @@ export const EXTENSION_MESSAGE_TYPES = [
   'PRODUCT_LOOKUP_ERROR',
   'ACTIVE_TAB_RESULT',
   'ACTIVE_TAB_ERROR',
+  'DATA_FETCH_REQUEST',
+  'DATA_FETCH_RESULT',
+  'DATA_FETCH_ERROR',
 ] as const;
 export type ExtensionMessageType = (typeof EXTENSION_MESSAGE_TYPES)[number];
 
@@ -133,6 +145,30 @@ export const productLookupResultPayloadSchema = z.object({
 });
 export type ProductLookupResultPayload = z.infer<typeof productLookupResultPayloadSchema>;
 
+/**
+ * The PWA→extension request for a **category data lookup** fetch (issue #616): the absolute URL
+ * of an open database endpoint, built by the PWA's own provider descriptor. The extension
+ * re-validates it against its data-lookup host allow-list and refuses anything else, so this is
+ * a request to fetch *one of a known set of hosts*, never an arbitrary origin.
+ */
+export const dataFetchRequestPayloadSchema = z.object({
+  url: z.string().url(),
+});
+export type DataFetchRequestPayload = z.infer<typeof dataFetchRequestPayloadSchema>;
+
+/**
+ * The raw body the extension fetched, echoed with the URL it came from.
+ *
+ * Deliberately **unparsed**: the provider that built the URL is the only thing that knows how to
+ * read the answer, and it lives in the PWA. The URL is echoed so the PWA can confirm the reply
+ * belongs to the request it made, on top of the correlation id.
+ */
+export const dataFetchResultPayloadSchema = z.object({
+  url: z.string().url(),
+  body: z.string(),
+});
+export type DataFetchResultPayload = z.infer<typeof dataFetchResultPayloadSchema>;
+
 const sourceLiteral = z.literal(EXTENSION_SOURCE);
 
 /**
@@ -205,11 +241,31 @@ export const extensionMessageSchema = z.discriminatedUnion('type', [
     requestId: requestIdSchema,
     payload: scrapeErrorPayloadSchema,
   }),
+  z.object({
+    source: sourceLiteral,
+    type: z.literal('DATA_FETCH_REQUEST'),
+    requestId: requestIdSchema,
+    payload: dataFetchRequestPayloadSchema,
+  }),
+  z.object({
+    source: sourceLiteral,
+    type: z.literal('DATA_FETCH_RESULT'),
+    requestId: requestIdSchema,
+    payload: dataFetchResultPayloadSchema,
+  }),
+  z.object({
+    source: sourceLiteral,
+    type: z.literal('DATA_FETCH_ERROR'),
+    requestId: requestIdSchema,
+    // Reuses the §9.4.2 error taxonomy — BLOCKED covers "not an allowed data-lookup host".
+    payload: scrapeErrorPayloadSchema,
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof extensionMessageSchema>;
 export type ScrapeRequestMessage = Extract<ExtensionMessage, { type: 'SCRAPE_REQUEST' }>;
 export type ProductLookupRequestMessage = Extract<ExtensionMessage, { type: 'PRODUCT_LOOKUP_REQUEST' }>;
+export type DataFetchRequestMessage = Extract<ExtensionMessage, { type: 'DATA_FETCH_REQUEST' }>;
 
 /** Context for validating an inbound message: the event origin + the trusted set. */
 export interface MessageOriginContext {

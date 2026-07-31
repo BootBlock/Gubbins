@@ -43,6 +43,7 @@ import {
   pruneTreeToIds,
   type VisibleTreeRow,
 } from '../location-tree';
+import { useLocationFieldSearchText } from '../categories';
 import { useLocationTagIndex } from '../tags';
 import { ALL_ITEMS_ID, useLocationSidebar } from '../useLocationSidebar';
 import { useLocationExpansionStore } from '../useLocationExpansionStore';
@@ -158,7 +159,14 @@ export function LocationSidebar({
   const searching = search.trim().length > 0;
   // Escape clears the box before it means anything else, via the shared searchable-surface seam.
   useSearchEscapeToClear(searching, searchRef, () => setSearch(''));
-  const searchMatches = useMemo(() => locationsMatchingQuery(visibleFlat, search), [visibleFlat, search]);
+  // The search also matches what a location records *about itself* (issue #617, `N2`): its
+  // description comes free on the flat list, while its custom-field values need their own read —
+  // deferred until the user actually types, so browsing the tree never pays for it.
+  const fieldSearchText = useLocationFieldSearchText(searching);
+  const searchMatches = useMemo(
+    () => locationsMatchingQuery(visibleFlat, search, fieldSearchText.data),
+    [visibleFlat, search, fieldSearchText.data],
+  );
 
   const filtering = effectiveTagIds.size > 0 || searching;
   const { shownTree, shownFlat, keptIds } = useMemo(() => {

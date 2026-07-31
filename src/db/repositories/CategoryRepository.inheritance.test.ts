@@ -320,6 +320,53 @@ describe('CategoryRepository — location-inherited fields (issue #97)', () => {
     });
   });
 
+  // Issue #617 (`N2`): the haystack the sidebar's location search matches against.
+  describe('the searchable text of a location’s field values', () => {
+    it('joins a location’s values with newlines, keyed by location', async () => {
+      const { workshop, cabinet, field } = await scenario();
+      const tools = await categories.create({ name: 'Storage' });
+      const access = await categories.addField(tools.id, { name: 'Access note', fieldType: 'TEXT' });
+      await categories.setLocationFieldValue(workshop.id, { defId: field.defId, value: 'Ryobi' });
+      await categories.setLocationFieldValue(workshop.id, {
+        defId: access.defId,
+        value: 'Key in the kitchen drawer',
+      });
+      await categories.setLocationFieldValue(cabinet.id, { defId: field.defId, value: 'Makita' });
+
+      const byLocation = await categories.listLocationFieldSearchText();
+      // Ordered by field name, so "Access note" precedes "Manufacturer".
+      expect(byLocation.get(workshop.id)).toBe('Key in the kitchen drawer\nRyobi');
+      expect(byLocation.get(cabinet.id)).toBe('Makita');
+    });
+
+    it('omits a location whose only values are blank or unset', async () => {
+      const { workshop, field } = await scenario();
+      await categories.setLocationFieldValue(workshop.id, { defId: field.defId, value: '   ' });
+      expect((await categories.listLocationFieldSearchText()).has(workshop.id)).toBe(false);
+    });
+
+    it('excludes an IMAGE value — it is a base64 picture, not words about the place', async () => {
+      const workshop = await locations.create({ name: 'Workshop' });
+      const kinds = await categories.create({ name: 'Rooms' });
+      const photo = await categories.addField(kinds.id, { name: 'Shelf photo', fieldType: 'IMAGE' });
+      const note = await categories.addField(kinds.id, { name: 'Zone', fieldType: 'TEXT' });
+      await categories.setLocationFieldValue(workshop.id, {
+        defId: photo.defId,
+        value: 'data:image/webp;base64,AAAA',
+      });
+      await categories.setLocationFieldValue(workshop.id, { defId: note.defId, value: 'North wall' });
+
+      expect((await categories.listLocationFieldSearchText()).get(workshop.id)).toBe('North wall');
+    });
+
+    it('drops a location’s entry once its last value is removed', async () => {
+      const { workshop, field } = await scenario();
+      await categories.setLocationFieldValue(workshop.id, { defId: field.defId, value: 'Ryobi' });
+      await categories.removeLocationFieldValue(workshop.id, field.defId);
+      expect(await categories.listLocationFieldSearchText()).toEqual(new Map());
+    });
+  });
+
   describe('removing a field from a category', () => {
     it("clears the stored values of that category's items", async () => {
       const { drill, tools, field } = await scenario();
