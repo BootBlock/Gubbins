@@ -74,6 +74,14 @@ describe('isoTimestamp', () => {
   it('keeps a zero epoch, which is a real instant rather than "unset"', () => {
     expect(isoTimestamp(0)).toBe('1970-01-01T00:00:00.000Z');
   });
+
+  // One unreadable stored timestamp must not cost the user the whole file: `toISOString` throws
+  // both on a NaN and on a finite number past the ±8.64e15 ms range `Date` can represent.
+  it('blanks a value Date cannot represent rather than throwing the export away', () => {
+    expect(isoTimestamp(Number.NaN)).toBeNull();
+    expect(isoTimestamp(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(isoTimestamp(8.64e15 + 1)).toBeNull();
+  });
 });
 
 describe('isoCalendarDay', () => {
