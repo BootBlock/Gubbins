@@ -281,10 +281,13 @@ export interface DeadStockCandidate {
   readonly unitCost: number | null;
   readonly preferredSupplierCost?: number | null;
   /**
-   * UNIX-ms of the item's most recent stock movement, or null when it has never moved
-   * since creation (in which case `createdAt` stands in as the reference instant).
+   * UNIX-ms of the furthest forward the item's ledger accounts for: its most recent stock
+   * movement, or the most recent point its Activity Log was cleared if that is later
+   * (issue #686 — a clear deletes the movement rows, so it is where the record stops and
+   * an idle age can honestly be measured from). Null when the ledger offers neither, in
+   * which case `createdAt` stands in as the reference instant.
    */
-  readonly lastMovedAt: number | null;
+  readonly lastKnownMovementAt: number | null;
   readonly createdAt: number;
   /**
    * This item's own idle threshold in days, resolved from its location chain (issue #92).
@@ -299,7 +302,7 @@ export interface DeadStockLine {
   readonly id: string;
   readonly name: string;
   readonly quantity: number;
-  /** Days since the item last moved (or was created), as of `now`. */
+  /** Days since the item last moved (or its log was cleared, or it was created), as of `now`. */
   readonly idleDays: number;
   /** Capital tied up in the idle stock (`quantity * effectiveUnitCost`). */
   readonly value: number;
@@ -333,6 +336,10 @@ export interface DeadStockReport {
  * uses {@link effectiveUnitCost}. Items with no on-hand stock are excluded (there is
  * nothing dead to report).
  *
+ * The reference instant an item is judged from is {@link DeadStockCandidate.lastKnownMovementAt}
+ * — its last movement, or a later clear of its Activity Log — else its creation. Falling
+ * straight through to creation would age an item by the whole span a clear erased (issue #686).
+ *
  * Each candidate may carry its own {@link DeadStockCandidate.thresholdDays}, resolved from
  * its location chain (issue #92); `sinceDays` is the fallback for those that don't, and
  * the figure the report as a whole is labelled with. Because thresholds vary per line, the
@@ -350,7 +357,7 @@ export function selectDeadStock(
     if (candidate.quantity <= 0) continue; // no stock ⇒ nothing dead to report
     consideredCount += 1;
     const thresholdDays = candidate.thresholdDays ?? sinceDays;
-    const reference = candidate.lastMovedAt ?? candidate.createdAt;
+    const reference = candidate.lastKnownMovementAt ?? candidate.createdAt;
     // Calendar-day idle threshold (issue #325): the "still live" cutoff is N calendar days back
     // from now, so it does not slip an hour across a DST change.
     if (reference > addCalendarDays(now, -thresholdDays)) continue; // still live

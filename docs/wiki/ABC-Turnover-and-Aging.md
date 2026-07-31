@@ -66,6 +66,12 @@ while a workbench goes stale in a month.
 > The threshold and the opt-in are independent — a location can set a house threshold for its
 > contents without switching reporting on for them.
 
+"Unmoved" is measured from the item's most recent stock movement in its
+[[activity log|Activity-Log]]. If it has never moved, its idle time runs from when it was added
+instead — or, if you have **cleared** its log, from the moment of that clear: the clear takes the
+movement records with it, so that is as far back as the evidence goes. A cleared item therefore
+starts its idle count afresh rather than being judged against the day it was added.
+
 > **💡 Tip**
 > A regular glance at dead stock keeps your inventory honest — it's easy to accumulate things you
 > no longer need, and this is how you find them.
