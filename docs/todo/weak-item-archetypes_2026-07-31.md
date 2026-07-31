@@ -313,7 +313,9 @@ does not make the app track anything better. None started.
   dates, substrate-decay dates and curing windows **at once**, and turns the existing 72 presets
   from decoration into behaviour. Addresses C1. Note the split: the "surface this" half is adjacent
   to issue [#619](https://github.com/BootBlock/Gubbins/issues/619) (which is purely presentational),
-  but the load-bearing half — feeds reading `DATE` fields — is untouched by it.
+  but the load-bearing half — feeds reading `DATE` fields — is untouched by it. **#619 has since
+  shipped**: a category now chooses where its fields sit (`categories.field_prominence`), so the
+  presentational half of `W1` is done and only the behavioural half remains.
 - **`W2` — A repeating (table-valued) field.** Removes the `UNIQUE (item_id, def_id)` ceiling for
   opted-in definitions. Unlocks telemetry logs, per-position measurements, prior owners, lineage
   notes — every archetype whose data is a *series*. Addresses C1. Larger and schema-visible; do

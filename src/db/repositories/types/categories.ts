@@ -27,6 +27,14 @@ export interface CategoryRow {
    * strings, or null when nothing is hidden. Parsed tolerantly at the mapper boundary.
    */
   readonly hidden_capabilities: string | null;
+  /**
+   * Where this category's custom fields sit in the item dialog (issue #619) — one of
+   * `default` / `promoted` / `own-tab`, or null for the default. Stored verbatim and narrowed
+   * at the render boundary, so a mode a newer peer invented survives a round-trip.
+   */
+  readonly field_prominence: string | null;
+  /** Label for the `own-tab` break-out tab (issue #619); null falls back to the built-in one. */
+  readonly field_tab_label: string | null;
   readonly updated_at: number;
 }
 
@@ -79,6 +87,24 @@ export interface Category {
    * the render boundary's job, not storage's.
    */
   readonly hiddenCapabilities: readonly string[];
+  /**
+   * Where this category's custom fields sit in the item dialog (issue #619): `default` leaves
+   * them inside **Classification**, `promoted` moves that tab up to sit directly after
+   * **Details**, and `own-tab` breaks the custom fields out into a tab of their own there.
+   *
+   * Deliberately `string` rather than a union, for the same reason `hiddenCapabilities` is
+   * `string[]`: this layer is imported by the bridge, and the value is kept **verbatim** so a
+   * mode a newer peer invented is not discarded the next time this device writes the row back.
+   * `toFieldProminenceMode` in `features/inventory/field-prominence.ts` is the render boundary
+   * that narrows it — an unrecognised mode reads as `default` there.
+   */
+  readonly fieldProminence: string | null;
+  /**
+   * The label for the `own-tab` break-out tab (issue #619); null falls back to the built-in
+   * "Custom fields". Retained while another mode is selected, so switching modes doesn't
+   * discard the wording the user chose.
+   */
+  readonly fieldTabLabel: string | null;
   readonly updatedAt: number;
 }
 
@@ -105,6 +131,10 @@ export interface CreateCategoryInput {
   readonly defaultMaintenanceIntervalUsage?: number | null;
   /** Capabilities this category's items don't have (issue #618); omit/empty for none. */
   readonly hiddenCapabilities?: readonly string[] | null;
+  /** Where this category's custom fields sit (issue #619); omit/null for the default position. */
+  readonly fieldProminence?: string | null;
+  /** Label for the `own-tab` break-out tab (issue #619); omit/null for the built-in label. */
+  readonly fieldTabLabel?: string | null;
 }
 
 export interface UpdateCategoryInput {
@@ -125,6 +155,10 @@ export interface UpdateCategoryInput {
   readonly defaultMaintenanceIntervalUsage?: number | null;
   /** Capabilities this category's items don't have (issue #618); null or `[]` clears it. */
   readonly hiddenCapabilities?: readonly string[] | null;
+  /** Where this category's custom fields sit (issue #619); null restores the default position. */
+  readonly fieldProminence?: string | null;
+  /** Label for the `own-tab` break-out tab (issue #619); null restores the built-in label. */
+  readonly fieldTabLabel?: string | null;
 }
 
 // --- Category custom fields (spec §4 "Categories & Schema Evolution") -----------

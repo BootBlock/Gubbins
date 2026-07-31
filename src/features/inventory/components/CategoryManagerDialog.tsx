@@ -25,11 +25,17 @@ import {
   type MaintenanceBasis,
   type TrackingMode,
 } from '@/db/repositories';
-import { useT } from '@/features/i18n';
+import { useT, type MessageKey } from '@/features/i18n';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
 import { builtInFieldNameClash } from '../builtin-field-names';
 import { HIDEABLE_CAPABILITIES, toggleHiddenCapability } from '../category-capabilities';
+import {
+  FIELD_PROMINENCE_MODES,
+  MAX_FIELD_TAB_LABEL_LENGTH,
+  toFieldProminenceMode,
+  type FieldProminenceMode,
+} from '../field-prominence';
 import {
   useAddCategoryField,
   useCategories,
@@ -366,9 +372,149 @@ function CategoryDetail({
       <CategoryDefaultsSection category={category} />
 
       <CategoryHiddenSectionsPanel category={category} />
+
+      <CategoryFieldProminencePanel category={category} />
     </div>
   );
 }
+
+/**
+ * Where this category's custom fields sit on an item (issue #619).
+ *
+ * Its own box rather than a row inside "Sections these items don't need", because the two answer
+ * opposite questions: that one removes things this kind of item doesn't have, this one *raises*
+ * something it is largely defined by. Folding a promotion into a panel headed "don't need" would
+ * read as the reverse of what it does.
+ *
+ * Saving is immediate, like every other control in this dialog. The radio group needs no buffer —
+ * a mode is never transiently invalid — but the tab label is free text, so it keeps one, reset
+ * when a different category is selected.
+ */
+function CategoryFieldProminencePanel({ category }: { category: CategoryWithFieldCount }) {
+  const t = useT();
+  const updateCategory = useUpdateCategory();
+  const mode = toFieldProminenceMode(category.fieldProminence);
+
+  const [labelText, setLabelText] = useState(category.fieldTabLabel ?? '');
+  const seededFor = useRef(category.id);
+  useEffect(() => {
+    if (seededFor.current !== category.id) {
+      seededFor.current = category.id;
+      setLabelText(category.fieldTabLabel ?? '');
+    }
+  }, [category.id, category.fieldTabLabel]);
+
+  // Promoting the fields while the category also hides them is a contradiction the user can
+  // reach from two directions, so say so and offer the fix rather than silently letting one
+  // decision win. Mirrors the maintenance conflict above.
+  const hidesFields = new Set(category.hiddenCapabilities).has('custom-fields');
+  const conflict = hidesFields && mode !== 'default';
+
+  // `name` is scoped to the category so two rendered panels could never share a radio group —
+  // the browser's mutual exclusion is keyed on the name, not on the DOM subtree.
+  const groupName = `category-field-prominence-${category.id}`;
+
+  return (
+    <fieldset className="space-y-field-gap-compact rounded-lg border border-border bg-secondary/10 p-2.5">
+      {/* As in the panel above, the legend *is* the visible heading — a sr-only legend beside an
+          identical <h4> would name the group twice to a screen reader for no visual gain. */}
+      <legend className="flex items-center gap-1.5 text-sm font-semibold">
+        {t('category.fieldProminence.title')}
+        <InfoHint content={t('category.fieldProminence.hint')} />
+      </legend>
+      <p className="text-xs text-muted-foreground">{t('category.fieldProminence.blurb')}</p>
+
+      <div className="space-y-1">
+        {FIELD_PROMINENCE_MODES.map((option) => (
+          // eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested radio is correctly associated; the label's text comes from the translation catalog, which the linter cannot resolve to a static string.
+          <label
+            key={option}
+            className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-secondary/40"
+          >
+            <Radio
+              name={groupName}
+              checked={mode === option}
+              onChange={() => updateCategory.mutate({ id: category.id, input: { fieldProminence: option } })}
+              className="mt-0.5"
+              data-testid={`category-field-prominence-${option}`}
+            />
+            <span className="flex-1">
+              <span className="block text-xs font-medium">{t(FIELD_PROMINENCE_LABEL_KEYS[option])}</span>
+              <span className="block text-xs text-muted-foreground">
+                {t(FIELD_PROMINENCE_DESCRIPTION_KEYS[option])}
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      {/* Only the break-out mode has a tab to name, so the field appears with it rather than
+          sitting permanently disabled. The stored label survives a switch away and back — the
+          repository keeps the column — so nothing typed here is lost by changing your mind. */}
+      {mode === 'own-tab' ? (
+        <FormField
+          label={t('category.fieldProminence.tabLabel')}
+          hint={t('category.fieldProminence.tabLabelHint')}
+        >
+          <Input
+            value={labelText}
+            maxLength={MAX_FIELD_TAB_LABEL_LENGTH}
+            placeholder={t('item.tab.customFields')}
+            data-testid="category-field-tab-label"
+            onChange={(e) => {
+              setLabelText(e.target.value);
+              updateCategory.mutate({ id: category.id, input: { fieldTabLabel: e.target.value } });
+            }}
+          />
+        </FormField>
+      ) : null}
+
+      {conflict ? (
+        <Banner
+          tone="warning"
+          icon={<WarningIcon aria-hidden />}
+          action={
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="category-field-prominence-conflict-clear"
+              onClick={() =>
+                updateCategory.mutate({
+                  id: category.id,
+                  input: {
+                    hiddenCapabilities: toggleHiddenCapability(
+                      category.hiddenCapabilities,
+                      'custom-fields',
+                      false,
+                    ),
+                  },
+                })
+              }
+            >
+              {t('category.fieldProminence.conflictAction')}
+            </Button>
+          }
+        >
+          {t('category.fieldProminence.conflict')}
+        </Banner>
+      ) : null}
+    </fieldset>
+  );
+}
+
+/** The radio labels, keyed by mode so a new mode is a compile error until it has copy. */
+const FIELD_PROMINENCE_LABEL_KEYS = {
+  default: 'category.fieldProminence.option.default',
+  promoted: 'category.fieldProminence.option.promoted',
+  'own-tab': 'category.fieldProminence.option.ownTab',
+} as const satisfies Record<FieldProminenceMode, MessageKey>;
+
+/** The one-line explanation under each radio, keyed the same way. */
+const FIELD_PROMINENCE_DESCRIPTION_KEYS = {
+  default: 'category.fieldProminence.option.defaultHint',
+  promoted: 'category.fieldProminence.option.promotedHint',
+  'own-tab': 'category.fieldProminence.option.ownTabHint',
+} as const satisfies Record<FieldProminenceMode, MessageKey>;
 
 /**
  * Which sections this category's items don't need (issue #618).
