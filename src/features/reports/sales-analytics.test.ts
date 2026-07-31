@@ -19,6 +19,7 @@ describe('buildSalesReport', () => {
   it('returns a zeroed report for no events', () => {
     const report = buildSalesReport([], 0, 100, 5);
     expect(report.proceeds).toBe(0);
+    expect(report.costedProceeds).toBe(0);
     expect(report.cogs).toBe(0);
     expect(report.margin).toBe(0);
     expect(report.marginPct).toBe(0);
@@ -57,6 +58,8 @@ describe('buildSalesReport', () => {
       4,
     );
     expect(report.proceeds).toBe(45);
+    // Every sale carried a cost, so the margin's revenue base is the whole of the proceeds.
+    expect(report.costedProceeds).toBe(45);
     expect(report.cogs).toBe(29);
     expect(report.margin).toBe(16);
     expect(report.unitsSold).toBe(3);
@@ -64,7 +67,7 @@ describe('buildSalesReport', () => {
     expect(report.unitsWithoutCost).toBe(0);
   });
 
-  it('excludes uncosted sales from COGS but still counts their proceeds and units', () => {
+  it('keeps an uncosted sale out of the margin on both sides, but counts its proceeds and units', () => {
     const report = buildSalesReport(
       [
         ev(10, { quantity: 2, proceeds: 40, cost: null }), // no cost
@@ -74,9 +77,13 @@ describe('buildSalesReport', () => {
       100,
       4,
     );
+    // The 40 really was taken, so it counts as revenue…
     expect(report.proceeds).toBe(50);
+    // …but only the costed sale's 10 backs the margin, so the uncosted line cannot book as profit.
+    expect(report.costedProceeds).toBe(10);
     expect(report.cogs).toBe(4);
-    expect(report.margin).toBe(46);
+    expect(report.margin).toBe(6);
+    expect(report.marginPct).toBeCloseTo(6 / 10, 6);
     expect(report.unitsSold).toBe(3);
     expect(report.unitsWithoutCost).toBe(2);
   });
@@ -288,6 +295,88 @@ describe('buildSalesReport', () => {
       // Every published row is still a whole yen — the apportionment never invents a fraction.
       for (const b of report.buckets) expect(Number.isInteger(b.proceeds)).toBe(true);
       for (const g of report.byCategory) expect(Number.isInteger(g.proceeds)).toBe(true);
+    });
+
+    it('apportions the costed-proceeds column too, so a mixed-cost margin still re-adds', () => {
+      // Two costed ¥100.5 sales and one uncosted, each in its own bucket and category. The costed
+      // column (raw ¥201) and the full proceeds column (raw ¥301.5) have different headlines, so
+      // the margin rows only sum to the headline if costed proceeds is apportioned on its own
+      // rather than derived from the proceeds column.
+      const report = buildSalesReport(
+        [
+          ev(10, { proceeds: 100.5, cost: 40.5, categoryId: 'a', categoryName: 'Alpha' }),
+          ev(40, { proceeds: 100.5, cost: 40.5, categoryId: 'b', categoryName: 'Bravo' }),
+          ev(70, { proceeds: 100.5, cost: null, categoryId: 'c', categoryName: 'Cair' }),
+        ],
+        0,
+        90,
+        3,
+        0, // JPY — whole units
+      );
+      expect(report.proceeds).toBe(302); // raw 301.5 → 302
+      expect(report.costedProceeds).toBe(201);
+      expect(report.cogs).toBe(81);
+      expect(report.margin).toBe(120);
+      expect(sum(report.buckets.map((b) => b.costedProceeds))).toBe(report.costedProceeds);
+      expect(sum(report.byCategory.map((g) => g.costedProceeds))).toBe(report.costedProceeds);
+      expect(sum(report.buckets.map((b) => b.margin))).toBe(report.margin);
+      expect(sum(report.byCategory.map((g) => g.margin))).toBe(report.margin);
+    });
+  });
+
+  // Issue #694: an uncosted sale used to contribute its full proceeds and no COGS, so it booked as
+  // 100% margin and lifted a headline the report's own caveat said excluded it.
+  describe('an uncosted sale never lifts the margin (issue #694)', () => {
+    const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
+
+    it('publishes the costed sale’s own margin, not one inflated by unpriced stock', () => {
+      // Item A cost £6 and sold for £10; item B has no cost basis and sold for £10.
+      const report = buildSalesReport(
+        [ev(10, { proceeds: 10, cost: 6 }), ev(20, { proceeds: 10, cost: null })],
+        0,
+        100,
+        4,
+      );
+      expect(report.proceeds).toBe(20);
+      expect(report.costedProceeds).toBe(10);
+      expect(report.cogs).toBe(6);
+      // Was 14 (£20 − £6) at 70% — the uncosted £10 counted as pure profit.
+      expect(report.margin).toBe(4);
+      expect(report.marginPct).toBeCloseTo(0.4, 6);
+      expect(report.unitsWithoutCost).toBe(1);
+    });
+
+    it('holds the uncosted revenue out of each bucket and category margin as well', () => {
+      const report = buildSalesReport(
+        [
+          ev(10, { proceeds: 10, cost: 6, categoryId: 'a', categoryName: 'Alpha' }),
+          ev(60, { proceeds: 10, cost: null, categoryId: 'b', categoryName: 'Bravo' }),
+        ],
+        0,
+        100,
+        2,
+      );
+      const bravo = report.byCategory.find((g) => g.id === 'b')!;
+      // Bravo's revenue still shows in the breakdown — it just backs no margin.
+      expect(bravo.proceeds).toBe(10);
+      expect(bravo.costedProceeds).toBe(0);
+      expect(bravo.margin).toBe(0);
+      expect(report.buckets[1]!.proceeds).toBe(10);
+      expect(report.buckets[1]!.margin).toBe(0);
+      // The #400 property survives: the columns still re-add to the headline.
+      expect(sum(report.byCategory.map((g) => g.margin))).toBe(report.margin);
+      expect(sum(report.buckets.map((b) => b.margin))).toBe(report.margin);
+    });
+
+    it('reports no margin at all when nothing sold carried a cost', () => {
+      const report = buildSalesReport([ev(10, { quantity: 3, proceeds: 25, cost: null })], 0, 100, 4);
+      expect(report.proceeds).toBe(25);
+      expect(report.costedProceeds).toBe(0);
+      expect(report.cogs).toBe(0);
+      // Not 25 at 100%: the app has no idea what this stock cost, so it claims no profit on it.
+      expect(report.margin).toBe(0);
+      expect(report.marginPct).toBe(0);
+      expect(report.unitsWithoutCost).toBe(3);
     });
   });
 });

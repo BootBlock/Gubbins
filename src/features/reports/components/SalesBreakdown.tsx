@@ -1,4 +1,5 @@
 import { AnimatedNumber, Money } from '@/components/foundry';
+import { useT } from '@/features/i18n';
 import type { Formatters } from '@/lib/format';
 import type { SalesGroup, SalesReport } from '../sales-analytics';
 
@@ -49,6 +50,7 @@ function topWithOther(groups: readonly SalesGroup[]): SalesGroup[] {
       id: null,
       name: `Other (${tail.length})`,
       proceeds: tail.reduce((sum, g) => sum + g.proceeds, 0),
+      costedProceeds: tail.reduce((sum, g) => sum + g.costedProceeds, 0),
       cogs: tail.reduce((sum, g) => sum + g.cogs, 0),
       margin: tail.reduce((sum, g) => sum + g.margin, 0),
       share: tail.reduce((sum, g) => sum + g.share, 0),
@@ -85,10 +87,16 @@ function Stat({
 /**
  * The sales & disposals breakdown: headline proceeds / COGS / margin, sale proceeds over time
  * (a bucket bar strip), sales by category, and the write-off total. Tokens only, no chart
- * dependency (§2.4.3); every bar labels its amount + share in text. The margin excludes any units
- * sold without a recorded cost — surfaced as a caveat rather than silently overstating the figure.
+ * dependency (§2.4.3); every bar labels its amount + share in text.
+ *
+ * A sale with no recorded cost is left out of the margin **on both sides** (issue #694), so with
+ * one in the window the headline trio no longer subtracts on its face: proceeds is every sale's
+ * takings while margin is drawn from `costedProceeds` alone. The caveat below the figures names
+ * that smaller amount, which is what lets a reader check the subtraction rather than reading the
+ * gap as an error.
  */
 export function SalesBreakdown({ report, formatters }: { report: SalesReport; formatters: Formatters }) {
+  const t = useT();
   const hasActivity = report.saleCount > 0 || report.writeOffCount > 0;
   if (!hasActivity) {
     return (
@@ -130,8 +138,12 @@ export function SalesBreakdown({ report, formatters }: { report: SalesReport; fo
 
       {report.unitsWithoutCost > 0 && (
         <p className="text-xs text-muted-foreground" data-testid="sales-cost-caveat">
-          Margin excludes {report.unitsWithoutCost} sold {report.unitsWithoutCost === 1 ? 'unit' : 'units'}{' '}
-          with no recorded cost.
+          {t('reports.sales.costCaveat', {
+            vars: {
+              amount: formatters.currency(report.costedProceeds),
+              count: report.unitsWithoutCost,
+            },
+          })}
         </p>
       )}
 
