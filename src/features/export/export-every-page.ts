@@ -52,9 +52,17 @@ export function listExportFilename(list: string, extension: string, date = new D
  * spreadsheet, where "12/07/26" is ambiguous and a raw epoch integer is unreadable. The screen
  * keeps its localised formatting; the file is locale-independent, exactly as the money and
  * quantity columns are.
+ *
+ * A value that is not a usable instant blanks its own cell rather than throwing: `toISOString`
+ * raises on any input `Date` cannot represent — a `NaN`, and equally a perfectly finite number
+ * past the ±8.64e15 ms range — and one unreadable stored timestamp must not cost the user the
+ * whole export file, the same reasoning the catalogue CSV's `expiryDate` cell uses. Testing the
+ * constructed `Date` rather than the number catches both in one check.
  */
 export function isoTimestamp(ms: number | null | undefined): string | null {
-  return ms == null ? null : new Date(ms).toISOString();
+  if (ms == null) return null;
+  const at = new Date(ms);
+  return Number.isNaN(at.getTime()) ? null : at.toISOString();
 }
 
 /**

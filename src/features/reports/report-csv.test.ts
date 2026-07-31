@@ -44,20 +44,32 @@ describe('report CSV builders', () => {
     expect(lines[2]).toBe('Location,Shelf,15,30');
   });
 
-  it('consumption CSV emits a single summary row with ISO window dates', () => {
+  it('consumption CSV emits one row per unit of measure with ISO window dates', () => {
     const csv = buildConsumptionCsv(
       {
         windowStart: 0,
         windowEnd: 10 * MS_PER_DAY,
         windowDays: 10,
-        totalConsumed: 50,
-        perDay: 5,
+        lines: [
+          { unit: 'g', totalConsumed: 400, perDay: 40 },
+          // The unitless line — items that count bare things — exports an empty unit cell.
+          { unit: null, totalConsumed: 50, perDay: 5 },
+        ],
       },
       isoDate,
     );
     const lines = csv.split('\r\n');
-    expect(lines[0]).toBe('windowStart,windowEnd,windowDays,totalConsumed,perDay');
-    expect(lines[1]).toBe('1970-01-01,1970-01-11,10,50,5');
+    expect(lines[0]).toBe('windowStart,windowEnd,windowDays,unit,totalConsumed,perDay');
+    expect(lines[1]).toBe('1970-01-01,1970-01-11,10,g,400,40');
+    expect(lines[2]).toBe('1970-01-01,1970-01-11,10,,50,5');
+  });
+
+  it('consumption CSV emits the header alone when nothing was consumed', () => {
+    const csv = buildConsumptionCsv(
+      { windowStart: 0, windowEnd: 10 * MS_PER_DAY, windowDays: 10, lines: [] },
+      isoDate,
+    );
+    expect(csv).toBe('windowStart,windowEnd,windowDays,unit,totalConsumed,perDay');
   });
 
   it('movement CSV emits one row per bucket plus a totals row', () => {

@@ -630,9 +630,74 @@ describe('ReportRepository', () => {
       );
 
       const report = await reports.consumptionRate(10, now);
-      expect(report.totalConsumed).toBe(50);
       expect(report.windowDays).toBe(10);
-      expect(report.perDay).toBe(5);
+      expect(report.lines).toEqual([{ unit: null, totalConsumed: 50, perDay: 5 }]);
+    });
+
+    it('reports each unit of measure on its own line, never summed (issue #685)', async () => {
+      const now = Date.now();
+      // Screws counted as bare things, filament weighed in grams, resin measured in millilitres.
+      const screws = await items.create({ name: 'Screws', quantity: 100 });
+      const filament = await items.create({
+        name: 'Filament',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 800 },
+      });
+      const resin = await items.create({
+        name: 'Resin',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'ml', grossCapacity: 500, currentNetValue: 500 },
+      });
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
+         VALUES (?, ?, 'QUANTITY_CHANGE', -6, ?);`,
+        [crypto.randomUUID(), screws.id, now - 5 * MS_PER_DAY],
+      );
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, net_value_delta, created_at)
+         VALUES (?, ?, 'GAUGE_UPDATE', -400, ?), (?, ?, 'GAUGE_UPDATE', -50, ?);`,
+        [
+          crypto.randomUUID(),
+          filament.id,
+          now - 2 * MS_PER_DAY,
+          crypto.randomUUID(),
+          resin.id,
+          now - MS_PER_DAY,
+        ],
+      );
+
+      const report = await reports.consumptionRate(10, now);
+      expect(report.lines).toEqual([
+        { unit: 'g', totalConsumed: 400, perDay: 40 },
+        { unit: 'ml', totalConsumed: 50, perDay: 5 },
+        { unit: null, totalConsumed: 6, perDay: 0.6 },
+      ]);
+    });
+
+    it('counts a gauge item itself as a bare count, not as more of what it holds', async () => {
+      const now = Date.now();
+      // A gauge's unit describes its contents, so 2 cylinders leaving is not 2 more litres.
+      const cylinder = await items.create({
+        name: 'Argon cylinder',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'L', grossCapacity: 10, currentNetValue: 10 },
+      });
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
+         VALUES (?, ?, 'CHECKED_OUT', -2, ?);`,
+        [crypto.randomUUID(), cylinder.id, now - 3 * MS_PER_DAY],
+      );
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, net_value_delta, created_at)
+         VALUES (?, ?, 'GAUGE_UPDATE', -4, ?);`,
+        [crypto.randomUUID(), cylinder.id, now - 2 * MS_PER_DAY],
+      );
+
+      const report = await reports.consumptionRate(10, now);
+      expect(report.lines).toEqual([
+        { unit: 'L', totalConsumed: 4, perDay: 0.4 },
+        { unit: null, totalConsumed: 2, perDay: 0.2 },
+      ]);
     });
   });
 
@@ -822,6 +887,58 @@ describe('ReportRepository', () => {
       const report = await reports.deadStock(30, now);
       expect(report.lines).toEqual([]);
       // Still counted as watched — it just isn't dead yet.
+      expect(report.consideredCount).toBe(1);
+    });
+
+    // Clearing an item's Activity Log (issue #620) deletes its movement rows and leaves one
+    // marker carrying no deltas, so "last moved" goes unknown. Judging from `created_at` then
+    // aged the item by everything the clear erased (issue #686).
+    it("judges a cleared log from the clear, not the item's creation", async () => {
+      const now = Date.now();
+      const item = await idleItem('Cleared', undefined, now); // created 200 days ago
+      await driver.execute("UPDATE items SET dead_stock_mode = 'always' WHERE id = ?;", [item.id]);
+
+      await items.clearHistory(item.id, 'Device');
+
+      // Nothing is known before the clear, which just happened — so the item is not idle at all.
+      const report = await reports.deadStock(30, now);
+      expect(report.lines).toEqual([]);
+      expect(report.consideredCount).toBe(1);
+
+      // The ledger is append-only, so the marker's instant is read back rather than dictated.
+      const [marker] = await driver.query<{ created_at: number }>(
+        'SELECT created_at FROM item_history WHERE item_id = ?;',
+        [item.id],
+      );
+      const clearedAt = marker?.created_at ?? now;
+
+      // Sixty days on with no movement since, it is dead — but idle since the clear (60 days),
+      // not since its creation (260 by then).
+      const later = await reports.deadStock(30, clearedAt + 60 * MS_PER_DAY);
+      expect(later.lines.map((l) => l.name)).toEqual(['Cleared']);
+      expect(later.lines[0]?.idleDays).toBe(60);
+    });
+
+    it('lets a movement recorded after a clear override the clear', async () => {
+      const now = Date.now();
+      const item = await idleItem('Restocked', undefined, now);
+      await driver.execute("UPDATE items SET dead_stock_mode = 'always' WHERE id = ?;", [item.id]);
+      await items.clearHistory(item.id, 'Device');
+      const [marker] = await driver.query<{ created_at: number }>(
+        'SELECT created_at FROM item_history WHERE item_id = ?;',
+        [item.id],
+      );
+      const clearedAt = marker?.created_at ?? now;
+
+      // Stocked 50 days after the clear — the later of the two is what it is judged on.
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at) VALUES (?, ?, 'QUANTITY_CHANGE', 3, ?);`,
+        [crypto.randomUUID(), item.id, clearedAt + 50 * MS_PER_DAY],
+      );
+
+      // Sixty days after the clear is only ten days after that movement → still live.
+      const report = await reports.deadStock(30, clearedAt + 60 * MS_PER_DAY);
+      expect(report.lines).toEqual([]);
       expect(report.consideredCount).toBe(1);
     });
 
@@ -1155,6 +1272,45 @@ describe('ReportRepository', () => {
       expect(byLabel['91–180 days']).toBe(1); // Old
       expect(report.totalQuantity).toBe(15);
       expect(report.totalValue).toBe(15);
+    });
+
+    // Clearing an item's Activity Log (issue #620) deletes the inbound rows this ages from, so
+    // without the clear instant the item would be aged from the day its row was created — which
+    // dates the row, not the stock (the sibling of issue #686).
+    it("ages a cleared log from the clear rather than the item's creation", async () => {
+      const now = Date.now();
+      const item = await items.create({ name: 'Restocked', quantity: 5, unitCost: 1 });
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [
+        now - 200 * MS_PER_DAY,
+        item.id,
+      ]);
+      await addHistory(item.id, 5, now - 150 * MS_PER_DAY);
+
+      await items.clearHistory(item.id, 'Device');
+
+      // The inbound is gone with the rest of the log; the clear just happened, so the stock is
+      // aged from there — not from a creation date 200 days back.
+      const report = await reports.stockAging(now);
+      const byLabel = Object.fromEntries(report.buckets.map((b) => [b.label, b.itemCount]));
+      expect(byLabel['0–30 days']).toBe(1);
+      expect(byLabel['180+ days']).toBe(0);
+    });
+
+    it('keeps a recorded acquisition date ahead of a cleared log', async () => {
+      const now = Date.now();
+      const item = await items.create({ name: 'Heirloom', quantity: 1, unitCost: 1 });
+      await driver.execute('UPDATE items SET acquired_at = ? WHERE id = ?;', [
+        new Date(now - 400 * MS_PER_DAY).toISOString(),
+        item.id,
+      ]);
+
+      await items.clearHistory(item.id, 'Device');
+
+      // The acquisition date survives the clear and still describes the stock, so it wins.
+      const report = await reports.stockAging(now);
+      const byLabel = Object.fromEntries(report.buckets.map((b) => [b.label, b.itemCount]));
+      expect(byLabel['180+ days']).toBe(1);
+      expect(byLabel['0–30 days']).toBe(0);
     });
 
     it('values on-hand stock the same way as the valuation headline (issue #397)', async () => {

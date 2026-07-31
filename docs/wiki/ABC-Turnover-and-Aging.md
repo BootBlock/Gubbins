@@ -66,9 +66,30 @@ while a workbench goes stale in a month.
 > The threshold and the opt-in are independent — a location can set a house threshold for its
 > contents without switching reporting on for them.
 
+"Unmoved" is measured from the item's most recent stock movement in its
+[[activity log|Activity-Log]]. If it has never moved, its idle time runs from when it was added
+instead — or, if you have **cleared** its log, from the moment of that clear: the clear takes the
+movement records with it, so that is as far back as the evidence goes. A cleared item therefore
+starts its idle count afresh rather than being judged against the day it was added.
+
 > **💡 Tip**
 > A regular glance at dead stock keeps your inventory honest — it's easy to accumulate things you
 > no longer need, and this is how you find them.
+
+### What ages the stock
+
+Aging works from the same records, from the other end: an item's age is the age of its **newest
+stock-in** — the last time more of it arrived. Where there's no such record, the **acquired**
+date on the item is used instead.
+
+Clearing an item's log removes those stock-in records too. When that happens the acquired date
+takes over if you recorded one — it still describes the stock, and a clear doesn't change when
+you got something. With no acquired date either, the age runs from the clear. Only an item with
+none of the three is aged from the day it was added.
+
+> **💡 Tip**
+> Filling in **Acquired** on the things you keep long-term is what keeps them aging sensibly, no
+> matter what happens to their log later.
 
 ## Related pages
 

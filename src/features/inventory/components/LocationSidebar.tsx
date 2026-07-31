@@ -25,6 +25,9 @@ import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useFeature } from '@/features/modules/useFeature';
 import { useT } from '@/features/i18n';
 import { useReportWriteFailure } from '@/features/errors';
+import { TabularExportMenu } from '@/features/export/TabularExportMenu';
+import { exportEveryPage } from '@/features/export/export-every-page';
+import { buildLocationsExport, locationsExportFilename } from '../locations-export';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
   EMPTY_VOLUME_TOTALS,
@@ -43,6 +46,7 @@ import {
   pruneTreeToIds,
   type VisibleTreeRow,
 } from '../location-tree';
+import { readLocationsPage } from '../queries';
 import { useLocationFieldSearchText } from '../categories';
 import { useLocationTagIndex } from '../tags';
 import { ALL_ITEMS_ID, useLocationSidebar } from '../useLocationSidebar';
@@ -434,19 +438,43 @@ export function LocationSidebar({
         >
           {t('inventory.locations.title')}
         </h2>
-        <Tooltip content="Create a new location. Locations can be nested to any depth." triggerTabIndex={-1}>
-          <span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              aria-label="Add location"
-              onClick={() => setAddOpen(true)}
-            >
-              <AddIcon className="text-glyph-success" />
-            </Button>
-          </span>
-        </Tooltip>
+        <div className="flex items-center gap-1">
+          {/* Export the location list (issue #617, `N7`). The tree is the app's location list, so
+              this is where the shared list-export control belongs — and it re-reads every page
+              rather than serialising the tree on screen, which "Show archived", the tag chips and
+              the search box have all already narrowed. */}
+          <TabularExportMenu
+            build={(format) =>
+              exportEveryPage(
+                readLocationsPage,
+                (rows) => buildLocationsExport(format, rows),
+                t('export.list.truncated'),
+              )
+            }
+            filename={locationsExportFilename}
+            triggerLabel={t('export.list.trigger')}
+            menuLabel={t('export.locations.menuLabel')}
+            toastHeading={t('export.locations.toast')}
+            disabled={flat.length === 0}
+            testIdPrefix="export-locations"
+          />
+          <Tooltip
+            content="Create a new location. Locations can be nested to any depth."
+            triggerTabIndex={-1}
+          >
+            <span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                aria-label="Add location"
+                onClick={() => setAddOpen(true)}
+              >
+                <AddIcon className="text-glyph-success" />
+              </Button>
+            </span>
+          </Tooltip>
+        </div>
       </div>
 
       {/* Name search. `pr-9` reserves the clear button's lane so the two never overlap. */}

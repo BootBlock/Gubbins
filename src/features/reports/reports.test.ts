@@ -62,23 +62,60 @@ describe('summariseConsumption — windowed consumption rate', () => {
   it('sums consumed magnitudes inside the half-open window and derives per-day', () => {
     const report = summariseConsumption(
       [
-        { createdAt: start - MS_PER_DAY, consumed: 999 }, // before window → ignored
-        { createdAt: start, consumed: 30 }, // inclusive start
-        { createdAt: start + 5 * MS_PER_DAY, consumed: 20 },
-        { createdAt: end, consumed: 999 }, // exclusive end → ignored
+        { createdAt: start - MS_PER_DAY, unit: null, consumed: 999 }, // before window → ignored
+        { createdAt: start, unit: null, consumed: 30 }, // inclusive start
+        { createdAt: start + 5 * MS_PER_DAY, unit: null, consumed: 20 },
+        { createdAt: end, unit: null, consumed: 999 }, // exclusive end → ignored
       ],
       start,
       end,
     );
     expect(report.windowDays).toBe(10);
-    expect(report.totalConsumed).toBe(50);
-    expect(report.perDay).toBe(5);
+    expect(report.lines).toEqual([{ unit: null, totalConsumed: 50, perDay: 5 }]);
   });
 
   it('clamps the window to at least one day to avoid divide-by-zero', () => {
-    const report = summariseConsumption([{ createdAt: start, consumed: 4 }], start, start + 1000);
+    const report = summariseConsumption([{ createdAt: start, unit: null, consumed: 4 }], start, start + 1000);
     expect(report.windowDays).toBe(1);
-    expect(report.perDay).toBe(4);
+    expect(report.lines[0]?.perDay).toBe(4);
+  });
+
+  it('never adds different units together — one line each, biggest first (issue #685)', () => {
+    const report = summariseConsumption(
+      [
+        { createdAt: start, unit: 'g', consumed: 400 },
+        { createdAt: start + MS_PER_DAY, unit: 'ml', consumed: 50 },
+        { createdAt: start + 2 * MS_PER_DAY, unit: null, consumed: 6 }, // bare screws
+        { createdAt: start + 3 * MS_PER_DAY, unit: 'g', consumed: 100 },
+      ],
+      start,
+      end,
+    );
+    expect(report.lines).toEqual([
+      { unit: 'g', totalConsumed: 500, perDay: 50 },
+      { unit: 'ml', totalConsumed: 50, perDay: 5 },
+      { unit: null, totalConsumed: 6, perDay: 0.6 },
+    ]);
+  });
+
+  it('folds one unit spelled differently into a single line, keeping the first spelling', () => {
+    const report = summariseConsumption(
+      [
+        { createdAt: start, unit: 'Rolls', consumed: 2 },
+        { createdAt: start, unit: ' rolls ', consumed: 3 },
+        { createdAt: start, unit: '   ', consumed: 4 }, // blank → the unitless line
+      ],
+      start,
+      end,
+    );
+    expect(report.lines).toEqual([
+      { unit: 'Rolls', totalConsumed: 5, perDay: 0.5 },
+      { unit: null, totalConsumed: 4, perDay: 0.4 },
+    ]);
+  });
+
+  it('reports no lines at all when nothing was consumed in the window', () => {
+    expect(summariseConsumption([], start, end).lines).toEqual([]);
   });
 });
 
@@ -122,27 +159,34 @@ describe('selectDeadStock — dead-stock boundary', () => {
     const report = selectDeadStock(
       [
         // exactly 30 days idle → qualifies (boundary inclusive)
-        { id: 'a', name: 'Idle', quantity: 4, unitCost: 5, lastMovedAt: now - 30 * MS_PER_DAY, createdAt: 0 },
+        {
+          id: 'a',
+          name: 'Idle',
+          quantity: 4,
+          unitCost: 5,
+          lastKnownMovementAt: now - 30 * MS_PER_DAY,
+          createdAt: 0,
+        },
         // 29 days idle → still live, excluded
         {
           id: 'b',
           name: 'Fresh',
           quantity: 9,
           unitCost: 1,
-          lastMovedAt: now - 29 * MS_PER_DAY,
+          lastKnownMovementAt: now - 29 * MS_PER_DAY,
           createdAt: 0,
         },
-        // never moved; created 90 days ago → uses createdAt → qualifies
+        // nothing on the ledger; created 90 days ago → uses createdAt → qualifies
         {
           id: 'c',
           name: 'Never',
           quantity: 2,
           unitCost: 10,
-          lastMovedAt: null,
+          lastKnownMovementAt: null,
           createdAt: now - 90 * MS_PER_DAY,
         },
         // zero stock → excluded regardless of idleness
-        { id: 'd', name: 'Empty', quantity: 0, unitCost: 5, lastMovedAt: 0, createdAt: 0 },
+        { id: 'd', name: 'Empty', quantity: 0, unitCost: 5, lastKnownMovementAt: 0, createdAt: 0 },
       ],
       30,
       now,

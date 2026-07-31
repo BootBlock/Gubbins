@@ -3,11 +3,10 @@
 > **Status:** 🟢 ACTIVE — research complete. `N1` and `N2` shipped together (2026-07-31), along with
 > both §9 defects ([#689](https://github.com/BootBlock/Gubbins/issues/689),
 > [#690](https://github.com/BootBlock/Gubbins/issues/690) — both closed). `N6`
-> ([#691](https://github.com/BootBlock/Gubbins/issues/691)) shipped 2026-07-31 — see §11.5 — and its
-> cross-location reader follow-on ([#693](https://github.com/BootBlock/Gubbins/issues/693)) with it.
-> `N3` is
-> **resolved without building it** — see §11.4. `N4`, `N5` and `N7` remain open and unstarted, as
-> does the deferred `locations_fts` table.
+> ([#691](https://github.com/BootBlock/Gubbins/issues/691)) shipped 2026-07-31 — see §11.5, and the
+> limitation it left ([#693](https://github.com/BootBlock/Gubbins/issues/693)) shipped the same day.
+> `N7` shipped 2026-07-31 — see §11.6. `N3` is **resolved without building it** — see §11.4. `N4` and
+> `N5` remain open and unstarted, as does the deferred `locations_fts` table.
 
 Answers issue [#617](https://github.com/BootBlock/Gubbins/issues/617): *is there a valid use for
 attaching an "item" to a `Location` that isn't an actual `Item` — a Note, say — and what else can be
@@ -221,8 +220,8 @@ Recorded so they aren't folded in and used to inflate the scope.
 Ranked by *(what it unlocks) ÷ (cost)*, and deliberately weighted toward **surfacing what exists**,
 because §5 is the finding: the mechanism is built and nobody can see it. `N1` and `N2` shipped
 together on 2026-07-31 (see §11 for what building them proved wrong); `N6`
-([#691](https://github.com/BootBlock/Gubbins/issues/691)) shipped the same day (§11.5); `N3` is
-resolved without being built (§11.4); `N4`, `N5` and `N7` are unstarted.
+([#691](https://github.com/BootBlock/Gubbins/issues/691)) and `N7` shipped the same day (§11.5,
+§11.6); `N3` is resolved without being built (§11.4); `N4` and `N5` are unstarted.
 
 - **`N1` — Give a location's own detail somewhere to appear. ✅ SHIPPED.** Render a location's
   non-inheritable field values, alongside its description, where a location is actually looked
@@ -284,9 +283,14 @@ resolved without being built (§11.4); `N4`, `N5` and `N7` are unstarted.
   `URL` custom field already does most of this, so what a table buys is **several of them, ordered
   and labelled**, not a new capability. Must not drift into storing bytes (`W6`), and should be
   scoped against [#466](https://github.com/BootBlock/Gubbins/issues/466) before starting.
-- **`N7` — A location list export.** Add locations to the tabular-export seam, and carry the
-  description (and kind/capacity/dimensions/walk order) in the JSON export and as a folder-level
-  page in the Markdown vault. Mechanical, and it closes §4's third weakness.
+- **`N7` — A location list export. ✅ SHIPPED (2026-07-31).** Add locations to the tabular-export
+  seam, and carry the description (and kind/capacity/dimensions/walk order) in the JSON export and
+  as a folder-level page in the Markdown vault. Mechanical, and it closes §4's third weakness.
+  *As built:* all three, exactly as scoped. A `TabularExportMenu` in the Inventory sidebar's
+  Locations header, over a pure `locations-export.ts` whose rows carry the ancestry a flat table
+  loses; a `locations` array in the JSON payload (format version 2); and an Obsidian folder note
+  per location folder in the vault. It does **not** close
+  [#596](https://github.com/BootBlock/Gubbins/issues/596) — see §11.6.
 - **`N3` — A repeating note list on a location. ⛔ RESOLVED WITHOUT BUILDING IT — the condition
   came back "no".** The proposal was a narrow `location_notes` table shaped like `location_photos`
   (`id`, `location_id` CASCADE, `body`, `kind`, `position`, timestamps), deliberately last and
@@ -340,12 +344,13 @@ the existing field mechanism was sufficient all along and simply invisible. `N5`
 into `W1` when that is picked up, and `N6` is worth filing on its own merits regardless of what
 happens to the rest of this document.
 
-## 11. What building `N1`/`N2`/`N6` proved wrong (2026-07-31)
+## 11. What building `N1`/`N2`/`N6`/`N7` proved wrong (2026-07-31)
 
 Recorded because the research above is otherwise a snapshot of `d4d8d385` and would keep reading as
 live guidance. First the three `N1`/`N2` corrections, one of which changed the design — then §11.4,
-which is not a correction but the verdict `N1` was built to make possible, and §11.5, what building
-`N6` corrected in turn.
+which is not a correction but the verdict `N1` was built to make possible, §11.5, what building
+`N6` corrected in turn, and §11.6, what building `N7` settled about its neighbour
+[#596](https://github.com/BootBlock/Gubbins/issues/596).
 
 1. **"Non-inheritable field values" was the wrong scope for the panel — it now shows them all.**
    §5's asymmetry argument is sound as far as it goes, but it misses that `LocationFieldsEditor`
@@ -402,10 +407,10 @@ exactly as `N5` folds into `W1`. **One change over two subjects, not a location-
 
 So §5's diagnosis holds and is now complete: the mechanism was built, sufficient, and invisible.
 `N1` and `N2` made it visible and findable, and nothing about a location's own text needs new schema.
-The remaining location gaps are the other §8 entries — a document with ordering and labels (`N4`), a
-date that raises something (`N5`) and an export (`N7`); the activity record
-(`N6`/[#691](https://github.com/BootBlock/Gubbins/issues/691)) is now built, and §11.5 records what
-building it corrected.
+The remaining location gaps are the other §8 entries — a document with ordering and labels (`N4`)
+and a date that raises something (`N5`); the activity record
+(`N6`/[#691](https://github.com/BootBlock/Gubbins/issues/691)) and the export (`N7`) are now built,
+and §11.5 and §11.6 record what building each corrected.
 
 ### 11.5 What building `N6` proved wrong (2026-07-31)
 
@@ -468,3 +473,52 @@ recording. Deleting a location promotes its children to its parent, which is the
 "why is this shelf suddenly under a different room?" the issue opens with — so each promoted child
 records its own `RE_PARENTED` entry, mirroring the per-item `RE_PARENTED` the same method already
 wrote for the items it re-homes.
+
+### 11.6 What building `N7` settled (2026-07-31)
+
+`N7`'s §8 entry called it "mechanical", and the three halves it named — the tabular seam, the JSON
+payload, the vault's folder-level page — all landed as scoped. Four things it did not say.
+
+1. **The export cannot read the list the sidebar is holding, even though that list is uncapped.**
+   `useLocations()` reads `LocationRepository.listAll`, so unlike every other list export the
+   sidebar genuinely *has* every row — the read-everything argument (§8's own constraint) looks
+   satisfied for free. It isn't, for a different reason: the sidebar filters that list before it
+   renders it — archived branches hidden, a tag chip or the search box narrowing the tree — so
+   serialising what is on screen would quietly export the current view. The export therefore
+   re-reads through the paged `list` via `exportEveryPage`, and the file deliberately carries
+   **every** location including archived ones. That difference is stated in the wiki, because it
+   is the one place the app's "the file matches what's in front of you" rule does not hold.
+2. **A flat table loses the hierarchy, which is most of what a location *is*.** A row saying
+   "Drawer 3" names nothing outside Gubbins. Each row therefore carries its immediate parent *and*
+   its full path, resolved against the whole set — never the filtered subset, because a path that
+   stopped at the first unexported ancestor would be wrong rather than short. The vault's folder
+   notes take the identical row (`VaultLocation` ≡ `LocationExportRow`), so the orchestrator
+   resolves ancestry once and feeds both.
+3. **The vault's folders are keyed by a location's *name*, not its path** — a pre-existing fact
+   that only becomes visible once a folder gains a note. Two "Cabinet A"s in different branches
+   already share one vault folder, so the second one to claim `Folder/Folder.md` takes the same
+   id-suffixed fallback a colliding item name takes, and each note's `path` frontmatter is what
+   says which location it describes. Folder notes are written **before** the items so the folder
+   note keeps the canonical name; an item that happens to share its location's name is the one
+   that moves.
+4. **It does *not* close [#596](https://github.com/BootBlock/Gubbins/issues/596), and shouldn't.**
+   That issue is about the **catalogue CSV** writing a raw `locationId` UUID where a name would be
+   readable and portable — and it is a *round-trip* format, so the column's contents are an import
+   contract as much as an export one. Nothing here touches it: the location list export is a new,
+   separate file, and the JSON payload gained a `locations` array rather than changing what an item
+   row writes. #596 also carries two decisions this work had no reason to take — whether to write a
+   bare name or a qualified path, and how the importer resolves an ambiguous one — plus a
+   dependency on [#407](https://github.com/BootBlock/Gubbins/issues/407) for the category half of
+   the same column. Closing it off the back of this would be claiming a fix that isn't there. What
+   *has* changed is that the JSON export no longer has the same defect: an item's `locationId`
+   resolves within the file.
+5. **The shared export timestamp seam threw on a value it could not render, and now doesn't.**
+   Locations are the first list export whose columns include two *optional* stored instants
+   (`archived_at`, `last_counted_at`). `isoTimestamp` (`features/export/export-every-page.ts`) —
+   the seam every list export writes its date columns through — called `toISOString` on anything
+   non-null, which raises both on a `NaN` and on a perfectly finite number past the ±8.64e15 ms
+   range `Date` can represent. One unreadable stored value would have failed the whole file rather
+   than blanking its own cell, and the fix belongs in the seam rather than at this call site:
+   hardening it once means the vault's folder note and the location list agree about what happens,
+   and every other list export (loans, contacts, bookings, purchase orders, activity) stops sharing
+   the defect too. That is the only change here that reaches past `N7`'s three parts.

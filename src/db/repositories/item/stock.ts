@@ -13,6 +13,7 @@ import { isDefaultBatch, planBatchConsumption, planBatchSelection } from '@/feat
 import { effectiveUnitCost } from '@/features/inventory/supplier-cost';
 import { fromStoredMoney, roundMoney } from '@/lib/money';
 import { stockRowId } from '../stock';
+import { preferredSupplierCostSql } from '../supplier-cost-sql';
 import {
   addBatchStatement,
   consumeBatchStatements,
@@ -32,7 +33,11 @@ interface OutboundDraw {
   readonly fromLocationId: string;
   readonly fromBatchKey: string | null;
   readonly stockStatements: SqlStatement[];
-  /** The item's effective per-unit cost at the moment of the movement, or null if unpriced. */
+  /**
+   * The item's effective per-unit cost at the moment of the movement, or null when it has none
+   * that can be booked — genuinely unpriced, or priced only by a supplier quoting a currency
+   * other than the base, which is declined rather than mis-booked (issue #687).
+   */
   readonly unitCostAtSale: number | null;
 }
 
@@ -411,6 +416,13 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       fromLocationIdInput: string | undefined,
       fromBatchKeyInput: string | undefined,
     ): Promise<OutboundDraw> {
+      // The supplier price is read through the shared {@link preferredSupplierCostSql} seam, not a
+      // subquery of its own (issue #687). `supplier_parts.currency` is the only currency-tagged
+      // source in this chain — `items` has no currency column — and Gubbins holds no exchange
+      // rates, so an unguarded lookup books a ¥9,800 part as 9,800 of the base currency. That
+      // number then lands in the append-only `item_history` ledger as the sale's cost-of-goods,
+      // where no later fix can correct it; declining the price instead leaves the sale uncosted,
+      // which the sales report already reports honestly as `unitsWithoutCost`.
       const item = await this.driver.queryOne<{
         tracking_mode: string;
         location_id: string;
@@ -419,8 +431,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
         preferred_unit_cost: number | null;
       }>(
         `SELECT i.tracking_mode, i.location_id, i.is_unlimited, i.unit_cost,
-                (SELECT sp.unit_cost FROM supplier_parts sp
-                  WHERE sp.item_id = i.id AND sp.is_preferred = 1 LIMIT 1) AS preferred_unit_cost
+                ${preferredSupplierCostSql('i.id', this.baseCurrency())} AS preferred_unit_cost
          FROM items i WHERE i.id = ?;`,
         [itemId],
       );

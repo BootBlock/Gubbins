@@ -59,6 +59,23 @@ vi.mock('../mutations', () => ({
   useCreateLocationPath: () => ({ mutate: spies.create, isPending: false }),
   useMoveItem: () => ({ mutate: spies.move, isPending: moveState.isPending, variables: moveState.variables }),
 }));
+// The location-list export (issue #617, `N7`) re-reads the list from the repository rather than
+// serialising the tree on screen. Stub that one read — and the download side-effect — so the test
+// stays free of a DB worker while still being able to assert *which* rows were serialised.
+const exportSpies = vi.hoisted(() => ({
+  readPage: vi.fn(async () => ({
+    rows: [{ id: 'archived-bin', name: 'Archived bin', parentId: null, archivedAt: 1, itemCount: 0 }],
+    limit: 100,
+    offset: 0,
+    hasMore: false,
+  })),
+  download: vi.fn(),
+}));
+vi.mock('../queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../queries')>()),
+  readLocationsPage: exportSpies.readPage,
+}));
+vi.mock('@/features/export/download', () => ({ download: exportSpies.download }));
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -77,6 +94,8 @@ beforeEach(() => {
   // Expansion is a persisted module-singleton store; clear it so each test starts from
   // the baseline (top-level open, deeper collapsed) rather than a prior test's toggles.
   useLocationExpansionStore.getState().reset();
+  exportSpies.readPage.mockClear();
+  exportSpies.download.mockClear();
 });
 
 function node(
@@ -892,5 +911,59 @@ describe('LocationSidebar — a newly created location is selected (issue #612)'
     expect(overrides.shelfb).toBe(true);
     expect(overrides.cabinet).toBe(true);
     expect(overrides.workshop).toBe(true);
+  });
+});
+
+/**
+ * The location list export (issue #617, `N7`). The sidebar is the app's location list, so this is
+ * where the shared list-export control lives — and it must serialise the *list*, not the tree on
+ * screen, which "Show archived", the tag chips and the search box have all already narrowed.
+ */
+describe('LocationSidebar — export the location list', () => {
+  async function exportCsv() {
+    renderSidebar();
+    fireEvent.click(screen.getByTestId('export-locations'));
+    fireEvent.click(await screen.findByTestId('export-locations-csv'));
+    // The build walks the pages and serialises before handing the blob to the download.
+    await vi.waitFor(() => expect(exportSpies.download).toHaveBeenCalled());
+    const [blob, name] = exportSpies.download.mock.calls[0]! as unknown as [Blob, string];
+    return { text: await blob.text(), name };
+  }
+
+  it('offers the shared export control beside the add button', () => {
+    renderSidebar();
+    expect(screen.getByRole('button', { name: 'Export locations' })).toBeTruthy();
+  });
+
+  it('re-reads the whole list rather than serialising the filtered tree', async () => {
+    const { text, name } = await exportCsv();
+    expect(exportSpies.readPage).toHaveBeenCalled();
+    // The stubbed read returns a location the sidebar is *not* showing (it is archived, and the
+    // "Show archived" toggle is off), so its presence proves the file came from the repository.
+    expect(text).toContain('Archived bin');
+    expect(text).not.toContain('Workshop');
+    expect(name).toMatch(/^gubbins-locations-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
+  it('carries what nothing else exported — the description and the walk order', async () => {
+    exportSpies.readPage.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 'shelf',
+          name: 'Shelf B',
+          parentId: null,
+          description: 'Overflow for the workshop',
+          walkOrder: 3,
+          itemCount: 0,
+        },
+      ],
+      limit: 100,
+      offset: 0,
+      hasMore: false,
+    } as never);
+    const { text } = await exportCsv();
+    expect(text).toContain('Overflow for the workshop');
+    expect(text).toContain('Walk order');
+    expect(text.split('\r\n')[1]).toContain('3');
   });
 });

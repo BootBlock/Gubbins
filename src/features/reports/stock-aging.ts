@@ -28,9 +28,9 @@ const EN_DASH = '–';
 
 /**
  * A minimal item shape for stock aging — extends the {@link ValuedUnit} valuation seam
- * with the on-hand quantity, a manual current value, and the three candidate reference
- * instants. Kept structural (not the full `Item`) so the repository selects a narrow
- * projection and these helpers stay trivially testable.
+ * with the on-hand quantity, a manual current value, and the candidate reference instants
+ * in precedence order. Kept structural (not the full `Item`) so the repository selects a
+ * narrow projection and these helpers stay trivially testable.
  */
 export interface AgingInput extends ValuedUnit {
   /** Stable item id. */
@@ -57,6 +57,23 @@ export interface AgingInput extends ValuedUnit {
    * #323). Used when there is no inbound movement.
    */
   readonly acquiredAtMs: number | null;
+  /**
+   * UNIX-ms of the most recent point the item's Activity Log was cleared. A clear deletes the
+   * inbound rows this report ages from, so an item that has been restocked repeatedly can end
+   * up with no inbound instant at all; the clear is where the record stops, and stands in ahead
+   * of `createdAt` — which dates the row, not the stock.
+   *
+   * Null means the answer is not needed rather than strictly "never cleared": the repository
+   * resolves it only for items with no {@link lastInboundAt}, since the lookup is the expensive
+   * one and an inbound instant has already settled the age. Read it as the fallback it is, not
+   * as a record of whether a clear happened.
+   *
+   * It sits *behind* {@link acquiredAtMs}: a recorded acquisition date survives the clear and
+   * is a genuine statement about the stock, whereas the clear only says how far the ledger
+   * now reaches. Preferring the clear would silently age stock as fresh whenever a log was
+   * tidied up.
+   */
+  readonly historyClearedAt: number | null;
   /** UNIX-ms creation instant — the final fallback reference when nothing else is known. */
   readonly createdAt: number;
 }
@@ -155,8 +172,9 @@ function makeBuckets(bounds: readonly number[]): {
 
 /**
  * Bucket on-hand stock by the age of its newest inbound. Each item's reference instant is
- * `lastInboundAt ?? acquiredAtMs ?? createdAt` (the newest inbound movement wins, else the
- * acquisition date, else creation), and its age is
+ * `lastInboundAt ?? acquiredAtMs ?? historyClearedAt ?? createdAt` (the newest inbound movement
+ * wins, else the acquisition date, else the point the log was cleared and took the inbound rows
+ * with it, else creation), and its age is
  * `Math.max(0, Math.floor((now − reference) / MS_PER_DAY))` so a future reference clamps to
  * age 0. Only items with `quantity > 0` are counted (nothing on hand = nothing to age);
  * each contributes `Math.max(0, quantity) * effectiveUnitValue(currentValuePerUnit, effectiveUnitCost(item))`
@@ -181,7 +199,7 @@ export function bucketStockAging(
   let totalValue = 0;
   for (const item of items) {
     if (item.quantity <= 0) continue;
-    const reference = item.lastInboundAt ?? item.acquiredAtMs ?? item.createdAt;
+    const reference = item.lastInboundAt ?? item.acquiredAtMs ?? item.historyClearedAt ?? item.createdAt;
     const ageDays = Math.max(0, Math.floor((now - reference) / MS_PER_DAY));
 
     // First bucket whose inclusive upper bound the age does not exceed; the final
