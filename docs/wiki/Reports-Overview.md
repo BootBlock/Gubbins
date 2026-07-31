@@ -17,6 +17,7 @@ data, and most can be exported.
 | **ABC analysis** | Which items matter most (the vital few vs the trivial many)? | [[ABC, turnover & aging\|ABC-Turnover-and-Aging]] |
 | **Turnover** | How fast is stock moving? | [[ABC, turnover & aging\|ABC-Turnover-and-Aging]] |
 | **Stock aging / dead stock** | What's been sitting untouched? (dead stock is opt-in) | [[ABC, turnover & aging\|ABC-Turnover-and-Aging]] |
+| **Consumption rate** | How fast is stock being used up, unit by unit? | Below on this page |
 | **Sales & margin** | What have I sold, and at what profit? | [[Sales & margin\|Sales-and-Margin]] |
 | **Data hygiene** | Which records are incomplete? | [[Data hygiene\|Data-Hygiene]] |
 
@@ -42,6 +43,26 @@ Your choice carries through to the **CSV export**: exporting a report that has a
 gives you the span you've selected on screen, so the file always covers the same period as the
 figures you were looking at. Reports with a fixed span — **ABC analysis** (always annual),
 **consumption rate** and **data hygiene** — have no selector and export over their own set period.
+
+## Consumption rate
+
+The **consumption rate** looks at everything that left your stock over the last 30 days — items
+used up, and material drawn from [[gauges|Low-Stock-and-Gauges]] — and tells you how fast it is
+going.
+
+It is reported **one line per unit of measure**, never as a single figure. Filament weighed in
+grams, resin measured in millilitres and screws counted one by one are different kinds of thing,
+and Gubbins holds no way to convert between them, so adding them together would produce a number
+that means nothing. Each unit gets its own total and its own daily rate; items that simply count
+things (no unit of measure set) are gathered into one **units** line.
+
+The headline card at the top of the screen shows the busiest single unit, labelled with that unit,
+and says how many others there are — the full list is in the **Consumption by unit** panel, and the
+CSV export carries a `unit` column so every figure stays labelled in a spreadsheet.
+
+> **ℹ️ Note**
+> This is the same principle as the [[valuation reports|Valuation-and-Spend]] declining to convert
+> a foreign-currency price: Gubbins would rather show you two honest figures than one invented one.
 
 ## Exporting
 

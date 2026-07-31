@@ -630,9 +630,48 @@ describe('ReportRepository', () => {
       );
 
       const report = await reports.consumptionRate(10, now);
-      expect(report.totalConsumed).toBe(50);
       expect(report.windowDays).toBe(10);
-      expect(report.perDay).toBe(5);
+      expect(report.lines).toEqual([{ unit: null, totalConsumed: 50, perDay: 5 }]);
+    });
+
+    it('reports each unit of measure on its own line, never summed (issue #685)', async () => {
+      const now = Date.now();
+      // Screws counted as bare things, filament weighed in grams, resin measured in millilitres.
+      const screws = await items.create({ name: 'Screws', quantity: 100 });
+      const filament = await items.create({
+        name: 'Filament',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 800 },
+      });
+      const resin = await items.create({
+        name: 'Resin',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'ml', grossCapacity: 500, currentNetValue: 500 },
+      });
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
+         VALUES (?, ?, 'QUANTITY_CHANGE', -6, ?);`,
+        [crypto.randomUUID(), screws.id, now - 5 * MS_PER_DAY],
+      );
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, net_value_delta, created_at)
+         VALUES (?, ?, 'GAUGE_UPDATE', -400, ?), (?, ?, 'GAUGE_UPDATE', -50, ?);`,
+        [
+          crypto.randomUUID(),
+          filament.id,
+          now - 2 * MS_PER_DAY,
+          crypto.randomUUID(),
+          resin.id,
+          now - MS_PER_DAY,
+        ],
+      );
+
+      const report = await reports.consumptionRate(10, now);
+      expect(report.lines).toEqual([
+        { unit: 'g', totalConsumed: 400, perDay: 40 },
+        { unit: 'ml', totalConsumed: 50, perDay: 5 },
+        { unit: null, totalConsumed: 6, perDay: 0.6 },
+      ]);
     });
   });
 
