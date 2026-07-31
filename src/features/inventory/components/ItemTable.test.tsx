@@ -71,6 +71,7 @@ const customField = (over: Partial<CardCustomField> = {}): CardCustomField => ({
   name: 'Voltage',
   fieldType: 'TEXT',
   defaultValue: null,
+  unit: null,
   ...over,
 });
 

@@ -688,6 +688,218 @@ describe('CategoryRepository', () => {
       expect((await categories.update(cat.id, { fieldTabLabel: null })).fieldTabLabel).toBeNull();
     });
   });
+
+  /**
+   * A NUMBER definition's unit (W1b) and range (W1c). Both live on `field_defs` rather than on
+   * the category's use of it, so they are shared by every category and location using the
+   * field — the same bargain the due-date opt-in makes.
+   */
+  describe('a number field’s unit and range (W1b/W1c)', () => {
+    it('defaults to no unit and no range', async () => {
+      const cat = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(cat.id, { name: 'Voltage', fieldType: 'NUMBER' });
+      expect(f.unit).toBeNull();
+      expect(f.minValue).toBeNull();
+      expect(f.maxValue).toBeNull();
+    });
+
+    it('round-trips a unit and both bounds through add and the list read', async () => {
+      const cat = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(cat.id, {
+        name: 'Voltage',
+        fieldType: 'NUMBER',
+        unit: 'V',
+        minValue: 0,
+        maxValue: 24,
+      });
+      expect([f.unit, f.minValue, f.maxValue]).toEqual(['V', 0, 24]);
+      // …and through the read the field editor and every value surface actually use.
+      const listed = (await categories.listFields(cat.id)).find((x) => x.id === f.id);
+      expect([listed?.unit, listed?.minValue, listed?.maxValue]).toEqual(['V', 0, 24]);
+    });
+
+    it('keeps a one-sided range one-sided', async () => {
+      const cat = await categories.create({ name: 'Tanks' });
+      const floor = await categories.addField(cat.id, {
+        name: 'Depth',
+        fieldType: 'NUMBER',
+        minValue: 0,
+      });
+      expect([floor.minValue, floor.maxValue]).toEqual([0, null]);
+      const ceiling = await categories.addField(cat.id, {
+        name: 'Charge',
+        fieldType: 'NUMBER',
+        maxValue: 100,
+      });
+      expect([ceiling.minValue, ceiling.maxValue]).toEqual([null, 100]);
+    });
+
+    it('folds a blank unit to null, so “no unit” has one spelling', async () => {
+      const cat = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(cat.id, { name: 'Cells', fieldType: 'NUMBER', unit: '   ' });
+      expect(f.unit).toBeNull();
+    });
+
+    it('trims a unit rather than storing the padding', async () => {
+      const cat = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(cat.id, { name: 'Voltage', fieldType: 'NUMBER', unit: ' V ' });
+      expect(f.unit).toBe('V');
+    });
+
+    it('refuses an inverted range in the app’s voice, not as a raw constraint failure', async () => {
+      const cat = await categories.create({ name: 'Fixings' });
+      await expect(
+        categories.addField(cat.id, { name: 'Torque', fieldType: 'NUMBER', minValue: 12, maxValue: 8 }),
+      ).rejects.toThrow(/cannot be above its maximum/);
+    });
+
+    it('allows equal bounds — “exactly this”', async () => {
+      const cat = await categories.create({ name: 'Motors' });
+      const f = await categories.addField(cat.id, {
+        name: 'Poles',
+        fieldType: 'NUMBER',
+        minValue: 2,
+        maxValue: 2,
+      });
+      expect([f.minValue, f.maxValue]).toEqual([2, 2]);
+    });
+
+    it('refuses a unit or a bound on any type other than NUMBER', async () => {
+      const cat = await categories.create({ name: 'Docs' });
+      await expect(
+        categories.addField(cat.id, { name: 'Title', fieldType: 'TEXT', unit: 'mm' }),
+      ).rejects.toThrow(/Only a Number field can carry a unit/);
+      await expect(
+        categories.addField(cat.id, { name: 'Blurb', fieldType: 'TEXT', minValue: 1 }),
+      ).rejects.toThrow(/Only a Number field can have a minimum/);
+    });
+
+    it('refuses a bound beyond the range a number stays exact in', async () => {
+      const cat = await categories.create({ name: 'Astro' });
+      await expect(
+        categories.addField(cat.id, {
+          name: 'Parsecs',
+          fieldType: 'NUMBER',
+          maxValue: Number.MAX_SAFE_INTEGER + 1000,
+        }),
+      ).rejects.toThrow(/must be a number between/);
+    });
+
+    it('clears the unit and range when the field is retyped away from NUMBER', async () => {
+      // The CHECK forbids the pair outright, so without the write seam clearing them the user's
+      // retype would fail on a constraint with nothing on screen to explain it.
+      const cat = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(cat.id, {
+        name: 'Voltage',
+        fieldType: 'NUMBER',
+        unit: 'V',
+        minValue: 0,
+        maxValue: 24,
+      });
+      const retyped = await categories.updateField(f.id, { fieldType: 'TEXT' });
+      expect([retyped.unit, retyped.minValue, retyped.maxValue]).toEqual([null, null, null]);
+    });
+
+    it('accepts a unit and range set in the same edit that retypes to NUMBER', async () => {
+      const cat = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(cat.id, { name: 'Voltage', fieldType: 'TEXT' });
+      const updated = await categories.updateField(f.id, {
+        fieldType: 'NUMBER',
+        unit: 'V',
+        maxValue: 24,
+      });
+      expect([updated.unit, updated.maxValue]).toEqual(['V', 24]);
+    });
+
+    it('refuses a one-sided edit that would invert the range the definition already holds', async () => {
+      // The ordering rule judges the pair the row will actually hold: raising the floor above a
+      // ceiling set earlier must fail, even though the input names only one end.
+      const cat = await categories.create({ name: 'Fixings' });
+      const f = await categories.addField(cat.id, {
+        name: 'Torque',
+        fieldType: 'NUMBER',
+        maxValue: 12,
+      });
+      await expect(categories.updateField(f.id, { minValue: 20 })).rejects.toThrow(
+        /cannot be above its maximum/,
+      );
+      // …and the stored value is untouched by the refusal.
+      expect((await categories.listFields(cat.id))[0]?.minValue).toBeNull();
+    });
+
+    it('clears one end of the range on an explicit null, leaving the other', async () => {
+      const cat = await categories.create({ name: 'Tanks' });
+      const f = await categories.addField(cat.id, {
+        name: 'Depth',
+        fieldType: 'NUMBER',
+        minValue: 0,
+        maxValue: 100,
+      });
+      const cleared = await categories.updateField(f.id, { maxValue: null });
+      expect([cleared.minValue, cleared.maxValue]).toEqual([0, null]);
+    });
+
+    it('applies a unit to a reused definition but never clears one by omission', async () => {
+      // Reuse states what the field *means*, so setting applies to the shared definition; an add
+      // that says nothing about the unit must not silently strip it from the other category.
+      const first = await categories.create({ name: 'Batteries' });
+      const second = await categories.create({ name: 'Cells' });
+      await categories.addField(first.id, { name: 'Voltage', fieldType: 'NUMBER', unit: 'V' });
+      const reused = await categories.addField(second.id, { name: 'Voltage', fieldType: 'NUMBER' });
+      expect(reused.unit).toBe('V');
+
+      const third = await categories.create({ name: 'Packs' });
+      const changed = await categories.addField(third.id, {
+        name: 'Voltage',
+        fieldType: 'NUMBER',
+        unit: 'mV',
+      });
+      expect(changed.unit).toBe('mV');
+      // …and the change reached the category that declared it first, because it is one definition.
+      expect((await categories.listFields(first.id))[0]?.unit).toBe('mV');
+    });
+
+    it('refuses a reuse whose bound would invert the range already stored', async () => {
+      const first = await categories.create({ name: 'Fixings' });
+      const second = await categories.create({ name: 'Bolts' });
+      await categories.addField(first.id, { name: 'Torque', fieldType: 'NUMBER', maxValue: 12 });
+      await expect(
+        categories.addField(second.id, { name: 'Torque', fieldType: 'NUMBER', minValue: 20 }),
+      ).rejects.toThrow(/cannot be above its maximum/);
+    });
+
+    it('holds an item’s value to the definition’s range', async () => {
+      const cat = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(cat.id, {
+        name: 'Voltage',
+        fieldType: 'NUMBER',
+        unit: 'V',
+        maxValue: 24,
+      });
+      const item = await items.create({ name: 'Pack', categoryId: cat.id });
+      await expect(categories.setItemFieldValues(item.id, { [f.id]: '30' })).rejects.toThrow(
+        /Voltage must be at most 24 V/,
+      );
+      await categories.setItemFieldValues(item.id, { [f.id]: '12' });
+      const stored = await categories.resolveItemFields(item.id);
+      expect(stored.find((x) => x.id === f.id)?.value).toBe('12');
+    });
+
+    it('holds a location’s value to the same range', async () => {
+      // A location's value feeds every item inheriting it, so it must not be able to sit outside
+      // the range those items are held to.
+      const cat = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(cat.id, {
+        name: 'Voltage',
+        fieldType: 'NUMBER',
+        maxValue: 24,
+      });
+      const shelf = await new LocationRepository(driver).create({ name: 'Shelf' });
+      await expect(
+        categories.setLocationFieldValue(shelf.id, { defId: f.defId, value: '30', isInheritable: true }),
+      ).rejects.toThrow(/Voltage must be at most 24/);
+    });
+  });
 });
 
 /**

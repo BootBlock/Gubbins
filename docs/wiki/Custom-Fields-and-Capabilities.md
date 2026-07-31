@@ -49,7 +49,8 @@ so `Manufacturer` can be required for Power tools and optional for Spares.
 Each custom field has a **type** that decides how you enter and how Gubbins shows its value:
 
 - **Text** / **Long text** — a single line, or a multi-line note.
-- **Number** — any number; **Rating (1–5)** — a whole-number star rating.
+- **Number** — any number, and optionally a [[unit and an accepted
+  range|#giving-a-number-a-unit-and-a-range]]; **Rating (1–5)** — a whole-number star rating.
 - **Yes / No** and **On / Off** — a simple two-state toggle.
 - **Date** — a calendar date.
 - **Choice** — a value picked from a list of options you define.
@@ -113,6 +114,46 @@ matters for a field you added before, or one that came from a
 > **⚠️ Heads-up**
 > Only **Date** fields can do this. If you change a field's type away from Date, the due-date
 > setting is cleared along with it.
+
+### Giving a number a unit and a range
+
+A **Number** field can carry a **unit** and an accepted **range**. Both sit under the field in
+**Categories & schemas**, and both are optional — a number with neither behaves exactly as it
+always has.
+
+**Unit** is the symbol the number is measured in: `mm`, `V`, `kg`, `mAh`. Gubbins shows it beside
+the value wherever the value appears — on the item's card, in the dense list, in the table, and
+on a location's details panel — so you type just `5` and read `5 V`. In the editor the unit joins the field's label instead
+(*Voltage (V)*), because the box itself only ever holds the number.
+
+**Range** is the smallest and largest value allowed. You can fill in **either box on its own**:
+
+- a **smallest** value with no largest means *at least this* — useful for a measurement that can
+  never be negative;
+- a **largest** value with no smallest means *at most this*;
+- both together pin the value to a band, and both are inclusive;
+- leave both empty to accept any number.
+
+If you type a value outside the range, Gubbins says so as you type and won't save the item until
+it's fixed — *"Voltage must be at most 24 V."* The message quotes the unit, so it reads in the
+terms you set the field up in.
+
+> **ℹ️ Note**
+> Like the field's name and type — and like the due-date setting above — a unit and a range
+> belong to the **field itself**, not to one category. Set them on *Voltage* and they apply
+> everywhere that field is used, including values
+> [[inherited from a location|#inheriting-a-value-from-a-location]].
+
+> **💡 Tip**
+> Use the **Unit** setting rather than putting the unit in the field's *name* or its
+> [[note|#adding-a-field-note]]. A field called *Voltage* with a unit of `V` shows the same
+> *Voltage (V)* on screen, but the value keeps its unit on every card and list too — and the
+> range messages can quote it.
+
+> **⚠️ Heads-up**
+> Only **Number** fields can carry a unit or a range. If you change a field's type away from
+> Number, both are cleared along with it. A range can't be set back-to-front either: a smallest
+> value above the largest would accept nothing at all, so Gubbins refuses it.
 
 ### Fields on a location
 
@@ -195,8 +236,13 @@ There are two different routes, and they behave differently — worth knowing wh
 When you define a custom field you can give it an optional **Description** — a short note about
 what the field is for. If you fill it in, an **(i)** info badge appears next to that field on
 every item in the category; hovering or focusing it shows your note. It's the ideal place for a
-reminder such as *where to read the value from*, *which units to use*, or a link to a reference.
-The note supports Markdown, and leaving it blank simply hides the badge.
+reminder such as *where to read the value from*, or a link to a reference. The note supports
+Markdown, and leaving it blank simply hides the badge.
+
+> **💡 Tip**
+> For a number's unit of measure, use the [[**Unit** setting|#giving-a-number-a-unit-and-a-range]]
+> rather than this note — that way the unit is shown beside the value itself, not tucked behind a
+> badge.
 
 ### Starting from a preset
 

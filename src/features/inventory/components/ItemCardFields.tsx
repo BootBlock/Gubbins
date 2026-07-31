@@ -63,6 +63,17 @@ export function FieldValue({
       return <img src={value.src} alt={field.label} className="max-h-8 rounded object-contain" />;
     case 'empty':
       return <span className="text-muted-foreground/60">—</span>;
+    case 'measure':
+      // A number and its unit (W1b). The unit takes the muted token so the value stays the
+      // thing being read, and the pair stays together — truncating as one on a card or row,
+      // wrapping as one on the location detail panel, so a long value never pushes its own
+      // unit out of sight.
+      return (
+        <span className={wrap ? 'break-words' : 'truncate'}>
+          {value.text}
+          <span className="text-muted-foreground"> {value.unit}</span>
+        </span>
+      );
     case 'text':
       return (
         <span

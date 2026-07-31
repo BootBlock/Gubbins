@@ -13,10 +13,18 @@ import {
  */
 
 function field(overrides: Partial<LocationDetailField> = {}): LocationDetailField {
-  return { defId: 'def-1', name: 'Load rating', fieldType: 'TEXT', value: '30 kg', ...overrides };
+  return { defId: 'def-1', name: 'Load rating', fieldType: 'TEXT', unit: null, value: '30 kg', ...overrides };
 }
 
 describe('resolveLocationDetailFields', () => {
+  it('shows a number field’s unit beside the value, as an item card does (W1b)', () => {
+    expect(
+      resolveLocationDetailFields([
+        field({ fieldType: 'NUMBER', name: 'Load rating', unit: 'kg', value: '30' }),
+      ]),
+    ).toEqual([{ id: 'def-1', label: 'Load rating', value: { kind: 'measure', text: '30', unit: 'kg' } }]);
+  });
+
   it('resolves a value into the same descriptor an item card renders', () => {
     expect(resolveLocationDetailFields([field()])).toEqual([
       { id: 'def-1', label: 'Load rating', value: { kind: 'text', text: '30 kg' } },

@@ -274,7 +274,10 @@ describe('ItemCard — content branches', () => {
 
   it('renders the configured card fields (E1): condition, total value and a custom field', () => {
     const customFields = new Map([
-      ['f1', { id: 'f1', categoryId: 'cat', name: 'Voltage', fieldType: 'TEXT', defaultValue: null }],
+      [
+        'f1',
+        { id: 'f1', categoryId: 'cat', name: 'Voltage', fieldType: 'TEXT', defaultValue: null, unit: null },
+      ],
     ]);
     renderCard(makeItem({ categoryId: 'cat', condition: 'GOOD', unitCost: 2, quantity: 3 }), {
       fieldOrder: ['condition', 'value', 'custom:f1'],
@@ -292,7 +295,10 @@ describe('ItemCard — content branches', () => {
 
   it('renders an em-dash for an inapplicable custom field so every card keeps one row per field', () => {
     const customFields = new Map([
-      ['f1', { id: 'f1', categoryId: 'cat', name: 'Voltage', fieldType: 'TEXT', defaultValue: null }],
+      [
+        'f1',
+        { id: 'f1', categoryId: 'cat', name: 'Voltage', fieldType: 'TEXT', defaultValue: null, unit: null },
+      ],
     ]);
     // The item is in a *different* category, so its Voltage field is not applicable.
     renderCard(makeItem({ categoryId: 'other' }), {

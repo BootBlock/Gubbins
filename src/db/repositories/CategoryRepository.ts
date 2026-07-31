@@ -22,7 +22,13 @@ import { foldName } from '@/lib/name-fold';
 import { DbError } from '../errors';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository } from './base';
-import { FIELD_DUE_LEAD_DAYS_MAX, FIELD_DUE_LEAD_DAYS_MIN, type FieldType } from './constants';
+import {
+  FIELD_DUE_LEAD_DAYS_MAX,
+  FIELD_DUE_LEAD_DAYS_MIN,
+  FIELD_NUMBER_BOUND_LIMIT,
+  FIELD_UNIT_MAX_LENGTH,
+  type FieldType,
+} from './constants';
 import { rowToCategory, rowToCategoryField, rowToFieldDef, rowToLocationFieldValue } from './mappers';
 import { tombstoneStatement } from './tombstone';
 import type {
@@ -92,7 +98,8 @@ function normaliseGlyph(glyph: string | null | undefined): string | null {
  */
 const CATEGORY_FIELD_COLUMNS = `
   cf.id, cf.category_id, cf.def_id, cf.is_required, cf.default_value, cf.position, cf.updated_at,
-  fd.name, fd.field_type, fd.options, fd.description, fd.due_lead_days
+  fd.name, fd.field_type, fd.options, fd.description, fd.due_lead_days,
+  fd.unit, fd.min_value, fd.max_value
 `;
 
 interface ResolvedFieldRow extends CategoryFieldRow {
@@ -479,6 +486,9 @@ export class CategoryRepository extends BaseRepository {
       options: string | null;
       description?: string | null;
       dueLeadDays?: number | null;
+      unit?: string | null;
+      minValue?: number | null;
+      maxValue?: number | null;
     },
     statements: SqlStatement[],
   ): Promise<string> {
@@ -492,22 +502,40 @@ export class CategoryRepository extends BaseRepository {
         );
       }
       // Reuse leaves the definition's identity alone — a second category declaring
-      // "Manufacturer" must not overwrite the note someone wrote on it. The due-date opt-in
-      // is the one exception, and only in the *setting* direction: a caller ticking "this is
-      // a due date" is stating what the field means, so it applies to the shared definition,
-      // while an unticked add never clears an opt-in the first category is relying on.
-      if (input.dueLeadDays != null && existing.due_lead_days !== input.dueLeadDays) {
+      // "Manufacturer" must not overwrite the note someone wrote on it. The attributes that
+      // say what the field *means* are the exception, and only in the *setting* direction: a
+      // caller supplying a due-date opt-in, a unit or a bound is stating what the field is, so
+      // it applies to the shared definition, while omitting one never clears what the first
+      // category is already relying on.
+      //
+      // Supplying one end of a range against a definition that already holds the other can
+      // invert it, so the pair is judged on its *effective* values rather than on the input
+      // alone — otherwise reuse would be the one way past the ordering rule.
+      this.assertRangeOrdered(input.minValue ?? existing.min_value, input.maxValue ?? existing.max_value);
+      const sets: string[] = [];
+      const params: SqlValue[] = [];
+      const applyOnReuse = (column: string, incoming: SqlValue | undefined, current: SqlValue) => {
+        if (incoming != null && incoming !== current) {
+          sets.push(`${column} = ?`);
+          params.push(incoming);
+        }
+      };
+      applyOnReuse('due_lead_days', input.dueLeadDays, existing.due_lead_days);
+      applyOnReuse('unit', input.unit, existing.unit);
+      applyOnReuse('min_value', input.minValue, existing.min_value);
+      applyOnReuse('max_value', input.maxValue, existing.max_value);
+      if (sets.length > 0) {
         statements.push({
-          sql: `UPDATE field_defs SET due_lead_days = ? WHERE id = ?;`,
-          params: [input.dueLeadDays, existing.id],
+          sql: `UPDATE field_defs SET ${sets.join(', ')} WHERE id = ?;`,
+          params: [...params, existing.id],
         });
       }
       return existing.id;
     }
     const id = crypto.randomUUID();
     statements.push({
-      sql: `INSERT INTO field_defs (id, name, field_type, options, description, due_lead_days)
-            VALUES (?, ?, ?, ?, ?, ?);`,
+      sql: `INSERT INTO field_defs (id, name, field_type, options, description, due_lead_days, unit, min_value, max_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         input.name,
@@ -515,6 +543,9 @@ export class CategoryRepository extends BaseRepository {
         input.options,
         input.description ?? null,
         input.dueLeadDays ?? null,
+        input.unit ?? null,
+        input.minValue ?? null,
+        input.maxValue ?? null,
       ],
     });
     return id;
@@ -643,12 +674,16 @@ export class CategoryRepository extends BaseRepository {
     await this.requireCategory(categoryId);
     const { name, fieldType, options } = this.validateFieldInput(input);
     const dueLeadDays = this.validateDueLeadDays(input.dueLeadDays, fieldType);
+    const unit = this.validateUnit(input.unit, fieldType);
+    const minValue = this.validateNumberBound(input.minValue, fieldType, 'minimum');
+    const maxValue = this.validateNumberBound(input.maxValue, fieldType, 'maximum');
+    this.assertRangeOrdered(minValue, maxValue);
 
     // Definition creation and the category's use of it land in one transaction, so a
     // failure can never leave an orphan definition behind.
     const statements: SqlStatement[] = [];
     const defId = await this.resolveFieldDef(
-      { name, fieldType, options, description: input.description, dueLeadDays },
+      { name, fieldType, options, description: input.description, dueLeadDays, unit, minValue, maxValue },
       statements,
     );
 
@@ -742,6 +777,25 @@ export class CategoryRepository extends BaseRepository {
         defSets.push('due_lead_days = ?');
         defParams.push(null);
       }
+      // Retyping away from NUMBER takes the unit and the range with it, for exactly the same
+      // reason: the CHECK forbids either on any other type, so leaving them behind would fail
+      // the user's edit on a constraint they cannot see. Each is skipped when the caller set
+      // it in the same edit, so the explicit set below is not overwritten — and so the column
+      // never appears twice in one `SET`.
+      if (validated.fieldType !== 'NUMBER') {
+        if (existing.unit != null && input.unit === undefined) {
+          defSets.push('unit = ?');
+          defParams.push(null);
+        }
+        if (existing.minValue != null && input.minValue === undefined) {
+          defSets.push('min_value = ?');
+          defParams.push(null);
+        }
+        if (existing.maxValue != null && input.maxValue === undefined) {
+          defSets.push('max_value = ?');
+          defParams.push(null);
+        }
+      }
     }
     if (input.description !== undefined) {
       defSets.push('description = ?');
@@ -753,6 +807,36 @@ export class CategoryRepository extends BaseRepository {
       defSets.push('due_lead_days = ?');
       defParams.push(this.validateDueLeadDays(input.dueLeadDays, validated.fieldType));
     }
+    // The unit and range are validated against the *effective* type too, so setting one while
+    // retyping to Number in the same edit is accepted and setting one on any other type is
+    // refused with a readable message.
+    if (input.unit !== undefined) {
+      defSets.push('unit = ?');
+      defParams.push(this.validateUnit(input.unit, validated.fieldType));
+    }
+    if (input.minValue !== undefined) {
+      defSets.push('min_value = ?');
+      defParams.push(this.validateNumberBound(input.minValue, validated.fieldType, 'minimum'));
+    }
+    if (input.maxValue !== undefined) {
+      defSets.push('max_value = ?');
+      defParams.push(this.validateNumberBound(input.maxValue, validated.fieldType, 'maximum'));
+    }
+    // The ordering rule judges the pair the row will actually hold, not the input: either end
+    // may be left untouched by this edit, so comparing only what was supplied would let a
+    // one-sided edit invert a range whose other end the definition already defines.
+    this.assertRangeOrdered(
+      input.minValue !== undefined
+        ? input.minValue
+        : validated.fieldType === 'NUMBER'
+          ? existing.minValue
+          : null,
+      input.maxValue !== undefined
+        ? input.maxValue
+        : validated.fieldType === 'NUMBER'
+          ? existing.maxValue
+          : null,
+    );
     if (defSets.length > 0) {
       statements.push({
         sql: `UPDATE field_defs SET ${defSets.join(', ')} WHERE id = ?;`,
@@ -1011,9 +1095,13 @@ export class CategoryRepository extends BaseRepository {
         field_type: FieldType;
         options: string | null;
         description: string | null;
+        unit: string | null;
+        min_value: number | null;
+        max_value: number | null;
       }
     >(
-      `SELECT lfv.*, fd.name, fd.field_type, fd.options, fd.description
+      `SELECT lfv.*, fd.name, fd.field_type, fd.options, fd.description,
+              fd.unit, fd.min_value, fd.max_value
        FROM location_field_values lfv
        JOIN field_defs fd ON fd.id = lfv.def_id
        WHERE lfv.location_id = ?
@@ -1178,6 +1266,77 @@ export class CategoryRepository extends BaseRepository {
       );
     }
     return value;
+  }
+
+  /**
+   * Validate a `unit` against the field type it is being set on, returning the value to store
+   * (W1b). Only a `NUMBER` carries a unit, and a unit is a symbol rather than a sentence — see
+   * {@link FIELD_UNIT_MAX_LENGTH}.
+   *
+   * A blank unit folds to `null` rather than being stored as `''`, so "no unit" has exactly one
+   * spelling — the same discipline `validateFieldValue` applies to a cleared value. Reported in
+   * the app's voice here rather than left to the table CHECK, which would surface as a raw
+   * SQLite constraint failure naming no rule.
+   */
+  private validateUnit(value: string | null | undefined, fieldType: FieldType): string | null {
+    if (value == null) return null;
+    const unit = value.trim();
+    if (unit.length === 0) return null;
+    if (fieldType !== 'NUMBER') {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'Only a Number field can carry a unit. Change the field to Number first, or clear the unit.',
+      );
+    }
+    if (unit.length > FIELD_UNIT_MAX_LENGTH) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        `A unit can be at most ${FIELD_UNIT_MAX_LENGTH} characters — it is a symbol such as "mm" or "kg", not a description.`,
+      );
+    }
+    return unit;
+  }
+
+  /**
+   * Validate one end of a `NUMBER` field's range against the field type it is being set on,
+   * returning the value to store (W1c). `label` names the end for the error message.
+   *
+   * Either end may be `null` — that means *unbounded on that side*, not "unset half a setting"
+   * — so this validates each independently and {@link assertRangeOrdered} judges the pair.
+   */
+  private validateNumberBound(
+    value: number | null | undefined,
+    fieldType: FieldType,
+    label: 'minimum' | 'maximum',
+  ): number | null {
+    if (value == null) return null;
+    if (fieldType !== 'NUMBER') {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        `Only a Number field can have a ${label}. Change the field to Number first, or clear the range.`,
+      );
+    }
+    if (!Number.isFinite(value) || Math.abs(value) > FIELD_NUMBER_BOUND_LIMIT) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        `A field's ${label} must be a number between -${FIELD_NUMBER_BOUND_LIMIT} and ${FIELD_NUMBER_BOUND_LIMIT}.`,
+      );
+    }
+    return value;
+  }
+
+  /**
+   * Refuse an inverted range. A minimum above its maximum admits no value at all, so it does
+   * not describe a strict field but an unusable one — every entry would fail, with nothing on
+   * the item editor to explain why. Equal bounds are allowed: they mean "exactly this".
+   */
+  private assertRangeOrdered(minValue: number | null, maxValue: number | null): void {
+    if (minValue != null && maxValue != null && minValue > maxValue) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        `A field's minimum (${minValue}) cannot be above its maximum (${maxValue}) — no value could satisfy that range.`,
+      );
+    }
   }
 
   /** Validate a field's name and (for SELECT) non-empty options; serialise options. */

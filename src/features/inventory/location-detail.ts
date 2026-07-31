@@ -27,6 +27,12 @@ export interface LocationDetailField {
   /** The definition's name, which is the row's label. */
   readonly name: string;
   readonly fieldType: FieldType;
+  /**
+   * The definition's unit of measure for a `NUMBER` field (W1b); null when it has none. Shown
+   * beside the value here for the same reason it is on an item's card — the panel has no
+   * label-and-control pair to hang it on, so it travels with the value.
+   */
+  readonly unit: string | null;
   /** The stored value; `null` when the location holds the field but has not filled it in. */
   readonly value: string | null;
 }
@@ -43,7 +49,7 @@ export interface LocationDetailField {
 export function resolveLocationDetailFields(values: readonly LocationDetailField[]): ResolvedCardField[] {
   const out: ResolvedCardField[] = [];
   for (const field of values) {
-    const value = customFieldValue(field.fieldType, field.value);
+    const value = customFieldValue(field.fieldType, field.value, field.unit);
     if (value.kind === 'empty') continue;
     out.push({ id: field.defId, label: field.name, value });
   }

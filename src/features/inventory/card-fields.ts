@@ -196,6 +196,15 @@ export interface CardCustomField {
   readonly name: string;
   readonly fieldType: FieldType;
   readonly defaultValue: string | null;
+  /**
+   * The definition's unit of measure for a `NUMBER` field (W1b), or null when it has none.
+   *
+   * The read-only surfaces have no label-and-control pair to hang it on the way an editor
+   * does, so the unit has to travel with the *value* here — `5 V` rather than a bare `5`. The
+   * table keeps the bare field name in its header for the same reason: the cell carries the
+   * unit, so a table agrees with the cards instead of needing a second rule.
+   */
+  readonly unit: string | null;
 }
 
 /**
@@ -206,6 +215,12 @@ export interface CardCustomField {
  */
 export type CardFieldValue =
   | { readonly kind: 'text'; readonly text: string }
+  /**
+   * A number carrying a unit (W1b). A separate kind rather than a pre-joined `"5 V"` string for
+   * the same reason `money` is one: the renderer owns how the two parts look, so the unit can
+   * take the muted token beside the value it qualifies instead of being baked into it here.
+   */
+  | { readonly kind: 'measure'; readonly text: string; readonly unit: string }
   | { readonly kind: 'money'; readonly amount: number }
   | { readonly kind: 'condition'; readonly condition: Condition }
   | { readonly kind: 'tags'; readonly tags: readonly string[] }
@@ -268,7 +283,7 @@ function resolveOne(id: string, item: Item, ctx: CardFieldContext): ResolvedCard
     // line still renders (as em-dash) so cards keep a uniform height.
     if (item.categoryId !== field.categoryId) return { id, label: field.name, value: EMPTY };
     const raw = ctx.customValues?.get(customId) ?? field.defaultValue;
-    return { id, label: field.name, value: customFieldValue(field.fieldType, raw) };
+    return { id, label: field.name, value: customFieldValue(field.fieldType, raw, field.unit) };
   }
 
   switch (id) {
@@ -330,12 +345,21 @@ function quantityValue(item: Item, fmt: CardFieldFormatters): CardFieldValue {
  * Format a raw stored custom-field value by type; a blank/absent value is em-dash.
  *
  * Shared with the location detail panel (`location-detail.ts`), so a custom field reads the same
- * whether it is a fact about an item or about the place it sits in (issue #617).
+ * whether it is a fact about an item or about the place it sits in (issue #617) — including the
+ * unit a NUMBER definition carries (W1b), which is a property of the definition and so is the
+ * same in both places.
  */
-export function customFieldValue(type: FieldType, raw: string | null): CardFieldValue {
+export function customFieldValue(type: FieldType, raw: string | null, unit: string | null): CardFieldValue {
   if (raw === null || raw.trim() === '') return EMPTY;
   if (type === 'BOOLEAN') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'Yes' : 'No' };
   if (type === 'ON_OFF') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'On' : 'Off' };
+  // A NUMBER with a unit (W1b) reads as the measurement it is. The unit is only ever set on a
+  // NUMBER definition (a table CHECK enforces that), but the type is tested here too so a
+  // definition retyped in one client and not yet synced to another can't render "true mm".
+  // Truthiness rather than `!== null`: a `unit` that is absent rather than null renders the bare
+  // number instead of "5 undefined". Types alone don't guarantee it is present, because this
+  // file's tests are excluded from `tsconfig.app.json` and build the catalog by hand.
+  if (type === 'NUMBER' && unit) return { kind: 'measure', text: raw, unit };
   // An IMAGE value is an image `data:` URL — render it as a thumbnail, not its base64 text.
   // Only a value of exactly that shape becomes a `src` (see {@link isImageDataUrl}); anything
   // else is em-dash, so a stored string can never become a URL the card fetches. Tested (and

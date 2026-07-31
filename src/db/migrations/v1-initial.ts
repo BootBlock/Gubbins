@@ -9,7 +9,9 @@ import {
   DEAD_STOCK_MODES,
   FIELD_DUE_LEAD_DAYS_MAX,
   FIELD_DUE_LEAD_DAYS_MIN,
+  FIELD_NUMBER_BOUND_LIMIT,
   FIELD_TYPES,
+  FIELD_UNIT_MAX_LENGTH,
   IN_TRANSIT_LOCATION_ID,
   IN_TRANSIT_LOCATION_NAME,
   MAINTENANCE_BASES,
@@ -639,6 +641,15 @@ const baselineStatements: SqlStatement[] = [
     // key on `def_id`, never on a category's use of one, so a def-scoped flag makes the
     // alert feed a plain join, whereas a category-scoped one would miss every value
     // inherited from a location or left behind by a category change.
+    //
+    // `unit` (W1b) and `min_value`/`max_value` (W1c) sit here for the same reason and are
+    // decided by the same two facts: "Voltage" is measured in volts wherever it is used, and
+    // a torque that must fall between 8 and 12 is out of range wherever it is entered. Because
+    // values key on `def_id`, a category-scoped unit would render nothing beside a value an
+    // item inherited from a location; and because the dictionary already refuses to let one
+    // name carry two *types*, letting the unit fork per category would reintroduce exactly the
+    // ambiguity that guard exists to prevent — the same number reading as millimetres on one
+    // item and inches on another, with nothing on screen to explain why.
     sql: `
         CREATE TABLE field_defs (
           id            TEXT    PRIMARY KEY NOT NULL,
@@ -647,6 +658,9 @@ const baselineStatements: SqlStatement[] = [
           options       TEXT,                          -- JSON array for SELECT fields
           description   TEXT,                          -- optional help note shown on the control
           due_lead_days INTEGER,                       -- DATE only: days' notice; NULL = not a due date
+          unit          TEXT,                          -- NUMBER only: unit of measure; NULL = unitless
+          min_value     REAL,                          -- NUMBER only: lower bound; NULL = unbounded below
+          max_value     REAL,                          -- NUMBER only: upper bound; NULL = unbounded above
           updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (field_type IN (${fieldTypeList})),
           -- Only a DATE can be a deadline, and the notice period is bounded. The write seam
@@ -657,7 +671,34 @@ const baselineStatements: SqlStatement[] = [
             OR (field_type = 'DATE'
                 AND due_lead_days >= ${FIELD_DUE_LEAD_DAYS_MIN}
                 AND due_lead_days <= ${FIELD_DUE_LEAD_DAYS_MAX})
-          )
+          ),
+          -- Only a NUMBER carries a unit. Stored pre-trimmed and never blank, so the column
+          -- has one spelling of "no unit" (NULL) rather than two; the write seam folds a blank
+          -- to NULL and clears the column on a retype away from NUMBER, and this is the
+          -- backstop under it.
+          CHECK (
+            unit IS NULL
+            OR (field_type = 'NUMBER'
+                AND unit = trim(unit)
+                AND length(unit) BETWEEN 1 AND ${FIELD_UNIT_MAX_LENGTH})
+          ),
+          -- Only a NUMBER carries a range, and each bound is independently optional: NULL means
+          -- unbounded on that side, so "at least 0" and "at most 100" are both expressible.
+          CHECK (
+            min_value IS NULL
+            OR (field_type = 'NUMBER'
+                AND min_value >= -${FIELD_NUMBER_BOUND_LIMIT}
+                AND min_value <= ${FIELD_NUMBER_BOUND_LIMIT})
+          ),
+          CHECK (
+            max_value IS NULL
+            OR (field_type = 'NUMBER'
+                AND max_value >= -${FIELD_NUMBER_BOUND_LIMIT}
+                AND max_value <= ${FIELD_NUMBER_BOUND_LIMIT})
+          ),
+          -- An inverted range admits no value at all, so it is not a strict field but a
+          -- broken one. Equal bounds are allowed and mean "exactly this".
+          CHECK (min_value IS NULL OR max_value IS NULL OR min_value <= max_value)
         ) STRICT;
       `,
   },

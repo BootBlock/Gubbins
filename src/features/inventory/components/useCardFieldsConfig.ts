@@ -62,6 +62,7 @@ export function useCardFieldsConfig(): CardFieldsConfigBundle {
         name: f.name,
         fieldType: f.fieldType,
         defaultValue: f.defaultValue,
+        unit: f.unit,
       });
     }
     return map;

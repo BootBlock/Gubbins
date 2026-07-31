@@ -63,6 +63,9 @@ const field = (overrides: Partial<CategoryField> = {}): CategoryField => ({
   defaultValue: null,
   description: null,
   dueLeadDays: null,
+  unit: null,
+  minValue: null,
+  maxValue: null,
   position: 0,
   updatedAt: 0,
   ...overrides,
@@ -204,6 +207,9 @@ describe('CategoryManagerDialog — the add-field form assembles the input', () 
             description: null,
             options: null,
             dueLeadDays: null,
+            unit: null,
+            minValue: null,
+            maxValue: null,
           },
         },
         expect.anything(),
@@ -634,6 +640,9 @@ describe('CategoryManagerDialog — unused field definitions (#97 follow-up)', (
     fieldType: 'NUMBER',
     options: null,
     description: null,
+    unit: null,
+    minValue: null,
+    maxValue: null,
     updatedAt: 0,
     ...overrides,
   });
@@ -1083,5 +1092,172 @@ describe('CategoryManagerDialog — where the custom fields go', () => {
 
     expect(screen.getByTestId('category-hide-custom-fields')).not.toBeChecked();
     expect(screen.queryByTestId('category-field-prominence-conflict-clear')).toBeNull();
+  });
+});
+
+describe('CategoryManagerDialog — a number field’s unit and range (W1b/W1c)', () => {
+  it('offers the controls on a NUMBER field only', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'TEXT' })];
+    const view = renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.queryByTestId('field-unit-f-1')).toBeNull();
+    expect(screen.queryByTestId('field-min-f-1')).toBeNull();
+
+    h.fields = [field({ fieldType: 'NUMBER' })];
+    view.rerender(<CategoryManagerDialog open onClose={onClose} />);
+    expect(screen.getByTestId('field-unit-f-1')).toBeInTheDocument();
+    expect(screen.getByTestId('field-max-f-1')).toBeInTheDocument();
+  });
+
+  it('seeds the boxes from the stored definition', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', unit: 'V', minValue: 0, maxValue: 24 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByTestId('field-unit-f-1')).toHaveValue('V');
+    expect(screen.getByTestId('field-min-f-1')).toHaveValue('0');
+    expect(screen.getByTestId('field-max-f-1')).toHaveValue('24');
+  });
+
+  it('saves a typed unit on blur, not per keystroke', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', unit: null })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const box = screen.getByTestId('field-unit-f-1');
+    fireEvent.change(box, { target: { value: 'mm' } });
+    expect(h.updateField).not.toHaveBeenCalled();
+
+    fireEvent.blur(box);
+    expect(h.updateField).toHaveBeenCalledWith({ fieldId: 'f-1', input: { unit: 'mm' } }, expect.anything());
+  });
+
+  it('clears the unit when the box is emptied — a blank unit is “unitless”', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', unit: 'V' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const box = screen.getByTestId('field-unit-f-1');
+    fireEvent.change(box, { target: { value: '  ' } });
+    fireEvent.blur(box);
+    expect(h.updateField).toHaveBeenCalledWith({ fieldId: 'f-1', input: { unit: null } }, expect.anything());
+  });
+
+  it('sends only the end of the range that was edited', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', minValue: null, maxValue: 24 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const min = screen.getByTestId('field-min-f-1');
+    fireEvent.change(min, { target: { value: '3' } });
+    fireEvent.blur(min);
+    expect(h.updateField).toHaveBeenCalledWith({ fieldId: 'f-1', input: { minValue: 3 } }, expect.anything());
+  });
+
+  it('clears a bound when its box is emptied — blank means unbounded, not zero', () => {
+    // The opposite rule to the due-date notice period, where blank had to revert. Here the empty
+    // box has its own meaning, so coercing it to 0 would invent a floor nobody asked for.
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', minValue: 5 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const min = screen.getByTestId('field-min-f-1');
+    fireEvent.change(min, { target: { value: '' } });
+    fireEvent.blur(min);
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { minValue: null } },
+      expect.anything(),
+    );
+  });
+
+  it('reverts an un-parseable bound instead of clearing the stored one', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', minValue: 5 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const min = screen.getByTestId('field-min-f-1');
+    fireEvent.change(min, { target: { value: '-' } });
+    fireEvent.blur(min);
+    expect(h.updateField).not.toHaveBeenCalled();
+    expect(min).toHaveValue('5');
+  });
+
+  it('does not write when the blurred value is unchanged', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', unit: 'V', maxValue: 24 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.blur(screen.getByTestId('field-unit-f-1'));
+    fireEvent.blur(screen.getByTestId('field-max-f-1'));
+    expect(h.updateField).not.toHaveBeenCalled();
+  });
+
+  it('re-seats the boxes when the stored definition changes underneath them', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER', unit: 'V', maxValue: 24 })];
+    const view = renderDialog();
+    selectCategory(/Resistors/);
+
+    h.fields = [field({ fieldType: 'NUMBER', unit: 'mV', maxValue: 5000 })];
+    view.rerender(<CategoryManagerDialog open onClose={onClose} />);
+    expect(screen.getByTestId('field-unit-f-1')).toHaveValue('mV');
+    expect(screen.getByTestId('field-max-f-1')).toHaveValue('5000');
+  });
+
+  it('sends the add form’s unit and range only for a NUMBER field', async () => {
+    h.categoryRows = [category()];
+    h.fields = [];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Number' }));
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Voltage' } });
+    fireEvent.change(screen.getByTestId('add-field-unit'), { target: { value: 'V' } });
+    fireEvent.change(screen.getByTestId('add-field-max'), { target: { value: '24' } });
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({ unit: 'V', minValue: null, maxValue: 24 }),
+        }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('retracts a typed unit and range when the type moves off Number', async () => {
+    // Otherwise the submit would silently discard what the user typed, with the boxes gone and
+    // nothing to say the values went with them.
+    h.categoryRows = [category()];
+    h.fields = [];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Number' }));
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Voltage' } });
+    fireEvent.change(screen.getByTestId('add-field-unit'), { target: { value: 'V' } });
+
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Text' }));
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({ unit: null, minValue: null, maxValue: null }),
+        }),
+        expect.anything(),
+      ),
+    );
   });
 });
