@@ -68,6 +68,7 @@ const field = (overrides: Partial<CategoryField> = {}): CategoryField => ({
   unit: null,
   minValue: null,
   maxValue: null,
+  prominence: null,
   position: 0,
   updatedAt: 0,
   ...overrides,
@@ -213,6 +214,7 @@ describe('CategoryManagerDialog — the add-field form assembles the input', () 
             unit: null,
             minValue: null,
             maxValue: null,
+            prominence: null,
           },
         },
         expect.anything(),
@@ -1259,6 +1261,111 @@ describe('CategoryManagerDialog — a number field’s unit and range (W1b/W1c)'
         expect.objectContaining({
           input: expect.objectContaining({ unit: null, minValue: null, maxValue: null }),
         }),
+        expect.anything(),
+      ),
+    );
+  });
+});
+
+/**
+ * W1d - the per-definition key-field mark. Offered on every field type, unlike the due-date
+ * opt-in and the number settings, and saved straight onto the shared dictionary definition.
+ */
+describe('CategoryManagerDialog - the key-field mark (W1d)', () => {
+  it('offers the tick on every field type, not just one', () => {
+    h.categoryRows = [category()];
+    for (const fieldType of ['TEXT', 'DATE', 'NUMBER', 'SELECT'] as const) {
+      h.fields = [field({ fieldType, options: fieldType === 'SELECT' ? ['A'] : null })];
+      const view = renderDialog();
+      selectCategory(/Resistors/);
+      expect(screen.getByTestId('field-key-toggle-f-1')).toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it('reflects the stored rank, reading an unrecognised mode as unticked', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ prominence: 'key' })];
+    const view = renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByTestId('field-key-toggle-f-1')).toBeChecked();
+
+    h.fields = [field({ prominence: 'trailing' })];
+    view.rerender(<CategoryManagerDialog open onClose={onClose} />);
+    expect(screen.getByTestId('field-key-toggle-f-1')).not.toBeChecked();
+  });
+
+  it('saves the mark immediately - a tick has no half-typed state to race the refetch', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ prominence: null })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByTestId('field-key-toggle-f-1'));
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { prominence: 'key' } },
+      expect.anything(),
+    );
+  });
+
+  it("clears the mark as 'default' rather than as a bare null", () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ prominence: 'key' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByTestId('field-key-toggle-f-1'));
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { prominence: 'default' } },
+      expect.anything(),
+    );
+  });
+
+  it('adds a new field marked, and sends null rather than a demotion when unticked', async () => {
+    // `null` on the add path matters: the name may resolve to a definition another category
+    // already marked, and an omission leaves that alone where 'default' would clear it.
+    h.categoryRows = [category()];
+    h.fields = [];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Movement' } });
+    fireEvent.click(addFieldButton());
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ prominence: null }) }),
+        expect.anything(),
+      ),
+    );
+
+    h.addField.mockClear();
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Reference' } });
+    fireEvent.click(screen.getByTestId('add-field-key'));
+    fireEvent.click(addFieldButton());
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ prominence: 'key' }) }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('keeps the mark across a type change, because it is not gated on the type', async () => {
+    // The contrast with the unit and the range, which the type Select deliberately clears.
+    h.categoryRows = [category()];
+    h.fields = [];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Movement' } });
+    fireEvent.click(screen.getByTestId('add-field-key'));
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Date' }));
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ prominence: 'key' }) }),
         expect.anything(),
       ),
     );

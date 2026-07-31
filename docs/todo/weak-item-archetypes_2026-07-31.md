@@ -1,7 +1,8 @@
 # What Gubbins is weakest at tracking — archetype audit (2026-07-31)
 
-> **Status:** 🟢 ACTIVE — research complete. `W1a` (custom-field due dates) and `W1b`/`W1c` (a
-> number's unit and range) have shipped; `W1d`, the deferred `W1e`, and `W2`–`W10` remain open.
+> **Status:** 🟢 ACTIVE — research complete. `W1a` (custom-field due dates), `W1b`/`W1c` (a
+> number's unit and range) and `W1d` (the key-field rank) have shipped; the deferred `W1e` and
+> `W2`–`W10` remain open.
 
 Answers issue [#621](https://github.com/BootBlock/Gubbins/issues/621): *which items, or types of
 item, is Gubbins weakest at tracking or managing?*
@@ -307,7 +308,7 @@ says so), so it belongs here as context, not as a gap.
 
 Ranked by *(breadth of archetypes unlocked) ÷ (cost)*. Deliberately weighted toward fixing a **cause**
 rather than adding a domain's fields, because the preset library already proves that adding fields
-does not make the app track anything better. `W1a`–`W1c` have shipped; everything else is open.
+does not make the app track anything better. `W1a`–`W1d` have shipped; `W1e` and `W2`–`W10` are open.
 
 - **`W1` — Make custom fields live.** The single highest-leverage change in the list: give
   `field_defs` a unit, a min/max, and a "surface this" flag, and teach the alert/agenda feeds to
@@ -315,7 +316,8 @@ does not make the app track anything better. `W1a`–`W1c` have shipped; everyth
   dates, substrate-decay dates and curing windows **at once**, and turns the existing 72 presets
   from decoration into behaviour. Addresses C1. Note the split: the "surface this" half is adjacent
   to issue [#619](https://github.com/BootBlock/Gubbins/issues/619) (which is purely presentational),
-  but the load-bearing half — feeds reading `DATE` fields — is untouched by it.
+  but the load-bearing half — feeds reading `DATE` fields — is untouched by it. All four have now
+  shipped; only `W1e` (precision) remains.
   - **`W1a` — DATE fields as due dates. ✅ Shipped** (see [§4.1](#41-w1a--the-due-date-opt-in-shipped)).
   - **`W1b` — a per-definition unit** on `field_defs`, so a `NUMBER` field carries one.
     ✅ **Shipped** (see [§4.2](#42-w1bw1c--a-numbers-unit-and-range-shipped)).
@@ -326,11 +328,12 @@ does not make the app track anything better. `W1a`–`W1c` have shipped; everyth
   - **`W1e` — decimal precision on a `NUMBER` definition.** Open, split out of `W1c`. Not a third
     bound of the same kind: min/max are pure *constraints*, while precision is half constraint
     ("at most 2 decimal places") and half *display format* ("show `5.5` as `5.50`"). See §4.2.
-  - **`W1d` — the "surface this" prominence flag.** Open, and deliberately last. #619 has since
-    shipped, so its adjacency is now concrete: a *category* chooses where its whole field set sits
-    (`categories.field_prominence`). That is **not** `W1d`, which is per **definition** and would
-    let one field outrank its siblings — but it is the surface `W1d` would hang beside, so design
-    the two together rather than ahead of each other.
+  - **`W1d` — the "surface this" prominence flag.** ✅ **Shipped** as the **key-field** rank
+    (see [§4.3](#43-w1d--the-key-field-rank-shipped)). Designed against #619 rather than beside it:
+    that setting is per *category* and chooses **which tab** the whole field set sits in, while this
+    one is per *definition* and chooses **which member leads** the set. §4.3 records why they cannot
+    fight, and why an ordering rank belongs on `field_defs` even though ordering is otherwise
+    category policy.
 - **`W2` — A repeating (table-valued) field.** Removes the `UNIQUE (item_id, def_id)` ceiling for
   opted-in definitions. Unlocks telemetry logs, per-position measurements, prior owners, lineage
   notes — every archetype whose data is a *series*. Addresses C1. Larger and schema-visible; do
@@ -534,6 +537,126 @@ every number was a legal setting.
   describe the pre-`W1a` shape, so a consumer cannot see a unit, a range or the due-date opt-in.
   Still one change, now covering three attributes, gated by the OpenAPI and field-vocabulary drift
   tests.
+
+### 4.3 `W1d` — the key-field rank (shipped)
+
+A custom-field definition can be marked a **key field**, which lifts it to the **front** of every
+field set it appears in: an item's custom fields, a location's values, and the category's own field
+list. Optional, applies to any field type, and a definition with it unset behaves exactly as before.
+
+**How it composes with #619, stated rather than discovered later.** The two settings are the
+question this task existed to answer, because a second knob that silently fights the first would
+have been worse than no knob at all. They do not fight, because they answer different questions and
+neither can do the other's job:
+
+| | subject | question | reach |
+| --- | --- | --- | --- |
+| `categories.field_prominence` (#619) | a **category** | *where does the whole set sit?* | the item dialog's tab rail |
+| `field_defs.prominence` (`W1d`) | a **definition** | *which member leads the set?* | every surface that renders a field set |
+
+Three consequences fall out, and all three are enforced rather than merely intended:
+
+- **`W1d` never moves a tab, and #619 never reorders within the set.** Each is the only answer to
+  its own question. #619 says so itself — "this only moves them" — and the rank is applied by the
+  *read* that produces the set, long before a tab exists to put it in.
+- **A key field therefore leads identically in all three of #619's modes.** Inside a category that
+  broke its fields out into their own tab, the key field leads *that tab*; inside a default
+  category it leads the section in Classification. The mode chooses the room, the rank chooses the
+  seat, and neither answer changes the other.
+- **The one place they meet needs no rule of its own.** When the custom-fields section is hidden —
+  the device's module is off, or the category hides it and the item holds nothing — no fields are
+  rendered at all, so there is nothing to lead. `W1d` inherits #619's "never outrank a hiding
+  decision" invariant for free instead of restating it, and can never resurrect a hidden field.
+
+**Where it lives: `field_defs`, and this time the counter-argument was genuinely strong.** Unlike
+`W1a` and `W1b`/`W1c`, "how prominent is this field" *looks* like category policy, and there is a
+column to prove it: `category_fields.position` already exists, beside `is_required` and
+`default_value`, and it is an ordering. Three things settle it against that reading rather than by
+precedent:
+
+1. **`position` cannot reach half the surfaces a rank must reach.** A **location's** field values
+   have no `category_fields` row at all — `listLocationFieldValues` can only order by name — and a
+   location feeds every item that inherits from it. An item's *effective* field set likewise carries
+   values inherited from a location or left behind by a change of category, and those key on
+   `def_id`. This is the same storage fact that decided `W1a` and `W1b`/`W1c`, but it bites harder
+   here: for a location it is not "the category-scoped answer misses a case", it is "there is no
+   category-scoped answer at all".
+2. **The two say different things, so neither replaces the other.** `position` is an *arrangement* —
+   where this category chose to put its fields in its own list. The rank is a claim about the field:
+   a *Serial number* matters more than a *Notes* wherever either appears. The rank therefore sorts
+   *ahead* of `position` rather than replacing it, and `position` still orders within each rank.
+   (Worth noting how little is actually being conceded: `position` has **no reorder UI** today — the
+   add-field form never sends one, so every hand-added field is `position = 0` and the effective
+   order collapses to alphabetical. Only the preset library assigns real positions.)
+3. **The dictionary exists so a definition means one thing everywhere.** One name carries one type,
+   enforced, precisely so a field cannot mean two things at once. Letting importance fork per
+   category would reintroduce that — *Voltage* leading on Batteries and trailing on Chargers, with
+   nothing on screen to explain the difference.
+
+The cost is the same accepted one: marking a shared definition reorders it in every category using
+it, exactly as a rename, a retype, a unit or a range already does. The editor's hint says so.
+
+**Its shape: one nullable `TEXT` column — and, unlike all three predecessors, no CHECK.** This is
+the part that had to be decided rather than inherited. `W1a` used one nullable column because a
+boolean plus a lead time can disagree; `W1b`/`W1c` used three independently nullable columns for the
+same underlying reason. `W1d` is one column too — a rank has nothing for a separate flag to gate —
+but it parts company on the constraint:
+
+- `due_lead_days`, `min_value` and `max_value` are **behavioural**. One gates an alert, the others
+  refuse a save. A value they cannot honour must be refused at the storage boundary, so each carries
+  a table CHECK.
+- A rank is **presentational**. The worst an unrecognised value can do is fail to change a sort
+  order. So the correct failure mode is the opposite one: keep whatever a peer on a newer version
+  wrote, and narrow it at the render boundary. A CHECK would instead fail that peer's *entire sync
+  apply* over a display preference — which is exactly the reasoning `categories.field_prominence`
+  already carries. `W1d` adopts it because it is the same **kind** of setting, not because it
+  happens to sit next door.
+
+There is also **no `field_type` term**, the one place `W1d` diverges from all three predecessors: a
+unit means nothing on a `DATE` and a notice period nothing on a `NUMBER`, but *any* type can be the
+field that matters most. So nothing is cleared on a retype — and a test asserts that a retype which
+strips the unit leaves the rank alone.
+
+**Where the ranking is applied: in the read, not in each renderer.** The `ORDER BY` of the three
+reads that produce a *rendered field set* — `listFields`, `resolveItemFields`,
+`listLocationFieldValues` — gains a leading `CASE WHEN fd.prominence = 'key'` term, so the item
+editor, the category manager, the CSV export's column order, the bridge's `fieldValues` array and
+the lookup panel's bindings all inherit one canonical order and cannot drift apart. The pure
+`field-def-prominence.ts` seam owns the vocabulary (the SQL interpolates its `KEY_FIELD_PROMINENCE`
+token, so the two cannot disagree about which string means "leads") and mirrors the ordering as a
+**stable partition** — not as a second live ordering path (no render surface re-sorts) but as an
+independently-written counterpart that keeps `fieldsForCategory`'s documented contract honest, and
+that a repository test compares against a real read so the two cannot quietly disagree. Note what this made unnecessary: **no render surface changed at all.**
+
+`listAllFields` is the deliberate exception. It is a *catalog grouped by category*, not a rendered
+set — the card-field picker labels its rows "name · category" on the strength of that grouping — so
+hoisting key definitions to the front would break the grouping in order to reorder a list the user
+orders by hand anyway.
+
+**Deliberately not in scope, and why each is a rejection rather than an omission:**
+
+- **The item card, dense row and table were left alone.** They looked like the obvious home for a
+  "surface this" flag, and they are not: which fields appear there is *already* an explicit
+  per-device user preference with its own picker and its own ordering (backlog `E1`'s `cardFields`).
+  Seeding that preference's default from a definition would make the flag's effect depend on
+  whether the user had ever opened the picker — visible on one device, inert on another, with
+  nothing on screen to explain which. That is precisely the "second knob silently fighting the
+  first" this task set out to avoid, only against `E1` instead of #619.
+- **No badge marking a key field on an item.** The ordering is the whole effect, and #619 set the
+  precedent: it moves a tab and marks nothing. A badge on every key field on every item would be
+  noise in exchange for restating what the order already says. The setting explains itself where it
+  is set, in the category manager.
+- **No symmetric "sink this to the bottom" mode.** A different request from the one `W1d` answers.
+  The vocabulary is stored as text precisely so adding one later costs no column change, and the
+  render boundary already reads an unknown mode as ordinary.
+- **The preset library marks nothing.** Several presets ship a dozen fields and would benefit, but
+  seeding ranks would reorder existing users' fields on adoption. Its own change — and it pairs
+  naturally with the preset unit-renaming work `W1b` deferred.
+- **Bridge exposure.** `ITEM_FIELD_VALUE_KEYS` and `CategoryFieldDto`/`toCategoryField` still
+  describe the pre-`W1a` shape, so a consumer cannot see a rank, a unit, a range or the due-date
+  opt-in. Still one change, now covering **four** attributes, gated by the OpenAPI and
+  field-vocabulary drift tests. (The bridge does already inherit the new *order* of `fieldValues`,
+  since it reads through `resolveItemFields`.)
 
 ## 5. Defects found while surveying
 

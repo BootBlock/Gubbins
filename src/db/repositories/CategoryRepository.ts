@@ -10,6 +10,7 @@
  * the category's field count, not the 100k+ item set, so they need no pagination.
  */
 import { validateFieldValue } from '@/features/inventory/custom-fields';
+import { KEY_FIELD_PROMINENCE, serialiseFieldDefProminence } from '@/features/inventory/field-def-prominence';
 import { normaliseFieldTabLabel } from '@/features/inventory/field-prominence';
 import {
   buildAncestorChain,
@@ -99,8 +100,25 @@ function normaliseGlyph(glyph: string | null | undefined): string | null {
 const CATEGORY_FIELD_COLUMNS = `
   cf.id, cf.category_id, cf.def_id, cf.is_required, cf.default_value, cf.position, cf.updated_at,
   fd.name, fd.field_type, fd.options, fd.description, fd.due_lead_days,
-  fd.unit, fd.min_value, fd.max_value
+  fd.unit, fd.min_value, fd.max_value, fd.prominence
 `;
+
+/**
+ * The leading term of every **rendered field set**'s ordering (W1d): a key definition sorts ahead
+ * of an ordinary one, and everything else is decided by the existing terms after it.
+ *
+ * Expressed in SQL rather than left to each caller so that one read produces the canonical order
+ * for every consumer at once — the item editor, the category manager, the CSV export's column
+ * order, the bridge's `fieldValues` array and the lookup panel's bindings all inherit it without
+ * re-sorting, and therefore cannot drift apart — no render surface applies a rank of its own. The
+ * pure `orderByFieldProminence` seam is the independently-written counterpart to this term rather
+ * than a second live ordering path; a test compares the two against one real read.
+ *
+ * The comparison is against {@link KEY_FIELD_PROMINENCE} verbatim, which makes it the exact SQL
+ * counterpart of `toFieldDefProminence`: any other string — including one a peer on a newer
+ * version wrote — simply ranks as ordinary rather than erroring. Assumes the alias `fd`.
+ */
+const FIELD_PROMINENCE_RANK = `CASE WHEN fd.prominence = '${KEY_FIELD_PROMINENCE}' THEN 0 ELSE 1 END`;
 
 interface ResolvedFieldRow extends CategoryFieldRow {
   readonly stored_value: string | null;
@@ -338,13 +356,16 @@ export class CategoryRepository extends BaseRepository {
 
   // --- custom fields -------------------------------------------------------------
 
-  /** The custom-field definitions for a category, in declared order. */
+  /**
+   * The custom-field definitions for a category, in display order: key definitions first (W1d),
+   * then the category's own `position`, then name.
+   */
   async listFields(categoryId: string): Promise<CategoryField[]> {
     const rows = await this.driver.query<CategoryFieldRow>(
       `SELECT ${CATEGORY_FIELD_COLUMNS} FROM category_fields cf
        JOIN field_defs fd ON fd.id = cf.def_id
        WHERE cf.category_id = ?
-       ORDER BY cf.position ASC, fd.name COLLATE NOCASE ASC;`,
+       ORDER BY ${FIELD_PROMINENCE_RANK}, cf.position ASC, fd.name COLLATE NOCASE ASC;`,
       [categoryId],
     );
     return rows.map(rowToCategoryField);
@@ -355,6 +376,11 @@ export class CategoryRepository extends BaseRepository {
    * position (backlog E1 — the item-card field picker offers each custom field as a
    * selectable card field). Bounded by the category × field count (not the 100k+ item set),
    * so it reads the whole set like {@link listFields} — no pagination.
+   *
+   * Deliberately **not** ranked by prominence, unlike every other field read: this is a *catalog
+   * grouped by category*, not a rendered field set, and the picker labels its rows "name ·
+   * category" on the strength of that grouping. Hoisting key definitions to the front would break
+   * the grouping to reorder a list the user orders by hand anyway.
    */
   async listAllFields(): Promise<CategoryField[]> {
     const rows = await this.driver.query<CategoryFieldRow>(
@@ -489,6 +515,7 @@ export class CategoryRepository extends BaseRepository {
       unit?: string | null;
       minValue?: number | null;
       maxValue?: number | null;
+      prominence?: string | null;
     },
     statements: SqlStatement[],
   ): Promise<string> {
@@ -524,6 +551,11 @@ export class CategoryRepository extends BaseRepository {
       applyOnReuse('unit', input.unit, existing.unit);
       applyOnReuse('min_value', input.minValue, existing.min_value);
       applyOnReuse('max_value', input.maxValue, existing.max_value);
+      // Prominence follows the same set-but-never-clear rule, and for the same reason read the
+      // other way round: adding a shared field to a second category must not quietly demote it
+      // in the first. `serialiseFieldDefProminence` has already folded "ordinary" to null, so an
+      // unticked box arrives here as an omission rather than as a demotion.
+      applyOnReuse('prominence', input.prominence, existing.prominence);
       if (sets.length > 0) {
         statements.push({
           sql: `UPDATE field_defs SET ${sets.join(', ')} WHERE id = ?;`,
@@ -534,8 +566,9 @@ export class CategoryRepository extends BaseRepository {
     }
     const id = crypto.randomUUID();
     statements.push({
-      sql: `INSERT INTO field_defs (id, name, field_type, options, description, due_lead_days, unit, min_value, max_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      sql: `INSERT INTO field_defs
+              (id, name, field_type, options, description, due_lead_days, unit, min_value, max_value, prominence)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         input.name,
@@ -546,6 +579,7 @@ export class CategoryRepository extends BaseRepository {
         input.unit ?? null,
         input.minValue ?? null,
         input.maxValue ?? null,
+        input.prominence ?? null,
       ],
     });
     return id;
@@ -678,12 +712,25 @@ export class CategoryRepository extends BaseRepository {
     const minValue = this.validateNumberBound(input.minValue, fieldType, 'minimum');
     const maxValue = this.validateNumberBound(input.maxValue, fieldType, 'maximum');
     this.assertRangeOrdered(minValue, maxValue);
+    // No validation beyond canonicalisation: prominence is presentational and applies to every
+    // field type, so there is no type to check it against and no bound to clamp it to.
+    const prominence = serialiseFieldDefProminence(input.prominence);
 
     // Definition creation and the category's use of it land in one transaction, so a
     // failure can never leave an orphan definition behind.
     const statements: SqlStatement[] = [];
     const defId = await this.resolveFieldDef(
-      { name, fieldType, options, description: input.description, dueLeadDays, unit, minValue, maxValue },
+      {
+        name,
+        fieldType,
+        options,
+        description: input.description,
+        dueLeadDays,
+        unit,
+        minValue,
+        maxValue,
+        prominence,
+      },
       statements,
     );
 
@@ -822,6 +869,14 @@ export class CategoryRepository extends BaseRepository {
       defSets.push('max_value = ?');
       defParams.push(this.validateNumberBound(input.maxValue, validated.fieldType, 'maximum'));
     }
+    // Prominence is not gated on the field type and so is never cleared by a retype — any type
+    // can be the field that matters most. Canonicalised rather than validated: an unrecognised
+    // mode from a newer peer is stored verbatim and read as ordinary, exactly as the category
+    // axis does, because failing a write over a display preference is the worse outcome.
+    if (input.prominence !== undefined) {
+      defSets.push('prominence = ?');
+      defParams.push(serialiseFieldDefProminence(input.prominence));
+    }
     // The ordering rule judges the pair the row will actually hold, not the input: either end
     // may be left untouched by this edit, so comparing only what was supplied would let a
     // one-sided edit invert a range whose other end the definition already defines.
@@ -934,7 +989,7 @@ export class CategoryRepository extends BaseRepository {
          LEFT JOIN item_field_values ifv
            ON ifv.def_id = cf.def_id AND ifv.item_id = ?
          WHERE cf.category_id = (SELECT category_id FROM items WHERE id = ?)
-         ORDER BY cf.position ASC, fd.name COLLATE NOCASE ASC;`,
+         ORDER BY ${FIELD_PROMINENCE_RANK}, cf.position ASC, fd.name COLLATE NOCASE ASC;`,
         [itemId, itemId],
       ),
       this.loadInheritanceContext([itemId]),
@@ -1084,9 +1139,13 @@ export class CategoryRepository extends BaseRepository {
   // --- location field values (issue #97) -----------------------------------------
 
   /**
-   * The custom-field values a location holds, joined to their dictionary definitions and
-   * ordered by field name. Includes non-inheritable rows: the location's editor shows
-   * every value it has set, with inheritability as a per-row toggle.
+   * The custom-field values a location holds, joined to their dictionary definitions: key
+   * definitions first (W1d), then field name. Includes non-inheritable rows: the location's
+   * editor shows every value it has set, with inheritability as a per-row toggle.
+   *
+   * A location's values have no `position` of their own — they belong to no category — so the
+   * prominence rank is the *only* axis that can lift one of them above alphabetical order. That
+   * is a large part of why the rank lives on the definition rather than beside a category's policy.
    */
   async listLocationFieldValues(locationId: string): Promise<LocationFieldValue[]> {
     const rows = await this.driver.query<
@@ -1098,14 +1157,15 @@ export class CategoryRepository extends BaseRepository {
         unit: string | null;
         min_value: number | null;
         max_value: number | null;
+        prominence: string | null;
       }
     >(
       `SELECT lfv.*, fd.name, fd.field_type, fd.options, fd.description,
-              fd.unit, fd.min_value, fd.max_value
+              fd.unit, fd.min_value, fd.max_value, fd.prominence
        FROM location_field_values lfv
        JOIN field_defs fd ON fd.id = lfv.def_id
        WHERE lfv.location_id = ?
-       ORDER BY fd.name COLLATE NOCASE ASC;`,
+       ORDER BY ${FIELD_PROMINENCE_RANK}, fd.name COLLATE NOCASE ASC;`,
       [locationId],
     );
     return rows.map(rowToLocationFieldValue);

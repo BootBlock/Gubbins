@@ -3,6 +3,7 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { DbError } from '@/db/errors';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
+import { fieldsForCategory } from '@/features/inventory/custom-fields';
 import { MAX_FIELD_TAB_LABEL_LENGTH } from '@/features/inventory/field-prominence';
 import { CategoryRepository } from './CategoryRepository';
 import { ItemRepository } from './ItemRepository';
@@ -898,6 +899,198 @@ describe('CategoryRepository', () => {
       await expect(
         categories.setLocationFieldValue(shelf.id, { defId: f.defId, value: '30', isInheritable: true }),
       ).rejects.toThrow(/Voltage must be at most 24/);
+    });
+  });
+
+  /**
+   * W1d - the per-definition **key-field** rank. Unlike the three settings above it applies to
+   * every field type, carries no CHECK, and is never cleared by a retype; what it does is lift the
+   * field to the front of every *rendered* field set, leaving `category_fields.position` to order
+   * within each rank.
+   */
+  describe('a definition key-field rank (W1d)', () => {
+    it('defaults to null - an ordinary field', async () => {
+      const c = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(c.id, { name: 'Voltage', fieldType: 'NUMBER' });
+      expect(f.prominence).toBeNull();
+      expect((await categories.listFieldDefs())[0]!.prominence).toBeNull();
+    });
+
+    it('round-trips through add and list', async () => {
+      const c = await categories.create({ name: 'Batteries' });
+      await categories.addField(c.id, { name: 'Voltage', fieldType: 'NUMBER', prominence: 'key' });
+      expect((await categories.listFields(c.id))[0]!.prominence).toBe('key');
+    });
+
+    it('stores default, blank and null identically, as NULL', async () => {
+      const c = await categories.create({ name: 'Batteries' });
+      const a = await categories.addField(c.id, { name: 'A', fieldType: 'TEXT', prominence: 'default' });
+      const b = await categories.addField(c.id, { name: 'B', fieldType: 'TEXT', prominence: '  ' });
+      const d = await categories.addField(c.id, { name: 'D', fieldType: 'TEXT', prominence: null });
+      expect([a.prominence, b.prominence, d.prominence]).toEqual([null, null, null]);
+    });
+
+    it('is accepted on every field type, unlike a unit or a notice period', async () => {
+      const c = await categories.create({ name: 'Mixed' });
+      for (const [name, fieldType] of [
+        ['Note', 'TEXT'],
+        ['Bought', 'DATE'],
+        ['Volts', 'NUMBER'],
+        ['Grade', 'SELECT'],
+      ] as const) {
+        const f = await categories.addField(c.id, {
+          name,
+          fieldType,
+          options: fieldType === 'SELECT' ? ['A', 'B'] : null,
+          prominence: 'key',
+        });
+        expect(f.prominence).toBe('key');
+      }
+    });
+
+    it('keeps a mode this build does not recognise, rather than refusing the write', async () => {
+      // The mirror of the CHECKs above, and deliberately the opposite outcome: a rank is
+      // presentational, so refusing an unknown one would fail a newer peer's whole sync apply
+      // over a display preference.
+      const c = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(c.id, {
+        name: 'Voltage',
+        fieldType: 'NUMBER',
+        prominence: 'trailing',
+      });
+      expect(f.prominence).toBe('trailing');
+    });
+
+    it('survives a retype, unlike the unit and the range', async () => {
+      const c = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(c.id, {
+        name: 'Voltage',
+        fieldType: 'NUMBER',
+        unit: 'V',
+        prominence: 'key',
+      });
+      const updated = await categories.updateField(f.id, { fieldType: 'TEXT' });
+      expect(updated.unit).toBeNull();
+      expect(updated.prominence).toBe('key');
+    });
+
+    it('is cleared by an explicit update and set by another', async () => {
+      const c = await categories.create({ name: 'Batteries' });
+      const f = await categories.addField(c.id, { name: 'Voltage', fieldType: 'NUMBER' });
+      expect((await categories.updateField(f.id, { prominence: 'key' })).prominence).toBe('key');
+      expect((await categories.updateField(f.id, { prominence: 'default' })).prominence).toBeNull();
+      expect((await categories.updateField(f.id, { prominence: 'key' })).prominence).toBe('key');
+      expect((await categories.updateField(f.id, { prominence: null })).prominence).toBeNull();
+    });
+
+    it('reaches every category using the definition, because it belongs to the definition', async () => {
+      const tools = await categories.create({ name: 'Tools' });
+      const toys = await categories.create({ name: 'Toys' });
+      const a = await categories.addField(tools.id, { name: 'Maker', fieldType: 'TEXT' });
+      await categories.addField(toys.id, { name: 'Maker', fieldType: 'TEXT' });
+      await categories.updateField(a.id, { prominence: 'key' });
+      expect((await categories.listFields(toys.id))[0]!.prominence).toBe('key');
+    });
+
+    it('applies on reuse but is never cleared by omission', async () => {
+      // Adding a shared field to a second category must not silently demote it in the first.
+      const tools = await categories.create({ name: 'Tools' });
+      const toys = await categories.create({ name: 'Toys' });
+      const shed = await categories.create({ name: 'Shed' });
+      await categories.addField(tools.id, { name: 'Maker', fieldType: 'TEXT' });
+      await categories.addField(toys.id, { name: 'Maker', fieldType: 'TEXT', prominence: 'key' });
+      expect((await categories.listFields(tools.id))[0]!.prominence).toBe('key');
+      await categories.addField(shed.id, { name: 'Maker', fieldType: 'TEXT' });
+      expect((await categories.listFields(tools.id))[0]!.prominence).toBe('key');
+    });
+
+    it('leads the field set, with position and name still ordering within each rank', async () => {
+      const c = await categories.create({ name: 'Watches' });
+      await categories.addField(c.id, { name: 'Bracelet', fieldType: 'TEXT', position: 0 });
+      await categories.addField(c.id, {
+        name: 'Movement',
+        fieldType: 'TEXT',
+        position: 1,
+        prominence: 'key',
+      });
+      await categories.addField(c.id, {
+        name: 'Reference',
+        fieldType: 'TEXT',
+        position: 2,
+        prominence: 'key',
+      });
+      await categories.addField(c.id, { name: 'Anti-magnetic', fieldType: 'TEXT', position: 3 });
+
+      const names = (await categories.listFields(c.id)).map((f) => f.name);
+      // The two key fields lead in *position* order - the rank is a coarser key layered over the
+      // category's own arrangement, not a replacement for it.
+      expect(names).toEqual(['Movement', 'Reference', 'Bracelet', 'Anti-magnetic']);
+      // The pure seam mirrors the SQL exactly: same input set, same answer.
+      expect(fieldsForCategory(await categories.listAllFields(), c.id).map((f) => f.name)).toEqual(names);
+    });
+
+    it('leads an item resolved fields too, so the editor and the read agree', async () => {
+      const c = await categories.create({ name: 'Watches' });
+      await categories.addField(c.id, { name: 'Bracelet', fieldType: 'TEXT' });
+      await categories.addField(c.id, { name: 'Movement', fieldType: 'TEXT', prominence: 'key' });
+      const item = await items.create({ name: 'Diver', categoryId: c.id });
+      expect((await categories.resolveItemFields(item.id)).map((f) => f.name)).toEqual([
+        'Movement',
+        'Bracelet',
+      ]);
+    });
+
+    it('leads a location values, which have no position axis of their own', async () => {
+      // The specific reason the rank sits on the definition: a location's field values belong to
+      // no category, so alphabetical is otherwise the only order available to them.
+      const c = await categories.create({ name: 'Watches' });
+      await categories.addField(c.id, { name: 'Bracelet', fieldType: 'TEXT' });
+      const movement = await categories.addField(c.id, {
+        name: 'Movement',
+        fieldType: 'TEXT',
+        prominence: 'key',
+      });
+      const bracelet = (await categories.listFields(c.id)).find((f) => f.name === 'Bracelet')!;
+      const shelf = await new LocationRepository(driver).create({ name: 'Shelf' });
+      await categories.setLocationFieldValue(shelf.id, { defId: bracelet.defId, value: 'Steel' });
+      await categories.setLocationFieldValue(shelf.id, { defId: movement.defId, value: 'Automatic' });
+
+      expect((await categories.listLocationFieldValues(shelf.id)).map((v) => v.name)).toEqual([
+        'Movement',
+        'Bracelet',
+      ]);
+    });
+
+    it('ranks an unrecognised mode as ordinary, matching the render boundary', async () => {
+      const c = await categories.create({ name: 'Watches' });
+      await categories.addField(c.id, { name: 'Bracelet', fieldType: 'TEXT' });
+      await categories.addField(c.id, { name: 'Movement', fieldType: 'TEXT', prominence: 'trailing' });
+      expect((await categories.listFields(c.id)).map((f) => f.name)).toEqual(['Bracelet', 'Movement']);
+    });
+
+    it('leaves the card-field catalog grouped by category rather than ranking it', async () => {
+      // `listAllFields` is a catalog, not a rendered set: the picker labels its rows
+      // "name - category" on the strength of that grouping, so the rank must not break it.
+      const a = await categories.create({ name: 'AAA' });
+      const b = await categories.create({ name: 'BBB' });
+      await categories.addField(a.id, { name: 'Solo', fieldType: 'TEXT' });
+      await categories.addField(b.id, { name: 'Plain', fieldType: 'TEXT', position: 0 });
+      await categories.addField(b.id, {
+        name: 'Leading',
+        fieldType: 'TEXT',
+        position: 1,
+        prominence: 'key',
+      });
+      const all = await categories.listAllFields();
+
+      // Grouping intact: each category's rows are contiguous. Asserted *without* naming which
+      // category id comes first — the ids are UUIDs, so an expectation derived from the same key
+      // the read sorts by could not tell a rank leak from the other coin flip.
+      const runs = all.map((f) => f.categoryId).filter((id, i, ids) => id !== ids[i - 1]);
+      expect(new Set(runs).size).toBe(runs.length);
+      // And inside the category that holds one, the key field has *not* been hoisted: `position`
+      // still decides. This is the assertion that fails if the rank ever reaches this read.
+      expect(all.filter((f) => f.categoryId === b.id).map((f) => f.name)).toEqual(['Plain', 'Leading']);
     });
   });
 });

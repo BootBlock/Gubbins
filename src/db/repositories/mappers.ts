@@ -614,6 +614,7 @@ export function rowToCategoryField(row: CategoryFieldRow): CategoryField {
     unit: row.unit,
     minValue: row.min_value,
     maxValue: row.max_value,
+    prominence: row.prominence,
     position: row.position,
     updatedAt: row.updated_at,
   };
@@ -631,6 +632,7 @@ export function rowToFieldDef(row: FieldDefRow): FieldDef {
     unit: row.unit,
     minValue: row.min_value,
     maxValue: row.max_value,
+    prominence: row.prominence,
     updatedAt: row.updated_at,
   };
 }
@@ -666,6 +668,7 @@ export function rowToLocationFieldValue(
     readonly unit: string | null;
     readonly min_value: number | null;
     readonly max_value: number | null;
+    readonly prominence: string | null;
   },
 ): LocationFieldValue {
   return {
@@ -679,6 +682,7 @@ export function rowToLocationFieldValue(
     unit: row.unit,
     minValue: row.min_value,
     maxValue: row.max_value,
+    prominence: row.prominence,
     value: row.value,
     isInheritable: row.is_inheritable === 1,
     updatedAt: row.updated_at,
