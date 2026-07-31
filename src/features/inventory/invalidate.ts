@@ -35,6 +35,28 @@ export function invalidateItems(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.itemAttention() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
   void client.invalidateQueries({ queryKey: agendaKeys.all });
+  // Named rather than delegated to `invalidateFieldDueDates`, which would sweep the agenda
+  // prefix a second time: the alert-centre due-date feed is the only part not already covered
+  // by the four above. It is a *sibling* of `items()`, not a child, so the prefix misses it.
+  void client.invalidateQueries({ queryKey: inventoryKeys.fieldDueDates() });
+}
+
+/**
+ * Refresh the opted-in custom-field due-date feeds (W1a) — the alert centre's `field-due` lane
+ * and its Upcoming-agenda twin.
+ *
+ * Its own helper because the writes that move it are not the ones that move the item row: an
+ * item's custom-field value, a *location's* inheritable value (which reaches every item beneath
+ * it), and a definition's due-date opt-in all change what the lane reports without touching
+ * `items` at all. Those call sites live in `features/inventory/categories.ts`; naming the sweep
+ * once here is what stops one of them being missed — the shape issue #374 caught on the agenda.
+ *
+ * The feed's key sits under `inventoryKeys.all` rather than `items()`, exactly like the warranty
+ * feed, so it is deliberately *not* carried by the `items()` prefix and must be swept by name.
+ */
+export function invalidateFieldDueDates(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: inventoryKeys.fieldDueDates() });
+  void client.invalidateQueries({ queryKey: agendaKeys.all });
 }
 
 /**

@@ -225,6 +225,9 @@ export {
   HandCoins as CheckoutIcon,
   Undo2 as CheckInIcon,
   CalendarClock as DueDateIcon,
+  // A custom DATE field the user has nominated as a deadline (W1a) — distinct from the
+  // agenda's own CalendarClock so a lane's glyph never doubles as its page's.
+  CalendarDays as FieldDueIcon,
   CalendarSync as RenewIcon,
   CalendarRange as BookingIcon,
   Printer as PrintIcon,

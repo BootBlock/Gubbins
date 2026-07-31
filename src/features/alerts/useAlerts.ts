@@ -1,12 +1,13 @@
 /**
  * useAlerts — data hook for the alert centre (Phase 68, spec §3).
  *
- * Fetches the four alert source feeds via existing repository hooks and runs
+ * Fetches the five alert source feeds via existing repository hooks and runs
  * `buildAlerts` + `applyDismissals` to produce a ready-to-render `Alert[]`.
  * Reuses the hooks wired in Phase 9 (`useLowStockItems`, `useExpiringItems`,
  * `useDueMaintenance`) so no new repository SQL is introduced except for the
  * warranty lane (`listWarrantyExpiring`, added to feeds.ts as the only new
- * SQL query genuinely required — no existing method covered warranty expiry).
+ * SQL query genuinely required — no existing method covered warranty expiry)
+ * and the custom-field due-date lane (`listFieldDueDates`, W1a).
  */
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -16,6 +17,7 @@ import { useLowStockItems, useExpiringItems, useDueMaintenance } from '@/feature
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { WARRANTY_EXPIRING_SOON_DAYS } from '@/features/inventory/asset-lifecycle';
+import { readAllPages } from '@/lib/read-all-pages';
 import {
   buildAlerts,
   applyDismissals,
@@ -35,12 +37,17 @@ import { nowMs } from '@/lib/clock';
  *   - `allAlerts`  — all alerts before dismissal filtering (for the badge count).
  *   - `isLoading`  — true while any source query is still loading.
  *   - `isError`    — true when any source query errored.
+ *   - `fieldDueTruncated` — true when the custom-field due-date read hit its ceiling, so that
+ *     lane is showing a prefix rather than the whole set. Surfaced rather than swallowed: a
+ *     feed that quietly stops at a page boundary reads as "that's everything" when it isn't
+ *     (issues #606/#607).
  */
 export function useAlerts(): {
   readonly alerts: Alert[];
   readonly allAlerts: Alert[];
   readonly isLoading: boolean;
   readonly isError: boolean;
+  readonly fieldDueTruncated: boolean;
 } {
   const now = nowMs();
 
@@ -64,6 +71,7 @@ export function useAlerts(): {
   const perishablesOn = enabled.has('perishables');
   const maintenanceOn = enabled.has('maintenance');
   const warrantyOn = enabled.has('warranty');
+  const customFieldsOn = enabled.has('custom-fields');
 
   const lowStockQuery = useLowStockItems({ qtyThreshold, gaugePercent });
   const expiringQuery = useExpiringItems(expirySoonWindowDays, { enabled: perishablesOn });
@@ -75,14 +83,35 @@ export function useAlerts(): {
     enabled: warrantyOn,
   });
 
+  /**
+   * Opted-in custom-field due dates (W1a). Unlike the four lanes above this walks **every**
+   * page rather than reading one and calling it the feed: the number of items carrying a due
+   * date is bounded by what the user has defined, not by a page size, and a lane that stopped
+   * at row 100 would show a short list with nothing saying so. `readAllPages` reports its own
+   * ceiling instead, which the screen surfaces (issues #606/#607).
+   *
+   * The repository applies each definition's own lead time, so this asks for no horizon: the
+   * feed is exactly "the dates that are due or overdue by their owner's rules".
+   */
+  const fieldDueQuery = useQuery({
+    queryKey: inventoryKeys.fieldDueDatesWithin(null),
+    queryFn: () => readAllPages((page) => getItemRepository().listFieldDueDates(now, page)),
+    enabled: customFieldsOn,
+  });
+
   const isLoading =
     lowStockQuery.isLoading ||
     expiringQuery.isLoading ||
     maintenanceDueQuery.isLoading ||
-    warrantyQuery.isLoading;
+    warrantyQuery.isLoading ||
+    fieldDueQuery.isLoading;
 
   const isError =
-    lowStockQuery.isError || expiringQuery.isError || maintenanceDueQuery.isError || warrantyQuery.isError;
+    lowStockQuery.isError ||
+    expiringQuery.isError ||
+    maintenanceDueQuery.isError ||
+    warrantyQuery.isError ||
+    fieldDueQuery.isError;
 
   // --- Build alert sources from query data ---
 
@@ -125,6 +154,17 @@ export function useAlerts(): {
           depreciationMonths: item.depreciationMonths,
         }))
       : [],
+
+    fieldDue: customFieldsOn
+      ? (fieldDueQuery.data?.rows ?? []).map((row) => ({
+          itemId: row.itemId,
+          itemName: row.itemName,
+          defId: row.defId,
+          fieldName: row.fieldName,
+          leadDays: row.leadDays,
+          dueAt: row.dueAt,
+        }))
+      : [],
   };
 
   // --- Dismissals ---
@@ -151,5 +191,9 @@ export function useAlerts(): {
     if (pruned) store.replace(pruned);
   }, [settled, liveIdKey]);
 
-  return { alerts, allAlerts, isLoading, isError };
+  // Only meaningful while the lane is on and has actually loaded; a disabled or still-loading
+  // lane is not "truncated", it simply has nothing to say yet.
+  const fieldDueTruncated = customFieldsOn && (fieldDueQuery.data?.truncated ?? false);
+
+  return { alerts, allAlerts, isLoading, isError, fieldDueTruncated };
 }

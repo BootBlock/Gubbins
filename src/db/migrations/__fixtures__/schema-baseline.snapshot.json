@@ -539,7 +539,7 @@
       "type": "table",
       "name": "field_defs",
       "tbl_name": "field_defs",
-      "sql": "CREATE TABLE field_defs (\n          id          TEXT    PRIMARY KEY NOT NULL,\n          name        TEXT    NOT NULL,\n          field_type  TEXT    NOT NULL,\n          options     TEXT,                            -- JSON array for SELECT fields\n          description TEXT,                            -- optional help note shown on the control\n          updated_at  INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (field_type IN ('TEXT', 'LONG_TEXT', 'URL', 'NUMBER', 'RATING', 'BOOLEAN', 'ON_OFF', 'DATE', 'SELECT', 'FILE', 'IMAGE'))\n        ) STRICT"
+      "sql": "CREATE TABLE field_defs (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          name          TEXT    NOT NULL,\n          field_type    TEXT    NOT NULL,\n          options       TEXT,                          -- JSON array for SELECT fields\n          description   TEXT,                          -- optional help note shown on the control\n          due_lead_days INTEGER,                       -- DATE only: days' notice; NULL = not a due date\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (field_type IN ('TEXT', 'LONG_TEXT', 'URL', 'NUMBER', 'RATING', 'BOOLEAN', 'ON_OFF', 'DATE', 'SELECT', 'FILE', 'IMAGE')),\n          -- Only a DATE can be a deadline, and the notice period is bounded. The write seam\n          -- clears the value when a field is retyped away from DATE so the user gets a clean\n          -- outcome; this CHECK is the backstop under it (and under sync and restore).\n          CHECK (\n            due_lead_days IS NULL\n            OR (field_type = 'DATE'\n                AND due_lead_days >= 0\n                AND due_lead_days <= 365)\n          )\n        ) STRICT"
     },
     {
       "type": "table",
@@ -2136,6 +2136,14 @@
         },
         {
           "cid": 5,
+          "name": "due_lead_days",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,

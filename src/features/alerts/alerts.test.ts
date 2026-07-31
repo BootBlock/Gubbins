@@ -1,7 +1,7 @@
 /**
  * Unit tests for the alert-centre pure seam (Phase 68, spec §3).
  *
- * All four lanes are tested independently. The warranty lane is also tested with
+ * All five lanes are tested independently. The warranty lane is also tested with
  * the Phase-66 `warrantyExpiresAt` field absent/null (gate check). Dismissal
  * filtering, grouping, severity ordering, and `dueAt` ordering are all covered.
  * No DB access, no side-effects — `now` is always injected.
@@ -21,7 +21,9 @@ import {
   type ExpirySource,
   type MaintenanceDueSource,
   type WarrantySource,
+  type FieldDueSource,
 } from './alerts';
+import { startOfLocalDay } from '@/lib/calendar-days';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,6 +39,7 @@ const EMPTY: AlertSources = {
   expiring: [],
   maintenanceDue: [],
   warrantyItems: [],
+  fieldDue: [],
 };
 
 function sources(overrides: Partial<AlertSources>): AlertSources {
@@ -489,5 +492,88 @@ describe('maintenanceDueAtMs', () => {
 describe('buildAlerts — empty sources', () => {
   it('returns an empty array when all sources are empty', () => {
     expect(buildAlerts(EMPTY, NOW)).toHaveLength(0);
+  });
+});
+
+/**
+ * The custom-field due-date lane (W1a) — what makes a user-defined `DATE` field act at all.
+ *
+ * The repository already narrows the read to opted-in definitions inside their own lead time,
+ * so what matters here is that the seam **re-grades** rather than trusting that: the feed is a
+ * cached page that may be minutes old, and a date pushed out of its window in the meantime must
+ * stop alerting without waiting for a refetch.
+ */
+describe('buildAlerts — custom-field due-date lane (W1a)', () => {
+  /** The stored midnight-UTC instant of the calendar day `offset` days from NOW's day. */
+  const storedDay = (offset: number): number => {
+    const today = new Date(startOfLocalDay(NOW));
+    return Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+  };
+
+  const source = (overrides: Partial<FieldDueSource> = {}): FieldDueSource => ({
+    itemId: 'i1',
+    itemName: 'Studio insurance',
+    defId: 'd1',
+    fieldName: 'Renewal date',
+    leadDays: 14,
+    dueAt: storedDay(3),
+    ...overrides,
+  });
+
+  it('produces a warning alert for a date inside its notice period', () => {
+    const [alert] = buildAlerts(sources({ fieldDue: [source()] }), NOW);
+    expect(alert.kind).toBe('field-due');
+    expect(alert.severity).toBe('warning');
+    expect(alert.title).toBe('Renewal date due soon — Studio insurance');
+  });
+
+  it('produces a critical alert once the date has passed', () => {
+    const [alert] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(-2) })] }), NOW);
+    expect(alert.severity).toBe('critical');
+    expect(alert.title).toBe('Renewal date passed — Studio insurance');
+  });
+
+  it('re-grades the feed, dropping a date that has moved beyond its notice period', () => {
+    // A stale cached row: the query included it, but by this render it is no longer imminent.
+    expect(buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(90) })] }), NOW)).toHaveLength(0);
+  });
+
+  it('encodes the date in the id, so moving a deadline lifts an earlier dismissal', () => {
+    const [first] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(1) })] }), NOW);
+    const [moved] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(2) })] }), NOW);
+    expect(first.id).not.toBe(moved.id);
+    expect(first.id.startsWith('field-due:i1:d1:')).toBe(true);
+  });
+
+  it('keys on the definition too, so two dated fields on one item both alert', () => {
+    const alerts = buildAlerts(
+      sources({
+        fieldDue: [source(), source({ defId: 'd2', fieldName: 'Inspection due' })],
+      }),
+      NOW,
+    );
+    expect(alerts).toHaveLength(2);
+    expect(new Set(alerts.map((a) => a.id)).size).toBe(2);
+  });
+
+  it('names the field in the detail, and the notice period it was judged against', () => {
+    const [alert] = buildAlerts(sources({ fieldDue: [source({ leadDays: 1 })] }), NOW);
+    // 3 days out with 1 day's notice would not fire; use a date inside the shorter window.
+    const [inWindow] = buildAlerts(
+      sources({ fieldDue: [source({ leadDays: 1, dueAt: storedDay(1) })] }),
+      NOW,
+    );
+    expect(alert).toBeUndefined();
+    expect(inWindow.detail).toContain('"Renewal date"');
+    expect(inWindow.detail).toContain('within 1 day');
+  });
+
+  it('deep-links to the item, seeding the search so it is on screen on arrival', () => {
+    const [alert] = buildAlerts(sources({ fieldDue: [source()] }), NOW);
+    expect(alert.target).toEqual({
+      route: '/inventory',
+      itemId: 'i1',
+      itemName: 'Studio insurance',
+    });
   });
 });

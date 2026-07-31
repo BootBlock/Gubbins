@@ -7,6 +7,8 @@ import {
   CONDITIONS,
   COSTING_MODES,
   DEAD_STOCK_MODES,
+  FIELD_DUE_LEAD_DAYS_MAX,
+  FIELD_DUE_LEAD_DAYS_MIN,
   FIELD_TYPES,
   IN_TRANSIT_LOCATION_ID,
   IN_TRANSIT_LOCATION_NAME,
@@ -594,15 +596,33 @@ const baselineStatements: SqlStatement[] = [
     // than owning a private copy, which is what lets a location's value for a def
     // be inherited by an item whose category uses that same def: the link is the
     // def id, so it is exact and survives a rename on either side.
+    //
+    // `due_lead_days` (W1a) is the DATE due-date opt-in, and it sits **here** rather than
+    // on `category_fields` because it is part of what the field *means*, not a category's
+    // policy about it: a field named "Renewal date" is a deadline wherever it is used,
+    // while "Date acquired" is not one anywhere. The storage decides it too — item values
+    // key on `def_id`, never on a category's use of one, so a def-scoped flag makes the
+    // alert feed a plain join, whereas a category-scoped one would miss every value
+    // inherited from a location or left behind by a category change.
     sql: `
         CREATE TABLE field_defs (
-          id          TEXT    PRIMARY KEY NOT NULL,
-          name        TEXT    NOT NULL,
-          field_type  TEXT    NOT NULL,
-          options     TEXT,                            -- JSON array for SELECT fields
-          description TEXT,                            -- optional help note shown on the control
-          updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (field_type IN (${fieldTypeList}))
+          id            TEXT    PRIMARY KEY NOT NULL,
+          name          TEXT    NOT NULL,
+          field_type    TEXT    NOT NULL,
+          options       TEXT,                          -- JSON array for SELECT fields
+          description   TEXT,                          -- optional help note shown on the control
+          due_lead_days INTEGER,                       -- DATE only: days' notice; NULL = not a due date
+          updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (field_type IN (${fieldTypeList})),
+          -- Only a DATE can be a deadline, and the notice period is bounded. The write seam
+          -- clears the value when a field is retyped away from DATE so the user gets a clean
+          -- outcome; this CHECK is the backstop under it (and under sync and restore).
+          CHECK (
+            due_lead_days IS NULL
+            OR (field_type = 'DATE'
+                AND due_lead_days >= ${FIELD_DUE_LEAD_DAYS_MIN}
+                AND due_lead_days <= ${FIELD_DUE_LEAD_DAYS_MAX})
+          )
         ) STRICT;
       `,
   },

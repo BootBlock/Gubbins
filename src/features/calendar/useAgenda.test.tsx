@@ -3,12 +3,13 @@
  *
  * The pure `buildAgenda` seam is covered in `agenda.test.ts`; here we verify the hook's
  * deep-cascade wiring: each date-driven lane gates on its owning feature (bookings→bookings,
- * checkouts→contacts, maintenance→maintenance, warranty→warranty, expiry→perishables), while
+ * checkouts→contacts, maintenance→maintenance, warranty→warranty, expiry→perishables,
+ * field-due→custom-fields), while
  * reorder stays (core inventory). A gated-off lane passes `enabled: false` to its feed query
  * and feeds an empty array into the seam, so it produces no events even though the mocked feed
  * still returns rows (a stale-cache stand-in).
  *
- * `useQuery` is mocked and keyed off the query key so each of the six feeds returns its own
+ * `useQuery` is mocked and keyed off the query key so each of the seven feeds returns its own
  * rows and records the `enabled` flag it was called with; the modules store is the real store.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -64,6 +65,20 @@ const LANE_DATA: Record<string, unknown> = {
       },
     ],
   },
+  // The due-date lane reads through `readAllPages`, whose envelope is `{ rows, truncated }`.
+  'field-due': {
+    rows: [
+      {
+        itemId: 'it-7',
+        itemName: 'Studio insurance',
+        defId: 'def-1',
+        fieldName: 'Renewal date',
+        leadDays: 14,
+        dueAt: Date.parse(new Date(PAST).toISOString().slice(0, 10)),
+      },
+    ],
+    truncated: false,
+  },
 };
 
 /** `enabled` flag captured per lane during the last render. */
@@ -93,13 +108,22 @@ describe('useAgenda — all features on (default)', () => {
   it('produces every lane and enables every gated feed; reorder is ungated', () => {
     const present = kinds();
     expect(present).toEqual(
-      new Set<AgendaKind>(['maintenance', 'warranty', 'expiry', 'checkout-due', 'reorder', 'booking']),
+      new Set<AgendaKind>([
+        'maintenance',
+        'warranty',
+        'expiry',
+        'checkout-due',
+        'reorder',
+        'booking',
+        'field-due',
+      ]),
     );
     expect(enabledByLane.maintenance).toBe(true);
     expect(enabledByLane.warranty).toBe(true);
     expect(enabledByLane.expiry).toBe(true);
     expect(enabledByLane.checkouts).toBe(true);
     expect(enabledByLane.bookings).toBe(true);
+    expect(enabledByLane['field-due']).toBe(true);
     // Reorder is core inventory — never passed an `enabled` flag (always fetches).
     expect(enabledByLane.reorder).toBeUndefined();
   });
@@ -141,5 +165,37 @@ describe('useAgenda — per-lane gating', () => {
     expect(present.has('booking')).toBe(false);
     expect(present.has('reorder')).toBe(true);
     expect(enabledByLane.bookings).toBe(false);
+  });
+
+  it('Custom fields off drops the custom-field due-date lane and disables its feed', () => {
+    useModulesStore.getState().setFeatureIntent('custom-fields', false);
+    const present = kinds();
+    expect(present.has('field-due')).toBe(false);
+    expect(present.has('reorder')).toBe(true);
+    expect(enabledByLane['field-due']).toBe(false);
+  });
+});
+
+describe('useAgenda — custom-field due-date truncation is reported, not swallowed', () => {
+  it("passes the read-everything walk's ceiling flag through to the screen", () => {
+    h.useQuery.mockImplementation((opts: { queryKey: readonly unknown[]; enabled?: boolean }) => {
+      const lane = String(opts.queryKey[1]);
+      const data = lane === 'field-due' ? { rows: [], truncated: true } : LANE_DATA[lane];
+      return { data, isLoading: false, isError: false };
+    });
+    const { result } = renderHook(() => useAgenda());
+    expect(result.current.fieldDueTruncated).toBe(true);
+  });
+
+  it('never reports truncation for a lane whose module is off', () => {
+    useModulesStore.getState().setFeatureIntent('custom-fields', false);
+    h.useQuery.mockImplementation((opts: { queryKey: readonly unknown[]; enabled?: boolean }) => {
+      const lane = String(opts.queryKey[1]);
+      // A stale cache entry from when the module was on still claiming truncation.
+      const data = lane === 'field-due' ? { rows: [], truncated: true } : LANE_DATA[lane];
+      return { data, isLoading: false, isError: false };
+    });
+    const { result } = renderHook(() => useAgenda());
+    expect(result.current.fieldDueTruncated).toBe(false);
   });
 });

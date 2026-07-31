@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MS_PER_DAY } from '@/db/repositories/constants';
+import { utcDayToLocalDay } from '@/lib/calendar-days';
 import {
   AGENDA_BUCKET_ORDER,
   AGENDA_KINDS,
@@ -30,6 +31,7 @@ const EMPTY: AgendaSources = {
   checkouts: [],
   reorder: [],
   bookings: [],
+  fieldDue: [],
 };
 
 describe('startOfLocalDay', () => {
@@ -361,9 +363,75 @@ describe('filterByKind', () => {
     expect(filterByKind(events, new Set())).toEqual([]);
   });
 
-  it('exposes all six kinds', () => {
+  it('exposes all seven kinds', () => {
     expect([...AGENDA_KINDS].sort()).toEqual(
-      ['booking', 'checkout-due', 'expiry', 'maintenance', 'reorder', 'warranty'].sort(),
+      ['booking', 'checkout-due', 'expiry', 'field-due', 'maintenance', 'reorder', 'warranty'].sort(),
     );
+  });
+});
+
+describe('buildAgenda — custom-field due-date lane (W1a)', () => {
+  /**
+   * The **stored** instant for a calendar day `offset` days from today: midnight UTC, which is
+   * the convention every day-grained value uses (issue #320) — not local midnight. The
+   * distinction is the point of this lane's re-anchoring, so the fixture has to honour it.
+   */
+  const storedDay = (offset: number): number => {
+    const today = new Date(SOD);
+    return Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+  };
+
+  const source = {
+    itemId: 'i1',
+    itemName: 'Studio insurance',
+    defId: 'd1',
+    fieldName: 'Renewal date',
+    dueAt: storedDay(3),
+  };
+
+  it('names the field in the title, so several dated fields stay distinguishable', () => {
+    const [event] = buildAgenda({ ...EMPTY, fieldDue: [source] }, NOW, fmtDate);
+    expect(event.title).toBe('Renewal date — Studio insurance');
+    expect(event.kind).toBe('field-due');
+  });
+
+  it('anchors at the stored day and always carries a date (unlike reorder/usage lanes)', () => {
+    const [event] = buildAgenda({ ...EMPTY, fieldDue: [source] }, NOW, fmtDate);
+    expect(event.dueAt).toBe(utcDayToLocalDay(source.dueAt));
+    expect(event.hasDate).toBe(true);
+  });
+
+  it('keys the id on item AND definition, so two dated fields on one item both appear', () => {
+    const events = buildAgenda(
+      {
+        ...EMPTY,
+        fieldDue: [source, { ...source, defId: 'd2', fieldName: 'Inspection due' }],
+      },
+      NOW,
+      fmtDate,
+    );
+    expect(events.map((e) => e.id)).toEqual(['field-due:i1:d1', 'field-due:i1:d2']);
+  });
+
+  it('shows a far-future date rather than hiding it — the agenda is the forward calendar', () => {
+    const far = { ...source, dueAt: storedDay(900) };
+    const [event] = buildAgenda({ ...EMPTY, fieldDue: [far] }, NOW, fmtDate);
+    expect(bucketForDueAt(event.dueAt, NOW)).toBe('later');
+  });
+
+  it('deep-links to the item it belongs to', () => {
+    const [event] = buildAgenda({ ...EMPTY, fieldDue: [source] }, NOW, fmtDate);
+    expect(event.target).toEqual({ route: '/inventory', itemId: 'i1' });
+  });
+
+  it('re-anchors the stored midnight-UTC day onto the local calendar', () => {
+    // The value is stored at midnight UTC (issue #320) but everything downstream reads the
+    // event's `dueAt` locally — the bucketer against `startOfLocalDay`, the card through the
+    // locale formatter. West of UTC the raw instant is the *previous* local day, so a date due
+    // today would bucket Overdue and render a day early (issue #323), while the alert centre
+    // graded the same row due-soon.
+    const [event] = buildAgenda({ ...EMPTY, fieldDue: [{ ...source, dueAt: storedDay(0) }] }, NOW, fmtDate);
+    expect(event.dueAt).toBe(SOD);
+    expect(bucketForDueAt(event.dueAt, NOW)).toBe('today');
   });
 });

@@ -1,8 +1,8 @@
 /**
  * Local reminder-notification pure seam (G3, spec §3 alert centre → PWA-native delivery).
  *
- * The alert centre already folds low stock, perishable expiry, maintenance-due and
- * warranty-due into a sorted `Alert[]` ({@link ./alerts}). Its only delivery surface is
+ * The alert centre already folds low stock, perishable expiry, maintenance-due, warranty-due
+ * and opted-in custom-field due dates into a sorted `Alert[]` ({@link ./alerts}). Its only delivery surface is
  * in-app. For an **installed** PWA this seam decides which of those alerts should fire an
  * **OS notification right now** — purely, with no DOM, no Notification API and no storage
  * access — so the "what fires now" decision is exhaustively unit-testable out of glue,
@@ -31,7 +31,23 @@ export const REMINDER_KINDS = [
   'expiry',
   'maintenance-due',
   'warranty-due',
+  'field-due',
 ] as const satisfies readonly AlertKind[];
+
+/**
+ * Compile-time **completeness** guard for {@link REMINDER_KINDS}.
+ *
+ * `satisfies readonly AlertKind[]` only checks the easy direction — that every listed lane *is*
+ * an `AlertKind`. A lane left *out* is silently accepted, and the consequence is invisible: it
+ * never gets a Settings switch, so it can never be turned off and it can never be persisted
+ * off either. This closes the other direction, and names the offender when it fails.
+ */
+type ReminderKindsAreExhaustive =
+  Exclude<AlertKind, (typeof REMINDER_KINDS)[number]> extends never
+    ? true
+    : ['Add this alert lane to REMINDER_KINDS:', Exclude<AlertKind, (typeof REMINDER_KINDS)[number]>];
+const reminderKindsAreExhaustive: ReminderKindsAreExhaustive = true;
+void reminderKindsAreExhaustive;
 
 /** Whether each alert lane is allowed to fire a reminder notification. */
 export type ReminderKinds = Record<AlertKind, boolean>;
@@ -42,6 +58,7 @@ export const DEFAULT_REMINDER_KINDS: ReminderKinds = {
   expiry: true,
   'maintenance-due': true,
   'warranty-due': true,
+  'field-due': true,
 };
 
 /** Human-readable lane names for the Settings controls (SSOT for reminder copy). */
@@ -50,6 +67,7 @@ export const REMINDER_KIND_LABELS: Record<AlertKind, string> = {
   expiry: 'Expiring stock',
   'maintenance-due': 'Maintenance due',
   'warranty-due': 'Warranty',
+  'field-due': 'Custom field date',
 };
 
 /**

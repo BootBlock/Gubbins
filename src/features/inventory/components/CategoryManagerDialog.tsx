@@ -16,9 +16,13 @@ import {
 } from '@/components/foundry';
 import { AddIcon, CategoryIcon, CloseIcon, DeleteIcon, InfoIcon, WarningIcon } from '@/components/icons';
 import {
+  FIELD_DUE_LEAD_DAYS_DEFAULT,
+  FIELD_DUE_LEAD_DAYS_MAX,
+  FIELD_DUE_LEAD_DAYS_MIN,
   FIELD_TYPES,
   MAINTENANCE_BASES,
   TRACKING_MODES,
+  type CategoryField,
   type CategoryWithFieldCount,
   type Condition,
   type FieldType,
@@ -28,6 +32,7 @@ import {
 import { useT } from '@/features/i18n';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
+import { clampFieldDueLeadDays } from '@/features/lifecycle/field-due';
 import { builtInFieldNameClash } from '../builtin-field-names';
 import { HIDEABLE_CAPABILITIES, toggleHiddenCapability } from '../category-capabilities';
 import {
@@ -40,6 +45,7 @@ import {
   useDeleteUnusedFieldDef,
   useUnusedFieldDefs,
   useUpdateCategory,
+  useUpdateCategoryField,
 } from '../categories';
 import { CategoryPresetPickerDialog } from './CategoryPresetPicker';
 import {
@@ -339,23 +345,30 @@ function CategoryDetail({
           fields!.map((field) => (
             <li
               key={field.id}
-              className="flex items-center gap-2 rounded-lg border border-border bg-secondary/20 px-2.5 py-1.5 text-sm"
+              className="rounded-lg border border-border bg-secondary/20 px-2.5 py-1.5 text-sm"
             >
-              <span className="flex-1 truncate">
-                {field.name}
-                {field.isRequired ? <span className="text-destructive"> *</span> : null}
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {FIELD_TYPE_LABELS[field.fieldType]}
-              </span>
-              <button
-                type="button"
-                aria-label={`Remove field ${field.name}`}
-                onClick={() => deleteField.mutate(field.id)}
-                className="rounded p-0.5 transition-colors hover:bg-secondary [&_svg]:size-3.5"
-              >
-                <CloseIcon className="text-glyph-danger" />
-              </button>
+              <div className="flex items-center gap-2">
+                <span className="flex-1 truncate">
+                  {field.name}
+                  {field.isRequired ? <span className="text-destructive"> *</span> : null}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {FIELD_TYPE_LABELS[field.fieldType]}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Remove field ${field.name}`}
+                  onClick={() => deleteField.mutate(field.id)}
+                  className="rounded p-0.5 transition-colors hover:bg-secondary [&_svg]:size-3.5"
+                >
+                  <CloseIcon className="text-glyph-danger" />
+                </button>
+              </div>
+              {/* Only a date can be a deadline, so the control appears on nothing else. It sits
+                  on the *existing* field rather than only on the add form because a date field is
+                  usually already there by the time its deadline-ness matters — the preset library
+                  ships several, and a field added before this existed has no other way back. */}
+              {field.fieldType === 'DATE' ? <FieldDueDateControl field={field} /> : null}
             </li>
           ))
         )}
@@ -688,6 +701,125 @@ function parseChoices(raw: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * The **due-date opt-in** for an existing `DATE` custom field (W1a) — a tick plus a notice
+ * period, saved straight onto the shared dictionary definition.
+ *
+ * Two things it deliberately does *not* do. It does not offer the opt-in on any other field
+ * type, because only a date can be a deadline (the schema's CHECK says the same). And it does
+ * not present the tick and the number as two independent settings: the stored value *is* the
+ * opt-in — `null` means "just a date" — so ticking seeds {@link FIELD_DUE_LEAD_DAYS_DEFAULT}
+ * and unticking clears it, and there is no state where the field is a deadline with no notice.
+ *
+ * The number saves on **blur**, not per keystroke: the control is fed from server state, so
+ * writing on every change races the refetch and drops digits (the same rule the location-field
+ * editor follows). The tick saves immediately, since it is a single discrete decision.
+ */
+function FieldDueDateControl({ field }: { field: CategoryField }) {
+  const t = useT();
+  const updateField = useUpdateCategoryField();
+  const describeError = useErrorMessage();
+  const [error, setError] = useState<string | null>(null);
+  // Seeded from the definition and re-seeded whenever it changes underneath us (another
+  // category sharing this field, or a peer's sync) — `key` on the id would not do it, since
+  // the row survives the change.
+  const [draft, setDraft] = useState(String(field.dueLeadDays ?? FIELD_DUE_LEAD_DAYS_DEFAULT));
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    // Never while the user is mid-edit: the save below invalidates and refetches, so the new
+    // value lands moments later — and if they have already clicked back in to change it again,
+    // re-seeding here would replace what they are typing with what they typed before. The same
+    // applies to a value arriving from a peer's sync.
+    if (document.activeElement === inputRef.current) return;
+    setDraft(String(field.dueLeadDays ?? FIELD_DUE_LEAD_DAYS_DEFAULT));
+  }, [field.dueLeadDays]);
+
+  const save = (dueLeadDays: number | null) => {
+    setError(null);
+    updateField.mutate(
+      { fieldId: field.id, input: { dueLeadDays } },
+      { onError: (e) => setError(describeError(e, t('inventory.fields.dueDate.saveFailed'))) },
+    );
+  };
+
+  /**
+   * Commit the typed notice period, or put the stored one back.
+   *
+   * A blank box is **not** zero. `Number('')` is `0` and the clamp floors at 0, so coercing
+   * would silently reconfigure a field from "30 days" to "on the day" the moment someone
+   * selected the value, hit delete and tabbed away — a legal value, so nothing would complain.
+   * A `type="number"` input also reports `''` for un-parseable keystrokes, which takes the same
+   * path. Blank therefore reverts.
+   */
+  const commitDraft = () => {
+    const typed = Number(draft);
+    if (draft.trim() === '' || !Number.isFinite(typed)) {
+      setDraft(String(field.dueLeadDays ?? FIELD_DUE_LEAD_DAYS_DEFAULT));
+      return;
+    }
+    const next = clampFieldDueLeadDays(typed);
+    setDraft(String(next));
+    if (next !== field.dueLeadDays) save(next);
+  };
+
+  const enabled = field.dueLeadDays != null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+      <label className="flex items-center gap-1.5">
+        <Checkbox
+          checked={enabled}
+          onChange={(e) => save(e.target.checked ? FIELD_DUE_LEAD_DAYS_DEFAULT : null)}
+          aria-label={t('inventory.fields.dueDate.toggleLabel', { vars: { name: field.name } })}
+          data-testid={`field-due-toggle-${field.id}`}
+        />
+        {t('inventory.fields.dueDate.label')}
+      </label>
+      <InfoHint content={t('inventory.fields.dueDate.hint')} />
+      {enabled ? (
+        <>
+          {/* `calc={false}`: a notice period is a plain count of days, never a sum worth typing —
+              and it keeps this a real `type="number"` box, so `min`/`max` are native constraints
+              rather than inert attributes on the calculator control's text field. */}
+          <Input
+            ref={inputRef}
+            type="number"
+            calc={false}
+            min={FIELD_DUE_LEAD_DAYS_MIN}
+            max={FIELD_DUE_LEAD_DAYS_MAX}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitDraft}
+            aria-label={t('inventory.fields.dueDate.noticeLabel', { vars: { name: field.name } })}
+            data-testid={`field-due-days-${field.id}`}
+            className="h-8 w-20"
+          />
+          {t('inventory.fields.dueDate.noticeSuffix')}
+        </>
+      ) : null}
+      {error ? (
+        <p role="alert" className="w-full text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The notice period a typed value means: the clamped number, or {@link FIELD_DUE_LEAD_DAYS_DEFAULT}
+ * when the box is blank or holds something that is not a number.
+ *
+ * Blank deliberately does **not** mean zero. `Number('')` is `0`, and 0 is a legal notice period
+ * ("tell me on the day"), so coercing would turn "I cleared the box to retype it" into a silent,
+ * valid, wrong setting that nothing would flag.
+ */
+function resolveLeadDays(raw: string): number {
+  const typed = Number(raw);
+  if (raw.trim() === '' || !Number.isFinite(typed)) return FIELD_DUE_LEAD_DAYS_DEFAULT;
+  return clampFieldDueLeadDays(typed);
+}
+
 function AddFieldForm({ categoryId }: { categoryId: string }) {
   const t = useT();
   const addField = useAddCategoryField();
@@ -695,6 +827,11 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
   const [fieldType, setFieldType] = useState<FieldType>('TEXT');
   const [options, setOptions] = useState('');
   const [isRequired, setIsRequired] = useState(false);
+  // The due-date opt-in (W1a). Kept as a tick plus a draft string rather than one nullable
+  // number so clearing the box does not lose the notice period the user just typed; only the
+  // tick decides whether anything is stored.
+  const [isDueDate, setIsDueDate] = useState(false);
+  const [dueLeadDays, setDueLeadDays] = useState(String(FIELD_DUE_LEAD_DAYS_DEFAULT));
   const [defaultValue, setDefaultValue] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -717,6 +854,10 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           defaultValue: defaultValue.trim() || null,
           description: description.trim() || null,
           options: fieldType === 'SELECT' ? parseChoices(options) : null,
+          // Only a DATE can carry it, and the tick is the opt-in — see `FieldDueDateControl`.
+          // A blank or un-parseable box falls back to the default rather than to `Number('')`,
+          // which is 0 and would silently create the field as "notify on the day".
+          dueLeadDays: fieldType === 'DATE' && isDueDate ? resolveLeadDays(dueLeadDays) : null,
         },
       },
       {
@@ -727,6 +868,8 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           setDefaultValue('');
           setDescription('');
           setIsRequired(false);
+          setIsDueDate(false);
+          setDueLeadDays(String(FIELD_DUE_LEAD_DAYS_DEFAULT));
         },
       },
     );
@@ -766,6 +909,9 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
             // new one (e.g. free text becoming a date) — start it fresh.
             setFieldType(value as FieldType);
             setDefaultValue('');
+            // The opt-in only exists on a date, so switching away from one retracts it rather
+            // than leaving a tick set that the submit would silently discard.
+            if (value !== 'DATE') setIsDueDate(false);
           }}
           options={FIELD_TYPES.map((t) => ({ value: t, label: FIELD_TYPE_LABELS[t] }))}
         />
@@ -814,6 +960,38 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
         </label>
         <InfoHint content="When on, an item in this category must have a value for this field before its custom fields can be saved." />
       </div>
+      {fieldType === 'DATE' ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Checkbox
+              checked={isDueDate}
+              onChange={(e) => setIsDueDate(e.target.checked)}
+              data-testid="add-field-due-toggle"
+            />
+            {t('inventory.fields.dueDate.label')}
+          </label>
+          <InfoHint content={t('inventory.fields.dueDate.hint')} />
+          {isDueDate ? (
+            <>
+              <Input
+                type="number"
+                calc={false}
+                min={FIELD_DUE_LEAD_DAYS_MIN}
+                max={FIELD_DUE_LEAD_DAYS_MAX}
+                value={dueLeadDays}
+                onChange={(e) => setDueLeadDays(e.target.value)}
+                onBlur={() => setDueLeadDays(String(resolveLeadDays(dueLeadDays)))}
+                aria-label={t('inventory.fields.dueDate.addNoticeLabel')}
+                data-testid="add-field-due-days"
+                className="h-8 w-20"
+              />
+              <span className="text-xs text-muted-foreground">
+                {t('inventory.fields.dueDate.noticeSuffix')}
+              </span>
+            </>
+          ) : null}
+        </div>
+      ) : null}
       {builtInClash ? (
         <Banner
           tone="warning"

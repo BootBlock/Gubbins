@@ -28,7 +28,7 @@ import {
 import { useReportWriteFailure } from '@/features/errors';
 import { bucketIds, mergeBucketMaps } from './id-buckets';
 import { inventoryKeys } from './queries';
-import { invalidateItems } from './invalidate';
+import { invalidateFieldDueDates, invalidateItems } from './invalidate';
 
 /**
  * The whole category set — the lookup table behind the category facet, the create/edit/bulk-edit
@@ -172,7 +172,12 @@ export function useAddCategoryField() {
   return useMutation({
     mutationFn: ({ categoryId, input }: { categoryId: string; input: CreateCategoryFieldInput }) =>
       getCategoryRepository().addField(categoryId, input),
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.categories() }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.categories() });
+      // A field added as a due date (W1a) can put existing items into the alert/agenda lanes
+      // straight away, since their values may already be stored against the shared definition.
+      invalidateFieldDueDates(client);
+    },
   });
 }
 
@@ -181,7 +186,11 @@ export function useUpdateCategoryField() {
   return useMutation({
     mutationFn: ({ fieldId, input }: { fieldId: string; input: UpdateCategoryFieldInput }) =>
       getCategoryRepository().updateField(fieldId, input),
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.categories() }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.categories() });
+      // Turning the due-date opt-in on or off (W1a), or renaming the field the alert names.
+      invalidateFieldDueDates(client);
+    },
   });
 }
 
@@ -195,7 +204,11 @@ export function useDeleteCategoryField() {
     mutationFn: (fieldId: string) => getCategoryRepository().deleteField(fieldId),
     // Fired from the manager with no error surface (#389).
     onError: reportFailure,
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.categories() }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.categories() });
+      // Dropping the field clears this category's items' values, so their due dates go with it.
+      invalidateFieldDueDates(client);
+    },
   });
 }
 
@@ -217,6 +230,8 @@ export function useSetItemFieldValues(itemId: string) {
       // Refresh the on-card custom-field values (E1) — each resident window keys its read on
       // its own item ids, so the shared prefix is what reaches all of them at once.
       void client.invalidateQueries({ queryKey: inventoryKeys.itemFieldValuesAll() });
+      // A stored DATE value is what the due-date lanes read (W1a).
+      invalidateFieldDueDates(client);
     },
   });
 }
@@ -259,7 +274,10 @@ export function useDeleteUnusedFieldDef() {
     mutationFn: (defId: string) => getCategoryRepository().deleteUnusedFieldDef(defId),
     // Fired from the dictionary cleanup with no error surface (#389).
     onError: reportFailure,
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.categories() }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.categories() });
+      invalidateFieldDueDates(client);
+    },
   });
 }
 
@@ -328,4 +346,6 @@ function invalidateInheritance(client: QueryClient, locationId: string): void {
     },
   });
   void client.invalidateQueries({ queryKey: inventoryKeys.itemFieldValuesAll() });
+  // An inheritable date reaches every item beneath the location, so it moves the lanes too.
+  invalidateFieldDueDates(client);
 }
