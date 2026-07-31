@@ -420,16 +420,20 @@ report it when they cannot, rather than showing one page as the whole set.
   gated by the OpenAPI and field-vocabulary drift tests.
 - **The other six agenda lanes still read one page and present it as the whole set** (an
   `AGENDA_FETCH_LIMIT` of 500 that `MAX_PAGE_SIZE` silently clamps to 100, with `hasMore` never
-  read). That predates this work and is the shape of #606/#607; the due-date lanes do not repeat
-  it, but fixing the other six is a separate change.
+  read). That predates this work and is filed as
+  [#607](https://github.com/BootBlock/Gubbins/issues/607); the due-date lanes do not repeat it, but
+  fixing the other six is that issue's job, not this one's.
 
-**One defect found while building this, not fixed here.** `buildWarrantyEvents` and
+**One defect met while building this, already filed.** `buildWarrantyEvents` and
 `buildExpiryEvents` feed a day-grained **midnight-UTC** value straight into `bucketForDueAt` and
 the locale date formatter, both of which work in **local** terms. West of UTC that reads a day
 early: a warranty expiring "20 July" buckets as *Overdue* and renders as the 19th all through the
-20th (issue #323 in the agenda, where issue #319 fixed the same thing for expiry status). The
-due-date lane re-anchors with `utcDayToLocalDay` and so is correct; the two older lanes were left
-alone rather than widened into scope. Worth filing alongside #683–#688.
+20th (issue #323 in the agenda, where issue #319 fixed the same thing for expiry status). That is
+[#495](https://github.com/BootBlock/Gubbins/issues/495), which names the warranty, expiry and
+booking lanes. The due-date lane re-anchors with `utcDayToLocalDay` and so is correct — so #495's
+fix should adopt the same call rather than invent a second answer, and the lane's test shows the
+shape a guard for it needs (an off-midnight fixture, since `utcDayToLocalDay` is the identity in
+UTC and CI runs there).
 
 ## 5. Defects found while surveying
 
