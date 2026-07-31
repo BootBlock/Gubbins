@@ -56,7 +56,7 @@ export function OverviewStep() {
             Core).
           </ChecklistItem>
           <ChecklistItem>
-            A machine that can run <span className="text-foreground">Node.js 24+</span> (or 22.16+ LTS) or
+            A machine that can run <span className="text-foreground">Node.js 24+</span> (or 22.18+ LTS) or
             Docker, that both sees your Gubbins data and can be reached by Home Assistant. This can be the
             Home Assistant host itself, a Raspberry Pi, or a NAS.
           </ChecklistItem>

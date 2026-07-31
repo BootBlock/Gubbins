@@ -56,9 +56,10 @@ export function BridgeStep() {
           label="clone and install command"
           code={`git clone https://github.com/BootBlock/Gubbins.git\ncd Gubbins\nnpm install`}
         />
-        <Banner tone="info" icon={<InfoIcon />} heading="Node.js 24+ (or 22.16+ LTS) is required">
-          The bridge needs a modern Node for its built-in SQLite with full-text search. Node 23.x specifically
-          will <span className="text-foreground">not</span> work. Check yours with{' '}
+        <Banner tone="info" icon={<InfoIcon />} heading="Node.js 24+ (or 22.18+ LTS) is required">
+          The bridge needs a modern Node for its built-in SQLite with full-text search, and for running its
+          TypeScript without a build step. Node 23.x specifically will{' '}
+          <span className="text-foreground">not</span> work. Check yours with{' '}
           <code className="rounded bg-secondary/60 px-1">node --version</code>.
         </Banner>
       </StepCard>
@@ -237,8 +238,9 @@ export function BridgeStep() {
                 the database needs). Check with{' '}
                 <code className="rounded bg-secondary/60 px-1">node --version</code> and install{' '}
                 <span className="text-foreground">Node 24+</span> or{' '}
-                <span className="text-foreground">22.16+ LTS</span>. Docker (the option above) sidesteps this
-                entirely by bringing its own Node.
+                <span className="text-foreground">22.18+ LTS</span>. The bridge says which version it found
+                and which it needs when it refuses to start. Docker (the option above) sidesteps this entirely
+                by bringing its own Node.
               </p>
             </BranchPanel>
           ) : outcome === 'other' ? (

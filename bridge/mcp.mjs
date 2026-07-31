@@ -14,6 +14,13 @@
  */
 import { register } from 'node:module';
 
+import { assertSupportedNodeVersion } from './node-version.mjs';
+
+// Before any `.ts` import: on too old a Node the import below would fail with a bare
+// SyntaxError from a type annotation instead of saying which Node is needed. An MCP client
+// only surfaces stderr, so a legible line here is the operator's only clue.
+assertSupportedNodeVersion();
+
 register('./loader.mjs', import.meta.url);
 
 try {
