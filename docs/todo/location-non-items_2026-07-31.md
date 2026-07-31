@@ -506,3 +506,13 @@ payload, the vault's folder-level page — all landed as scoped. Four things it 
    the same column. Closing it off the back of this would be claiming a fix that isn't there. What
    *has* changed is that the JSON export no longer has the same defect: an item's `locationId`
    resolves within the file.
+5. **The shared export timestamp seam threw on a value it could not render, and now doesn't.**
+   Locations are the first list export whose columns include two *optional* stored instants
+   (`archived_at`, `last_counted_at`). `isoTimestamp` (`features/export/export-every-page.ts`) —
+   the seam every list export writes its date columns through — called `toISOString` on anything
+   non-null, which raises both on a `NaN` and on a perfectly finite number past the ±8.64e15 ms
+   range `Date` can represent. One unreadable stored value would have failed the whole file rather
+   than blanking its own cell, and the fix belongs in the seam rather than at this call site:
+   hardening it once means the vault's folder note and the location list agree about what happens,
+   and every other list export (loans, contacts, bookings, purchase orders, activity) stops sharing
+   the defect too. That is the only change here that reaches past `N7`'s three parts.

@@ -48,7 +48,7 @@ const FORMATS: {
   {
     value: 'JSON',
     label: 'JSON data export',
-    hint: 'Items, contacts & loans for use in other tools — Gubbins cannot import this file back. For a restorable backup, use Sync → Backup & restore.',
+    hint: 'Items, locations, contacts & loans for use in other tools — Gubbins cannot import this file back. For a restorable backup, use Sync → Backup & restore.',
     icon: ExportIcon,
   },
   {

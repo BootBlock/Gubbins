@@ -124,6 +124,13 @@ describe('locationsExportColumns', () => {
     expect(cell(archived!, 'Last counted')).toBeNull();
   });
 
+  // The same guarantee the vault's folder note makes, because both go through `isoTimestamp`:
+  // one unreadable stored timestamp blanks its own cell rather than failing the whole file.
+  it('blanks an unreadable stored timestamp rather than throwing the export away', () => {
+    const [broken] = toLocationExportRows([makeLocation({ archivedAt: Number.NaN })]);
+    expect(cell(broken!, 'Archived')).toBeNull();
+  });
+
   it('spells the default flag out for a reader', () => {
     const [yes] = toLocationExportRows([makeLocation({ isDefault: true })]);
     const [no] = toLocationExportRows([makeLocation({ isDefault: false })]);

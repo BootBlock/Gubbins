@@ -15,6 +15,7 @@ import type {
 } from '@/db/repositories';
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import { toDateInputValue } from '@/lib/date-input';
+import { isoTimestamp } from './export-every-page';
 import {
   buildTabularExport,
   toCsv,
@@ -512,17 +513,6 @@ export function buildVaultFiles(vaultItems: readonly VaultItem[]): Record<string
 }
 
 /**
- * An epoch-milliseconds column as an ISO-8601 instant for YAML frontmatter, or `null`.
- *
- * Guarded rather than calling `toISOString` straight: it raises on a non-finite value, and one
- * unusable stored timestamp must not cost the user the whole vault — the same reasoning the
- * catalogue CSV's `expiryDate` cell uses.
- */
-function isoInstant(ms: number | null): string | null {
-  return ms != null && Number.isFinite(ms) ? new Date(ms).toISOString() : null;
-}
-
-/**
  * One location's Obsidian **folder note** (issue #617, `N7`) — the page that carries what a
  * location records about itself, which the vault previously reduced to a folder name.
  *
@@ -555,8 +545,10 @@ function renderLocationMarkdown(entry: VaultLocation): string {
     packingFactor: location.packingFactor,
     walkOrder: location.walkOrder,
     default: location.isDefault,
-    archived: isoInstant(location.archivedAt),
-    lastCounted: isoInstant(location.lastCountedAt),
+    // Through the shared export seam, so the vault and the location list export agree about what
+    // an unreadable stored timestamp does — blank the field rather than fail the whole file.
+    archived: isoTimestamp(location.archivedAt),
+    lastCounted: isoTimestamp(location.lastCountedAt),
     deadStockMode: location.deadStockMode,
     deadStockDays: location.deadStockDays,
     color: location.color,
