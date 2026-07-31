@@ -1,28 +1,7 @@
-import { useT, type TypedTranslator } from '@/features/i18n';
+import { useT } from '@/features/i18n';
 import type { Formatters } from '@/lib/format';
 import type { ConsumptionRateReport } from '../reports';
-
-/**
- * A consumed amount rendered **in its own unit**: `400g` through the shared `measure` formatter —
- * the same seam every gauge surface prints a net value with, so a consumption figure reads exactly
- * as the gauge it came from does — or, for the unitless line, a plain count of units.
- *
- * Exported because the Reports screen's headline tile shows the leading line and must print it
- * identically to the panel below; one function is what keeps the two from drifting.
- */
-export function formatConsumed(
-  amount: number,
-  unit: string | null,
-  formatters: Formatters,
-  t: TypedTranslator,
-): string {
-  if (unit !== null) return formatters.measure(amount, unit);
-  // `quantity` carries no unit of its own, so the noun comes from the catalog rather than a
-  // concatenation here; it is rounded to match what `measure` does with a fractional value.
-  return t('reports.consumption.unitlessAmount', {
-    vars: { amount: formatters.quantity(Math.round(amount * 100) / 100) },
-  });
-}
+import { formatConsumed } from './consumption-format';
 
 /**
  * The consumption rate, one row per **unit of measure** (issue #685).
