@@ -665,6 +665,8 @@
   "inventory.location.fields.saving": "Wird gespeichert…",
   "inventory.location.fields.emptyNoFields": "Es gibt noch keine benutzerdefinierten Felder. Legen Sie eines unter „Kategorien & Schemata“ an und setzen Sie hier seinen Wert, um ihn an diesem Ort festzuhalten.",
   "inventory.location.detail.region": "Angaben zu {name}",
+  "inventory.field.link.newTab": "(wird in einem neuen Tab geöffnet)",
+  "inventory.field.filePointer.label": "Dateipfad:",
   "hotkeys.section": "Tastenkürzel",
   "hotkeys.enabled.label": "Tastenkürzel",
   "hotkeys.enabled.description": "Mit einem einzigen Tastendruck direkt zu einem Bildschirm springen oder die Befehlspalette öffnen.",
