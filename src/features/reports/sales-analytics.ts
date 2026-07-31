@@ -9,24 +9,32 @@
  *
  * **Cost basis is a snapshot, not a re-derivation.** Each `SOLD`/`WRITTEN_OFF` ledger row carried
  * the item's effective unit cost at the moment it left inventory (`metadata.unitCostAtSale`), so
- * the margin reflects the cost *as it was then*, immune to later price edits. A row whose cost was
- * unknown at the time contributes proceeds but no COGS; those units are counted separately
- * (`unitsWithoutCost`) so the UI can caveat the margin rather than silently overstate it.
+ * the margin reflects the cost *as it was then*, immune to later price edits.
+ *
+ * **An uncosted sale is held out of the margin on _both_ sides** (issue #694). A row whose cost was
+ * unknown at the time still counts towards `proceeds` — that money really did come in — but its
+ * revenue is *also* kept out of `margin`, which is drawn from a second total, `costedProceeds`.
+ * Holding back only the cost would book the whole sale as profit and lift the headline: the more
+ * stock leaves without a price on it, the more profitable the report would claim to be, in a report
+ * whose own caveat says those units are excluded. Carrying two proceeds totals is what buys a margin
+ * that means what it says; `unitsWithoutCost` counts the units left out so the UI can caveat it.
  *
  * **Amounts accumulate raw and are quantised once, at the boundary** (issue #288) — every money
  * figure this module publishes goes through `@/lib/money`, rather than rounding per line and
  * summing rounded lines. Two consequences worth knowing:
  *
- *  - **A derived amount is derived from the published ones.** `margin` is published proceeds −
- *    published COGS at every level, so the amounts a reader sees side by side subtract correctly.
+ *  - **A derived amount is derived from the published ones.** `margin` is published *costed*
+ *    proceeds − published COGS at every level, so the two amounts it is drawn from subtract
+ *    correctly. When every sale carries a cost `costedProceeds` equals `proceeds`, and the headline
+ *    trio a reader sees side by side subtracts too.
  *  - **A breakdown re-adds to its headline** (issue #400). Buckets and categories are not rounded
  *    on their own — each column is *apportioned* to the headline through `apportionMoney`, so the
  *    figures really do sum to the total printed above them. Rounding parts and their whole
  *    independently would leave a column up to half a minor unit per row adrift, invisible at 2dp
  *    but a whole unit under a 0-decimal currency; the headline stays the accurate figure and the
  *    remainder is shared out (largest-remainder), the same guarantee the printed insurance schedule
- *    gives by summing its single column rung by rung. Apportioning proceeds and COGS makes the
- *    derived `margin` column add up for free (a difference of two reconciled columns).
+ *    gives by summing its single column rung by rung. Apportioning costed proceeds and COGS makes
+ *    the derived `margin` column add up for free (a difference of two reconciled columns).
  *
  * Ratios (`share`, `marginPct`) are deliberately computed from the raw totals: they are
  * fractions, not amounts.
@@ -60,8 +68,10 @@ export interface SalesBucket {
   readonly start: number;
   readonly end: number;
   readonly proceeds: number;
+  /** The part of {@link proceeds} that came from sales carrying a cost basis. */
+  readonly costedProceeds: number;
   readonly cogs: number;
-  /** Proceeds − COGS for the bucket (from costed sales only). */
+  /** Costed proceeds − COGS for the bucket. */
   readonly margin: number;
 }
 
@@ -71,7 +81,10 @@ export interface SalesGroup {
   readonly id: string | null;
   readonly name: string;
   readonly proceeds: number;
+  /** The part of {@link proceeds} that came from sales carrying a cost basis. */
+  readonly costedProceeds: number;
   readonly cogs: number;
+  /** Costed proceeds − COGS for the group. */
   readonly margin: number;
   /** This group's share of total proceeds (`0..1`; `0` when proceeds are 0). */
   readonly share: number;
@@ -81,19 +94,25 @@ export interface SalesGroup {
 export interface SalesReport {
   readonly windowStart: number;
   readonly windowEnd: number;
-  /** Total sale proceeds in the window. */
+  /** Total sale proceeds in the window — every sale, costed or not. */
   readonly proceeds: number;
+  /**
+   * The part of {@link proceeds} that came from sales carrying a cost basis — the revenue side of
+   * {@link margin}. Equal to {@link proceeds} when every sale was costed; short of it by the
+   * takings of the {@link unitsWithoutCost} units when not.
+   */
+  readonly costedProceeds: number;
   /** Cost of goods sold (costed sales only). */
   readonly cogs: number;
-  /** Gross margin: proceeds − COGS (costed sales only). */
+  /** Gross margin: costed proceeds − COGS. An uncosted sale contributes to neither side. */
   readonly margin: number;
-  /** Margin as a fraction of proceeds (`0..1`; `0` when proceeds are 0). */
+  /** Margin as a fraction of *costed* proceeds (`0..1`; `0` when those are 0). */
   readonly marginPct: number;
   /** Units sold in the window. */
   readonly unitsSold: number;
   /** Number of sale events counted. */
   readonly saleCount: number;
-  /** Units sold whose cost was unknown at the time (excluded from COGS/margin). */
+  /** Units sold whose cost was unknown at the time (excluded from COGS *and* from the margin). */
   readonly unitsWithoutCost: number;
   /** Cost value of stock written off in the window (a loss, not a sale). */
   readonly writeOffValue: number;
@@ -126,10 +145,11 @@ const UNCATEGORISED = 'Uncategorised';
  * **Bucketing.** `bucketCount` equal half-open spans across the window (clamped to `>= 1`); the
  * final bucket's `end` is pinned to `windowEnd`.
  *
- * **Costing.** A sale with a null `cost` contributes proceeds but no COGS, and its units are
- * tallied in `unitsWithoutCost`; margin is therefore always proceeds-of-costed-sales minus their
- * COGS, never overstated by unpriced stock. Write-offs never contribute proceeds or COGS — their
- * cost is surfaced separately as `writeOffValue`.
+ * **Costing.** A sale with a null `cost` contributes to `proceeds` but to neither side of the
+ * margin: its revenue is withheld from `costedProceeds` exactly as its unknown cost is withheld
+ * from `cogs`, and its units are tallied in `unitsWithoutCost`. Margin is therefore always
+ * proceeds-of-costed-sales minus their COGS, never overstated by unpriced stock. Write-offs never
+ * contribute proceeds or COGS — their cost is surfaced separately as `writeOffValue`.
  *
  * @param decimals Places every published amount is quantised to — the reporting currency's
  * **minor unit**, not a flat 2dp (issue #292). A yen has no minor unit and a Bahraini dinar has
@@ -149,16 +169,26 @@ export function buildSalesReport(
   const span = Math.max(1, windowEnd - windowStart);
   const width = span / count;
 
-  const buckets: { start: number; end: number; proceeds: number; cogs: number }[] = [];
+  const buckets: {
+    start: number;
+    end: number;
+    proceeds: number;
+    costedProceeds: number;
+    cogs: number;
+  }[] = [];
   for (let i = 0; i < count; i += 1) {
     const start = Math.round(windowStart + i * width);
     const end = i === count - 1 ? windowEnd : Math.round(windowStart + (i + 1) * width);
-    buckets.push({ start, end, proceeds: 0, cogs: 0 });
+    buckets.push({ start, end, proceeds: 0, costedProceeds: 0, cogs: 0 });
   }
 
-  const categoryTotals = new Map<string | null, { name: string; proceeds: number; cogs: number }>();
+  const categoryTotals = new Map<
+    string | null,
+    { name: string; proceeds: number; costedProceeds: number; cogs: number }
+  >();
 
   let proceeds = 0;
+  let costedProceeds = 0;
   let cogs = 0;
   let unitsSold = 0;
   let saleCount = 0;
@@ -178,12 +208,16 @@ export function buildSalesReport(
       continue;
     }
 
-    // A sale.
+    // A sale. Its revenue always counts towards `proceeds`; it only reaches the margin's own
+    // revenue total when there is a cost to set against it (issue #694) — otherwise the line would
+    // book as pure profit and lift a figure the report claims excludes it.
     const lineProceeds = Number.isFinite(event.proceeds) ? Math.max(0, event.proceeds) : 0;
     const hasCost = event.cost !== null && Number.isFinite(event.cost);
+    const lineCosted = hasCost ? lineProceeds : 0;
     const lineCogs = hasCost ? event.cost! : 0;
 
     proceeds += lineProceeds;
+    costedProceeds += lineCosted;
     cogs += lineCogs;
     unitsSold += event.quantity;
     saleCount += 1;
@@ -194,6 +228,7 @@ export function buildSalesReport(
       Math.max(0, Math.floor(((event.instant - windowStart) / span) * count)),
     );
     buckets[index]!.proceeds += lineProceeds;
+    buckets[index]!.costedProceeds += lineCosted;
     buckets[index]!.cogs += lineCogs;
 
     const catKey = event.categoryId ?? null;
@@ -201,9 +236,15 @@ export function buildSalesReport(
     const existing = categoryTotals.get(catKey);
     if (existing) {
       existing.proceeds += lineProceeds;
+      existing.costedProceeds += lineCosted;
       existing.cogs += lineCogs;
     } else {
-      categoryTotals.set(catKey, { name: catName, proceeds: lineProceeds, cogs: lineCogs });
+      categoryTotals.set(catKey, {
+        name: catName,
+        proceeds: lineProceeds,
+        costedProceeds: lineCosted,
+        cogs: lineCogs,
+      });
     }
   }
 
@@ -211,23 +252,31 @@ export function buildSalesReport(
   // once, at the boundary (issue #288). Rounding per line and summing rounded lines would make
   // three sales of 3 units at 0.10 total 0.8999999999999999 rather than 0.90.
   const totalProceeds = roundMoney(proceeds, decimals);
+  const totalCostedProceeds = roundMoney(costedProceeds, decimals);
   const totalCogs = roundMoney(cogs, decimals);
   // Margin is derived from the two figures the report *publishes*, not from the raw difference,
-  // so the three amounts a reader sees side by side actually subtract. Taking `roundMoney(raw
-  // proceeds − raw cogs)` instead would reintroduce the very defect this seam removes: proceeds
-  // 0.005 and cost 0.004 publish as 0.01 and 0.00, which no reader can reconcile with a 0.00
-  // margin. The outer round mops up the float noise in a difference of two quantised values.
-  const margin = roundMoney(totalProceeds - totalCogs, decimals);
+  // so the amounts it is drawn from actually subtract. Taking `roundMoney(raw costed proceeds −
+  // raw cogs)` instead would reintroduce the very defect this seam removes: proceeds 0.005 and
+  // cost 0.004 publish as 0.01 and 0.00, which no reader can reconcile with a 0.00 margin. The
+  // outer round mops up the float noise in a difference of two quantised values.
+  const margin = roundMoney(totalCostedProceeds - totalCogs, decimals);
 
   // Each breakdown column is apportioned to the published headline rather than rounded row by row
-  // (issue #400), so the categories sum to `totalProceeds`/`totalCogs` exactly. Proceeds and COGS
-  // are apportioned separately, which also makes each group's derived margin add up (it is the
-  // difference of two reconciled columns). The share stays a ratio of the raw totals — a fraction,
-  // not an amount — since dividing rounded pennies would visibly skew a small category's percentage.
+  // (issue #400), so the categories sum to `totalProceeds`/`totalCostedProceeds`/`totalCogs`
+  // exactly. Costed proceeds is apportioned as its own column alongside the other two, which is
+  // what makes each group's derived margin add up (it is the difference of two reconciled columns)
+  // — deriving it from the full proceeds column instead would put the uncosted revenue back into
+  // every row's margin. The share stays a ratio of the raw totals — a fraction, not an amount —
+  // since dividing rounded pennies would visibly skew a small category's percentage.
   const catEntries = [...categoryTotals.entries()];
   const catProceeds = apportionMoney(
     catEntries.map(([, v]) => v.proceeds),
     totalProceeds,
+    decimals,
+  );
+  const catCostedProceeds = apportionMoney(
+    catEntries.map(([, v]) => v.costedProceeds),
+    totalCostedProceeds,
     decimals,
   );
   const catCogs = apportionMoney(
@@ -238,13 +287,15 @@ export function buildSalesReport(
   const byCategory: SalesGroup[] = catEntries
     .map(([id, { name, proceeds: p }], i) => {
       const groupProceeds = catProceeds[i]!;
+      const groupCostedProceeds = catCostedProceeds[i]!;
       const groupCogs = catCogs[i]!;
       return {
         id,
         name,
         proceeds: groupProceeds,
+        costedProceeds: groupCostedProceeds,
         cogs: groupCogs,
-        margin: roundMoney(groupProceeds - groupCogs, decimals),
+        margin: roundMoney(groupCostedProceeds - groupCogs, decimals),
         share: share(p, proceeds),
       };
     })
@@ -262,6 +313,11 @@ export function buildSalesReport(
     totalProceeds,
     decimals,
   );
+  const bucketCostedProceeds = apportionMoney(
+    buckets.map((b) => b.costedProceeds),
+    totalCostedProceeds,
+    decimals,
+  );
   const bucketCogs = apportionMoney(
     buckets.map((b) => b.cogs),
     totalCogs,
@@ -272,10 +328,14 @@ export function buildSalesReport(
     windowStart,
     windowEnd,
     proceeds: totalProceeds,
+    costedProceeds: totalCostedProceeds,
     cogs: totalCogs,
     margin,
-    // Also a ratio of the raw totals, for the same reason as a group's `share`.
-    marginPct: share(proceeds - cogs, proceeds),
+    // Also a ratio of the raw totals, for the same reason as a group's `share` — and over *costed*
+    // proceeds, the revenue the margin was actually drawn from. Dividing by the full proceeds would
+    // dilute the percentage with revenue the numerator deliberately excludes, reporting a lower
+    // margin rate than the costed sales achieved.
+    marginPct: share(costedProceeds - cogs, costedProceeds),
     unitsSold,
     saleCount,
     unitsWithoutCost,
@@ -284,14 +344,16 @@ export function buildSalesReport(
     writeOffCount,
     buckets: buckets.map((b, i) => {
       const p = bucketProceeds[i]!;
+      const cp = bucketCostedProceeds[i]!;
       const c = bucketCogs[i]!;
       return {
         start: b.start,
         end: b.end,
         proceeds: p,
+        costedProceeds: cp,
         cogs: c,
         // Derived from the published pair, exactly like the headline margin.
-        margin: roundMoney(p - c, decimals),
+        margin: roundMoney(cp - c, decimals),
       };
     }),
     byCategory,
