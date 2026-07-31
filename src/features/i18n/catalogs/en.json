@@ -1204,6 +1204,8 @@
   "inventory.writeError.heading.tagMerge": "Couldn’t merge the tags",
   "inventory.writeError.heading.tagDelete": "Couldn’t delete the tag",
   "inventory.writeError.reverted": "Your change has been undone.",
+  "item.section.shownDespiteHidden": "This is usually hidden for this item’s category, but it isn’t empty — so it’s shown here.",
+  "item.section.shownDespiteHiddenNamed": "The {category} category usually hides this, but it isn’t empty — so it’s shown here.",
   "projects.list.error": "Your projects couldn’t be loaded.",
   "projects.list.retry": "Try again",
   "projects.list.title": "Projects",

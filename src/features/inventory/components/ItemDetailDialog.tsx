@@ -21,9 +21,14 @@ import {
   TagsIcon,
   TestRecordIcon,
 } from '@/components/icons';
-import type { Item } from '@/db/repositories';
+import type { Item, ItemSectionPresence } from '@/db/repositories';
+import { NO_SECTION_PRESENCE } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import type { FeatureId } from '@/features/modules/feature-registry';
+import { hidesAnyCapability, isCapabilityVisible, toHiddenCapabilitySet } from '../category-capabilities';
+import { useCategories } from '../categories';
+import { useItemSectionPresence } from '../queries';
 import { KitEditor, LifecycleEditor, MaintenanceEditor } from '@/features/lifecycle';
 import { ActivityLog } from './ActivityLog';
 import { AttachmentManager } from './AttachmentManager';
@@ -75,7 +80,22 @@ export function ItemDetailDialog({
   // way in disappears. Passing the resolved set into the pure `buildTabs` keeps the hook out
   // of the tab-building logic.
   const enabledFeatures = useEnabledFeatures();
-  const tabs = buildTabs(item, enabledFeatures);
+
+  // Second axis (issue #618): the item's category can declare capabilities its items simply
+  // don't have — a Movie has no maintenance schedule — narrowing the device's set further.
+  // `useCategories` is the app-wide cached list every other consumer resolves an id against,
+  // so this costs nothing extra. An uncategorised item hides nothing.
+  const categories = useCategories();
+  const category = categories.data?.rows.find((c) => c.id === item.categoryId);
+  const hiddenCapabilities = toHiddenCapabilitySet(category?.hiddenCapabilities);
+
+  // Hiding must never make existing data invisible, so a hidden section that holds something
+  // is shown anyway. Only ask which sections hold data when the category actually hides one —
+  // an inventory that hides nothing never runs this query.
+  const hidesSomething = hidesAnyCapability(category?.hiddenCapabilities);
+  const presence = useItemSectionPresence(item.id, hidesSomething);
+
+  const tabs = buildTabs(item, enabledFeatures, hiddenCapabilities, presence.data ?? NO_SECTION_PRESENCE);
 
   // Collector-card rarity (Appearance flair): a decorative gem in the dialog's top-right for the
   // ~5% of items that are collectors. Gated to match the card frame — shown only when the
@@ -95,7 +115,14 @@ export function ItemDetailDialog({
     label: tab.label,
     icon: tab.icon,
     content: tab.sections.map((section) => (
-      <Section key={section.title} title={section.title} icon={section.icon} hint={section.hint}>
+      <Section
+        key={section.title}
+        title={section.title}
+        icon={section.icon}
+        hint={section.hint}
+        shownDespiteHidden={section.shownDespiteHidden === true}
+        categoryName={category?.name}
+      >
         {section.content}
       </Section>
     )),
@@ -131,6 +158,22 @@ interface SectionDef {
    * section is dropped; a section with no `feature` is always shown (a core facet).
    */
   readonly feature?: FeatureId;
+  /**
+   * Whether this section actually holds data for the item (issue #618).
+   *
+   * Only consulted when the item's category hides {@link feature}: hiding must never make
+   * existing data invisible, so a populated section is shown regardless, carrying a note that
+   * explains why it is there. Per-section rather than per-capability because one capability
+   * can gate two sections — `tags-attachments` gates Tags *and* Datasheets, and either may
+   * hold data without the other.
+   */
+  readonly hasData?: boolean;
+  /**
+   * Set by {@link buildTabs}' filter, never at the declaration site: this section survived
+   * only because it holds data its category would otherwise have hidden, so the UI owes the
+   * user an explanation for its presence.
+   */
+  readonly shownDespiteHidden?: boolean;
 }
 
 interface TabDef {
@@ -311,10 +354,24 @@ const SECTION_HINT_ACTIVITY =
  * it is the edit-item home for the core identity fields (name, description, notes,
  * MPN, manufacturer, cost, category) plus the item's location.
  *
- * `enabled` is the resolved feature set: feature-gated sections whose capability is off are
- * dropped, and any tab left with no surviving sections is dropped entirely (§4, Phase 6).
+ * Visibility runs on two axes, both resolved by the pure `isCapabilityVisible` seam:
+ *
+ * - `enabled` — the device's resolved feature set. A capability switched off on the Modules
+ *   screen drops its section, and any tab left with no surviving sections is dropped
+ *   entirely (§4, Phase 6). This axis always wins.
+ * - `hidden` — the capabilities the item's *category* says its items don't have (issue #618).
+ *   Narrows further, never widens. A section it would hide is kept anyway when `presence`
+ *   says it holds data, flagged `shownDespiteHidden` so the UI can explain itself.
+ *
+ * `presence` is the data-presence probe for the item, or {@link NO_SECTION_PRESENCE} while it
+ * is still loading or when nothing is hidden and it was never asked for.
  */
-export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly TabDef[] {
+export function buildTabs(
+  item: Item,
+  enabled: ReadonlySet<FeatureId>,
+  hidden: ReadonlySet<FeatureId> = EMPTY_HIDDEN,
+  presence: ItemSectionPresence = NO_SECTION_PRESENCE,
+): readonly TabDef[] {
   const tabs: readonly TabDef[] = [
     {
       id: 'details',
@@ -355,6 +412,7 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           content: <ItemPlacementsPanel item={item} />,
           hint: SECTION_HINT_PLACEMENTS,
           feature: 'location-photos',
+          hasData: presence.placements,
         },
       ],
     },
@@ -410,6 +468,7 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           content: <AssetEditor item={item} />,
           hint: SECTION_HINT_ASSET,
           feature: 'warranty',
+          hasData: hasAssetData(item),
         },
         {
           title: 'Maintenance',
@@ -417,6 +476,7 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           content: <MaintenanceEditor itemId={item.id} />,
           hint: SECTION_HINT_MAINTENANCE,
           feature: 'maintenance',
+          hasData: presence.maintenance,
         },
         // Per-instance test / calibration / service records (feature-gap G7). Structured pass/fail
         // + reading logs are only meaningful for a *serialised* unit (a specific instance with a
@@ -448,6 +508,7 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           content: <KitEditor item={item} />,
           hint: SECTION_HINT_KIT,
           feature: 'kits',
+          hasData: presence.kit,
         },
       ],
     },
@@ -500,6 +561,7 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           content: <AttachmentManager itemId={item.id} />,
           hint: SECTION_HINT_DATASHEETS,
           feature: 'tags-attachments',
+          hasData: presence.attachments,
         },
       ],
     },
@@ -514,6 +576,7 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           content: <TagEditor itemId={item.id} />,
           hint: SECTION_HINT_TAGS,
           feature: 'tags-attachments',
+          hasData: presence.tags,
         },
         {
           title: 'Capabilities',
@@ -521,6 +584,7 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           content: <CapabilityEditor itemId={item.id} />,
           hint: SECTION_HINT_CAPABILITIES,
           feature: 'custom-fields',
+          hasData: presence.capabilities,
         },
         {
           title: 'Custom fields',
@@ -528,6 +592,7 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           content: <CustomFieldsEditor itemId={item.id} />,
           hint: SECTION_HINT_CUSTOM_FIELDS,
           feature: 'custom-fields',
+          hasData: presence.customFields,
         },
       ],
     },
@@ -546,13 +611,38 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
     },
   ];
 
-  // Drop feature-gated sections whose capability is off, then any tab left with no sections.
+  // Resolve both visibility axes, then drop any tab left with no sections. A section kept only
+  // because it holds data its category hides is marked so its header can explain itself.
   return tabs
     .map((tab) => ({
       ...tab,
-      sections: tab.sections.filter((s) => s.feature === undefined || enabled.has(s.feature)),
+      sections: tab.sections.flatMap((s) => {
+        const verdict = isCapabilityVisible(s.feature, enabled, hidden, s.hasData === true);
+        if (verdict === 'hidden') return [];
+        return [verdict === 'shown-despite-hidden' ? { ...s, shownDespiteHidden: true } : s];
+      }),
     }))
     .filter((tab) => tab.sections.length > 0);
+}
+
+/** No category hiding — the default, and the answer for an uncategorised item. */
+const EMPTY_HIDDEN: ReadonlySet<FeatureId> = new Set<FeatureId>();
+
+/**
+ * Whether the Asset details section holds anything, read straight off the already-loaded item.
+ *
+ * These five live on the item row, so asking the database again would be waste — hence they
+ * are absent from the `EXISTS` probe rather than forgotten by it. `currentValue` stands in for
+ * a non-empty revaluation log: recording a revaluation writes both in one transaction.
+ */
+function hasAssetData(item: Item): boolean {
+  return (
+    item.acquiredAt !== null ||
+    item.warrantyExpiresAt !== null ||
+    item.purchasePrice !== null ||
+    item.depreciationMonths !== null ||
+    item.currentValue !== null
+  );
 }
 
 /**
@@ -566,13 +656,20 @@ function Section({
   title,
   icon,
   hint,
+  shownDespiteHidden = false,
+  categoryName,
   children,
 }: {
   title: string;
   icon: ReactNode;
   hint?: string;
+  /** This section's category hides it, but it holds data — say so rather than surprising anyone. */
+  shownDespiteHidden?: boolean;
+  /** The item's category name, for the note above. Absent for an uncategorised item. */
+  categoryName?: string;
   children: ReactNode;
 }) {
+  const t = useT();
   return (
     <section className="overflow-hidden rounded-xl border border-border shadow-sm">
       <h3 className="flex items-center gap-2.5 border-b border-border bg-secondary/30 px-4 py-2.5 text-sm font-semibold">
@@ -590,7 +687,19 @@ function Section({
           </span>
         ) : null}
       </h3>
-      <div className="p-4">{children}</div>
+      <div className="p-4">
+        {/* Hiding must never make existing data invisible. When a section survives only because
+            it holds something its category would otherwise hide, say so plainly — an unexplained
+            section appearing on one item but not its neighbour reads as a bug. */}
+        {shownDespiteHidden ? (
+          <p className="mb-3 rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+            {categoryName === undefined
+              ? t('item.section.shownDespiteHidden')
+              : t('item.section.shownDespiteHiddenNamed', { vars: { category: categoryName } })}
+          </p>
+        ) : null}
+        {children}
+      </div>
     </section>
   );
 }

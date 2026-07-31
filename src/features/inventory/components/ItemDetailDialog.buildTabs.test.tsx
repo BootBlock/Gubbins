@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Item } from '@/db/repositories';
+import { NO_SECTION_PRESENCE } from '@/db/repositories';
 import { ALL_FEATURE_IDS, type FeatureId } from '@/features/modules/feature-registry';
 import { buildTabs } from './ItemDetailDialog';
 
@@ -125,6 +126,87 @@ describe('buildTabs — feature gating (Phase 6)', () => {
   it('never mutates the item it is given (gating hides UI, never touches stored data)', () => {
     const snapshot = structuredClone(item);
     buildTabs(item, without('warranty', 'maintenance', 'custom-fields', 'tags-attachments'));
+    expect(item).toEqual(snapshot);
+  });
+});
+
+/**
+ * Issue #618 — the second visibility axis: the item's *category* can declare capabilities its
+ * items simply don't have. It narrows the device's set and may never widen it, and it must
+ * never make existing data invisible — a hidden section that holds something is shown anyway.
+ */
+describe('buildTabs — category-scoped hiding (issue #618)', () => {
+  const hiding = (...ids: FeatureId[]): ReadonlySet<FeatureId> => new Set(ids);
+
+  it('hides a section the category hides when it holds no data', () => {
+    const tabs = buildTabs(item, ALL, hiding('maintenance'), NO_SECTION_PRESENCE);
+    expect(sectionTitles(tabs, 'lifecycle')).not.toContain('Maintenance');
+  });
+
+  it('keeps a hidden section that holds data, and flags why it survived', () => {
+    const tabs = buildTabs(item, ALL, hiding('maintenance'), {
+      ...NO_SECTION_PRESENCE,
+      maintenance: true,
+    });
+    const section = tabs.find((t) => t.id === 'lifecycle')?.sections.find((s) => s.title === 'Maintenance');
+    expect(section).toBeDefined();
+    expect(section!.shownDespiteHidden).toBe(true);
+  });
+
+  it('does not flag a section that was never hidden', () => {
+    const tabs = buildTabs(item, ALL, hiding(), { ...NO_SECTION_PRESENCE, maintenance: true });
+    const section = tabs.find((t) => t.id === 'lifecycle')?.sections.find((s) => s.title === 'Maintenance');
+    expect(section!.shownDespiteHidden).toBeUndefined();
+  });
+
+  it('resolves per section, not per capability, where one capability gates two', () => {
+    // `tags-attachments` gates Tags and Datasheets. Attachments exist, tags do not — so only
+    // Datasheets is rescued. Keying presence off the capability would wrongly show both.
+    const tabs = buildTabs(item, ALL, hiding('tags-attachments'), {
+      ...NO_SECTION_PRESENCE,
+      attachments: true,
+    });
+    expect(sectionTitles(tabs, 'classification')).not.toContain('Tags');
+    expect(sectionTitles(tabs, 'media')).toContain('Datasheets');
+  });
+
+  it('reads Asset details presence off the item row rather than the probe', () => {
+    const priced: Item = { ...item, purchasePrice: 12.5 };
+    const tabs = buildTabs(priced, ALL, hiding('warranty'), NO_SECTION_PRESENCE);
+    expect(sectionTitles(tabs, 'lifecycle')).toContain('Asset details');
+  });
+
+  it('lets the device module win over a category that hides nothing, even with data present', () => {
+    const tabs = buildTabs(item, without('maintenance'), hiding(), {
+      ...NO_SECTION_PRESENCE,
+      maintenance: true,
+    });
+    expect(sectionTitles(tabs, 'lifecycle')).not.toContain('Maintenance');
+  });
+
+  it('never lets a category re-enable a capability the device has switched off', () => {
+    // The narrowing invariant, end to end: no category state resurrects a disabled module.
+    for (const hidden of [hiding(), hiding('kits')]) {
+      const tabs = buildTabs(item, without('kits'), hidden, { ...NO_SECTION_PRESENCE, kit: true });
+      expect(tabIds(tabs)).not.toContain('kit');
+    }
+  });
+
+  it('drops a tab whose only section the category hides', () => {
+    const tabs = buildTabs(item, ALL, hiding('kits'), NO_SECTION_PRESENCE);
+    expect(tabIds(tabs)).not.toContain('kit');
+  });
+
+  it('behaves exactly as before when no category hiding is supplied', () => {
+    expect(buildTabs(item, ALL)).toEqual(buildTabs(item, ALL, new Set(), NO_SECTION_PRESENCE));
+  });
+
+  it('never mutates the item it is given', () => {
+    const snapshot = structuredClone(item);
+    buildTabs(item, ALL, hiding('maintenance', 'kits', 'custom-fields'), {
+      ...NO_SECTION_PRESENCE,
+      maintenance: true,
+    });
     expect(item).toEqual(snapshot);
   });
 });

@@ -108,12 +108,14 @@ export type {
   LocationBatchLine,
   KitComponent,
   ItemStatusCount,
+  ItemSectionPresence,
 } from './ItemRepository';
 export {
   ITEM_SORT_FIELDS,
   ITEM_STATUS_FILTERS,
   STATUS_FILTER_FEATURE,
   STOCK_DEPENDENT_STATUSES,
+  NO_SECTION_PRESENCE,
   isItemStatusFilter,
   isStockDependentStatus,
 } from './ItemRepository';

@@ -205,6 +205,10 @@ export const inventoryKeys = {
   // Feature-gap G6 — an item's related-items cross-links ("works with"/accessory/spare-for); under
   // item() so an `items()` invalidation refreshes it by prefix.
   itemRelations: (itemId: string) => [...inventoryKeys.item(itemId), 'relations'] as const,
+  // Issue #618 — which of an item's sections hold data, so a section its category hides is
+  // still shown when it has something in it. Under item() so any write to the item refreshes
+  // it by prefix; a section that has just gained its first row must stop being hidden.
+  itemSectionPresence: (itemId: string) => [...inventoryKeys.item(itemId), 'section-presence'] as const,
   // Issue #70 — full rows for a set of items in one round-trip (the checkout prerequisite panel);
   // under items() so any item write refreshes it by prefix.
   itemsById: (itemIds: readonly string[]) => [...inventoryKeys.items(), 'by-id-batch', itemIds] as const,
@@ -318,6 +322,21 @@ export function useItemRevaluations(itemId: string | undefined) {
     queryKey: inventoryKeys.itemRevaluations(itemId ?? ''),
     queryFn: () => getItemRepository().listRevaluations(itemId!),
     enabled: Boolean(itemId),
+  });
+}
+
+/**
+ * Which of an item's sections actually hold data (issue #618).
+ *
+ * Only asked when the item's category hides at least one capability — `enabled` is what keeps
+ * the overwhelmingly common "hides nothing" case free, so an inventory that never hides a
+ * capability never runs this query at all.
+ */
+export function useItemSectionPresence(itemId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: inventoryKeys.itemSectionPresence(itemId ?? ''),
+    queryFn: () => getItemRepository().getSectionPresence(itemId!),
+    enabled: Boolean(itemId) && enabled,
   });
 }
 

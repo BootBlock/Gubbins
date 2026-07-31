@@ -1204,6 +1204,8 @@
   "inventory.writeError.heading.tagMerge": "Tags konnten nicht zusammengeführt werden",
   "inventory.writeError.heading.tagDelete": "Tag konnte nicht gelöscht werden",
   "inventory.writeError.reverted": "Ihre Änderung wurde rückgängig gemacht.",
+  "item.section.shownDespiteHidden": "Dies wird für die Kategorie dieses Artikels normalerweise ausgeblendet, ist aber nicht leer — daher wird es hier angezeigt.",
+  "item.section.shownDespiteHiddenNamed": "Die Kategorie {category} blendet dies normalerweise aus, es ist aber nicht leer — daher wird es hier angezeigt.",
   "projects.list.error": "Deine Projekte konnten nicht geladen werden.",
   "projects.list.retry": "Erneut versuchen",
   "projects.list.title": "Projekte",
