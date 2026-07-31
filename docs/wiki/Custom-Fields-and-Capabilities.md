@@ -168,8 +168,8 @@ terms you set the field up in.
 **Decimals** is how many decimal places the number is written to. Unlike the range, it changes how
 the value *looks* as well as what's allowed:
 
-- set **2** on a *Torque* field and `5.5` reads as `5.50` everywhere the value appears — the item's
-  card, the dense list, the table and a location's details panel;
+- set **2** on a *Torque* field and `5.5` is shown as `5.50` on the item's card, the dense list, the
+  table and a location's details panel;
 - set **0** for **whole numbers only** — a rule a range can't express, since no smallest-and-largest
   pair rules out `2.5` while still allowing `2` and `3`;
 - leave the box empty to show numbers exactly as they were typed.
@@ -187,7 +187,8 @@ and simply shown as `5.50`.
 > **💡 Tip**
 > Decimals only change how the value is *displayed* — the number you typed is what's stored. So you
 > can raise or lower the setting later and every existing value is rewritten to match, rather than
-> leaving a mixture of old and new. Exports and searches still use the number as you typed it.
+> leaving a mixture of old and new. The box you type the value into keeps it as you typed it, and so
+> do exports and searches.
 
 > **💡 Tip**
 > Use the **Unit** setting rather than putting the unit in the field's *name* or its

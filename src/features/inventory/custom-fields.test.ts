@@ -15,8 +15,7 @@ function def(over: Partial<CategoryField> & { fieldType: FieldType }): CategoryF
     unit: over.unit ?? null,
     minValue: over.minValue ?? null,
     maxValue: over.maxValue ?? null,
-    // `?? null` would swallow the `0` that means "whole numbers only", so this one is `== null`.
-    precision: over.precision == null ? null : over.precision,
+    precision: over.precision ?? null,
     position: over.position ?? 0,
     updatedAt: over.updatedAt ?? 0,
   };

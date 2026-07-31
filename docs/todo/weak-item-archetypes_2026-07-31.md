@@ -831,9 +831,20 @@ reasons, each checkable rather than a preference:
    ([evaluate-expression.ts:83-98](../../src/components/foundry/evaluate-expression.ts#L83-L98));
    below it `validateFieldValue` parses with a bare `Number(text)`, for which `'5,50'` is `NaN`.
    So under a German locale a card would read `5,50` and *neither* layer of the control that set
-   it would take that string back. Money can afford the locale because it owns **both** ends —
-   `Money` renders and `snapMoneyInput` + `decimalSeparatorForLocale` parse. Adopting only the
-   render half here would take the risk without the mechanism that makes it safe.
+   it would take that string back.
+
+   Worth recording what this reason is **not**, because the tempting version of it is false and
+   review caught it: money is not different here. `MoneyInput` renders the same
+   `Input type="number"` ([money-input.tsx:55-66](../../src/components/foundry/money-input.tsx#L55-L66)),
+   which delegates to the same calculator text box
+   ([input.tsx:24-31](../../src/components/foundry/input.tsx#L24-L31)), and `snapMoneyInput` parses
+   `.`-separated text by its own documented design
+   ([format.ts:438-455](../../src/lib/format.ts#L438-L455)) — `decimalSeparatorForLocale` has
+   exactly one non-test consumer in the repo, and it is the CSV import dialog, not any money
+   control. So money already ships this render-locale/parse-`.` asymmetry and absorbs it, because
+   a currency symbol tells the reader what format they are looking at. A bare custom number
+   carries no such marker. That makes this a difference of degree rather than of kind, and
+   **reasons 1 and 3 are what actually decide it.**
 3. **Every other surface publishes the stored string verbatim.** `field:` search comparisons match
    on it, the CSV export writes it, and the bridge serves it. A grouped or comma-separated card
    would be the one surface of five spelling the value differently.
@@ -881,7 +892,8 @@ without grouping (which keeps reason 2 and most of reason 3 while gaining almost
 6. **The editor's box clamps rather than refusing, unlike the range boxes beside it.** A count of
    decimal places is a bounded whole number — the shape of `due_lead_days`, not of a bound — so
    `9` settles to the cap and `2.5` to `3`, and the control has no error path at all. Its `maxLength`
-   is 1 (the cap is a single digit), which keeps the clamp a paste-only path. It is still a text
+   is 1 (the cap is a single digit), so a *typed* value can only overshoot the cap by one digit —
+   `7`, `8` or `9`; reaching the clamp with anything further out takes a paste. It is still a text
    input with `inputMode="numeric"` rather than `type="number"`, for the reason §4.2's last
    paragraph gives, and `numeric` rather than `decimal` because the count itself is whole.
 

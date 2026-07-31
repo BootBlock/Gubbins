@@ -4,9 +4,12 @@
  *
  * `field_defs.precision` is the odd one out among a definition's number settings. A unit only
  * labels a value and a range only refuses one; a precision does both. It refuses a value carrying
- * more decimals than the field allows, *and* it decides how a stored value is written wherever it
- * is displayed — `5.5` on a two-decimal field reads `5.50`. Shipping only the first half would
- * read as a defect: someone who sets 2 dp and still sees `5.5` will call it a bug.
+ * more decimals than the field allows, *and* it decides how a stored value is written on the
+ * read-only surfaces — `5.5` on a two-decimal field reads `5.50` on the item card, the dense row,
+ * the table cell and the location detail panel. (The *editor*'s box still holds `5.5`: that is
+ * where the number is typed, and validation only ever refuses too *many* decimals, never too few.)
+ * Shipping only the first half would read as a defect: someone who sets 2 dp and still sees `5.5`
+ * will call it a bug.
  *
  * The two halves are literally the same call. {@link formatFieldNumber} writes the value at the
  * definition's precision; {@link fitsFieldPrecision} asks whether doing so would lose anything.

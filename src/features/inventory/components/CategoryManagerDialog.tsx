@@ -1410,7 +1410,8 @@ function resolveBound(raw: string): number | null | undefined {
  * Unlike a bound, this one is *clamped* rather than passed on to be refused. A count of decimal
  * places is a bounded whole number, exactly as a notice period is, so `2.5` settling to `3` and
  * `9` settling to the cap is a predictable read of what was typed rather than a rejection the user
- * has to act on. The control's `maxLength` means this normally only fires for a pasted value.
+ * has to act on. The control's `maxLength` of 1 narrows what can reach the clamp by typing to a
+ * single digit above the cap — `7`, `8` or `9`; anything further out has to be pasted.
  */
 function resolvePrecision(raw: string): number | null | undefined {
   if (raw.trim() === '') return null;
@@ -1593,8 +1594,8 @@ function FieldNumberOptionsControl({ field }: { field: CategoryField }) {
       {t('inventory.fields.number.precisionLabel')}
       {/* A text box with a numeric keypad, for the same reason as the bounds above and one more:
           the count is a whole number, so `inputMode="numeric"` matches the due-date notice period
-          rather than the decimal bounds. `maxLength` is 1 because the cap is a single digit, which
-          is what keeps {@link resolvePrecision}'s clamp a paste-only path. */}
+          rather than the decimal bounds. `maxLength` is 1 because the cap is a single digit, so a
+          typed value can only ever overshoot it by one digit — see {@link resolvePrecision}. */}
       <Input
         inputMode="numeric"
         maxLength={1}
