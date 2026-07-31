@@ -63,12 +63,7 @@ export class SyncRemoteMissingError extends Error {
  * Google token raised by the upload must still reach the reconnect path.
  */
 export class SyncPushFailedError extends Error {
-  /**
-   * What the merge already committed to the local database before the push failed.
-   *
-   * Declared and assigned rather than a constructor parameter property: the bridge imports this
-   * module graph through Node's strip-only TypeScript loader, which cannot run one.
-   */
+  /** What the merge already committed to the local database before the push failed. */
   readonly localOutcome: SyncResult;
 
   constructor(message: string, localOutcome: SyncResult, options?: { cause?: unknown }) {
