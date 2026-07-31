@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { ActivityFeedEntry } from '@/db/repositories';
-import { activityExportColumns, activityExportFilename, buildActivityExport } from './activity-export';
+import {
+  activityExportColumns,
+  activityExportFilename,
+  buildActivityExport,
+  buildItemActivityExport,
+  itemActivityExportColumns,
+  itemActivityExportFilename,
+} from './activity-export';
 
 function entry(overrides: Partial<ActivityFeedEntry> = {}): ActivityFeedEntry {
   return {
@@ -84,6 +91,41 @@ describe('activityExportFilename', () => {
   it('is date-stamped and carries the chosen extension', () => {
     expect(activityExportFilename('json', new Date('2026-07-25T00:00:00Z'))).toBe(
       'gubbins-activity-2026-07-25.json',
+    );
+  });
+});
+
+describe('one item’s Activity Log export (issue #620)', () => {
+  it('drops only the Item column — every event column is the feed’s own', () => {
+    const headers = itemActivityExportColumns().map((c) => c.header);
+    expect(headers).toEqual(
+      activityExportColumns()
+        .map((c) => c.header)
+        .filter((h) => h !== 'Item'),
+    );
+  });
+
+  it('reads the same values the feed’s columns do', () => {
+    const row = entry({ action: 'MOVED', quantityDelta: -2 });
+    const cell = (header: string) =>
+      itemActivityExportColumns()
+        .find((c) => c.header === header)
+        ?.value(row);
+    expect(cell('When')).toBe('2026-07-25T09:30:00.000Z');
+    expect(cell('Kind')).toBe('Moves');
+    expect(cell('Action')).toBe('Moved');
+    expect(cell('Quantity change')).toBe(-2);
+  });
+
+  it('names the item in the document title instead, since every row shares it', async () => {
+    const { content } = await buildItemActivityExport('html', [entry()], 'Brass widget');
+    expect(String(content)).toContain('Activity — Brass widget');
+    expect(String(content)).not.toContain('<th>Item</th>');
+  });
+
+  it('is date-stamped and sorts beside the other list exports', () => {
+    expect(itemActivityExportFilename('csv', new Date('2026-07-25T00:00:00Z'))).toBe(
+      'gubbins-item-activity-2026-07-25.csv',
     );
   });
 });

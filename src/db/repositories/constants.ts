@@ -160,6 +160,15 @@ export const HISTORY_ACTIONS = [
   // each held before and after, rides the entry's note/metadata, so the public event vocabulary
   // stays as it is (`item.changed`) instead of growing a type per column.
   'ATTRIBUTES_CHANGED',
+  // The item's own ledger was cleared on purpose (issue #620). The one entry that survives a
+  // clear, so the log never simply goes blank: an emptied audit trail that says nothing is
+  // indistinguishable from an item nothing ever happened to.
+  //
+  // It is also the **watermark** the sync engine reads: `item_history` reconciles by
+  // union-by-id, so without a marker in the ledger itself a peer would hand the cleared rows
+  // straight back on the next merge. Entries older than the newest `HISTORY_CLEARED` for an
+  // item are neither imported nor kept — see `reconcileHistory`.
+  'HISTORY_CLEARED',
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 

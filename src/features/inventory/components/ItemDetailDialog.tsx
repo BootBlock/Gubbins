@@ -609,7 +609,7 @@ export function buildTabs(
         {
           title: 'Activity log',
           icon: <HistoryIcon />,
-          content: <ActivityLog itemId={item.id} />,
+          content: <ActivityLog itemId={item.id} itemName={item.name} />,
           hint: SECTION_HINT_ACTIVITY,
         },
       ],

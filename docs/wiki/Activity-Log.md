@@ -47,11 +47,37 @@ that have always been logged.
 > a cold-storage export first) from the [[storage triage|Storage-Triage]] tools — nothing is lost
 > without a copy.
 
-> **💡 Tip**
-> **Export** on the Activity screen saves the log as a spreadsheet or a table — handy for an audit
-> trail, a handover, or working out where a month's stock went. The file covers the whole log
-> under whichever kinds you have selected, not just the entries on screen. See
-> [[Export & import|Export-and-Import]].
+## Exporting a log
+
+**Export** saves a log as a spreadsheet or a table — handy for an audit trail, a handover, or
+working out where a month's stock went. It sits on the Activity screen for the whole-inventory
+feed, and above an item's own **Activity** tab for just that item.
+
+Either way the file covers the **whole** log — the global feed under whichever kinds you have
+selected, or every entry for the item — not just what is on screen. The usual formats are offered:
+CSV, TSV, an Excel workbook, JSON, Markdown, printable HTML or plain text. See
+[[Export & import|Export-and-Import]].
+
+## Clearing an item's log
+
+**Clear log**, above an item's **Activity** tab, empties that item's history. It is not a hard
+delete of everything: one entry is left in place recording that the log was cleared, when, and by
+whom — the signed-in person if you use [[accounts|Users-and-Accounts]], or a short marker for the
+device it was done on if you don't.
+
+The item itself is untouched. Its stock, photos, custom fields and everything else stay exactly as
+they were; only the record of how it got there goes.
+
+> **⚠️ Heads-up**
+> Clearing cannot be undone, and it travels: your other devices drop the same entries on their next
+> [[sync|Cloud-Sync]]. Take an **Export** first if there is any chance you will want the history
+> later. If you only want to reclaim space, prune old history from the
+> [[storage triage|Storage-Triage]] tools instead — that keeps a cold-storage copy.
+
+> **ℹ️ Note**
+> Clearing is only offered to someone allowed to delete audit records. With
+> [[accounts|Users-and-Accounts]] switched off that's everyone, as usual; with them on, a role
+> without that permission sees the log and its Export button but no Clear.
 
 ## Related pages
 

@@ -48,8 +48,10 @@ export interface PermissionSubjectDef {
  * zero or written off, never deleted.
  *
  * `audit` uses `view`/`delete` rather than `read`/`write` because the ledger is immutable:
- * there is no such thing as writing an audit entry directly, and `delete` covers only
- * retention pruning.
+ * there is no such thing as writing an audit entry directly, and `delete` covers only the two
+ * ways a ledger entry can legitimately go — retention pruning, and clearing a single item's log
+ * (issue #620). Both destroy an audit trail rather than editing one, which is why neither
+ * rides on `items:write`.
  *
  * `users` uses `read`/`manage` because account administration is not usefully divisible —
  * anyone who can edit an account can grant themselves a role, so a separate `users:delete`

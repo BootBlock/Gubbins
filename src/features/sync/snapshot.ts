@@ -609,6 +609,22 @@ export function historyInsertStatement(row: SqlRow, columns: readonly string[] |
 }
 
 /**
+ * Build the DELETE that enforces one item's ledger clear (issue #620): every `item_history`
+ * entry for the item from before the clear mark goes.
+ *
+ * Shared by the two paths that merge a ledger — {@link applyPlan}'s ordinary reconciliation
+ * and the clone-and-salvage rebuild — so a clear cannot be honoured by one and quietly
+ * skipped by the other. Strictly `<`, so the `HISTORY_CLEARED` entry carrying the mark
+ * survives its own delete.
+ */
+export function historyClearStatement(itemId: string, before: number): SqlStatement {
+  return {
+    sql: `DELETE FROM ${ITEM_HISTORY_TABLE} WHERE item_id = ? AND created_at < ?;`,
+    params: [itemId, before],
+  };
+}
+
+/**
  * Build the INSERT OR IGNORE for an append-only `stock_deltas` row (union-by-id, issue #188).
  *
  * The discrete-stock twin of {@link historyInsertStatement}: `columns` must come from the live
@@ -753,6 +769,13 @@ export async function applyPlan(
   // Runs after the LWW upserts so the parent items exist (FK-safe).
   for (const row of plan.historyInserts) {
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
+  }
+
+  // Issue #620: adopt a peer's per-item ledger clear — drop the entries it cleared that this
+  // device still holds. Runs *after* the union above so the clearing peer's own marker is in
+  // place first; the marker itself carries the cut-off instant, so it survives its own delete.
+  for (const { itemId, before } of plan.historyClears) {
+    statements.push(historyClearStatement(itemId, before));
   }
 
   // Issue #188: append-only stock-delta ledger union-by-id (INSERT OR IGNORE, same as the

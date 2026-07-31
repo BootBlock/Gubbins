@@ -66,6 +66,8 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   TESTED: 'lifecycle',
   // An edit to the item's notifiable attributes (W10) — record-keeping, not a stock movement.
   ATTRIBUTES_CHANGED: 'lifecycle',
+  // The ledger itself was cleared (issue #620) — a record-keeping event about the record.
+  HISTORY_CLEARED: 'lifecycle',
   // Outbound / commercial stock movements.
   SOLD: 'stock',
   // Supplier / external data.
