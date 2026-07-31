@@ -3,6 +3,7 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { DbError } from '@/db/errors';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
+import { MAX_FIELD_TAB_LABEL_LENGTH } from '@/features/inventory/field-prominence';
 import { CategoryRepository } from './CategoryRepository';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
@@ -596,6 +597,96 @@ describe('CategoryRepository', () => {
 
   it('returns an empty map (no query) for no item ids', async () => {
     expect((await categories.getItemFieldValues([])).size).toBe(0);
+  });
+
+  /**
+   * Custom-field prominence (issue #619) — a presentational preference, stored with the same
+   * discipline as `hidden_capabilities`: one canonical spelling of "no preference" so an LWW
+   * merge can't mistake a no-op for an edit, and unrecognised values kept verbatim so a peer on
+   * a newer version doesn't have its choice discarded by a round-trip through this build.
+   */
+  describe('custom-field prominence (issue #619)', () => {
+    it('defaults to no preference', async () => {
+      const cat = await categories.create({ name: 'Fasteners' });
+      expect(cat.fieldProminence).toBeNull();
+      expect(cat.fieldTabLabel).toBeNull();
+    });
+
+    it('round-trips a mode and a label through create', async () => {
+      const cat = await categories.create({
+        name: 'Movie',
+        fieldProminence: 'own-tab',
+        fieldTabLabel: 'Film details',
+      });
+      expect(cat.fieldProminence).toBe('own-tab');
+      expect(cat.fieldTabLabel).toBe('Film details');
+      // …and through the read the whole UI actually uses.
+      const listed = (await categories.listAll()).find((c) => c.id === cat.id);
+      expect(listed?.fieldProminence).toBe('own-tab');
+      expect(listed?.fieldTabLabel).toBe('Film details');
+    });
+
+    it('round-trips a mode and a label through update', async () => {
+      const cat = await categories.create({ name: 'Vinyl record' });
+      const updated = await categories.update(cat.id, {
+        fieldProminence: 'promoted',
+        fieldTabLabel: 'Pressing',
+      });
+      expect(updated.fieldProminence).toBe('promoted');
+      expect(updated.fieldTabLabel).toBe('Pressing');
+    });
+
+    it('stores the default mode as NULL, so "no preference" has one spelling', async () => {
+      const cat = await categories.create({ name: 'Book', fieldProminence: 'default' });
+      expect(cat.fieldProminence).toBeNull();
+      const back = await categories.update(cat.id, { fieldProminence: 'default' });
+      expect(back.fieldProminence).toBeNull();
+    });
+
+    it('stores a blank or whitespace label as NULL, for the same reason', async () => {
+      const cat = await categories.create({ name: 'Coin', fieldTabLabel: '   ' });
+      expect(cat.fieldTabLabel).toBeNull();
+    });
+
+    it('trims and caps a label, so an imported value cannot deform the tab rail', async () => {
+      const cat = await categories.create({ name: 'Stamp', fieldTabLabel: `  ${'A'.repeat(60)}  ` });
+      expect(cat.fieldTabLabel).toBe('A'.repeat(MAX_FIELD_TAB_LABEL_LENGTH));
+    });
+
+    it('keeps a mode it does not recognise, rather than rejecting or discarding it', async () => {
+      // A newer peer may add a fourth position. Storage is not the boundary that judges it —
+      // the render seam reads it as `default` and this device writes it back untouched.
+      const cat = await categories.create({ name: 'Poster', fieldProminence: 'floating-panel' });
+      expect(cat.fieldProminence).toBe('floating-panel');
+    });
+
+    it('leaves both columns alone when an update mentions neither', async () => {
+      const cat = await categories.create({
+        name: 'Blu-rays',
+        fieldProminence: 'own-tab',
+        fieldTabLabel: 'Disc details',
+      });
+      const renamed = await categories.update(cat.id, { name: 'Blu-ray discs' });
+      expect(renamed.fieldProminence).toBe('own-tab');
+      expect(renamed.fieldTabLabel).toBe('Disc details');
+    });
+
+    it('keeps the label when the mode returns to the default, so a switch back restores it', async () => {
+      const cat = await categories.create({
+        name: 'Video games',
+        fieldProminence: 'own-tab',
+        fieldTabLabel: 'Game details',
+      });
+      const off = await categories.update(cat.id, { fieldProminence: 'default' });
+      expect(off.fieldTabLabel).toBe('Game details');
+      const on = await categories.update(cat.id, { fieldProminence: 'own-tab' });
+      expect(on.fieldTabLabel).toBe('Game details');
+    });
+
+    it('clears a label on an explicit null', async () => {
+      const cat = await categories.create({ name: 'DVDs', fieldTabLabel: 'Disc details' });
+      expect((await categories.update(cat.id, { fieldTabLabel: null })).fieldTabLabel).toBeNull();
+    });
   });
 });
 

@@ -16,20 +16,31 @@ import {
 } from '@/components/foundry';
 import { AddIcon, CategoryIcon, CloseIcon, DeleteIcon, InfoIcon, WarningIcon } from '@/components/icons';
 import {
+  FIELD_DUE_LEAD_DAYS_DEFAULT,
+  FIELD_DUE_LEAD_DAYS_MAX,
+  FIELD_DUE_LEAD_DAYS_MIN,
   FIELD_TYPES,
   MAINTENANCE_BASES,
   TRACKING_MODES,
+  type CategoryField,
   type CategoryWithFieldCount,
   type Condition,
   type FieldType,
   type MaintenanceBasis,
   type TrackingMode,
 } from '@/db/repositories';
-import { useT } from '@/features/i18n';
+import { useT, type MessageKey } from '@/features/i18n';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
+import { clampFieldDueLeadDays } from '@/features/lifecycle/field-due';
 import { builtInFieldNameClash } from '../builtin-field-names';
 import { HIDEABLE_CAPABILITIES, toggleHiddenCapability } from '../category-capabilities';
+import {
+  FIELD_PROMINENCE_MODES,
+  MAX_FIELD_TAB_LABEL_LENGTH,
+  toFieldProminenceMode,
+  type FieldProminenceMode,
+} from '../field-prominence';
 import {
   useAddCategoryField,
   useCategories,
@@ -40,6 +51,7 @@ import {
   useDeleteUnusedFieldDef,
   useUnusedFieldDefs,
   useUpdateCategory,
+  useUpdateCategoryField,
 } from '../categories';
 import { CategoryPresetPickerDialog } from './CategoryPresetPicker';
 import {
@@ -285,6 +297,9 @@ function CategoryDetail({
   const { data: fields } = useCategoryFields(category.id);
   const deleteField = useDeleteCategoryField();
   const updateCategory = useUpdateCategory();
+  // One draft for the hidden-capability set, shared by the two panels that write it. See
+  // {@link useHiddenCapabilitiesDraft} for why it cannot live inside either of them.
+  const hiddenCapabilities = useHiddenCapabilitiesDraft(category);
 
   return (
     <div className="space-y-3">
@@ -339,23 +354,30 @@ function CategoryDetail({
           fields!.map((field) => (
             <li
               key={field.id}
-              className="flex items-center gap-2 rounded-lg border border-border bg-secondary/20 px-2.5 py-1.5 text-sm"
+              className="rounded-lg border border-border bg-secondary/20 px-2.5 py-1.5 text-sm"
             >
-              <span className="flex-1 truncate">
-                {field.name}
-                {field.isRequired ? <span className="text-destructive"> *</span> : null}
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {FIELD_TYPE_LABELS[field.fieldType]}
-              </span>
-              <button
-                type="button"
-                aria-label={`Remove field ${field.name}`}
-                onClick={() => deleteField.mutate(field.id)}
-                className="rounded p-0.5 transition-colors hover:bg-secondary [&_svg]:size-3.5"
-              >
-                <CloseIcon className="text-glyph-danger" />
-              </button>
+              <div className="flex items-center gap-2">
+                <span className="flex-1 truncate">
+                  {field.name}
+                  {field.isRequired ? <span className="text-destructive"> *</span> : null}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {FIELD_TYPE_LABELS[field.fieldType]}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Remove field ${field.name}`}
+                  onClick={() => deleteField.mutate(field.id)}
+                  className="rounded p-0.5 transition-colors hover:bg-secondary [&_svg]:size-3.5"
+                >
+                  <CloseIcon className="text-glyph-danger" />
+                </button>
+              </div>
+              {/* Only a date can be a deadline, so the control appears on nothing else. It sits
+                  on the *existing* field rather than only on the add form because a date field is
+                  usually already there by the time its deadline-ness matters — the preset library
+                  ships several, and a field added before this existed has no other way back. */}
+              {field.fieldType === 'DATE' ? <FieldDueDateControl field={field} /> : null}
             </li>
           ))
         )}
@@ -365,10 +387,197 @@ function CategoryDetail({
 
       <CategoryDefaultsSection category={category} />
 
-      <CategoryHiddenSectionsPanel category={category} />
+      <CategoryHiddenSectionsPanel category={category} hiddenCapabilities={hiddenCapabilities} />
+
+      <CategoryFieldProminencePanel category={category} hiddenCapabilities={hiddenCapabilities} />
     </div>
   );
 }
+
+/**
+ * The category's hidden-capability set as a single **shared draft** — the base every panel that
+ * writes that column computes from.
+ *
+ * The column holds a *set*, so each change is a read-modify-write of the whole value, and
+ * `useUpdateCategory` is not optimistic (it only invalidates on settle). Computing the next value
+ * from the query cache therefore loses changes: a second edit made before the refetch lands
+ * recomputes from the pre-first-edit array and silently drops it — and because the column syncs
+ * LWW, that discard reaches other devices.
+ *
+ * A per-panel draft fixes that only while one panel writes the column. Two do — the hidden-sections
+ * checkboxes and the prominence panel's "show the custom fields again" fix (issue #619) — and a
+ * second, independent draft reintroduces the same bug across panels *and* adds a worse one: the
+ * drafts only reseed when a different category is selected, so after one panel writes, the other
+ * renders stale state for the rest of the session and writes its own value back over the change.
+ * Hence one draft, owned by the parent that renders both.
+ */
+function useHiddenCapabilitiesDraft(category: CategoryWithFieldCount): HiddenCapabilitiesDraft {
+  const updateCategory = useUpdateCategory();
+  const [draft, setDraft] = useState<readonly string[]>(category.hiddenCapabilities);
+  const seededFor = useRef(category.id);
+  useEffect(() => {
+    if (seededFor.current !== category.id) {
+      seededFor.current = category.id;
+      setDraft(category.hiddenCapabilities);
+    }
+  }, [category.id, category.hiddenCapabilities]);
+
+  return {
+    hidden: new Set(draft),
+    setCapabilityHidden: (id: FeatureId, hide: boolean) => {
+      const next = toggleHiddenCapability(draft, id, hide);
+      setDraft(next);
+      updateCategory.mutate({ id: category.id, input: { hiddenCapabilities: next } });
+    },
+  };
+}
+
+/** The shared draft's public shape: what is hidden right now, and the one way to change it. */
+interface HiddenCapabilitiesDraft {
+  readonly hidden: ReadonlySet<string>;
+  readonly setCapabilityHidden: (id: FeatureId, hide: boolean) => void;
+}
+
+/**
+ * Where this category's custom fields sit on an item (issue #619).
+ *
+ * Its own box rather than a row inside "Sections these items don't need", because the two answer
+ * opposite questions: that one removes things this kind of item doesn't have, this one *raises*
+ * something it is largely defined by. Folding a promotion into a panel headed "don't need" would
+ * read as the reverse of what it does.
+ *
+ * Saving is immediate, like every other control in this dialog. The radio group needs no buffer —
+ * a mode is never transiently invalid — but the tab label is free text, so it keeps one, reset
+ * when a different category is selected.
+ */
+function CategoryFieldProminencePanel({
+  category,
+  hiddenCapabilities,
+}: {
+  category: CategoryWithFieldCount;
+  hiddenCapabilities: HiddenCapabilitiesDraft;
+}) {
+  const t = useT();
+  const updateCategory = useUpdateCategory();
+  const mode = toFieldProminenceMode(category.fieldProminence);
+
+  const [labelText, setLabelText] = useState(category.fieldTabLabel ?? '');
+  const seededFor = useRef(category.id);
+  useEffect(() => {
+    if (seededFor.current !== category.id) {
+      seededFor.current = category.id;
+      setLabelText(category.fieldTabLabel ?? '');
+    }
+  }, [category.id, category.fieldTabLabel]);
+
+  // Promoting the fields while the category also hides them is a contradiction the user can
+  // reach from two directions, so say so and offer the fix rather than silently letting one
+  // decision win. Mirrors the maintenance conflict above. Read through the shared draft, not the
+  // query cache, so the banner agrees with the checkbox above it the moment either is changed.
+  const conflict = hiddenCapabilities.hidden.has('custom-fields') && mode !== 'default';
+
+  // `name` is scoped to the category so two rendered panels could never share a radio group —
+  // the browser's mutual exclusion is keyed on the name, not on the DOM subtree.
+  const groupName = `category-field-prominence-${category.id}`;
+
+  return (
+    <fieldset className="space-y-field-gap-compact rounded-lg border border-border bg-secondary/10 p-2.5">
+      {/* As in the panel above, the legend *is* the visible heading — a sr-only legend beside an
+          identical <h4> would name the group twice to a screen reader for no visual gain. */}
+      <legend className="flex items-center gap-1.5 text-sm font-semibold">
+        {t('category.fieldProminence.title')}
+        <InfoHint content={t('category.fieldProminence.hint')} />
+      </legend>
+      <p className="text-xs text-muted-foreground">{t('category.fieldProminence.blurb')}</p>
+
+      <div className="space-y-1">
+        {FIELD_PROMINENCE_MODES.map((option) => (
+          // eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested radio is correctly associated; the label's text comes from the translation catalog, which the linter cannot resolve to a static string.
+          <label
+            key={option}
+            className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-secondary/40"
+          >
+            <Radio
+              name={groupName}
+              checked={mode === option}
+              onChange={() => updateCategory.mutate({ id: category.id, input: { fieldProminence: option } })}
+              className="mt-0.5"
+              data-testid={`category-field-prominence-${option}`}
+            />
+            <span className="flex-1">
+              <span className="block text-xs font-medium">{t(FIELD_PROMINENCE_LABEL_KEYS[option])}</span>
+              <span className="block text-xs text-muted-foreground">
+                {t(FIELD_PROMINENCE_DESCRIPTION_KEYS[option])}
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      {/* Only the break-out mode has a tab to name, so the field appears with it rather than
+          sitting permanently disabled. The stored label survives a switch away and back — the
+          repository keeps the column — so nothing typed here is lost by changing your mind. */}
+      {mode === 'own-tab' ? (
+        <FormField
+          label={t('category.fieldProminence.tabLabel')}
+          hint={t('category.fieldProminence.tabLabelHint')}
+        >
+          <Input
+            value={labelText}
+            // HTML `maxLength` counts UTF-16 code units where the seam caps by code point, so the
+            // browser stops an emoji-heavy label slightly sooner than storage would. Deliberate:
+            // for all but a label of a dozen-plus emoji the two agree, and a cap the user can feel
+            // while typing beats one that silently truncates what they typed on save.
+            maxLength={MAX_FIELD_TAB_LABEL_LENGTH}
+            placeholder={t('item.tab.customFields')}
+            data-testid="category-field-tab-label"
+            onChange={(e) => {
+              setLabelText(e.target.value);
+              updateCategory.mutate({ id: category.id, input: { fieldTabLabel: e.target.value } });
+            }}
+          />
+        </FormField>
+      ) : null}
+
+      {conflict ? (
+        <Banner
+          tone="warning"
+          icon={<WarningIcon aria-hidden />}
+          action={
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="category-field-prominence-conflict-clear"
+              // Un-hide rather than drop the position: asking for the fields to come forward is
+              // the choice the user made in *this* panel, so the other half of the contradiction
+              // is the one to give way. Goes through the shared draft so the checkbox above
+              // follows, and so a tick made moments earlier is not recomputed away.
+              onClick={() => hiddenCapabilities.setCapabilityHidden('custom-fields', false)}
+            >
+              {t('category.fieldProminence.conflictAction')}
+            </Button>
+          }
+        >
+          {t('category.fieldProminence.conflict')}
+        </Banner>
+      ) : null}
+    </fieldset>
+  );
+}
+
+/** The radio labels, keyed by mode so a new mode is a compile error until it has copy. */
+const FIELD_PROMINENCE_LABEL_KEYS = {
+  default: 'category.fieldProminence.option.default',
+  promoted: 'category.fieldProminence.option.promoted',
+  'own-tab': 'category.fieldProminence.option.ownTab',
+} as const satisfies Record<FieldProminenceMode, MessageKey>;
+
+/** The one-line explanation under each radio, keyed the same way. */
+const FIELD_PROMINENCE_DESCRIPTION_KEYS = {
+  default: 'category.fieldProminence.option.defaultHint',
+  promoted: 'category.fieldProminence.option.promotedHint',
+  'own-tab': 'category.fieldProminence.option.ownTabHint',
+} as const satisfies Record<FieldProminenceMode, MessageKey>;
 
 /**
  * Which sections this category's items don't need (issue #618).
@@ -379,36 +588,21 @@ function CategoryDetail({
  *
  * Ticking hides — the question is "what doesn't this kind of thing have?", which is the way
  * round a user thinks about a Movie having no service schedule. Saving is immediate, matching
- * every other control in this dialog; a set toggle is never transiently invalid, so unlike the
- * warranty and interval fields it needs no local buffer.
+ * every other control in this dialog.
+ *
+ * The set itself is **not** owned here: it lives in the shared {@link useHiddenCapabilitiesDraft}
+ * one level up, because the prominence panel below writes the same column.
  */
-function CategoryHiddenSectionsPanel({ category }: { category: CategoryWithFieldCount }) {
+function CategoryHiddenSectionsPanel({
+  category,
+  hiddenCapabilities,
+}: {
+  category: CategoryWithFieldCount;
+  hiddenCapabilities: HiddenCapabilitiesDraft;
+}) {
   const t = useT();
   const updateCategory = useUpdateCategory();
-
-  // Unlike every other control in this dialog, this one writes a *set* held in a single column,
-  // so each toggle is a read-modify-write of the whole value. Reading the base from the query
-  // cache would lose ticks: the write is not optimistic, so a second toggle made before the
-  // refetch lands would compute from the pre-first-toggle array and silently drop it — and
-  // since the column is synced LWW, that discard would propagate to other devices. Ticking
-  // several boxes in a row is exactly how this control gets used, so the local draft is the
-  // base, reseeded when a different category is selected (the buffer idiom used above).
-  const [draft, setDraft] = useState<readonly string[]>(category.hiddenCapabilities);
-  const seededFor = useRef(category.id);
-  useEffect(() => {
-    if (seededFor.current !== category.id) {
-      seededFor.current = category.id;
-      setDraft(category.hiddenCapabilities);
-    }
-  }, [category.id, category.hiddenCapabilities]);
-
-  const hidden = new Set(draft);
-
-  const toggle = (id: FeatureId, hide: boolean) => {
-    const next = toggleHiddenCapability(draft, id, hide);
-    setDraft(next);
-    updateCategory.mutate({ id: category.id, input: { hiddenCapabilities: next } });
-  };
+  const { hidden, setCapabilityHidden: toggle } = hiddenCapabilities;
 
   // A category that both *applies* a maintenance schedule to every new item and hides the
   // section showing it would be quietly contradictory — the schedule would be created and then
@@ -688,6 +882,124 @@ function parseChoices(raw: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * The **due-date opt-in** for an existing `DATE` custom field (W1a) — a tick plus a notice
+ * period, saved straight onto the shared dictionary definition.
+ *
+ * Two things it deliberately does *not* do. It does not offer the opt-in on any other field
+ * type, because only a date can be a deadline (the schema's CHECK says the same). And it does
+ * not present the tick and the number as two independent settings: the stored value *is* the
+ * opt-in — `null` means "just a date" — so ticking seeds {@link FIELD_DUE_LEAD_DAYS_DEFAULT}
+ * and unticking clears it, and there is no state where the field is a deadline with no notice.
+ *
+ * The number saves on **blur**, not per keystroke: the control is fed from server state, so
+ * writing on every change races the refetch and drops digits (the same rule the location-field
+ * editor follows). The tick saves immediately, since it is a single discrete decision.
+ */
+function FieldDueDateControl({ field }: { field: CategoryField }) {
+  const t = useT();
+  const updateField = useUpdateCategoryField();
+  const describeError = useErrorMessage();
+  const [error, setError] = useState<string | null>(null);
+  // Seeded from the definition and re-seeded whenever it changes underneath us (another
+  // category sharing this field, or a peer's sync) — `key` on the id would not do it, since
+  // the row survives the change.
+  // The box is fed from server state and re-seats whenever the stored value moves — this save's
+  // own refetch, another category editing the shared definition, a peer's sync. A concurrent
+  // change can therefore land over something half-typed; that is what "fed from server state"
+  // means, it is self-correcting (the new value is on screen to retype from), and guarding it
+  // would trade a rare, visible overwrite for a focus-tracking state machine that can push a
+  // *stale* value back on blur instead — quietly, and over the newer one.
+  const [draft, setDraft] = useState(String(field.dueLeadDays ?? FIELD_DUE_LEAD_DAYS_DEFAULT));
+  useEffect(() => {
+    setDraft(String(field.dueLeadDays ?? FIELD_DUE_LEAD_DAYS_DEFAULT));
+  }, [field.dueLeadDays]);
+
+  const save = (dueLeadDays: number | null) => {
+    setError(null);
+    updateField.mutate(
+      { fieldId: field.id, input: { dueLeadDays } },
+      { onError: (e) => setError(describeError(e, t('inventory.fields.dueDate.saveFailed'))) },
+    );
+  };
+
+  /**
+   * Commit the typed notice period, or put the stored one back.
+   *
+   * A blank box is **not** zero. `Number('')` is `0` and the clamp floors at 0, so coercing
+   * would silently reconfigure a field from "30 days" to "on the day" the moment someone
+   * selected the value, hit delete and tabbed away — a legal value, so nothing would complain.
+   * A `type="number"` input also reports `''` for un-parseable keystrokes, which takes the same
+   * path. Blank therefore reverts.
+   */
+  const commitDraft = () => {
+    const typed = Number(draft);
+    if (draft.trim() === '' || !Number.isFinite(typed)) {
+      setDraft(String(field.dueLeadDays ?? FIELD_DUE_LEAD_DAYS_DEFAULT));
+      return;
+    }
+    const next = clampFieldDueLeadDays(typed);
+    setDraft(String(next));
+    if (next !== field.dueLeadDays) save(next);
+  };
+
+  const enabled = field.dueLeadDays != null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+      <label className="flex items-center gap-1.5">
+        <Checkbox
+          checked={enabled}
+          onChange={(e) => save(e.target.checked ? FIELD_DUE_LEAD_DAYS_DEFAULT : null)}
+          aria-label={t('inventory.fields.dueDate.toggleLabel', { vars: { name: field.name } })}
+          data-testid={`field-due-toggle-${field.id}`}
+        />
+        {t('inventory.fields.dueDate.label')}
+      </label>
+      <InfoHint content={t('inventory.fields.dueDate.hint')} />
+      {enabled ? (
+        <>
+          {/* `calc={false}`: a notice period is a plain count of days, never a sum worth typing —
+              and it keeps this a real `type="number"` box, so `min`/`max` are native constraints
+              rather than inert attributes on the calculator control's text field. */}
+          <Input
+            type="number"
+            calc={false}
+            min={FIELD_DUE_LEAD_DAYS_MIN}
+            max={FIELD_DUE_LEAD_DAYS_MAX}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitDraft}
+            aria-label={t('inventory.fields.dueDate.noticeLabel', { vars: { name: field.name } })}
+            data-testid={`field-due-days-${field.id}`}
+            className="h-8 w-20"
+          />
+          {t('inventory.fields.dueDate.noticeSuffix')}
+        </>
+      ) : null}
+      {error ? (
+        <p role="alert" className="w-full text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The notice period a typed value means: the clamped number, or {@link FIELD_DUE_LEAD_DAYS_DEFAULT}
+ * when the box is blank or holds something that is not a number.
+ *
+ * Blank deliberately does **not** mean zero. `Number('')` is `0`, and 0 is a legal notice period
+ * ("tell me on the day"), so coercing would turn "I cleared the box to retype it" into a silent,
+ * valid, wrong setting that nothing would flag.
+ */
+function resolveLeadDays(raw: string): number {
+  const typed = Number(raw);
+  if (raw.trim() === '' || !Number.isFinite(typed)) return FIELD_DUE_LEAD_DAYS_DEFAULT;
+  return clampFieldDueLeadDays(typed);
+}
+
 function AddFieldForm({ categoryId }: { categoryId: string }) {
   const t = useT();
   const addField = useAddCategoryField();
@@ -695,6 +1007,11 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
   const [fieldType, setFieldType] = useState<FieldType>('TEXT');
   const [options, setOptions] = useState('');
   const [isRequired, setIsRequired] = useState(false);
+  // The due-date opt-in (W1a). Kept as a tick plus a draft string rather than one nullable
+  // number so clearing the box does not lose the notice period the user just typed; only the
+  // tick decides whether anything is stored.
+  const [isDueDate, setIsDueDate] = useState(false);
+  const [dueLeadDays, setDueLeadDays] = useState(String(FIELD_DUE_LEAD_DAYS_DEFAULT));
   const [defaultValue, setDefaultValue] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -717,6 +1034,10 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           defaultValue: defaultValue.trim() || null,
           description: description.trim() || null,
           options: fieldType === 'SELECT' ? parseChoices(options) : null,
+          // Only a DATE can carry it, and the tick is the opt-in — see `FieldDueDateControl`.
+          // A blank or un-parseable box falls back to the default rather than to `Number('')`,
+          // which is 0 and would silently create the field as "notify on the day".
+          dueLeadDays: fieldType === 'DATE' && isDueDate ? resolveLeadDays(dueLeadDays) : null,
         },
       },
       {
@@ -727,6 +1048,8 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           setDefaultValue('');
           setDescription('');
           setIsRequired(false);
+          setIsDueDate(false);
+          setDueLeadDays(String(FIELD_DUE_LEAD_DAYS_DEFAULT));
         },
       },
     );
@@ -766,6 +1089,9 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
             // new one (e.g. free text becoming a date) — start it fresh.
             setFieldType(value as FieldType);
             setDefaultValue('');
+            // The opt-in only exists on a date, so switching away from one retracts it rather
+            // than leaving a tick set that the submit would silently discard.
+            if (value !== 'DATE') setIsDueDate(false);
           }}
           options={FIELD_TYPES.map((t) => ({ value: t, label: FIELD_TYPE_LABELS[t] }))}
         />
@@ -800,6 +1126,8 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
         hint="An optional note about this field. When set, an **(i)** info badge appears beside the field on each item, showing this text — a handy place for guidance such as *where to read the value from* or *which units to use*. Supports Markdown."
       >
         <Textarea
+          sizeKey="category-field.description"
+          autoGrow
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="e.g. Read from the label on the base — in volts."
@@ -814,6 +1142,38 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
         </label>
         <InfoHint content="When on, an item in this category must have a value for this field before its custom fields can be saved." />
       </div>
+      {fieldType === 'DATE' ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Checkbox
+              checked={isDueDate}
+              onChange={(e) => setIsDueDate(e.target.checked)}
+              data-testid="add-field-due-toggle"
+            />
+            {t('inventory.fields.dueDate.label')}
+          </label>
+          <InfoHint content={t('inventory.fields.dueDate.hint')} />
+          {isDueDate ? (
+            <>
+              <Input
+                type="number"
+                calc={false}
+                min={FIELD_DUE_LEAD_DAYS_MIN}
+                max={FIELD_DUE_LEAD_DAYS_MAX}
+                value={dueLeadDays}
+                onChange={(e) => setDueLeadDays(e.target.value)}
+                onBlur={() => setDueLeadDays(String(resolveLeadDays(dueLeadDays)))}
+                aria-label={t('inventory.fields.dueDate.addNoticeLabel')}
+                data-testid="add-field-due-days"
+                className="h-8 w-20"
+              />
+              <span className="text-xs text-muted-foreground">
+                {t('inventory.fields.dueDate.noticeSuffix')}
+              </span>
+            </>
+          ) : null}
+        </div>
+      ) : null}
       {builtInClash ? (
         <Banner
           tone="warning"

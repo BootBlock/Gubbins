@@ -2,10 +2,13 @@ import { describe, it, expect } from 'vitest';
 import type { Item } from '@/db/repositories';
 import { NO_SECTION_PRESENCE } from '@/db/repositories';
 import { ALL_FEATURE_IDS, type FeatureId } from '@/features/modules/feature-registry';
-import { buildTabs } from './ItemDetailDialog';
+import { buildTabs, type FieldProminence } from './ItemDetailDialog';
 
 /** The category hides nothing — the shape `buildTabs` defaults to, spelled out where it matters. */
 const NOTHING_HIDDEN: ReadonlySet<FeatureId> = new Set<FeatureId>();
+
+/** Custom fields stay where they are — likewise the default, named so a call reads positionally. */
+const DEFAULT_PROMINENCE: FieldProminence = { mode: 'default', tabLabel: 'Custom fields' };
 
 /**
  * Phase 6 — the item-detail tabs gate their capability sections by the enabled feature set.
@@ -131,12 +134,15 @@ describe('buildTabs — feature gating (Phase 6)', () => {
     // feature the category hasn't got on the Classification tab of *every* item.
     expect(sectionTitles(buildTabs(item, ALL), 'classification')).not.toContain('Fill from a database');
     expect(
-      sectionTitles(buildTabs(item, ALL, NOTHING_HIDDEN, NO_SECTION_PRESENCE, false), 'classification'),
+      sectionTitles(
+        buildTabs(item, ALL, NOTHING_HIDDEN, NO_SECTION_PRESENCE, DEFAULT_PROMINENCE, false),
+        'classification',
+      ),
     ).not.toContain('Fill from a database');
   });
 
   it('shows "Fill from a database" when the category does offer one, gated by scraping', () => {
-    const offered = buildTabs(item, ALL, NOTHING_HIDDEN, NO_SECTION_PRESENCE, true);
+    const offered = buildTabs(item, ALL, NOTHING_HIDDEN, NO_SECTION_PRESENCE, DEFAULT_PROMINENCE, true);
     expect(sectionTitles(offered, 'classification')).toEqual([
       'Tags',
       'Capabilities',
@@ -144,8 +150,41 @@ describe('buildTabs — feature gating (Phase 6)', () => {
       'Fill from a database',
     ]);
     // Still a capability-gated section: switching the device's module off drops it again.
-    const scrapingOff = buildTabs(item, without('scraping'), NOTHING_HIDDEN, NO_SECTION_PRESENCE, true);
+    const scrapingOff = buildTabs(
+      item,
+      without('scraping'),
+      NOTHING_HIDDEN,
+      NO_SECTION_PRESENCE,
+      DEFAULT_PROMINENCE,
+      true,
+    );
     expect(sectionTitles(scrapingOff, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
+  });
+
+  it('moves "Fill from a database" into the break-out tab with the fields it fills (#616 × #619)', () => {
+    // The lookup exists to fill the custom fields, so stranding it in Classification while they
+    // move away would separate the button from what it acts on. The break-out tab is assembled
+    // past the section filter, so this also pins that the `scraping` gate is still applied.
+    const ownTab = buildTabs(
+      item,
+      ALL,
+      NOTHING_HIDDEN,
+      NO_SECTION_PRESENCE,
+      { mode: 'own-tab', tabLabel: 'Film details' },
+      true,
+    );
+    expect(sectionTitles(ownTab, 'classification')).toEqual(['Tags', 'Capabilities']);
+    expect(sectionTitles(ownTab, 'custom-fields')).toEqual(['Custom fields', 'Fill from a database']);
+
+    const scrapingOff = buildTabs(
+      item,
+      without('scraping'),
+      NOTHING_HIDDEN,
+      NO_SECTION_PRESENCE,
+      { mode: 'own-tab', tabLabel: 'Film details' },
+      true,
+    );
+    expect(sectionTitles(scrapingOff, 'custom-fields')).toEqual(['Custom fields']);
   });
 
   it('drops the Classification tab entirely once both its capabilities are off', () => {
@@ -252,6 +291,162 @@ describe('buildTabs — category-scoped hiding (issue #618)', () => {
       ...NO_SECTION_PRESENCE,
       maintenance: true,
     });
+    expect(item).toEqual(snapshot);
+  });
+});
+
+/**
+ * Issue #619 — the third axis, and the only one about *position* rather than presence. Every tab
+ * remains reachable in every mode; what changes is how far a reader has to travel to reach the
+ * fields their category is largely defined by. It is applied last and may never outrank the two
+ * visibility axes above.
+ */
+describe('buildTabs — custom-field prominence (issue #619)', () => {
+  const NONE: ReadonlySet<FeatureId> = new Set<FeatureId>();
+  const prominence = (mode: FieldProminence['mode'], tabLabel = 'Custom fields'): FieldProminence => ({
+    mode,
+    tabLabel,
+  });
+
+  it('changes nothing in the default mode', () => {
+    const tabs = buildTabs(item, ALL, NONE, NO_SECTION_PRESENCE, prominence('default'));
+    expect(tabIds(tabs)).toEqual(tabIds(buildTabs(item, ALL)));
+    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
+  });
+
+  it('moves the whole Classification tab up to sit directly after Details when promoted', () => {
+    const tabs = buildTabs(item, ALL, NONE, NO_SECTION_PRESENCE, prominence('promoted'));
+    expect(tabIds(tabs)).toEqual([
+      'details',
+      'classification',
+      'supplier',
+      'lifecycle',
+      'kit',
+      'related',
+      'substitutions',
+      'media',
+      'activity',
+    ]);
+    // Promotion moves the tab; it does not restructure it.
+    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
+  });
+
+  it('breaks the custom fields out into their own tab after Details when asked', () => {
+    const tabs = buildTabs(item, ALL, NONE, NO_SECTION_PRESENCE, prominence('own-tab', 'Film details'));
+    expect(tabIds(tabs)).toEqual([
+      'details',
+      'custom-fields',
+      'supplier',
+      'lifecycle',
+      'kit',
+      'related',
+      'substitutions',
+      'media',
+      'classification',
+      'activity',
+    ]);
+    expect(tabs.find((t) => t.id === 'custom-fields')!.label).toBe('Film details');
+    expect(sectionTitles(tabs, 'custom-fields')).toEqual(['Custom fields']);
+  });
+
+  it('leaves tags and capabilities in Classification when the fields break out', () => {
+    // The break-out is about the *fields*; the rest of Classification is unrelated and stays put.
+    const tabs = buildTabs(item, ALL, NONE, NO_SECTION_PRESENCE, prominence('own-tab'));
+    expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Capabilities']);
+  });
+
+  it('shows the fields exactly once, never in both places', () => {
+    for (const mode of ['default', 'promoted', 'own-tab'] as const) {
+      const tabs = buildTabs(item, ALL, NONE, NO_SECTION_PRESENCE, prominence(mode));
+      expect(
+        sectionTitles(tabs).filter((t) => t === 'Custom fields'),
+        mode,
+      ).toHaveLength(1);
+    }
+  });
+
+  it('reverts to the default position when the device has custom fields switched off', () => {
+    // Nothing to bring forward: promoting would raise a tab holding only tags, and breaking out
+    // would produce an empty one.
+    for (const mode of ['promoted', 'own-tab'] as const) {
+      const tabs = buildTabs(item, without('custom-fields'), NONE, NO_SECTION_PRESENCE, prominence(mode));
+      expect(tabIds(tabs), mode).not.toContain('custom-fields');
+      expect(tabIds(tabs).indexOf('classification'), mode).toBeGreaterThan(tabIds(tabs).indexOf('media'));
+      expect(sectionTitles(tabs), mode).not.toContain('Custom fields');
+    }
+  });
+
+  it('reverts to the default position when the category hides custom fields and the item has none', () => {
+    for (const mode of ['promoted', 'own-tab'] as const) {
+      const tabs = buildTabs(
+        item,
+        ALL,
+        new Set(['custom-fields'] as FeatureId[]),
+        NO_SECTION_PRESENCE,
+        prominence(mode),
+      );
+      expect(tabIds(tabs), mode).not.toContain('custom-fields');
+      expect(sectionTitles(tabs, 'classification'), mode).toEqual(['Tags']);
+    }
+  });
+
+  it('still breaks out — flagged — when the category hides the fields but the item has some', () => {
+    // Hiding must never make existing data invisible (issue #618), and the break-out tab is
+    // bound by that rule exactly as the Classification section is.
+    const tabs = buildTabs(
+      item,
+      ALL,
+      new Set(['custom-fields'] as FeatureId[]),
+      { ...NO_SECTION_PRESENCE, customFields: true },
+      prominence('own-tab', 'Film details'),
+    );
+    const section = tabs.find((t) => t.id === 'custom-fields')?.sections[0];
+    expect(section?.title).toBe('Custom fields');
+    expect(section?.shownDespiteHidden).toBe(true);
+  });
+
+  it('keeps Classification alive on its remaining sections when the fields break out', () => {
+    // `custom-fields` gates Capabilities too, so losing Tags and the fields still leaves it
+    // something to show.
+    const tabs = buildTabs(
+      item,
+      without('tags-attachments'),
+      NONE,
+      NO_SECTION_PRESENCE,
+      prominence('own-tab'),
+    );
+    expect(sectionTitles(tabs, 'classification')).toEqual(['Capabilities']);
+    expect(tabIds(tabs)).toContain('custom-fields');
+  });
+
+  it('drops the Classification tab entirely when the fields leave and nothing else survives', () => {
+    // The invariant most at risk from removing the section at construction time rather than
+    // letting the filter drop it: Classification must not linger as an empty tab once the fields
+    // have gone. Here the category hides both its capabilities and only the fields hold data, so
+    // they alone are rescued — into the break-out tab.
+    const tabs = buildTabs(
+      item,
+      ALL,
+      new Set(['custom-fields', 'tags-attachments'] as FeatureId[]),
+      { ...NO_SECTION_PRESENCE, customFields: true },
+      prominence('own-tab', 'Film details'),
+    );
+    expect(tabIds(tabs)).not.toContain('classification');
+    expect(tabIds(tabs)).toContain('custom-fields');
+    expect(sectionTitles(tabs, 'custom-fields')).toEqual(['Custom fields']);
+  });
+
+  it('keeps Details first in every mode, so the rail never opens somewhere unexpected', () => {
+    for (const mode of ['default', 'promoted', 'own-tab'] as const) {
+      expect(tabIds(buildTabs(item, ALL, NONE, NO_SECTION_PRESENCE, prominence(mode)))[0], mode).toBe(
+        'details',
+      );
+    }
+  });
+
+  it('never mutates the item it is given', () => {
+    const snapshot = structuredClone(item);
+    buildTabs(item, ALL, NONE, NO_SECTION_PRESENCE, prominence('own-tab', 'Film details'));
     expect(item).toEqual(snapshot);
   });
 });

@@ -10,6 +10,7 @@
  * the category's field count, not the 100k+ item set, so they need no pagination.
  */
 import { validateFieldValue } from '@/features/inventory/custom-fields';
+import { normaliseFieldTabLabel } from '@/features/inventory/field-prominence';
 import {
   buildAncestorChain,
   findInheritedValue,
@@ -21,7 +22,7 @@ import { foldName } from '@/lib/name-fold';
 import { DbError } from '../errors';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository } from './base';
-import type { FieldType } from './constants';
+import { FIELD_DUE_LEAD_DAYS_MAX, FIELD_DUE_LEAD_DAYS_MIN, type FieldType } from './constants';
 import { rowToCategory, rowToCategoryField, rowToFieldDef, rowToLocationFieldValue } from './mappers';
 import { tombstoneStatement } from './tombstone';
 import type {
@@ -91,7 +92,7 @@ function normaliseGlyph(glyph: string | null | undefined): string | null {
  */
 const CATEGORY_FIELD_COLUMNS = `
   cf.id, cf.category_id, cf.def_id, cf.is_required, cf.default_value, cf.position, cf.updated_at,
-  fd.name, fd.field_type, fd.options, fd.description
+  fd.name, fd.field_type, fd.options, fd.description, fd.due_lead_days
 `;
 
 interface ResolvedFieldRow extends CategoryFieldRow {
@@ -108,6 +109,7 @@ const SELECT_WITH_FIELD_COUNT = `
   SELECT c.id, c.name, c.glyph, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
          c.default_maintenance_basis, c.default_maintenance_interval_days,
          c.default_maintenance_interval_usage, c.hidden_capabilities, c.lookup_sources,
+         c.field_prominence, c.field_tab_label,
          c.updated_at, COUNT(f.id) AS field_count
   FROM categories c
   LEFT JOIN category_fields f ON f.category_id = c.id
@@ -130,6 +132,7 @@ function serialiseHiddenCapabilities(ids: readonly string[] | null | undefined):
 }
 
 /**
+
  * Serialise a category's attached lookup providers (issue #616) for storage.
  *
  * Canonicalised for the same reason {@link serialiseHiddenCapabilities} is: "no lookups" is
@@ -162,6 +165,20 @@ function serialiseLookupSources(sources: readonly CategoryLookupSource[] | null 
       return pairs.length > 0 ? { providerId, fieldMap: Object.fromEntries(pairs) } : { providerId };
     });
   return JSON.stringify(entries);
+}
+
+/**
+ * Canonicalise a custom-field prominence mode for storage (issue #619).
+ *
+ * Trimmed, and `'default'` collapsed to NULL: "leave the fields where they are" is the absence of
+ * a preference, and storing two spellings of it would make an LWW merge see an edit where the
+ * user changed nothing. An unrecognised mode is *not* rejected here — the column keeps whatever a
+ * newer peer wrote, and `toFieldProminenceMode` decides what this build renders.
+ */
+function serialiseFieldProminence(mode: string | null | undefined): string | null {
+  if (mode == null) return null;
+  const trimmed = mode.trim();
+  return trimmed.length === 0 || trimmed === 'default' ? null : trimmed;
 }
 
 export class CategoryRepository extends BaseRepository {
@@ -209,8 +226,8 @@ export class CategoryRepository extends BaseRepository {
       `INSERT INTO categories
          (id, name, glyph, default_tracking_mode, default_condition, default_warranty_months,
           default_maintenance_basis, default_maintenance_interval_days, default_maintenance_interval_usage,
-          hidden_capabilities, lookup_sources)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          hidden_capabilities, lookup_sources, field_prominence, field_tab_label)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         name,
@@ -223,6 +240,8 @@ export class CategoryRepository extends BaseRepository {
         input.defaultMaintenanceIntervalUsage ?? null,
         serialiseHiddenCapabilities(input.hiddenCapabilities),
         serialiseLookupSources(input.lookupSources),
+        serialiseFieldProminence(input.fieldProminence),
+        normaliseFieldTabLabel(input.fieldTabLabel),
       ],
     );
     return (await this.getById(id))!;
@@ -280,6 +299,14 @@ export class CategoryRepository extends BaseRepository {
     if (input.lookupSources !== undefined) {
       sets.push('lookup_sources = ?');
       params.push(serialiseLookupSources(input.lookupSources));
+    }
+    if (input.fieldProminence !== undefined) {
+      sets.push('field_prominence = ?');
+      params.push(serialiseFieldProminence(input.fieldProminence));
+    }
+    if (input.fieldTabLabel !== undefined) {
+      sets.push('field_tab_label = ?');
+      params.push(normaliseFieldTabLabel(input.fieldTabLabel));
     }
     if (sets.length > 0) {
       params.push(id);
@@ -446,7 +473,13 @@ export class CategoryRepository extends BaseRepository {
    * it — that would reinterpret stored values app-wide as a side effect of adding a field.
    */
   private async resolveFieldDef(
-    input: { name: string; fieldType: FieldType; options: string | null; description?: string | null },
+    input: {
+      name: string;
+      fieldType: FieldType;
+      options: string | null;
+      description?: string | null;
+      dueLeadDays?: number | null;
+    },
     statements: SqlStatement[],
   ): Promise<string> {
     const existing = await this.findFieldDefByName(input.name);
@@ -458,12 +491,31 @@ export class CategoryRepository extends BaseRepository {
             `Rename this field, or change the existing one's type, rather than defining it twice.`,
         );
       }
+      // Reuse leaves the definition's identity alone — a second category declaring
+      // "Manufacturer" must not overwrite the note someone wrote on it. The due-date opt-in
+      // is the one exception, and only in the *setting* direction: a caller ticking "this is
+      // a due date" is stating what the field means, so it applies to the shared definition,
+      // while an unticked add never clears an opt-in the first category is relying on.
+      if (input.dueLeadDays != null && existing.due_lead_days !== input.dueLeadDays) {
+        statements.push({
+          sql: `UPDATE field_defs SET due_lead_days = ? WHERE id = ?;`,
+          params: [input.dueLeadDays, existing.id],
+        });
+      }
       return existing.id;
     }
     const id = crypto.randomUUID();
     statements.push({
-      sql: `INSERT INTO field_defs (id, name, field_type, options, description) VALUES (?, ?, ?, ?, ?);`,
-      params: [id, input.name, input.fieldType, input.options, input.description ?? null],
+      sql: `INSERT INTO field_defs (id, name, field_type, options, description, due_lead_days)
+            VALUES (?, ?, ?, ?, ?, ?);`,
+      params: [
+        id,
+        input.name,
+        input.fieldType,
+        input.options,
+        input.description ?? null,
+        input.dueLeadDays ?? null,
+      ],
     });
     return id;
   }
@@ -590,12 +642,13 @@ export class CategoryRepository extends BaseRepository {
     this.assertWritable();
     await this.requireCategory(categoryId);
     const { name, fieldType, options } = this.validateFieldInput(input);
+    const dueLeadDays = this.validateDueLeadDays(input.dueLeadDays, fieldType);
 
     // Definition creation and the category's use of it land in one transaction, so a
     // failure can never leave an orphan definition behind.
     const statements: SqlStatement[] = [];
     const defId = await this.resolveFieldDef(
-      { name, fieldType, options, description: input.description },
+      { name, fieldType, options, description: input.description, dueLeadDays },
       statements,
     );
 
@@ -682,10 +735,23 @@ export class CategoryRepository extends BaseRepository {
       }
       defSets.push('field_type = ?', 'options = ?');
       defParams.push(validated.fieldType, validated.options);
+      // Retyping away from DATE takes the due-date opt-in with it. The table CHECK forbids the
+      // pair outright, so without this the user's edit would fail on a constraint they cannot
+      // see; clearing it here makes "this is no longer a date" mean what it says.
+      if (validated.fieldType !== 'DATE' && existing.dueLeadDays != null && input.dueLeadDays === undefined) {
+        defSets.push('due_lead_days = ?');
+        defParams.push(null);
+      }
     }
     if (input.description !== undefined) {
       defSets.push('description = ?');
       defParams.push(input.description);
+    }
+    if (input.dueLeadDays !== undefined) {
+      // Validated against the *effective* type, so opting in while retyping to DATE in the
+      // same edit is accepted and opting in on a non-date is refused with a readable message.
+      defSets.push('due_lead_days = ?');
+      defParams.push(this.validateDueLeadDays(input.dueLeadDays, validated.fieldType));
     }
     if (defSets.length > 0) {
       statements.push({
@@ -1049,6 +1115,31 @@ export class CategoryRepository extends BaseRepository {
       throw new DbError('SQLITE_CONSTRAINT', `Custom field "${id}" does not exist.`);
     }
     return rowToCategoryField(row);
+  }
+
+  /**
+   * Validate a `dueLeadDays` opt-in against the field type it is being set on, returning the
+   * value to store. Only a `DATE` can be a deadline, and the notice period is a whole number
+   * of calendar days within {@link FIELD_DUE_LEAD_DAYS_MIN}–{@link FIELD_DUE_LEAD_DAYS_MAX}.
+   *
+   * Reported in the app's voice here rather than left to the table CHECK, which would surface
+   * as a raw SQLite constraint failure with no indication of which rule was broken.
+   */
+  private validateDueLeadDays(value: number | null | undefined, fieldType: FieldType): number | null {
+    if (value == null) return null;
+    if (fieldType !== 'DATE') {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'Only a Date field can be used as a due date. Change the field to Date first, or clear the due-date setting.',
+      );
+    }
+    if (!Number.isInteger(value) || value < FIELD_DUE_LEAD_DAYS_MIN || value > FIELD_DUE_LEAD_DAYS_MAX) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        `A due date's notice period must be a whole number of days from ${FIELD_DUE_LEAD_DAYS_MIN} to ${FIELD_DUE_LEAD_DAYS_MAX}.`,
+      );
+    }
+    return value;
   }
 
   /** Validate a field's name and (for SELECT) non-empty options; serialise options. */

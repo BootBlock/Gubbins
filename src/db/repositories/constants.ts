@@ -318,6 +318,29 @@ export const FIELD_TYPES = [
 export type FieldType = (typeof FIELD_TYPES)[number];
 
 /**
+ * Bounds on `field_defs.due_lead_days` — a `DATE` custom field's **due-date opt-in** (W1a).
+ *
+ * A custom `DATE` field is inert by default, and deliberately so: "Date acquired" is a fact,
+ * not a deadline. `due_lead_days` is the whole opt-in — `NULL` means "just a date", and any
+ * value means "this is a deadline; raise it this many calendar days before it falls due". One
+ * nullable column rather than a boolean *plus* a lead time, because two columns can disagree
+ * ("opted in, no notice") and that disagreement would have no meaning.
+ *
+ * The lead time is per definition rather than one shared preference because deadlines are not
+ * alike: a subscription renewal wants a fortnight, a calibration certificate a quarter, a
+ * "return by" a day or two. A single shared window would make the feature miss most of what it
+ * exists to surface. `0` is legitimate — "tell me on the day".
+ *
+ * Interpolated into the `field_defs` CHECK, so the schema and the app clamp to the same range
+ * (see `clampFieldDueLeadDays` in `@/features/lifecycle/field-due`).
+ */
+export const FIELD_DUE_LEAD_DAYS_MIN = 0;
+/** A year's notice — beyond this a "reminder" stops being one. See {@link FIELD_DUE_LEAD_DAYS_MIN}. */
+export const FIELD_DUE_LEAD_DAYS_MAX = 365;
+/** The lead time offered when a field is first opted in — two weeks' notice. */
+export const FIELD_DUE_LEAD_DAYS_DEFAULT = 14;
+
+/**
  * Attachment/datasheet kinds (spec §4 "Attachments & Datasheets"). `URL` is an
  * external link; `LOCAL_POINTER` stores only the literal local file-path string
  * (never the blob), keeping it sync-safe (§4 Strict Sync Isolation). Which kinds a

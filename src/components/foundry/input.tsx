@@ -1,13 +1,15 @@
-import { type InputHTMLAttributes, type TextareaHTMLAttributes, forwardRef } from 'react';
+import { type InputHTMLAttributes, forwardRef } from 'react';
 import { cn } from '@/lib/utils';
+import { fieldClasses } from './field-classes';
 import { NumberInput } from './number-input';
 
 /**
  * Foundry form controls (spec §2.4.1). Hand-built minimal primitives feature code
  * imports instead of reaching for shadcn/raw elements directly; swappable later.
+ *
+ * The multi-line control lives next door in `textarea.tsx` — it grew behaviour of its own
+ * (a remembered user-chosen size, optional auto-grow) that these one-liners don't share.
  */
-const fieldClasses =
-  'h-10 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50';
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   /**
@@ -30,20 +32,6 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
   },
 );
 Input.displayName = 'Input';
-
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, rows = 3, ...props }, ref) => (
-    // Shares the field look but is auto-height (min-h, not the fixed h-10 of one-liners)
-    // and vertically resizable.
-    <textarea
-      ref={ref}
-      rows={rows}
-      className={cn(fieldClasses, 'h-auto min-h-[4.5rem] resize-y py-2 leading-relaxed', className)}
-      {...props}
-    />
-  ),
-);
-Textarea.displayName = 'Textarea';
 
 /**
  * A styled checkbox — the Foundry replacement for raw `<input type="checkbox">` at call

@@ -152,6 +152,8 @@ export function WishlistEntryDialog({ open, entry, isSaving, onSubmit, onClose }
 
         <FormField label="Note" hint="Anything worth remembering — a colour, a model, or when to buy.">
           <Textarea
+            sizeKey="wishlist.note"
+            autoGrow
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}

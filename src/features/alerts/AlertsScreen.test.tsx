@@ -11,6 +11,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { Alert } from './alerts';
 
+/**
+ * Whether the stubbed feed reports its custom-field due-date read as truncated (W1a). Mutable so
+ * one test can turn it on without a second `vi.mock` factory.
+ */
+let fieldDueTruncated = false;
+
+/** One custom-field due-date alert, so the `field-due` section exists to hang the notice off. */
+const FIELD_DUE_ALERT: Alert = {
+  id: 'field-due:policy-1:def-1:2026-07-01',
+  kind: 'field-due',
+  severity: 'critical',
+  title: 'Renewal date passed — Studio insurance',
+  detail: '"Renewal date" was due on 2026-07-01.',
+  dueAt: '2026-07-01T00:00:00.000Z',
+  target: { route: '/inventory', itemId: 'policy-1', itemName: 'Studio insurance' },
+};
+
 /** One low-stock alert — enough to exercise a card's controls. */
 const ALERT: Alert = {
   id: 'low-stock:widget-1',
@@ -37,11 +54,13 @@ vi.mock('@/features/export/TabularExportMenu', () => ({
 vi.mock('./useAlerts', () => ({
   useAlerts: () => {
     const dismissals = useDismissedAlertsStore((s) => s.dismissals);
+    const all = fieldDueTruncated ? [ALERT, FIELD_DUE_ALERT] : [ALERT];
     return {
-      alerts: applyDismissals([ALERT], dismissals, Date.now()),
-      allAlerts: [ALERT],
+      alerts: applyDismissals(all, dismissals, Date.now()),
+      allAlerts: all,
       isLoading: false,
       isError: false,
+      fieldDueTruncated,
     };
   },
 }));
@@ -72,6 +91,7 @@ const dismissals = () => useDismissedAlertsStore.getState().dismissals;
 beforeEach(() => {
   localStorage.clear();
   useDismissedAlertsStore.setState({ dismissals: new Map() });
+  fieldDueTruncated = false;
 });
 
 afterEach(cleanup);
@@ -167,5 +187,28 @@ describe('AlertsScreen — export', () => {
     // Dismiss the only alert; the export has nothing left to write.
     fireEvent.click(screen.getByTestId(`dismiss-alert-${ALERT.id}`));
     expect(screen.getByTestId('export-alerts')).toBeDisabled();
+  });
+});
+
+/**
+ * A capped feed must say so. The custom-field due-date lane reads every page and reports when it
+ * stopped (issues #606/#607) — the whole point being that the shortfall is never silent, so the
+ * screen has to actually render it, and only against the lane it is about.
+ */
+describe('AlertsScreen — the custom-field due-date lane is honest about truncation', () => {
+  it("says so, inside that lane's section, when the read hit its ceiling", () => {
+    fieldDueTruncated = true;
+    render(<AlertsScreen />);
+
+    const notice = screen.getByTestId('alerts-field-due-truncated');
+    expect(notice).toBeInTheDocument();
+    // Scoped to its own section, not floated above the whole feed — the other four lanes are
+    // complete and must not be cast into doubt.
+    expect(notice.closest('section')?.getAttribute('aria-labelledby')).toBe('alerts-section-field-due');
+  });
+
+  it('says nothing when the whole set was read', () => {
+    render(<AlertsScreen />);
+    expect(screen.queryByTestId('alerts-field-due-truncated')).toBeNull();
   });
 });

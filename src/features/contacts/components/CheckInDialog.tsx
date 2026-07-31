@@ -80,6 +80,8 @@ export function CheckInDialog({
 
         <FormField label="Return note (optional)">
           <Textarea
+            sizeKey="contact.checkin-note"
+            autoGrow
             ref={noteRef}
             value={note}
             onChange={(e) => setNote(e.target.value)}

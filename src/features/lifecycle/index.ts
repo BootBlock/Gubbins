@@ -5,6 +5,7 @@
  * the sibling modules and are unit-tested in isolation.
  */
 export { expiryStatus, daysUntilExpiry, type ExpiryStatus } from './expiry';
+export { fieldDueStatus, clampFieldDueLeadDays, type FieldDueStatus } from './field-due';
 export { maintenanceStatus, maintenancePerformedNote, type MaintenanceScheduleState } from './maintenance';
 export {
   variances,

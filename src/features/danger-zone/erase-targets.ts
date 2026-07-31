@@ -646,7 +646,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     section: 'local',
     label: 'Drafts & reminders',
     tooltip:
-      'Clears local-only odds and ends on this device: export drafts, app-update reminders, an in-progress stock-take, which location groups are expanded, remembered dialog sizes, and which one-off celebrations have already played.',
+      'Clears local-only odds and ends on this device: export drafts, app-update reminders, an in-progress stock-take, which location groups are expanded, remembered dialog and text-box sizes, and which one-off celebrations have already played.',
     scope: 'local',
     localKeys: localKeysFor('local-ui'),
   },

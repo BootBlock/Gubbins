@@ -34,6 +34,15 @@ Paste or import a list — see [[Export & import|Export-and-Import]]. Coming fro
 Turn on [[cloud sync|Cloud-Sync]] to your own folder or drive, or move a
 [[backup|Backup-and-Restore]] across.
 
+**The description or notes box is too small. Can I make it bigger?**
+Yes — two ways, and they work together. Most free-text boxes **grow as you type**, up to about a
+dozen lines, then scroll. You can also drag the little handle at a box's bottom-right corner to
+whatever height you want, and Gubbins **remembers that height** for that box on this device — so
+the next time you open the dialog, it's already the size you chose. Changed your mind? Shrink the
+box right back down and it forgets your height and returns to the standard size. Sizes are per device and
+aren't carried in a [[backup|Backup-and-Restore]]; **Drafts & reminders** in the
+[[Danger Zone|Danger-Zone-Erasing-Data]] clears them all.
+
 **Why does an item show "Unassigned" for location?**
 It hasn't been put in a [[location|Locations-and-Stock]] yet. Assign one on the item, or drag its
 card onto a location.

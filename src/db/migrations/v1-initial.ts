@@ -7,6 +7,8 @@ import {
   CONDITIONS,
   COSTING_MODES,
   DEAD_STOCK_MODES,
+  FIELD_DUE_LEAD_DAYS_MAX,
+  FIELD_DUE_LEAD_DAYS_MIN,
   FIELD_TYPES,
   IN_TRANSIT_LOCATION_ID,
   IN_TRANSIT_LOCATION_NAME,
@@ -430,6 +432,24 @@ const baselineStatements: SqlStatement[] = [
           -- build doesn't recognise are kept verbatim so an older device can't discard a newer
           -- peer's choice on a round-trip. Nullable (no lookups).
           lookup_sources                     TEXT,
+          -- Where this category's custom fields sit in the item dialog (issue #619). A Movie
+          -- exists *because* of its Format, Director and Year; a Fastener's custom fields are a
+          -- footnote to its built-in ones. One position cannot be right for both, and the
+          -- category is the only thing that knows which fields an item even has.
+          --
+          -- 'default' (or NULL) leaves them in the Classification tab; 'promoted' moves that
+          -- whole tab up to sit directly after Details; 'own-tab' breaks the Custom fields
+          -- section out into a tab of its own there, labelled by field_tab_label.
+          --
+          -- No CHECK, and no NOT NULL: an unrecognised mode written by a peer on a newer version
+          -- is kept verbatim and simply reads as 'default' here, exactly as an unknown id in
+          -- hidden_capabilities does. A CHECK would instead fail that peer's whole sync apply
+          -- over a presentational preference.
+          field_prominence                   TEXT,
+          -- The label for the 'own-tab' break-out tab; NULL falls back to the built-in
+          -- "Custom fields". Kept even while another mode is selected, so switching modes back
+          -- and forth doesn't discard the wording the user chose.
+          field_tab_label                    TEXT,
           updated_at              INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (default_tracking_mode IS NULL OR default_tracking_mode IN (${trackingModeList})),
           CHECK (default_condition IS NULL OR default_condition IN (${conditionList})),
@@ -611,15 +631,33 @@ const baselineStatements: SqlStatement[] = [
     // than owning a private copy, which is what lets a location's value for a def
     // be inherited by an item whose category uses that same def: the link is the
     // def id, so it is exact and survives a rename on either side.
+    //
+    // `due_lead_days` (W1a) is the DATE due-date opt-in, and it sits **here** rather than
+    // on `category_fields` because it is part of what the field *means*, not a category's
+    // policy about it: a field named "Renewal date" is a deadline wherever it is used,
+    // while "Date acquired" is not one anywhere. The storage decides it too — item values
+    // key on `def_id`, never on a category's use of one, so a def-scoped flag makes the
+    // alert feed a plain join, whereas a category-scoped one would miss every value
+    // inherited from a location or left behind by a category change.
     sql: `
         CREATE TABLE field_defs (
-          id          TEXT    PRIMARY KEY NOT NULL,
-          name        TEXT    NOT NULL,
-          field_type  TEXT    NOT NULL,
-          options     TEXT,                            -- JSON array for SELECT fields
-          description TEXT,                            -- optional help note shown on the control
-          updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (field_type IN (${fieldTypeList}))
+          id            TEXT    PRIMARY KEY NOT NULL,
+          name          TEXT    NOT NULL,
+          field_type    TEXT    NOT NULL,
+          options       TEXT,                          -- JSON array for SELECT fields
+          description   TEXT,                          -- optional help note shown on the control
+          due_lead_days INTEGER,                       -- DATE only: days' notice; NULL = not a due date
+          updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (field_type IN (${fieldTypeList})),
+          -- Only a DATE can be a deadline, and the notice period is bounded. The write seam
+          -- clears the value when a field is retyped away from DATE so the user gets a clean
+          -- outcome; this CHECK is the backstop under it (and under sync and restore).
+          CHECK (
+            due_lead_days IS NULL
+            OR (field_type = 'DATE'
+                AND due_lead_days >= ${FIELD_DUE_LEAD_DAYS_MIN}
+                AND due_lead_days <= ${FIELD_DUE_LEAD_DAYS_MAX})
+          )
         ) STRICT;
       `,
   },

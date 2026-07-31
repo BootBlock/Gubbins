@@ -1,7 +1,7 @@
 /**
  * useAgenda — data hook for the unified "Upcoming" agenda (Phase 75).
  *
- * Fetches the five date-driven feeds through existing repository methods and runs the pure
+ * Fetches the seven date-driven feeds through existing repository methods and runs the pure
  * {@link buildAgenda} seam to produce a sorted `AgendaEvent[]`. Read-only: no new SQL beyond
  * the additive `MaintenanceRepository.listUpcoming` (which lists *future* schedules, not just
  * the overdue ones {@link useAlerts} needs). Maintenance due-ness is derived here with the
@@ -21,6 +21,7 @@ import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { buildAgenda, maintenanceDueAtMs, type AgendaEvent, type AgendaSources } from './agenda';
 import { agendaKeys } from './keys';
 import { nowMs } from '@/lib/clock';
+import { readAllPages } from '@/lib/read-all-pages';
 import { useFormatters } from '@/lib/useFormatters';
 
 /**
@@ -38,7 +39,7 @@ const AGENDA_LOOKAHEAD_DAYS = 36_500;
 const AGENDA_FETCH_LIMIT = 500;
 
 /**
- * Combine the five agenda source feeds into a single sorted `AgendaEvent[]`.
+ * Combine the seven agenda source feeds into a single sorted `AgendaEvent[]`.
  *
  * @returns
  *   - `events`    — every pending event, soonest first.
@@ -48,12 +49,15 @@ const AGENDA_FETCH_LIMIT = 500;
  *                   marginally-later second clock read.
  *   - `isLoading` — true while any source query is still loading.
  *   - `isError`   — true when any source query errored.
+ *   - `fieldDueTruncated` — true when the custom-field due-date read hit its ceiling, so that
+ *     lane is a prefix rather than the whole set. Surfaced rather than swallowed (#606/#607).
  */
 export function useAgenda(): {
   readonly events: AgendaEvent[];
   readonly now: number;
   readonly isLoading: boolean;
   readonly isError: boolean;
+  readonly fieldDueTruncated: boolean;
 } {
   const now = nowMs();
   // Format every date in the agenda copy through the shared formatter seam so a due/expiry/booking
@@ -71,6 +75,7 @@ export function useAgenda(): {
   const perishablesOn = enabled.has('perishables');
   const contactsOn = enabled.has('contacts');
   const bookingsOn = enabled.has('bookings');
+  const customFieldsOn = enabled.has('custom-fields');
 
   const maintenanceQuery = useQuery({
     queryKey: agendaKeys.maintenance(),
@@ -109,13 +114,32 @@ export function useAgenda(): {
     enabled: bookingsOn,
   });
 
+  /**
+   * Opted-in custom-field due dates (W1a). Asked for under the shared lookahead rather than
+   * each definition's own lead time — the agenda is the forward calendar, so a date belongs on
+   * it from the moment it is recorded; the lead time only decides when it becomes an *alert*.
+   *
+   * Walks every page rather than reading one and calling it the feed. The other six lanes cap
+   * at a single page and say nothing about it; here the truncation is reported and shown
+   * (issues #606/#607).
+   */
+  const fieldDueQuery = useQuery({
+    queryKey: agendaKeys.fieldDue(AGENDA_LOOKAHEAD_DAYS),
+    queryFn: () =>
+      readAllPages((page) =>
+        getItemRepository().listFieldDueDates(now, { ...page, withinDays: AGENDA_LOOKAHEAD_DAYS }),
+      ),
+    enabled: customFieldsOn,
+  });
+
   const isLoading =
     maintenanceQuery.isLoading ||
     warrantyQuery.isLoading ||
     expiryQuery.isLoading ||
     checkoutsQuery.isLoading ||
     reorderQuery.isLoading ||
-    bookingsQuery.isLoading;
+    bookingsQuery.isLoading ||
+    fieldDueQuery.isLoading;
 
   const isError =
     maintenanceQuery.isError ||
@@ -123,7 +147,8 @@ export function useAgenda(): {
     expiryQuery.isError ||
     checkoutsQuery.isError ||
     reorderQuery.isError ||
-    bookingsQuery.isError;
+    bookingsQuery.isError ||
+    fieldDueQuery.isError;
 
   const sources: AgendaSources = {
     maintenance: maintenanceOn
@@ -196,9 +221,22 @@ export function useAgenda(): {
           endDate: b.endDate,
         }))
       : [],
+
+    fieldDue: customFieldsOn
+      ? (fieldDueQuery.data?.rows ?? []).map((row) => ({
+          itemId: row.itemId,
+          itemName: row.itemName,
+          defId: row.defId,
+          fieldName: row.fieldName,
+          dueAt: row.dueAt,
+        }))
+      : [],
   };
 
   const events = buildAgenda(sources, now, formatDate);
 
-  return { events, now, isLoading, isError };
+  // Only meaningful while the lane is on and loaded; a disabled lane is not "truncated".
+  const fieldDueTruncated = customFieldsOn && (fieldDueQuery.data?.truncated ?? false);
+
+  return { events, now, isLoading, isError, fieldDueTruncated };
 }

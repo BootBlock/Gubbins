@@ -288,6 +288,8 @@ export function EditLocationDialog({
         hint={t('inventory.location.hint.description')}
       >
         <Textarea
+          sizeKey="location.description"
+          autoGrow
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder={t('inventory.location.field.descriptionPlaceholder')}

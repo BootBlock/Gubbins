@@ -5,7 +5,8 @@ fields** and **capabilities** let you record — and search on — exactly the p
 to *your* inventory.
 
 **Where to find it:** the **Classification** tab of an item's details, once the **Custom fields &
-capabilities** capability is enabled ([[Modular UI|Modular-UI]]).
+capabilities** capability is enabled ([[Modular UI|Modular-UI]]) — though a category can
+[bring its fields further forward](#bringing-a-categorys-fields-forward).
 
 ## Custom fields
 
@@ -74,6 +75,44 @@ Each custom field has a **type** that decides how you enter and how Gubbins show
 > text — isn't a picture, so Gubbins tells you it can't be shown and offers to replace it
 > rather than trying to load it. On the item's card that field simply reads `—` until you
 > choose a picture.
+
+### Turning a date into a deadline
+
+Most dates just record a fact — *Date acquired*, *Date signed* — and Gubbins leaves them alone.
+But some are **deadlines**: a subscription's renewal date, an extinguisher's next inspection, the
+date a resin stops being usable, a "return by" on something you've borrowed.
+
+Tick **Use as a due date** on any **Date** field and Gubbins starts treating it like one. The
+field then appears in:
+
+- **[[Alerts]]** — as it approaches, and again (more urgently) once it has passed.
+- The **[[Upcoming agenda|Upcoming-Agenda]]** — in date order, alongside servicing, warranties
+  and loans.
+- **[[Reminder notifications|Reminder-Notifications]]**, if you've switched those on.
+
+Next to the tick, set **how many days' notice** you want — anything from `0` ("tell me on the
+day") up to `365`. Different deadlines want different warning: a fortnight is plenty for a
+subscription renewal, while a calibration certificate might want three months. Until that many
+days before, the date sits quietly on the Upcoming agenda without raising an alert.
+
+You can turn this on when you first add the field, or at any time afterwards from **Categories &
+schemas** — pick the category, and the setting appears under each of its Date fields. That
+matters for a field you added before, or one that came from a
+[[preset|#starting-from-a-preset]] — this is how you make an existing date behave like a deadline.
+
+> **ℹ️ Note**
+> Like the field's name and type, this belongs to the **field itself**, not to one category. Tick
+> it on *Renewal date* and it applies everywhere that field is used — and to values
+> [[inherited from a location|#inheriting-a-value-from-a-location]] as well as those typed onto
+> an item.
+
+> **💡 Tip**
+> The alert names the field, so several dated fields on one item stay tellable apart —
+> *"Inspection due passed — Rack PDU"* rather than a generic "a date is due".
+
+> **⚠️ Heads-up**
+> Only **Date** fields can do this. If you change a field's type away from Date, the due-date
+> setting is cleared along with it.
 
 ### Inheriting a value from a location
 
@@ -182,6 +221,47 @@ search; pressing **Escape** anywhere else (or with the search box empty) closes 
 > **ℹ️ Note**
 > A preset whose category already exists is marked **Added** and can't be imported twice, so
 > there's no risk of duplicates.
+
+### Bringing a category's fields forward
+
+Custom fields normally live in the **Classification** tab, near the end of an item's tabs. That
+is the right place for a bolt, whose custom fields are a footnote to its built-in ones — and the
+wrong place for a film, whose Format, Director and Year are close to the whole point of the
+record.
+
+So a **category** can say how prominent its own fields should be. Open **Categories & schemas**,
+pick a category, and find **Where the custom fields go**. There are three choices:
+
+- **Leave them where they are** — the default, and what every category has always done. The
+  fields stay inside **Classification**, alongside tags and capabilities.
+- **Move Classification up** — the whole **Classification** tab moves to sit directly after
+  **Details**, bringing its tags and capabilities with it. Nothing is restructured; the fields
+  are simply much closer to hand.
+- **Give them a tab of their own** — the custom fields break out into their **own tab**, directly
+  after **Details**, under a name you choose. Tags and capabilities stay behind in
+  Classification.
+
+Choosing the third option reveals a **Tab name** box. Use it to name what the fields collectively
+*are* — *Film details*, *Pressing*, *Provenance* — rather than repeating "custom fields". Leave
+it blank and the tab is simply called **Custom fields**. The name you type is kept even if you
+switch back to another option later, so changing your mind never loses it.
+
+> **ℹ️ Note**
+> This only moves things. No field is added, removed, renamed or re-typed, nothing stops syncing,
+> and searching with `field:` works exactly the same wherever the fields sit.
+
+Several of the built-in presets come with a choice already made: `Movie`, `Book`,
+`Vinyl record`, `DVDs`, `Blu-rays`, `Video games (physical)` and `Vintage movie posters` each
+give their fields a tab of their own with a fitting name. Everything else starts at the default —
+a preset is only a starting point, so change it to suit.
+
+> **⚠️ Heads-up**
+> If a category also hides its custom fields (below), the two settings contradict each other, so
+> Gubbins says so and offers to show the fields again. Until you do, items with nothing recorded
+> keep the ordinary tab order — but an item that *does* have values still shows them, with the
+> usual note explaining why, so nothing is ever buried. The same goes for turning the **Custom
+> fields & capabilities** capability off under [[Modules|Modular-UI]]: the tabs then simply stay
+> where they always were.
 
 ### Hiding the sections a category doesn't need
 

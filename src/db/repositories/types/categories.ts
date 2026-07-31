@@ -33,6 +33,14 @@ export interface CategoryRow {
    * tolerantly at the mapper boundary.
    */
   readonly lookup_sources: string | null;
+  /**
+   * Where this category's custom fields sit in the item dialog (issue #619) — one of
+   * `default` / `promoted` / `own-tab`, or null for the default. Stored verbatim and narrowed
+   * at the render boundary, so a mode a newer peer invented survives a round-trip.
+   */
+  readonly field_prominence: string | null;
+  /** Label for the `own-tab` break-out tab (issue #619); null falls back to the built-in one. */
+  readonly field_tab_label: string | null;
   readonly updated_at: number;
 }
 
@@ -115,6 +123,24 @@ export interface Category {
    * whether this build can offer the lookup at all) is the feature layer's job, not storage's.
    */
   readonly lookupSources: readonly CategoryLookupSource[];
+  /**
+   * Where this category's custom fields sit in the item dialog (issue #619): `default` leaves
+   * them inside **Classification**, `promoted` moves that tab up to sit directly after
+   * **Details**, and `own-tab` breaks the custom fields out into a tab of their own there.
+   *
+   * Deliberately `string` rather than a union, for the same reason `hiddenCapabilities` is
+   * `string[]`: this layer is imported by the bridge, and the value is kept **verbatim** so a
+   * mode a newer peer invented is not discarded the next time this device writes the row back.
+   * `toFieldProminenceMode` in `features/inventory/field-prominence.ts` is the render boundary
+   * that narrows it — an unrecognised mode reads as `default` there.
+   */
+  readonly fieldProminence: string | null;
+  /**
+   * The label for the `own-tab` break-out tab (issue #619); null falls back to the built-in
+   * "Custom fields". Retained while another mode is selected, so switching modes doesn't
+   * discard the wording the user chose.
+   */
+  readonly fieldTabLabel: string | null;
   readonly updatedAt: number;
 }
 
@@ -143,6 +169,10 @@ export interface CreateCategoryInput {
   readonly hiddenCapabilities?: readonly string[] | null;
   /** Open databases this category's fields can be filled from (issue #616); omit/empty for none. */
   readonly lookupSources?: readonly CategoryLookupSource[] | null;
+  /** Where this category's custom fields sit (issue #619); omit/null for the default position. */
+  readonly fieldProminence?: string | null;
+  /** Label for the `own-tab` break-out tab (issue #619); omit/null for the built-in label. */
+  readonly fieldTabLabel?: string | null;
 }
 
 export interface UpdateCategoryInput {
@@ -165,6 +195,10 @@ export interface UpdateCategoryInput {
   readonly hiddenCapabilities?: readonly string[] | null;
   /** Open databases this category's fields can be filled from (issue #616); null or `[]` clears it. */
   readonly lookupSources?: readonly CategoryLookupSource[] | null;
+  /** Where this category's custom fields sit (issue #619); null restores the default position. */
+  readonly fieldProminence?: string | null;
+  /** Label for the `own-tab` break-out tab (issue #619); null restores the built-in label. */
+  readonly fieldTabLabel?: string | null;
 }
 
 // --- Category custom fields (spec §4 "Categories & Schema Evolution") -----------
@@ -180,6 +214,7 @@ export interface FieldDefRow {
   readonly field_type: FieldType;
   readonly options: string | null;
   readonly description: string | null;
+  readonly due_lead_days: number | null;
   readonly updated_at: number;
 }
 
@@ -196,6 +231,18 @@ export interface FieldDef {
    * reminder of any field-specific guidance. Null when the field carries no note.
    */
   readonly description: string | null;
+  /**
+   * The **due-date opt-in** for a `DATE` field (W1a): how many calendar days' notice the
+   * alert centre and the Upcoming agenda give before the stored date falls due. `null` —
+   * the default, and the only legal value on any non-`DATE` type — means the field is an
+   * ordinary date that raises nothing, which is right for "Date acquired" and wrong only
+   * for the deadlines a user explicitly nominates.
+   *
+   * It lives on the **definition**, so it is shared by every category using that field —
+   * deliberately, because a field's name is its identity here and "Renewal date" means the
+   * same thing wherever it appears.
+   */
+  readonly dueLeadDays: number | null;
   readonly updatedAt: number;
 }
 
@@ -214,6 +261,7 @@ export interface CategoryFieldRow {
   readonly is_required: number;
   readonly default_value: string | null;
   readonly description: string | null;
+  readonly due_lead_days: number | null;
   readonly position: number;
   readonly updated_at: number;
 }
@@ -245,6 +293,12 @@ export interface CategoryField {
    * reminder of any field-specific guidance. Null when the field carries no note.
    */
   readonly description: string | null;
+  /**
+   * The dictionary definition's due-date opt-in — see {@link FieldDef.dueLeadDays}. Carried
+   * onto the category's view of the field so the field editor can show and change it without
+   * a second read; it is a *definition* attribute, so editing it here changes it everywhere.
+   */
+  readonly dueLeadDays: number | null;
   readonly position: number;
   readonly updatedAt: number;
 }
@@ -268,6 +322,16 @@ export interface CreateCategoryFieldInput {
   readonly defaultValue?: string | null;
   /** Optional author's note about the field; omit/null for none. */
   readonly description?: string | null;
+  /**
+   * Opt a `DATE` field in as a **due date**, with this many calendar days' notice (W1a).
+   * Omit/null for an ordinary date.
+   *
+   * When the name resolves to a definition that already exists, a value here is *applied*
+   * to it (the user is stating what the field means) but null/omitted never *clears* an
+   * existing opt-in — adding "Renewal date" to a second category must not silently stop the
+   * first category's items alerting.
+   */
+  readonly dueLeadDays?: number | null;
   readonly position?: number;
 }
 
@@ -285,6 +349,12 @@ export interface UpdateCategoryFieldInput {
   readonly defaultValue?: string | null;
   /** Optional author's note about the field; null clears it. */
   readonly description?: string | null;
+  /**
+   * The due-date opt-in (W1a); `null` clears it, turning the field back into an ordinary
+   * date. A *definition* attribute, so this reaches every category and location using the
+   * field. Rejected on a non-`DATE` field; retyping away from `DATE` clears it.
+   */
+  readonly dueLeadDays?: number | null;
   readonly position?: number;
 }
 
@@ -368,4 +438,42 @@ export interface SetLocationFieldValueInput {
   readonly defId: string;
   readonly value: string | null;
   readonly isInheritable?: boolean;
+}
+
+/**
+ * One item's value for a custom `DATE` field that its definition has opted in as a **due
+ * date** (W1a) — the row {@link ItemFeedRepository.listFieldDueDates} returns and the alert
+ * centre / Upcoming agenda lanes are built from.
+ *
+ * Flat rather than nested because the feed is a projection, not an entity: it exists to answer
+ * "which recorded dates are due, and how much notice did the user ask for", and every consumer
+ * needs the item and the field named together.
+ */
+export interface FieldDueDate {
+  readonly itemId: string;
+  readonly itemName: string;
+  /** The dictionary definition the value belongs to — see {@link FieldDef}. */
+  readonly defId: string;
+  /** The definition's name, as the user sees it on the item ("Renewal date"). */
+  readonly fieldName: string;
+  /** The definition's notice period in calendar days — see {@link FieldDef.dueLeadDays}. */
+  readonly leadDays: number;
+  /** UNIX-ms midnight-UTC instant of the stored `YYYY-MM-DD` day (issue #320). */
+  readonly dueAt: number;
+}
+
+/**
+ * The raw projection behind {@link FieldDueDate}. `value` is the canonical `YYYY-MM-DD` the
+ * query has already shape-checked (`GLOB`) and confirmed is a real calendar day
+ * (`date(value) = value` — an equality, because SQLite's `date()` normalises an impossible day
+ * rather than rejecting it; see `listFieldDueDates`), so the mapper can parse it without a
+ * failure branch.
+ */
+export interface FieldDueDateRow {
+  readonly item_id: string;
+  readonly item_name: string;
+  readonly def_id: string;
+  readonly field_name: string;
+  readonly due_lead_days: number;
+  readonly value: string;
 }

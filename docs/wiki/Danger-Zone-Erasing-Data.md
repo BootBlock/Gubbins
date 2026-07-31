@@ -102,7 +102,7 @@ need to reload:
   is not deleted.
 - **Drafts & reminders** — the local odds and ends: export drafts, app-update reminders, an
   in-progress [[stock-take|Cycle-Counts-and-Audit-Day]], which location groups are expanded,
-  remembered dialog sizes, and which one-off celebrations have already played.
+  remembered dialog and text-box sizes, and which one-off celebrations have already played.
 
 > **⚠️ Heads-up**
 > These three — **App preferences**, **Dashboard layout** and **Saved searches** — are the ones

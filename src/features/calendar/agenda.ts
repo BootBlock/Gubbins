@@ -2,7 +2,8 @@
  * Unified "Upcoming" agenda pure seam (Phase 75, third feature-gap audit candidate #1).
  *
  * Folds every date-driven event in the app — maintenance due (time + usage), warranty
- * expiry, perishable expiry, checkout due-back and reorder-now — into ONE chronological,
+ * expiry, perishable expiry, checkout due-back, reorder-now, bookings and opted-in
+ * custom-field due dates (W1a) — into ONE chronological,
  * time-ordered agenda. Today these live scattered across the alert centre and the dashboard
  * widgets; there is no single time-ordered view. This is the "logic out of the glue" half:
  * pure (`now` injected, no DB / React / DOM), so the lane builders and the date bucketing are
@@ -16,7 +17,7 @@
  * anchored at `now`, so they sort and bucket into "Today" rather than being hidden.
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
-import { addCalendarDays, startOfLocalDay, startOfUtcDay } from '@/lib/calendar-days';
+import { addCalendarDays, startOfLocalDay, startOfUtcDay, utcDayToLocalDay } from '@/lib/calendar-days';
 import { plural } from '@/lib/plural';
 import { daysOverdue, overdueLabel } from '@/features/contacts/overdue';
 import { maintenanceDueAtMs } from '@/features/alerts/alerts';
@@ -29,8 +30,9 @@ export { startOfLocalDay };
 // Types
 // ---------------------------------------------------------------------------
 
-/** The six date-driven event categories the agenda aggregates. */
-export type AgendaKind = 'maintenance' | 'warranty' | 'expiry' | 'checkout-due' | 'reorder' | 'booking';
+/** The seven date-driven event categories the agenda aggregates. */
+export type AgendaKind =
+  'maintenance' | 'warranty' | 'expiry' | 'checkout-due' | 'reorder' | 'booking' | 'field-due';
 
 /** Chronological buckets, in display order. "Later" is a catch-all so nothing is hidden. */
 export type AgendaBucket = 'overdue' | 'today' | 'week' | 'month' | 'later';
@@ -129,7 +131,25 @@ export interface BookingAgendaSource {
   readonly endDate: number;
 }
 
-/** The six pre-fetched source arrays passed to {@link buildAgenda}. */
+/**
+ * An item's value for a custom `DATE` field its definition opted in as a **due date** (W1a).
+ *
+ * Unlike the alert-centre twin this lane carries no lead time: the agenda is the forward
+ * calendar, so a date is worth showing from the moment it is recorded — the lead time decides
+ * when it becomes an *alert*, not when it exists.
+ */
+export interface FieldDueAgendaSource {
+  readonly itemId: string;
+  readonly itemName: string;
+  /** The dictionary definition id; part of the event id, since one item can have several. */
+  readonly defId: string;
+  /** The field's name as the user sees it on the item ("Renewal date"). */
+  readonly fieldName: string;
+  /** UNIX-ms midnight-UTC instant of the stored day. */
+  readonly dueAt: number;
+}
+
+/** The seven pre-fetched source arrays passed to {@link buildAgenda}. */
 export interface AgendaSources {
   readonly maintenance: readonly MaintenanceAgendaSource[];
   readonly warranty: readonly WarrantyAgendaSource[];
@@ -137,6 +157,7 @@ export interface AgendaSources {
   readonly checkouts: readonly CheckoutAgendaSource[];
   readonly reorder: readonly ReorderAgendaSource[];
   readonly bookings: readonly BookingAgendaSource[];
+  readonly fieldDue: readonly FieldDueAgendaSource[];
 }
 
 // ---------------------------------------------------------------------------
@@ -316,12 +337,47 @@ function buildBookingEvents(
   return events;
 }
 
+/**
+ * Opted-in custom-field due dates (W1a) — a user-defined "Renewal date" or "Inspection due"
+ * taking its place on the calendar beside the built-in deadlines.
+ *
+ * The field is named in the title rather than the detail because it *is* the event: two items
+ * can carry three dated fields between them, and "Renewal date — Studio insurance" says which
+ * one at a glance where a generic "Custom field — …" would not.
+ *
+ * The stored day is re-anchored onto the local calendar with `utcDayToLocalDay` (issue #323)
+ * before it becomes the event's `dueAt`. Everything downstream reads that instant in **local**
+ * terms — {@link bucketForDueAt} compares it against `startOfLocalDay`, and the card renders it
+ * through the locale date formatter — while the value itself is a midnight-**UTC** stamp (issue
+ * #320). Passed through raw, a date of "20 July" is 19 July 20:00 in New York, so it would
+ * bucket as Overdue and *display* as the 19th all through the 20th — and contradict the alert
+ * centre, which grades the very same row as due-soon via `fieldDueStatus`. Re-anchoring is what
+ * keeps the two surfaces agreeing about one date.
+ */
+function buildFieldDueEvents(
+  sources: readonly FieldDueAgendaSource[],
+  formatDate: AgendaDateFormatter,
+): AgendaEvent[] {
+  return sources.map((s) => {
+    const dueAt = utcDayToLocalDay(s.dueAt);
+    return {
+      id: `field-due:${s.itemId}:${s.defId}`,
+      kind: 'field-due',
+      title: `${s.fieldName} — ${s.itemName}`,
+      detail: `Due ${formatDate(dueAt)}.`,
+      dueAt,
+      hasDate: true,
+      target: { route: '/inventory', itemId: s.itemId },
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // buildAgenda — flatten + sort
 // ---------------------------------------------------------------------------
 
 /**
- * Fold the five sources into a single `AgendaEvent[]`, soonest first.
+ * Fold the seven sources into a single `AgendaEvent[]`, soonest first.
  *
  * Sort: by `dueAt` ascending (overdue → far future), tie-broken by deterministic `id` so the
  * order is stable across renders. `now` is injected for the date-less lanes and testability;
@@ -340,6 +396,7 @@ export function buildAgenda(
     ...buildCheckoutEvents(sources.checkouts, now, formatDate),
     ...buildReorderEvents(sources.reorder, now),
     ...buildBookingEvents(sources.bookings, now, formatDate),
+    ...buildFieldDueEvents(sources.fieldDue, formatDate),
   ];
   return all.slice().sort((a, b) => {
     if (a.dueAt !== b.dueAt) return a.dueAt - b.dueAt;
@@ -430,14 +487,33 @@ export function bucketAgenda(events: readonly AgendaEvent[], now: number): Agend
 // ---------------------------------------------------------------------------
 
 /** Every agenda kind, for "all on by default" filter state and the filter control. */
-export const AGENDA_KINDS: readonly AgendaKind[] = [
+export const AGENDA_KINDS = [
   'maintenance',
   'warranty',
   'expiry',
   'checkout-due',
   'reorder',
   'booking',
-];
+  'field-due',
+] as const satisfies readonly AgendaKind[];
+
+/**
+ * Compile-time **completeness** guard for {@link AGENDA_KINDS}, matching the one over
+ * `REMINDER_KINDS`. Without it a lane left out of the array compiles cleanly and then silently
+ * has no filter chip and is switched off by nothing, since the screen seeds its filter state
+ * from this list.
+ *
+ * Note the declaration above must stay `as const satisfies …` rather than carrying a
+ * `: readonly AgendaKind[]` annotation. An annotation widens `typeof AGENDA_KINDS` back to
+ * `readonly AgendaKind[]`, so `(typeof AGENDA_KINDS)[number]` becomes `AgendaKind`, the
+ * `Exclude` below is unconditionally `never`, and this guard silently cannot fail.
+ */
+type AgendaKindsAreExhaustive =
+  Exclude<AgendaKind, (typeof AGENDA_KINDS)[number]> extends never
+    ? true
+    : ['Add this lane to AGENDA_KINDS:', Exclude<AgendaKind, (typeof AGENDA_KINDS)[number]>];
+const agendaKindsAreExhaustive: AgendaKindsAreExhaustive = true;
+void agendaKindsAreExhaustive;
 
 /** Keep only events whose kind is in `enabled`. An empty set yields no events. */
 export function filterByKind(

@@ -17,6 +17,8 @@ Alerts pulls together the things that are *wrong now or soon*:
 - **Overdue loans** — items [[out with a contact|Loans-Check-Out-and-In]] past their due date.
 - **Due maintenance & warranty** — [[servicing|Maintenance-and-Servicing]] due and
   [[warranties|Warranty-and-Depreciation]] about to lapse.
+- **Custom field dates** — your own date fields that you've marked as
+  [[due dates|Custom-Fields-and-Capabilities]], such as a renewal, an inspection or a return-by.
 
 Each alert links straight to the thing that raised it, so you can act on it in a click.
 
@@ -71,3 +73,5 @@ anything you've snoozed or dismissed stays out of it. See [[Export & import|Expo
 - **[[Export & import|Export-and-Import]]** — saving the alert list to a file.
 - **[[Reminder notifications|Reminder-Notifications]]** — alerts as OS notifications.
 - **[[Low stock & gauges|Low-Stock-and-Gauges]]** — the thresholds behind stock alerts.
+- **[[Custom fields & capabilities|Custom-Fields-and-Capabilities]]** — marking one of your own
+  date fields as a due date.

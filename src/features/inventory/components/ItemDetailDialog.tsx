@@ -29,6 +29,14 @@ import { useEnabledFeatures } from '@/features/modules/useFeature';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { hidesAnyCapability, isCapabilityVisible, toHiddenCapabilitySet } from '../category-capabilities';
 import { useCategories } from '../categories';
+import {
+  effectiveProminenceMode,
+  insertTabAfter,
+  moveTabAfter,
+  resolveFieldTabLabel,
+  toFieldProminenceMode,
+  type FieldProminenceMode,
+} from '../field-prominence';
 import { useItemSectionPresence } from '../queries';
 import { KitEditor, LifecycleEditor, MaintenanceEditor } from '@/features/lifecycle';
 import { ActivityLog } from './ActivityLog';
@@ -103,11 +111,26 @@ export function ItemDetailDialog({
   // every item rather than no card at all.
   const offersLookup = hasRunnableLookup(category?.lookupSources);
 
+  // Third axis (issue #619): where the category's *custom fields* sit. Position, unlike the two
+  // axes above, is not about what exists — every tab here is still reachable in every mode.
+  //
+  // Note the break-out tab's fallback label is the one translated string in this rail: the rest of
+  // this screen is not converted yet, so its labels are still English literals. Routing a *new*
+  // string through `t()` is what the conventions ask for even on an unconverted screen, and the
+  // key is needed by the category manager regardless — so the mixed rail is a transitional
+  // artefact of this screen's conversion, not a decision to leave the label untranslated.
+  const t = useT();
+  const prominence: FieldProminence = {
+    mode: toFieldProminenceMode(category?.fieldProminence),
+    tabLabel: resolveFieldTabLabel(category?.fieldTabLabel, t('item.tab.customFields')),
+  };
+
   const tabs = buildTabs(
     item,
     enabledFeatures,
     hiddenCapabilities,
     presence.data ?? NO_SECTION_PRESENCE,
+    prominence,
     offersLookup,
   );
 
@@ -196,6 +219,28 @@ interface TabDef {
   readonly icon: ReactNode;
   readonly sections: readonly SectionDef[];
 }
+
+/**
+ * How prominently this item's category wants its custom fields presented (issue #619), with the
+ * break-out tab's label already resolved — the catalog lookup belongs to the component, not to
+ * this pure builder.
+ */
+export interface FieldProminence {
+  readonly mode: FieldProminenceMode;
+  readonly tabLabel: string;
+}
+
+/** The Custom fields section's heading, and the built-in fallback for a break-out tab's label. */
+const CUSTOM_FIELDS_SECTION_TITLE = 'Custom fields';
+
+/** The id of the break-out tab in `own-tab` mode. Distinct from every declared tab id above. */
+const CUSTOM_FIELDS_TAB_ID = 'custom-fields';
+
+/** No category preference — the answer for an uncategorised item, and the default everywhere. */
+const DEFAULT_PROMINENCE: FieldProminence = {
+  mode: 'default',
+  tabLabel: CUSTOM_FIELDS_SECTION_TITLE,
+};
 
 /**
  * Section-level help — the rich-Markdown a reader sees behind each groupbox header's `(i)`
@@ -388,23 +433,65 @@ const SECTION_HINT_ACTIVITY =
  * `presence` is the data-presence probe for the item, or {@link NO_SECTION_PRESENCE} while it
  * is still loading or when nothing is hidden and it was never asked for.
  *
- * `offersLookup` is the one gate that is not a capability: the "Fill from a database" section is
- * omitted outright unless the item's category has a lookup provider this build can run. Every
- * other section owns an editor that is useful empty, so it can render its card and let the editor
- * say "nothing yet"; that one renders nothing at all, and an empty card promising a feature the
- * category hasn't got would be worse than no card.
+ * A third axis, `prominence` (issue #619), decides *where* the custom fields sit rather than
+ * whether they appear. It is applied last, and deliberately cannot resurrect anything the two
+ * visibility axes dropped: when the Custom fields section would not be shown at all, the
+ * position reverts to the default rather than promoting a tab that no longer holds them.
+ *
+ * `offersLookup` (issue #616) is the one gate that is not a capability: the "Fill from a database"
+ * section is omitted outright unless the item's category has a lookup provider this build can run.
+ * Every other section owns an editor that is useful empty, so it can render its card and let the
+ * editor say "nothing yet"; that one renders nothing at all, and an empty card promising a feature
+ * the category hasn't got would be worse than no card. It moves with the custom fields under
+ * `prominence`, since those are the fields it fills.
  */
 export function buildTabs(
   item: Item,
   enabled: ReadonlySet<FeatureId>,
   hidden: ReadonlySet<FeatureId> = EMPTY_HIDDEN,
   presence: ItemSectionPresence = NO_SECTION_PRESENCE,
+  prominence: FieldProminence = DEFAULT_PROMINENCE,
   offersLookup = false,
 ): readonly TabDef[] {
   // The variants block lives inside LifecycleEditor and is gated there by both axes, so the
   // section heading has to ask the same question rather than only the device's.
   const showsVariants =
     isCapabilityVisible('variants', enabled, hidden, item.hasVariants || item.parentId !== null) !== 'hidden';
+
+  // Issue #619. The custom-fields verdict is needed *before* the tab list is assembled, because
+  // `own-tab` removes the section from Classification rather than filtering it out afterwards —
+  // and because a mode may only take effect while the section actually survives.
+  const customFieldsVerdict = isCapabilityVisible('custom-fields', enabled, hidden, presence.customFields);
+  const prominenceMode = effectiveProminenceMode(prominence.mode, customFieldsVerdict !== 'hidden');
+  const customFieldsSection: SectionDef = {
+    title: CUSTOM_FIELDS_SECTION_TITLE,
+    icon: <CategoryIcon />,
+    content: <CustomFieldsEditor itemId={item.id} />,
+    hint: SECTION_HINT_CUSTOM_FIELDS,
+    feature: 'custom-fields',
+    hasData: presence.customFields,
+  };
+
+  // Filling those fields from an open database (issue #616). Sits directly under them wherever
+  // they end up — it answers the follow-up question, "do I have to type all this?" — so it moves
+  // into the break-out tab with them rather than being stranded in Classification.
+  //
+  // Gated on `scraping` ("Product & supplier lookup"), the capability the barcode and supplier
+  // lookups already live under, but resolved **here** rather than left to the section filter
+  // below: the `own-tab` tab is assembled after that filter has run, so a section carried into it
+  // would otherwise skip the gate entirely. Present at all only when the category actually offers
+  // a lookup — unlike every other section, this one has nothing to show without one.
+  const lookupSections: readonly SectionDef[] =
+    offersLookup && isCapabilityVisible('scraping', enabled, hidden, false) !== 'hidden'
+      ? [
+          {
+            title: 'Fill from a database',
+            icon: <DatabaseIcon />,
+            content: <CategoryLookupPanel item={item} />,
+            hint: SECTION_HINT_LOOKUP,
+          },
+        ]
+      : [];
   const tabs: readonly TabDef[] = [
     {
       id: 'details',
@@ -620,30 +707,10 @@ export function buildTabs(
           feature: 'custom-fields',
           hasData: presence.capabilities,
         },
-        {
-          title: 'Custom fields',
-          icon: <CategoryIcon />,
-          content: <CustomFieldsEditor itemId={item.id} />,
-          hint: SECTION_HINT_CUSTOM_FIELDS,
-          feature: 'custom-fields',
-          hasData: presence.customFields,
-        },
-        // Filling those fields from an open database (issue #616). Sits directly under them
-        // because it answers the follow-up question — "do I have to type all this?" — and is gated
-        // by `scraping` ("Product & supplier lookup"), the same capability the barcode and supplier
-        // lookups live under. Present only when the category actually offers a lookup: unlike every
-        // other section, this one has nothing to show without one.
-        ...(offersLookup
-          ? [
-              {
-                title: 'Fill from a database',
-                icon: <DatabaseIcon />,
-                content: <CategoryLookupPanel item={item} />,
-                hint: SECTION_HINT_LOOKUP,
-                feature: 'scraping' as const,
-              },
-            ]
-          : []),
+        // In `own-tab` mode the fields — and the lookup that fills them — leave Classification
+        // entirely and are inserted below as a tab of their own; Tags and Capabilities keep this
+        // one.
+        ...(prominenceMode === 'own-tab' ? [] : [customFieldsSection, ...lookupSections]),
       ],
     },
     {
@@ -663,7 +730,7 @@ export function buildTabs(
 
   // Resolve both visibility axes, then drop any tab left with no sections. A section kept only
   // because it holds data its category hides is marked so its header can explain itself.
-  return tabs
+  const visible = tabs
     .map((tab) => ({
       ...tab,
       sections: tab.sections.flatMap((s) => {
@@ -673,6 +740,31 @@ export function buildTabs(
       }),
     }))
     .filter((tab) => tab.sections.length > 0);
+
+  // Position last (issue #619), over the list that survived: promotion moves a tab that is
+  // definitely there, and the break-out tab is inserted only in the mode that removed the
+  // section from Classification above. `effectiveProminenceMode` has already ruled out the
+  // `hidden` verdict, so the section below is genuinely shown either way.
+  if (prominenceMode === 'promoted') return moveTabAfter(visible, 'classification', 'details');
+  if (prominenceMode === 'own-tab') {
+    return insertTabAfter(
+      visible,
+      {
+        id: CUSTOM_FIELDS_TAB_ID,
+        label: prominence.tabLabel,
+        icon: <CategoryIcon />,
+        sections: [
+          customFieldsVerdict === 'shown-despite-hidden'
+            ? { ...customFieldsSection, shownDespiteHidden: true }
+            : customFieldsSection,
+          // Already gated above, since this tab is built past the section filter (issue #616).
+          ...lookupSections,
+        ],
+      },
+      'details',
+    );
+  }
+  return visible;
 }
 
 /** No category hiding — the default, and the answer for an uncategorised item. */

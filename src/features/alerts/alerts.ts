@@ -1,8 +1,9 @@
 /**
  * Alert-centre pure seam (Phase 68, spec §3 alert centre).
  *
- * Folds four existing data sources — low stock, perishable expiry, maintenance-due
- * and warranty-due — into a single sorted, typed `Alert[]`. All functions are pure
+ * Folds five existing data sources — low stock, perishable expiry, maintenance-due,
+ * warranty-due and opted-in custom-field due dates (W1a) — into a single sorted, typed
+ * `Alert[]`. All functions are pure
  * (no DB access, no side-effects, `now` injected) so they are exhaustively
  * unit-testable in isolation, following the same "logic out of glue" seam as
  * `reorder-policy.ts`, `expiry.ts` and `asset-lifecycle.ts`.
@@ -15,6 +16,10 @@
  * A re-triggered alert with a *new* id reappears automatically. A dismissal can also
  * carry a deadline — a snooze — after which the alert returns on its own.
  *
+ * **Custom-field gate**: the `field-due` lane only ever sees rows whose *definition* opted in
+ * (`field_defs.due_lead_days`), so an ordinary `DATE` field — "Date acquired" — raises nothing.
+ * The repository read applies that filter; this seam grades what comes back.
+ *
  * **Web push**: not implemented here. This is a backend-less PWA; web push requires a
  * server-side push subscription service. Deferred — see docs/dev/deferred-features.md.
  */
@@ -25,14 +30,16 @@ import {
   type AssetLifecycleItem,
 } from '@/features/inventory/asset-lifecycle';
 import { expiryStatus } from '@/features/lifecycle/expiry';
+import { fieldDueStatus } from '@/features/lifecycle/field-due';
 import { addCalendarDays } from '@/lib/calendar-days';
+import { plural } from '@/lib/plural';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/** The four alert categories produced by the alert centre. */
-export type AlertKind = 'low-stock' | 'expiry' | 'maintenance-due' | 'warranty-due';
+/** The five alert categories produced by the alert centre. */
+export type AlertKind = 'low-stock' | 'expiry' | 'maintenance-due' | 'warranty-due' | 'field-due';
 
 /**
  * How urgent the alert is:
@@ -87,6 +94,7 @@ export const ALERT_KIND_LABEL: Record<AlertKind, string> = {
   expiry: 'Expiring stock',
   'maintenance-due': 'Maintenance due',
   'warranty-due': 'Warranty',
+  'field-due': 'Custom field date',
 };
 
 /** Human-readable urgency names, one per {@link AlertSeverity} (shared with the export). */
@@ -133,12 +141,31 @@ export interface WarrantySource extends AssetLifecycleItem {
   readonly name: string;
 }
 
-/** The four source arrays passed to `buildAlerts`. */
+/**
+ * One item's value for a custom `DATE` field its definition opted in as a due date (W1a).
+ * Mirrors the repository's `FieldDueDate` projection; kept as its own minimal shape so the
+ * seam stays free of the repository layer, exactly like the four lanes above.
+ */
+export interface FieldDueSource {
+  readonly itemId: string;
+  readonly itemName: string;
+  /** The dictionary definition id — half of the alert's identity, since one item can have several. */
+  readonly defId: string;
+  /** The field's name as the user sees it on the item ("Renewal date"). */
+  readonly fieldName: string;
+  /** The definition's notice period in calendar days (`0` = "on the day"). */
+  readonly leadDays: number;
+  /** UNIX-ms midnight-UTC instant of the stored day. */
+  readonly dueAt: number;
+}
+
+/** The five source arrays passed to `buildAlerts`. */
 export interface AlertSources {
   readonly lowStock: readonly LowStockSource[];
   readonly expiring: readonly ExpirySource[];
   readonly maintenanceDue: readonly MaintenanceDueSource[];
   readonly warrantyItems: readonly WarrantySource[];
+  readonly fieldDue: readonly FieldDueSource[];
 }
 
 // ---------------------------------------------------------------------------
@@ -241,19 +268,57 @@ function buildWarrantyAlerts(sources: readonly WarrantySource[], now: number): A
   return alerts;
 }
 
+/**
+ * Custom-field due dates (W1a) — the lane that makes a user-defined `DATE` field do something.
+ *
+ * The repository has already narrowed the read to definitions that opted in and to dates
+ * inside their own lead time; this re-grades each row through the pure {@link fieldDueStatus}
+ * so the classification lives in one place and the SQL window and the alert can never disagree
+ * about what "due" means. A row that grades `SCHEDULED` or `NONE` is skipped rather than
+ * trusted from the query — the feed can be a cached page read minutes ago, and a date that has
+ * since moved out of its window should stop alerting without waiting for a refetch.
+ *
+ * The id carries the stored date, like the warranty lane, so pushing a deadline back gives the
+ * alert a new identity and lifts an earlier dismissal — a dismissed "Renewal date" must not
+ * stay silent once the renewal is a year later, or (worse) once it is brought forward.
+ */
+function buildFieldDueAlerts(sources: readonly FieldDueSource[], now: number): Alert[] {
+  const alerts: Alert[] = [];
+  for (const source of sources) {
+    const status = fieldDueStatus(source.dueAt, source.leadDays, now);
+    if (status === 'NONE' || status === 'SCHEDULED') continue;
+
+    const overdue = status === 'OVERDUE';
+    const dueAt = new Date(source.dueAt).toISOString();
+    const day = dueAt.slice(0, 10);
+    alerts.push({
+      id: `field-due:${source.itemId}:${source.defId}:${day}`,
+      kind: 'field-due',
+      severity: overdue ? 'critical' : 'warning',
+      title: `${source.fieldName} ${overdue ? 'passed' : 'due soon'} — ${source.itemName}`,
+      detail: overdue
+        ? `"${source.fieldName}" was due on ${day}.`
+        : `"${source.fieldName}" is due on ${day} (within ${source.leadDays} ${plural(source.leadDays, 'day')}).`,
+      dueAt,
+      target: { route: '/inventory', itemId: source.itemId, itemName: source.itemName },
+    });
+  }
+  return alerts;
+}
+
 // ---------------------------------------------------------------------------
 // buildAlerts — the primary export
 // ---------------------------------------------------------------------------
 
 /**
- * Fold the four alert sources into a single sorted `Alert[]`.
+ * Fold the five alert sources into a single sorted `Alert[]`.
  *
  * Sorting rules (stable):
  * 1. Severity — critical before warning before info.
  * 2. `dueAt` — soonest ISO string first (nulls sort last).
  * 3. `id` — deterministic tie-break.
  *
- * @param sources - The four pre-fetched source arrays.
+ * @param sources - The five pre-fetched source arrays.
  * @param now     - Current wall-clock instant (UNIX-ms). Injected for testability.
  */
 export function buildAlerts(sources: AlertSources, now: number): Alert[] {
@@ -262,6 +327,7 @@ export function buildAlerts(sources: AlertSources, now: number): Alert[] {
     ...buildExpiryAlerts(sources.expiring, now),
     ...buildMaintenanceDueAlerts(sources.maintenanceDue, now),
     ...buildWarrantyAlerts(sources.warrantyItems, now),
+    ...buildFieldDueAlerts(sources.fieldDue, now),
   ];
 
   return all.slice().sort((a, b) => {

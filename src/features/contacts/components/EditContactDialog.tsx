@@ -124,6 +124,8 @@ export function EditContactDialog({
 
         <FormField label="Address (optional)">
           <Textarea
+            sizeKey="contact.address"
+            autoGrow
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             placeholder="Their postal address, for your reference."
@@ -132,6 +134,8 @@ export function EditContactDialog({
 
         <FormField label="Note (optional)">
           <Textarea
+            sizeKey="contact.note"
+            autoGrow
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Anything else worth remembering about this contact."

@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   deleteCategory: vi.fn(),
   addField: vi.fn(),
   addFieldAsync: vi.fn(),
+  updateField: vi.fn(),
   deleteField: vi.fn(),
   unusedDefs: [] as FieldDef[],
   deleteUnusedFieldDef: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('../categories', () => ({
   useDeleteCategory: () => ({ mutate: h.deleteCategory, isPending: false }),
   useCategoryFields: () => ({ data: h.fields }),
   useAddCategoryField: () => ({ mutate: h.addField, mutateAsync: h.addFieldAsync, isPending: false }),
+  useUpdateCategoryField: () => ({ mutate: h.updateField, isPending: false }),
   useDeleteCategoryField: () => ({ mutate: h.deleteField, isPending: false }),
   useUnusedFieldDefs: () => ({ data: h.unusedDefs }),
   useDeleteUnusedFieldDef: () => ({
@@ -60,6 +62,7 @@ const field = (overrides: Partial<CategoryField> = {}): CategoryField => ({
   isRequired: true,
   defaultValue: null,
   description: null,
+  dueLeadDays: null,
   position: 0,
   updatedAt: 0,
   ...overrides,
@@ -86,6 +89,8 @@ const category = (overrides: Partial<CategoryWithFieldCount> = {}): CategoryWith
   defaultMaintenanceIntervalDays: null,
   defaultMaintenanceIntervalUsage: null,
   hiddenCapabilities: [],
+  fieldProminence: null,
+  fieldTabLabel: null,
   updatedAt: 0,
   fieldCount: 1,
   ...overrides,
@@ -103,6 +108,7 @@ beforeEach(() => {
   h.updateCategory.mockReset();
   h.deleteCategory.mockReset();
   h.addField.mockReset().mockImplementation((_input, opts) => opts?.onSuccess?.());
+  h.updateField.mockReset();
   h.addFieldAsync.mockReset().mockResolvedValue(undefined);
   h.deleteField.mockReset();
   h.unusedDefs = [];
@@ -197,6 +203,7 @@ describe('CategoryManagerDialog — the add-field form assembles the input', () 
             defaultValue: null,
             description: null,
             options: null,
+            dueLeadDays: null,
           },
         },
         expect.anything(),
@@ -754,5 +761,327 @@ describe('CategoryManagerDialog — hidden sections accumulate across quick togg
 
     selectCategory(/Movies/);
     expect(screen.getByTestId('category-hide-kits')).toBeChecked();
+  });
+});
+
+/**
+ * The DATE due-date opt-in (W1a). What matters here is that the *only* way to make a custom date
+ * act like a deadline is deliberate, is offered on nothing else, and reaches an already-defined
+ * field — an opt-in reachable only when creating one would strand every date field that already
+ * exists, including the ones the preset library ships.
+ */
+describe('CategoryManagerDialog — the DATE due-date opt-in', () => {
+  beforeEach(() => {
+    h.categoryRows = [category()];
+    renderDialog();
+    selectCategory(/Resistors/);
+  });
+
+  it('offers the opt-in on a DATE field only', () => {
+    expect(screen.queryByTestId('add-field-due-toggle')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Date' }));
+    expect(screen.getByTestId('add-field-due-toggle')).toBeInTheDocument();
+  });
+
+  it('sends null unless the box is ticked, so an ordinary date still raises nothing', async () => {
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Date acquired' } });
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Date' }));
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ dueLeadDays: null }) }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('sends the notice period once ticked', async () => {
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Renewal date' } });
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Date' }));
+    fireEvent.click(screen.getByTestId('add-field-due-toggle'));
+    fireEvent.change(screen.getByTestId('add-field-due-days'), { target: { value: '30' } });
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ dueLeadDays: 30 }) }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('sends the default rather than 0 when the notice box is cleared before submitting', async () => {
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Renewal date' } });
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Date' }));
+    fireEvent.click(screen.getByTestId('add-field-due-toggle'));
+    fireEvent.change(screen.getByTestId('add-field-due-days'), { target: { value: '' } });
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ dueLeadDays: 14 }) }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('retracts the opt-in when the type moves off DATE, rather than sending a discarded tick', async () => {
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Renewal date' } });
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Date' }));
+    fireEvent.click(screen.getByTestId('add-field-due-toggle'));
+    fireEvent.click(screen.getByLabelText('Field type'));
+    fireEvent.click(screen.getByRole('option', { name: 'Text' }));
+    expect(screen.queryByTestId('add-field-due-toggle')).toBeNull();
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ dueLeadDays: null }) }),
+        expect.anything(),
+      ),
+    );
+  });
+});
+
+describe('CategoryManagerDialog — opting an existing DATE field in', () => {
+  it('shows no due-date control on a field that is not a date', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ fieldType: 'NUMBER' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.queryByTestId('field-due-toggle-f-1')).toBeNull();
+  });
+
+  it('ticking an existing date field stores the default notice period', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ name: 'Renewal date', fieldType: 'DATE', dueLeadDays: null })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByTestId('field-due-toggle-f-1'));
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { dueLeadDays: 14 } },
+      expect.anything(),
+    );
+  });
+
+  it('unticking clears the opt-in entirely — the stored value IS the opt-in', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ name: 'Renewal date', fieldType: 'DATE', dueLeadDays: 30 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByTestId('field-due-toggle-f-1'));
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { dueLeadDays: null } },
+      expect.anything(),
+    );
+  });
+
+  it('saves an edited notice period on blur, clamped into range', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ name: 'Renewal date', fieldType: 'DATE', dueLeadDays: 14 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const input = screen.getByTestId('field-due-days-f-1');
+    fireEvent.change(input, { target: { value: '9999' } });
+    // Nothing is written mid-typing — the control is fed from server state.
+    expect(h.updateField).not.toHaveBeenCalled();
+
+    fireEvent.blur(input);
+    expect(h.updateField).toHaveBeenCalledWith(
+      { fieldId: 'f-1', input: { dueLeadDays: 365 } },
+      expect.anything(),
+    );
+  });
+
+  it('reverts a cleared box instead of writing 0 — blank is not "notify on the day"', () => {
+    // `Number('')` is 0 and 0 is a legal notice period, so coercing would silently reconfigure
+    // the field the moment someone cleared the box to retype it, with nothing to flag it.
+    h.categoryRows = [category()];
+    h.fields = [field({ name: 'Renewal date', fieldType: 'DATE', dueLeadDays: 30 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const input = screen.getByTestId('field-due-days-f-1');
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+
+    expect(h.updateField).not.toHaveBeenCalled();
+    expect((input as HTMLInputElement).value).toBe('30');
+  });
+
+  it('re-seats the box when the stored value changes underneath it', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ name: 'Renewal date', fieldType: 'DATE', dueLeadDays: 14 })];
+    const view = renderDialog();
+    selectCategory(/Resistors/);
+    expect((screen.getByTestId('field-due-days-f-1') as HTMLInputElement).value).toBe('14');
+
+    // Another category editing the shared definition, or a peer's sync.
+    h.fields = [field({ name: 'Renewal date', fieldType: 'DATE', dueLeadDays: 60 })];
+    view.rerender(<CategoryManagerDialog open onClose={onClose} />);
+
+    expect((screen.getByTestId('field-due-days-f-1') as HTMLInputElement).value).toBe('60');
+  });
+
+  it('does not write when the blurred value is unchanged', () => {
+    h.categoryRows = [category()];
+    h.fields = [field({ name: 'Renewal date', fieldType: 'DATE', dueLeadDays: 14 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.blur(screen.getByTestId('field-due-days-f-1'));
+    expect(h.updateField).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Custom-field prominence (issue #619) — where the category's fields sit on an item. Unlike the
+ * hidden-sections panel above this changes nothing about *what* exists, so the panel's whole job
+ * is to write one of three modes plus an optional tab name, and to surface the one contradiction
+ * a user can construct (promoting fields the same category also hides).
+ */
+describe('CategoryManagerDialog — where the custom fields go', () => {
+  const radio = (mode: string) => screen.getByTestId(`category-field-prominence-${mode}`);
+  const tabNameInput = () => screen.queryByTestId('category-field-tab-label');
+
+  it('offers the three positions, with the default selected when nothing is stored', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByText('Where the custom fields go')).toBeInTheDocument();
+    expect(radio('default')).toBeChecked();
+    expect(radio('promoted')).not.toBeChecked();
+    expect(radio('own-tab')).not.toBeChecked();
+  });
+
+  it('reads an unrecognised stored mode as the default rather than leaving nothing selected', () => {
+    // A peer on a newer version may store a fourth position; the panel must still be usable.
+    h.categoryRows = [category({ fieldProminence: 'floating-panel' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(radio('default')).toBeChecked();
+  });
+
+  it('saves the chosen mode immediately', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    fireEvent.click(radio('promoted'));
+    expect(h.updateCategory).toHaveBeenCalledWith({ id: 'cat-1', input: { fieldProminence: 'promoted' } });
+  });
+
+  it('offers a tab name only for the mode that creates a tab', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(tabNameInput()).toBeNull();
+
+    // The radio is driven from the persisted value, so the panel only shows the field once the
+    // category actually reads back as `own-tab` — mirror that rather than faking local state.
+    h.categoryRows = [category({ fieldProminence: 'promoted' })];
+    cleanup();
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(tabNameInput()).toBeNull();
+
+    h.categoryRows = [category({ fieldProminence: 'own-tab' })];
+    cleanup();
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(tabNameInput()).toBeInTheDocument();
+  });
+
+  it('saves the tab name as it is typed, and shows the built-in label as the placeholder', () => {
+    h.categoryRows = [category({ fieldProminence: 'own-tab' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const input = tabNameInput()!;
+    expect(input).toHaveAttribute('placeholder', 'Custom fields');
+    fireEvent.change(input, { target: { value: 'Film details' } });
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { fieldTabLabel: 'Film details' },
+    });
+  });
+
+  it('shows the stored tab name, and reseeds it when a different category is selected', () => {
+    h.categoryRows = [
+      category({ fieldProminence: 'own-tab', fieldTabLabel: 'Film details' }),
+      category({ id: 'cat-2', name: 'Vinyl', fieldProminence: 'own-tab', fieldTabLabel: 'Pressing' }),
+    ];
+    renderDialog();
+
+    selectCategory(/Resistors/);
+    expect(tabNameInput()).toHaveValue('Film details');
+
+    selectCategory(/Vinyl/);
+    expect(tabNameInput()).toHaveValue('Pressing');
+  });
+
+  it('says nothing about a conflict while the fields stay where they are', () => {
+    h.categoryRows = [category({ hiddenCapabilities: ['custom-fields'] })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.queryByTestId('category-field-prominence-conflict-clear')).toBeNull();
+  });
+
+  it('flags the contradiction when the category both promotes and hides its custom fields', () => {
+    h.categoryRows = [
+      category({ hiddenCapabilities: ['custom-fields', 'kits'], fieldProminence: 'own-tab' }),
+    ];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    expect(screen.getByText(/also hides its custom fields/)).toBeInTheDocument();
+
+    // The offered fix un-hides the fields rather than dropping the position, because asking for a
+    // tab of their own is the choice the user just made explicitly. Other hidden sections stay.
+    fireEvent.click(screen.getByTestId('category-field-prominence-conflict-clear'));
+    expect(h.updateCategory).toHaveBeenCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['kits'] },
+    });
+  });
+
+  /**
+   * Both this panel and the hidden-sections panel write `hiddenCapabilities`, and the write is not
+   * optimistic. They therefore share one draft: two independent buffers would let each recompute
+   * from a base the other had already moved, dropping a change on a synced LWW column.
+   */
+  it('computes the conflict fix from a tick made moments earlier, not from the stale cache', () => {
+    h.categoryRows = [category({ hiddenCapabilities: ['custom-fields'], fieldProminence: 'own-tab' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    // Hide another section. `h.categoryRows` is deliberately NOT updated — this is the window
+    // where the query cache still holds the pre-click value.
+    fireEvent.click(screen.getByTestId('category-hide-kits'));
+    fireEvent.click(screen.getByTestId('category-field-prominence-conflict-clear'));
+
+    expect(h.updateCategory).toHaveBeenLastCalledWith({
+      id: 'cat-1',
+      input: { hiddenCapabilities: ['kits'] },
+    });
+  });
+
+  it('clears the sibling panel’s tick and its own banner when the fix is applied', () => {
+    // The other direction: with separate drafts the checkbox above would stay ticked for the rest
+    // of the session and write `custom-fields` straight back on the next unrelated toggle.
+    h.categoryRows = [category({ hiddenCapabilities: ['custom-fields'], fieldProminence: 'promoted' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+    expect(screen.getByTestId('category-hide-custom-fields')).toBeChecked();
+
+    fireEvent.click(screen.getByTestId('category-field-prominence-conflict-clear'));
+
+    expect(screen.getByTestId('category-hide-custom-fields')).not.toBeChecked();
+    expect(screen.queryByTestId('category-field-prominence-conflict-clear')).toBeNull();
   });
 });

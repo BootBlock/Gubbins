@@ -266,6 +266,8 @@ export function SupplierPartFormDialog({
           hint="Quantity price-breaks, one per line as `qty:unitCost` (e.g. `10:0.20`). The cheaper rate applies at that quantity and above."
         >
           <Textarea
+            sizeKey="supplier-part.price-breaks"
+            autoGrow
             value={breaksText}
             onChange={(e) => setBreaksText(e.target.value)}
             rows={3}
