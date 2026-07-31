@@ -10,13 +10,16 @@ Inventory **More** menu.
 
 Get your data out in whichever form suits:
 
-- **JSON data export** — your items, contacts and loans as one structured file, for scripts and
-  other tools.
+- **JSON data export** — your items, locations, contacts and loans as one structured file, for
+  scripts and other tools. Each item names the location it lives in, and the locations themselves
+  travel in the same file, so a reader can work out where everything is.
 - **Items file** — the selected items as **CSV**, **TSV**, an **Excel workbook (.xlsx)**, **JSON**,
   a **Markdown** table, a printable **HTML** page or **plain text**. Pick the file format under the
   format cards; whichever you choose is remembered for next time.
 - **Markdown vault** — a folder of readable Markdown files (one per item), with **full-resolution
-  images** extracted alongside. Great for archiving or reading outside Gubbins.
+  images** extracted alongside. Each location folder also gets a page of its own, carrying that
+  location's description, type, capacity, size and walk order. Great for archiving or reading
+  outside Gubbins.
 - **Raw `.sqlite`** — the database file itself, for anyone who wants the data directly.
 - **CSV** — from [[reports|Reports-Overview]], for spreadsheets.
 
@@ -44,6 +47,7 @@ Look for the **Export** button and pick a format — **CSV**, **TSV**, an **Exce
 | [[Alerts]] | Alert centre | The alerts you can currently see, with their urgency and due date |
 | [[On loan\|Loans-Check-Out-and-In]] | Contacts & borrowing | Who has what, how many, when it went out and when it's due |
 | [[Contacts]] | Contacts & borrowing | Names, contact details and how many items each person has out |
+| [[Locations\|Locations-and-Stock]] | Inventory → the Locations pane | Every location with its full path, type, description, item count, capacity, size, walk order and dead-stock setting |
 | [[Bookings]] | Bookings | Which asset is reserved for whom, over which days, and its status |
 | [[Purchase orders\|Purchase-Orders]] | Purchase orders | One row per order — supplier, reference, status, quantities and total |
 | [[Tags\|Tags-Attachments-and-Related-Items]] | Tags | Every tag and how many items and locations use it |
@@ -58,14 +62,18 @@ down; once you've [[installed Gubbins|Installing-Gubbins]], they're cached for o
 > looking at — so paging through a long list first is unnecessary, and turning
 > [[pagination|Inventory-Views]] on or off makes no difference to the file. Filters *do* apply: the
 > Activity export covers the kinds you have selected, and the Alerts export leaves out anything
-> you've snoozed or dismissed, so the file matches what's in front of you. If a list is ever too
-> long to read in one go, Gubbins says so when the file saves rather than handing you a short file
-> that looks complete.
+> you've snoozed or dismissed, so the file matches what's in front of you. **Locations** are the
+> exception — that file always holds every location, including archived ones and anything a tag
+> chip or the search box is currently hiding, because it is meant as a record of the whole place.
+> If a list is ever too long to read in one go, Gubbins says so when the file saves rather than
+> handing you a short file that looks complete.
 
 > **💡 Tip** Dates and times in an exported file are written in the international
 > `YYYY-MM-DD` form rather than your local format, so a file stays unambiguous whoever opens it
 > and wherever they are. Prices and quantities stay plain numbers for the same reason — your
-> spreadsheet formats them however you prefer.
+> spreadsheet formats them however you prefer. Measurements follow the same rule: a location's
+> width, height and depth are written in **millimetres** whatever
+> [[unit you've chosen|Language-and-Region]] on screen, and each column says so in its heading.
 
 > **💡 Tip** The **HTML** page opens straight in a browser and follows your system's light or
 > dark appearance on screen, but always prints as black text on white paper — so a printout is

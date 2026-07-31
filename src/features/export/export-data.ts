@@ -4,7 +4,15 @@
  * serialisation is unit-tested in isolation; the wizard wires these to repository
  * reads and the download/zip side-effects.
  */
-import type { Checkout, Contact, FieldType, GaugeState, Item, ItemHistoryEntry } from '@/db/repositories';
+import type {
+  Checkout,
+  Contact,
+  FieldType,
+  GaugeState,
+  Item,
+  ItemHistoryEntry,
+  LocationWithCount,
+} from '@/db/repositories';
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import { toDateInputValue } from '@/lib/date-input';
 import {
@@ -16,8 +24,15 @@ import {
   type TabularExportResult,
 } from './tabular-export';
 
-/** Schema version of the JSON data-export payload (independent of the backup format's own). */
-export const JSON_EXPORT_FORMAT_VERSION = 1;
+/**
+ * Schema version of the JSON data-export payload (independent of the backup format's own).
+ *
+ * v2 adds the `locations` array (issue #617, `N7`). Before it, an item's `locationId` was a bare
+ * UUID pointing at nothing in the file, so the payload could not say where anything was — and a
+ * location's own description, kind, capacity, dimensions and walk order left the app in no export
+ * at all.
+ */
+export const JSON_EXPORT_FORMAT_VERSION = 2;
 
 export interface JsonExportPayload {
   readonly kind: typeof JSON_EXPORT_KIND;
@@ -28,16 +43,30 @@ export interface JsonExportPayload {
   readonly items: readonly Item[];
   readonly contacts: readonly Contact[];
   readonly checkouts: readonly Checkout[];
+  /**
+   * Every location the user has, whatever the export's scope (issue #617, `N7`).
+   *
+   * Deliberately the whole hierarchy rather than only the locations the exported items sit in:
+   * `parentId` chains upward, so a partial list would leave a path that stops halfway, and an
+   * empty location's description would never leave the app at all — the gap this closes. The
+   * hierarchy is bounded physical structure (the same reasoning that lets `LocationRepository`
+   * expose an uncapped `listAll`), so carrying all of it is cheap even for a one-item export.
+   * The Markdown vault narrows by scope instead, for a reason that doesn't apply here: there
+   * each location becomes a **folder** on disk, and a one-item export would otherwise unpack as
+   * a tree of empty ones.
+   */
+  readonly locations: readonly LocationWithCount[];
 }
 
 /** Spelled out in the file itself — the wizard's hint is long gone by the time it is reopened. */
 const JSON_EXPORT_NOTE =
-  'A read-only extract of items, contacts and loans for use in other tools. ' +
+  'A read-only extract of items, locations, contacts and loans for use in other tools. ' +
+  "Each item's locationId refers to an entry in the locations array. " +
   'Gubbins cannot import this file back — use Backup & restore for a restorable backup.';
 
 /** Build the portable, versioned JSON data extract (§3). */
 export function buildJsonExport(
-  data: Pick<JsonExportPayload, 'items' | 'contacts' | 'checkouts'>,
+  data: Pick<JsonExportPayload, 'items' | 'contacts' | 'checkouts' | 'locations'>,
   exportedAt = Date.now(),
 ): string {
   const payload: JsonExportPayload = {
@@ -48,6 +77,7 @@ export function buildJsonExport(
     items: data.items,
     contacts: data.contacts,
     checkouts: data.checkouts,
+    locations: data.locations,
   };
   return JSON.stringify(payload, null, 2);
 }
@@ -331,6 +361,33 @@ export interface VaultBuild {
   readonly assets: readonly VaultAsset[];
 }
 
+/**
+ * A location to write a **folder note** for (issue #617, `N7`).
+ *
+ * The vault reduced a location to a folder name and nothing else, so a place's description, kind,
+ * capacity, dimensions and walk order left the app in no export at all. One note per location
+ * gives them somewhere to live, at the Obsidian folder-note path (`Folder/Folder.md`) so the
+ * folder itself carries them.
+ */
+export interface VaultLocation {
+  /**
+   * Structurally the same row the location **list** export builds
+   * (`@/features/inventory/locations-export`), so the orchestrator resolves each location's
+   * ancestry once and feeds both. Declared here rather than imported so this pure builder keeps
+   * depending on nothing but the repository DTOs; the two are checked against each other at the
+   * call site.
+   */
+  readonly location: LocationWithCount;
+  /**
+   * The full path **including** this location, e.g. `Workshop / Cabinet A / Drawer 3`. Carried
+   * because the vault's folders are keyed by a location's own name, so the note is the only place
+   * that can say *which* "Drawer 3" this is.
+   */
+  readonly path: string;
+  /** The immediate parent's name, or `null` for a top-level location. */
+  readonly parentName: string | null;
+}
+
 export interface VaultOptions {
   /**
    * When set, every note and asset nests under this single top-level folder (§4.5 project
@@ -338,6 +395,12 @@ export interface VaultOptions {
    * associated components"). Sanitised here; falls back to `Project` if it empties out.
    */
   readonly rootFolder?: string;
+  /**
+   * Locations to write folder notes for (issue #617, `N7`). Omit for a vault that should carry
+   * item notes alone — which is what every caller did before, so the layout is unchanged without
+   * it.
+   */
+  readonly locations?: readonly VaultLocation[];
 }
 
 /** Fallback name for a project folder whose name sanitises to nothing. */
@@ -356,6 +419,13 @@ function extOf(path: string): string {
  * Datasheets` section of pointer links, and the Activity Ledger table. Full-resolution
  * images **and** thumbnails are extracted into `/assets` (§4.5). Returns the `path → text`
  * map plus the {@link VaultAsset} descriptors the orchestrator fills with bytes.
+ *
+ * With `options.locations` (issue #617, `N7`) each location also gets an Obsidian **folder note**
+ * at `Folder/Folder.md`, carrying what the vault previously threw away: the description, kind,
+ * capacity, dimensions and walk order. Those are written *first*, so the folder note keeps the
+ * canonical name and an item that happens to share its location's name takes the id-suffixed
+ * fallback instead — the folder's own note is the one that cannot be renamed without breaking
+ * Obsidian's folder-note convention.
  */
 export function buildVault(vaultItems: readonly VaultItem[], options: VaultOptions = {}): VaultBuild {
   const files: Record<string, string> = {};
@@ -366,6 +436,20 @@ export function buildVault(vaultItems: readonly VaultItem[], options: VaultOptio
   const prefix = options.rootFolder
     ? `${sanitiseSegment(options.rootFolder) || PROJECT_FOLDER_FALLBACK}/`
     : '';
+
+  for (const entry of options.locations ?? []) {
+    const folder = sanitiseSegment(entry.location.name) || 'Unfiled';
+    // The vault's folders are keyed by a location's *name*, so two same-named locations in
+    // different branches already share one folder. The second one to claim it takes the same
+    // id-suffixed fallback a colliding item name does, rather than overwriting the first; each
+    // note's `path` frontmatter is what says which location it describes.
+    let path = `${prefix}${folder}/${folder}.md`;
+    if (used.has(path.toLowerCase())) {
+      path = `${prefix}${folder}/${folder}-${entry.location.id.slice(0, 8)}.md`;
+    }
+    used.add(path.toLowerCase());
+    files[path] = renderLocationMarkdown(entry);
+  }
 
   for (const entry of vaultItems) {
     const folder = sanitiseSegment(entry.locationName) || 'Unfiled';
@@ -405,9 +489,10 @@ export function buildProjectVault(
   projectName: string,
   vaultItems: readonly VaultItem[],
   budget?: VaultBudget,
+  locations?: readonly VaultLocation[],
 ): VaultBuild {
   const folder = sanitiseSegment(projectName) || PROJECT_FOLDER_FALLBACK;
-  const { files, assets } = buildVault(vaultItems, { rootFolder: folder });
+  const { files, assets } = buildVault(vaultItems, { rootFolder: folder, locations });
   const master = buildProjectMasterNote(
     projectName,
     vaultItems.map((entry) => entry.item),
@@ -424,6 +509,66 @@ export function buildProjectVault(
  */
 export function buildVaultFiles(vaultItems: readonly VaultItem[]): Record<string, string> {
   return buildVault(vaultItems).files;
+}
+
+/**
+ * An epoch-milliseconds column as an ISO-8601 instant for YAML frontmatter, or `null`.
+ *
+ * Guarded rather than calling `toISOString` straight: it raises on a non-finite value, and one
+ * unusable stored timestamp must not cost the user the whole vault — the same reasoning the
+ * catalogue CSV's `expiryDate` cell uses.
+ */
+function isoInstant(ms: number | null): string | null {
+  return ms != null && Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+/**
+ * One location's Obsidian **folder note** (issue #617, `N7`) — the page that carries what a
+ * location records about itself, which the vault previously reduced to a folder name.
+ *
+ * The frontmatter holds the stored values verbatim (the `kind` *key*, not its display label;
+ * millimetres, not the reader's `dimensionUnit`), matching how an item note writes `trackingMode`
+ * — this is Dataview-queryable metadata, whereas the spreadsheet export next door is read by a
+ * person and uses the labels. `path` is what disambiguates two same-named locations sharing a
+ * folder.
+ *
+ * Deliberately **no** contents list: the folder is keyed by location name, so a list here could
+ * not honestly claim to be *this* location's items when two share the folder — and each item note
+ * already carries `location:` in its own frontmatter, which is what Dataview queries anyway.
+ */
+function renderLocationMarkdown(entry: VaultLocation): string {
+  const { location } = entry;
+  const front: Record<string, string | number | boolean | null> = {
+    type: 'location',
+    id: location.id,
+    name: location.name,
+    path: entry.path,
+    parent: entry.parentName,
+    kind: location.kind,
+    items: location.itemCount,
+    capacity: location.capacity,
+    // Canonical stored units — millimetres and cubic millimetres (issue #457).
+    width: location.width,
+    height: location.height,
+    depth: location.depth,
+    usableVolume: location.usableVolume,
+    packingFactor: location.packingFactor,
+    walkOrder: location.walkOrder,
+    default: location.isDefault,
+    archived: isoInstant(location.archivedAt),
+    lastCounted: isoInstant(location.lastCountedAt),
+    deadStockMode: location.deadStockMode,
+    deadStockDays: location.deadStockDays,
+    color: location.color,
+  };
+
+  const lines: string[] = ['---'];
+  for (const [key, value] of Object.entries(front)) {
+    lines.push(`${key}: ${yamlValue(value)}`);
+  }
+  lines.push('---', '', `# ${location.name}`, '');
+  if (location.description) lines.push(location.description, '');
+  return lines.join('\n');
 }
 
 function renderItemMarkdown(entry: VaultItem, imageNames: readonly string[]): string {

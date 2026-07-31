@@ -1830,6 +1830,8 @@
   "export.purchaseOrders.toast": "Bestellungen exportiert",
   "export.tags.menuLabel": "Schlagwörter exportieren",
   "export.tags.toast": "Schlagwörter exportiert",
+  "export.locations.menuLabel": "Orte exportieren",
+  "export.locations.toast": "Orte exportiert",
   "export.items.card.label": "Artikeldatei",
   "export.items.card.hint": "Die ausgewählten Artikel als Tabellenkalkulation, Tabelle oder Nur-Text — wählen Sie unten das Dateiformat.",
   "export.items.fileFormat.label": "Dateiformat",

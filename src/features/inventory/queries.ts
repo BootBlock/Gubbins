@@ -722,3 +722,18 @@ export function useLocations() {
     },
   });
 }
+
+/**
+ * One page of the location list, for the export's read-everything walk (issue #617, `N7`).
+ *
+ * Deliberately the paged `LocationRepository.list` rather than the `listAll` the sidebar
+ * itself reads: the sidebar's copy is filtered before it is rendered — archived branches hidden,
+ * a tag chip or a search narrowing the tree — and an export that serialised it would quietly
+ * produce whatever the user happened to be looking at. Re-reading from the start through
+ * `exportEveryPage` gives the whole list, and pairs it with the `readAllPages` ceiling so a set
+ * that somehow outgrew it reports itself as short rather than pretending to be complete. Not a
+ * hook: it is called from the export's `build` callback, outside React's render.
+ */
+export function readLocationsPage(params: { limit: number; offset: number }) {
+  return getLocationRepository().list(params);
+}
