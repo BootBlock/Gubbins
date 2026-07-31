@@ -341,7 +341,8 @@ export default defineConfig({
     // isolation (Vitest's default) is preserved, so no global state leaks.
     pool: 'threads',
     // The companion bridge (`bridge/`) ships its own Vitest config — a Node
-    // environment and Node >= 22.16/24 for `node:sqlite` (with FTS5) + type-stripping — and is run
+    // environment, Node >= 22.16/24 for `node:sqlite` (with FTS5) and >= 22.18/24 for
+    // type-stripping — and is run
     // as a separate CI job (`bridge/vitest.config.ts`). Exclude it here so the app
     // suite (happy-dom, Node 20) never sweeps the bridge's Node-only tests, which
     // would fail under the wrong environment.
