@@ -24,7 +24,7 @@ shape in this codebase, used three times already:
 - `HIDEABLE_CAPABILITIES` (`src/features/inventory/category-capabilities.ts`) — a pool of
   capability ids a category can *reference*.
 - `parsers/registry.ts` (`src/features/scraping/parsers/`) — a pool of site parsers, each a
-  pure `(html) => payload` function selected by host.
+  pure `parse(doc, url) => payload` function selected by host.
 
 A **lookup provider** is the fourth: a pure, DB-free descriptor plus a parse function, listed in
 one registry. Adding a provider is a source change (registry entry + parser module + host
@@ -171,9 +171,11 @@ detail of this one. Revisit only if Wikidata's coverage proves inadequate in pra
 
 - **Two fetch paths, unchanged from product lookup**: the companion extension performs the
   request when present (host allow-list, `isAllowedLookupUrl`-style gate), otherwise the app
-  fetches directly after **one-time consent**. Provider origins are added to CSP `connect-src`
-  and to the extension manifest via the existing `suppliers.ts` allow-list seam, which
-  `host-permissions.test.ts` pins.
+  fetches directly after **one-time consent**. A provider origin must be added in **two**
+  independent places, each with its own guard test: the extension manifest, via the
+  `parsers/suppliers.ts` allow-list seam that `host-permissions.test.ts` pins, **and** CSP
+  `connect-src`, which is its own hard-coded list in `src/csp.ts` pinned by `src/csp.test.ts`.
+  Missing either one blocks the fetch on that path.
 - **Consent is per provider host, not one global yes.** The existing `allowOnlineProductLookup`
   boolean does not generalise; this needs a stored set, with a `merge` reconcile on read (a
   persisted-state change — see the persisted-state-reconcile-on-read convention). Agreeing to
