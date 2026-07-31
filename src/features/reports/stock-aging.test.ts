@@ -18,6 +18,7 @@ function makeItem(overrides: Partial<AgingInput> = {}): AgingInput {
     unitCost: null,
     lastInboundAt: null,
     acquiredAtMs: null,
+    historyClearedAt: null,
     createdAt: NOW,
     ...overrides,
   };
@@ -115,6 +116,43 @@ describe('bucketStockAging — reference precedence', () => {
     );
     expect(report.buckets[2]?.label).toBe('91–180 days');
     expect(report.buckets[2]?.itemCount).toBe(1);
+  });
+
+  // A cleared log takes the inbound rows with it, so ageing from `createdAt` would date the row
+  // rather than the stock. The clear is where the record stops (the sibling of issue #686).
+  it('falls back to a cleared log ahead of createdAt', () => {
+    const report = bucketStockAging(
+      [
+        makeItem({
+          lastInboundAt: null,
+          acquiredAtMs: null,
+          historyClearedAt: daysAgo(60),
+          createdAt: daysAgo(400),
+        }),
+      ],
+      NOW,
+    );
+    expect(report.buckets[1]?.label).toBe('31–90 days');
+    expect(report.buckets[1]?.itemCount).toBe(1);
+  });
+
+  // A recorded acquisition date survives the clear and says something about the stock itself,
+  // where the clear only says how far the ledger reaches — so it keeps precedence. Otherwise
+  // tidying a log would quietly re-date genuinely old stock as fresh.
+  it('keeps acquiredAtMs ahead of a cleared log', () => {
+    const report = bucketStockAging(
+      [
+        makeItem({
+          lastInboundAt: null,
+          acquiredAtMs: daysAgo(400),
+          historyClearedAt: daysAgo(1),
+          createdAt: daysAgo(400),
+        }),
+      ],
+      NOW,
+    );
+    expect(report.buckets[3]?.label).toBe('180+ days');
+    expect(report.buckets[3]?.itemCount).toBe(1);
   });
 });
 

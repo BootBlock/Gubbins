@@ -97,6 +97,8 @@ they were; only the record of how it got there goes.
 Reports that read the log adjust accordingly. [[Dead-stock detection|ABC-Turnover-and-Aging]] counts
 an item's idle time from its last recorded movement, so once that record is gone it counts from the
 clear instead — the item starts fresh rather than being reported as idle since the day you added it.
+[[Stock aging|ABC-Turnover-and-Aging]] does the same, except that an item's **Acquired** date, which
+the clear doesn't touch, still takes precedence if you recorded one.
 
 > **⚠️ Heads-up**
 > Clearing cannot be undone, and it travels: your other devices drop the same entries on their next

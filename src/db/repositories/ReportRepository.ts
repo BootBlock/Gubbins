@@ -99,7 +99,8 @@ import { nowMs } from '@/lib/clock';
 /**
  * The action of the marker a cleared Activity Log leaves behind (issue #620), typed against the
  * action vocabulary so a rename there breaks this build rather than silently turning the
- * dead-stock query's clear-instant subselect into one that matches nothing.
+ * clear-instant lookups in {@link ReportRepository.deadStock} and
+ * {@link ReportRepository.stockAging} into ones that match nothing.
  */
 const HISTORY_CLEARED: HistoryAction = 'HISTORY_CLEARED';
 
@@ -1291,9 +1292,21 @@ export class ReportRepository extends BaseRepository {
   /**
    * Stock aging (§3 advanced analytics): on-hand stock bucketed by the age of its **newest
    * inbound** — the most recent `item_history` positive-quantity movement, else the local-day
-   * re-anchored `items.acquired_at` ({@link acquiredAtReportInstant}, issue #323), else `created_at`
-   * (resolved in the pure {@link bucketStockAging}). Only active, non-parent items holding stock are
-   * aged. `now` defaults to the wall clock.
+   * re-anchored `items.acquired_at` ({@link acquiredAtReportInstant}, issue #323), else the point
+   * the item's log was cleared, else `created_at` (resolved in the pure {@link bucketStockAging}).
+   * Only active, non-parent items holding stock are aged. `now` defaults to the wall clock.
+   *
+   * The clear instant is read because clearing an item's Activity Log (issue #620) deletes the
+   * inbound rows this ages from, leaving a single `HISTORY_CLEARED` marker that carries no
+   * quantity — so a repeatedly-restocked item can end up with no inbound instant and be aged from
+   * the day its row was created, which dates the row rather than the stock (the sibling of #686).
+   * It is read *only* for items with no inbound instant. Like the inbound lookup beside it, the
+   * marker lookup is a per-item ledger walk that `idx_item_history_item_id` cannot narrow —
+   * neither `quantity_delta` nor `action` is in the index — so it is a **second** such walk, and
+   * the `CASE` guard, whose `THEN` SQLite evaluates lazily, skips it entirely once the inbound
+   * instant has answered the question. The inbound instant is resolved in a **`MATERIALIZED`**
+   * CTE precisely so that guard is free: a plain subquery is flattened, which substitutes the
+   * inbound lookup back into both the guard *and* the projection and runs it twice per item.
    *
    * Each line is valued through the **same** rule as the {@link inventoryValue} headline beside it
    * — a manual `current_value` wins over the effective cost (`effectiveUnitValue`) — and unlimited
@@ -1313,14 +1326,26 @@ export class ReportRepository extends BaseRepository {
       acquired_at: string | null;
       created_at: number;
       last_inbound_at: number | null;
+      history_cleared_at: number | null;
     }>(
-      `SELECT i.id AS id, i.name AS name, i.quantity AS quantity,
-              ${valuedItemColumns('i', base)},
-              i.acquired_at AS acquired_at, i.created_at AS created_at,
-              ( SELECT MAX(h.created_at) FROM item_history h
-                 WHERE h.item_id = i.id AND h.quantity_delta > 0 ) AS last_inbound_at
-         FROM items i
-        WHERE ${valuableItemFilter('i')} AND i.quantity > 0;`,
+      `WITH aged AS MATERIALIZED (
+              SELECT i.id AS id, i.name AS name, i.quantity AS quantity,
+                     ${valuedItemColumns('i', base)},
+                     i.acquired_at AS acquired_at, i.created_at AS created_at,
+                     ( SELECT MAX(h.created_at) FROM item_history h
+                        WHERE h.item_id = i.id AND h.quantity_delta > 0 ) AS last_inbound_at
+                FROM items i
+               WHERE ${valuableItemFilter('i')} AND i.quantity > 0 )
+       SELECT a.id AS id, a.name AS name, a.quantity AS quantity,
+              a.unit_cost AS unit_cost, a.current_value AS current_value,
+              a.preferred_supplier_cost AS preferred_supplier_cost,
+              a.acquired_at AS acquired_at, a.created_at AS created_at,
+              a.last_inbound_at AS last_inbound_at,
+              CASE WHEN a.last_inbound_at IS NULL
+                     THEN ( SELECT MAX(h.created_at) FROM item_history h
+                             WHERE h.item_id = a.id AND h.action = '${HISTORY_CLEARED}' )
+              END AS history_cleared_at
+         FROM aged a;`,
     );
     const inputs: AgingInput[] = rows.map((r) => ({
       id: r.id,
@@ -1334,6 +1359,7 @@ export class ReportRepository extends BaseRepository {
       // A date-only `acquired_at` is re-anchored to the user's local calendar day so its age is
       // measured on the same wall-clock timeline as `now` (issue #323).
       acquiredAtMs: acquiredAtReportInstant(r.acquired_at),
+      historyClearedAt: r.history_cleared_at,
       createdAt: r.created_at,
     }));
     return bucketStockAging(inputs, now);
