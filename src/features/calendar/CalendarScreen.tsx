@@ -2,7 +2,8 @@
  * CalendarScreen — the unified "Upcoming" agenda (Phase 75, third feature-gap audit #1).
  *
  * One chronological, time-ordered view of every date-driven event in the app: maintenance due
- * (time + usage), warranty expiry, perishable expiry, checkout due-back and reorder-now. These
+ * (time + usage), warranty expiry, perishable expiry, checkout due-back, reorder-now, bookings
+ * and opted-in custom-field due dates (W1a). These
  * previously lived scattered across the alert centre and dashboard widgets; this composes the
  * same existing queries into date buckets — Overdue / Today / This week / This month / Later —
  * each event tagged by kind with a jump-to-source link. Read-only; no schema change.
@@ -27,9 +28,11 @@ import {
   DueDateIcon,
   ExpiryIcon,
   LowStockIcon,
+  FieldDueIcon,
   MaintenanceIcon,
   NotificationIcon,
 } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { assertExhaustive } from '@/lib/exhaustive';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
@@ -54,6 +57,7 @@ const KIND_LABEL: Record<AgendaKind, string> = {
   'checkout-due': 'Loans due',
   reorder: 'Reorder',
   booking: 'Bookings',
+  'field-due': 'Field dates',
 };
 
 function KindIcon({ kind }: { kind: AgendaKind }) {
@@ -70,6 +74,8 @@ function KindIcon({ kind }: { kind: AgendaKind }) {
       return <LowStockIcon aria-hidden />;
     case 'booking':
       return <BookingIcon aria-hidden />;
+    case 'field-due':
+      return <FieldDueIcon aria-hidden />;
     default:
       // Exhaustiveness guard (#355), matching the alert centre's lane icon: a new AgendaKind
       // must extend this switch or this stops compiling. A component has no return-type
@@ -180,7 +186,8 @@ function KindFilter({
 // ---------------------------------------------------------------------------
 
 export function CalendarScreen() {
-  const { events, now, isLoading, isError } = useAgenda();
+  const t = useT();
+  const { events, now, isLoading, isError, fieldDueTruncated } = useAgenda();
 
   // All kinds enabled by default; toggling a chip filters the agenda.
   const [enabledKinds, setEnabledKinds] = useState<Set<AgendaKind>>(() => new Set(AGENDA_KINDS));
@@ -247,10 +254,7 @@ export function CalendarScreen() {
           <Surface className="flex flex-col items-center gap-3 p-12 text-center">
             <DueDateIcon className="size-10 text-muted-foreground" />
             <p className="font-medium">Nothing upcoming</p>
-            <p className="text-sm text-muted-foreground">
-              No maintenance, warranties, expiries, loans, reorders or bookings are pending. You're all caught
-              up.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('agenda.empty.allClear')}</p>
           </Surface>
         )}
 
@@ -258,6 +262,18 @@ export function CalendarScreen() {
           <Surface className="p-6 text-center text-sm text-muted-foreground">
             No items match the selected kinds.
           </Surface>
+        )}
+
+        {/* Named to the one lane that is capped, rather than shown as a page-wide caveat that
+            would cast doubt on six feeds which are complete for this screen's purposes. The
+            agenda mixes kinds within each date bucket, so it cannot hang off a section — hence
+            the explicit filter check: with the Field dates chip off there is nothing on screen
+            for the caveat to be about, and it would otherwise sit above "No items match the
+            selected kinds." contradicting it. */}
+        {!isLoading && !isError && fieldDueTruncated && enabledKinds.has('field-due') && (
+          <p className="text-xs text-muted-foreground" data-testid="agenda-field-due-truncated">
+            {t('agenda.fieldDue.truncated')}
+          </p>
         )}
 
         {!isLoading && !isError && sections.length > 0 && (

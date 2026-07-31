@@ -1,8 +1,8 @@
 # Reminder notifications
 
 When Gubbins is **installed** as an app, it can surface its [[alerts|Alerts]] as **OS
-notifications** — so you hear about low stock, expiries, overdue loans and due servicing without
-having to open it.
+notifications** — so you hear about low stock, expiries, overdue loans, due servicing and your own
+[[dated deadlines|Custom-Fields-and-Capabilities]] without having to open it.
 
 **Where to find it:** **Settings → Notifications** (after [[installing|Installing-Gubbins]] the
 app).
@@ -10,12 +10,14 @@ app).
 ## Turning them on
 
 Notifications are **opt-in**. Enable them in Settings and grant your device's notification
-permission, then choose which of the four lanes you want:
+permission, then choose which of the lanes you want:
 
 - **Low stock**
 - **Expiring** items
 - **Maintenance due**
 - **Warranty due**
+- **Custom field date** — your own date fields marked as
+  [[due dates|Custom-Fields-and-Capabilities]]
 
 Gubbins then delivers those as OS notifications, and — where your device supports it — checks
 periodically in the background so reminders arrive even when the app isn't open. Tapping a

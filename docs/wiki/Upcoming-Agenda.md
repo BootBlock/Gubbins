@@ -18,8 +18,15 @@ chronological list:
 - **[[Maintenance & servicing|Maintenance-and-Servicing]]** that's due.
 - **[[Warranty|Warranty-and-Depreciation]]** expiries.
 - **[[Expiring batches|Batches-and-Lots]]** and perishables.
+- **Your own [[date fields marked as due dates|Custom-Fields-and-Capabilities]]** — renewals,
+  inspections, return-bys, anything you've defined.
 
 Each entry links to the item or record behind it.
+
+> **ℹ️ Note**
+> A custom date field appears here as soon as you record it, however far off it is — Upcoming is
+> the forward calendar. The **days' notice** you set on the field decides when it also starts
+> raising an [[alert|Alerts]].
 
 > **💡 Tip**
 > Glance at Upcoming at the start of a week to get ahead — service the tools due soon, chase the
@@ -40,4 +47,6 @@ schedule.
 - **[[Alerts]]** — what needs action now.
 - **[[Bookings]]**, **[[Loans|Loans-Check-Out-and-In]]**, **[[Maintenance & servicing|Maintenance-and-Servicing]]**
   — the sources of agenda items.
+- **[[Custom fields & capabilities|Custom-Fields-and-Capabilities]]** — adding your own dated
+  deadlines to this list.
 - **[[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]** — subscribing from your calendar.

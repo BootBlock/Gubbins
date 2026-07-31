@@ -6,11 +6,14 @@
 import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD } from '../constants';
 import type { HistoryAction } from '../constants';
 import { addCalendarDays } from '@/lib/calendar-days';
+import { todayDateInputValue } from '@/lib/date-input';
 import type { SqlValue } from '../../rpc/driver';
-import { rowToActivityFeedEntry, rowToItem } from '../mappers';
+import { rowToActivityFeedEntry, rowToFieldDueDate, rowToItem } from '../mappers';
 import type {
   ActivityFeedEntry,
   ActivityFeedRow,
+  FieldDueDate,
+  FieldDueDateRow,
   Item,
   ItemRow,
   LowStockThresholds,
@@ -255,6 +258,81 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
         [cutoff, limit, offset],
       );
       return this.toPage(rows.map(rowToItem), limit, offset);
+    }
+
+    /**
+     * Active items carrying a value for a custom `DATE` field whose **definition has opted in
+     * as a due date** (W1a) — the alert-centre and Upcoming-agenda "custom field date" lanes.
+     * Ordered soonest-first, then by item and field name so the order is stable.
+     *
+     * Until this existed a custom `DATE` field was inert: readable everywhere, actionable
+     * nowhere, so a user-defined "Renewal date" raised nothing. The opt-in is
+     * `field_defs.due_lead_days` — null means an ordinary date and is skipped here.
+     *
+     * **Reads the `item_field_effective_values` VIEW, not `item_field_values`.** An item whose
+     * value is inherited from its location stores NULL in the base table, so reading the base
+     * table would silently miss every inheriting item (issue #97) — the same reason the search
+     * layer's `field:` predicate reads the view.
+     *
+     * **The window.** Each row is compared against *its own definition's* lead time —
+     * `value <= date(:today, '+' || due_lead_days || ' days')`, which is exactly "the due day
+     * is within N calendar days of today" and so agrees day-for-day with the pure
+     * `fieldDueStatus` classifier that grades what comes back. Already-passed dates are
+     * included (they are `<= today`, and an overdue deadline is the one most worth raising).
+     * `withinDays` overrides every definition's lead time with one shared horizon — how the
+     * agenda asks for *everything* scheduled rather than only what is imminent.
+     *
+     * Values are stored as canonical `YYYY-MM-DD` TEXT, so ISO string comparison orders and
+     * bounds them correctly. The `GLOB` guard skips anything not of that shape: values are
+     * validated on write, but a row can also arrive from a peer or a restored snapshot, and a
+     * malformed one must be ignored rather than compared as a string against a real date.
+     *
+     * The `date(value) = value` companion is an **equality**, not a null check: SQLite's `date()`
+     * silently *normalises* an impossible day rather than rejecting it (`2026-02-30` comes back as
+     * `2026-03-02`), so a null test would admit the row and then report a date the user never
+     * entered. Comparing against the input accepts only a canonical, real calendar day — which is
+     * also what makes `Date.parse` total in the mapper, and so what keeps the page's `hasMore`
+     * honest, since nothing has to be dropped after the read.
+     *
+     * Abstract variant parents are deliberately **not** excluded here, unlike the stock and
+     * warranty predicates. Those exclude a parent because it holds no stock of its own; a date
+     * is not stock, and a licence or inspection recorded against the parent is a real deadline.
+     *
+     * The `(item_id, def_id)` tail on the ORDER BY makes it **total**, which the three
+     * human-meaningful keys are not — two items can share a name, and then carry the same field
+     * with the same date. Both callers walk this by `LIMIT`/`OFFSET` across every page
+     * (`readAllPages`), and an under-determined order can repeat or skip a row at a page
+     * boundary; the view's grain makes that pair unique, so it settles every tie.
+     *
+     * Binds, in order: `[todayIso, withinDays ?? null, limit, offset]`.
+     */
+    async listFieldDueDates(
+      now: number,
+      params: PageParams & { readonly withinDays?: number } = {},
+    ): Promise<Page<FieldDueDate>> {
+      const { limit, offset } = this.resolvePage(params);
+      // The *local* calendar day, not a UTC slice of `now`: the window is "within N days of
+      // today", and which day it is today is a wall-clock question (see `todayDateInputValue`).
+      const today = todayDateInputValue(now);
+      const rows = await this.driver.query<FieldDueDateRow>(
+        `SELECT i.id AS item_id, i.name AS item_name,
+                fd.id AS def_id, fd.name AS field_name,
+                fd.due_lead_days AS due_lead_days, efv.value AS value
+         FROM item_field_effective_values efv
+         JOIN field_defs fd ON fd.id = efv.def_id
+         JOIN items i ON i.id = efv.item_id
+         WHERE i.is_active = 1
+           AND fd.due_lead_days IS NOT NULL
+           AND efv.value IS NOT NULL
+           AND efv.value GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+           AND date(efv.value) = efv.value
+           AND efv.value <= date(?, '+' || COALESCE(?, fd.due_lead_days) || ' days')
+         ORDER BY efv.value ASC, i.name COLLATE NOCASE ASC, fd.name COLLATE NOCASE ASC,
+                  efv.item_id ASC, efv.def_id ASC
+         LIMIT ? OFFSET ?;`,
+        [today, params.withinDays ?? null, limit, offset],
+      );
+      return this.toPage(rows.map(rowToFieldDueDate), limit, offset);
     }
 
     /**

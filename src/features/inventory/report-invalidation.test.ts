@@ -40,11 +40,15 @@ describe('invalidateItems', () => {
     // exactly the drift risk this test exists to catch. The narrow `invalidateItemStock`, which
     // omits it on purpose, is pinned in `invalidate.test.ts`. The agenda prefix joined for the
     // same reason the reports one did, and is owned by `calendar/agenda-invalidation.test.tsx`.
+    // The custom-field due-date feed (W1a) is a sibling of `items()` too, so it likewise has to
+    // be named — and it is asserted here exactly once, since sweeping the agenda prefix already
+    // covers that lane's agenda twin.
     expect(invalidated).toEqual([
       [...inventoryKeys.items()],
       [...inventoryKeys.itemAttention()],
       [...reportKeys.all],
       [...agendaKeys.all],
+      [...inventoryKeys.fieldDueDates()],
     ]);
   });
 });

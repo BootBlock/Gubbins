@@ -27,11 +27,15 @@ const ON_OFF_OPTIONS = [
   { value: 'off', label: 'Off' },
 ] as const;
 
+/** The capabilities that gate a notify-able lane. Low stock is core inventory and never gated. */
+type GatedLaneFeature = 'perishables' | 'maintenance' | 'warranty' | 'custom-fields';
+
 /** Which capability each notify-able lane belongs to, so a hidden module hides its switch. */
-const KIND_FEATURE: Partial<Record<AlertKind, 'perishables' | 'maintenance' | 'warranty'>> = {
+const KIND_FEATURE: Partial<Record<AlertKind, GatedLaneFeature>> = {
   expiry: 'perishables',
   'maintenance-due': 'maintenance',
   'warranty-due': 'warranty',
+  'field-due': 'custom-fields',
 };
 
 /**
@@ -53,10 +57,12 @@ export function ReminderSettings({ apiOverride }: { readonly apiOverride?: Remin
   const perishablesOn = useFeature('perishables');
   const maintenanceOn = useFeature('maintenance');
   const warrantyOn = useFeature('warranty');
-  const featureOn: Record<'perishables' | 'maintenance' | 'warranty', boolean> = {
+  const customFieldsOn = useFeature('custom-fields');
+  const featureOn: Record<GatedLaneFeature, boolean> = {
     perishables: perishablesOn,
     maintenance: maintenanceOn,
     warranty: warrantyOn,
+    'custom-fields': customFieldsOn,
   };
 
   const handleMasterChange = async (value: string) => {
@@ -95,7 +101,7 @@ export function ReminderSettings({ apiOverride }: { readonly apiOverride?: Remin
     <>
       <SettingRow
         label="Reminders"
-        description="Show due low-stock, expiry, maintenance and warranty alerts as notifications on this device."
+        description={t('settings.reminders.description')}
         hintSize="md"
         hint={
           'Surfaces the same alerts you see in the **Alert centre** as **device notifications**, so an ' +

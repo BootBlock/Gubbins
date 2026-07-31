@@ -22,7 +22,7 @@ import { foldName } from '@/lib/name-fold';
 import { DbError } from '../errors';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository } from './base';
-import type { FieldType } from './constants';
+import { FIELD_DUE_LEAD_DAYS_MAX, FIELD_DUE_LEAD_DAYS_MIN, type FieldType } from './constants';
 import { rowToCategory, rowToCategoryField, rowToFieldDef, rowToLocationFieldValue } from './mappers';
 import { tombstoneStatement } from './tombstone';
 import type {
@@ -91,7 +91,7 @@ function normaliseGlyph(glyph: string | null | undefined): string | null {
  */
 const CATEGORY_FIELD_COLUMNS = `
   cf.id, cf.category_id, cf.def_id, cf.is_required, cf.default_value, cf.position, cf.updated_at,
-  fd.name, fd.field_type, fd.options, fd.description
+  fd.name, fd.field_type, fd.options, fd.description, fd.due_lead_days
 `;
 
 interface ResolvedFieldRow extends CategoryFieldRow {
@@ -431,7 +431,13 @@ export class CategoryRepository extends BaseRepository {
    * it — that would reinterpret stored values app-wide as a side effect of adding a field.
    */
   private async resolveFieldDef(
-    input: { name: string; fieldType: FieldType; options: string | null; description?: string | null },
+    input: {
+      name: string;
+      fieldType: FieldType;
+      options: string | null;
+      description?: string | null;
+      dueLeadDays?: number | null;
+    },
     statements: SqlStatement[],
   ): Promise<string> {
     const existing = await this.findFieldDefByName(input.name);
@@ -443,12 +449,31 @@ export class CategoryRepository extends BaseRepository {
             `Rename this field, or change the existing one's type, rather than defining it twice.`,
         );
       }
+      // Reuse leaves the definition's identity alone — a second category declaring
+      // "Manufacturer" must not overwrite the note someone wrote on it. The due-date opt-in
+      // is the one exception, and only in the *setting* direction: a caller ticking "this is
+      // a due date" is stating what the field means, so it applies to the shared definition,
+      // while an unticked add never clears an opt-in the first category is relying on.
+      if (input.dueLeadDays != null && existing.due_lead_days !== input.dueLeadDays) {
+        statements.push({
+          sql: `UPDATE field_defs SET due_lead_days = ? WHERE id = ?;`,
+          params: [input.dueLeadDays, existing.id],
+        });
+      }
       return existing.id;
     }
     const id = crypto.randomUUID();
     statements.push({
-      sql: `INSERT INTO field_defs (id, name, field_type, options, description) VALUES (?, ?, ?, ?, ?);`,
-      params: [id, input.name, input.fieldType, input.options, input.description ?? null],
+      sql: `INSERT INTO field_defs (id, name, field_type, options, description, due_lead_days)
+            VALUES (?, ?, ?, ?, ?, ?);`,
+      params: [
+        id,
+        input.name,
+        input.fieldType,
+        input.options,
+        input.description ?? null,
+        input.dueLeadDays ?? null,
+      ],
     });
     return id;
   }
@@ -575,12 +600,13 @@ export class CategoryRepository extends BaseRepository {
     this.assertWritable();
     await this.requireCategory(categoryId);
     const { name, fieldType, options } = this.validateFieldInput(input);
+    const dueLeadDays = this.validateDueLeadDays(input.dueLeadDays, fieldType);
 
     // Definition creation and the category's use of it land in one transaction, so a
     // failure can never leave an orphan definition behind.
     const statements: SqlStatement[] = [];
     const defId = await this.resolveFieldDef(
-      { name, fieldType, options, description: input.description },
+      { name, fieldType, options, description: input.description, dueLeadDays },
       statements,
     );
 
@@ -667,10 +693,23 @@ export class CategoryRepository extends BaseRepository {
       }
       defSets.push('field_type = ?', 'options = ?');
       defParams.push(validated.fieldType, validated.options);
+      // Retyping away from DATE takes the due-date opt-in with it. The table CHECK forbids the
+      // pair outright, so without this the user's edit would fail on a constraint they cannot
+      // see; clearing it here makes "this is no longer a date" mean what it says.
+      if (validated.fieldType !== 'DATE' && existing.dueLeadDays != null && input.dueLeadDays === undefined) {
+        defSets.push('due_lead_days = ?');
+        defParams.push(null);
+      }
     }
     if (input.description !== undefined) {
       defSets.push('description = ?');
       defParams.push(input.description);
+    }
+    if (input.dueLeadDays !== undefined) {
+      // Validated against the *effective* type, so opting in while retyping to DATE in the
+      // same edit is accepted and opting in on a non-date is refused with a readable message.
+      defSets.push('due_lead_days = ?');
+      defParams.push(this.validateDueLeadDays(input.dueLeadDays, validated.fieldType));
     }
     if (defSets.length > 0) {
       statements.push({
@@ -1034,6 +1073,31 @@ export class CategoryRepository extends BaseRepository {
       throw new DbError('SQLITE_CONSTRAINT', `Custom field "${id}" does not exist.`);
     }
     return rowToCategoryField(row);
+  }
+
+  /**
+   * Validate a `dueLeadDays` opt-in against the field type it is being set on, returning the
+   * value to store. Only a `DATE` can be a deadline, and the notice period is a whole number
+   * of calendar days within {@link FIELD_DUE_LEAD_DAYS_MIN}–{@link FIELD_DUE_LEAD_DAYS_MAX}.
+   *
+   * Reported in the app's voice here rather than left to the table CHECK, which would surface
+   * as a raw SQLite constraint failure with no indication of which rule was broken.
+   */
+  private validateDueLeadDays(value: number | null | undefined, fieldType: FieldType): number | null {
+    if (value == null) return null;
+    if (fieldType !== 'DATE') {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'Only a Date field can be used as a due date. Change the field to Date first, or clear the due-date setting.',
+      );
+    }
+    if (!Number.isInteger(value) || value < FIELD_DUE_LEAD_DAYS_MIN || value > FIELD_DUE_LEAD_DAYS_MAX) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        `A due date's notice period must be a whole number of days from ${FIELD_DUE_LEAD_DAYS_MIN} to ${FIELD_DUE_LEAD_DAYS_MAX}.`,
+      );
+    }
+    return value;
   }
 
   /** Validate a field's name and (for SELECT) non-empty options; serialise options. */

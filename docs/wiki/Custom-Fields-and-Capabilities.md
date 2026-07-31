@@ -76,6 +76,44 @@ Each custom field has a **type** that decides how you enter and how Gubbins show
 > rather than trying to load it. On the item's card that field simply reads `—` until you
 > choose a picture.
 
+### Turning a date into a deadline
+
+Most dates just record a fact — *Date acquired*, *Date signed* — and Gubbins leaves them alone.
+But some are **deadlines**: a subscription's renewal date, an extinguisher's next inspection, the
+date a resin stops being usable, a "return by" on something you've borrowed.
+
+Tick **Use as a due date** on any **Date** field and Gubbins starts treating it like one. The
+field then appears in:
+
+- **[[Alerts]]** — as it approaches, and again (more urgently) once it has passed.
+- The **[[Upcoming agenda|Upcoming-Agenda]]** — in date order, alongside servicing, warranties
+  and loans.
+- **[[Reminder notifications|Reminder-Notifications]]**, if you've switched those on.
+
+Next to the tick, set **how many days' notice** you want — anything from `0` ("tell me on the
+day") up to `365`. Different deadlines want different warning: a fortnight is plenty for a
+subscription renewal, while a calibration certificate might want three months. Until that many
+days before, the date sits quietly on the Upcoming agenda without raising an alert.
+
+You can turn this on when you first add the field, or at any time afterwards from **Categories &
+schemas** — pick the category, and the setting appears under each of its Date fields. That
+matters for a field you added before, or one that came from a
+[[preset|#starting-from-a-preset]] — this is how you make an existing date behave like a deadline.
+
+> **ℹ️ Note**
+> Like the field's name and type, this belongs to the **field itself**, not to one category. Tick
+> it on *Renewal date* and it applies everywhere that field is used — and to values
+> [[inherited from a location|#inheriting-a-value-from-a-location]] as well as those typed onto
+> an item.
+
+> **💡 Tip**
+> The alert names the field, so several dated fields on one item stay tellable apart —
+> *"Inspection due passed — Rack PDU"* rather than a generic "a date is due".
+
+> **⚠️ Heads-up**
+> Only **Date** fields can do this. If you change a field's type away from Date, the due-date
+> setting is cleared along with it.
+
 ### Inheriting a value from a location
 
 Instead of typing the same value onto every item in a drawer, you can set it **once on the

@@ -20,4 +20,6 @@ export const agendaKeys = {
   checkouts: () => [...agendaKeys.all, 'checkouts'] as const,
   reorder: () => [...agendaKeys.all, 'reorder'] as const,
   bookings: () => [...agendaKeys.all, 'bookings'] as const,
+  /** Opted-in custom-field due dates (W1a), under one shared lookahead horizon. */
+  fieldDue: (lookaheadDays: number) => [...agendaKeys.all, 'field-due', lookaheadDays] as const,
 } as const;

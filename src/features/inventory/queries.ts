@@ -243,6 +243,14 @@ export const inventoryKeys = {
   lowStockFor: (thresholds: LowStockThresholds | null) => [...inventoryKeys.lowStock(), thresholds] as const,
   /** Items whose warranty is expiring — the §3 alerts feed. */
   warrantyExpiring: () => [...inventoryKeys.all, 'warranty-expiring'] as const,
+  /**
+   * Opted-in custom-field due dates — the alert centre's `field-due` lane (W1a). The prefix,
+   * so every write that can move one (an item's field value, a location's inheritable value,
+   * a definition's opt-in) can sweep them all without naming a window.
+   */
+  fieldDueDates: () => [...inventoryKeys.all, 'field-due-dates'] as const,
+  /** The due-date feed under one shared horizon; omitted = each definition's own lead time. */
+  fieldDueDatesWithin: (withinDays: number | null) => [...inventoryKeys.fieldDueDates(), withinDays] as const,
   inTransit: () => [...inventoryKeys.all, 'in-transit'] as const,
   /** One item's derived incoming In-Transit quantity (Phase 20); under item() so an
    *  `items()` invalidation (fired by procurement mutations) refreshes it by prefix. */

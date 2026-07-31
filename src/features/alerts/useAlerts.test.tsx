@@ -2,7 +2,8 @@
  * Hook-wiring tests for `useAlerts` feature gating (Modular UI Phase 7).
  *
  * The pure `buildAlerts` seam is exhaustively covered in `alerts.test.ts`; here we verify the
- * hook's deep-cascade wiring: when the Expiry-tracking, Maintenance or Warranty feature is off,
+ * hook's deep-cascade wiring: when the Expiry-tracking, Maintenance, Warranty or Custom-fields
+ * feature is off,
  * the hook (a) passes `enabled: false` to that lane's source query — skipping the fetch — and
  * (b) feeds an empty array into the seam, so the lane produces no alerts even though the mocked
  * source still returns rows (simulating a stale cache from when the feature was on). Low stock is
@@ -28,8 +29,9 @@ vi.mock('@/features/lifecycle', () => ({
   useDueMaintenance: h.useDueMaintenance,
 }));
 
-// The warranty lane is a bespoke `useQuery` inside the hook; mock it so no query client or
-// repository is needed and we can capture the `enabled` flag it was called with.
+// The warranty and custom-field-due lanes are bespoke `useQuery` calls inside the hook; mock it
+// so no query client or repository is needed and we can capture the `enabled` flag each was
+// called with. Both go through this one spy, so the fixtures below dispatch on the query key.
 vi.mock('@tanstack/react-query', () => ({ useQuery: h.useQuery }));
 
 import { useAlerts } from './useAlerts';
@@ -40,9 +42,38 @@ import { useDismissedAlertsStore } from './useDismissedAlertsStore';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EXPIRED_AT = Date.now() - DAY_MS; // an expired perishable → emits an alert
 const WARRANTY_EXPIRED_ISO = new Date(Date.now() - DAY_MS).toISOString().slice(0, 10);
+// A custom DATE field whose day has passed → its definition's opt-in makes it an alert.
+const FIELD_DUE_AT = Date.parse(new Date(Date.now() - DAY_MS).toISOString().slice(0, 10));
 
 function loaded<T>(rows: T[]) {
   return { data: { rows }, isLoading: false, isError: false };
+}
+
+const WARRANTY_ROWS = [
+  {
+    id: 'war-1',
+    name: 'Drill',
+    acquiredAt: null,
+    warrantyExpiresAt: WARRANTY_EXPIRED_ISO,
+    purchasePrice: null,
+    depreciationMonths: null,
+  },
+];
+
+const FIELD_DUE_ROWS = [
+  {
+    itemId: 'it-9',
+    itemName: 'Studio insurance',
+    defId: 'def-9',
+    fieldName: 'Renewal date',
+    leadDays: 14,
+    dueAt: FIELD_DUE_AT,
+  },
+];
+
+/** Which bespoke lane a `useQuery` call belongs to, read from its key's second segment. */
+function laneOf(options: { queryKey?: readonly unknown[] } | undefined): string {
+  return String(options?.queryKey?.[1] ?? '');
 }
 
 beforeEach(() => {
@@ -67,17 +98,12 @@ beforeEach(() => {
       },
     ]),
   );
-  h.useQuery.mockReturnValue(
-    loaded([
-      {
-        id: 'war-1',
-        name: 'Drill',
-        acquiredAt: null,
-        warrantyExpiresAt: WARRANTY_EXPIRED_ISO,
-        purchasePrice: null,
-        depreciationMonths: null,
-      },
-    ]),
+  // Both bespoke lanes share one spy, so answer by key rather than returning warranty rows to
+  // the due-date lane (which would silently grade to "nothing due" and hide a broken gate).
+  h.useQuery.mockImplementation((options: { queryKey?: readonly unknown[] }) =>
+    laneOf(options) === 'field-due-dates'
+      ? { data: { rows: FIELD_DUE_ROWS, truncated: false }, isLoading: false, isError: false }
+      : loaded(WARRANTY_ROWS),
   );
 });
 
@@ -92,19 +118,32 @@ function kinds(): Set<AlertKind> {
   return new Set(result.current.allAlerts.map((a) => a.kind));
 }
 
-/** The `enabled` flag the bespoke warranty `useQuery` was last called with. */
-function warrantyEnabled(): boolean | undefined {
-  const lastCall = h.useQuery.mock.calls.at(-1)?.[0] as { enabled?: boolean } | undefined;
-  return lastCall?.enabled;
+/** The `enabled` flag a bespoke lane's `useQuery` was last called with. */
+function laneEnabled(lane: 'warranty-expiring' | 'field-due-dates'): boolean | undefined {
+  const calls = h.useQuery.mock.calls as [{ queryKey?: readonly unknown[]; enabled?: boolean }][];
+  return calls.filter(([o]) => laneOf(o) === lane).at(-1)?.[0]?.enabled;
 }
 
 describe('useAlerts — all features on (default)', () => {
   it('produces every lane and enables every source query', () => {
     const present = kinds();
-    expect(present).toEqual(new Set<AlertKind>(['low-stock', 'expiry', 'maintenance-due', 'warranty-due']));
+    expect(present).toEqual(
+      new Set<AlertKind>(['low-stock', 'expiry', 'maintenance-due', 'warranty-due', 'field-due']),
+    );
     expect(h.useExpiringItems).toHaveBeenCalledWith(expect.anything(), { enabled: true });
     expect(h.useDueMaintenance).toHaveBeenCalledWith({ enabled: true });
-    expect(warrantyEnabled()).toBe(true);
+    expect(laneEnabled('warranty-expiring')).toBe(true);
+    expect(laneEnabled('field-due-dates')).toBe(true);
+  });
+});
+
+describe('useAlerts — Custom fields off', () => {
+  it('drops the custom-field due-date lane and disables its query', () => {
+    useModulesStore.getState().setFeatureIntent('custom-fields', false);
+    const present = kinds();
+    expect(present.has('field-due')).toBe(false);
+    expect(present.has('expiry')).toBe(true);
+    expect(laneEnabled('field-due-dates')).toBe(false);
   });
 });
 
@@ -136,7 +175,7 @@ describe('useAlerts — Warranty off', () => {
     const present = kinds();
     expect(present.has('warranty-due')).toBe(false);
     expect(present.has('expiry')).toBe(true);
-    expect(warrantyEnabled()).toBe(false);
+    expect(laneEnabled('warranty-expiring')).toBe(false);
   });
 });
 

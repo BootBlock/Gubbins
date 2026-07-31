@@ -1,11 +1,12 @@
 /**
  * AlertsScreen — the §3 proactive alert centre (Phase 68).
  *
- * A consolidated, sorted feed of four alert lanes:
+ * A consolidated, sorted feed of five alert lanes:
  *  - Low stock (items at or below reorder point)
  *  - Perishable expiry (expiring within the "soon" window, or already expired)
  *  - Maintenance due (schedules past their service interval)
  *  - Warranty due (warranty expiring soon or already expired, Phase-66 fields)
+ *  - Custom field date (a DATE field its definition opted in as a due date, W1a)
  *
  * Each alert carries a Snooze menu and a Dismiss action (device-local, no migration).
  * Snoozing hides the alert until the chosen date and then lets it come back on its own —
@@ -37,6 +38,7 @@ import {
   CriticalIcon,
   WarningIcon,
   ExpiryIcon,
+  FieldDueIcon,
   MaintenanceIcon,
   NotificationIcon,
   PackageIcon,
@@ -69,7 +71,7 @@ import { useAlerts } from './useAlerts';
 // The lane and severity *labels* live in the pure `alerts` seam, so the export (issue #132)
 // names a row exactly as this screen names its section — one definition, no drift.
 
-const KIND_ORDER: AlertKind[] = ['maintenance-due', 'warranty-due', 'expiry', 'low-stock'];
+const KIND_ORDER: AlertKind[] = ['maintenance-due', 'warranty-due', 'field-due', 'expiry', 'low-stock'];
 
 function KindIcon({ kind }: { kind: AlertKind }) {
   switch (kind) {
@@ -81,6 +83,8 @@ function KindIcon({ kind }: { kind: AlertKind }) {
       return <MaintenanceIcon aria-hidden />;
     case 'warranty-due':
       return <NotificationIcon aria-hidden />;
+    case 'field-due':
+      return <FieldDueIcon aria-hidden />;
     default:
       // Exhaustiveness guard (#355): a new alert lane must extend this switch or this stops
       // compiling. A component has no return-type annotation to fall back on, so without it
@@ -223,7 +227,7 @@ function AlertCard({
  */
 export function AlertsScreen() {
   const t = useT();
-  const { alerts, allAlerts, isLoading, isError } = useAlerts();
+  const { alerts, allAlerts, isLoading, isError, fieldDueTruncated } = useAlerts();
   const { dismiss, snooze, clearAll } = useDismissedAlertsStore();
 
   // Count what is hidden *right now* rather than how many records the store holds: a record for
@@ -328,9 +332,7 @@ export function AlertsScreen() {
             <AlertIcon className="size-10 text-muted-foreground" />
             <p className="font-medium">No active alerts</p>
             <p className="text-sm text-muted-foreground">
-              {hasHidden
-                ? t('alerts.empty.allHidden')
-                : 'All stock levels, expiry dates, maintenance schedules and warranties look good.'}
+              {hasHidden ? t('alerts.empty.allHidden') : t('alerts.empty.allClear')}
             </p>
           </Surface>
         )}
@@ -352,6 +354,17 @@ export function AlertsScreen() {
                       {kindAlerts.length}
                     </span>
                   </h2>
+                  {/* Named to this lane rather than shown as a page-wide caveat: only the
+                      custom-field feed is capped, and a general "this list may be short" would
+                      cast doubt on four lanes that are complete. */}
+                  {kind === 'field-due' && fieldDueTruncated ? (
+                    <p
+                      className="mb-3 text-xs text-muted-foreground"
+                      data-testid="alerts-field-due-truncated"
+                    >
+                      {t('alerts.fieldDue.truncated')}
+                    </p>
+                  ) : null}
                   <div className="flex flex-col gap-3">
                     {kindAlerts.map((alert) => (
                       <AlertCard

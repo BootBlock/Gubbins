@@ -1,7 +1,7 @@
 # What Gubbins is weakest at tracking — archetype audit (2026-07-31)
 
-> **Status:** 🟢 ACTIVE — research complete; the ranked candidates `W1`–`W10` are an open backlog,
-> none started.
+> **Status:** 🟢 ACTIVE — research complete. `W1a` (custom-field due dates) has shipped; the rest
+> of `W1` and `W2`–`W10` remain open.
 
 Answers issue [#621](https://github.com/BootBlock/Gubbins/issues/621): *which items, or types of
 item, is Gubbins weakest at tracking or managing?*
@@ -315,11 +315,16 @@ does not make the app track anything better. None started.
   dates, substrate-decay dates and curing windows **at once**, and turns the existing 72 presets
   from decoration into behaviour. Addresses C1. Note the split: the "surface this" half is adjacent
   to issue [#619](https://github.com/BootBlock/Gubbins/issues/619) (which is purely presentational),
-  but the load-bearing half — feeds reading `DATE` fields — is untouched by it. #619 has since
-  shipped, so that adjacency is now concrete: a *category* chooses where its whole field set sits
-  (`categories.field_prominence`). It is not `W1`'s "surface this" flag, which is per **definition**
-  and would let one field outrank its siblings — `W1` remains unstarted, and the position control is
-  the surface it would hang beside.
+  but the load-bearing half — feeds reading `DATE` fields — is untouched by it.
+  - **`W1a` — DATE fields as due dates. ✅ Shipped** (see [§4.1](#41-w1a--the-due-date-opt-in-shipped)).
+  - **`W1b` — a per-definition unit** on `field_defs`, so a `NUMBER` field carries one. Open.
+  - **`W1c` — min/max (and precision) on a `NUMBER` definition**, validated at the point of save
+    through the existing `validateFieldValue` seam. Open.
+  - **`W1d` — the "surface this" prominence flag.** Open, and deliberately last. #619 has since
+    shipped, so its adjacency is now concrete: a *category* chooses where its whole field set sits
+    (`categories.field_prominence`). That is **not** `W1d`, which is per **definition** and would
+    let one field outrank its siblings — but it is the surface `W1d` would hang beside, so design
+    the two together rather than ahead of each other.
 - **`W2` — A repeating (table-valued) field.** Removes the `UNIQUE (item_id, def_id)` ceiling for
   opted-in definitions. Unlocks telemetry logs, per-position measurements, prior owners, lineage
   notes — every archetype whose data is a *series*. Addresses C1. Larger and schema-visible; do
@@ -353,6 +358,78 @@ does not make the app track anything better. None started.
   token, so this is a `FIELD_TYPES` member plus that existing input, not new machinery. Only worth
   doing **with** an honest statement of what it does and does not protect, since nothing in the
   database is encrypted. Partially unlocks §3.3; see the non-goal below before starting.
+
+### 4.1 `W1a` — the due-date opt-in (shipped)
+
+The load-bearing half of `W1`: a custom `DATE` field can opt in as a **due date**, and the alert
+centre and the Upcoming agenda both read it. A user-defined "Renewal date" now behaves like a
+built-in expiry instead of sitting inert, which is the specific charge C1 laid.
+
+**The design fork, and how it was settled.** Not every `DATE` is a deadline — *Date acquired* is
+not — so the opt-in had to sit somewhere, and there were two live questions.
+
+*Where it lives: on `field_defs`, not `category_fields`.* The dictionary already splits these
+cleanly — `field_defs` holds what a field **means** (name, type, options, note), `category_fields`
+holds a category's **policy** about it (required, default, position). "Is this date a deadline, and
+how much notice" is meaning: a field named *Renewal date* is a deadline wherever it is used. Two
+consequences settle it beyond taste:
+
+- `item_field_values` and the `item_field_effective_values` view key on `def_id`, never on a
+  category's *use* of a definition. A def-scoped flag therefore makes the feed a plain join, while
+  a category-scoped one needs item → category → `category_fields` and silently misses any value
+  inherited from a location, or left behind when an item changed category.
+- The dictionary already forces one *type* per name and refuses to retype a shared definition,
+  precisely so a field cannot mean two things at once. Letting deadline-ness fork per category
+  would reintroduce that: the same field alerting on some items and not others, with nothing on
+  screen to explain why.
+
+The cost is accepted and real: ticking the box on a shared field changes behaviour for every
+category using it. That is the same bargain a rename already makes, and the field editor states it.
+
+*Its shape: one nullable `due_lead_days INTEGER`, not a boolean plus a shared preference.* `NULL`
+means "an ordinary date"; any value means "a deadline, with this many calendar days' notice". Two
+reasons:
+
+- **Per-definition, not shared.** Deadlines are not alike — a subscription renewal wants a
+  fortnight, a calibration certificate a quarter, a "return by" a day or two. One shared window
+  would make the feature miss most of the archetypes `W1` exists to unlock (§3.3, §3.6, §3.8).
+- **One column, not two.** A boolean *plus* a nullable lead time can disagree — "opted in, no
+  notice" — and that state has no meaning. The stored value *is* the opt-in, so the UI presents a
+  tick (seeding a default) plus a number, and there is no third state to reconcile.
+
+Bounded `0`–`365` by a table CHECK alongside `field_type = 'DATE'`, with the write seam clearing
+the value when a field is retyped away from `DATE` so the user meets a clean outcome rather than a
+constraint failure. `0` is meaningful: "tell me on the day".
+
+**What shipped alongside.** The decision logic is a dependency-free seam
+(`features/lifecycle/field-due.ts`, injected clock) whose day-grained comparisons agree with the
+SQL window that narrows the read; new lanes in both `AlertKind` and `AgendaKind` with completeness
+guards added over `REMINDER_KINDS` and `AGENDA_KINDS` (both were arrays a new lane could silently
+fall out of); gating on the `custom-fields` capability; and both feeds read **every** page and
+report it when they cannot, rather than showing one page as the whole set.
+
+**Deliberately not in scope, and where each belongs:**
+
+- **The bridge's iCal feed** (`CALENDAR_SOURCE_TYPES`) is its own four-source union, independent of
+  `AgendaKind`. Adding a fifth source is a coherent follow-up, but it is a *bridge* surface with its
+  own OpenAPI and README drift guards; do it with `W1b`–`W1d` or as its own change.
+- **Exposing the opt-in over the bridge** — both the item-field vocabulary
+  (`ITEM_FIELD_VALUE_KEYS`) and the category-field projection (`CategoryFieldDto` /
+  `toCategoryField`) still describe the pre-W1a shape, so a bridge or Home Assistant consumer
+  reading a category's fields cannot tell that one of them is now a deadline. Its own change,
+  gated by the OpenAPI and field-vocabulary drift tests.
+- **The other six agenda lanes still read one page and present it as the whole set** (an
+  `AGENDA_FETCH_LIMIT` of 500 that `MAX_PAGE_SIZE` silently clamps to 100, with `hasMore` never
+  read). That predates this work and is the shape of #606/#607; the due-date lanes do not repeat
+  it, but fixing the other six is a separate change.
+
+**One defect found while building this, not fixed here.** `buildWarrantyEvents` and
+`buildExpiryEvents` feed a day-grained **midnight-UTC** value straight into `bucketForDueAt` and
+the locale date formatter, both of which work in **local** terms. West of UTC that reads a day
+early: a warranty expiring "20 July" buckets as *Overdue* and renders as the 19th all through the
+20th (issue #323 in the agenda, where issue #319 fixed the same thing for expiry status). The
+due-date lane re-anchors with `utcDayToLocalDay` and so is correct; the two older lanes were left
+alone rather than widened into scope. Worth filing alongside #683–#688.
 
 ## 5. Defects found while surveying
 

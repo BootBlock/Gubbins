@@ -26,6 +26,8 @@ import type {
   CategoryRow,
   FieldDef,
   FieldDefRow,
+  FieldDueDate,
+  FieldDueDateRow,
   GaugeState,
   LocationFieldValue,
   LocationFieldValueRow,
@@ -548,6 +550,7 @@ export function rowToCategoryField(row: CategoryFieldRow): CategoryField {
     isRequired: row.is_required === 1,
     defaultValue: row.default_value,
     description: row.description,
+    dueLeadDays: row.due_lead_days,
     position: row.position,
     updatedAt: row.updated_at,
   };
@@ -561,7 +564,26 @@ export function rowToFieldDef(row: FieldDefRow): FieldDef {
     fieldType: row.field_type,
     options: parseStringArray(row.options),
     description: row.description,
+    dueLeadDays: row.due_lead_days,
     updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * One opted-in custom-field due date (W1a) as a DTO.
+ *
+ * `value` is the stored `YYYY-MM-DD`, which the query has already shape-checked and validated
+ * as a real calendar day — so `Date.parse` is total here, and yields the midnight-UTC instant
+ * that every day-grained value in the app is anchored at (issue #320).
+ */
+export function rowToFieldDueDate(row: FieldDueDateRow): FieldDueDate {
+  return {
+    itemId: row.item_id,
+    itemName: row.item_name,
+    defId: row.def_id,
+    fieldName: row.field_name,
+    leadDays: row.due_lead_days,
+    dueAt: Date.parse(row.value),
   };
 }
 
