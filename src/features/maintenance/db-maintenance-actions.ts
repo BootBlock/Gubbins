@@ -183,7 +183,7 @@ export interface OrphanSweepResult {
   readonly supported: boolean;
   /** Number of raw image files found in OPFS. */
   readonly scanned: number;
-  /** Number of files that were referenced by an `item_images` row (kept). */
+  /** Number of files that were referenced by a photo row (kept). */
   readonly referenced: number;
   /** Number of unreferenced (orphaned) files deleted. */
   readonly removed: number;
@@ -253,8 +253,8 @@ export interface MissingImagesResult {
 const MISSING_SAMPLE_LIMIT = 5;
 
 /**
- * The inverse of {@link sweepOrphanImages}: find `item_images` rows whose full-resolution
- * OPFS file is **missing on this device**. Read-only and deliberately non-destructive — a
+ * The inverse of {@link sweepOrphanImages}: find photo rows — item images and location
+ * photos alike — whose full-resolution OPFS file is **missing on this device**. Read-only and deliberately non-destructive — a
  * missing file is often a legitimate image synced from a peer that this device has not
  * downloaded yet (never a downgraded one, which no longer expects a local file), so the
  * report only informs; it never deletes a row or downgrades it.
