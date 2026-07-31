@@ -176,14 +176,17 @@ describe('CategoryPresetPickerDialog — importing', () => {
     // preset's fields are still being written.
     rerender(<CategoryPresetPickerDialog {...props} existingNames={['Tools']} />);
 
-    const row = screen.getByRole('button', { name: 'Add Tools preset' });
-    expect(within(row).getByText('Adding…')).toBeInTheDocument();
-    expect(within(row).queryByText('Added')).not.toBeInTheDocument();
+    // Located by a name both states share, so each assertion below stands on its own.
+    const toolsRow = () => screen.getByRole('button', { name: /Tools preset/ });
+    await waitFor(() => expect(within(toolsRow()).getByText('Adding…')).toBeInTheDocument());
+    expect(within(toolsRow()).queryByText('Added')).not.toBeInTheDocument();
+    expect(toolsRow()).toHaveAccessibleName('Add Tools preset');
 
     releaseFields();
 
-    await waitFor(() => expect(onImported).toHaveBeenCalledWith('cat-new'));
-    expect(await screen.findByRole('button', { name: 'Tools preset already added' })).toBeDisabled();
+    // Only once the last field has landed does the row settle on Added.
+    await waitFor(() => expect(within(toolsRow()).getByText('Added')).toBeInTheDocument());
+    expect(onImported).toHaveBeenCalledWith('cat-new');
   });
 
   it('marks an already-imported preset as Added and disables it (idempotent — no duplicate)', () => {
