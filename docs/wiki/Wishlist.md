@@ -39,6 +39,12 @@ list to a [[purchase order|Purchase-Orders]] instead, if you're ready to actuall
 > Only ordinary web links (`http`/`https`) are accepted for an entry's link, so a wishlist can't
 > carry anything unsafe.
 
+## Removing a wish
+
+The bin on a row removes that wish, along with its note, link and target price. It can't be
+undone and the removal reaches your other devices, so Gubbins names the wish and asks before it
+removes anything.
+
 > **ℹ️ Note**
 > The wishlist is for things you **don't own**. Once you buy something and start tracking it, it
 > becomes a normal [[item|Items]]; restocking things you *do* own is the
