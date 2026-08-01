@@ -8,6 +8,12 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  defaultRangeExtractor,
+  measureElement as measureElementRect,
+  observeElementRect,
+  useVirtualizer,
+} from '@tanstack/react-virtual';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
@@ -15,12 +21,12 @@ import { fieldAria } from './field-aria';
 import { InfoHint } from './info-hint';
 import { LiveRegion } from './live-region';
 import {
+  SELECT_FALLBACK_VIEWPORT,
   SELECT_FILTER_THRESHOLD,
-  SELECT_WINDOW_THRESHOLD,
   SELECT_OPTION_HEIGHT,
+  SELECT_WINDOW_OVERSCAN,
+  SELECT_WINDOW_THRESHOLD,
   filterSelectOptions,
-  scrollTopForRow,
-  selectWindow,
   trailingActionStart,
 } from './select-options';
 import { type TooltipSize } from './tooltip';
@@ -90,18 +96,22 @@ export interface SelectProps {
  *
  * **Long lists** (issue #563). Its biggest feeder is the location picker, which is handed
  * the whole hierarchy uncapped — thousands of rows on a bin-level inventory. Two things
- * scale it, both driven by the pure `select-options.ts` seam:
+ * scale it:
  *
  * - From {@link SELECT_FILTER_THRESHOLD} options the trigger becomes a **filter field**
- *   while the list is open, so a row is found by typing rather than by scrolling. The
- *   combobox role (and the id, ARIA and test id with it) moves onto that input for as long
- *   as it exists, so there is still exactly one combobox and it still owns
- *   `aria-activedescendant` — the contract above survives intact. Home/End and Space are
- *   left to the text field while it is filtering, since they are editing keys there.
- * - Past {@link SELECT_WINDOW_THRESHOLD} the list is **windowed**: only the rows near the
- *   viewport exist in the DOM, with spacers standing in for the rest so the scrollbar
- *   still measures the whole list. Nothing is capped — every row remains reachable by
- *   scrolling — and `aria-setsize`/`aria-posinset` report the true list to assistive tech.
+ *   while the list is open, so a row is found by typing rather than by scrolling — narrowed
+ *   by the pure {@link filterSelectOptions} seam. The combobox role (and the id, ARIA and
+ *   test id with it) moves onto that input for as long as it exists, so there is still
+ *   exactly one combobox and it still owns `aria-activedescendant` — the contract above
+ *   survives intact. Home/End and Space are left to the text field while it is filtering,
+ *   since they are editing keys there; so is Tab, so that an enclosing Modal's focus trap can
+ *   resolve it against the still-focused field — the field's own blur then closes the list.
+ * - Past {@link SELECT_WINDOW_THRESHOLD} the ordinary options are **windowed** with
+ *   `@tanstack/react-virtual` — the same virtualiser (and the same measurement floors) the
+ *   location sidebar already windows this hierarchy with. Nothing is capped: the scroll
+ *   container still measures the whole list, `aria-setsize`/`aria-posinset` report its true
+ *   size, and the active row is pinned into the rendered range so `aria-activedescendant`
+ *   never dangles.
  *
  * The active-option highlight is keyboard-only and hover is a **CSS** state, so crossing an
  * open list with the pointer costs nothing: it neither re-renders the options nor drags
@@ -130,10 +140,6 @@ export function Select({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
-  // Measured live rather than assumed: the window's spacers have to match the rows they stand
-  // in for, or a long list's scrollbar drifts away from its content.
-  const [rowHeight, setRowHeight] = useState(SELECT_OPTION_HEIGHT);
-  const [viewport, setViewport] = useState({ scrollTop: 0, height: 0 });
 
   const selected = options.find((option) => option.value === value);
   /** Filtering is offered only once scrolling the list is the problem, not the answer. */
@@ -147,9 +153,6 @@ export function Select({
 
   const plainCount = trailingActionStart(visible);
   const windowed = plainCount > SELECT_WINDOW_THRESHOLD;
-  const optionWindow = windowed
-    ? selectWindow(plainCount, viewport.scrollTop, viewport.height, rowHeight)
-    : null;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
@@ -159,17 +162,65 @@ export function Select({
   // against the trigger — see {@link useAnchoredPopover}.
   const { popoverRef, style: popoverStyle } = useAnchoredPopover(rootRef, open);
 
-  // Dismiss when a pointer goes down anywhere outside this control — counting the
-  // portalled listbox as "inside" so choosing an option doesn't self-dismiss first.
+  // Only the *ordinary* options are windowed; the few pinned command rows always render.
+  const virtualizer = useVirtualizer({
+    count: plainCount,
+    // Kept subscribed even below the threshold (where the plain branch renders instead), so a
+    // filter that crosses the threshold never tears the virtualiser down in the same commit that
+    // unmounts every measured row — which React flags as a re-entrant flush.
+    enabled: true,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => SELECT_OPTION_HEIGHT,
+    getItemKey: (index) => visible[index]?.value ?? index,
+    overscan: SELECT_WINDOW_OVERSCAN,
+    // A viewport guess for the first paint, before the popover has been measured…
+    initialRect: { width: 0, height: SELECT_FALLBACK_VIEWPORT },
+    // …and the same floor on every later measurement — see {@link SELECT_FALLBACK_VIEWPORT}.
+    observeElementRect: (instance, cb) =>
+      observeElementRect(instance, (rect) =>
+        cb({ width: rect.width, height: rect.height || SELECT_FALLBACK_VIEWPORT }),
+      ),
+    // Same floor per row: taking a zero measurement at face value collapses every row onto one
+    // offset, after which the virtualiser's position lookup can land anywhere in the list.
+    measureElement: (el, entry, instance) => measureElementRect(el, entry, instance) || SELECT_OPTION_HEIGHT,
+    // The active option has to *exist* for `aria-activedescendant` to reference it, so it is
+    // pinned into the rendered range even when the pointer has scrolled it out of the window.
+    rangeExtractor: (range) => {
+      const indexes = defaultRangeExtractor(range);
+      if (active >= plainCount || indexes.includes(active)) return indexes;
+      return [...indexes, active].sort((a, b) => a - b);
+    },
+  });
+
+  // True for the duration of a pointer press that started inside the popover — a click on an
+  // option, or a drag of the list's scrollbar. Both blur the filter field (neither target is
+  // focusable), and neither should be read as "the user has left the control".
+  const pressInList = useRef(false);
+
+  // Dismiss when a pointer goes down outside this control. The portalled listbox counts as
+  // "inside" so choosing an option doesn't self-dismiss first — but while a filter field owns the
+  // focus, the trigger's chrome around it counts as *outside*: clicking there would otherwise
+  // blur the field and leave an open list nothing could type into, dismiss or Escape (Escape
+  // would reach the enclosing Modal and close the whole dialog instead).
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (!rootRef.current?.contains(target) && !popoverRef.current?.contains(target)) setOpen(false);
+      pressInList.current = Boolean(popoverRef.current?.contains(target));
+      if (pressInList.current) return;
+      const control = filtering ? filterRef.current : rootRef.current;
+      if (!control?.contains(target)) setOpen(false);
     };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open, popoverRef]);
+    const onPointerUp = () => {
+      pressInList.current = false;
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('pointerup', onPointerUp, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('pointerup', onPointerUp, true);
+    };
+  }, [open, filtering, popoverRef]);
 
   // The filter field only exists while the list is open, so focus has to follow it there. The
   // trigger box itself stays mounted throughout (it merely hands the combobox role over), which
@@ -181,37 +232,24 @@ export function Select({
   // A new filter is a new list — start it at the top rather than wherever the last one was left.
   useLayoutEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
-    setViewport((prev) => (prev.scrollTop === 0 ? prev : { ...prev, scrollTop: 0 }));
   }, [query]);
 
-  // Take the window's measurements from the rendered list rather than trusting the nominal
-  // figures, so a themed row height or a shorter popover still windows accurately.
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    if (!open || !windowed || !list) return;
-    const measured = list.querySelector<HTMLElement>('[role="option"]')?.getBoundingClientRect().height ?? 0;
-    if (measured > 0) setRowHeight((prev) => (Math.abs(prev - measured) > 0.5 ? measured : prev));
-    setViewport((prev) =>
-      prev.scrollTop === list.scrollTop && prev.height === list.clientHeight
-        ? prev
-        : { scrollTop: list.scrollTop, height: list.clientHeight },
-    );
-  }, [open, windowed, visible.length]);
-
   // Keep the active option in view while navigating with the keyboard. A windowed row may not be
-  // in the DOM to scroll to, so its position is computed instead — see {@link scrollTopForRow}.
+  // in the DOM to scroll to, so the virtualiser is asked for it by index instead.
+  //
+  // Keyed on the *popover* rather than on `open`, because the two are a render apart: the anchored
+  // position arrives in a layout effect, so on the commit where `open` flips there is no list yet
+  // to scroll. Waiting for it is also what re-seats a reopened list — the virtualiser outlives the
+  // popover and would otherwise still be reporting the offset the last session was left scrolled to.
+  const listMounted = open && Boolean(popoverStyle);
   useEffect(() => {
-    const list = listRef.current;
-    if (!open || !list) return;
+    if (!listMounted || !listRef.current) return;
     if (windowed && active < plainCount) {
-      const next = scrollTopForRow(active, list.scrollTop, list.clientHeight, rowHeight);
-      if (next === list.scrollTop) return;
-      list.scrollTop = next;
-      setViewport({ scrollTop: list.scrollTop, height: list.clientHeight });
+      virtualizer.scrollToIndex(active, { align: 'auto' });
       return;
     }
     document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' });
-  }, [open, active, activeId, windowed, plainCount, rowHeight]);
+  }, [listMounted, active, activeId, windowed, plainCount, virtualizer]);
 
   const openList = (
     toIndex = Math.max(
@@ -289,7 +327,14 @@ export function Select({
         close();
         break;
       case 'Tab':
-        if (open) close();
+        // While a filter field holds the focus, Tab is left entirely alone: an enclosing Modal's
+        // focus trap resolves it by looking the *focused* element up in its own tab order, so the
+        // field has to still be mounted and focused when the trap runs. Closing here would
+        // unmount it first — React flushes a discrete event's update before the event reaches
+        // the trap's document listener — and the trap, finding nothing, would throw focus to the
+        // top of the dialog. Leaving it be lets the trap move focus properly; the field's own
+        // blur then closes the list.
+        if (open && !filtering) setOpen(false);
         break;
     }
   };
@@ -314,7 +359,7 @@ export function Select({
     const isActive = index === active;
     const isSelected = option.value === value;
     return (
-      // eslint-disable-next-line jsx-a11y/interactive-supports-focus, jsx-a11y/click-events-have-key-events -- APG combobox+listbox: focus stays on the role="combobox" trigger via aria-activedescendant, so options are deliberately not tab stops, and the combobox's onKeyDown handles Enter/Space selection — the option's onClick is a pointer affordance with full keyboard parity.
+      // eslint-disable-next-line jsx-a11y/interactive-supports-focus, jsx-a11y/click-events-have-key-events -- APG combobox+listbox: DOM focus stays on whichever element carries role="combobox" and tracks the list via aria-activedescendant, so options are deliberately not tab stops, and that element's onKeyDown handles selection (Enter always; Space too, except while it is a filter field and a space is text) — the option's onClick is a pointer affordance with full keyboard parity.
       <div
         key={option.value}
         id={optionId(index)}
@@ -346,9 +391,6 @@ export function Select({
     );
   };
 
-  const windowStart = optionWindow ? optionWindow.start : 0;
-  const windowEnd = optionWindow ? optionWindow.end : plainCount;
-
   return (
     <div ref={rootRef} className="relative">
       {/* APG select-only combobox: the trigger is the focusable, keyboard-driven combobox — until
@@ -358,7 +400,10 @@ export function Select({
       <div
         ref={triggerRef}
         {...(filtering
-          ? { tabIndex: -1 }
+          ? // Focusable only programmatically, so it never becomes a second tab stop beside the
+            // field it contains. Closing restores `tabIndex={0}` in the same commit that hands
+            // focus back here, so the enclosing trap finds it again on the next Tab.
+            { tabIndex: -1 }
           : {
               ...comboboxProps,
               tabIndex: disabled ? -1 : 0,
@@ -395,6 +440,12 @@ export function Select({
               setActiveIndex(0);
             }}
             onKeyDown={onKeyDown}
+            // Focus leaving the field is what ends the filtering session — Tab above relies on
+            // it. A press that began inside the list is not that: an option and the scrollbar are
+            // both unfocusable, so both blur the field without the user having gone anywhere.
+            onBlur={() => {
+              if (!pressInList.current) setOpen(false);
+            }}
             className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         ) : (
@@ -446,10 +497,11 @@ export function Select({
               style={popoverStyle}
               className="z-[70] flex flex-col overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg animate-fade-in"
             >
-              {/* Counted over the *ordinary* options, and placed above them: a list whose only
-                  survivor is the pinned "＋ New location…" row has still matched nothing, and
-                  saying so first is what stops that row reading as the match. */}
-              {plainCount === 0 ? (
+              {/* Only ever a *filter* result: counted over the ordinary options and placed above
+                  them, because a list whose only survivor is the pinned "＋ New location…" row has
+                  still matched nothing, and saying so first is what stops that row reading as the
+                  match. A genuinely empty list has nothing to report — nothing was searched. */}
+              {filtering && query.length > 0 && plainCount === 0 ? (
                 <p className="px-2 py-1.5 text-sm text-muted-foreground">{t('select.noMatches')}</p>
               ) : null}
               <div
@@ -458,26 +510,30 @@ export function Select({
                 id={listboxId}
                 aria-labelledby={ariaLabelledBy}
                 aria-label={ariaLabel}
-                onScroll={(event) => {
-                  if (!windowed) return;
-                  const list = event.currentTarget;
-                  setViewport((prev) =>
-                    prev.scrollTop === list.scrollTop && prev.height === list.clientHeight
-                      ? prev
-                      : { scrollTop: list.scrollTop, height: list.clientHeight },
-                  );
-                }}
                 className="min-h-0 flex-1 overflow-y-auto"
               >
-                {optionWindow && optionWindow.padTop > 0 ? (
-                  <div role="presentation" style={{ height: optionWindow.padTop }} />
-                ) : null}
-                {visible
-                  .slice(windowStart, windowEnd)
-                  .map((option, index) => renderOption(option, windowStart + index))}
-                {optionWindow && optionWindow.padBottom > 0 ? (
-                  <div role="presentation" style={{ height: optionWindow.padBottom }} />
-                ) : null}
+                {windowed ? (
+                  <div
+                    role="presentation"
+                    className="relative w-full"
+                    style={{ height: virtualizer.getTotalSize() }}
+                  >
+                    {virtualizer.getVirtualItems().map((row) => (
+                      <div
+                        key={row.key}
+                        role="presentation"
+                        data-index={row.index}
+                        ref={virtualizer.measureElement}
+                        className="absolute left-0 top-0 w-full"
+                        style={{ transform: `translateY(${row.start}px)` }}
+                      >
+                        {renderOption(visible[row.index]!, row.index)}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  visible.slice(0, plainCount).map((option, index) => renderOption(option, index))
+                )}
                 {visible.slice(plainCount).map((option, index) => renderOption(option, plainCount + index))}
               </div>
             </div>,

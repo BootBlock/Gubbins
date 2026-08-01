@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { Modal } from './modal';
 import { Select, type SelectOption } from './select';
 import { SELECT_FILTER_THRESHOLD, SELECT_WINDOW_THRESHOLD } from './select-options';
 
@@ -141,15 +142,51 @@ describe('Select — filtering a long list', () => {
     expect(document.activeElement).toBe(combobox());
   });
 
-  it('recovers a usable active option after a query that matched nothing', () => {
-    const onChange = renderSelect(longList);
+  it('keeps the active option on a real row when the list shrinks underneath it', () => {
+    // A refetch can replace the options while the list is open, stranding the active index past
+    // the end of the new list — where the highlight, `aria-activedescendant` and Enter would all
+    // point at a row that no longer exists.
+    const onChange = vi.fn();
+    const label = <span id="loc-label">Location</span>;
+    const view = render(
+      <>
+        {label}
+        <Select aria-labelledby="loc-label" value="" onChange={onChange} options={bins(20)} />
+      </>,
+    );
     openList();
-    typeFilter('no such bin');
-    fireEvent.keyDown(combobox(), { key: 'ArrowDown' }); // nowhere to go — the list is empty
-    typeFilter('');
+    for (let i = 0; i < 15; i += 1) fireEvent.keyDown(combobox(), { key: 'ArrowDown' });
 
+    view.rerender(
+      <>
+        {label}
+        <Select aria-labelledby="loc-label" value="" onChange={onChange} options={bins(3)} />
+      </>,
+    );
+
+    expect(combobox().getAttribute('aria-activedescendant')).toBe(
+      screen.getByRole('option', { name: 'Bin 2' }).id,
+    );
     fireEvent.keyDown(combobox(), { key: 'Enter' });
-    expect(onChange).toHaveBeenCalledWith('bin-0');
+    expect(onChange).toHaveBeenCalledWith('bin-2');
+  });
+
+  it('dismisses when the pointer lands on the trigger chrome around the filter field', () => {
+    // That chrome is inert while filtering, so a click there would otherwise blur the field and
+    // strand an open list with the focus outside it — where Escape reaches the enclosing Modal.
+    renderSelect(longList);
+    openList();
+    fireEvent.pointerDown(combobox().parentElement!);
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('says nothing about matches when there is no filter to have matched', () => {
+    // A picker with nothing but its "＋ New…" row (a fresh install has no locations yet) has not
+    // searched for anything, so reporting no matches would be a lie about a search never run.
+    renderSelect([{ value: '__create__', label: '＋ New location…', kind: 'action' }]);
+    openList();
+    expect(screen.queryByText('No matching options')).toBeNull();
+    expect(screen.getByRole('option', { name: '＋ New location…' })).toBeTruthy();
   });
 
   it('closes from the pointer via the chevron, without disturbing the filter field first', () => {
@@ -162,14 +199,61 @@ describe('Select — filtering a long list', () => {
     expect(document.activeElement).toBe(combobox());
   });
 
-  it('starts each open from a clean filter', () => {
+  it('closes when the field loses focus, and starts the next open from a clean filter', () => {
     renderSelect(longList);
     openList();
     typeFilter('bin 11');
-    fireEvent.keyDown(combobox(), { key: 'Tab' });
+
+    fireEvent.blur(combobox()); // focus has gone elsewhere — Tab, or a click past the control
+    expect(screen.queryByRole('listbox')).toBeNull();
+
     openList();
     expect(combobox()).toHaveValue('');
     expect(screen.getAllByRole('option')).toHaveLength(SELECT_FILTER_THRESHOLD);
+  });
+});
+
+describe('Select — inside a Modal, where focus is trapped', () => {
+  const longList = bins(SELECT_FILTER_THRESHOLD);
+
+  function renderInModal(onClose = vi.fn()) {
+    render(
+      <Modal open onClose={onClose} title="Add item">
+        <button>Before</button>
+        <span id="loc-label">Location</span>
+        <Select aria-labelledby="loc-label" value="" onChange={vi.fn()} options={longList} />
+        <button>After</button>
+      </Modal>,
+    );
+    return onClose;
+  }
+
+  it('Tab closes the list and hands the trap the focused field, not the inert trigger', () => {
+    renderInModal();
+    openList();
+    fireEvent.keyDown(combobox(), { key: 'Tab' });
+
+    expect(screen.queryByRole('listbox')).toBeNull();
+    // The trap resolves Tab from whatever holds focus. Yanking focus back to the trigger — which
+    // is `tabIndex={-1}` while filtering, so not in the trap's tab order — would make it fall
+    // back to the *first* control in the dialog instead of the next one.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'After' }));
+  });
+
+  it('Escape closes only the list, never the dialog behind it', () => {
+    const onClose = renderInModal();
+    openList();
+    typeFilter('bin 1');
+
+    fireEvent.keyDown(combobox(), { key: 'Escape' }); // clears the filter
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(combobox(), { key: 'Escape' }); // closes the list
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+
+    // …and only once the list is gone does Escape belong to the dialog again.
+    fireEvent.keyDown(combobox(), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -115,8 +115,9 @@ typing: the list narrows as you go, so you never have to scroll a long list of b
 
 - **Every word you type has to appear** in the entry's name, in any order.
 - **`Escape` clears what you've typed**; press it again to close the list.
-- **`↑` / `↓` and `Enter`** still choose, and a pinned **＋ New location…** row stays on offer even
-  when nothing matches — usually exactly the moment you want it.
+- **`↑` / `↓` and `Enter`** still choose, so the whole thing works from the keyboard.
+- Where a picker offers a **＋ New location…** row — **Add item** does — that row stays on offer
+  even when nothing matches, which is usually exactly the moment you want it.
 
 The same goes for every long dropdown in Gubbins, not just locations: categories, projects and
 item pickers all behave this way.
