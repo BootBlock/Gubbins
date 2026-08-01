@@ -690,9 +690,9 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
               Cancel order
             </Button>
           )}
-          {/* The one irreversible action on this screen, so it reads as its own thing: a text
-              label rather than a bare bin beside "Cancel order", and de-emphasised so it is
-              never the button reached for by accident. It asks before deleting. */}
+          {/* The irreversible action in this row, so it reads as its own thing: a text label
+              rather than a bare bin beside "Cancel order", and de-emphasised so it is never the
+              button reached for by accident. It asks before deleting. */}
           <Button
             variant="ghost"
             className="text-destructive hover:bg-destructive/10 hover:text-destructive"

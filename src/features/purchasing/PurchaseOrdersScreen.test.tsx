@@ -623,12 +623,20 @@ describe('PurchaseOrdersScreen — deleting an order asks first (issue #588)', (
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('carries a readable label rather than a bare bin beside Cancel order', () => {
+  it('carries a readable label rather than a bare bin', () => {
     renderScreen();
-    // Both the reversible and the irreversible action now read as words, and only the
-    // irreversible one is styled as destructive.
     expect(screen.getByTestId('po-delete').textContent).toContain('Delete order');
-    expect(screen.getByTestId('po-cancel').textContent).toContain('Cancel order');
+  });
+
+  it('reserves the destructive styling for the delete, not the reversible Cancel order', () => {
+    renderScreen();
+    // `variant="destructive"` is the solid `bg-destructive` fill; cancelling is undone by
+    // "Reopen as draft", so wearing it made the two adjacent buttons read as equally final.
+    // Split on whitespace rather than substring-matching: `hover:text-destructive` contains
+    // `text-destructive`, so a substring check would pass even with the base token gone.
+    const classesOf = (testId: string) => screen.getByTestId(testId).className.split(/\s+/);
+    expect(classesOf('po-cancel')).not.toContain('bg-destructive');
+    expect(classesOf('po-delete')).toContain('text-destructive');
   });
 });
 

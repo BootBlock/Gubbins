@@ -103,6 +103,17 @@ Received stock lands in your inventory and the in-transit figure drops according
 > instead, use the **On order** status chip on the Inventory screen
 > ([[Inventory views|Inventory-Views]]).
 
+> **ℹ️ Note**
+> Purchase orders need [[Contacts]] enabled. If the module is off, turn it on in
+> [[Modular UI|Modular-UI]] and the dependency is offered automatically.
+
+> **💡 Tip**
+> **Export** on the Orders tab saves the order book as a spreadsheet or a table — one row per
+> order, with its supplier, reference, status, ordered and received quantities and total. Handy
+> for reconciling against invoices. The file covers every order, not just the page on screen; each
+> total is in that order's own currency, named in the adjacent column. See
+> [[Export & import|Export-and-Import]].
+
 ## Cancelling or deleting an order
 
 These are two different things, and only one of them can be taken back:
@@ -125,17 +136,6 @@ commit. Removing a single **line** asks in the same way.
 
 The same applies on the [[Wishlist]] — removing a wish takes its note, link and target price with
 it, so that asks before it removes anything too.
-
-> **ℹ️ Note**
-> Purchase orders need [[Contacts]] enabled. If the module is off, turn it on in
-> [[Modular UI|Modular-UI]] and the dependency is offered automatically.
-
-> **💡 Tip**
-> **Export** on the Orders tab saves the order book as a spreadsheet or a table — one row per
-> order, with its supplier, reference, status, ordered and received quantities and total. Handy
-> for reconciling against invoices. The file covers every order, not just the page on screen; each
-> total is in that order's own currency, named in the adjacent column. See
-> [[Export & import|Export-and-Import]].
 
 ## Related pages
 
