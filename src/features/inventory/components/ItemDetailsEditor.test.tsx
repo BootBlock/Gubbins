@@ -252,6 +252,36 @@ describe('ItemDetailsEditor', () => {
     );
   });
 
+  it('keeps unsaved text edits when an unrelated field of the item changes (issue #576)', () => {
+    // Every write to an item rebuilds the cached object (`{ ...item, ...changes }`), so a save
+    // made in *another* section of the dialog hands this editor a new `item` identity carrying
+    // the same core fields. Since the panel now stays mounted behind the rail rather than being
+    // unmounted, an identity-keyed re-seed would silently wipe whatever is half-typed here.
+    const { rerender } = render(<ItemDetailsEditor item={item} />);
+    fireEvent.change(screen.getByLabelText('Notes (optional)'), {
+      target: { value: 'Half-typed remark' },
+    });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'NE555 timer (renamed)' } });
+
+    // A low-stock save on the Supplier & ops tab: a brand-new object, none of these fields touched.
+    rerender(<ItemDetailsEditor item={{ ...item, reorderPoint: 5, updatedAt: 12345 }} />);
+
+    expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toBe(
+      'Half-typed remark',
+    );
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('NE555 timer (renamed)');
+  });
+
+  it('re-seeds the draft when the item’s own persisted values change (a sync landing)', () => {
+    const { rerender } = render(<ItemDetailsEditor item={item} />);
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('NE555 timer');
+
+    // A value this editor owns really did change underneath it, so the draft must follow —
+    // narrowing the deps must not turn the re-seed off altogether.
+    rerender(<ItemDetailsEditor item={{ ...item, name: 'NE555 timer (from sync)' }} />);
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('NE555 timer (from sync)');
+  });
+
   it('shows Tracking read-only for a Serialised item (no in-place conversion)', () => {
     render(<ItemDetailsEditor item={{ ...item, trackingMode: 'SERIALISED' }} />);
     const tracking = screen.getByLabelText('Tracking') as HTMLInputElement;

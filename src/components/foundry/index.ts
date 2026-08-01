@@ -78,6 +78,11 @@ export {
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';
+// How an editor tells the dialog around it that it holds work nobody has written yet, so a
+// dismissal asks before discarding it (issue #576). Only the editor-side hook is re-exported:
+// the registry and its context are the frame's half of the contract, and a feature reaching for
+// those is hand-rolling a dialog rather than composing `Modal`.
+export { useReportUnsavedChanges } from './unsaved-changes';
 // Off-canvas panel for a master pane that can't sit beside its detail pane on a compact
 // viewport. It shares Modal's `aria-modal` contract through `use-dialog-behaviour`, which is
 // deliberately *not* re-exported: a feature needing a modal surface composes one of these two

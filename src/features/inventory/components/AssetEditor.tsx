@@ -10,7 +10,7 @@
  * a purchase price is present.
  */
 import { useEffect, useState } from 'react';
-import { Button, InfoHint, Input, Money } from '@/components/foundry';
+import { Button, InfoHint, Input, Money, useReportUnsavedChanges } from '@/components/foundry';
 import { CostIcon, SecureIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { cn } from '@/lib/utils';
@@ -66,6 +66,8 @@ export function AssetEditor({ item }: { item: Item }) {
     nextWarrantyExpiresAt !== (item.warrantyExpiresAt ?? null) ||
     (nextPrice ?? null) !== (item.purchasePrice ?? null) ||
     (nextMonths ?? null) !== (item.depreciationMonths ?? null);
+  // Let the dialog frame ask before discarding the draft on a dismissal (issue #576).
+  useReportUnsavedChanges(dirty);
 
   const save = () => {
     update.mutate({

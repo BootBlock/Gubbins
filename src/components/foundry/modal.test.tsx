@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { Modal } from './modal';
+import { useReportUnsavedChanges } from './unsaved-changes';
 
 afterEach(cleanup);
 
@@ -309,5 +310,151 @@ describe('Modal — dismissing by tapping the backdrop (#614)', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add location' })).toBeNull());
     expect(screen.getByRole('dialog', { name: 'Add item' })).toBeTruthy();
+  });
+});
+
+describe('Modal — guarding unsaved work on dismissal (#576)', () => {
+  /** Stands in for a facet editor holding a draft: it reports, and renders nothing itself. */
+  function Editor({ unsaved, label }: { unsaved: boolean; label: string }) {
+    useReportUnsavedChanges(unsaved);
+    return <span>{label}</span>;
+  }
+
+  /**
+   * A dialog that really unmounts on close, holding one editor whose draft can be saved (the
+   * editor stops reporting) or torn down (it unmounts) from inside the dialog — the two ways a
+   * dirty dialog becomes clean in the app.
+   */
+  function Harness({ initiallyUnsaved = true }: { initiallyUnsaved?: boolean }) {
+    const [open, setOpen] = useState(true);
+    const [unsaved, setUnsaved] = useState(initiallyUnsaved);
+    const [mounted, setMounted] = useState(true);
+    return (
+      <Modal open={open} onClose={() => setOpen(false)} title="Item details">
+        {mounted ? <Editor unsaved={unsaved} label="Draft" /> : null}
+        <button onClick={() => setUnsaved(false)}>Save details</button>
+        <button onClick={() => setMounted(false)}>Unmount editor</button>
+      </Modal>
+    );
+  }
+
+  const prompt = () => screen.queryByRole('dialog', { name: 'Discard unsaved changes?' });
+  const itemDialog = () => screen.queryByRole('dialog', { name: 'Item details' });
+  /** The backdrop is the dialog container's first child — the dimmed layer behind the panel. */
+  const backdropOf = (dialog: Element) => dialog.firstElementChild!;
+
+  it('asks before Escape throws a draft away, leaving the dialog and its work up', async () => {
+    render(<Harness />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => expect(prompt()).not.toBeNull());
+    // The editor is still mounted behind the question, so nothing has been lost yet.
+    expect(itemDialog()).not.toBeNull();
+    expect(screen.getByText('Draft')).toBeTruthy();
+  });
+
+  it('keeps the work when the question is answered "Keep editing"', async () => {
+    render(<Harness />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(prompt()).not.toBeNull());
+
+    fireEvent.click(screen.getByTestId('unsaved-keep-editing'));
+    await waitFor(() => expect(prompt()).toBeNull());
+    expect(itemDialog()).not.toBeNull();
+  });
+
+  it('closes the dialog only once the discard is confirmed', async () => {
+    render(<Harness />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(prompt()).not.toBeNull());
+
+    fireEvent.click(screen.getByTestId('unsaved-discard'));
+    await waitFor(() => expect(itemDialog()).toBeNull());
+    expect(prompt()).toBeNull();
+  });
+
+  it('dismissing the question itself keeps the draft, rather than answering "discard"', async () => {
+    render(<Harness />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(prompt()).not.toBeNull());
+
+    // Escape again is aimed at the question (the topmost dialog), and the safe reading of it
+    // is "leave me alone" — not "yes, throw the work away".
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(prompt()).toBeNull());
+    expect(itemDialog()).not.toBeNull();
+  });
+
+  it('asks on the Close button too, not just Escape', async () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    await waitFor(() => expect(prompt()).not.toBeNull());
+    expect(itemDialog()).not.toBeNull();
+  });
+
+  it('asks on a backdrop tap too', async () => {
+    render(<Harness />);
+    const backdrop = backdropOf(itemDialog()!);
+    const pointer = { pointerId: 1, isPrimary: true, button: 0 };
+    fireEvent.pointerDown(backdrop, pointer);
+    fireEvent.pointerUp(backdrop, pointer);
+    fireEvent.click(backdrop, { ...pointer, detail: 1 });
+
+    await waitFor(() => expect(prompt()).not.toBeNull());
+    expect(itemDialog()).not.toBeNull();
+  });
+
+  it('closes straight away when nothing inside reports unsaved work', async () => {
+    render(<Harness initiallyUnsaved={false} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => expect(itemDialog()).toBeNull());
+    expect(prompt()).toBeNull();
+  });
+
+  it('stops asking once the editor reports the draft saved', async () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(itemDialog()).toBeNull());
+    expect(prompt()).toBeNull();
+  });
+
+  it('retracts an editor’s report when it unmounts, so a stale draft never wedges the dialog', async () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Unmount editor' }));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(itemDialog()).toBeNull());
+    expect(prompt()).toBeNull();
+  });
+
+  it('counts every editor separately, so one clean editor cannot speak for a dirty one', async () => {
+    function TwoEditors() {
+      const [open, setOpen] = useState(true);
+      const [firstUnsaved, setFirstUnsaved] = useState(true);
+      return (
+        <Modal open={open} onClose={() => setOpen(false)} title="Item details">
+          <Editor unsaved={firstUnsaved} label="First" />
+          <Editor unsaved={false} label="Second" />
+          <button onClick={() => setFirstUnsaved(false)}>Save first</button>
+        </Modal>
+      );
+    }
+    render(<TwoEditors />);
+
+    // The clean second editor reported first-and-last on mount; that must not clear the
+    // first editor's report, which is what a shared boolean would have done.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(prompt()).not.toBeNull());
+    fireEvent.click(screen.getByTestId('unsaved-keep-editing'));
+    await waitFor(() => expect(prompt()).toBeNull());
+
+    // With the only dirty editor saved, the dialog closes without a question.
+    fireEvent.click(screen.getByRole('button', { name: 'Save first' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(itemDialog()).toBeNull());
   });
 });

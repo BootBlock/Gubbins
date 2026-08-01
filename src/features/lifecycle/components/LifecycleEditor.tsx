@@ -6,7 +6,15 @@
  * gain sub-variants; only cycles are rejected, enforced in the repository.
  */
 import { useId, useState } from 'react';
-import { Button, InfoHint, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import {
+  Button,
+  InfoHint,
+  Input,
+  Select,
+  Tooltip,
+  INFO_OPEN_DELAY_MS,
+  useReportUnsavedChanges,
+} from '@/components/foundry';
 import { DueDateIcon, WarningIcon, AddIcon, PackageIcon, TruckIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { plural } from '@/lib/plural';
@@ -58,16 +66,26 @@ export function LifecycleEditor({ item }: { item: Item }) {
   const inTransitQty = useInTransitQty(item.id).data ?? 0;
   const isGauge = item.trackingMode === 'CONSUMABLE_GAUGE';
 
+  // What a Save would write, resolved once so the dirty check below and the save itself can
+  // never drift apart.
+  const draft = {
+    expiryDate: fromDateInputValue(expiry),
+    batchNumber: batch.trim() || null,
+    lotNumber: lot.trim() || null,
+    condition: (condition || null) as Item['condition'],
+  };
+  // Unlike the other facet editors this one's Save is always enabled, so there was no dirty flag
+  // to reuse — but the dialog frame still needs to know a draft is sitting here uncommitted, or
+  // Escape would take it away without asking (issue #576).
+  useReportUnsavedChanges(
+    draft.expiryDate !== item.expiryDate ||
+      draft.batchNumber !== item.batchNumber ||
+      draft.lotNumber !== item.lotNumber ||
+      draft.condition !== item.condition,
+  );
+
   const save = () => {
-    update.mutate({
-      id: item.id,
-      input: {
-        expiryDate: fromDateInputValue(expiry),
-        batchNumber: batch.trim() || null,
-        lotNumber: lot.trim() || null,
-        condition: (condition || null) as Item['condition'],
-      },
-    });
+    update.mutate({ id: item.id, input: draft });
   };
 
   return (
