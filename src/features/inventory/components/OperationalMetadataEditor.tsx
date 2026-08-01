@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, InfoHint, Input } from '@/components/foundry';
+import { Button, InfoHint, Input, useReportUnsavedChanges } from '@/components/foundry';
 import { AddIcon, CloseIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { useUpdateItem } from '../mutations';
@@ -35,6 +35,8 @@ export function OperationalMetadataEditor({ item }: { item: Item }) {
 
   const built = buildMetadata(rows);
   const dirty = built.ok && JSON.stringify(built.value ?? null) !== savedJson;
+  // Let the dialog frame ask before discarding the draft on a dismissal (issue #576).
+  useReportUnsavedChanges(dirty);
 
   const save = () => {
     const result = buildMetadata(rows);

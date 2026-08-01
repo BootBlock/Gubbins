@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { Button, InfoHint, SegmentedRadioGroup } from '@/components/foundry';
+import { Button, InfoHint, SegmentedRadioGroup, useReportUnsavedChanges } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 import type { DeadStockMode } from '@/db/repositories/constants';
 import { useDeadStockPolicy } from '@/features/reports/queries';
@@ -76,6 +76,8 @@ export function DeadStockEditor({ item }: { item: Item }) {
   }, [item.deadStockMode]);
 
   const dirty = mode !== item.deadStockMode;
+  // Let the dialog frame ask before discarding the draft on a dismissal (issue #576).
+  useReportUnsavedChanges(dirty);
 
   return (
     <div className="space-y-3">

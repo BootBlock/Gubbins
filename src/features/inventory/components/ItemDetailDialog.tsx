@@ -176,6 +176,11 @@ export function ItemDetailDialog({
       railAriaLabel="Item sections"
       idPrefix="item"
       tabs={railTabs}
+      // Cross-referencing between tabs mid-edit — "what did the supplier record say the part
+      // number was?", "is that the right photo?" — is how this dialog is meant to be used, and
+      // every facet editor here holds its draft locally until an explicit Save. Unmounting the
+      // panel behind you would throw that draft away without a word (issue #576).
+      keepPanelsMounted
     />
   );
 }
@@ -415,11 +420,11 @@ const SECTION_HINT_ACTIVITY =
 
 /**
  * The facet editors, grouped into six tabs. Built per-render (the editors
- * close over `item`); only the active tab's panel is mounted, so switching tabs
- * unmounts the others — each editor persists to the DB through its own hooks, so
- * there is no shared in-flight state to preserve across a switch. "Details" leads:
- * it is the edit-item home for the core identity fields (name, description, notes,
- * MPN, manufacturer, cost, category) plus the item's location.
+ * close over `item`); a panel is mounted the first time it is shown and then kept
+ * (`keepPanelsMounted`), because each editor holds its draft in local state until an
+ * explicit Save and unmounting the panel behind you would discard it (issue #576).
+ * "Details" leads: it is the edit-item home for the core identity fields (name,
+ * description, notes, MPN, manufacturer, cost, category) plus the item's location.
  *
  * Visibility runs on two axes, both resolved by the pure `isCapabilityVisible` seam:
  *

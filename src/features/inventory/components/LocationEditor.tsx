@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Button } from '@/components/foundry';
+import { Button, useReportUnsavedChanges } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useLocations } from '../queries';
@@ -44,6 +44,8 @@ export function LocationEditor({ item }: { item: Item }) {
   }, [rows, locationId, item.locationId]);
 
   const dirty = locationId !== item.locationId;
+  // Let the dialog frame ask before discarding the pending move on a dismissal (issue #576).
+  useReportUnsavedChanges(dirty);
   const save = () => move.mutate({ id: item.id, locationId });
 
   return (

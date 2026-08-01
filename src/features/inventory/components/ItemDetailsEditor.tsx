@@ -9,6 +9,7 @@ import {
   MoneyInput,
   SelectField,
   Textarea,
+  useReportUnsavedChanges,
 } from '@/components/foundry';
 import { CONVERTIBLE_TRACKING_MODES, type Item, type TrackingMode } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -94,9 +95,17 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const [barcodeScanOpen, setBarcodeScanOpen] = useState(false);
 
   // Re-sync the whole draft when the persisted item changes (open, after a save, or a sync
-  // landing). Keyed on `item` identity ALONE: a unit-preference change must not reach the text
-  // fields, or switching grams→ounces mid-edit would silently discard unsaved Notes and the
-  // other text drafts (issue #158). The measurements are re-expressed by the effects below.
+  // landing).
+  //
+  // Keyed on the persisted *values*, never on `item` identity — the same discipline
+  // `GaugeConfigEditor` follows, and for the same reason twice over. An optimistic mutation
+  // rebuilds the cached item (`{ ...item, ...changes }`), as does a background refetch, so an
+  // identity-keyed effect re-seeds on a write that touched none of these fields: saving the
+  // low-stock point on another tab would wipe a half-typed Name here, now that the panel stays
+  // mounted behind you. Listing the fields keeps the re-seed to writes that actually changed one.
+  //
+  // The unit preferences stay out of the deps for the separate #158 reason: switching grams→ounces
+  // must not reach the text fields. The measurements are re-expressed by the effects below.
   useEffect(() => {
     setName(item.name);
     setTrackingMode(item.trackingMode);
@@ -117,7 +126,24 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     // `weightUnit`/`dimensionUnit` are read for the initial re-expression but deliberately kept
     // out of the deps — a unit change is handled by the dedicated effects below, not here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item]);
+  }, [
+    item.name,
+    item.trackingMode,
+    item.description,
+    item.notes,
+    item.mpn,
+    item.manufacturer,
+    item.barcode,
+    item.serialNumber,
+    item.unitCost,
+    item.gauge?.costPerUnitOfMeasure,
+    item.categoryId,
+    item.isUnlimited,
+    item.weight,
+    item.width,
+    item.height,
+    item.depth,
+  ]);
 
   // Re-express the stored canonical weight when only the weight *unit* preference changes, so the
   // displayed number tracks grams→ounces without touching any other field (issue #158).
@@ -211,6 +237,9 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     depthState.dirty ||
     draft.categoryId !== (item.categoryId ?? null) ||
     draft.isUnlimited !== item.isUnlimited;
+  // Tell the dialog frame the draft is uncommitted, so Escape, a backdrop tap or Close asks
+  // before taking it away rather than discarding it silently (issue #576).
+  useReportUnsavedChanges(dirty);
   // A bad number blocks the save and shows why, rather than quietly clearing the stored
   // value — the failure branch of a "valid ? convert : null" guard reads as "clear this
   // field", which is not what typing `-5` over a stored weight means (issue #345).
