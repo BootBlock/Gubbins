@@ -564,13 +564,34 @@ describe('Modal — refusing a dismissal while work is in flight (#654)', () => 
     await waitFor(() => expect(announcement()).toBeNull());
   });
 
-  it('keeps focus in the dialog when the control the user pressed is disabled out from under them', () => {
+  it('starts each spell of work silent, so a second one never re-speaks the first’s refusal', async () => {
+    // Several dialogs run one operation after another behind a single opening — each maintenance
+    // task, a backup and then a restore. A refusal counted during the first would put the message
+    // into the region at the instant the second mounts it: a refusal nobody made, announced by a
+    // region that came into existence already holding it.
     render(<PropHarness />);
-    closeButton().focus();
-    // Going busy disables the ✕, and a browser blurs a disabled element — which would otherwise
-    // drop focus onto <body>, outside the dialog and outside its Tab trap.
     start();
-    expect(dialog()!.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(announcement()).toContain('can’t be closed'));
+    finish();
+
+    start();
+    expect(announcement()).toBe('');
+  });
+
+  it('pulls focus back inside when work starts with nothing in the dialog focused', () => {
+    render(<PropHarness />);
+    // What a browser leaves behind when the control under the user's finger is disabled: it
+    // blurs the element, dropping focus to <body> — outside the dialog, outside its Tab trap,
+    // and nowhere a screen reader can describe. Reproduced directly, because the test DOM does
+    // not blur a focused element on `disabled` the way a real browser does, so pressing the ✕
+    // and going busy would leave focus exactly where it started and assert nothing.
+    closeButton().focus();
+    (document.activeElement as HTMLElement).blur();
+    expect(dialog()!.contains(document.activeElement)).toBe(false);
+
+    start();
+    expect(document.activeElement).toBe(dialog());
   });
 
   it('holds the frame for a panel below it, which is where the flag usually lives', async () => {

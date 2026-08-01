@@ -143,7 +143,7 @@ function CycleCountBody({
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">No countable items in this location to audit.</p>
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={onClose}>
+              <Button variant="ghost" onClick={onClose} disabled={pending}>
                 Close
               </Button>
               <Button
@@ -166,7 +166,9 @@ function CycleCountBody({
                 {missing.length > 0 ? ` (${missing.length} missing)` : ''}
               </p>
               <div className="flex gap-2">
-                <Button variant="ghost" onClick={onClose}>
+                {/* Held with the frame's own routes: this calls the host's `onClose` directly, so
+                    it would take the dialog down mid-transaction without the guard ever seeing it. */}
+                <Button variant="ghost" onClick={onClose} disabled={pending}>
                   Cancel
                 </Button>
                 <Tooltip

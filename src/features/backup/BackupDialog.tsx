@@ -176,9 +176,16 @@ function TabButton({
       type="button"
       role="tab"
       aria-selected={active}
-      onClick={onClick}
-      disabled={disabled}
-      className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 ${
+      // `aria-disabled`, not the native attribute — the pattern the Foundry Menu already uses for
+      // a held row. A tab belongs to a composite widget, and `disabled` would take it out of the
+      // dialog's Tab cycle altogether (`focus-trap.ts` skips `[disabled]`), so the rail would
+      // disappear from the keyboard instead of saying why it is unavailable.
+      aria-disabled={disabled || undefined}
+      onClick={() => {
+        if (disabled) return;
+        onClick();
+      }}
+      className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:size-4 ${
         active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
       }`}
     >
@@ -332,7 +339,11 @@ function RestorePanel({
   // costs a re-pick to abandon, whereas from here on the current data is being replaced, and a
   // dismissal that unmounted this panel would take the failure path down with it — leaving a
   // restore that threw *after* the database was overwritten with nothing to report it (#654).
-  const restoring = busy && confirming;
+  //
+  // Its own state rather than anything derived from `confirming`: that flag answers "is the
+  // confirmation banner up", which the mode radios clear at will, so a guard resting on it could
+  // be switched off from the screen *while the database was being replaced*.
+  const [restoring, setRestoring] = useState(false);
   useReportDialogBusy(restoring);
 
   const resetMode = (next: RestoreMode) => {
@@ -379,6 +390,10 @@ function RestorePanel({
     if (!parsed) return;
     if (mode === 'replace' && !isReplaceConfirmed(replaceText)) return; // type-to-confirm guard
     setBusy(true);
+    // Raised for exactly as long as this runs, and lowered in the `finally` below so every way
+    // out of it — the abandoned save picker, an unsecured restore point, a throw, the reload —
+    // releases the dialog rather than only the paths that remembered to.
+    setRestoring(true);
     setError(null);
     try {
       // Safety net: capture the current data as a saved "restore point" *before* a destructive
@@ -432,6 +447,8 @@ function RestorePanel({
       setError(describeError(err, 'The restore failed.'));
       setBusy(false);
       setConfirming(false);
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -488,6 +505,10 @@ function RestorePanel({
             <legend className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               How to apply
             </legend>
+            {/* Held while anything is running, like every other control here. Changing the mode
+                calls `resetMode`, which takes the confirmation banner back down — harmless when
+                idle, but mid-restore it would swap the running operation's own controls for the
+                idle row and its enabled Close. */}
             <ModeOption
               name={modeName}
               value="merge"
@@ -495,6 +516,7 @@ function RestorePanel({
               onChange={() => resetMode('merge')}
               label="Merge into current data"
               hint="Add and update records from the backup; keep anything you've added since. Non-destructive."
+              disabled={busy}
             />
             <ModeOption
               name={modeName}
@@ -503,6 +525,7 @@ function RestorePanel({
               onChange={() => resetMode('replace')}
               label="Replace everything"
               hint="Erase current data and restore the backup exactly. We save a restore point first, but it cannot otherwise be undone."
+              disabled={busy}
             />
           </fieldset>
 
@@ -659,6 +682,7 @@ function ModeOption({
   onChange,
   label,
   hint,
+  disabled,
 }: {
   name: string;
   value: string;
@@ -666,15 +690,21 @@ function ModeOption({
   onChange: () => void;
   label: string;
   hint: string;
+  disabled?: boolean;
 }) {
   return (
     // eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested radio input is correctly associated; the label's text comes from the dynamic {label}/{hint} props, which the linter cannot resolve to a static string.
-    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-secondary/40">
+    <label
+      className={`flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-secondary/40 ${
+        disabled ? 'pointer-events-none opacity-50' : ''
+      }`}
+    >
       <Radio
         name={name}
         value={value}
         checked={checked}
         onChange={onChange}
+        disabled={disabled}
         className="mt-0.5"
         data-testid={`restore-mode-${value}`}
       />

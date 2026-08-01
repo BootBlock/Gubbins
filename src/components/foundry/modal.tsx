@@ -78,10 +78,11 @@ function DismissBlockedMessage() {
  * Ask before throwing away a draft (issue #576). Kept beside {@link Modal} rather than in its
  * own module because it *is* a Modal, and a separate file would put a cycle between the two.
  *
- * Its copy is the one part of the dialog frame that goes through `t()`, so the hook is called
- * here rather than in {@link Modal} itself: this component mounts only once someone tries to
- * dismiss unsaved work, which keeps the plain dialog frame — the one the crash screen's rescue
- * actions are drawn in — free of any dependency on the message catalog being loadable.
+ * Its copy goes through `t()`, so the hook is called here rather than in {@link Modal} itself:
+ * this component mounts only once someone tries to dismiss unsaved work, which keeps the plain
+ * dialog frame — the one the crash screen's rescue actions are drawn in — free of any dependency
+ * on the message catalog being loadable. {@link DismissBlockedMessage} is split out for the same
+ * reason; between them they are the whole of the frame's translated copy.
  */
 function UnsavedChangesPrompt({
   onKeepEditing,
@@ -174,14 +175,19 @@ export function Modal({
     onClose();
   }, [blocked, hasUnsavedChanges, onClose]);
   // A dialog closed out from under the question (a save landing, a route change) must not come
-  // back asking about a draft that is no longer on screen. The refusal count is reset with it so
-  // the next opening starts silent.
+  // back asking about a draft that is no longer on screen.
   useEffect(() => {
-    if (!open) {
-      setConfirmingClose(false);
-      setRefusals(0);
-    }
+    if (!open) setConfirmingClose(false);
   }, [open]);
+  // The refusal count is scoped to a *spell* of work, not to the dialog being open: several
+  // dialogs run one operation after another behind a single opening (each maintenance task, a
+  // backup then a restore). Left standing, a count from the first spell would put the message
+  // into the region at the instant the second one mounts it — announcing a refusal nobody made,
+  // and inserting region and message together, which is the announcement loss this is shaped to
+  // avoid.
+  useEffect(() => {
+    if (!blocked) setRefusals(0);
+  }, [blocked]);
 
   // Keep focus inside the dialog when work starts. The controls that go busy are disabled in the
   // same commit — this frame's ✕ among them — and a browser blurs a focused element the moment

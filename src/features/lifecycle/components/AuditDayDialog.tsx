@@ -22,6 +22,7 @@ import {
   Spinner,
   Tooltip,
   useBurst,
+  useDialogIsBusy,
   useReportDialogBusy,
   type SelectOption,
 } from '@/components/foundry';
@@ -298,6 +299,11 @@ function AuditProgressBar({ done, total }: { done: number; total: number }) {
 }
 
 function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: () => void }) {
+  // Both footer buttons below call the host's `onClose` directly, so they would take the walk down
+  // mid-transaction without the frame's guard ever seeing them. The location panel two levels
+  // down is what reports the authorise, so this reads the frame's answer rather than keeping a
+  // second copy of the flag (issue #654).
+  const busy = useDialogIsBusy();
   const session = useAuditSessionStore((s) => s.session)!;
   const recordCurrent = useAuditSessionStore((s) => s.recordCurrent);
   const skipCurrent = useAuditSessionStore((s) => s.skipCurrent);
@@ -366,13 +372,14 @@ function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: 
                 onAbandon();
                 onClose();
               }}
+              disabled={busy}
               data-testid="audit-abandon"
             >
               Abandon
             </Button>
           </span>
         </Tooltip>
-        <Button variant="ghost" size="sm" onClick={onClose} data-testid="audit-pause">
+        <Button variant="ghost" size="sm" onClick={onClose} disabled={busy} data-testid="audit-pause">
           Pause &amp; close
         </Button>
       </div>
