@@ -8,8 +8,9 @@
  *  - **A second tab left behind by an update.** Updates are `prompt`-mode: a new worker waits
  *    until someone clicks "Reload now". The tab that clicks reloads onto the new build — but a
  *    *second* Gubbins tab keeps running the old JavaScript while the newly-activated worker has
- *    already dropped the old build's chunks from the precache (`sw.ts` `pruneStalePrecache`).
- *    The old hashed file is gone from the host too, so the next lazy import in that tab 404s.
+ *    already deleted the whole precache that build's chunks lived in (each build owns one, named
+ *    after its manifest — `sw.ts`, `lib/precache-name.ts`). The old hashed file is gone from the
+ *    host too, so the next lazy import in that tab 404s.
  *  - **A half-propagated deploy**, where the shell is new but a chunk hasn't reached the CDN edge.
  *
  * In every case the tab is running code whose remaining pieces no longer exist, and the only
