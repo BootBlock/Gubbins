@@ -192,35 +192,17 @@ export function Select({
     },
   });
 
-  // True for the duration of a pointer press that started inside the popover — a click on an
-  // option, or a drag of the list's scrollbar. Both blur the filter field (neither target is
-  // focusable), and neither should be read as "the user has left the control".
-  const pressInList = useRef(false);
-
-  // Dismiss when a pointer goes down outside this control. The portalled listbox counts as
-  // "inside" so choosing an option doesn't self-dismiss first — but while a filter field owns the
-  // focus, the trigger's chrome around it counts as *outside*: clicking there would otherwise
-  // blur the field and leave an open list nothing could type into, dismiss or Escape (Escape
-  // would reach the enclosing Modal and close the whole dialog instead).
+  // Dismiss when a pointer goes down anywhere outside this control — counting the
+  // portalled listbox as "inside" so choosing an option doesn't self-dismiss first.
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
-      pressInList.current = Boolean(popoverRef.current?.contains(target));
-      if (pressInList.current) return;
-      const control = filtering ? filterRef.current : rootRef.current;
-      if (!control?.contains(target)) setOpen(false);
+      if (!rootRef.current?.contains(target) && !popoverRef.current?.contains(target)) setOpen(false);
     };
-    const onPointerUp = () => {
-      pressInList.current = false;
-    };
-    document.addEventListener('pointerdown', onPointerDown, true);
-    document.addEventListener('pointerup', onPointerUp, true);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown, true);
-      document.removeEventListener('pointerup', onPointerUp, true);
-    };
-  }, [open, filtering, popoverRef]);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open, popoverRef]);
 
   // The filter field only exists while the list is open, so focus has to follow it there. The
   // trigger box itself stays mounted throughout (it merely hands the combobox role over), which
@@ -419,8 +401,12 @@ export function Select({
           'flex h-10 w-full items-center gap-2 rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors',
           disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
           // While filtering the ring belongs to the input inside, which is always the focused one.
+          // The box also stops being a pointer target: a press on the padding around the field
+          // would otherwise blur it, and the close that followed would re-arm the box's own
+          // toggle in time for the *same* press's click to reopen the list and discard the query.
+          // Presses fall through to the dialog instead, which dismisses like any click outside.
           filtering
-            ? 'border-ring ring-[3px] ring-ring/40'
+            ? 'pointer-events-none border-ring ring-[3px] ring-ring/40'
             : 'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40',
           className,
         )}
@@ -441,12 +427,11 @@ export function Select({
             }}
             onKeyDown={onKeyDown}
             // Focus leaving the field is what ends the filtering session — Tab above relies on
-            // it. A press that began inside the list is not that: an option and the scrollbar are
-            // both unfocusable, so both blur the field without the user having gone anywhere.
-            onBlur={() => {
-              if (!pressInList.current) setOpen(false);
-            }}
-            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            // it. Nothing the user does *inside* the control blurs it: the popover swallows the
+            // focus change on mouse-down, and the trigger's chrome around this field is not a
+            // pointer target at all while it is here.
+            onBlur={() => setOpen(false)}
+            className="pointer-events-auto min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         ) : (
           <span
@@ -460,17 +445,20 @@ export function Select({
         )}
         {filtering ? (
           // With the box itself inert, the chevron carries the pointer affordance for closing the
-          // list. Not a tab stop (the input is the one stop) and mouse-down-preventDefault so it
+          // list. Not a tab stop (the input is the one stop), and mouse-down-preventDefault so it
           // never steals focus mid-filter — the same shape {@link Autocomplete}'s toggle uses.
+          // It closes on *click*, not on that mouse-down: closing early would re-arm the box's
+          // toggle in time for the same press's click to reopen what it just dismissed.
           <button
             type="button"
             tabIndex={-1}
             aria-hidden="true"
-            onMouseDown={(event) => {
-              event.preventDefault();
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => {
+              event.stopPropagation();
               close();
             }}
-            className="-mr-1 flex size-6 shrink-0 items-center justify-center text-muted-foreground"
+            className="pointer-events-auto -mr-1 flex size-6 shrink-0 items-center justify-center text-muted-foreground"
           >
             <ChevronDownIcon className="size-4 rotate-180 transition-transform" />
           </button>
@@ -492,9 +480,15 @@ export function Select({
 
       {open && popoverStyle
         ? createPortal(
+            // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- this handler adds no interaction, it *suppresses* one: nothing in the popover is focusable, so a press would move focus to the body and blur the filter field, dismissing the list before the click that chose an option could land. The interactive elements are the role="option" rows below, which keep full keyboard parity via the combobox's onKeyDown.
             <div
               ref={popoverRef}
               style={popoverStyle}
+              // On touch, suppressing it is the only option: the compatibility mouse events (and
+              // so the blur) arrive after the pointer sequence is already over, where no
+              // press-in-progress flag could still be watching. {@link Autocomplete} does the
+              // same, on its options, for the same reason.
+              onMouseDown={(event) => event.preventDefault()}
               className="z-[70] flex flex-col overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg animate-fade-in"
             >
               {/* Only ever a *filter* result: counted over the ordinary options and placed above

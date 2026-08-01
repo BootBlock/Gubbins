@@ -171,12 +171,30 @@ describe('Select — filtering a long list', () => {
     expect(onChange).toHaveBeenCalledWith('bin-2');
   });
 
-  it('dismisses when the pointer lands on the trigger chrome around the filter field', () => {
-    // That chrome is inert while filtering, so a click there would otherwise blur the field and
-    // strand an open list with the focus outside it — where Escape reaches the enclosing Modal.
+  it('makes the chrome around the filter field inert, so a press there cannot reopen what it closed', () => {
     renderSelect(longList);
     openList();
-    fireEvent.pointerDown(combobox().parentElement!);
+    const chrome = combobox().parentElement!;
+
+    // Not a pointer target at all: a press falls through to the page, which dismisses like any
+    // click outside. Were the box still clickable, the dismissal would re-arm its own toggle in
+    // time for the *same* press's click to reopen the list — discarding the typed query with it.
+    expect(chrome.className).toContain('pointer-events-none');
+    fireEvent.click(chrome);
+    expect(screen.getByRole('listbox')).toBeTruthy();
+  });
+
+  it('swallows the focus change on a press inside the list, so a touch tap still chooses', () => {
+    const onChange = renderSelect(longList);
+    openList();
+    const option = screen.getByRole('option', { name: 'Bin 2' });
+
+    // `false` means the default action — moving focus off the filter field — was prevented.
+    // Without that, a tap blurs the field via the compatibility mouse events that arrive *after*
+    // the pointer sequence ends, closing the list before its click lands: nothing gets chosen.
+    expect(fireEvent.mouseDown(option)).toBe(false);
+    fireEvent.click(option);
+    expect(onChange).toHaveBeenCalledWith('bin-2');
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 
@@ -194,7 +212,13 @@ describe('Select — filtering a long list', () => {
     openList();
     const chevron = combobox().parentElement?.querySelector('button');
     expect(chevron).toBeTruthy();
-    fireEvent.mouseDown(chevron!);
+
+    // The press itself only holds the focus in place — closing here would re-arm the trigger's
+    // own toggle in time for this same press's click to reopen the list.
+    expect(fireEvent.mouseDown(chevron!)).toBe(false);
+    expect(screen.getByRole('listbox')).toBeTruthy();
+
+    fireEvent.click(chevron!);
     expect(screen.queryByRole('listbox')).toBeNull();
     expect(document.activeElement).toBe(combobox());
   });
