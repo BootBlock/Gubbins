@@ -16,35 +16,55 @@ function images(n: number): OpfsImageFile[] {
 }
 
 /**
- * A stand-in OPFS `images/` directory. `failWrite` / `failClose` name the files whose stream
- * misbehaves — a full disk fails the write, and a write that succeeded can still fail to commit
- * on close, which is why the count follows the close rather than the write.
+ * A stand-in OPFS `images/` directory, faithful on the point that matters here: opening a
+ * handle with `create: true` mints the (empty) directory entry immediately, before any byte is
+ * written, and only `close()` commits the staged bytes to it.
+ *
+ * `failWrite` / `failClose` name the files whose stream misbehaves — a full disk fails the
+ * write, and a write that succeeded can still fail to commit on close.
  */
 function fakeOpfs(
-  options: { failWrite?: readonly string[]; failClose?: readonly string[]; noDirectory?: boolean } = {},
+  options: {
+    failWrite?: readonly string[];
+    failClose?: readonly string[];
+    noDirectory?: boolean;
+    /** Files already on disk before the run, as if from an earlier restore. */
+    existing?: Record<string, Uint8Array>;
+  } = {},
 ) {
-  const stored = new Map<string, Uint8Array>();
+  const stored = new Map<string, Uint8Array>(Object.entries(options.existing ?? {}));
   const aborted: string[] = [];
 
   const dir = {
-    getFileHandle: async (name: string) => ({
-      createWritable: async () => {
-        let staged: Uint8Array | undefined;
-        return {
-          write: async (bytes: Uint8Array) => {
-            if (options.failWrite?.includes(name)) throw new Error('QuotaExceededError');
-            staged = bytes;
-          },
-          close: async () => {
-            if (options.failClose?.includes(name)) throw new Error('QuotaExceededError');
-            stored.set(name, staged!);
-          },
-          abort: async () => {
-            aborted.push(name);
-          },
-        };
-      },
-    }),
+    getFileHandle: async (name: string, opts?: { create?: boolean }) => {
+      if (!stored.has(name)) {
+        if (!opts?.create) throw new Error('NotFoundError');
+        stored.set(name, new Uint8Array()); // the entry exists from this moment, and is empty
+      }
+      return {
+        getFile: async () => ({ size: stored.get(name)!.length }),
+        createWritable: async () => {
+          let staged: Uint8Array | undefined;
+          return {
+            write: async (bytes: Uint8Array) => {
+              if (options.failWrite?.includes(name)) throw new Error('QuotaExceededError');
+              staged = bytes;
+            },
+            close: async () => {
+              if (options.failClose?.includes(name)) throw new Error('QuotaExceededError');
+              stored.set(name, staged!);
+            },
+            // Discards the scratch copy only — whatever the file already held survives.
+            abort: async () => {
+              aborted.push(name);
+            },
+          };
+        },
+      };
+    },
+    removeEntry: async (name: string) => {
+      stored.delete(name);
+    },
   };
 
   vi.stubGlobal('navigator', {
@@ -71,8 +91,9 @@ describe('writeImageFiles', () => {
 
     const report = await writeImageFiles(images(3));
 
-    expect(report).toEqual({ written: 3, failed: [], failure: undefined });
+    expect(report).toEqual({ failed: [], failure: undefined });
     expect([...stored.keys()]).toEqual(['image-0.webp', 'image-1.webp', 'image-2.webp']);
+    expect(stored.get('image-1.webp')).toEqual(new Uint8Array([1]));
   });
 
   it('carries on past a file that will not write, so the rest still land', async () => {
@@ -82,7 +103,6 @@ describe('writeImageFiles', () => {
 
     const report = await writeImageFiles(images(3));
 
-    expect(report.written).toBe(2);
     expect(report.failed).toEqual(['image-1.webp']);
     expect(report.failure).toBeInstanceOf(Error);
     expect([...stored.keys()]).toEqual(['image-0.webp', 'image-2.webp']);
@@ -98,14 +118,39 @@ describe('writeImageFiles', () => {
     expect(aborted).toEqual(['image-0.webp']);
   });
 
-  it('does not count a file whose close failed — the bytes are not committed until then', async () => {
+  it('leaves no empty file behind, which would read as a present-but-broken image', async () => {
+    // Opening the handle mints the entry before any byte is written, so a failed write would
+    // otherwise leave a 0-byte file — and `readImageBlob` returns an empty blob for that rather
+    // than the `undefined` that makes callers fall back to the stored thumbnail.
+    const { stored } = fakeOpfs({ failWrite: ['image-0.webp'], failClose: ['image-1.webp'] });
+
+    await writeImageFiles(images(3));
+
+    expect(stored.has('image-0.webp')).toBe(false);
+    expect(stored.has('image-1.webp')).toBe(false);
+    expect(stored.has('image-2.webp')).toBe(true);
+  });
+
+  it('keeps an image the device already had when the write over it fails', async () => {
+    // The swap copy never reaches the file, so the old bytes survive the abort — a merge
+    // restore that runs out of room must not delete the photos already there.
+    const kept = new Uint8Array([9, 9, 9]);
+    const { stored } = fakeOpfs({ failWrite: ['image-0.webp'], existing: { 'image-0.webp': kept } });
+
+    const report = await writeImageFiles(images(1));
+
+    expect(report.failed).toEqual(['image-0.webp']);
+    expect(stored.get('image-0.webp')).toBe(kept);
+  });
+
+  it('does not treat a file whose close failed as written — the bytes commit on close', async () => {
     const { stored } = fakeOpfs({ failClose: ['image-0.webp'] });
 
     const report = await writeImageFiles(images(2));
 
-    expect(report.written).toBe(1);
     expect(report.failed).toEqual(['image-0.webp']);
     expect(stored.has('image-0.webp')).toBe(false);
+    expect(stored.has('image-1.webp')).toBe(true);
   });
 
   it('reports the whole set instead of throwing when the directory cannot be opened', async () => {
@@ -113,13 +158,13 @@ describe('writeImageFiles', () => {
 
     const report = await writeImageFiles(images(2));
 
-    expect(report.written).toBe(0);
     expect(report.failed).toEqual(['image-0.webp', 'image-1.webp']);
+    expect(report.failure).toBeInstanceOf(Error);
   });
 
   it('touches OPFS at all only when there is something to write', async () => {
     fakeOpfs({ noDirectory: true });
 
-    expect(await writeImageFiles([])).toEqual({ written: 0, failed: [] });
+    expect(await writeImageFiles([])).toEqual({ failed: [] });
   });
 });

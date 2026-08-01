@@ -195,10 +195,8 @@ export async function imagesBytesOnDisk(): Promise<number | null> {
   }
 }
 
-/** What a re-hydration run managed: the files that landed, and the ones that did not. */
+/** What a re-hydration run could not manage: the files that did not land, and why. */
 export interface ImageWriteReport {
-  /** How many files were written and closed successfully. */
-  readonly written: number;
   /** The names of the files that could not be written, in the order they were attempted. */
   readonly failed: readonly string[];
   /** The first failure, so a caller can chain it as a `cause` for diagnostics. */
@@ -220,7 +218,7 @@ export interface ImageWriteReport {
  * sizes vary, so the file after the one that exhausted the quota may well still fit.
  */
 export async function writeImageFiles(files: readonly OpfsImageFile[]): Promise<ImageWriteReport> {
-  if (files.length === 0) return { written: 0, failed: [] };
+  if (files.length === 0) return { failed: [] };
 
   let dir: FileSystemDirectoryHandle;
   try {
@@ -228,10 +226,9 @@ export async function writeImageFiles(files: readonly OpfsImageFile[]): Promise<
   } catch (error) {
     // No directory means no file can land; report the whole set rather than throwing, so the
     // caller still finishes and reports the restore that already committed.
-    return { written: 0, failed: files.map((file) => file.name), failure: error };
+    return { failed: files.map((file) => file.name), failure: error };
   }
 
-  let written = 0;
   const failed: string[] = [];
   let failure: unknown;
   for (const { name, bytes } of files) {
@@ -240,10 +237,9 @@ export async function writeImageFiles(files: readonly OpfsImageFile[]): Promise<
       const writable = await handle.createWritable();
       try {
         await writable.write(bytes as BufferSource);
-        // Counted only once the stream closes: the bytes are not committed to the file until
-        // then, so a close that fails is a file that did not land.
+        // The bytes are not committed to the file until the stream closes, so a close that
+        // fails is a file that did not land — hence inside the try, not after it.
         await writable.close();
-        written += 1;
       } catch (error) {
         // The stream holds a scratch copy until it is closed or aborted, and `close()` on an
         // errored stream rejects in turn — so `abort()` is what releases the space here, which
@@ -254,9 +250,35 @@ export async function writeImageFiles(files: readonly OpfsImageFile[]): Promise<
     } catch (error) {
       failed.push(name);
       failure ??= error;
+      await discardEmptyFile(dir, name);
     }
   }
-  return { written, failed, failure };
+  return { failed, failure };
+}
+
+/**
+ * Remove `name` from the images directory if the failed write left it empty.
+ *
+ * `getFileHandle(…, { create: true })` mints the directory entry before a single byte is
+ * written, and aborting the stream discards only its scratch copy — so without this a write
+ * that failed leaves a zero-byte file behind. That is *worse* than no file at all:
+ * {@link readImageBlob} would hand back an empty blob rather than the `undefined` that makes
+ * callers fall back to the stored thumbnail, so a photo the device merely lacked would render
+ * broken instead, and the next backup would carry the empty file forward.
+ *
+ * Only an empty entry is removed. An aborted write over an image this device already held
+ * leaves the original bytes intact (the swap copy never reaches the file), and those must
+ * survive — a merge restore that ran out of room must not delete the photos already there.
+ */
+async function discardEmptyFile(dir: FileSystemDirectoryHandle, name: string): Promise<void> {
+  try {
+    const handle = await dir.getFileHandle(name, { create: false });
+    if ((await handle.getFile()).size > 0) return;
+    await dir.removeEntry(name);
+  } catch {
+    // No entry (the failure came before one was made), or OPFS refused — either way there is
+    // nothing useful to do, and this must never displace the write failure being reported.
+  }
 }
 
 /**

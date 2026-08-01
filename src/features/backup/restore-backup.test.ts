@@ -67,10 +67,9 @@ function parsedBackup(images: number, sqlite: Uint8Array | null = null): ParsedB
   };
 }
 
-/** What {@link writeImageFiles} reports when `missed` of `total` files would not write. */
-function imageReport(total: number, missed: number) {
+/** What {@link writeImageFiles} reports when `missed` files would not write. */
+function imageReport(missed: number) {
   return {
-    written: total - missed,
     failed: Array.from({ length: missed }, (_, i) => `image-${i}.webp`),
     failure: missed > 0 ? new Error('QuotaExceededError') : undefined,
   };
@@ -79,7 +78,7 @@ function imageReport(total: number, missed: number) {
 beforeEach(() => {
   vi.clearAllMocks();
   applySettings.mockReturnValue(0);
-  writeImageFiles.mockResolvedValue(imageReport(0, 0));
+  writeImageFiles.mockResolvedValue(imageReport(0));
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -89,7 +88,7 @@ afterEach(() => {
 
 describe('restoreBackup — images that will not write (issue #639)', () => {
   it('reports a merge that landed minus some images, rather than throwing', async () => {
-    writeImageFiles.mockResolvedValue(imageReport(4, 3));
+    writeImageFiles.mockResolvedValue(imageReport(3));
 
     const outcome = await restoreBackup(parsedBackup(4), 'merge');
 
@@ -100,7 +99,7 @@ describe('restoreBackup — images that will not write (issue #639)', () => {
   });
 
   it('still requires the reload after an exact-copy replace, so the disposed worker comes back', async () => {
-    writeImageFiles.mockResolvedValue(imageReport(2, 1));
+    writeImageFiles.mockResolvedValue(imageReport(1));
 
     const outcome = await restoreBackup(parsedBackup(2, SQLITE_BYTES), 'replace');
 
@@ -113,7 +112,7 @@ describe('restoreBackup — images that will not write (issue #639)', () => {
   });
 
   it('reports the shortfall from a wipe-and-clone replace too, without a reload', async () => {
-    writeImageFiles.mockResolvedValue(imageReport(2, 2));
+    writeImageFiles.mockResolvedValue(imageReport(2));
 
     const outcome = await restoreBackup(parsedBackup(2), 'replace');
 
@@ -122,7 +121,7 @@ describe('restoreBackup — images that will not write (issue #639)', () => {
   });
 
   it('says nothing about images when they all land', async () => {
-    writeImageFiles.mockResolvedValue(imageReport(3, 0));
+    writeImageFiles.mockResolvedValue(imageReport(0));
 
     const outcome = await restoreBackup(parsedBackup(3), 'merge');
 
@@ -139,7 +138,7 @@ describe('restoreBackup — images that will not write (issue #639)', () => {
 
   it('still surfaces a stale journal, which must stop the reload rather than defer it (#203)', async () => {
     overwriteDatabaseFile.mockRejectedValueOnce(new StaleJournalError('gubbins.sqlite3-wal'));
-    writeImageFiles.mockResolvedValue(imageReport(2, 1));
+    writeImageFiles.mockResolvedValue(imageReport(1));
 
     await expect(restoreBackup(parsedBackup(2, SQLITE_BYTES), 'replace')).rejects.toBeInstanceOf(
       StaleJournalError,

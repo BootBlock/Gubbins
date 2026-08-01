@@ -288,10 +288,12 @@ describe('restoreArchive — images that will not write (issue #639)', () => {
   });
 
   it('still refuses to reload when the database landed beside a stale journal (#203)', async () => {
-    // The two post-commit hazards together: the images are written either way, but the journal
-    // is the one that must stop the reload outright rather than merely defer it.
+    // Deliberately a *clean* image run: with images missed as well, the reload would be blocked
+    // by the shortfall alone and this would pass however the two were ordered. Every image
+    // landing leaves the stale journal as the only thing that can stop it — which is the
+    // ordering #203 depends on, since reloading beside a hot journal rolls the restore back.
     overwriteDatabaseFile.mockRejectedValueOnce(new StaleJournalError('gubbins.sqlite3-wal'));
-    writeImageFiles.mockResolvedValue({ written: 1, failed: ['two.webp'] });
+    writeImageFiles.mockResolvedValue({ failed: [] });
 
     await expect(
       restoreArchive(archiveFile({ [ARCHIVE_DB_ENTRY]: fakeSqlite(), ...IMAGES }), { save: SAVE }),
