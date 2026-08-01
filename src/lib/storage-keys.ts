@@ -239,6 +239,16 @@ export const STORAGE_KEYS = [
     backupIncluded: false,
   },
   {
+    key: 'gubbins:count-drafts',
+    store: 'useCountDraftStore',
+    storage: 'local',
+    eraseGroup: 'local-ui',
+    backupIncluded: false,
+    // Never backed up: an unfinished count sheet describes what is on *this* device's shelves
+    // right now, and is cleared the moment its location is authorised — restoring one onto
+    // another machine would offer to resume a walk that machine never started.
+  },
+  {
     key: 'gubbins:milestones',
     store: 'useMilestonesStore',
     storage: 'local',

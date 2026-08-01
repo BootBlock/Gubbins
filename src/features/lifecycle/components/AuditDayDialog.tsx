@@ -10,7 +10,7 @@
  * All the progress/scope/summary arithmetic lives in the pure, unit-tested
  * `audit-session` seam; this component is only the glue and the accessible presentation.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { plural } from '@/lib/plural';
 import {
@@ -30,8 +30,10 @@ import { useLocationTree } from '@/features/inventory/queries';
 import { useFormatters } from '@/lib/useFormatters';
 import { CycleCountProvider } from '../CycleCountContext';
 import { useLocationCycleCount } from '../useLocationCycleCount';
+import { CountDraftNotice } from './CountDraftNotice';
 import { CycleCountLines } from './CycleCountLines';
 import { useAuditSessionStore } from '../useAuditSessionStore';
+import { useCountDraftStore } from '../useCountDraftStore';
 import {
   buildScope,
   progress,
@@ -69,8 +71,19 @@ function walkableWithDepth(tree: readonly LocationTreeNode[]): WalkableLocation[
 export function AuditDayDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const session = useAuditSessionStore((s) => s.session);
   const resume = useAuditSessionStore((s) => s.resume);
-  const abandon = useAuditSessionStore((s) => s.abandon);
+  const abandonSession = useAuditSessionStore((s) => s.abandon);
+  const clearDrafts = useCountDraftStore((s) => s.clearMany);
   const { burst } = useBurst();
+
+  // Ending the walk ends its unfinished sheets too (issue #587). Each location already drops
+  // its saved counts as it is authorised or skipped, so this is about the one in hand — and
+  // about a scope walked away from with several left part-counted. Abandon says it discards the
+  // walk's progress; leaving the sheets behind to reappear inside the *next* stock-take would
+  // make that untrue.
+  const abandon = useCallback(() => {
+    clearDrafts(useAuditSessionStore.getState().session?.scope.map((loc) => loc.id) ?? []);
+    abandonSession();
+  }, [abandonSession, clearDrafts]);
 
   // On (re)open, land an in-progress walk on the first location still needing work so a
   // resumed audit picks up where it left off rather than wherever the index was persisted.
@@ -113,7 +126,7 @@ export function AuditDayDialog({ open, onClose }: { open: boolean; onClose: () =
         : 'Start a stock-take';
   const description =
     stage === 'scope'
-      ? "A stock-take means physically counting what you actually have, and letting Gubbins update its records to match — catching drift from things being used, moved, damaged or mis-logged along the way. This guided walk takes you through your locations one at a time: count what's there, then reconcile any difference, before moving to the next. Your progress is saved as you go, so you can pause partway through and pick up right where you left off."
+      ? "A stock-take means physically counting what you actually have, and letting Gubbins update its records to match — catching drift from things being used, moved, damaged or mis-logged along the way. This guided walk takes you through your locations one at a time: count what's there, then reconcile any difference, before moving to the next. Your progress is saved as you go — including the counts you've typed but not yet authorised — so you can pause partway through and pick up right where you left off."
       : undefined;
 
   // Announce completion as text for screen-reader users (WCAG 4.1.3): the milestone burst is
@@ -300,6 +313,7 @@ function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: 
   const session = useAuditSessionStore((s) => s.session)!;
   const recordCurrent = useAuditSessionStore((s) => s.recordCurrent);
   const skipCurrent = useAuditSessionStore((s) => s.skipCurrent);
+  const clearDraft = useCountDraftStore((s) => s.clear);
 
   const prog = progress(session);
   const tally = summarise(session);
@@ -325,6 +339,9 @@ function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: 
 
   const skip = () => {
     setAnnouncement(`Skipped ${current.name}.`);
+    // A skipped location is done with, so its unfinished sheet goes too — otherwise the walk
+    // would offer to restore a count for somewhere the auditor decided not to count.
+    clearDraft(current.id);
     skipCurrent();
   };
 
@@ -354,7 +371,7 @@ function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: 
 
       <div className="flex items-center justify-between border-t border-border pt-3">
         <Tooltip
-          content="Abandon the whole stock-take and discard its progress. Already-authorised reconciliations stay applied."
+          content="Abandon the whole stock-take and discard its progress, including any counts entered but not yet authorised. Already-authorised reconciliations stay applied."
           triggerTabIndex={-1}
         >
           <span>
@@ -371,9 +388,16 @@ function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: 
             </Button>
           </span>
         </Tooltip>
-        <Button variant="ghost" size="sm" onClick={onClose} data-testid="audit-pause">
-          Pause &amp; close
-        </Button>
+        <Tooltip
+          content="Stop here and come back later. The walk keeps its place, and the counts entered at this location are kept with it — nothing is written to the ledger until you authorise."
+          triggerTabIndex={-1}
+        >
+          <span>
+            <Button variant="ghost" size="sm" onClick={onClose} data-testid="audit-pause">
+              Pause &amp; close
+            </Button>
+          </span>
+        </Tooltip>
       </div>
 
       {/* Polite live region announcing step changes and reconciliation outcomes. */}
@@ -394,7 +418,7 @@ function AuditLocationPanel({
   onSkip: () => void;
 }) {
   const count = useLocationCycleCount(location);
-  const { isLoading, isEmpty, missing, totalToApply, pending } = count;
+  const { isLoading, isEmpty, missing, totalToApply, pending, restored, clearSheet } = count;
 
   // Every "done with this location" path — an empty location, a clean count, or one with
   // variances — funnels through `authorise()` so the durable `lastCountedAt` stamp (spec
@@ -410,67 +434,71 @@ function AuditLocationPanel({
     onFinish(result.adjustmentsMade > 0 ? 'reconciled' : 'counted', result, message);
   };
 
-  if (isLoading) {
-    return <p className="py-6 text-center text-sm text-muted-foreground">Loading items…</p>;
-  }
-
-  if (isEmpty) {
-    return (
-      <div className="space-y-4 py-2">
-        <p className="text-sm text-muted-foreground">Nothing to count in this location.</p>
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onSkip} data-testid="audit-skip">
-            Skip
-          </Button>
-          <Button onClick={() => void finishLocation()} disabled={pending} data-testid="audit-continue">
-            <ChevronRightIcon />
-            Continue
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   const hasVariances = totalToApply > 0;
 
+  // One return, with the restore notice *outside* the loading / empty / counting branch. Its
+  // live region has to pre-exist the message it carries to be announced (see the LiveRegion
+  // primitive), and the sheet is only seeded once the location's stock has loaded — so a region
+  // living inside the counting branch would mount already-populated and stay silent.
   return (
-    <div className="space-y-4">
-      <CycleCountLines count={count} />
+    <>
+      <CountDraftNotice restored={restored} onDiscard={clearSheet} />
 
-      <div className="flex items-center justify-between pt-1">
-        <p className="text-xs text-muted-foreground">
-          {totalToApply} {plural(totalToApply, 'adjustment')} to authorise
-          {missing.length > 0 ? ` (${missing.length} missing)` : ''}
-        </p>
-        <div className="flex gap-2">
-          <Button variant="ghost" onClick={onSkip} data-testid="audit-skip">
-            Skip
-          </Button>
-          {hasVariances ? (
-            <Tooltip
-              content="Authorise this location's variances (writing the reconciliation adjustments), then move to the next location."
-              triggerTabIndex={-1}
-            >
-              <span>
-                <Button
-                  onClick={() => void finishLocation()}
-                  disabled={pending}
-                  data-testid="audit-authorise-continue"
-                >
-                  <CheckIcon />
-                  Authorise &amp; continue ({totalToApply})
-                </Button>
-              </span>
-            </Tooltip>
-          ) : (
+      {isLoading ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">Loading items…</p>
+      ) : isEmpty ? (
+        <div className="space-y-4 py-2">
+          <p className="text-sm text-muted-foreground">Nothing to count in this location.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onSkip} data-testid="audit-skip">
+              Skip
+            </Button>
             <Button onClick={() => void finishLocation()} disabled={pending} data-testid="audit-continue">
               <ChevronRightIcon />
-              Mark counted &amp; continue
+              Continue
             </Button>
-          )}
+          </div>
         </div>
-      </div>
-    </div>
+      ) : (
+        <div className="space-y-4">
+          <CycleCountLines count={count} />
+
+          <div className="flex items-center justify-between pt-1">
+            <p className="text-xs text-muted-foreground">
+              {totalToApply} {plural(totalToApply, 'adjustment')} to authorise
+              {missing.length > 0 ? ` (${missing.length} missing)` : ''}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={onSkip} data-testid="audit-skip">
+                Skip
+              </Button>
+              {hasVariances ? (
+                <Tooltip
+                  content="Authorise this location's variances (writing the reconciliation adjustments), then move to the next location."
+                  triggerTabIndex={-1}
+                >
+                  <span>
+                    <Button
+                      onClick={() => void finishLocation()}
+                      disabled={pending}
+                      data-testid="audit-authorise-continue"
+                    >
+                      <CheckIcon />
+                      Authorise &amp; continue ({totalToApply})
+                    </Button>
+                  </span>
+                </Tooltip>
+              ) : (
+                <Button onClick={() => void finishLocation()} disabled={pending} data-testid="audit-continue">
+                  <ChevronRightIcon />
+                  Mark counted &amp; continue
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

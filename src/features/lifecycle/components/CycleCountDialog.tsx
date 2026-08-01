@@ -17,6 +17,7 @@ import { plural } from '@/lib/plural';
 import { Button, LiveRegion, Modal, Tooltip, useBurst } from '@/components/foundry';
 import { CycleCountProvider } from '../CycleCountContext';
 import { useLocationCycleCount } from '../useLocationCycleCount';
+import { CountDraftNotice } from './CountDraftNotice';
 import { CycleCountLines } from './CycleCountLines';
 
 export function CycleCountDialog({
@@ -51,7 +52,7 @@ function CycleCountBody({
   onClose: () => void;
 }) {
   const count = useLocationCycleCount(location);
-  const { isLoading, isEmpty, drift, missing, totalToApply, pending } = count;
+  const { isLoading, isEmpty, drift, missing, totalToApply, pending, restored, clearSheet } = count;
   const [applied, setApplied] = useState<number | null>(null);
 
   // Celebrate a completed count with a one-shot milestone burst (visual-flair F4) as the result
@@ -110,6 +111,14 @@ function CycleCountBody({
       </LiveRegion>
 
       {/*
+        Sits outside the `space-y-5` wrapper for the same reason as the region above — its own
+        live region is `sr-only`, so inside the stack it would push the primer down by a
+        phantom gap on every fresh count. Dropped once the count is applied: the sheet has been
+        committed, and the result view says so.
+      */}
+      <CountDraftNotice restored={applied === null ? restored : null} onDiscard={clearSheet} />
+
+      {/*
         The intro primer and the state below it (loading / empty / counting / result) are stacked
         with a `space-y-5` gap so the bordered primer card never crowds the section beneath it —
         e.g. the "Serialised instances" heading, which otherwise sat flush against the card's
@@ -160,9 +169,22 @@ function CycleCountBody({
                 {missing.length > 0 ? ` (${missing.length} missing)` : ''}
               </p>
               <div className="flex gap-2">
-                <Button variant="ghost" onClick={onClose}>
-                  Cancel
-                </Button>
+                {/*
+                  "Close", not "Cancel": the sheet is saved as it is typed (issue #587), so
+                  leaving no longer throws the count away and a button promising to cancel it
+                  would now be the lie in the other direction. The tooltip says what is kept,
+                  and the notice at the top offers to discard it on the way back in.
+                */}
+                <Tooltip
+                  content="Leave without authorising. The counts entered here are kept, so reopening this location picks them back up."
+                  triggerTabIndex={-1}
+                >
+                  <span>
+                    <Button variant="ghost" onClick={onClose} data-testid="cycle-count-close">
+                      Close
+                    </Button>
+                  </span>
+                </Tooltip>
                 <Tooltip
                   content={
                     totalToApply > 0
