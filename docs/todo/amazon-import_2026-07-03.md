@@ -2,9 +2,9 @@
 
 > **Status:** 📘 REFERENCE — the work shipped; kept as the durable reference for the import format.
 
-> **Status: shipped.** The Amazon-import work is complete; this file is now the durable
-> decision record (what was built, what was declined, and where the code lives). The original
-> investigation prose has been folded into the code it produced. Nothing here is actionable.
+> This file is the durable decision record (what was built, what was declined, and where the
+> code lives). The original investigation prose has been folded into the code it produced.
+> Nothing here is actionable.
 
 ## The problem (unchanged framing)
 
