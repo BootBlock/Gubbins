@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { FormField, Input } from '@/components/foundry';
 import { ChevronRightIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
+import { assertExhaustive } from '@/lib/exhaustive';
 import { cn } from '@/lib/utils';
 import { volumeUnitLabel, type VolumeUnit } from '@/lib/volume';
 import { PACKING_PERCENT_MAX, PACKING_PERCENT_MIN } from '../measure-input';
@@ -51,12 +52,25 @@ export function LocationAdvancedVolumeFields({
       })
     : undefined;
 
-  const usableIssue =
-    usableVolumeState.issue === null
-      ? undefined
-      : usableVolumeState.issue === 'negative'
-        ? t('inventory.location.measure.errorNegative')
-        : t('inventory.location.measure.errorNaN');
+  // A location's own copy namespace keeps this off the shared `measureIssueText`, so the switch
+  // carries its own exhaustiveness guard: a new `MeasureIssue` must be worded here too, rather
+  // than silently falling through to "that isn't a number" (issue #355 / #675).
+  const usableIssue = ((): string | undefined => {
+    switch (usableVolumeState.issue) {
+      case null:
+        return undefined;
+      case 'negative':
+        return t('inventory.location.measure.errorNegative');
+      // Unreachable today: this draft comes from `resolveVolume` → `parseOptionalNumber`, which
+      // never reports it. A usable volume has no "must exceed zero" rule to word it against.
+      case 'not-positive':
+      case 'not-a-number':
+        return t('inventory.location.measure.errorNaN');
+      default:
+        assertExhaustive(usableVolumeState.issue);
+        return t('inventory.location.measure.errorNaN');
+    }
+  })();
 
   // Keep the section expanded whenever a field has a blocking error — its error text lives inside
   // the disclosure, so collapsing it while invalid would leave the disabled Save/Create button

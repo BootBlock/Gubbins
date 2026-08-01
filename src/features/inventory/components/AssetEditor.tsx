@@ -89,12 +89,10 @@ export function AssetEditor({ item }: { item: Item }) {
 
   const valid = priceEntry.issue === null && monthsEntry.issue === null;
 
+  // The save is wholesale, so one unusable field blocks the lot (via the button's `disabled`,
+  // as in `ItemDetailsEditor`): letting the dates through would carry the fallback price with
+  // them and re-save a figure the user is mid-way through changing.
   const save = () => {
-    // The save is wholesale, so one unusable field has to block the lot: writing the dates
-    // through would carry the fallback price with them and re-save a figure the user is
-    // mid-way through changing. Guarded here as well as on the button, so the rule doesn't
-    // depend on the two staying in step.
-    if (!valid) return;
     update.mutate({
       id: item.id,
       input: {

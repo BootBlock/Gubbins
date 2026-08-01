@@ -1,5 +1,6 @@
 import { FormField, InfoHint, Input } from '@/components/foundry';
 import { useT } from '@/features/i18n';
+import { assertExhaustive } from '@/lib/exhaustive';
 import { useFormatters } from '@/lib/useFormatters';
 import type { DimensionUnit } from '@/lib/dimensions';
 import type { MeasureDraft } from './measure-draft';
@@ -42,13 +43,26 @@ export function LocationDimensionsFields({
   const fmt = useFormatters();
   const t = useT();
   // A bad entry blocks the save and says why, rather than silently clearing the stored value —
-  // the same clear-vs-error discipline the item editor's measurements use (issue #345).
-  const issueText = (state: MeasureDraft): string | undefined =>
-    state.issue === null
-      ? undefined
-      : state.issue === 'negative'
-        ? t('inventory.location.measure.errorNegative')
-        : t('inventory.location.measure.errorNaN');
+  // the same clear-vs-error discipline the item editor's measurements use (issue #345). A
+  // location's own copy namespace keeps this off the shared `measureIssueText`, so the switch
+  // carries its own exhaustiveness guard: a new `MeasureIssue` must be worded here too, not
+  // silently fall through to "that isn't a number" (issue #355 / #675).
+  const issueText = (state: MeasureDraft): string | undefined => {
+    switch (state.issue) {
+      case null:
+        return undefined;
+      case 'negative':
+        return t('inventory.location.measure.errorNegative');
+      // Unreachable today: these drafts come from `resolveDimension` → `parseOptionalNumber`,
+      // which never reports it. A dimension has no "must exceed zero" rule to word it against.
+      case 'not-positive':
+      case 'not-a-number':
+        return t('inventory.location.measure.errorNaN');
+      default:
+        assertExhaustive(state.issue);
+        return t('inventory.location.measure.errorNaN');
+    }
+  };
   // While any field is invalid its draft keeps the *stored* value (so nothing is erased), which
   // would otherwise let the preview show a volume that doesn't match what's on screen. Suppress
   // it until all three parse, so the number never contradicts a visible error.

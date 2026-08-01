@@ -80,8 +80,13 @@ describe('RevaluationEditor', () => {
 
     expect(screen.getByRole('alert').textContent).toMatch(/number/i);
     expect(recordButton()).toHaveProperty('disabled', true);
+
+    // Correcting it clears the error and releases the figure — the recovery the old silent
+    // disable gave no route to.
+    fireEvent.change(amount(), { target: { value: '1250' } });
+    expect(screen.queryByRole('alert')).toBeNull();
     fireEvent.click(recordButton());
-    expect(spies.record).not.toHaveBeenCalled();
+    expect(spies.record.mock.calls[0][0].input).toEqual(expect.objectContaining({ value: 1250 }));
   });
 
   it('reports a negative figure the same way', () => {

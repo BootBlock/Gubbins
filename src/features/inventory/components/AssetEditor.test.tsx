@@ -87,9 +87,9 @@ describe('AssetEditor', () => {
     fireEvent.change(price(), { target: { value: typed } });
 
     expect(screen.getByRole('alert').textContent).toMatch(message);
+    // The disabled button *is* the block — a click on it never reaches `onClick`, so asserting
+    // the mutation didn't fire would restate this rather than test anything further.
     expect(saveButton()).toHaveProperty('disabled', true);
-    fireEvent.click(saveButton());
-    expect(spies.update).not.toHaveBeenCalled();
   });
 
   it('refuses a zero depreciation term instead of switching depreciation off (issue #675)', () => {
@@ -98,8 +98,6 @@ describe('AssetEditor', () => {
 
     expect(screen.getByRole('alert').textContent).toMatch(/above zero/i);
     expect(saveButton()).toHaveProperty('disabled', true);
-    fireEvent.click(saveButton());
-    expect(spies.update).not.toHaveBeenCalled();
   });
 
   it('marks the unusable field invalid and describes the error to it', () => {
@@ -112,15 +110,23 @@ describe('AssetEditor', () => {
     expect(control.getAttribute('aria-describedby')).toContain(alert.id);
   });
 
-  it('blocks the whole save while one field is unusable, so a good sibling edit cannot land', () => {
-    // The save is wholesale — letting the acquisition date through would write the parsed
-    // price alongside it, which is exactly how the figure used to disappear.
+  it('holds a good sibling edit back while a field is unusable, then lands both once fixed', () => {
+    // The save is wholesale, so a perfectly good date edit must not carry the price with it —
+    // that pairing is exactly how the figure used to disappear. The button stays disabled
+    // despite the draft being dirty, and correcting the price releases the whole edit intact.
     render(<AssetEditor item={priced} />);
     fireEvent.change(screen.getByTestId('asset-acquired-at'), { target: { value: '2026-01-31' } });
     fireEvent.change(price(), { target: { value: '-250' } });
+    expect(saveButton()).toHaveProperty('disabled', true);
+
+    fireEvent.change(price(), { target: { value: '275' } });
+    expect(screen.queryByRole('alert')).toBeNull();
     fireEvent.click(saveButton());
 
-    expect(spies.update).not.toHaveBeenCalled();
+    expect(spies.update).toHaveBeenCalledTimes(1);
+    expect(spies.update.mock.calls[0][0].input).toEqual(
+      expect.objectContaining({ acquiredAt: '2026-01-31', purchasePrice: 275, depreciationMonths: 36 }),
+    );
   });
 
   it('still clears a stored price or term when the field is deliberately blanked', () => {
