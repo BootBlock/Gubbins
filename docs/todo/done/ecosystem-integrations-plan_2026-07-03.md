@@ -6,15 +6,15 @@
 > `main`. Phase order was **EI-1 → EI-7**; EI-1 (the event model) was a hard prerequisite for
 > EI-2 and EI-6. No further work is scheduled here.
 
+> **This plan builds out the recommendations in the companion research doc**
+> [`ecosystem-integrations_2026-07-03.md`](../ecosystem-integrations_2026-07-03.md). Read that
+> first for the *why*; this doc is the *how*, phase by phase.
+
 > **Historical process note — no longer in force.** Each phase is implemented in its **own
 > chat session** in its **own git worktree**. Tick the `[ ]` boxes as work lands, append a
 > one-paragraph **Outcome** note under each phase when it completes (mirroring
 > [`home-assistant_2026-06-29.md`](home-assistant_2026-06-29.md)), and re-schedule — never
 > silently drop — any deferred item.
->
-> **This plan builds out the recommendations in the companion research doc**
-> [`ecosystem-integrations_2026-07-03.md`](../ecosystem-integrations_2026-07-03.md). Read that
-> first for the *why*; this doc is the *how*, phase by phase.
 >
 > **Continuation-prompt rule (mandatory).** When a phase completes you **must** do **both**
 > before ending the session:
