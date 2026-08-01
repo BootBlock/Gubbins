@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
 import type { Item } from '@/db/repositories';
 
 /**
@@ -24,7 +24,14 @@ let scanResult: Item | null = null;
 // What a typed/scanned short code resolves to (issue #338) — empty, one item, or ambiguous.
 let shortCodeMatches: Item[] = [];
 
-vi.mock('../useScanner', () => ({ useScanner: () => {} }));
+// The camera/decoder is neutered, but the props the overlay hands the hook are kept so a test can
+// play the part of the decode loop — specifically reporting the engine it resolved (issue #678).
+const scannerProps = vi.hoisted(() => ({ current: null as { onEngine?: (e: string) => void } | null }));
+vi.mock('../useScanner', () => ({
+  useScanner: (props: { onEngine?: (e: string) => void }) => {
+    scannerProps.current = props;
+  },
+}));
 vi.mock('../feedback', () => ({
   ScanFeedback: class {
     prime() {}
@@ -157,6 +164,38 @@ beforeEach(() => {
   checkoutMutateAsync.mockReset().mockResolvedValue(undefined);
 });
 afterEach(cleanup);
+
+describe('ScannerOverlay — what the decoding engine tells the user', () => {
+  /** Report an engine the way the decode loop does, from outside React's own event handling. */
+  const reportEngine = async (engine: string) => {
+    await act(async () => scannerProps.current?.onEngine?.(engine));
+  };
+
+  it('says nothing about the engine while a real one is decoding', async () => {
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+    await reportEngine('native');
+    expect(screen.queryByTestId('scanner-engine-none')).toBeNull();
+    expect(screen.queryByTestId('scanner-engine-failed')).toBeNull();
+  });
+
+  it('steers to manual entry — and says the engine stopped — when it dies mid-scan (issue #678)', async () => {
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+    await reportEngine('wasm');
+    expect(screen.getByTestId('scanner-engine-wasm')).toBeInTheDocument();
+
+    await reportEngine('failed');
+
+    // Distinct from the `none` copy on purpose: this browser *does* support live scanning, so
+    // "isn't supported here" would send the user away from the reload that fixes it.
+    const message = screen.getByTestId('scanner-engine-failed');
+    expect(message).toHaveTextContent(/stopped working/i);
+    expect(message).toHaveTextContent(/reload/i);
+    expect(screen.queryByTestId('scanner-engine-wasm')).toBeNull();
+    // …and it is announced, not just drawn: it appears long after the surface mounted, so it sits
+    // inside the always-mounted live region rather than being inserted as one.
+    expect(screen.getByTestId('scanner-notice')).toContainElement(message);
+  });
+});
 
 describe('ScannerOverlay — "What can I scan?" explainer', () => {
   it('opens the explainer from the header help button and describes both code kinds', async () => {

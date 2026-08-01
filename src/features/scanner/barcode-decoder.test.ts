@@ -5,6 +5,7 @@ import {
   supportsCanvasWorkerDecode,
   makeWorkerDecoder,
   makeCanvasWorkerDecoder,
+  DECODE_TIMEOUT_MS,
   type ScannerEngine,
   type DecodeWorkerLike,
   type CapturedFrame,
@@ -381,5 +382,113 @@ describe('makeCanvasWorkerDecoder — main-thread capture, worker decode (spec �
     decoder.dispose();
     expect(worker.terminated).toBe(true);
     expect(await decoder.detect(fakeVideo())).toEqual([]);
+  });
+});
+
+/**
+ * A worker that can never answer again must not be posted into (issue #678). The decode chunk is
+ * lazily loaded, so it can 404 under a stale tab, and the browser can reclaim a worker under
+ * memory pressure — neither of which makes `new Worker(...)` throw, so the decoder is handed out
+ * looking healthy. Without latching, the next frame waits on a reply that never comes and the
+ * single-flight guard sticks: a live viewfinder, a UI reporting the WASM engine, and no code ever
+ * decoded again for the rest of the session.
+ */
+describe('worker-backed decoders — a dead worker stays dead (issue #678)', () => {
+  it('latches after a worker error, so no later frame is posted into the corpse', async () => {
+    const worker = new FakeWorker(); // manual: a worker that will never answer
+    const decoder = makeWorkerDecoder({
+      spawnWorker: () => worker,
+      createBitmap: async () => fakeBitmap(),
+    });
+    const pending = decoder.detect(fakeVideo());
+    await tick();
+    worker.onerror?.({});
+    expect(await pending).toEqual([]);
+    expect(decoder.failed).toBe(true);
+
+    // The wedge this pins: the second frame used to post into the dead worker and park for ever,
+    // leaving `inFlight` stuck true and every frame after it silently dropped.
+    expect(await decoder.detect(fakeVideo())).toEqual([]);
+    expect(worker.posts).toHaveLength(1);
+  });
+
+  it('latches on a load failure that lands before any frame is decoded', async () => {
+    // The chunk 404s: `new Worker(...)` resolved fine (module loading is asynchronous) and there
+    // is nothing in flight, so the error event is the only signal the decoder is already dead.
+    const worker = new FakeWorker(() => 'WASM-CODE');
+    const decoder = makeWorkerDecoder({
+      spawnWorker: () => worker,
+      createBitmap: async () => fakeBitmap(),
+    });
+    worker.onerror?.({});
+    expect(decoder.failed).toBe(true);
+    expect(await decoder.detect(fakeVideo())).toEqual([]);
+    expect(worker.posts).toHaveLength(0);
+  });
+
+  it('latches the main-thread-capture engine the same way', async () => {
+    const worker = new FakeWorker(() => 'CANVAS-CODE');
+    const decoder = makeCanvasWorkerDecoder({
+      spawnWorker: () => worker,
+      captureFrame: () => fakeFrame(),
+    });
+    worker.onerror?.({});
+    expect(decoder.failed).toBe(true);
+    expect(await decoder.detect(fakeVideo())).toEqual([]);
+    expect(worker.posts).toHaveLength(0);
+  });
+
+  it('never latches a healthy decoder, whether or not the frame held a code', async () => {
+    const worker = new FakeWorker(() => null);
+    const decoder = makeWorkerDecoder({
+      spawnWorker: () => worker,
+      createBitmap: async () => fakeBitmap(),
+    });
+    expect(await decoder.detect(fakeVideo())).toEqual([]);
+    expect(decoder.failed).toBe(false);
+  });
+
+  it('abandons a frame the worker never answers — without latching — and decodes the next', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker(); // alive, but silent on this frame
+      const decoder = makeWorkerDecoder({
+        spawnWorker: () => worker,
+        createBitmap: async () => fakeBitmap(),
+      });
+      const first = decoder.detect(fakeVideo());
+      await vi.advanceTimersByTimeAsync(0); // let the capture settle and the frame post
+      expect(worker.posts).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(DECODE_TIMEOUT_MS);
+      expect(await first).toEqual([]);
+      // One unanswered frame is not proof the worker is gone (the call `worker-driver.ts` makes
+      // for a database RPC), so the decoder stays usable and the next frame really is posted —
+      // which only holds because the abandoned frame released the single-flight guard.
+      expect(decoder.failed).toBe(false);
+      const second = decoder.detect(fakeVideo());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(worker.posts).toHaveLength(2);
+      worker.reply('WASM-CODE');
+      expect(await second).toEqual(['WASM-CODE']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails soft when the frame cannot be handed over at all, and frees the capture', async () => {
+    const bitmap = fakeBitmap();
+    const worker = new FakeWorker();
+    vi.spyOn(worker, 'postMessage').mockImplementation(() => {
+      throw new DOMException('could not be cloned', 'DataCloneError');
+    });
+    const decoder = makeWorkerDecoder({ spawnWorker: () => worker, createBitmap: async () => bitmap });
+
+    // Resolves rather than rejects: a throw out of `detect` would take the caller's polling loop
+    // down with it — the same silent stop this issue is about, by another route.
+    await expect(decoder.detect(fakeVideo())).resolves.toEqual([]);
+    expect(bitmap.close).toHaveBeenCalled();
+    // A frame the worker could not accept says nothing about the worker's health.
+    expect(decoder.failed).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 
 /**
  * Behaviour tests for {@link BarcodeScanDialog} — the Scan-into-the-Barcode-field capture
@@ -11,7 +11,14 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react';
  * is driven through the always-available manual-entry seam rather than a faked camera frame.
  */
 
-vi.mock('../useScanner', () => ({ useScanner: () => {} }));
+// The camera/decoder is neutered, but the props the dialog hands the hook are kept so a test can
+// play the part of the decode loop — specifically reporting the engine it resolved (issue #678).
+const scannerProps = vi.hoisted(() => ({ current: null as { onEngine?: (e: string) => void } | null }));
+vi.mock('../useScanner', () => ({
+  useScanner: (props: { onEngine?: (e: string) => void }) => {
+    scannerProps.current = props;
+  },
+}));
 vi.mock('../feedback', () => ({
   ScanFeedback: class {
     prime() {}
@@ -41,6 +48,20 @@ describe('BarcodeScanDialog', () => {
 
     expect(onCapture).toHaveBeenCalledWith('4006381333931');
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('says the engine stopped, and points at manual entry, when it dies mid-scan (issue #678)', async () => {
+    render(<BarcodeScanDialog open onClose={vi.fn()} onCapture={vi.fn()} />);
+
+    await act(async () => scannerProps.current?.onEngine?.('failed'));
+
+    // Distinct from the `none` copy on purpose: this browser *does* support live scanning, so
+    // "isn't supported here" would send the user away from the reload that fixes it.
+    const message = screen.getByTestId('barcode-scan-engine-failed');
+    expect(message).toHaveTextContent(/stopped working/i);
+    // Announced, not just drawn: it appears long after the dialog mounted, so it sits inside the
+    // always-mounted live region rather than being inserted as one.
+    expect(screen.getByTestId('barcode-scan-notice')).toContainElement(message);
   });
 
   it('rejects a Gubbins label instead of dropping its deep-link into the field', () => {

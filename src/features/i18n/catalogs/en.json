@@ -1846,6 +1846,7 @@
   "scanner.camera.menuLabel": "Choose a camera",
   "scanner.camera.unnamed": "Camera {position}",
   "scanner.camera.unavailable": "That camera isn’t available — using the usual one instead.",
+  "scanner.engine.stopped": "Live scanning has stopped working — reload Gubbins to try again, or enter a code below.",
   "scanner.manual.placeholder": "Enter or paste a code, or a label's short code",
   "scanner.shortCode.ambiguous": "More than one item starts with that short code — scan the label’s code instead.",
   "scanner.help.shortCode.title": "Short codes",

@@ -5,8 +5,9 @@ import { Button, Input, LiveRegion, Surface } from '@/components/foundry';
 import { nextTrapIndex, trapFocusables } from '@/components/foundry/focus-trap';
 import { isTopModal, popModal, pushModal } from '@/components/foundry/modal-stack';
 import { CloseIcon, ExternalLinkIcon, LinkIcon, ScanIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
-import type { ScannerEngine } from '../barcode-decoder';
+import type { ScannerEngineStatus } from '../barcode-decoder';
 import { ScanFeedback } from '../feedback';
 import { asOpenableLink, isStructuredQrPayload, parseScannedCode } from '../scan-payload';
 import { initialScannerState, scannerReducer } from '../scanner-machine';
@@ -70,9 +71,12 @@ function BarcodeScanDialogInner({
   const cameraId = usePreferencesStore((s) => s.scannerCameraId);
   const setCameraId = usePreferencesStore((s) => s.setScannerCameraId);
 
+  const t = useT();
   const [manual, setManual] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
-  const [engine, setEngine] = useState<ScannerEngine | null>(null);
+  // Resolved asynchronously by useScanner; `failed` is an engine that resolved and then died
+  // under us (issue #678), which reads very differently to a browser that never had one.
+  const [engine, setEngine] = useState<ScannerEngineStatus | null>(null);
   // A scanned marketing QR resolves to a website link, not a product barcode (issue #59). We
   // never drop its URL into the Barcode field; instead we pause and offer to open it, so the
   // user stays in control of following an external link rather than being silently blocked.
@@ -294,18 +298,25 @@ function BarcodeScanDialogInner({
 
       {/* Manual entry — graceful fallback (§6.6) and always-available aid. */}
       <div className="space-y-2 p-4">
-        {engine === 'none' ? (
-          <p className="text-center text-xs text-white/70" data-testid="barcode-scan-engine-none">
-            Live scanning isn’t supported on this browser — enter a barcode below.
-          </p>
-        ) : engine === 'wasm' || engine === 'wasm-canvas' ? (
-          <p className="text-center text-xs text-white/70" data-testid={`barcode-scan-engine-${engine}`}>
-            Using the compatibility scanner — point steadily at the barcode, or enter it below.
-          </p>
-        ) : null}
-        {/* Manual-entry feedback is the screen-reader channel: a blind user types a code and
-            would otherwise get nothing back. Always-mounted polite region. */}
-        <LiveRegion data-testid="barcode-scan-notice">
+        {/* The screen-reader channel, and the one region both in-place messages live in: which
+            engine resolved (or that it died mid-scan, issue #678) and the manual-entry feedback —
+            a blind user types a code and would otherwise get nothing back. Both arrive *after*
+            mount, so the region is always mounted and only its children change; a region inserted
+            alongside its message is frequently never announced. */}
+        <LiveRegion className="space-y-2" data-testid="barcode-scan-notice">
+          {engine === 'none' ? (
+            <p className="text-center text-xs text-white/70" data-testid="barcode-scan-engine-none">
+              Live scanning isn’t supported on this browser — enter a barcode below.
+            </p>
+          ) : engine === 'failed' ? (
+            <p className="text-center text-xs text-white/70" data-testid="barcode-scan-engine-failed">
+              {t('scanner.engine.stopped')}
+            </p>
+          ) : engine === 'wasm' || engine === 'wasm-canvas' ? (
+            <p className="text-center text-xs text-white/70" data-testid={`barcode-scan-engine-${engine}`}>
+              Using the compatibility scanner — point steadily at the barcode, or enter it below.
+            </p>
+          ) : null}
           {notice ? <p className="text-center text-xs text-warning">{notice}</p> : null}
         </LiveRegion>
         <div className="mx-auto flex max-w-md gap-2">

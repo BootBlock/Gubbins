@@ -1,15 +1,20 @@
 /**
  * Behaviour tests for the {@link useScanner} camera-acquisition effect — specifically the
- * `no-camera` lab flag (`/lab`, hidden testing screen). The decode-loop / visibility / teardown
- * effects need a real video element and decoder plumbing that isn't exercised here; those are
- * covered indirectly by the component tests that neuter this hook entirely
- * (`vi.mock('../useScanner', () => ({ useScanner: () => {} }))`). This file pins the one thing
- * only `useScanner` itself can prove: what happens when the permission-request effect runs.
+ * `no-camera` lab flag (`/lab`, hidden testing screen) — and for the decode loop's handling of a
+ * decoder that dies under it (issue #678). The visibility / teardown effects are covered
+ * indirectly by the component tests, which mock this hook away entirely and drive the surfaces
+ * through the callbacks it would have called. This file pins the things only `useScanner` itself
+ * can prove: what happens when the permission-request effect runs, and what the polling loop does
+ * with the decoder it resolved.
+ *
+ * The decoder is faked wholesale, so no real `Worker` is ever spawned and its engine can be
+ * killed mid-scan on demand.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, cleanup, waitFor } from '@testing-library/react';
 import { useEffect, useReducer, useRef } from 'react';
 import { useScanner } from './useScanner';
+import type { ScannerEngineStatus } from './barcode-decoder';
 import {
   initialScannerState,
   scannerReducer,
@@ -20,17 +25,37 @@ import { useLabStore } from '@/state/stores/useLabStore';
 
 const CLEAN_LAB = { flags: {} } as const;
 
+/**
+ * The decoder `createDecoder` hands back, standing in for a real worker-backed one: `failed`
+ * flips the moment its worker is meant to have died, exactly as the real decoder latches it.
+ */
+const decoder = vi.hoisted(() => ({
+  engine: 'wasm' as const,
+  failed: false,
+  detect: vi.fn(async (): Promise<string[]> => []),
+  dispose: vi.fn(),
+}));
+
+vi.mock('./barcode-decoder', () => ({ createDecoder: vi.fn(async () => decoder) }));
+
 afterEach(() => {
   cleanup();
   useLabStore.setState(CLEAN_LAB);
   vi.restoreAllMocks();
+  decoder.failed = false;
+  decoder.detect.mockClear().mockResolvedValue([]);
+  decoder.dispose.mockClear();
 });
 
 function renderScanner(
   status: ScannerStatus,
   dispatch: (action: ScannerAction) => void,
   video: HTMLVideoElement | null = null,
-  extra: { cameraId?: string; onCameraWarning?: (message: string) => void } = {},
+  extra: {
+    cameraId?: string;
+    onCameraWarning?: (message: string) => void;
+    onEngine?: (engine: ScannerEngineStatus) => void;
+  } = {},
 ) {
   const videoRef = { current: video };
   return renderHook(
@@ -332,5 +357,42 @@ describe('useScanner — the torch', () => {
 
     await waitFor(() => expect(result.current.torch.supported).toBe(false));
     expect(result.current.torch.on).toBe(false);
+  });
+});
+
+/**
+ * What the polling loop does when the decoder it resolved dies under it (issue #678) — the decode
+ * worker's chunk 404ing after a deploy, or the browser reclaiming the worker. The camera is still
+ * live and the UI has already been told an engine is running, so unless the loop notices, the user
+ * holds a barcode in frame indefinitely with no result and no hint that manual entry is the way
+ * through.
+ */
+describe('useScanner — the decode loop', () => {
+  /** A frame that is ready to decode, so the loop actually asks the decoder for codes. */
+  const liveVideo = () =>
+    ({ readyState: 4, videoWidth: 640, videoHeight: 480 }) as unknown as HTMLVideoElement;
+
+  it('reports the engine it resolved and polls it while the stream is active', async () => {
+    const onEngine = vi.fn();
+
+    renderScanner('STREAM_ACTIVE', vi.fn(), liveVideo(), { onEngine });
+
+    await waitFor(() => expect(onEngine).toHaveBeenCalledWith('wasm'));
+    await waitFor(() => expect(decoder.detect).toHaveBeenCalled());
+  });
+
+  it('stops polling and reports `failed` once the decoder’s worker dies mid-scan', async () => {
+    const onEngine = vi.fn();
+    renderScanner('STREAM_ACTIVE', vi.fn(), liveVideo(), { onEngine });
+    await waitFor(() => expect(decoder.detect).toHaveBeenCalled());
+
+    decoder.failed = true; // the worker 404'd, or the browser reclaimed it
+
+    await waitFor(() => expect(onEngine).toHaveBeenLastCalledWith('failed'));
+    // And the loop really stops, rather than spinning the camera against a decoder that can
+    // never answer: the base cadence is 120 ms, so several decodes would have run by now.
+    const polled = decoder.detect.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(decoder.detect).toHaveBeenCalledTimes(polled);
   });
 });
