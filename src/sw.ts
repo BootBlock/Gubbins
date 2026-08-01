@@ -27,11 +27,12 @@ import {
   REMINDER_FALLBACK_ROUTE,
   REMINDER_PERIODIC_SYNC_TAG,
 } from './features/alerts/reminder-messages';
-
-interface PrecacheEntry {
-  url: string;
-  revision: string | null;
-}
+import {
+  precacheCacheName,
+  precacheRequestSpec,
+  isPrecacheName,
+  type PrecacheEntry,
+} from './lib/precache-name';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
@@ -49,19 +50,38 @@ const SHARE_TARGET_PATH = new URL('share-target', sw.location.href).pathname;
 // PWA-manifest icons are emitted both by the precache glob and the webmanifest
 // `icons` injection), and `cache.addAll` REJECTS on duplicate requests
 // ("Cache.addAll(): duplicate requests") — which would abort `install` and leave the
-// worker `redundant`, so no update could ever activate. A `Set` over the URLs keeps
+// worker `redundant`, so no update could ever activate. A `Map` keyed by URL keeps
 // `addAll` happy while precaching exactly the same asset set.
-const PRECACHE_URLS = [
-  ...new Set((self as unknown as { __WB_MANIFEST: PrecacheEntry[] }).__WB_MANIFEST.map((entry) => entry.url)),
+const PRECACHE_ENTRIES: readonly PrecacheEntry[] = [
+  ...new Map(
+    (self as unknown as { __WB_MANIFEST: PrecacheEntry[] }).__WB_MANIFEST.map((entry) => [entry.url, entry]),
+  ).values(),
 ];
 
-const CACHE = 'gubbins-precache-v1';
+/**
+ * This build's app-shell precache — named after the manifest it holds, never a constant shared
+ * with other builds (issue #499). A build that installs while another is still active writes to
+ * a cache of its own, so the running app keeps being served the exact shell and chunks it booted
+ * with until the user accepts the update and `activate` swaps caches. See
+ * {@link ./lib/precache-name}.
+ */
+const CACHE = precacheCacheName(PRECACHE_ENTRIES);
 const INDEX_URL = 'index.html';
 
 /**
+ * Where {@link recordInServicePrecache} notes the precache the app is actually being served from,
+ * so a later `install` can tell a superseded precache (safe to delete) from the live one (deleting
+ * it would blank the running app). Its own cache for the same reason the bridge origin has one:
+ * the precache holds precisely the manifest set, and is itself the thing being swept.
+ */
+const SW_STATE_CACHE = 'gubbins-sw-state-v1';
+/** Relative, so it resolves against this worker's scope like every other cached request. */
+const IN_SERVICE_PRECACHE_KEY = 'in-service-precache';
+
+/**
  * Where the user's bridge origin is kept so it survives this worker being terminated between
- * events. Its own cache, not the precache: {@link pruneStalePrecache} deletes anything the
- * build manifest doesn't name, which is every entry here.
+ * events. Its own cache, not the precache: the precache is named after — and holds exactly — one
+ * build's manifest, and is deleted wholesale once that build is superseded.
  */
 const BRIDGE_ORIGIN_CACHE = 'gubbins-bridge-origin-v1';
 /** Relative, so it resolves against this worker's scope like every other cached request. */
@@ -130,7 +150,9 @@ sw.addEventListener('install', (event) => {
   // boot — so it must skip the prompt and activate immediately.
   event.waitUntil(
     (async () => {
-      await caches.open(CACHE).then((cache) => cache.addAll(PRECACHE_URLS));
+      const cache = await caches.open(CACHE);
+      await cache.addAll(PRECACHE_ENTRIES.map(precacheRequest));
+      await pruneSupersededPrecaches();
       if (!sw.registration.active) await sw.skipWaiting();
     })(),
   );
@@ -227,10 +249,15 @@ sw.addEventListener('activate', (event) => {
       // upgrade is swept here as a *superseded* cache rather than served stale. The bridge-origin
       // cache holds the one user-supplied value the CSP needs (issue #385) — sweeping it would
       // silently re-block the bridge on every deploy.
+      //
+      // This is also where a *previous build's* precache goes: its name carries that build's
+      // manifest (issue #499), so it is simply another superseded cache, and this is the first
+      // moment deleting it is safe — the clients it was serving are about to be claimed onto
+      // this build.
       const keys = await caches.keys();
-      const keep = new Set([CACHE, SHARE_INBOX_CACHE, OCR_ASSET_CACHE, BRIDGE_ORIGIN_CACHE]);
+      const keep = new Set([CACHE, SHARE_INBOX_CACHE, OCR_ASSET_CACHE, BRIDGE_ORIGIN_CACHE, SW_STATE_CACHE]);
       await Promise.all(keys.filter((key) => !keep.has(key)).map((key) => caches.delete(key)));
-      await pruneStalePrecache();
+      await recordInServicePrecache();
       // Reclaim any share that was stashed but never consumed (its landing tab was dismissed),
       // while keeping a just-stashed, still-in-flight share.
       await pruneStaleShares();
@@ -240,24 +267,59 @@ sw.addEventListener('activate', (event) => {
 });
 
 /**
- * Drop precache entries left behind by previous deploys. The cache name is stable
- * across releases (so the offline shell survives an update), and every build emits
- * new content-hashed asset URLs, so `install`'s `addAll` only ever *adds* to this
- * cache — superseded chunks would otherwise linger forever, growing CacheStorage on
- * each deploy and eating into the same storage quota the app meters (spec §7.6).
- *
- * `respond()` never writes to *this* cache — the one thing it does cache at runtime, the OCR
- * assets, goes to its own {@link OCR_ASSET_CACHE} precisely so this stays true — so it holds
- * exactly the precached set: anything no longer named by the current manifest is stale and safe
- * to delete. URLs are resolved against `sw.location` — the identical base `addAll` uses — so the
- * comparison matches the cached requests regardless of relative/absolute manifest form.
+ * The request `install` precaches one manifest entry with — see {@link precacheRequestSpec} for
+ * why the HTTP-cache mode differs per entry, and why the URL is resolved against this worker's
+ * own location.
  */
-async function pruneStalePrecache(): Promise<void> {
-  const cache = await caches.open(CACHE);
-  const wanted = new Set(PRECACHE_URLS.map((url) => new URL(url, sw.location.href).href));
-  const cached = await cache.keys();
+function precacheRequest(entry: PrecacheEntry): Request {
+  const { url, cache } = precacheRequestSpec(entry, sw.location.href);
+  return new Request(url, { cache });
+}
+
+/**
+ * Record that this build's precache is the one clients are now served from, so a future
+ * `install` can recognise every *other* precache as superseded (issue #499).
+ *
+ * Written on `activate` rather than `install` for the obvious reason: a worker that is merely
+ * installed may never be accepted, and claiming to be in service would let the next build delete
+ * the cache the app is actually running on.
+ */
+async function recordInServicePrecache(): Promise<void> {
+  const cache = await caches.open(SW_STATE_CACHE);
+  await cache.put(IN_SERVICE_PRECACHE_KEY, new Response(CACHE));
+}
+
+/**
+ * Delete precaches belonging to builds that are neither running nor being installed.
+ *
+ * Naming the precache after its manifest means an unaccepted update leaves a fully-populated
+ * cache behind: if the user ignores the banner across several deploys, each superseded build's
+ * shell, chunks and WASM would linger forever against the same storage quota the app meters
+ * (spec §7.6). `activate` sweeps them, but only for a build that actually gets accepted — so
+ * `install` sweeps too, which is what bounds CacheStorage to at most the running build's
+ * precache plus the incoming one.
+ *
+ * Deliberately conservative: without a recorded in-service name (a first install after this
+ * shipped, or a CacheStorage read that failed) nothing is deleted. Guessing wrong here means
+ * deleting the cache the running app is being served from — a blank page, and offline it would
+ * not even recover — whereas guessing nothing merely defers the sweep to the next `activate`,
+ * which deletes every superseded cache regardless.
+ */
+async function pruneSupersededPrecaches(): Promise<void> {
+  let inService: string;
+  try {
+    const cache = await caches.open(SW_STATE_CACHE);
+    const stored = await cache.match(IN_SERVICE_PRECACHE_KEY);
+    if (!stored) return;
+    inService = await stored.text();
+  } catch {
+    return;
+  }
+  const keys = await caches.keys();
   await Promise.all(
-    cached.filter((request) => !wanted.has(request.url)).map((request) => cache.delete(request)),
+    keys
+      .filter((key) => isPrecacheName(key) && key !== CACHE && key !== inService)
+      .map((key) => caches.delete(key)),
   );
 }
 

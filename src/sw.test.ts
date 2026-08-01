@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { OCR_ASSET_CACHE } from './features/inventory/ocr/ocr-asset-cache';
+import { precacheCacheName, type PrecacheEntry } from './lib/precache-name';
 
 /**
  * Unit coverage for the service worker's `install` handler (spec §2.2.6) — previously
@@ -41,6 +42,8 @@ let fetchHandler: FetchHandler | undefined;
 let messageHandler: MessageHandler | undefined;
 let cacheMatch: ReturnType<typeof vi.fn>;
 let bridgeOriginMatch: ReturnType<typeof vi.fn>;
+let swStateMatch: ReturnType<typeof vi.fn>;
+let swStatePut: ReturnType<typeof vi.fn>;
 let skipWaitingSpy: ReturnType<typeof vi.fn>;
 let cacheAddAll: ReturnType<typeof vi.fn>;
 let cachePut: ReturnType<typeof vi.fn>;
@@ -50,12 +53,16 @@ let addEventListenerSpy: ReturnType<typeof vi.spyOn>;
 
 /** The bridge-origin cache's name, kept in step with sw.ts (issue #385). */
 const BRIDGE_ORIGIN_CACHE = 'gubbins-bridge-origin-v1';
+/** The worker's own state cache, kept in step with sw.ts (issue #499). */
+const SW_STATE_CACHE = 'gubbins-sw-state-v1';
 
 /** Stub the worker-global surface sw.ts touches at import time and during `install`. */
-function stubServiceWorkerGlobals(activeWorker: unknown) {
+function stubServiceWorkerGlobals(activeWorker: unknown, manifest: readonly PrecacheEntry[] = []) {
   cacheAddAll = vi.fn().mockResolvedValue(undefined);
   cacheMatch = vi.fn().mockResolvedValue(undefined);
   bridgeOriginMatch = vi.fn().mockResolvedValue(undefined);
+  swStateMatch = vi.fn().mockResolvedValue(undefined);
+  swStatePut = vi.fn().mockResolvedValue(undefined);
   cachePut = vi.fn().mockResolvedValue(undefined);
   cacheDelete = vi.fn().mockResolvedValue(true);
   const fakeCache = {
@@ -68,17 +75,21 @@ function stubServiceWorkerGlobals(activeWorker: unknown) {
   // The bridge-origin lookup every response makes (issue #385) gets its **own** `match`, exactly
   // as it gets its own cache in the worker. Sharing one mock would let a single stubbed Response
   // answer both lookups — and the first reader consumes its body, so the second would be served
-  // an already-used one and the test would pass for the wrong reason.
+  // an already-used one and the test would pass for the wrong reason. The in-service precache
+  // record (issue #499) gets its own pair for the same reason.
   const bridgeOriginCache = { ...fakeCache, match: bridgeOriginMatch };
-  cachesOpen = vi.fn((name: string) =>
-    Promise.resolve(name === BRIDGE_ORIGIN_CACHE ? bridgeOriginCache : fakeCache),
-  );
+  const swStateCache = { ...fakeCache, match: swStateMatch, put: swStatePut };
+  cachesOpen = vi.fn((name: string) => {
+    if (name === BRIDGE_ORIGIN_CACHE) return Promise.resolve(bridgeOriginCache);
+    if (name === SW_STATE_CACHE) return Promise.resolve(swStateCache);
+    return Promise.resolve(fakeCache);
+  });
   vi.stubGlobal('caches', {
     open: cachesOpen,
     keys: vi.fn().mockResolvedValue([]),
     delete: vi.fn().mockResolvedValue(true),
   });
-  vi.stubGlobal('__WB_MANIFEST', []);
+  vi.stubGlobal('__WB_MANIFEST', manifest);
   skipWaitingSpy = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal('skipWaiting', skipWaitingSpy);
   vi.stubGlobal('registration', { active: activeWorker });
@@ -143,6 +154,120 @@ describe('src/sw.ts — install handler (fresh install vs. genuine update)', () 
 
     expect(cacheAddAll).toHaveBeenCalled();
     expect(skipWaitingSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Per-build precache naming (issue #499).
+ *
+ * The precache used to be a constant every build shared, so `install` wrote the incoming build's
+ * shell and chunks straight into the cache the still-active worker was serving from. `addAll` has
+ * put semantics, so `index.html` was replaced in place and the new hashed chunks landed beside the
+ * old ones — after which an ordinary F5 loaded the new app under the old worker, with no banner,
+ * no accepted update and, crucially, no reset warning for a build that moves `BASELINE_REVISION`.
+ * The user arrived at "reset your data to continue" mid-task having never been offered a backup.
+ *
+ * These pin down the structural fix: the name is derived from the build's own manifest, so an
+ * installing build cannot touch the running one's bytes; the swap happens on `activate`, the step
+ * the user's "Reload now" actually gates; and the caches that swap leaves behind are bounded
+ * without ever risking the one being served.
+ */
+describe('src/sw.ts — an installing build precaches into its own cache, never the live one', () => {
+  /** A plausible manifest: the unhashed shell, plus one content-hashed chunk. */
+  const MANIFEST: readonly PrecacheEntry[] = [
+    { url: 'index.html', revision: 'a1b2c3d4' },
+    { url: 'assets/index-9f8e7d6c.js', revision: null },
+  ];
+  /** The cache the build described by {@link MANIFEST} owns. */
+  const THIS_BUILD = precacheCacheName(MANIFEST);
+  /** The constant name every build shared before this fix — now just another superseded cache. */
+  const RETIRED = 'gubbins-precache-v1';
+
+  /** Re-stub `caches` with a fixed key set, collecting every name the worker deletes. */
+  function trackDeletes(keys: readonly string[]): string[] {
+    const deleted: string[] = [];
+    vi.stubGlobal('caches', {
+      open: cachesOpen,
+      keys: vi.fn().mockResolvedValue([...keys]),
+      delete: vi.fn((key: string) => {
+        deleted.push(key);
+        return Promise.resolve(true);
+      }),
+    });
+    return deleted;
+  }
+
+  /** Drive one lifecycle handler to completion. */
+  async function run(handler: InstallHandler | undefined): Promise<void> {
+    let waited: Promise<unknown> | undefined;
+    handler!({
+      waitUntil: (p) => {
+        waited = p;
+      },
+    });
+    await waited;
+  }
+
+  it('precaches into a cache named for this build, not a name another build could be serving', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' }, MANIFEST);
+    await import('./sw');
+
+    await run(installHandler);
+
+    expect(cachesOpen.mock.calls.flat()).toContain(THIS_BUILD);
+    expect(cachesOpen.mock.calls.flat()).not.toContain(RETIRED);
+    // Resolved against the worker's own location, so the keys are absolute and track the base path.
+    const requested = (cacheAddAll.mock.calls[0]![0] as Request[]).map((request) => request.url);
+    expect(requested).toEqual([
+      new URL('index.html', globalThis.location.href).href,
+      new URL('assets/index-9f8e7d6c.js', globalThis.location.href).href,
+    ]);
+  });
+
+  it('swaps caches on activate — the previous build’s precache goes, and this one is recorded as live', async () => {
+    stubServiceWorkerGlobals({ state: 'activated' }, MANIFEST);
+    const deleted = trackDeletes([RETIRED, THIS_BUILD, BRIDGE_ORIGIN_CACHE, SW_STATE_CACHE]);
+    await import('./sw');
+
+    await run(activateHandler);
+
+    // Activate is the first moment the old cache is safe to drop: the clients it was serving are
+    // about to be claimed onto this build.
+    expect(deleted).toEqual([RETIRED]);
+    // Recorded only here, never at install: a worker that is merely installed may never be
+    // accepted, and claiming to be live would let the *next* build delete the running app's cache.
+    expect(swStatePut).toHaveBeenCalledTimes(1);
+    expect(swStatePut.mock.calls[0]![0]).toBe('in-service-precache');
+    await expect((swStatePut.mock.calls[0]![1] as Response).text()).resolves.toBe(THIS_BUILD);
+  });
+
+  it('sweeps an abandoned update’s precache on install, while leaving the live one alone', async () => {
+    // The user ignored the banner, so the build in between was never accepted and its fully
+    // populated cache would otherwise linger against the storage quota forever.
+    const LIVE = 'gubbins-precache-1111111122222222';
+    const ABANDONED = 'gubbins-precache-3333333344444444';
+    stubServiceWorkerGlobals({ state: 'activated' }, MANIFEST);
+    swStateMatch.mockResolvedValue(new Response(LIVE));
+    const deleted = trackDeletes([LIVE, ABANDONED, THIS_BUILD, OCR_ASSET_CACHE, SW_STATE_CACHE]);
+    await import('./sw');
+
+    await run(installHandler);
+
+    expect(deleted).toEqual([ABANDONED]);
+  });
+
+  it('deletes nothing on install when no live precache has been recorded', async () => {
+    // The build that ships this fix installs beside a worker still serving `gubbins-precache-v1`,
+    // and no activate has ever recorded a name. Deleting on a guess would blank the running app —
+    // offline, it could not even recover — so the sweep waits for the next activate, which drops
+    // every superseded cache anyway.
+    stubServiceWorkerGlobals({ state: 'activated' }, MANIFEST);
+    const deleted = trackDeletes([RETIRED, THIS_BUILD]);
+    await import('./sw');
+
+    await run(installHandler);
+
+    expect(deleted).toEqual([]);
   });
 });
 
@@ -253,9 +378,9 @@ describe('src/sw.ts — OCR assets are cached at runtime, in their own cache', (
     expect(response.status).toBe(200);
     // Exactly two caches are opened — the read-only bridge-origin lookup every response makes,
     // and the OCR one this asset belongs in. Asserted as the *whole set* rather than as "not the
-    // precache": naming the precache would go quietly vacuous the day its name is bumped, and the
-    // invariant being guarded is that this path leaves the precache holding precisely the manifest
-    // set its `activate` prune assumes.
+    // precache": naming the precache would go quietly vacuous the day its name changes (it is
+    // derived per build — issue #499), and the invariant being guarded is that this path leaves
+    // the precache holding precisely the build manifest it is named after.
     expect(cachesOpen.mock.calls.flat()).toEqual([BRIDGE_ORIGIN_CACHE, OCR_ASSET_CACHE]);
     expect(cachePut).toHaveBeenCalledTimes(1);
   });
