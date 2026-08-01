@@ -116,11 +116,31 @@ describe('WishlistTab (feature-gap G8)', () => {
     expect(screen.getByText('A name is required.')).toBeInTheDocument();
   });
 
-  it('deletes an entry from its row', () => {
+  /**
+   * A wish is typed by hand and hard-deleted with no undo, so the row's bin asks before it
+   * removes anything (issue #588) rather than deleting on the click that opened it.
+   */
+  it('asks before deleting an entry, and does not delete until confirmed', () => {
     rows = [entry({ id: 'w-del', name: 'Old thing' })];
     render(<WishlistTab />);
+
     fireEvent.click(screen.getByTestId('wishlist-delete'));
-    expect(deleteSpy).toHaveBeenCalledWith('w-del');
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog').textContent).toContain('Old thing');
+
+    fireEvent.click(screen.getByTestId('wishlist-delete-confirm'));
+    expect(deleteSpy).toHaveBeenCalledWith('w-del', expect.anything());
+  });
+
+  it('leaves the entry alone when the confirmation is dismissed', () => {
+    rows = [entry({ id: 'w-del', name: 'Old thing' })];
+    render(<WishlistTab />);
+
+    fireEvent.click(screen.getByTestId('wishlist-delete'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
 
