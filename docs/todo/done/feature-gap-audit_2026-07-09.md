@@ -2,14 +2,15 @@
 
 > **Status:** ✅ COMPLETE (2026-07-10) — every actionable item G1–G9 shipped.
 
-> ✅ **COMPLETE (2026-07-10).** Every actionable item G1–G9 has shipped and passed review; **G4 (UI
-> internationalization) was the last.** This file is retained as the record of the audit — the
-> deliberate non-goals below remain non-goals. No open items remain.
+> Every actionable item G1–G9 has shipped and passed review; **G4 (UI internationalization) was
+> the last.** This file is retained as the record of the audit — the deliberate non-goals below
+> remain non-goals. No open items remain.
 
-A grounded backlog of genuine feature gaps, to be implemented **one task at a time** in
-separate sessions. Each task has a stable ID (`G1`, `G2`, …) so a session can be kicked off with
-just "implement `G1`". This is the single source of truth for the audit backlog; the matching
-memory note (`feature-gap-audit-2026-07-09`) is a pointer to this file.
+**Original scope (the backlog is closed — see above).** A grounded backlog of genuine feature
+gaps, to be implemented **one task at a time** in separate sessions. Each task has a stable ID
+(`G1`, `G2`, …) so a session can be kicked off with just "implement `G1`". This is the single
+source of truth for the audit backlog; the matching memory note
+(`feature-gap-audit-2026-07-09`) is a pointer to this file.
 
 **Origin.** Fourth grounded audit benchmarking Gubbins against current comparable tools — Sortly,
 Encircle, HomeZada, Homebox, Grocy, Snipe-IT, InvenTree/PartKeepr, and the 2026 "AI home
@@ -24,21 +25,21 @@ location capacity/fullness gauge, label/QR customisation, structured **condition
 HA / MCP / iCal / webhook / MQTT ecosystem. So the verified, against-the-code residue below is
 short.
 
-**Process (mandatory).** Implement one item at a time, in a fresh session, in a **git worktree**
-(concurrent agents edit this repo). Every item is **complete only after `/code-review` passes** —
-no item counts as done on merge alone. Respect **DRY**, **no god-objects / monolith files**, and
-**no AI-trope / junior-level code**: extend the established "pure logic seam out of glue" pattern
-(`reorder-policy.ts`, `cycle-count.ts`, `asset-lifecycle.ts`). Honour design-token / Foundry / a11y
-discipline (see `CLAUDE.md`): tokens only, reach for a Foundry primitive before hand-rolling, keep
-the a11y wiring, and verify token-based Tailwind utilities actually emit. No time constraints —
-do the thorough thing. When a task ships and its review passes, tick its box here **and** in the
-memory note.
+**Process (mandatory — no longer in force).** Implement one item at a time, in a fresh session,
+in a **git worktree** (concurrent agents edit this repo). Every item is **complete only after
+`/code-review` passes** — no item counts as done on merge alone. Respect **DRY**, **no
+god-objects / monolith files**, and **no AI-trope / junior-level code**: extend the established
+"pure logic seam out of glue" pattern (`reorder-policy.ts`, `cycle-count.ts`,
+`asset-lifecycle.ts`). Honour design-token / Foundry / a11y discipline (see `CLAUDE.md`): tokens
+only, reach for a Foundry primitive before hand-rolling, keep the a11y wiring, and verify
+token-based Tailwind utilities actually emit. No time constraints — do the thorough thing. When
+a task ships and its review passes, tick its box here **and** in the memory note.
 
 **Deliberate non-goals** (recorded so they are not re-proposed) are at the bottom.
 
 ---
 
-## Actionable gaps (open) — ranked by value × fit
+## Actionable gaps — ranked by value × fit (all since shipped)
 
 - [x] **G1 — Insurance / estate schedule export (print + PDF).** ✅ **Shipped 2026-07-10.**
   *High value; strong local-first
@@ -109,7 +110,7 @@ memory note.
   TCG / comic apps) and Encircle/NestEgg centre on *current market value*, not purchase price —
   we keep it **manual** (live-price scraping needs a keyed cloud API; see non-goals).
 
-## Shipped (tick + date as they land)
+## Shipped
 
 - **G4 — UI internationalization (multi-language)** — shipped 2026-07-10. **The last open item; this
   audit is complete.** Was: only number/date/currency formatting was locale-aware (`lib/format.ts`),
