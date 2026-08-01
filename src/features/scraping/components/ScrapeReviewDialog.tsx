@@ -65,6 +65,7 @@ export function ScrapeReviewDialog({
       title="Review scraped data"
       description="Empty fields are filled automatically. Your existing values are never changed unless you tick them."
       className="max-w-lg"
+      busy={isApplying}
     >
       <div className="space-y-4">
         {nothingToDo ? (
@@ -136,7 +137,7 @@ export function ScrapeReviewDialog({
         ) : null}
 
         <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="ghost" onClick={onClose}>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={isApplying}>
             Cancel
           </Button>
           <Button type="button" onClick={confirm} disabled={isApplying || nothingToDo}>

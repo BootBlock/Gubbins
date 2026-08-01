@@ -262,6 +262,7 @@ export function WebhooksScreen() {
           onClose={() => setDeleting(null)}
           title={t('webhooks.delete.title')}
           description={t('webhooks.delete.body', { vars: { name: deleting.name } })}
+          busy={deleteWebhook.isPending}
         >
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setDeleting(null)} disabled={deleteWebhook.isPending}>

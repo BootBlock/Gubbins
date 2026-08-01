@@ -86,6 +86,14 @@ just *offer* you the file and carry on — it waits until the copy is really the
 > most often on a phone, or when the disk is full — and the whole point of the copy is to exist
 > before anything is overwritten. Go and look for the file first.
 
+> **ℹ️ Note**
+> Once a backup or a restore is genuinely under way, the dialog stays put until it finishes —
+> pressing Escape, clicking outside it and the ✕ all wait, and so does switching between the
+> **Create backup** and **Restore** tabs. Leaving wouldn't call the work off; on a **Replace** it
+> would only hide whether your data came back or something went wrong part-way. Picking and
+> reading a backup file is not "under way" — nothing has been changed yet, so you can still back
+> out of that at any point.
+
 > **💡 Tip**
 > Take a backup before any big change — a large import, a bulk edit, or a Replace restore. The
 > automatic restore-point has your back, but your own recent `.zip` is the surest safety net.

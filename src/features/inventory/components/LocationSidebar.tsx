@@ -661,6 +661,7 @@ export function LocationSidebar({
             ? `"${confirmDelete.name}" still holds ${confirmDelete.itemCount} ${plural(confirmDelete.itemCount, 'item')}. Deleting it will move ${confirmDelete.itemCount === 1 ? 'it' : 'them'} to Unassigned.`
             : undefined
         }
+        busy={deleteLocation.isPending}
       >
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setConfirmDelete(null)} disabled={deleteLocation.isPending}>

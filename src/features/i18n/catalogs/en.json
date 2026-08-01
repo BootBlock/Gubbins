@@ -1400,6 +1400,7 @@
   "dialog.unsaved.description": "Something in this dialog has changes you haven’t saved yet. Closing it now throws them away, and they can’t be brought back.",
   "dialog.unsaved.keepEditing": "Keep editing",
   "dialog.unsaved.discard": "Discard changes",
+  "dialog.busy.blocked": "This dialog can’t be closed until the work it started has finished.",
   "common.writeFailed": "Your change could not be saved.",
   "common.writeUnknown.heading": "Not sure whether that saved",
   "common.writeUnknown": "The database took too long to answer, so Gubbins can’t tell whether your change was saved. Check before making the change again.",

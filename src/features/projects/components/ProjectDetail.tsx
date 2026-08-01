@@ -310,6 +310,7 @@ export function ProjectDetail({
         onClose={() => setConfirmDeleteOpen(false)}
         title="Delete project?"
         description={`"${projectName}" and its entire bill of materials will be permanently removed. Matched inventory items and their stock are not affected.`}
+        busy={deleteProject.isPending}
       >
         <div className="flex justify-end gap-2">
           <Button

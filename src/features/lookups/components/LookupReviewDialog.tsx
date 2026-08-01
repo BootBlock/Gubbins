@@ -144,6 +144,7 @@ export function LookupReviewDialog({
       title={t('lookup.review.title', { vars: { source: sourceName } })}
       description={t('lookup.review.description')}
       className="max-w-lg"
+      busy={isApplying}
     >
       <div className="space-y-4">
         {fills.length === 0 && conflicts.length === 0 ? (
@@ -230,7 +231,7 @@ export function LookupReviewDialog({
         </p>
 
         <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="ghost" onClick={onClose}>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={isApplying}>
             {t('lookup.cancel')}
           </Button>
           <Button

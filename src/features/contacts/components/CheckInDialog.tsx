@@ -63,6 +63,7 @@ export function CheckInDialog({
       title="Return item"
       description={`${checkout.itemName} — on loan to ${checkout.borrowerName}`}
       initialFocusRef={noteRef}
+      busy={checkIn.isPending}
     >
       <div className="space-y-4">
         <SelectField

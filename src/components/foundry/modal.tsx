@@ -5,10 +5,12 @@ import { useT } from '@/features/i18n';
 import { Button } from './button';
 import { Surface } from './surface';
 import { CloseButton } from './close-button';
+import { LiveRegion } from './live-region';
 import { useBackdropDismiss } from './backdrop-dismiss';
 import { useDialogBehaviour } from './use-dialog-behaviour';
 import { useReducedMotion } from './useReducedMotion';
 import { UnsavedChangesContext, useUnsavedChangesRegistry } from './unsaved-changes';
+import { DialogBusyContext, DialogBusyStateContext, useDialogBusyRegistry } from './dialog-busy';
 
 /**
  * Foundry Modal — a lightweight, accessible dialog (spec §2.4.1). Hand-built for
@@ -46,16 +48,41 @@ export interface ModalProps {
    * into an intermediate scroll container.
    */
   readonly scrollBody?: boolean;
+  /**
+   * Whether the dialog has work in flight that cannot be interrupted (issue #654). While set,
+   * *every* route out is refused — Escape, a backdrop tap and the ✕ alike — and the ✕ is
+   * disabled so the refusal is visible rather than a dead press.
+   *
+   * Pass the same flag the dialog's own buttons are disabled by. The frame owns the policy, so
+   * this names the *reason* rather than the answer: a dialog can say it is working, and every
+   * dismissal affordance then agrees on what that means. A dialog whose flag lives in a
+   * descendant reports it with `useReportDialogBusy` instead; the two are OR'd, so a frame is
+   * held while either says so.
+   */
+  readonly busy?: boolean;
+}
+
+/**
+ * Say *why* a dismissal was refused, for a screen reader that would otherwise get silence
+ * (WCAG 4.1.3). A separate component for the same reason {@link UnsavedChangesPrompt} is one:
+ * it is the only other part of the dialog frame whose copy goes through `t()`, and it mounts
+ * only once someone has actually tried to leave — so the plain frame, the one the crash screen
+ * draws its rescue actions in, keeps no dependency on the message catalog being loadable.
+ */
+function DismissBlockedMessage() {
+  const t = useT();
+  return <p>{t('dialog.busy.blocked')}</p>;
 }
 
 /**
  * Ask before throwing away a draft (issue #576). Kept beside {@link Modal} rather than in its
  * own module because it *is* a Modal, and a separate file would put a cycle between the two.
  *
- * Its copy is the one part of the dialog frame that goes through `t()`, so the hook is called
- * here rather than in {@link Modal} itself: this component mounts only once someone tries to
- * dismiss unsaved work, which keeps the plain dialog frame — the one the crash screen's rescue
- * actions are drawn in — free of any dependency on the message catalog being loadable.
+ * Its copy goes through `t()`, so the hook is called here rather than in {@link Modal} itself:
+ * this component mounts only once someone tries to dismiss unsaved work, which keeps the plain
+ * dialog frame — the one the crash screen's rescue actions are drawn in — free of any dependency
+ * on the message catalog being loadable. {@link DismissBlockedMessage} is split out for the same
+ * reason; between them they are the whole of the frame's translated copy.
  */
 function UnsavedChangesPrompt({
   onKeepEditing,
@@ -106,6 +133,7 @@ export function Modal({
   titleAccessory,
   initialFocusRef,
   scrollBody = true,
+  busy = false,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   // Honour the user's reduced-motion preference (§3 / WCAG 2.3.3): when set, the
@@ -118,20 +146,59 @@ export function Modal({
   // silently. A dialog holding nothing that reports behaves exactly as it always did.
   const { hasUnsavedChanges, report } = useUnsavedChangesRegistry();
   const [confirmingClose, setConfirmingClose] = useState(false);
+
+  // In-flight guard (issue #654). The same shape one level along: a panel below reports that it
+  // has started work nobody can interrupt, and the frame refuses every route out until it ends.
+  // OR'd with the caller's own `busy`, since the flag sits in the dialog itself as often as in a
+  // panel below it.
+  const { isBusy, report: reportBusy } = useDialogBusyRegistry();
+  const blocked = busy || isBusy;
+  // Counts refusals rather than flagging one, so a second Escape re-announces instead of
+  // mutating the live region to the text it already holds — which several screen readers treat
+  // as no change at all and say nothing about.
+  const [refusals, setRefusals] = useState(0);
+
   // A dismissal the *user* asked for, as opposed to the caller setting `open` to false: only the
   // former is worth questioning, since the latter is usually the dialog's own work completing.
   const requestClose = useCallback(() => {
+    // Busy is settled before unsaved work, because it is not a question. Offering to discard a
+    // draft here would take an answer the frame cannot honour — closing does not stop the
+    // operation, it only hides the outcome — so the honest reply is "not yet".
+    if (blocked) {
+      setRefusals((n) => n + 1);
+      return;
+    }
     if (hasUnsavedChanges) {
       setConfirmingClose(true);
       return;
     }
     onClose();
-  }, [hasUnsavedChanges, onClose]);
+  }, [blocked, hasUnsavedChanges, onClose]);
   // A dialog closed out from under the question (a save landing, a route change) must not come
   // back asking about a draft that is no longer on screen.
   useEffect(() => {
     if (!open) setConfirmingClose(false);
   }, [open]);
+  // The refusal count is scoped to a *spell* of work, not to the dialog being open: several
+  // dialogs run one operation after another behind a single opening (each maintenance task, a
+  // backup then a restore). Left standing, a count from the first spell would put the message
+  // into the region at the instant the second one mounts it — announcing a refusal nobody made,
+  // and inserting region and message together, which is the announcement loss this is shaped to
+  // avoid.
+  useEffect(() => {
+    if (!blocked) setRefusals(0);
+  }, [blocked]);
+
+  // Keep focus inside the dialog when work starts. The controls that go busy are disabled in the
+  // same commit — this frame's ✕ among them — and a browser blurs a focused element the moment
+  // it is disabled, dropping focus to `<body>`: outside the dialog, outside its Tab trap, and
+  // nowhere a screen reader can describe. Whatever the user had pressed, they end up back on the
+  // container, which is where the dialog announces itself.
+  useEffect(() => {
+    if (!open || !blocked) return;
+    const node = dialogRef.current;
+    if (node && !node.contains(document.activeElement)) node.focus();
+  }, [open, blocked]);
 
   // Accessible dialog behaviour (spec §3 — aria-modal contract): modal-stack registration,
   // initial focus, Tab trap, Escape, scroll lock and focus restore. Shared with {@link Drawer}.
@@ -181,7 +248,10 @@ export function Modal({
             </div>
             <div className="flex items-center gap-2">
               {titleAccessory}
-              <CloseButton onClick={requestClose} />
+              {/* Disabled rather than merely inert while work is in flight: it is the one
+                  dismissal affordance the user can *see*, so greying it out says "not yet"
+                  before they press it, the same way the dialog's own buttons already do. */}
+              <CloseButton onClick={requestClose} disabled={blocked} />
             </div>
           </div>
           {/* The body region. `min-h-0` lets this flex child shrink below its content height so a
@@ -208,8 +278,24 @@ export function Modal({
             past the Surface with no way to reach the bottom of it; as a flex item it shrinks to
             the room actually left over and scrolls internally instead. */}
           <div className={cn('mt-5 min-h-0', scrollBody ? 'dialog-scroll -ml-2 pl-2' : 'flex flex-col')}>
-            <UnsavedChangesContext.Provider value={report}>{children}</UnsavedChangesContext.Provider>
+            <UnsavedChangesContext.Provider value={report}>
+              <DialogBusyContext.Provider value={reportBusy}>
+                <DialogBusyStateContext.Provider value={blocked}>{children}</DialogBusyStateContext.Provider>
+              </DialogBusyContext.Provider>
+            </UnsavedChangesContext.Provider>
           </div>
+          {/* Mounted for as long as the dialog is holding on, its *content* swapped in when a
+              dismissal is actually turned down — a live region inserted at the same moment as its
+              message is frequently never announced at all (see `live-region.tsx`), and going busy
+              always precedes a refusal by at least one commit, so the region is there in good
+              time. Tied to `blocked` rather than left up permanently so a dialog that never runs
+              anything adds no second status region beside its own. Last inside the Surface, after
+              the body, so it sits outside the scroll region rather than in the middle of it. */}
+          {blocked ? (
+            <LiveRegion visuallyHidden data-testid="dialog-dismiss-blocked">
+              {refusals > 0 ? <DismissBlockedMessage key={refusals} /> : null}
+            </LiveRegion>
+          ) : null}
         </Surface>
       </div>
       {/* A sibling of the dialog rather than a child of it, in the React tree as well as the DOM:
@@ -222,6 +308,14 @@ export function Modal({
           onKeepEditing={() => setConfirmingClose(false)}
           onDiscard={() => {
             setConfirmingClose(false);
+            // Re-checked rather than assumed: the question can only have been *opened* while
+            // idle, but the work behind it need not have been started from this dialog — a
+            // caller-owned mutation can go busy while it is up, and a "discard" answered then
+            // must not be the one route out that still closes.
+            if (blocked) {
+              setRefusals((n) => n + 1);
+              return;
+            }
             onClose();
           }}
         />

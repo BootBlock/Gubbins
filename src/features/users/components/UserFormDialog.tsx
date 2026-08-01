@@ -73,6 +73,7 @@ export function UserFormDialog({ user, roles, busy, error, onSubmit, onClose }: 
       onClose={onClose}
       title={user ? t('users.form.title.edit') : t('users.form.title.create')}
       description={t('users.form.description')}
+      busy={busy}
     >
       <form
         className="flex flex-col gap-4"

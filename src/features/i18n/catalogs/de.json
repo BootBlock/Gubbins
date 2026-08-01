@@ -1400,6 +1400,7 @@
   "dialog.unsaved.description": "In diesem Dialog gibt es Änderungen, die Sie noch nicht gespeichert haben. Wenn Sie ihn jetzt schließen, gehen sie verloren und lassen sich nicht wiederherstellen.",
   "dialog.unsaved.keepEditing": "Weiter bearbeiten",
   "dialog.unsaved.discard": "Änderungen verwerfen",
+  "dialog.busy.blocked": "Dieser Dialog kann erst geschlossen werden, wenn der gestartete Vorgang abgeschlossen ist.",
   "common.writeFailed": "Ihre Änderung konnte nicht gespeichert werden.",
   "common.writeUnknown.heading": "Unklar, ob das gespeichert wurde",
   "common.writeUnknown": "Die Datenbank hat zu lange nicht geantwortet, daher kann Gubbins nicht feststellen, ob Ihre Änderung gespeichert wurde. Prüfen Sie das, bevor Sie die Änderung erneut vornehmen.",

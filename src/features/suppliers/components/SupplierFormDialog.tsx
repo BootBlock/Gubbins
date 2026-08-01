@@ -119,6 +119,7 @@ export function SupplierFormDialog({ supplier, onClose, onMerge, onAnnounce }: S
       title={isEdit ? t('suppliers.form.edit.title') : t('suppliers.form.create.title')}
       description={isEdit ? t('suppliers.form.edit.description') : t('suppliers.form.create.description')}
       initialFocusRef={nameRef}
+      busy={busy}
     >
       <div className="space-y-5">
         <FormField label={t('suppliers.form.name')}>
