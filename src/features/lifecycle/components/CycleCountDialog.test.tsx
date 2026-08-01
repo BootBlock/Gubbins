@@ -251,6 +251,37 @@ describe('CycleCountDialog — the count sheet survives being closed (issue #587
     expect(useCountDraftStore.getState().drafts[LOC.id]).toBeUndefined();
   });
 
+  it('empties the live sheet on authorise, so the post-write refetch cannot resurrect it', async () => {
+    // Authorising invalidates this location's cycle-count query (its key sits under the items
+    // prefix), so the provider is re-seeded while still mounted and its mirror effect runs
+    // again. Clearing only the *stored* sheet would leave the live inputs holding the committed
+    // numbers, and that re-seed would write them straight back as a draft of work that is now
+    // the database's own state — offered back the next time this location is opened.
+    let count: LocationCycleCount | null = null;
+    function Harness() {
+      count = useLocationCycleCount(LOC);
+      return null;
+    }
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <CycleCountProvider>
+          <Harness />
+        </CycleCountProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(count!.lines).toHaveLength(1));
+    act(() => count!.setCount(BATCH_LINE_KEY, '8'));
+    await waitFor(() => expect(useCountDraftStore.getState().drafts[LOC.id]).toBeDefined());
+
+    await act(async () => {
+      await count!.authorise();
+    });
+
+    expect(count!.counts).toEqual({});
+    expect(useCountDraftStore.getState().drafts[LOC.id]).toBeUndefined();
+  });
+
   it('keeps the sheet when authorisation fails — a failed write must not cost the count', async () => {
     // Driven through the hook rather than the button: the dialog fires `void authorise()`, so a
     // rejection there escapes as an unhandled one (the mutation reports the failure to the user

@@ -78,8 +78,13 @@ interface CycleCountValue {
   ) => void;
   readonly setCount: (lineKey: string, value: string) => void;
   readonly setPresence: (itemId: string, value: SerialisedPresence) => void;
-  /** Throw the saved sheet away and start this location's count from scratch. */
-  readonly discardDraft: () => void;
+  /**
+   * Empty this location's sheet — the live inputs *and* the saved copy behind them. Both the
+   * auditor's "Start over" and the moment a count is authorised go through here: once the sheet
+   * has been committed to the ledger it must stop being mirrored, or the next refetch would
+   * write it straight back as a draft of work that is now the database's own state.
+   */
+  readonly clearSheet: () => void;
 }
 
 const CycleCountContext = createContext<CycleCountValue | null>(null);
@@ -139,11 +144,11 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
     setPresenceMap((prev) => ({ ...prev, [itemId]: value }));
   }, []);
 
-  const discardDraft = useCallback(() => {
+  const clearSheet = useCallback(() => {
     const locationId = seededLocationRef.current;
     // Cleared here as well as by the mirroring effect below (which an emptied sheet would also
-    // reach): discarding is a deliberate destructive action, so it drops the stored sheet then
-    // and there rather than depending on a later effect to notice.
+    // reach): both callers are deliberate, so the stored sheet goes then and there rather than
+    // depending on a later effect to notice.
     if (locationId) useCountDraftStore.getState().clear(locationId);
     setCounts({});
     setPresenceMap(reconcilePresence(serialised, {}));
@@ -171,9 +176,9 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
       begin,
       setCount,
       setPresence,
-      discardDraft,
+      clearSheet,
     }),
-    [location, lines, counts, serialised, presence, restored, begin, setCount, setPresence, discardDraft],
+    [location, lines, counts, serialised, presence, restored, begin, setCount, setPresence, clearSheet],
   );
   return <CycleCountContext.Provider value={value}>{children}</CycleCountContext.Provider>;
 }

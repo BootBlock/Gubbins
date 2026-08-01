@@ -52,7 +52,7 @@ function CycleCountBody({
   onClose: () => void;
 }) {
   const count = useLocationCycleCount(location);
-  const { isLoading, isEmpty, drift, missing, totalToApply, pending, restored, discardDraft } = count;
+  const { isLoading, isEmpty, drift, missing, totalToApply, pending, restored, clearSheet } = count;
   const [applied, setApplied] = useState<number | null>(null);
 
   // Celebrate a completed count with a one-shot milestone burst (visual-flair F4) as the result
@@ -116,7 +116,7 @@ function CycleCountBody({
         phantom gap on every fresh count. Dropped once the count is applied: the sheet has been
         committed, and the result view says so.
       */}
-      <CountDraftNotice restored={applied === null ? restored : null} onDiscard={discardDraft} />
+      <CountDraftNotice restored={applied === null ? restored : null} onDiscard={clearSheet} />
 
       {/*
         The intro primer and the state below it (loading / empty / counting / result) are stacked

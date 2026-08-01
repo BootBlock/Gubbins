@@ -418,7 +418,7 @@ function AuditLocationPanel({
   onSkip: () => void;
 }) {
   const count = useLocationCycleCount(location);
-  const { isLoading, isEmpty, missing, totalToApply, pending, restored, discardDraft } = count;
+  const { isLoading, isEmpty, missing, totalToApply, pending, restored, clearSheet } = count;
 
   // Every "done with this location" path — an empty location, a clean count, or one with
   // variances — funnels through `authorise()` so the durable `lastCountedAt` stamp (spec
@@ -442,7 +442,7 @@ function AuditLocationPanel({
   // living inside the counting branch would mount already-populated and stay silent.
   return (
     <>
-      <CountDraftNotice restored={restored} onDiscard={discardDraft} />
+      <CountDraftNotice restored={restored} onDiscard={clearSheet} />
 
       {isLoading ? (
         <p className="py-6 text-center text-sm text-muted-foreground">Loading items…</p>
