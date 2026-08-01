@@ -1992,5 +1992,8 @@
   "settings.lookupConsent.description": "Die offenen Datenbanken, die dieses Gerät kontaktieren darf, wenn Sie die Felder eines Objekts daraus füllen. Entfernen Sie eine, um erneut gefragt zu werden.",
   "settings.lookupConsent.hint": "Eine Kategorie kann so eingerichtet werden, dass sie **die Felder eines Objekts aus einer offenen Datenbank füllt**. Bevor dieses Gerät eine solche Datenbank zum ersten Mal kontaktiert, fragt Gubbins um Ihre Erlaubnis und nennt die genaue Seite.\n\nJeder Seite wird **einzeln** zugestimmt – ja zu einer Filmdatenbank ist kein Ja zu allem – und übertragen wird immer nur der Name des Objekts, und nur wenn Sie die Schaltfläche drücken.\n\nEine Seite hier zu entfernen **widerruft** diese Zustimmung: Es wird nichts kontaktiert, bis Sie erneut zustimmen. Diese Entscheidung bleibt auf **diesem Gerät**: Sie wird nie über die Einstellungssynchronisierung geteilt, und eine Sicherung stellt sie nur wieder her, wenn Sie die Gruppe *Dieses Gerät* einbeziehen.",
   "settings.lookupConsent.empty": "Sie haben bisher keiner zugestimmt.",
-  "settings.lookupConsent.withdraw": "Zustimmung für {host} widerrufen"
+  "settings.lookupConsent.withdraw": "Zustimmung für {host} widerrufen",
+  "storage.hardStop.observed.heading": "Speicher voll – Speichern angehalten",
+  "storage.hardStop.observed.body": "Ein Speichervorgang ist fehlgeschlagen, weil auf diesem Gerät kein Platz mehr frei ist. Gubbins hat deshalb alle Schreibvorgänge angehalten, um Ihre Daten zu schützen. Ihr Browser meldet weiterhin nur {percent} belegt – er erkennt nicht immer, wenn das Gerät selbst voll ist. Geben Sie Speicherplatz frei, um fortzufahren.",
+  "storage.triage.observedFull": "Ein Speichervorgang ist aus Platzmangel fehlgeschlagen, deshalb ist das Speichern angehalten. Die Werte oben geben möglicherweise nicht wieder, wie voll dieses Gerät tatsächlich ist."
 }

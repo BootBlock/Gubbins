@@ -67,6 +67,24 @@ with a message saying storage is full, and [[cloud sync|Cloud-Sync]] stops befor
 down. Declining the write is deliberate — a database that runs out of room part-way through is far
 worse than one that says no.
 
+### When a save runs out of space anyway
+
+Those percentages come from a figure your **browser** reports, and it is an estimate rather than a
+measurement. Browsers deliberately round it, and some pad it; a device whose *own* disk is full can
+still tell Gubbins there is plenty of room. So the percentage is not the last word:
+
+- If a save actually fails for lack of space, Gubbins pauses saving there and then, whatever the
+  percentage says, and the banner explains the disagreement rather than quoting a figure that
+  contradicts it. Storage triage opens from that banner as usual.
+- Saving resumes on its own once space genuinely comes back — either because something you deleted
+  or downgraded here saved successfully, or because free space reappears on the device. There is
+  nothing to switch back on by hand.
+
+> **💡 Tip**
+> If the banner says storage is full but the percentage looks low, the space is being used by
+> something *other* than Gubbins. Free some up on the device itself — empty the trash, clear
+> downloads — and Gubbins picks it up on its own shortly afterwards.
+
 > **💡 Tip**
 > Sending your data *out* keeps working, so you're never stuck with no way to preserve it:
 > [[export|Export-and-Import]] a file, or publish to [[cloud sync|Cloud-Sync]] if you haven't yet.

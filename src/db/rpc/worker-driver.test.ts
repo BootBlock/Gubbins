@@ -8,6 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DbError } from '../errors';
+import { setStorageOutcomeObserver } from '@/features/storage/exhaustion';
 import { RPC_TIMEOUT_MS, WorkerDatabaseDriver } from './worker-driver';
 import type { RpcRequestEnvelope, RpcResponseEnvelope } from './protocol';
 
@@ -378,6 +379,58 @@ describe('WorkerDatabaseDriver', () => {
       const driver = createDriver();
       worker.emit('error', new ErrorEvent('error', { message: 'wasm trap' }));
       await expect(driver.query('SELECT 1')).rejects.toThrowError(/wasm trap/);
+    });
+  });
+
+  /**
+   * Issue #504: the storage tier used to come from `navigator.storage.estimate()` alone, so a
+   * write that genuinely ran out of space changed nothing. This is the one point every database
+   * outcome passes through, which is why the report lives here rather than at each call site.
+   */
+  describe('storage-exhaustion reporting', () => {
+    const onExhausted = vi.fn();
+    const onWriteSucceeded = vi.fn();
+
+    beforeEach(() => {
+      onExhausted.mockClear();
+      onWriteSucceeded.mockClear();
+      setStorageOutcomeObserver({ onExhausted, onWriteSucceeded });
+    });
+    afterEach(() => setStorageOutcomeObserver(null));
+
+    it('reports a SQLITE_FULL failure so the tier can stop believing the estimate', async () => {
+      const driver = createDriver();
+      const write = driver.execute('INSERT INTO items DEFAULT VALUES');
+      worker.reply(0, {
+        ok: false,
+        error: new DbError('SQLITE_FULL', 'database or disk is full', { resultCode: 13 }).toSerialized(),
+      });
+      await expect(write).rejects.toMatchObject({ code: 'SQLITE_FULL' });
+      expect(onExhausted).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves failures that are nothing to do with space alone', async () => {
+      const driver = createDriver();
+      const write = driver.execute('INSERT INTO items DEFAULT VALUES');
+      worker.reply(0, { ok: false, error: new DbError('SQLITE_BUSY', 'database is locked').toSerialized() });
+      await expect(write).rejects.toMatchObject({ code: 'SQLITE_BUSY' });
+      expect(onExhausted).not.toHaveBeenCalled();
+    });
+
+    it('reports a write that lands — the only evidence that can clear an observed failure', async () => {
+      const driver = createDriver();
+      const write = driver.transaction([{ sql: 'INSERT INTO items DEFAULT VALUES' }]);
+      worker.reply(0, { ok: true, result: null });
+      await expect(write).resolves.toBeUndefined();
+      expect(onWriteSucceeded).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not treat a successful read as evidence that storage accepts writes', async () => {
+      const driver = createDriver();
+      const rows = driver.query('SELECT 1');
+      worker.reply(0, { ok: true, result: [] });
+      await expect(rows).resolves.toEqual([]);
+      expect(onWriteSucceeded).not.toHaveBeenCalled();
     });
   });
 

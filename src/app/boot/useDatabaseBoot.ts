@@ -25,6 +25,7 @@ import { bootDatabase, countStoredItems, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
 import { storageWriteGate, useStorageStore } from '@/state/stores/useStorageStore';
 import { setStorageWriteGate } from '@/features/storage/write-gate';
+import { setStorageOutcomeObserver } from '@/features/storage/exhaustion';
 import { labFlag } from '@/state/stores/useLabStore';
 import {
   evaluateDbPresence,
@@ -145,6 +146,15 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
     // Registered rather than imported by those modules, because the Bridge shares them and has
     // neither a quota nor these stores — see `features/storage/write-gate.ts`.
     setStorageWriteGate(storageWriteGate);
+
+    // Issue #504: let a write that *actually* ran out of space raise the tier, rather than leaving
+    // the whole storage subsystem subordinate to an estimate the browser is entitled to pad. Same
+    // registration reason as the gate above — the database driver and the raw OPFS image writes
+    // that report into it must not reach into a store, and the Bridge has none.
+    setStorageOutcomeObserver({
+      onExhausted: () => useStorageStore.getState().reportExhaustion(),
+      onWriteSucceeded: () => useStorageStore.getState().reportWriteSucceeded(),
+    });
 
     // DEV-only test seam (stripped from production builds): the real-browser smoke
     // (§8.5.5) can force a storage tier to drive the §7.6 Triage Dashboard, which is
