@@ -103,6 +103,13 @@ detection — so a BOM export, a supplier basket or a typed shopping list can be
 going through the item importer first.
 
 > **ℹ️ Note**
+> Once you've pressed import and the rows are actually being written, the dialog stays put until
+> it's done — pressing Escape, clicking outside it and the ✕ all wait. It finishes on a summary:
+> how many items were created, how many updated, and how many rows were skipped with the reason
+> for each. That summary is the only place those reasons appear, and closing part-way through
+> wouldn't have stopped the import — only hidden what it did.
+
+> **ℹ️ Note**
 > A chosen file is checked *before* anything is read from it, because a file picker's "All files"
 > option lets anything through. Only **text** is importable: a spreadsheet workbook (`.xlsx`,
 > `.ods`), a PDF, a photo or an archive is turned away with a note saying what it looks like and

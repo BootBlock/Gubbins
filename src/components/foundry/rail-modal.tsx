@@ -91,6 +91,11 @@ export interface RailModalProps {
    * actually opened, and the set resets when the dialog closes.
    */
   readonly keepPanelsMounted?: boolean;
+  /**
+   * Forwarded to the underlying {@link Modal}: the rail dialog has work in flight, so every
+   * route out of it is refused until that finishes (issue #654).
+   */
+  readonly busy?: boolean;
 }
 
 /**
@@ -125,6 +130,7 @@ export function RailModal({
   onSubmit,
   initialFocusRef,
   keepPanelsMounted = false,
+  busy = false,
 }: RailModalProps) {
   // Uncontrolled fallback selection — used only when the caller does not pass `activeTabId`.
   const [internalId, setInternalId] = useState(initialTabId ?? tabs[0]!.id);
@@ -303,6 +309,7 @@ export function RailModal({
       titleAccessory={titleAccessory}
       scrollBody={false}
       initialFocusRef={initialFocusRef}
+      busy={busy}
     >
       {/* The <form> sits between the Modal body and the frame, so it has to pass the body's
           shrink-to-fit through rather than block it at its own natural height. */}

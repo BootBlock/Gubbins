@@ -25,6 +25,7 @@ import {
   SuccessIcon,
 } from '@/components/icons';
 import { plural } from '@/lib/plural';
+import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -65,12 +66,17 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
    */
   const [choosingArchiveDestination, setChoosingArchiveDestination] = useState(false);
   const fmt = useFormatters();
+  const t = useT();
 
   const pruneCutoffMs = useMemo(() => pruneCutoff(now, pruneMonths), [now, pruneMonths]);
   const downgradeCutoffMs = useMemo(() => pruneCutoff(now, downgradeMonths), [now, downgradeMonths]);
 
   const estimate = useStorageStore((s) => s.estimate);
   const ratio = useStorageStore((s) => s.ratio);
+  // A write that actually ran out of space outranks the figures above it (issue #504) — and when
+  // the estimate still shows headroom, saying so is the difference between an explanation and a
+  // contradiction.
+  const observedFull = useStorageStore((s) => s.exhaustion !== null);
 
   const breakdown = useStorageBreakdown();
   const pruneCount = usePruneCandidateCount(pruneCutoffMs);
@@ -86,9 +92,16 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
     // Reserve the destination inside the click (issue #502). The picker that can actually report
     // a completed save needs the user gesture, and the rows are not read until it resolves —
     // so choosing first is what lets the prune wait on a copy that provably exists.
+    // Released in a `finally` rather than after the await: the dialog now refuses to close while
+    // this is set, so a throw on the way to a destination would strand the user in a dialog with
+    // no way out rather than merely leaving a button greyed.
     setChoosingArchiveDestination(true);
-    const saver = await prepareSave(historyArchiveFilename(now), HISTORY_ARCHIVE_FILE_KIND);
-    setChoosingArchiveDestination(false);
+    let saver;
+    try {
+      saver = await prepareSave(historyArchiveFilename(now), HISTORY_ARCHIVE_FILE_KIND);
+    } finally {
+      setChoosingArchiveDestination(false);
+    }
     if (!saver) return; // the user closed the save dialog: nothing is archived and nothing deleted
     prune.mutate(
       { months: pruneMonths, save: { saver, confirmUnverified: confirmSaved } },
@@ -145,6 +158,9 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
       title="Storage triage"
       description="Reclaim local space without losing your active inventory."
       className="max-w-2xl"
+      // The archive's destination picker counts as work in flight alongside the two mutations: the
+      // prune has not started while it is open, so its own `isPending` does not cover that window.
+      busy={prune.isPending || downgrade.isPending || choosingArchiveDestination}
     >
       <div className="flex flex-col gap-6">
         <section aria-labelledby="triage-breakdown" className="flex flex-col gap-3">
@@ -163,6 +179,11 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               Your browser does not report a storage quota; the estimates below are approximate.
             </p>
           )}
+          {observedFull ? (
+            <p className="text-sm font-medium text-destructive" data-testid="triage-observed-full">
+              {t('storage.triage.observedFull')}
+            </p>
+          ) : null}
           {breakdown.isPending ? (
             <Spinner />
           ) : breakdown.data ? (

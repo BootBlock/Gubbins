@@ -42,6 +42,7 @@ import {
   restoreRawSqlite,
   StaleJournalError,
 } from './safe-mode-actions';
+import { setStorageOutcomeObserver } from '@/features/storage/exhaustion';
 import { SAHPOOL_DIRECTORY } from '@/db/db-storage';
 import { readDbPresence, writeDbPresence } from '@/db/db-presence';
 import { SQLITE_MAGIC } from '@/db/sqlite-header';
@@ -368,6 +369,21 @@ describe('overwriteDatabaseFile (issue #203)', () => {
       expect(events).toContain('abort');
     },
   );
+
+  it('reports running out of room to the storage tier (#504)', async () => {
+    // This write never reaches the database worker, so nothing else can observe it — and it backs
+    // the ordinary backup restore as well as the crash screen. Left unreported, the tier would
+    // keep believing the estimate that said there was room for it.
+    const onExhausted = vi.fn();
+    setStorageOutcomeObserver({ onExhausted, onWriteSucceeded: vi.fn() });
+    try {
+      mockOpfs(4096, { failAt: 'close' });
+      await expect(overwriteDatabaseFile(sqliteBytes())).rejects.toThrow(/quota/i);
+      expect(onExhausted).toHaveBeenCalledTimes(1);
+    } finally {
+      setStorageOutcomeObserver(null);
+    }
+  });
 
   it('raises a sidecar removal that fails for a reason other than absence', async () => {
     // The new database is on disk but an old journal survives beside it — replaying that over

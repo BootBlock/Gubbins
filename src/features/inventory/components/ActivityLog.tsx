@@ -248,6 +248,7 @@ function ActivityLogControls({
         onClose={() => setConfirming(false)}
         title={t('inventory.activityLog.clear.title')}
         description={t('inventory.activityLog.clear.description', { vars: { name: itemName } })}
+        busy={clearHistory.isPending}
       >
         {clearHistory.isError ? (
           <p role="alert" className="mb-3 text-xs text-destructive" data-testid="clear-item-activity-error">

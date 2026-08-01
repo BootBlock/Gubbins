@@ -400,6 +400,7 @@ export function UsersScreen() {
           onClose={() => setDeletingUser(null)}
           title={t('users.delete.title')}
           description={t('users.delete.body', { vars: { name: deletingUser.displayName } })}
+          busy={deleteUser.isPending}
         >
           <div className="flex flex-col gap-4">
             {formError ? (
@@ -444,6 +445,7 @@ export function UsersScreen() {
           onClose={() => setDeletingRole(null)}
           title={t('roles.delete.title')}
           description={t('roles.delete.body', { vars: { name: deletingRole.name } })}
+          busy={deleteRole.isPending}
         >
           <div className="flex flex-col gap-4">
             {formError ? (

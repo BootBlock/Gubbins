@@ -225,6 +225,9 @@ export function ImportPurchaseListDialog({
       title={t('purchasing.import.title')}
       description={t('purchasing.import.description')}
       className="max-w-2xl"
+      // A dismissal part-way through an import drops the callback that routes the user to the
+      // order it created, leaving behind a draft order nothing on screen leads to.
+      busy={pending}
     >
       <div className="space-y-4">
         <div className="space-y-field-gap-compact">
@@ -364,7 +367,7 @@ export function ImportPurchaseListDialog({
             {parsed ? t('purchasing.import.ready', { vars: { count: parsed.lines.length } }) : ' '}
           </p>
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" onClick={close}>
+            <Button type="button" variant="ghost" onClick={close} disabled={pending}>
               {t('purchasing.import.close')}
             </Button>
             <Button

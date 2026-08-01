@@ -187,6 +187,9 @@ export function CategoryPresetPickerDialog({
       className="max-w-3xl"
       scrollBody={false}
       initialFocusRef={searchRef}
+      // The seed writes the category and then its fields one at a time, so a dismissal part-way
+      // through leaves a partly-built category behind with nothing on screen to say so.
+      busy={importingId !== null}
     >
       <div className="flex h-[65vh] min-h-0 flex-col gap-3 sm:flex-row sm:gap-4">
         {/* Left: the search box above the browse sections. On narrow screens the

@@ -368,6 +368,7 @@ export function ContactsScreen() {
             ? `"${confirmDelete.name}" is currently borrowing/loaning ${confirmDelete.openCount} ${plural(confirmDelete.openCount, 'item')}. Deleting this contact will check ${confirmDelete.openCount === 1 ? 'it' : 'them'} back in as returned. Are you sure you want to delete this contact?`
             : undefined
         }
+        busy={deleteContact.isPending}
       >
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setConfirmDelete(null)} disabled={deleteContact.isPending}>

@@ -53,6 +53,7 @@ export function SyncConflictsDialog({ open, onClose, onRestored }: SyncConflicts
       onClose={onClose}
       title="Review sync conflicts"
       description="These edits you made were overwritten when a device synced a change to the same thing at the same time. Keep the current version, or restore yours."
+      busy={busyId !== null}
     >
       {error ? (
         <Banner tone="danger" role="alert" className="mb-4">

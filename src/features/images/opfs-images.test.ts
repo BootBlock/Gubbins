@@ -1,14 +1,107 @@
 /**
- * `writeImageFiles` re-hydrates the full-resolution images after a restore has already replaced
- * the database (issue #639), so it is the one OPFS helper that must never throw: by the time it
- * runs there is nothing left to unwind, and abandoning the remaining files on the first failure
- * loses images the device had room for. It reports instead — what landed, and what did not.
+ * Issue #504: the full-resolution WebP is the largest thing Gubbins writes, and it goes straight to
+ * OPFS on the main thread — nowhere near the database worker. A `QuotaExceededError` here used to
+ * propagate to a toast and stop, leaving the storage tier (and so the banners, Triage and the Hard
+ * Stop) computed purely from an estimate the browser is entitled to pad.
  *
- * The rest of the module is exercised by the real-browser smoke test (§8.5.5); this covers the
- * loop's error handling, which is precisely what a happy-path browser run never reaches.
+ * OPFS itself is not available under happy-dom, so the File System Access chain is faked: what is
+ * under test is this module's failure handling, which a real OPFS would only make harder to drive.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { writeImageFiles, type OpfsImageFile } from './opfs-images';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setStorageOutcomeObserver } from '@/features/storage/exhaustion';
+import { saveImageFile, writeImageFiles, type OpfsImageFile } from './opfs-images';
+
+type FailurePoint = 'write' | 'close' | null;
+
+class FakeWritable {
+  aborted = false;
+  closed = false;
+  readonly chunks: unknown[] = [];
+
+  constructor(
+    private readonly failAt: FailurePoint,
+    private readonly error: unknown,
+  ) {}
+
+  async write(chunk: unknown): Promise<void> {
+    if (this.failAt === 'write') throw this.error;
+    this.chunks.push(chunk);
+  }
+
+  async close(): Promise<void> {
+    // A real stream that already errored refuses to close, which is exactly how the underlying
+    // failure used to get masked when `close()` ran from a `finally`.
+    if (this.failAt === 'close') throw this.error;
+    if (this.failAt === 'write') throw new DOMException('stream is errored', 'InvalidStateError');
+    this.closed = true;
+  }
+
+  async abort(): Promise<void> {
+    this.aborted = true;
+  }
+}
+
+let writable: FakeWritable;
+
+/** Stub OPFS so `saveImageFile` reaches a writable that fails where the test wants it to. */
+function stubOpfs(failAt: FailurePoint, error: unknown = quotaExceeded()): void {
+  writable = new FakeWritable(failAt, error);
+  const fileHandle = { createWritable: () => Promise.resolve(writable) };
+  const imagesDir = { getFileHandle: () => Promise.resolve(fileHandle) };
+  const root = { getDirectoryHandle: () => Promise.resolve(imagesDir) };
+  vi.stubGlobal('navigator', { storage: { getDirectory: () => Promise.resolve(root) } });
+}
+
+function quotaExceeded(): DOMException {
+  return new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+}
+
+const onExhausted = vi.fn();
+
+beforeEach(() => {
+  onExhausted.mockClear();
+  setStorageOutcomeObserver({ onExhausted, onWriteSucceeded: vi.fn() });
+});
+
+afterEach(() => {
+  setStorageOutcomeObserver(null);
+  vi.unstubAllGlobals();
+});
+
+describe('saveImageFile — running out of space', () => {
+  it('stores the blob and returns its relative path when there is room', async () => {
+    stubOpfs(null);
+    await expect(saveImageFile(new Blob(['x']))).resolves.toMatch(/^images\/.+\.webp$/);
+    expect(writable.closed).toBe(true);
+    expect(onExhausted).not.toHaveBeenCalled();
+  });
+
+  it('reports a quota failure raised by close(), where OPFS usually surfaces one', async () => {
+    // OPFS *stages* a write, so the quota check normally lands at close() rather than at write().
+    stubOpfs('close');
+    await expect(saveImageFile(new Blob(['x']))).rejects.toMatchObject({ name: 'QuotaExceededError' });
+    expect(onExhausted).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a quota failure raised by write(), without close() masking it', async () => {
+    stubOpfs('write');
+    await expect(saveImageFile(new Blob(['x']))).rejects.toMatchObject({ name: 'QuotaExceededError' });
+    expect(onExhausted).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards the staged bytes rather than committing a partial file on a full device', async () => {
+    stubOpfs('close');
+    await expect(saveImageFile(new Blob(['x']))).rejects.toThrow();
+    expect(writable.aborted).toBe(true);
+    expect(writable.closed).toBe(false);
+  });
+
+  it('rethrows a failure that has nothing to do with space without raising the tier', async () => {
+    stubOpfs('close', new DOMException('gone', 'NotFoundError'));
+    await expect(saveImageFile(new Blob(['x']))).rejects.toMatchObject({ name: 'NotFoundError' });
+    expect(onExhausted).not.toHaveBeenCalled();
+  });
+});
 
 /** `n` files named `image-0.webp`, `image-1.webp`, … */
 function images(n: number): OpfsImageFile[] {
@@ -47,11 +140,11 @@ function fakeOpfs(
           let staged: Uint8Array | undefined;
           return {
             write: async (bytes: Uint8Array) => {
-              if (options.failWrite?.includes(name)) throw new Error('QuotaExceededError');
+              if (options.failWrite?.includes(name)) throw quotaExceeded();
               staged = bytes;
             },
             close: async () => {
-              if (options.failClose?.includes(name)) throw new Error('QuotaExceededError');
+              if (options.failClose?.includes(name)) throw quotaExceeded();
               stored.set(name, staged!);
             },
             // Discards the scratch copy only — whatever the file already held survives.
@@ -81,10 +174,6 @@ function fakeOpfs(
   return { stored, aborted };
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 describe('writeImageFiles', () => {
   it('writes every file and reports nothing missed', async () => {
     const { stored } = fakeOpfs();
@@ -104,8 +193,19 @@ describe('writeImageFiles', () => {
     const report = await writeImageFiles(images(3));
 
     expect(report.failed).toEqual(['image-1.webp']);
-    expect(report.failure).toBeInstanceOf(Error);
+    expect(report.failure).toMatchObject({ name: 'QuotaExceededError' });
     expect([...stored.keys()]).toEqual(['image-0.webp', 'image-2.webp']);
+  });
+
+  it('still raises the storage tier, though it no longer throws (issue #504)', async () => {
+    // Swallowing the failure for the caller must not swallow it for the tier: this is a write
+    // that genuinely ran out of room, and it is the only authority the estimate does not have.
+    const { stored } = fakeOpfs({ failWrite: ['image-0.webp', 'image-1.webp'] });
+
+    await writeImageFiles(images(2));
+
+    expect(onExhausted).toHaveBeenCalledTimes(2);
+    expect(stored.size).toBe(0);
   });
 
   it('aborts the stream of a failed write, rather than leaving its scratch copy holding space', async () => {
@@ -159,7 +259,7 @@ describe('writeImageFiles', () => {
     const report = await writeImageFiles(images(2));
 
     expect(report.failed).toEqual(['image-0.webp', 'image-1.webp']);
-    expect(report.failure).toBeInstanceOf(Error);
+    expect(report.failure).toMatchObject({ message: 'OPFS unavailable' });
   });
 
   it('touches OPFS at all only when there is something to write', async () => {

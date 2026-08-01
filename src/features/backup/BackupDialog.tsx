@@ -1,5 +1,16 @@
 import { Fragment, useId, useRef, useState } from 'react';
-import { Banner, Button, Checkbox, Input, LiveRegion, Modal, Radio, Surface } from '@/components/foundry';
+import {
+  Banner,
+  Button,
+  Checkbox,
+  Input,
+  LiveRegion,
+  Modal,
+  Radio,
+  Surface,
+  useDialogIsBusy,
+  useReportDialogBusy,
+} from '@/components/foundry';
 import {
   DatabaseIcon,
   DownloadIcon,
@@ -105,8 +116,6 @@ export function BackupDialog({
   /** Called after a reload-free restore (merge / clone) so the host can refresh in place. */
   onRestored?: (notice: RestoreNotice) => void;
 }) {
-  const [tab, setTab] = useState<Tab>('create');
-
   return (
     <Modal
       open={open}
@@ -114,33 +123,58 @@ export function BackupDialog({
       title="Backup & restore"
       description="Save everything to a file, or restore from one."
     >
-      <div className="space-y-4">
-        <div
-          role="tablist"
-          aria-label="Backup or restore"
-          className="flex gap-1 rounded-lg bg-secondary/40 p-1"
-        >
-          <TabButton active={tab === 'create'} onClick={() => setTab('create')}>
-            <DownloadIcon /> Create backup
-          </TabButton>
-          <TabButton active={tab === 'restore'} onClick={() => setTab('restore')}>
-            <UploadIcon /> Restore
-          </TabButton>
-        </div>
-
-        {tab === 'create' ? <CreatePanel /> : <RestorePanel onClose={onClose} onRestored={onRestored} />}
-      </div>
+      <BackupTabs onClose={onClose} onRestored={onRestored} />
     </Modal>
+  );
+}
+
+/**
+ * The dialog's body, a component of its own so it can read the frame's in-flight answer
+ * ({@link useDialogIsBusy}) — which is published by the {@link Modal} above it, and so is not in
+ * scope for the component that renders that Modal.
+ */
+function BackupTabs({
+  onClose,
+  onRestored,
+}: {
+  onClose: () => void;
+  onRestored?: (notice: RestoreNotice) => void;
+}) {
+  const [tab, setTab] = useState<Tab>('create');
+  // Switching tab unmounts the panel behind it, so while a backup or a restore is running the
+  // rail is a third way to lose the outcome — exactly what closing the dialog would do. It is
+  // held with the same answer the frame gives Escape, the backdrop and the ✕ (issue #654).
+  const busy = useDialogIsBusy();
+
+  return (
+    <div className="space-y-4">
+      <div
+        role="tablist"
+        aria-label="Backup or restore"
+        className="flex gap-1 rounded-lg bg-secondary/40 p-1"
+      >
+        <TabButton active={tab === 'create'} onClick={() => setTab('create')} disabled={busy}>
+          <DownloadIcon /> Create backup
+        </TabButton>
+        <TabButton active={tab === 'restore'} onClick={() => setTab('restore')} disabled={busy}>
+          <UploadIcon /> Restore
+        </TabButton>
+      </div>
+
+      {tab === 'create' ? <CreatePanel /> : <RestorePanel onClose={onClose} onRestored={onRestored} />}
+    </div>
   );
 }
 
 function TabButton({
   active,
   onClick,
+  disabled,
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -148,8 +182,16 @@ function TabButton({
       type="button"
       role="tab"
       aria-selected={active}
-      onClick={onClick}
-      className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors [&_svg]:size-4 ${
+      // `aria-disabled`, not the native attribute — the pattern the Foundry Menu already uses for
+      // a held row. A tab belongs to a composite widget, and `disabled` would take it out of the
+      // dialog's Tab cycle altogether (`focus-trap.ts` skips `[disabled]`), so the rail would
+      // disappear from the keyboard instead of saying why it is unavailable.
+      aria-disabled={disabled || undefined}
+      onClick={() => {
+        if (disabled) return;
+        onClick();
+      }}
+      className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:size-4 ${
         active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
       }`}
     >
@@ -167,6 +209,10 @@ function CreatePanel() {
   const [result, setResult] = useState<BackupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
+
+  // Building the archive is long and cannot be called off part-way, and the summary below is the
+  // only place the filename and size are ever shown. Hold the dialog until it lands (issue #654).
+  useReportDialogBusy(busy);
 
   const toggle = (key: BackupToggleKey) => setSelection((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -294,6 +340,18 @@ function RestorePanel({
   // backup that happens to carry a bridge address never re-points a different device by default.
   const [settingGroups, setSettingGroups] = useState<SettingsGroupSelection>(DEFAULT_SETTINGS_GROUPS);
 
+  // A restore is under way — as opposed to a backup file merely being read, which `busy` also
+  // covers. Only the former is worth holding the dialog for: reading a file changes nothing and
+  // costs a re-pick to abandon, whereas from here on the current data is being replaced, and a
+  // dismissal that unmounted this panel would take the failure path down with it — leaving a
+  // restore that threw *after* the database was overwritten with nothing to report it (#654).
+  //
+  // Its own state rather than anything derived from `confirming`: that flag answers "is the
+  // confirmation banner up", which the mode radios clear at will, so a guard resting on it could
+  // be switched off from the screen *while the database was being replaced*.
+  const [restoring, setRestoring] = useState(false);
+  useReportDialogBusy(restoring);
+
   const resetMode = (next: RestoreMode) => {
     setMode(next);
     setConfirming(false);
@@ -338,6 +396,10 @@ function RestorePanel({
     if (!parsed) return;
     if (mode === 'replace' && !isReplaceConfirmed(replaceText)) return; // type-to-confirm guard
     setBusy(true);
+    // Raised for exactly as long as this runs, and lowered in the `finally` below so every way
+    // out of it — the abandoned save picker, an unsecured restore point, a throw, the reload —
+    // releases the dialog rather than only the paths that remembered to.
+    setRestoring(true);
     setError(null);
     try {
       // Safety net: capture the current data as a saved "restore point" *before* a destructive
@@ -398,6 +460,8 @@ function RestorePanel({
       setError(describeError(err, 'The restore failed.'));
       setBusy(false);
       setConfirming(false);
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -454,6 +518,10 @@ function RestorePanel({
             <legend className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               How to apply
             </legend>
+            {/* Held while anything is running, like every other control here. Changing the mode
+                calls `resetMode`, which takes the confirmation banner back down — harmless when
+                idle, but mid-restore it would swap the running operation's own controls for the
+                idle row and its enabled Close. */}
             <ModeOption
               name={modeName}
               value="merge"
@@ -461,6 +529,7 @@ function RestorePanel({
               onChange={() => resetMode('merge')}
               label="Merge into current data"
               hint="Add and update records from the backup; keep anything you've added since. Non-destructive."
+              disabled={busy}
             />
             <ModeOption
               name={modeName}
@@ -469,6 +538,7 @@ function RestorePanel({
               onChange={() => resetMode('replace')}
               label="Replace everything"
               hint="Erase current data and restore the backup exactly. We save a restore point first, but it cannot otherwise be undone."
+              disabled={busy}
             />
           </fieldset>
 
@@ -625,6 +695,7 @@ function ModeOption({
   onChange,
   label,
   hint,
+  disabled,
 }: {
   name: string;
   value: string;
@@ -632,15 +703,21 @@ function ModeOption({
   onChange: () => void;
   label: string;
   hint: string;
+  disabled?: boolean;
 }) {
   return (
     // eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested radio input is correctly associated; the label's text comes from the dynamic {label}/{hint} props, which the linter cannot resolve to a static string.
-    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-secondary/40">
+    <label
+      className={`flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-secondary/40 ${
+        disabled ? 'pointer-events-none opacity-50' : ''
+      }`}
+    >
       <Radio
         name={name}
         value={value}
         checked={checked}
         onChange={onChange}
+        disabled={disabled}
         className="mt-0.5"
         data-testid={`restore-mode-${value}`}
       />

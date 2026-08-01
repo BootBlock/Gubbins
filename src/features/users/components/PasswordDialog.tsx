@@ -44,6 +44,7 @@ export function PasswordDialog({
       onClose={onClose}
       title={t('users.password.title', { vars: { name: user.displayName } })}
       description={t('users.password.description')}
+      busy={busy}
     >
       <form
         className="flex flex-col gap-4"

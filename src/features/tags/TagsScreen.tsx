@@ -422,6 +422,7 @@ function EditTagDialog({ tag, onClose }: { tag: TagWithCount; onClose: () => voi
       title={t('tags.edit.title')}
       description={t('tags.edit.description')}
       initialFocusRef={nameRef}
+      busy={busy}
     >
       <div className="space-y-5">
         <div className="flex items-end gap-2">

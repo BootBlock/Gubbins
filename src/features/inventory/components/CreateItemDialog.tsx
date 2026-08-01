@@ -535,7 +535,7 @@ export function CreateItemDialog({
   // create mutations' own `isPending` only covers the first link, so it drops back to false
   // mid-chain — re-enabling the button while the form is still on screen, so a second click
   // creates a duplicate item. `isSubmitting` stays true for the *whole* chain (set at the top of
-  // `onSubmit`, cleared only by `done()` or `onError`) and is what gates the button + status.
+  // `onSubmit`, cleared only by `done()` or `failSubmit`) and is what gates the button + status.
   // The ref is a synchronous re-entry guard: RHF's `handleSubmit` validates asynchronously, so
   // two rapid Enter presses can both clear validation before any state update lands — the ref is
   // flipped before either can proceed, so the second call bails immediately.
@@ -723,6 +723,27 @@ export function CreateItemDialog({
     runSubmit(values);
   };
 
+  /**
+   * Release the re-entry guard and say the create did not happen. Shared by the mutations' own
+   * failure path and by anything the synchronous build throws, because a guard left raised over
+   * work that never started now holds the dialog shut as well as blocking a retry (issue #654) —
+   * which would leave no way out of it but a reload.
+   *
+   * Surfacing the failure rather than swallowing it matters on its own: without this the dialog
+   * would sit silently open on any error (e.g. a `no such column` from a schema-stale local DB),
+   * giving the user no signal that nothing was saved. The raw message is shown so the cause is
+   * diagnosable; the dialog stays open so a corrected retry loses nothing.
+   */
+  const failSubmit = (e: unknown) => {
+    submittingRef.current = false;
+    setIsSubmitting(false);
+    show({
+      tone: 'danger',
+      heading: 'Couldn’t create item',
+      message: describeError(e, 'The item was not saved. Please try again.'),
+    });
+  };
+
   const runSubmit = (values: FormValues) => {
     // Re-entry guard (issue #294): bail if a submit is already in flight, so a second click or a
     // double Enter can't kick off a parallel create-chain and duplicate the item. Set before any
@@ -730,7 +751,15 @@ export function CreateItemDialog({
     if (submittingRef.current) return;
     submittingRef.current = true;
     setIsSubmitting(true);
+    try {
+      beginCreate(values);
+    } catch (e) {
+      failSubmit(e);
+    }
+  };
 
+  /** Build the create input from `values` and start the mutation chain. */
+  const beginCreate = (values: FormValues) => {
     // Resolve the low-stock policy to the stored floor(s): 'default' → omit (null), 'never'
     // → 0 (hard exemption), 'custom' → the entered trigger. Unlimited / serialised / untracked
     // items never watch stock, so they carry no reorder fields.
@@ -843,28 +872,13 @@ export function CreateItemDialog({
     // Amazon supplier part (Path A2), then finish.
     const finish = (itemId: string) => mapAliases(itemId, () => persistAmazonSupplier(itemId, done));
 
-    // Surface a create failure rather than swallowing it: without this the dialog would
-    // sit silently open on any error (e.g. a `no such column` from a schema-stale local DB),
-    // giving the user no signal that nothing was saved. The raw message is shown so the
-    // cause is diagnosable; the dialog stays open so a corrected retry loses nothing.
-    const onError = (e: unknown) => {
-      // Release the guard so a corrected retry can submit — the dialog stays open on error.
-      submittingRef.current = false;
-      setIsSubmitting(false);
-      show({
-        tone: 'danger',
-        heading: 'Couldn’t create item',
-        message: describeError(e, 'The item was not saved. Please try again.'),
-      });
-    };
-
     if (values.trackingMode === 'SERIALISED') {
       // Auto-clone N distinct instance records sharing a name (spec §4). The schema has already
       // bounded the count (issue #677), so it is a whole number the repository will accept.
       const count = serialisedCount(values);
       createSerialised.mutate(
         { ...base, count },
-        { onSuccess: (items) => finish(items[0]?.id ?? ''), onError },
+        { onSuccess: (items) => finish(items[0]?.id ?? ''), onError: failSubmit },
       );
       return;
     }
@@ -895,7 +909,7 @@ export function CreateItemDialog({
         },
       };
     }
-    createItem.mutate(input, { onSuccess: (item) => finish(item.id), onError });
+    createItem.mutate(input, { onSuccess: (item) => finish(item.id), onError: failSubmit });
   };
 
   // A rejected submit (Zod validation failed): jump the rail to the tab holding the first
@@ -1630,6 +1644,9 @@ export function CreateItemDialog({
         onActiveTabChange={(id) => setActiveTab(id as CreateTabId)}
         onSubmit={handleSubmit(onSubmit, onInvalid)}
         initialFocusRef={nameRef}
+        // The create is a chain of writes rather than one mutation, and its failure path relies on
+        // the half-filled form still being on screen so a corrected retry loses nothing.
+        busy={isBusy}
         footer={
           <>
             {/* Progress feedback while the create is in flight (issue #57): a disabled Create
@@ -1646,7 +1663,10 @@ export function CreateItemDialog({
                 Creating item…
               </span>
             ) : null}
-            <Button type="button" variant="ghost" onClick={handleClose}>
+            {/* Held with the frame's own routes: `handleClose` clears the re-entry guard that
+                stops a second submit, so reaching it mid-create would re-arm it against a chain
+                still running and let the same item be created twice. */}
+            <Button type="button" variant="ghost" onClick={handleClose} disabled={isBusy}>
               Cancel
             </Button>
             <Button type="submit" disabled={isBusy}>

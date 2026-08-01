@@ -41,6 +41,7 @@
  * than a refusal (see `isUnknownWriteOutcome`) precisely because of it.
  */
 import { DbError } from '../errors';
+import { reportStorageFailure, reportStorageWriteSucceeded } from '@/features/storage/exhaustion';
 import {
   isRpcResponseEnvelope,
   type DbDiagnostics,
@@ -115,6 +116,22 @@ export const RPC_TIMEOUT_MS: Readonly<Record<DbRequest['kind'], number>> = {
 const POST_TIME_BUDGET_KINDS: ReadonlySet<DbRequestKind> = new Set<DbRequestKind>([
   'close',
   'wipeDatabaseFiles',
+]);
+
+/**
+ * The requests that put data *into* storage, and so answer the question the quota estimate cannot:
+ * does this device still accept a write (issue #504)?
+ *
+ * Read-only kinds are excluded because a query succeeding on a full disk proves nothing, and the
+ * teardown/wipe kinds because they only ever free space. `execute` covers deletions too, which is
+ * deliberate: a DELETE still has to journal and commit, so one landing is real evidence that
+ * SQLite can write — and at the Hard Stop, deletions are the writes the user is left with.
+ */
+const WRITE_REQUEST_KINDS: ReadonlySet<DbRequestKind> = new Set<DbRequestKind>([
+  'execute',
+  'transaction',
+  'snapshotMerge',
+  'writeDatabaseFile',
 ]);
 
 /** The `id` of a message that failed the envelope guard, where it carries a usable one. */
@@ -352,9 +369,17 @@ export class WorkerDatabaseDriver implements IDatabaseDriver {
     if (!response) {
       pending.reject(new DbError('UNKNOWN', 'The database worker sent a response that could not be read.'));
     } else if (response.ok) {
+      // This is the only place the app learns that storage still accepts data — the quota estimate
+      // is a prediction, and issue #504 is what happens when it is believed over the disk itself.
+      if (WRITE_REQUEST_KINDS.has(pending.kind)) reportStorageWriteSucceeded();
       pending.resolve(response.result);
     } else {
-      pending.reject(DbError.fromSerialized(response.error));
+      const error = DbError.fromSerialized(response.error);
+      // …and the same in reverse: a `SQLITE_FULL` out of the worker is the observation that
+      // outranks the estimate. Reported here, at the one point every database failure passes
+      // through, so no call site can forget to (issue #504).
+      reportStorageFailure(error);
+      pending.reject(error);
     }
   };
 

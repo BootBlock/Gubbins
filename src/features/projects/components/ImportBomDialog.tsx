@@ -186,6 +186,7 @@ export function ImportBomDialog({
       }
       className="max-w-2xl"
       {...(isNewProject ? { initialFocusRef: nameRef } : {})}
+      busy={pending}
     >
       <div className="space-y-4">
         {isNewProject ? (
@@ -312,7 +313,7 @@ export function ImportBomDialog({
             {parsed ? `${parsed.lines.length} ${plural(parsed.lines.length, 'line')} ready` : ' '}
           </p>
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" onClick={close}>
+            <Button type="button" variant="ghost" onClick={close} disabled={pending}>
               {isNewProject ? 'Cancel' : 'Close'}
             </Button>
             <Button

@@ -81,6 +81,7 @@ export function FinaliseAssemblyDialog({
       onClose={close}
       title="Finalise assembly"
       description={`Assemble the parts of "${projectName}".`}
+      busy={finalise.isPending}
     >
       <div className="space-y-4">
         <div className="space-y-2">
@@ -171,7 +172,7 @@ export function FinaliseAssemblyDialog({
         </p>
 
         <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="ghost" onClick={close}>
+          <Button type="button" variant="ghost" onClick={close} disabled={finalise.isPending}>
             Cancel
           </Button>
           <Button type="button" onClick={handleFinalise} disabled={finalise.isPending || blocked}>
