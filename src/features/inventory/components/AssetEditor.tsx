@@ -8,16 +8,24 @@
  * Warranty status is derived via the pure `warrantyStatus` seam and displayed as a
  * token-styled badge. Current book value is derived via `currentValue` and shown when
  * a purchase price is present.
+ *
+ * The two numeric fields parse through the shared `measure-draft` seam, so an entry the
+ * repository would refuse (`-250`, `1,250`, a zero-month term) is reported on the field and
+ * blocks the save, keeping what is stored. Deriving the value to save from a
+ * "usable ? parse : null" guard instead erases the column — the same defect this dialog's
+ * other half was fixed for in issue #345, and this half in issue #675.
  */
 import { useEffect, useState } from 'react';
-import { Button, InfoHint, Input, Money, useReportUnsavedChanges } from '@/components/foundry';
+import { Button, FormField, Input, Money, MoneyInput, useReportUnsavedChanges } from '@/components/foundry';
 import { CostIcon, SecureIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { nowMs } from '@/lib/clock';
 import { warrantyStatus, currentValue, type WarrantyStatus } from '../asset-lifecycle';
 import { WARRANTY_STATUS_COLOR_CLASS } from './inventory-ui';
+import { measureIssueText, parseOptionalNumber, parseOptionalPositiveInt } from './measure-draft';
 import { useUpdateItem } from '../mutations';
 import { RevaluationEditor } from './RevaluationEditor';
 
@@ -30,6 +38,7 @@ const WARRANTY_LABEL: Record<WarrantyStatus, string> = {
 };
 
 export function AssetEditor({ item }: { item: Item }) {
+  const t = useT();
   const update = useUpdateItem();
   const fmt = useFormatters();
 
@@ -53,22 +62,36 @@ export function AssetEditor({ item }: { item: Item }) {
   const status = warrantyStatus(item, now);
   const bookValue = currentValue(item, now);
 
-  // Parse the price/months drafts to their numeric representations.
-  const nextPrice = toOptionalFloat(purchasePrice);
-  const nextMonths = toOptionalInt(depreciationMonths);
+  // Parse the price/months drafts, keeping *why* an entry is unusable rather than collapsing it
+  // into the same `null` that means "clear this column" (issue #675).
+  const priceEntry = parseOptionalNumber(purchasePrice);
+  const monthsEntry = parseOptionalPositiveInt(depreciationMonths);
+  // What a save would write: the parsed entry, or — while it is unusable — whatever is already
+  // stored, so a blocked save can never be the thing that erases the figure.
+  const nextPrice = priceEntry.issue === null ? priceEntry.value : (item.purchasePrice ?? null);
+  const nextMonths = monthsEntry.issue === null ? monthsEntry.value : (item.depreciationMonths ?? null);
 
   // Convert date-input values back to ISO strings (or null to clear).
   const nextAcquiredAt = acquiredAt.trim() || null;
   const nextWarrantyExpiresAt = warrantyExpiresAt.trim() || null;
 
+  // An unusable entry is uncommitted work too — it counts as dirty (so closing the dialog asks
+  // first) even though `nextPrice`/`nextMonths` deliberately still hold the stored value.
   const dirty =
     nextAcquiredAt !== (item.acquiredAt ?? null) ||
     nextWarrantyExpiresAt !== (item.warrantyExpiresAt ?? null) ||
-    (nextPrice ?? null) !== (item.purchasePrice ?? null) ||
-    (nextMonths ?? null) !== (item.depreciationMonths ?? null);
+    nextPrice !== (item.purchasePrice ?? null) ||
+    nextMonths !== (item.depreciationMonths ?? null) ||
+    priceEntry.issue !== null ||
+    monthsEntry.issue !== null;
   // Let the dialog frame ask before discarding the draft on a dismissal (issue #576).
   useReportUnsavedChanges(dirty);
 
+  const valid = priceEntry.issue === null && monthsEntry.issue === null;
+
+  // The save is wholesale, so one unusable field blocks the lot (via the button's `disabled`,
+  // as in `ItemDetailsEditor`): letting the dates through would carry the fallback price with
+  // them and re-save a figure the user is mid-way through changing.
   const save = () => {
     update.mutate({
       id: item.id,
@@ -117,7 +140,8 @@ export function AssetEditor({ item }: { item: Item }) {
       ) : null}
 
       <div className="grid grid-cols-2 gap-3">
-        <LField
+        <FormField
+          compact
           label="Acquired on"
           hint={
             'The date this item was purchased or otherwise acquired. Used as the start date ' +
@@ -130,9 +154,10 @@ export function AssetEditor({ item }: { item: Item }) {
             onChange={(e) => setAcquiredAt(e.target.value)}
             data-testid="asset-acquired-at"
           />
-        </LField>
+        </FormField>
 
-        <LField
+        <FormField
+          compact
           label="Warranty expires"
           hint={
             'The date on which the manufacturer or supplier warranty expires. Once set, the ' +
@@ -146,30 +171,30 @@ export function AssetEditor({ item }: { item: Item }) {
             onChange={(e) => setWarrantyExpiresAt(e.target.value)}
             data-testid="asset-warranty-expires-at"
           />
-        </LField>
+        </FormField>
 
-        <LField
+        <FormField
+          compact
           label="Purchase price"
+          error={measureIssueText(priceEntry.issue, t)}
           hint={
             "The original acquisition cost in the base currency. Shown as the item's current " +
-            '**book value** (decreasing over time when a depreciation term is set).'
+            '**book value** (decreasing over time when a depreciation term is set).\n\nEnter it ' +
+            'as plain digits — `1250`, not `1,250` — with a full stop for any decimals.'
           }
         >
-          <Input
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
+          <MoneyInput
             value={purchasePrice}
-            onChange={(e) => setPurchasePrice(e.target.value)}
+            onValueChange={setPurchasePrice}
             placeholder="—"
-            aria-label="Purchase price"
             data-testid="asset-purchase-price"
           />
-        </LField>
+        </FormField>
 
-        <LField
+        <FormField
+          compact
           label="Depreciation term (months)"
+          error={measureIssueText(monthsEntry.issue, t)}
           hint={
             'Useful life in whole months for **straight-line depreciation**: the book value ' +
             'decreases linearly from the purchase price to zero over this period, starting from ' +
@@ -184,58 +209,24 @@ export function AssetEditor({ item }: { item: Item }) {
             value={depreciationMonths}
             onChange={(e) => setDepreciationMonths(e.target.value)}
             placeholder="—"
-            aria-label="Depreciation term in months"
             data-testid="asset-depreciation-months"
           />
-        </LField>
+        </FormField>
       </div>
 
       <div className="flex justify-end">
-        <Button size="sm" onClick={save} disabled={!dirty || update.isPending} data-testid="save-asset">
+        <Button
+          size="sm"
+          onClick={save}
+          disabled={!dirty || !valid || update.isPending}
+          data-testid="save-asset"
+        >
           {dirty ? 'Save asset details' : 'Saved'}
         </Button>
       </div>
 
       {/* Manual current / market value + revaluation log (feature-gap G9). */}
       <RevaluationEditor item={item} />
-    </div>
-  );
-}
-
-/** Parse a string to an optional float: blank → null, else parse. */
-function toOptionalFloat(raw: string): number | null {
-  const trimmed = raw.trim();
-  if (trimmed === '') return null;
-  const n = Number(trimmed);
-  return Number.isFinite(n) && n >= 0 ? n : null;
-}
-
-/** Parse a string to an optional positive integer: blank → null, else truncate. */
-function toOptionalInt(raw: string): number | null {
-  const trimmed = raw.trim();
-  if (trimmed === '') return null;
-  const n = Number(trimmed);
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
-}
-
-/**
- * Compact labelled-field wrapper that mirrors the {@link LField} in LifecycleEditor —
- * a label with an optional inline {@link InfoHint} positioned at the top-right.
- */
-function LField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="relative">
-      <label className="block">
-        <span className={cn('mb-field-gap-compact block text-xs text-muted-foreground', hint && 'pr-5')}>
-          {label}
-        </span>
-        {children}
-      </label>
-      {hint ? (
-        <span className="absolute right-0 top-0">
-          <InfoHint content={hint} />
-        </span>
-      ) : null}
     </div>
   );
 }

@@ -31,6 +31,19 @@ decreases. This underpins the valuation [[reports|Reports-Overview]] and the
 > tools, property — record a manual **[[current value|Current-Value-and-Revaluation]]** instead;
 > it can move up as well as down and takes precedence for valuation.
 
+### Entering the figures
+
+Type the **purchase price** as plain digits — `1250`, not `1,250` — using a full stop for any
+decimals, and the **depreciation term** as a whole number of months above zero. Leaving either
+box empty clears it: a blank purchase price means the item is unpriced, and a blank term means
+its value stays flat.
+
+> **⚠️ Heads-up**
+> If what you type can't be read as a figure — a thousands separator, a comma decimal, a negative
+> amount, a term of `0` — Gubbins says so beneath the box and won't let you save until it's
+> fixed. What was already stored stays put in the meantime, so a mistyped price never quietly
+> erases the one you had.
+
 ## Related pages
 
 - **[[Current value & revaluation|Current-Value-and-Revaluation]]** — for assets that appreciate.

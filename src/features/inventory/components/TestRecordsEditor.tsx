@@ -316,9 +316,9 @@ export function TestRecordsEditor({ item }: { item: Item }) {
 }
 
 /**
- * Compact labelled-field wrapper matching {@link RevaluationEditor}'s `RField` — a `text-xs` label
- * above its control at the compact field gap, with an optional top-right {@link InfoHint} and a
- * `role="alert"` error line.
+ * Compact labelled-field wrapper — a `text-xs` label above its control at the compact field gap,
+ * with an optional top-right {@link InfoHint} and a `role="alert"` error line. The Foundry
+ * `FormField`'s `compact` density now covers this; prefer it for new fields.
  */
 function TField({
   label,

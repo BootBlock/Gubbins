@@ -11,15 +11,17 @@
  * via `text-*` tokens driving `currentColor`); `<Money>` renders every figure.
  */
 import { useEffect, useState } from 'react';
-import { Button, InfoHint, Input, Money } from '@/components/foundry';
+import { Button, FormField, InfoHint, Input, Money, MoneyInput } from '@/components/foundry';
 import { CostIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { useItemRevaluations } from '../queries';
 import { useRecordRevaluation, useUpdateItem } from '../mutations';
 import { buildRevaluationSeries, describeValueChange, type ValueDirection } from '../valuation';
 import { sparklinePolyline } from '../price-history';
+import { measureIssueText, parseOptionalNumber } from './measure-draft';
 import { fromDateInputValue, toDateInputValue } from './inventory-ui';
 
 const SPARK_WIDTH = 140;
@@ -44,6 +46,7 @@ const DIRECTION_GLYPH: Record<ValueDirection, string> = {
 };
 
 export function RevaluationEditor({ item }: { item: Item }) {
+  const t = useT();
   const fmt = useFormatters();
   const record = useRecordRevaluation();
   const update = useUpdateItem();
@@ -70,7 +73,11 @@ export function RevaluationEditor({ item }: { item: Item }) {
       ? describeValueChange(item.purchasePrice, item.currentValue)
       : null;
 
-  const nextAmount = toOptionalNonNegFloat(amount);
+  // A revaluation is a figure to *record*, so a blank field simply isn't ready yet (no error);
+  // an entry that can't be used says why rather than leaving the button inexplicably dead — the
+  // same reporting seam the asset fields above parse through (issue #675).
+  const amountEntry = parseOptionalNumber(amount);
+  const nextAmount = amountEntry.issue === null ? amountEntry.value : null;
   const canSave = nextAmount !== null && !record.isPending;
 
   const submit = (e: React.FormEvent) => {
@@ -176,27 +183,26 @@ export function RevaluationEditor({ item }: { item: Item }) {
 
       {/* Record a new revaluation. */}
       <form onSubmit={submit} className="grid grid-cols-2 gap-3">
-        <RField
+        <FormField
+          compact
           label="New value"
+          error={measureIssueText(amountEntry.issue, t)}
           hint={
             'The item’s current worth **per unit** in the base currency. Recording it sets the ' +
-            'current value and appends a point to the revaluation log.'
+            'current value and appends a point to the revaluation log.\n\nEnter it as plain ' +
+            'digits — `1250`, not `1,250` — with a full stop for any decimals.'
           }
         >
-          <Input
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
+          <MoneyInput
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onValueChange={setAmount}
             placeholder="—"
-            aria-label="New value"
             data-testid="revaluation-amount"
           />
-        </RField>
+        </FormField>
 
-        <RField
+        <FormField
+          compact
           label="As of"
           hint={'The date this valuation applies from. Defaults to today when left blank.'}
         >
@@ -204,22 +210,20 @@ export function RevaluationEditor({ item }: { item: Item }) {
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            aria-label="Revaluation date"
             data-testid="revaluation-date"
           />
-        </RField>
+        </FormField>
 
         <div className="col-span-2">
-          <RField label="Note (optional)">
+          <FormField compact label="Note (optional)">
             <Input
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="e.g. post-restoration appraisal"
-              aria-label="Revaluation note"
               data-testid="revaluation-note"
             />
-          </RField>
+          </FormField>
         </div>
 
         <div className="col-span-2 flex justify-end">
@@ -252,35 +256,5 @@ export function RevaluationEditor({ item }: { item: Item }) {
         </div>
       ) : null}
     </section>
-  );
-}
-
-/** Parse a string to an optional non-negative float: blank/invalid → null. */
-function toOptionalNonNegFloat(raw: string): number | null {
-  const trimmed = raw.trim();
-  if (trimmed === '') return null;
-  const n = Number(trimmed);
-  return Number.isFinite(n) && n >= 0 ? n : null;
-}
-
-/**
- * Compact labelled-field wrapper matching {@link AssetEditor}'s `LField` — a `text-xs` label
- * above its control at the compact field gap, with an optional top-right {@link InfoHint}.
- */
-function RField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="relative">
-      <label className="block">
-        <span className={cn('mb-field-gap-compact block text-xs text-muted-foreground', hint && 'pr-5')}>
-          {label}
-        </span>
-        {children}
-      </label>
-      {hint ? (
-        <span className="absolute right-0 top-0">
-          <InfoHint content={hint} />
-        </span>
-      ) : null}
-    </div>
   );
 }
