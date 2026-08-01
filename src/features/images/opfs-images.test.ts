@@ -121,6 +121,8 @@ function fakeOpfs(
     failWrite?: readonly string[];
     failClose?: readonly string[];
     noDirectory?: boolean;
+    /** What opening the directory throws when `noDirectory` is set. */
+    directoryFailure?: unknown;
     /** Files already on disk before the run, as if from an earlier restore. */
     existing?: Record<string, Uint8Array>;
   } = {},
@@ -164,7 +166,7 @@ function fakeOpfs(
     storage: {
       getDirectory: async () => ({
         getDirectoryHandle: async () => {
-          if (options.noDirectory) throw new Error('OPFS unavailable');
+          if (options.noDirectory) throw options.directoryFailure ?? new Error('OPFS unavailable');
           return dir;
         },
       }),
@@ -260,6 +262,19 @@ describe('writeImageFiles', () => {
 
     expect(report.failed).toEqual(['image-0.webp', 'image-1.webp']);
     expect(report.failure).toMatchObject({ message: 'OPFS unavailable' });
+    // OPFS being absent is not a full disk, so the tier must hear nothing about it.
+    expect(onExhausted).not.toHaveBeenCalled();
+  });
+
+  it('raises the tier when it is the images directory itself that will not fit', async () => {
+    // Creating the directory is a write like any other, and it is the first one a restore makes
+    // on a device that has never stored a photo — so it is a plausible place to run out.
+    fakeOpfs({ noDirectory: true, directoryFailure: quotaExceeded() });
+
+    const report = await writeImageFiles(images(2));
+
+    expect(report.failed).toEqual(['image-0.webp', 'image-1.webp']);
+    expect(onExhausted).toHaveBeenCalledTimes(1);
   });
 
   it('touches OPFS at all only when there is something to write', async () => {

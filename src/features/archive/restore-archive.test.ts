@@ -182,7 +182,7 @@ describe('parseArchive — manifest (issue #501)', () => {
 describe('restoreArchive — schema baseline (issue #501)', () => {
   beforeEach(() => {
     vi.stubGlobal('location', { reload: vi.fn() });
-    writeImageFiles.mockResolvedValue({ written: 0, failed: [] });
+    writeImageFiles.mockResolvedValue({ failed: [] });
   });
 
   afterEach(() => {
@@ -251,7 +251,7 @@ describe('restoreArchive — images that will not write (issue #639)', () => {
 
   beforeEach(() => {
     vi.stubGlobal('location', { reload: vi.fn() });
-    writeImageFiles.mockResolvedValue({ written: 0, failed: [] });
+    writeImageFiles.mockResolvedValue({ failed: [] });
   });
 
   afterEach(() => {
@@ -260,7 +260,7 @@ describe('restoreArchive — images that will not write (issue #639)', () => {
   });
 
   it('reloads and reports nothing missed when every image lands', async () => {
-    writeImageFiles.mockResolvedValue({ written: 2, failed: [] });
+    writeImageFiles.mockResolvedValue({ failed: [] });
 
     const outcome = await restoreArchive(archiveFile({ [ARCHIVE_DB_ENTRY]: fakeSqlite(), ...IMAGES }), {
       save: SAVE,
@@ -272,9 +272,8 @@ describe('restoreArchive — images that will not write (issue #639)', () => {
 
   it('reports the shortfall instead of throwing, and leaves the reload to the caller', async () => {
     writeImageFiles.mockResolvedValue({
-      written: 1,
       failed: ['two.webp'],
-      failure: new Error('QuotaExceededError'),
+      failure: new DOMException('The quota has been exceeded.', 'QuotaExceededError'),
     });
 
     const outcome = await restoreArchive(archiveFile({ [ARCHIVE_DB_ENTRY]: fakeSqlite(), ...IMAGES }), {
