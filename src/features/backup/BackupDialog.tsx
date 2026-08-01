@@ -27,7 +27,7 @@ import {
   type SettingsGroupSelection,
 } from './settings-groups';
 import { SettingsGroupPicker } from './SettingsGroupPicker';
-import { isUnknownWriteOutcome, useErrorMessage } from '@/features/errors';
+import { useErrorMessage } from '@/features/errors';
 import {
   REPLACE_CONFIRM_WORD,
   assessQuota,
@@ -382,16 +382,7 @@ function RestorePanel({
       onRestored?.(outcome.message);
       onClose();
     } catch (err) {
-      // A restore is one long transaction, so a database timeout says the worker did not answer
-      // in time — not that it rolled back. It may still be committing, and nothing cancels it. So
-      // this stops short of "the restore failed", which would send the user to re-run a restore
-      // that had in fact landed, or to reach for the restore point over data that was never
-      // lost (issue #554).
-      setError(
-        isUnknownWriteOutcome(err)
-          ? 'The database took too long to answer, so it is not clear whether the restore finished. Reload the page and check your data before restoring again.'
-          : describeError(err, 'The restore failed.'),
-      );
+      setError(describeError(err, 'The restore failed.'));
       setBusy(false);
       setConfirming(false);
     }

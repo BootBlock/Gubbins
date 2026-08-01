@@ -18,10 +18,11 @@
  *
  * **One error is not a failure at all** (issue #554): a `WORKER_TIMEOUT` means the database did not
  * answer in time, not that it refused the write — it may still be running and commit moments later.
- * Every heading here names a verb that *didn't* happen ("Couldn't adjust the quantity"), and the
- * humanised body used to end "Try again", which is the one instruction that can do real damage: an
- * append-only write repeated over one that did land records the event twice. So that case gets its
- * own honest heading and body — see {@link isUnknownWriteOutcome} — rather than the call site's.
+ * Every heading here names a verb that *didn't* happen ("Couldn't adjust the quantity"), which is
+ * exactly what isn't known, so that case takes its own heading and body — see
+ * {@link isUnknownWriteOutcome} — rather than the call site's. (The shared `db.error.workerTimeout`
+ * sentence is honest about it too, for the dialogs that resolve their own copy through
+ * {@link useErrorMessage} rather than reporting through here.)
  */
 import { useCallback, useRef } from 'react';
 // Imported from the subpath, not the `@/components/foundry` barrel: the barrel re-exports

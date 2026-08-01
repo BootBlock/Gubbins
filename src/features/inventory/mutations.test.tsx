@@ -191,7 +191,7 @@ describe('optimistic item writes surface their rollback', () => {
 
     const toast = await screen.findByTestId('toast');
     expect(toast).toHaveTextContent('Not sure whether that saved');
-    expect(toast).toHaveTextContent('check it before making the change again');
+    expect(toast).toHaveTextContent('Check before making the change again');
     expect(toast).not.toHaveTextContent('Couldn’t update the item');
     expect(toast).not.toHaveTextContent('Try again');
   });

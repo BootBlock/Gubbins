@@ -75,18 +75,18 @@ close it.
 Gubbins keeps your data in a background component of the page, and very occasionally that component
 stops — a browser reclaiming memory is the usual reason. When it does, Gubbins tells you instead of
 leaving the screen spinning, and **reloading the page** restores it. Nothing is lost: your data is
-on the device, not in that component. If it says the database merely took too long, try the action
-again first; reload only if it keeps happening.
+on the device, not in that component. If it says the database merely **took too long**, that isn't a
+refusal — see the next question before repeating whatever you were doing, and reload only if it
+keeps happening.
 
-**Gubbins says it isn't sure whether a change was saved.**
-That message means the database didn't answer in time — not that it refused the change, which may
-still be saved a moment later. Rather than guess, Gubbins reloads that piece of data and asks you to
-look. **Check the item (or the list) first, and only make the change again if it isn't there.**
-Repeating it blindly is the one thing worth avoiding: some records — a value change, a stock
-movement, a test result, an [[Activity Log|Activity-Log]] entry — are added rather than overwritten,
-so doing it twice leaves two of an event that happened once. It's an uncommon message, and usually
-means something large was running at the same time, such as an import, a
-[[restore|Backup-and-Restore]] or a [[sync|Cloud-Sync]].
+**Gubbins says it took too long to answer, or that it isn't sure whether a change was saved.**
+Either message means the database didn't answer in time — *not* that it refused the change, which
+may still be saved a moment later. **Check the item (or the list) first, and only make the change
+again if it isn't there.** Repeating it blindly is the one thing worth avoiding: some records — a
+value change, a stock movement, a test result, an [[Activity Log|Activity-Log]] entry — are added
+rather than overwritten, so doing it twice leaves two of an event that happened once. It's an
+uncommon message, and usually means something large was running at the same time, such as an import,
+a [[restore|Backup-and-Restore]] or a [[sync|Cloud-Sync]].
 
 **Gubbins can't reach my [[bridge|Bridge-Overview]], but the bridge is definitely running.**
 If you have *just* entered the bridge's address, look for a **Reload to connect to this bridge**

@@ -270,17 +270,26 @@ describe('WorkerDatabaseDriver', () => {
       const driver = createDriver();
       const bulk = driver.transaction([{ sql: 'INSERT INTO items VALUES (1)' }]);
       const write = driver.execute('UPDATE items SET name = ?', ['x']);
+      const settled = vi.fn();
+      const watched = write.then(settled, settled);
       const assertions = [
         expect(bulk).resolves.toBeUndefined(),
         expect(write).rejects.toMatchObject({ code: 'WORKER_TIMEOUT' }),
       ];
 
       await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.transaction - 1);
+      // Still unsettled just shy of the *import's* budget: post-time arming would have given up on
+      // it 269 seconds ago. Asserted before the reply, or the rejection below could be that one.
+      expect(settled).not.toHaveBeenCalled();
       worker.reply(0, { ok: true, result: null });
 
-      // Its own full budget from the moment the worker became free — not what was left of it.
-      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.execute);
+      // Now it is the request the worker is on, and gets its own full budget from that moment —
+      // not whatever was left of one started when it was posted.
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.execute - 1);
+      expect(settled).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
       await Promise.all(assertions);
+      await watched;
     });
 
     it('still bounds a wedged worker: each pending call gives up in turn', async () => {

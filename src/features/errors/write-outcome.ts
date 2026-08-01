@@ -13,8 +13,9 @@
  *    stock delta, a test record or an item-history entry mints a fresh id per attempt, so retrying
  *    over a write that did land records the same event twice — permanently, and silently.
  *
- * So callers stop asserting either outcome: leave the patch for the refetch to settle, and tell
- * the user to check rather than to repeat. That converges on the truth whichever way it went.
+ * So callers stop asserting either outcome: where there is an optimistic patch, it is left for the
+ * refetch to settle, and the user is told to check rather than to repeat. That converges on the
+ * truth whichever way the write went, instead of guessing and being wrong half the time.
  *
  * Pure and catalog-free, like its neighbour `db-error-message.ts` — the copy lives in the
  * catalogs, and `useReportWriteFailure` is what binds this to it.
