@@ -3,6 +3,7 @@
  * concern modules. Keeping them here means the correlated thumbnail subquery and the
  * capability "best match" score are defined once rather than copied per query.
  */
+import type { ItemRow } from '../types';
 import { variantParentSql } from './attention-sql';
 
 /**
@@ -29,19 +30,57 @@ export const THUMBNAIL_SUBQUERY = `(
 export const HAS_VARIANTS_SUBQUERY = `${variantParentSql('items.id')} AS has_variants`;
 
 /**
- * The SELECT projection **every** read that maps rows through `rowToItem` uses — the raw item
- * columns plus the two derived ones (`thumbnail_blob`, `has_variants`).
+ * The projection for a read whose rows become `Item`s but whose consumers render **text
+ * only** — the raw item columns plus `has_variants`, without the thumbnail BLOB (issue #529).
+ *
+ * `thumbnail_blob` is much the largest column an item read projects, and the only one whose
+ * size a row cap does not bound: the attention feeds are capped at 100 rows a widget and 500 an
+ * agenda lane, but each of those rows drags a WebP thumbnail out of the worker and through
+ * structured clone to render a name beside a quantity or a date. The bill therefore grows with
+ * photo coverage rather than with inventory size — invisible until most items have a picture,
+ * and then tens of megabytes on the two screens opened first and most often.
+ *
+ * Omitting the column is deliberate, and is **not** the same as selecting `NULL AS
+ * thumbnail_blob` (what the report reads do — see `ReportRepository.partsCatalogue`). `Item`
+ * distinguishes three states, and `rowToItem` reads them off the row's *keys*: bytes, `null`
+ * for "this item has no image", and `undefined` for "this read did not ask". Aliasing a literal
+ * NULL would collapse the last two, telling a caller an item with a photo has none; leaving the
+ * column out keeps the answer honest. A read whose consumer does render an image wants
+ * {@link ITEM_READ_COLUMNS} instead.
+ */
+export const ITEM_READ_COLUMNS_NO_THUMBNAIL = `items.*, ${HAS_VARIANTS_SUBQUERY}`;
+
+/**
+ * The SELECT projection every read that maps rows through `rowToItem` **and shows the item's
+ * image** uses — the raw item columns plus both derived ones (`has_variants`, `thumbnail_blob`).
+ * A read whose consumers render text only wants {@link ITEM_READ_COLUMNS_NO_THUMBNAIL}.
  *
  * It is one constant rather than a per-query column list because `Item.hasVariants` is what
  * lets the pure reorder seam (`isLow` / `isOutOfStock` / `discreteStockLevel`) apply the same
  * abstract-parent exclusion `lowStockPredicateSql` does. A read that projected the raw columns
  * only would hand the UI and the bridge an item whose `hasVariants` silently read `false`, and
  * the two definitions would disagree again — which is issue #156. Sharing the projection makes
- * that structural instead of a convention every new read has to remember.
+ * that structural instead of a convention every new read has to remember. It extends
+ * {@link ITEM_READ_COLUMNS_NO_THUMBNAIL} rather than restating it so that a future derived
+ * column is added once and both projections carry it.
  *
  * Requires an **unaliased** `items` table (both subqueries correlate on `items.id`).
  */
-export const ITEM_READ_COLUMNS = `items.*, ${THUMBNAIL_SUBQUERY}, ${HAS_VARIANTS_SUBQUERY}`;
+export const ITEM_READ_COLUMNS = `${ITEM_READ_COLUMNS_NO_THUMBNAIL}, ${THUMBNAIL_SUBQUERY}`;
+
+/**
+ * The row an {@link ITEM_READ_COLUMNS_NO_THUMBNAIL} read returns — `ItemRow` minus the column
+ * that projection leaves out.
+ *
+ * Narrowing the declared row type is what makes the omission checkable rather than a comment:
+ * `query<TRow>` is compared against the columns SQLite will actually key its rows by
+ * (`query-row-shape.test.ts`, issue #356), so a read that declared the full `ItemRow` over this
+ * projection would fail the build rather than promise bytes it never selects. That guard only
+ * runs in one direction — an *extra* column is not drift — so the other one, a thumbnail
+ * subquery finding its way back into a text-only feed, is pinned by asserting the statement
+ * itself in `ItemRepository.feed-projection.test.ts`.
+ */
+export type ItemRowNoThumbnail = Omit<ItemRow, 'thumbnail_blob'>;
 
 /**
  * A correlated subquery yielding an item's "best match" relevance score (spec §4,

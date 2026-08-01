@@ -2,6 +2,12 @@
  * Dashboard feed reads (spec §3 "Soon to Expire" / "Low Stock Alerts", §4). Read-only
  * projections over the item table that power the dashboard widgets and surface the
  * items needing attention soonest.
+ *
+ * The three item feeds here project {@link ITEM_READ_COLUMNS_NO_THUMBNAIL}, not the full
+ * `ITEM_READ_COLUMNS` (issue #529): every consumer — the dashboard widgets, the alert centre,
+ * the Upcoming agenda and the bridge's iCal feed — renders a name and a date or a quantity, and
+ * none renders an image. See that constant for why the column is left out rather than aliased
+ * to NULL.
  */
 import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD } from '../constants';
 import type { HistoryAction } from '../constants';
@@ -15,12 +21,11 @@ import type {
   FieldDueDate,
   FieldDueDateRow,
   Item,
-  ItemRow,
   LowStockThresholds,
   Page,
   PageParams,
 } from '../types';
-import { ITEM_READ_COLUMNS } from './sql';
+import { ITEM_READ_COLUMNS_NO_THUMBNAIL, type ItemRowNoThumbnail } from './sql';
 import { expiringPredicateSql, lowStockPredicateSql, warrantyExpiringPredicateSql } from './attention-sql';
 import { ITEM_STATUS_FILTERS, buildStatusFilter, type ItemStatusFilter } from './status-filter';
 import type { Constructor } from './mixin';
@@ -161,10 +166,10 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
      */
     async listExpiring(before: number, params: PageParams = {}): Promise<Page<Item>> {
       const { limit, offset } = this.resolvePage(params);
-      const rows = await this.driver.query<ItemRow>(
+      const rows = await this.driver.query<ItemRowNoThumbnail>(
         // The expiry predicate is shared with the inventory list's status filter — see
         // `attention-sql.ts` — so the widget feed and the filter can never diverge.
-        `SELECT ${ITEM_READ_COLUMNS} FROM items
+        `SELECT ${ITEM_READ_COLUMNS_NO_THUMBNAIL} FROM items
          WHERE is_active = 1 AND ${expiringPredicateSql()}
          ORDER BY expiry_date ASC LIMIT ? OFFSET ?;`,
         [before, limit, offset],
@@ -209,13 +214,13 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       const qty = thresholds.qtyThreshold ?? LOW_STOCK_QTY_THRESHOLD;
       const pct = thresholds.gaugePercent ?? LOW_STOCK_GAUGE_PERCENT;
       const { limit, offset } = this.resolvePage(params);
-      const rows = await this.driver.query<ItemRow>(
+      const rows = await this.driver.query<ItemRowNoThumbnail>(
         // The low-stock predicate is shared with the inventory list's status filter — see
         // `attention-sql.ts` (`COALESCE(reorder_point, :qty)` resolves each row's effective
         // floor; the `> 0` guard makes a 0 floor mean "off"/opt-in). The qty ordering below
         // divides by `MAX(effectiveFloor, 1)` to avoid a divide-by-zero (belt-and-braces —
         // a 0-floor row is already excluded by the predicate, so ordering never sees it).
-        `SELECT ${ITEM_READ_COLUMNS} FROM items
+        `SELECT ${ITEM_READ_COLUMNS_NO_THUMBNAIL} FROM items
          WHERE is_active = 1 AND ${lowStockPredicateSql()}
          ORDER BY
            CASE WHEN tracking_mode = 'CONSUMABLE_GAUGE' THEN current_net_value / gross_capacity
@@ -248,10 +253,10 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       // We include items already past expiry (warranty_expires_at <= today) as well
       // as those expiring within the window (warranty_expires_at <= cutoff date).
       const cutoff = new Date(addCalendarDays(now, withinDays)).toISOString().slice(0, 10);
-      const rows = await this.driver.query<ItemRow>(
+      const rows = await this.driver.query<ItemRowNoThumbnail>(
         // The warranty predicate is shared with the inventory list's status filter — see
         // `attention-sql.ts` — so the alert-centre feed and the filter can never diverge.
-        `SELECT ${ITEM_READ_COLUMNS} FROM items
+        `SELECT ${ITEM_READ_COLUMNS_NO_THUMBNAIL} FROM items
          WHERE is_active = 1 AND ${warrantyExpiringPredicateSql()}
          ORDER BY warranty_expires_at ASC, name COLLATE NOCASE ASC
          LIMIT ? OFFSET ?;`,
