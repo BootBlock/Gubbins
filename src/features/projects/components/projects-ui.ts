@@ -51,10 +51,13 @@ export const ASSEMBLY_OUTCOME_LABELS = {
   PERMANENT_CONSUMPTION: 'Permanent consumption',
 } as const;
 
+// Each description says what happens to the *quantities the bill of materials asks for* — only
+// those move or are consumed, and a part is archived only when the build takes the last of it
+// (issue #647). Wording that promised the whole item would contradict the summary below it.
 export const ASSEMBLY_OUTCOME_DESCRIPTIONS = {
-  CONTAINER: 'The project becomes a location holding its individual parts.',
-  SINGULAR_OBJECT: 'The parts merge into one new inventory item; the parts are consumed.',
-  PERMANENT_CONSUMPTION: 'The parts are permanently consumed and removed from active tracking.',
+  CONTAINER: 'The project becomes a location holding the parts the build used.',
+  SINGULAR_OBJECT: 'The parts merge into one new inventory item; the quantities used are consumed.',
+  PERMANENT_CONSUMPTION: 'The quantities used are consumed and leave your active stock.',
 } as const;
 
 // --- Budgeting display (spec §4 budgeting) -------------------------------------

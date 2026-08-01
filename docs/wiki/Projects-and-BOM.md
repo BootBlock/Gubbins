@@ -116,6 +116,44 @@ item, or simply used up).
 > mark it physically collected when you're actually at the shelf. A part can be reserved but not
 > yet picked, or picked without ever being reserved.
 
+## Finishing the build
+
+**Finalise** turns the gathered parts into the finished thing. Choose what the build became:
+
+- **Container** — the project becomes a **[[location|Locations-and-Stock]]** holding the parts the
+  build used. Good for a box of spares, a populated drawer, a machine you'll take apart again.
+- **Singular object** — the parts merge into **one new item**. Good for something you now own as a
+  single thing: an assembled board, a built bike.
+- **Permanent consumption** — the quantities used are consumed and leave your active stock. Good
+  for glue, solder, screws that are now inside something.
+
+### What it takes from stock
+
+Finalising draws **the quantity each BOM line asks for** — no more. A build that used 4 screws
+takes 4 screws; the rest of the box stays exactly where it is, still in your inventory. A part is
+only archived (or, for a container, moved bodily into the new location) when the build takes the
+**last** of it.
+
+Before you commit, the dialog lists every matched part and what will happen to it — *"Takes 4 of
+500"*, *"Takes the last 2 — then archived"*, *"Moves into the container"* — so nothing is a
+surprise afterwards. A part that is **one physical thing** rather than a divisible quantity is
+taken whole: a [[serialised item|Items]], a presence-only item, or a
+[[gauge|Low-Stock-and-Gauges]] going into a container (you can decant glue out of a bottle, but a
+box holds the bottle). An **unlimited supply** records what the build drew without ever running
+down.
+
+If a part hasn't enough stock for what the BOM asks, finalising is **refused** and the dialog names
+the part along with what it needs and what's on hand. Add the stock, or lower that line's quantity,
+and try again.
+
+> **⚠️ Heads-up**
+> Finalising marks the project **Completed** and cannot be undone automatically — the parts have
+> been taken. Check the summary before pressing the button.
+
+> **ℹ️ Note**
+> Each part's [[activity log|Activity-Log]] records the exact quantity the build consumed, so your
+> usage reports and [[ABC / turnover figures|ABC-Turnover-and-Aging]] see what the build really used.
+
 ## Exporting the BOM
 
 Use **Export BOM** (beside *Import BOM*) to save the bill of materials as a file — for sharing a

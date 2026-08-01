@@ -4,6 +4,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { readAllPages } from '@/lib/read-all-pages';
+import { planAssemblyDraw } from '@/features/projects/assembly';
 import { IN_TRANSIT_LOCATION_ID, UNASSIGNED_LOCATION_ID } from './constants';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
@@ -569,8 +570,8 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
 
   it('CONTAINER: turns the project into a location holding the matched parts', async () => {
     const p = await projects.create({ name: 'Lamp' });
-    const a = await items.create({ name: 'LED' });
-    const b = await items.create({ name: 'Resistor' });
+    const a = await items.create({ name: 'LED', quantity: 1 });
+    const b = await items.create({ name: 'Resistor', quantity: 1 });
     await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
     await projects.addLine(p.id, { itemId: b.id, requiredQty: 1 });
 
@@ -598,16 +599,18 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     const assembled = await items.getById(result.itemId!);
     expect(assembled?.name).toBe('Sensor Board Assembly');
 
+    // One of five consumed — the other four stay in active inventory (issue #647).
     const consumed = await items.getById(a.id);
-    expect(consumed?.isActive).toBe(false); // part consumed
+    expect(consumed?.quantity).toBe(4);
+    expect(consumed?.isActive).toBe(true);
     const history = await items.getHistory(a.id);
     expect(history.rows.some((h) => h.action === 'CONSUMED')).toBe(true);
   });
 
-  it('PERMANENT_CONSUMPTION: soft-deletes the parts with no new item or location', async () => {
+  it('PERMANENT_CONSUMPTION: draws the required quantity with no new item or location', async () => {
     const p = await projects.create({ name: 'Glue Job' });
-    const a = await items.create({ name: 'Epoxy A' });
-    const b = await items.create({ name: 'Epoxy B' });
+    const a = await items.create({ name: 'Epoxy A', quantity: 1 });
+    const b = await items.create({ name: 'Epoxy B', quantity: 3 });
     await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
     await projects.addLine(p.id, { itemId: b.id, requiredQty: 1 });
 
@@ -615,25 +618,206 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(result.itemId).toBeUndefined();
     expect(result.locationId).toBeUndefined();
 
+    // The draw emptied A, so it retires; B keeps the two units the build didn't use.
     expect((await items.getById(a.id))?.isActive).toBe(false);
-    expect((await items.getById(b.id))?.isActive).toBe(false);
+    expect((await items.getById(b.id))?.isActive).toBe(true);
+    expect((await items.getById(b.id))?.quantity).toBe(2);
     expect((await projects.getById(p.id))?.status).toBe('COMPLETED');
   });
 
   it('does not place a SINGULAR_OBJECT result in a system-locked location by default', async () => {
     const p = await projects.create({ name: 'Thing' });
-    const a = await items.create({ name: 'Part' });
+    const a = await items.create({ name: 'Part', quantity: 1 });
     await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
     const result = await projects.finaliseAssembly(p.id, { outcome: 'SINGULAR_OBJECT' });
     const assembled = await items.getById(result.itemId!);
     expect(assembled?.locationId).toBe(UNASSIGNED_LOCATION_ID);
   });
 
+  // --- assembly draws the BOM's quantities (issue #647) --------------------------
+
+  it('consumes only the quantity the BOM asks for, leaving the rest in inventory', async () => {
+    const p = await projects.create({ name: 'Shelf' });
+    const screws = await items.create({ name: 'M3 screw', quantity: 500 });
+    await projects.addLine(p.id, { itemId: screws.id, requiredQty: 4 });
+
+    await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
+
+    const after = await items.getById(screws.id);
+    expect(after?.quantity).toBe(496);
+    expect(after?.isActive).toBe(true);
+    // The ledger records what the build actually used, so consumption analytics can see it.
+    const consumed = (await items.getHistory(screws.id)).rows.find((h) => h.action === 'CONSUMED');
+    expect(consumed?.quantityDelta).toBe(-4);
+  });
+
+  it('sums every line matching the same part, drawing the total once', async () => {
+    const p = await projects.create({ name: 'Bracket' });
+    const screws = await items.create({ name: 'M3 screw', quantity: 10 });
+    await projects.addLine(p.id, { itemId: screws.id, requiredQty: 3 });
+    await projects.addLine(p.id, { itemId: screws.id, requiredQty: 4 });
+
+    await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
+    expect((await items.getById(screws.id))?.quantity).toBe(3);
+  });
+
+  it('retires a part only when the draw takes the last of it', async () => {
+    const p = await projects.create({ name: 'One-off' });
+    const part = await items.create({ name: 'Bespoke bracket', quantity: 2 });
+    await projects.addLine(p.id, { itemId: part.id, requiredQty: 2 });
+
+    await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
+    const after = await items.getById(part.id);
+    expect(after?.quantity).toBe(0);
+    expect(after?.isActive).toBe(false);
+  });
+
+  it('rejects a finalise a part cannot supply, writing nothing at all', async () => {
+    const p = await projects.create({ name: 'Optimistic' });
+    const part = await items.create({ name: 'Rare chip', quantity: 0 });
+    await projects.addLine(p.id, { itemId: part.id, requiredQty: 10 });
+
+    await expect(projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' })).rejects.toThrow(
+      /Rare chip/,
+    );
+    // Nothing happened: the project is still open and the part untouched.
+    expect((await projects.getById(p.id))?.status).toBe('PLANNING');
+    expect((await items.getById(part.id))?.isActive).toBe(true);
+    expect((await items.getHistory(part.id)).rows.some((h) => h.action === 'CONSUMED')).toBe(false);
+  });
+
+  it('draws a part across every location it sits in, oldest expiry first', async () => {
+    const garage = await locations.create({ name: 'Garage' });
+    const loft = await locations.create({ name: 'Loft' });
+    const p = await projects.create({ name: 'Split build' });
+    const bolt = await items.create({ name: 'Bolt', quantity: 8, locationId: garage.id });
+    await items.transferStock(bolt.id, garage.id, loft.id, 5); // Garage 3, Loft 5
+    await projects.addLine(p.id, { itemId: bolt.id, requiredQty: 6 });
+
+    await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
+
+    expect((await items.getById(bolt.id))?.quantity).toBe(2);
+    // Two units are left somewhere; the point is that the draw spanned both placements rather
+    // than stopping at the home location's three.
+    const placements = await items.listStock(bolt.id);
+    expect(placements.reduce((sum, s) => sum + s.quantity, 0)).toBe(2);
+  });
+
+  it('CONTAINER: moves only the required quantity, leaving the part where it lives', async () => {
+    const garage = await locations.create({ name: 'Garage' });
+    const p = await projects.create({ name: 'Lamp' });
+    const screws = await items.create({ name: 'M3 screw', quantity: 500, locationId: garage.id });
+    await projects.addLine(p.id, { itemId: screws.id, requiredQty: 4 });
+
+    const result = await projects.finaliseAssembly(p.id, { outcome: 'CONTAINER' });
+
+    // The box of screws stays on its own shelf; only the four the build used are in the box.
+    const after = await items.getById(screws.id);
+    expect(after?.locationId).toBe(garage.id);
+    expect(after?.quantity).toBe(500);
+    const placements = await items.listStock(screws.id);
+    expect(placements.find((s) => s.locationId === result.locationId)?.quantity).toBe(4);
+    expect(placements.find((s) => s.locationId === garage.id)?.quantity).toBe(496);
+  });
+
+  it('CONTAINER: moves the item itself once the move takes the last of it', async () => {
+    const garage = await locations.create({ name: 'Garage' });
+    const p = await projects.create({ name: 'Lamp' });
+    const shade = await items.create({ name: 'Shade', quantity: 1, locationId: garage.id });
+    await projects.addLine(p.id, { itemId: shade.id, requiredQty: 1 });
+
+    const result = await projects.finaliseAssembly(p.id, { outcome: 'CONTAINER' });
+    expect((await items.getById(shade.id))?.locationId).toBe(result.locationId);
+  });
+
+  it('draws a gauge part by net value and only archives an emptied one', async () => {
+    const p = await projects.create({ name: 'Glue Job' });
+    const glue = await items.create({
+      name: 'Adhesive',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'ml', grossCapacity: 500, tareWeight: 0 },
+    });
+    await projects.addLine(p.id, { itemId: glue.id, requiredQty: 50 });
+
+    await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
+
+    const after = await items.getById(glue.id);
+    expect(after?.gauge?.currentNetValue).toBe(450);
+    expect(after?.isActive).toBe(true);
+    const consumed = (await items.getHistory(glue.id)).rows.find((h) => h.action === 'CONSUMED');
+    expect(consumed?.netValueDelta).toBe(-50);
+  });
+
+  it('takes a presence-only part whole — it has no quantity to slice', async () => {
+    const p = await projects.create({ name: 'Manual job' });
+    const manual = await items.create({ name: 'Reference manual', trackingMode: 'UNTRACKED' });
+    await projects.addLine(p.id, { itemId: manual.id, requiredQty: 1 });
+
+    await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
+    expect((await items.getById(manual.id))?.isActive).toBe(false);
+  });
+
+  it('takes a serialised instance whole rather than drawing its pinned quantity by count', async () => {
+    // A SERIALISED row's quantity is pinned at 1 by a table CHECK, so a count draw would abort the
+    // whole transaction instead of consuming the instance.
+    const p = await projects.create({ name: 'Meter job' });
+    const meter = await items.create({ name: 'Multimeter', trackingMode: 'SERIALISED' });
+    await projects.addLine(p.id, { itemId: meter.id, requiredQty: 1 });
+
+    await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
+    const after = await items.getById(meter.id);
+    expect(after?.isActive).toBe(false);
+    expect(after?.quantity).toBe(1);
+  });
+
+  it('CONTAINER: carries a gauge vessel in whole, and never calls it short there', async () => {
+    // The bottle goes in the box; there is no slice of glue to move, so a requirement larger than
+    // what is left must not block the move.
+    const p = await projects.create({ name: 'Glue box' });
+    const glue = await items.create({
+      name: 'Adhesive',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'ml', grossCapacity: 500, tareWeight: 0, currentNetValue: 100 },
+    });
+    await projects.addLine(p.id, { itemId: glue.id, requiredQty: 600 });
+
+    const result = await projects.finaliseAssembly(p.id, { outcome: 'CONTAINER' });
+    const after = await items.getById(glue.id);
+    expect(after?.locationId).toBe(result.locationId);
+    // Moving the vessel consumes none of its contents.
+    expect(after?.gauge?.currentNetValue).toBe(100);
+  });
+
+  it('lists the parts a finalise plans from, and moves nothing doing so', async () => {
+    const p = await projects.create({ name: 'Shelf' });
+    const screws = await items.create({ name: 'M3 screw', quantity: 500 });
+    const rare = await items.create({ name: 'Rare chip', quantity: 1 });
+    await projects.addLine(p.id, { itemId: screws.id, requiredQty: 4 });
+    await projects.addLine(p.id, { itemId: rare.id, requiredQty: 3 });
+    // An unmatched line has no part to draw and never reaches the summary.
+    await projects.addLine(p.id, { description: 'Custom bracket' });
+
+    const parts = await projects.listAssemblyParts(p.id);
+    expect(parts.map((d) => [d.name, d.requiredQty, d.onHand])).toEqual([
+      ['M3 screw', 4, 500],
+      ['Rare chip', 3, 1],
+    ]);
+    // The plan the dialog draws from is the one the write rejects on.
+    const plan = planAssemblyDraw(parts, 'PERMANENT_CONSUMPTION');
+    expect(plan.feasible).toBe(false);
+    expect(plan.shortfalls.map((s) => s.shortfallQty)).toEqual([2]);
+    await expect(projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' })).rejects.toThrow(
+      /Rare chip/,
+    );
+    // Reading the parts moves nothing.
+    expect((await items.getById(screws.id))?.quantity).toBe(500);
+  });
+
   // --- assembly idempotency under sync (issue #195) ------------------------------
 
   it('CONTAINER: derives the container id from the project so concurrent finalises converge', async () => {
     const p = await projects.create({ name: 'Lamp' });
-    const a = await items.create({ name: 'LED' });
+    const a = await items.create({ name: 'LED', quantity: 1 });
     await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
 
     const result = await projects.finaliseAssembly(p.id, { outcome: 'CONTAINER' });
@@ -645,7 +829,7 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
 
   it('SINGULAR_OBJECT: derives the assembled item id from the project so concurrent finalises converge', async () => {
     const p = await projects.create({ name: 'Sensor Board' });
-    const a = await items.create({ name: 'MCU' });
+    const a = await items.create({ name: 'MCU', quantity: 1 });
     await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
 
     const result = await projects.finaliseAssembly(p.id, { outcome: 'SINGULAR_OBJECT' });
@@ -654,7 +838,7 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
 
   it('derives assembly ledger-entry ids from the project so the union-by-id log does not duplicate', async () => {
     const p = await projects.create({ name: 'Glue Job' });
-    const a = await items.create({ name: 'Epoxy' });
+    const a = await items.create({ name: 'Epoxy', quantity: 1 });
     await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
 
     await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
@@ -664,7 +848,7 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
 
   it('rejects finalising an already-completed project', async () => {
     const p = await projects.create({ name: 'Done Already' });
-    const a = await items.create({ name: 'Part' });
+    const a = await items.create({ name: 'Part', quantity: 2 });
     await projects.addLine(p.id, { itemId: a.id, requiredQty: 1 });
 
     await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });

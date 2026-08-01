@@ -66,6 +66,7 @@ export const projectKeys = {
   costing: (id: string) => [...projectKeys.detail(id), 'costing'] as const,
   shoppingList: (id: string) => [...projectKeys.detail(id), 'shopping-list'] as const,
   pickList: (id: string) => [...projectKeys.detail(id), 'pick-list'] as const,
+  assemblyParts: (id: string) => [...projectKeys.detail(id), 'assembly-parts'] as const,
   budget: (id: string) => [...projectKeys.detail(id), 'budget'] as const,
   expenses: (id: string) => [...projectKeys.detail(id), 'expenses'] as const,
   budgetCategories: (id: string) => [...projectKeys.detail(id), 'budget-categories'] as const,
@@ -158,6 +159,26 @@ export function usePickList(projectId: string | undefined) {
     queryKey: projectKeys.pickList(projectId ?? ''),
     queryFn: () => getProjectRepository().listPickList(projectId!),
     enabled: Boolean(projectId),
+  });
+}
+
+/**
+ * The project's matched parts as a finalise sees them (issue #647) — what the finalise dialog
+ * plans its "what this takes from stock" summary from, via the pure `planAssemblyDraw`.
+ *
+ * Gated by `enabled` so it is only read while that dialog is open, and deliberately **never
+ * stale-cached**: it reflects live stock, which any other screen can move without touching a
+ * project key, so the app-wide 30-second `staleTime` would happily re-show figures a transfer had
+ * already invalidated. A promise about an un-undoable action is worth one extra read, so it is
+ * refetched every time the dialog opens.
+ */
+export function useAssemblyParts(projectId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: projectKeys.assemblyParts(projectId ?? ''),
+    queryFn: () => getProjectRepository().listAssemblyParts(projectId!),
+    enabled: Boolean(projectId) && enabled,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
