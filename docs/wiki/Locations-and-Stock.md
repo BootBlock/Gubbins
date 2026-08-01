@@ -106,6 +106,27 @@ back exactly as you left it — searching never changes which branches you had o
 > quick no matter how many locations you have. Search and the keyboard still reach every one of
 > them.
 
+### Picking a location from a list
+
+That search box belongs to the sidebar. When you're *choosing* a location instead — on **Add
+item**, **Move item**, a purchase order or the scanner — the picker is a dropdown, and once its
+list runs past a dozen or so entries it gains a filter of its own. Open it and simply start
+typing: the list narrows as you go, so you never have to scroll a long list of bins to find one.
+
+- **Every word you type has to appear** in the entry's name, in any order.
+- **`Escape` clears what you've typed**; press it again to close the list.
+- **`↑` / `↓` and `Enter`** still choose, so the whole thing works from the keyboard.
+- Where a picker offers a **＋ New location…** row — **Add item** does — that row stays on offer
+  even when nothing matches, which is usually exactly the moment you want it.
+
+The same goes for every long dropdown in Gubbins, not just locations: categories, projects and
+item pickers all behave this way.
+
+> **ℹ️ Note**
+> A very long list is drawn a screenful at a time as you scroll, just as the tree is, so opening
+> the picker stays quick with thousands of locations. Nothing is left out — scrolling and
+> filtering both reach every entry.
+
 ## On a phone
 
 On a narrow screen there isn't room for the tree and your items side by side, so the tree moves

@@ -126,6 +126,8 @@ Gubbins is built to be driven by keyboard and assistive technology throughout:
 - **Skip-to-content** link to bypass navigation.
 - **Focus trapping** in dialogs, with focus restored on close.
 - **Arrow-key navigation** in the [[location tree|Locations-and-Stock]] and menus.
+- **Type-to-filter** in long dropdowns — [[choosing a location|Locations-and-Stock]], a category or
+  a project is a few keystrokes rather than a long scroll.
 - **Live announcements** for status changes, and accessible, associated form errors.
 - **Reduced-motion** support — all decorative animation respects your system setting.
 
