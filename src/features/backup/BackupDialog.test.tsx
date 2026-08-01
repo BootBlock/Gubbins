@@ -284,7 +284,7 @@ describe('BackupDialog — choosing which settings travel (issue #175)', () => {
     // The restore point is the undo for a destructive Replace — the user never chose its shape,
     // so it must not inherit the create tab's "device settings off" default and lose them.
     mockCreateBackup.mockResolvedValue(BACKUP_RESULT);
-    mockRestoreBackup.mockResolvedValue({ reloadRequired: false, message: 'done' });
+    mockRestoreBackup.mockResolvedValue({ reloadRequired: false, imagesMissed: 0, message: 'done' });
     renderDialog('restore');
     await chooseBackupFile(PARSED_BACKUP);
 
@@ -304,7 +304,7 @@ describe('BackupDialog — choosing which settings travel (issue #175)', () => {
     // the zip *built*. A browser that dropped the download looked exactly like one that saved it,
     // and the wipe went ahead on the strength of that.
     mockCreateBackup.mockResolvedValue({ ...BACKUP_RESULT, secured: false });
-    mockRestoreBackup.mockResolvedValue({ reloadRequired: false, message: 'done' });
+    mockRestoreBackup.mockResolvedValue({ reloadRequired: false, imagesMissed: 0, message: 'done' });
     renderDialog('restore');
     await chooseBackupFile(PARSED_BACKUP);
 
@@ -354,7 +354,7 @@ describe('BackupDialog — choosing which settings travel (issue #175)', () => {
   });
 
   it('applies only the groups left ticked when restoring', async () => {
-    mockRestoreBackup.mockResolvedValue({ reloadRequired: false, message: 'done' });
+    mockRestoreBackup.mockResolvedValue({ reloadRequired: false, imagesMissed: 0, message: 'done' });
     renderDialog('restore');
     await chooseBackupFile(PARSED_WITH_SETTINGS);
 
@@ -367,5 +367,55 @@ describe('BackupDialog — choosing which settings travel (issue #175)', () => {
     const groups = mockRestoreBackup.mock.calls[0]![2] as Record<string, boolean>;
     expect(groups.appearance).toBe(true);
     expect(groups.savedSearches).toBe(false);
+  });
+});
+
+/**
+ * Issue #639: a restore whose images would not all write has still *happened* — the data has
+ * committed and the old data is gone. Reporting it as a failure invited the user to try again or
+ * to go looking for records that were no longer anywhere, so it is handed on as a partial
+ * success in a warning voice instead.
+ */
+describe('BackupDialog — a restore that could not save every image (issue #639)', () => {
+  it('hands a partial restore on as a warning-toned success, not an error', async () => {
+    const onRestored = vi.fn();
+    mockRestoreBackup.mockResolvedValue({
+      reloadRequired: false,
+      imagesMissed: 3,
+      message: 'Merged in backup — 10 items, 12 images. 3 images could not be saved to this device.',
+    });
+    render(<BackupDialog open onClose={() => {}} onRestored={onRestored} />);
+    fireEvent.click(screen.getByRole('tab', { name: /restore/i }));
+    await chooseBackupFile(PARSED_BACKUP);
+
+    fireEvent.click(screen.getByTestId('restore-backup'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-restore-backup'));
+    });
+
+    expect(onRestored).toHaveBeenCalledWith({
+      message: 'Merged in backup — 10 items, 12 images. 3 images could not be saved to this device.',
+      tone: 'warning',
+    });
+    expect(screen.getByTestId('restore-error-live-region').textContent).toBe('');
+  });
+
+  it('keeps the ordinary voice when nothing was missed', async () => {
+    const onRestored = vi.fn();
+    mockRestoreBackup.mockResolvedValue({
+      reloadRequired: false,
+      imagesMissed: 0,
+      message: 'Merged in backup — 10 items.',
+    });
+    render(<BackupDialog open onClose={() => {}} onRestored={onRestored} />);
+    fireEvent.click(screen.getByRole('tab', { name: /restore/i }));
+    await chooseBackupFile(PARSED_BACKUP);
+
+    fireEvent.click(screen.getByTestId('restore-backup'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-restore-backup'));
+    });
+
+    expect(onRestored).toHaveBeenCalledWith({ message: 'Merged in backup — 10 items.', tone: 'info' });
   });
 });

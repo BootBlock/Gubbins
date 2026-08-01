@@ -195,28 +195,68 @@ export async function imagesBytesOnDisk(): Promise<number | null> {
   }
 }
 
+/** What a re-hydration run managed: the files that landed, and the ones that did not. */
+export interface ImageWriteReport {
+  /** How many files were written and closed successfully. */
+  readonly written: number;
+  /** The names of the files that could not be written, in the order they were attempted. */
+  readonly failed: readonly string[];
+  /** The first failure, so a caller can chain it as a `cause` for diagnostics. */
+  readonly failure?: unknown;
+}
+
 /**
  * Write full-resolution image files back into OPFS (§2.7 archive restore — the inverse of
  * {@link readAllImages}). Used when re-hydrating a full archive onto a fresh device so the
  * detail-view full-res images return alongside the restored database. Each file keeps its
  * original name (the UUID the stored `images/<uuid>.webp` path points at), so it lines up
- * with `item_images.full_res_opfs_path` with no remapping. Returns the count written.
+ * with `item_images.full_res_opfs_path` with no remapping.
+ *
+ * **Reports rather than throws** (issue #639). Every caller runs this *after* the restored
+ * database has already committed, so there is nothing left to unwind: abandoning the remaining
+ * files on the first failure would lose images the device had room for, and letting the failure
+ * propagate would have the caller announce a restore that had in fact already happened. A file
+ * that cannot be written is named in {@link ImageWriteReport.failed} and the run carries on —
+ * sizes vary, so the file after the one that exhausted the quota may well still fit.
  */
-export async function writeImageFiles(files: readonly OpfsImageFile[]): Promise<number> {
-  if (files.length === 0) return 0;
-  const dir = await imagesDirectory(true);
+export async function writeImageFiles(files: readonly OpfsImageFile[]): Promise<ImageWriteReport> {
+  if (files.length === 0) return { written: 0, failed: [] };
+
+  let dir: FileSystemDirectoryHandle;
+  try {
+    dir = await imagesDirectory(true);
+  } catch (error) {
+    // No directory means no file can land; report the whole set rather than throwing, so the
+    // caller still finishes and reports the restore that already committed.
+    return { written: 0, failed: files.map((file) => file.name), failure: error };
+  }
+
   let written = 0;
+  const failed: string[] = [];
+  let failure: unknown;
   for (const { name, bytes } of files) {
-    const handle = await dir.getFileHandle(name, { create: true });
-    const writable = await handle.createWritable();
     try {
-      await writable.write(bytes as BufferSource);
-      written += 1;
-    } finally {
-      await writable.close();
+      const handle = await dir.getFileHandle(name, { create: true });
+      const writable = await handle.createWritable();
+      try {
+        await writable.write(bytes as BufferSource);
+        // Counted only once the stream closes: the bytes are not committed to the file until
+        // then, so a close that fails is a file that did not land.
+        await writable.close();
+        written += 1;
+      } catch (error) {
+        // The stream holds a scratch copy until it is closed or aborted, and `close()` on an
+        // errored stream rejects in turn — so `abort()` is what releases the space here, which
+        // matters most in the case that put us here (a full disk).
+        await writable.abort().catch(() => {});
+        throw error;
+      }
+    } catch (error) {
+      failed.push(name);
+      failure ??= error;
     }
   }
-  return written;
+  return { written, failed, failure };
 }
 
 /**

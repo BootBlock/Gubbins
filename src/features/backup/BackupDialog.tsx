@@ -17,7 +17,13 @@ import { estimateStorage } from '@/features/storage/storage-api';
 import { useConfirmSaved } from '@/components/useConfirmSaved';
 import { prepareSave } from '@/lib/save-file';
 import { BACKUP_FILE_KIND, backupFilename, createBackup, type BackupResult } from './build-backup';
-import { readBackup, rememberRestoreNotice, restoreBackup, type RestoreMode } from './restore-backup';
+import {
+  readBackup,
+  rememberRestoreNotice,
+  restoreBackup,
+  type RestoreMode,
+  type RestoreNotice,
+} from './restore-backup';
 import { DEFAULT_BACKUP_SELECTION, type BackupSelection, type ParsedBackup } from './backup-format';
 import {
   DEFAULT_SETTINGS_GROUPS,
@@ -97,7 +103,7 @@ export function BackupDialog({
   open: boolean;
   onClose: () => void;
   /** Called after a reload-free restore (merge / clone) so the host can refresh in place. */
-  onRestored?: (message: string) => void;
+  onRestored?: (notice: RestoreNotice) => void;
 }) {
   const [tab, setTab] = useState<Tab>('create');
 
@@ -265,7 +271,7 @@ function RestorePanel({
   onRestored,
 }: {
   onClose: () => void;
-  onRestored?: (message: string) => void;
+  onRestored?: (notice: RestoreNotice) => void;
 }) {
   const fmt = useFormatters();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -374,12 +380,19 @@ function RestorePanel({
       }
 
       const outcome = await restoreBackup(parsed, mode, settingGroups);
+      // A restore that could not write every image still *happened*: the data has committed and
+      // the old data is gone, so this is a partial success said in a warning voice — never an
+      // error, which would send the user looking for records that are no longer there (#639).
+      const notice: RestoreNotice = {
+        message: outcome.message,
+        tone: outcome.imagesMissed > 0 ? 'warning' : 'info',
+      };
       if (outcome.reloadRequired) {
-        rememberRestoreNotice(outcome.message); // survives the reload, shown on the Sync screen
+        rememberRestoreNotice(notice); // survives the reload, shown on the Sync screen
         location.reload();
         return; // page navigates away
       }
-      onRestored?.(outcome.message);
+      onRestored?.(notice);
       onClose();
     } catch (err) {
       setError(describeError(err, 'The restore failed.'));

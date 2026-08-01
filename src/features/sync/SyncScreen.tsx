@@ -33,7 +33,7 @@ import { useFormatters } from '@/lib/useFormatters';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { BackupDialog } from '@/features/backup/BackupDialog';
-import { consumeRestoreNotice } from '@/features/backup/restore-backup';
+import { consumeRestoreNotice, type RestoreNotice } from '@/features/backup/restore-backup';
 import { SettingsGroupPicker } from '@/features/backup/SettingsGroupPicker';
 import { LIVE_SYNCABLE_SETTINGS_GROUP_IDS } from '@/features/backup/settings-groups';
 import { applySharedSettings, flushSettingsSync } from '@/features/settings/settings-sync-runtime';
@@ -110,7 +110,11 @@ export function SyncScreen() {
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
-  const [notice, setNotice] = useState<string | null>(null);
+  // A one-off banner at the top of the screen. Carries its own tone because a restore can land
+  // and still leave something out, and that is not news to say in the success voice (#639).
+  const [notice, setNotice] = useState<RestoreNotice | null>(null);
+  /** The ordinary "that worked" banner — anything with a tone of its own sets `notice` directly. */
+  const showInfo = (message: string) => setNotice({ message, tone: 'info' });
   const [reconnectable, setReconnectable] = useState(false);
   const [googleReconnectable, setGoogleReconnectable] = useState(false);
   // Issue #196: the shared snapshot has gone missing on a device that has synced before, so
@@ -223,7 +227,7 @@ export function SyncScreen() {
     setError(null);
     // A different remote is now in play, so a missing-copy warning about the old one is stale.
     setRemoteMissing(false);
-    setNotice(`Connected to ${provider.label}.`);
+    showInfo(`Connected to ${provider.label}.`);
   }
 
   function connectMemory() {
@@ -257,7 +261,7 @@ export function SyncScreen() {
     setResult(null);
     void forgetFileSystemProvider(); // drop the persisted folder handle (Phase 14)
     forgetGoogleDrive(); // drop the stored Google token
-    setNotice('Disconnected.');
+    showInfo('Disconnected.');
   }
 
   /**
@@ -435,8 +439,8 @@ export function SyncScreen() {
           </Banner>
         ) : null}
         {notice ? (
-          <Banner tone="info" data-testid="sync-notice">
-            {notice}
+          <Banner tone={notice.tone} data-testid="sync-notice">
+            {notice.message}
           </Banner>
         ) : null}
 
@@ -804,9 +808,9 @@ export function SyncScreen() {
       <BackupDialog
         open={backupOpen}
         onClose={() => setBackupOpen(false)}
-        onRestored={(message) => {
+        onRestored={(restored) => {
           void client.invalidateQueries();
-          setNotice(message);
+          setNotice(restored);
         }}
       />
 
@@ -815,7 +819,7 @@ export function SyncScreen() {
         onClose={() => setConflictsOpen(false)}
         onRestored={() => {
           void client.invalidateQueries();
-          setNotice('Your version was restored. It will sync to your other devices on the next sync.');
+          showInfo('Your version was restored. It will sync to your other devices on the next sync.');
         }}
       />
     </PageContainer>
