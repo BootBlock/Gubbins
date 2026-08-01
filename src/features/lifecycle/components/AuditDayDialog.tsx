@@ -22,6 +22,7 @@ import {
   Spinner,
   Tooltip,
   useBurst,
+  useReportDialogBusy,
   type SelectOption,
 } from '@/components/foundry';
 import { CheckIcon, ChevronRightIcon, CycleCountIcon, SuccessIcon, WarningIcon } from '@/components/icons';
@@ -395,6 +396,11 @@ function AuditLocationPanel({
 }) {
   const count = useLocationCycleCount(location);
   const { isLoading, isEmpty, missing, totalToApply, pending } = count;
+
+  // Authorising writes this location's adjustments and its counted-at stamp in one transaction,
+  // and the walk only advances once that lands. A dismissal mid-write would still alter the
+  // ledger while stranding the walk on a location it has already reconciled (issue #654).
+  useReportDialogBusy(pending);
 
   // Every "done with this location" path — an empty location, a clean count, or one with
   // variances — funnels through `authorise()` so the durable `lastCountedAt` stamp (spec

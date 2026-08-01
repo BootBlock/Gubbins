@@ -232,6 +232,7 @@ export function ExportWizard({
       onClose={onClose}
       title="Export"
       description="Your last settings are remembered for next time."
+      busy={busy}
     >
       <div className="space-y-4">
         <div className="grid gap-2">
@@ -394,7 +395,7 @@ export function ExportWizard({
         </LiveRegion>
 
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             Close
           </Button>
           <Button onClick={() => void run()} disabled={busy || targetMissing} data-testid="run-export">

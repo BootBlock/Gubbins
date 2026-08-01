@@ -17,11 +17,24 @@ export interface CloseButtonProps {
   readonly label?: string;
   /** Extra classes merged onto the button (e.g. to override the glyph colour on a dark overlay). */
   readonly className?: string;
+  /**
+   * Grey the control out and stop it dismissing anything — for a surface that genuinely cannot
+   * be left yet, such as a {@link Modal} with work in flight (issue #654). Left off by default:
+   * a close button that refuses is only honest where the refusal is real.
+   */
+  readonly disabled?: boolean;
 }
 
-export function CloseButton({ onClick, label = 'Close', className }: CloseButtonProps) {
+export function CloseButton({ onClick, label = 'Close', className, disabled = false }: CloseButtonProps) {
   return (
-    <Button variant="ghost" size="icon" onClick={onClick} aria-label={label} className={className}>
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={onClick}
+      aria-label={label}
+      className={className}
+      disabled={disabled}
+    >
       <CloseIcon className="text-glyph-neutral" />
     </Button>
   );

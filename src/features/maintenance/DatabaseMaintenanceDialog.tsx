@@ -339,6 +339,7 @@ export function DatabaseMaintenanceDialog({ open, onClose }: DatabaseMaintenance
       title="Database maintenance"
       description="Keep the local database tidy, healthy and compact. These tasks never remove inventory data."
       className="max-w-2xl"
+      busy={busy}
     >
       <div className="flex flex-col gap-6">
         <section aria-labelledby="maint-group-checks" className="flex flex-col gap-4">

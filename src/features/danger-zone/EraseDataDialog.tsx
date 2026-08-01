@@ -266,6 +266,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
       description="Choose exactly what to remove from this device. This can't be undone."
       className="max-w-3xl"
       scrollBody={false}
+      busy={busy}
     >
       {/* `min-h-0` lets this shrink below the requested `68dvh` when the viewport cannot
           give it that much — see the `scrollBody={false}` note in the Modal primitive. */}

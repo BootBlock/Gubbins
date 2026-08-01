@@ -83,6 +83,13 @@ export { Modal, type ModalProps } from './modal';
 // the registry and its context are the frame's half of the contract, and a feature reaching for
 // those is hand-rolling a dialog rather than composing `Modal`.
 export { useReportUnsavedChanges } from './unsaved-changes';
+// How a panel below a dialog tells the frame it has work in flight, so every route out — Escape,
+// the backdrop and the ✕ — is refused until it finishes (issue #654). A dialog that renders its
+// own `Modal` passes the `busy` prop instead; only the panel-side hook needs re-exporting, for
+// the same reason as its unsaved-changes neighbour above.
+// `useDialogIsBusy` is the read side of the same seam, for a control inside a dialog that would
+// take a panel down as surely as closing the dialog would (a tab rail switching panels).
+export { useReportDialogBusy, useDialogIsBusy } from './dialog-busy';
 // Off-canvas panel for a master pane that can't sit beside its detail pane on a compact
 // viewport. It shares Modal's `aria-modal` contract through `use-dialog-behaviour`, which is
 // deliberately *not* re-exported: a feature needing a modal surface composes one of these two

@@ -30,6 +30,7 @@ import {
   Spinner,
   Surface,
   Textarea,
+  useReportDialogBusy,
 } from '@/components/foundry';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
@@ -356,6 +357,13 @@ function ImportWorkbench({
   const [applyError, setApplyError] = useState<string | null>(null);
   const describeError = useErrorMessage();
   const [result, setResult] = useState<CatalogApplyResult | null>(null);
+
+  // Hold the dialog open until the rows have landed (issue #654). The apply never throws for a
+  // per-row failure — it returns a report partitioning every row into created / updated /
+  // skipped, with the reason for each skip — and this dialog is the only place that report is
+  // ever shown. Dismissing part-way through leaves the writes running and discards it, so an
+  // import that skipped sixty rows looks exactly like one that landed cleanly.
+  useReportDialogBusy(applying);
 
   // Read a currency price the way the user's own browser locale writes numbers, so a
   // eurozone `€5,99` parses as 5.99 rather than 5. Fixed per session (the locale does not

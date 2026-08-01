@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { plural } from '@/lib/plural';
-import { Button, LiveRegion, Modal, Tooltip, useBurst } from '@/components/foundry';
+import { Button, LiveRegion, Modal, Tooltip, useBurst, useReportDialogBusy } from '@/components/foundry';
 import { CycleCountProvider } from '../CycleCountContext';
 import { useLocationCycleCount } from '../useLocationCycleCount';
 import { CycleCountLines } from './CycleCountLines';
@@ -53,6 +53,12 @@ function CycleCountBody({
   const count = useLocationCycleCount(location);
   const { isLoading, isEmpty, drift, missing, totalToApply, pending } = count;
   const [applied, setApplied] = useState<number | null>(null);
+
+  // Authorising writes the adjustments, the presence audit and the location's counted-at stamp in
+  // one transaction, and the count of what it applied is reported here and nowhere else. A
+  // dismissal mid-write would still alter the ledger, only silently — so the frame holds until it
+  // is done (issue #654).
+  useReportDialogBusy(pending);
 
   // Celebrate a completed count with a one-shot milestone burst (visual-flair F4) as the result
   // view appears. Edge-detected on the `null → confirmed` transition via a ref so it fires exactly
