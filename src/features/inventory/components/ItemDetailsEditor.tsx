@@ -9,6 +9,7 @@ import {
   MoneyInput,
   SelectField,
   Textarea,
+  useReportUnsavedChanges,
 } from '@/components/foundry';
 import { CONVERTIBLE_TRACKING_MODES, type Item, type TrackingMode } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -211,6 +212,9 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     depthState.dirty ||
     draft.categoryId !== (item.categoryId ?? null) ||
     draft.isUnlimited !== item.isUnlimited;
+  // Tell the dialog frame the draft is uncommitted, so Escape, a backdrop tap or Close asks
+  // before taking it away rather than discarding it silently (issue #576).
+  useReportUnsavedChanges(dirty);
   // A bad number blocks the save and shows why, rather than quietly clearing the stored
   // value — the failure branch of a "valid ? convert : null" guard reads as "clear this
   // field", which is not what typing `-5` over a stored weight means (issue #345).

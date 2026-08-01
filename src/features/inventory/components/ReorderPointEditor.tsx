@@ -1,5 +1,12 @@
 import { useEffect, useId, useState } from 'react';
-import { Button, InfoHint, Input, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import {
+  Button,
+  InfoHint,
+  Input,
+  Tooltip,
+  INFO_OPEN_DELAY_MS,
+  useReportUnsavedChanges,
+} from '@/components/foundry';
 import { TruckIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { LOW_STOCK_GAUGE_SUGGESTED, LOW_STOCK_QTY_SUGGESTED } from '@/db/repositories/constants';
@@ -147,6 +154,9 @@ function DiscreteReorderEditor({ item }: { item: Item }) {
   const targetTopUp = policy === 'custom' ? toValue(topUp) : null;
   const dirty = targetPoint !== (item.reorderPoint ?? null) || targetTopUp !== (item.reorderQty ?? null);
   const invalid = customInvalid(policy, customPoint);
+  // Let the dialog frame ask before discarding the draft on a dismissal (issue #576) — reported
+  // on exactly the flag the Save button below is driven by, so the two never disagree.
+  useReportUnsavedChanges(dirty && !invalid);
 
   const save = () =>
     update.mutate({ id: item.id, input: { reorderPoint: targetPoint, reorderQty: targetTopUp } });
@@ -232,6 +242,8 @@ function GaugeReorderEditor({ item }: { item: Item }) {
   const targetPercent = valueForPolicy(policy, customPercent);
   const dirty = targetPercent !== (item.reorderGaugePercent ?? null);
   const invalid = customInvalid(policy, customPercent);
+  // As above: the close guard and the Save button read the same flag (issue #576).
+  useReportUnsavedChanges(dirty && !invalid);
 
   const save = () => update.mutate({ id: item.id, input: { reorderGaugePercent: targetPercent } });
 

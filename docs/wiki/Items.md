@@ -73,6 +73,15 @@ up to sit directly after **Details**, or giving the fields a tab of their own th
 the category chooses. That is why a `Movie` opens with a **Film details** tab where a `Fastener`
 has none.
 
+Each section is saved on its own — fill in what you want and press that section's **Save**. Edits
+you haven't saved yet are held while you move around the rail, so you can click across to check a
+photo or a supplier's part number and come back to find everything still typed in.
+
+> **ℹ️ Note**
+> If you close the dialog — with **Close**, the `Esc` key, or by clicking outside it — while a
+> section still has unsaved edits, Gubbins asks first and lets you go back to finish rather than
+> quietly throwing the work away.
+
 > **💡 Tip**
 > **Description** and **Notes** grow as you type, and you can drag the handle at a box's
 > bottom-right corner to make it taller still. Gubbins remembers the height you drag to and

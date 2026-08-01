@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { AutocompleteField, Button, FormField, Input, LiveRegion } from '@/components/foundry';
+import {
+  AutocompleteField,
+  Button,
+  FormField,
+  Input,
+  LiveRegion,
+  useReportUnsavedChanges,
+} from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 import { ATTRITION_PERCENT_BOUNDS, clampNetValue, isValidAttritionPercent } from '@/db/repositories/gauge';
 import { useFormatters } from '@/lib/useFormatters';
@@ -30,23 +37,37 @@ import { useReconfigureGauge } from '../mutations';
  * before saving rather than silently applied.
  */
 export function GaugeConfigEditor({ item }: { item: Item }) {
+  // "Is there a gauge to configure at all?" is answered here rather than inside the editor, so
+  // the editor's hooks — including its unsaved-work report (#576) — are never sat behind an
+  // early return. There is no draft to hold when there is nothing to configure.
+  if (!item.gauge) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Only consumable items measured on a gauge have a unit, capacity and tare to configure.
+      </p>
+    );
+  }
+  return <GaugeConfigForm item={item} gauge={item.gauge} />;
+}
+
+/** The editor proper, reached only for an item that actually carries gauge state. */
+function GaugeConfigForm({ item, gauge }: { item: Item; gauge: NonNullable<Item['gauge']> }) {
   const reconfigure = useReconfigureGauge();
   const fmt = useFormatters();
   const { data: unitSuggestions } = useFieldSuggestions('unitOfMeasure');
 
-  const gauge = item.gauge;
   // The mapper rebuilds `item.gauge` on every read, so the effect below keys off these
   // primitives rather than the object — otherwise a background refetch would identity-change
   // the gauge and wipe whatever the user had half-typed.
-  const savedUnit = gauge?.unitOfMeasure ?? '';
-  const savedCapacity = gauge ? String(gauge.grossCapacity) : '';
-  const savedTare = gauge ? String(gauge.tareWeight) : '';
+  const savedUnit = gauge.unitOfMeasure;
+  const savedCapacity = String(gauge.grossCapacity);
+  const savedTare = String(gauge.tareWeight);
   // Blank is the honest rendering of "no attrition": a literal 0 in the box invites the
   // reading that a rate is set and happens to be zero.
-  const savedAttrition = gauge?.attritionPercent != null ? String(gauge.attritionPercent) : '';
+  const savedAttrition = gauge.attritionPercent != null ? String(gauge.attritionPercent) : '';
   // Normalise absent → null so the dirty check below compares like with like; an unset rate
   // must not read as an edit the moment the editor mounts.
-  const savedAttritionValue = gauge?.attritionPercent ?? null;
+  const savedAttritionValue = gauge.attritionPercent ?? null;
 
   const [unit, setUnit] = useState(savedUnit);
   const [capacity, setCapacity] = useState(savedCapacity);
@@ -60,14 +81,6 @@ export function GaugeConfigEditor({ item }: { item: Item }) {
     setTare(savedTare);
     setAttrition(savedAttrition);
   }, [savedUnit, savedCapacity, savedTare, savedAttrition]);
-
-  if (!gauge) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        Only consumable items measured on a gauge have a unit, capacity and tare to configure.
-      </p>
-    );
-  }
 
   const trimmedUnit = unit.trim();
   const capacityValue = Number(capacity.trim());
@@ -92,6 +105,8 @@ export function GaugeConfigEditor({ item }: { item: Item }) {
     (capacityValid && capacityValue !== gauge.grossCapacity) ||
     (tareValid && tareValue !== gauge.tareWeight) ||
     (attritionValid && attritionValue !== savedAttritionValue);
+  // Let the dialog frame ask before discarding the draft on a dismissal (issue #576).
+  useReportUnsavedChanges(dirty);
 
   // How much material a smaller capacity would displace — surfaced before the save, not after.
   const spill = capacityValid

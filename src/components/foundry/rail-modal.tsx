@@ -5,9 +5,9 @@ import { resolveTabKey } from './tab-keyboard';
 
 /**
  * A single rail tab: an icon + label in the left-hand rail, and the panel content it
- * reveals. Only the active tab's `content` is placed in the tree, so switching tabs
- * unmounts the previous panel — callers that hold in-flight state must persist it
- * outside the panel (each Gubbins editor already writes through its own store/hooks).
+ * reveals. By default only the active tab's `content` is placed in the tree, so switching
+ * tabs unmounts the previous panel — a caller whose panels hold in-flight state should set
+ * {@link RailModalProps.keepPanelsMounted} rather than relying on that.
  */
 export interface RailTab {
   readonly id: string;
@@ -75,6 +75,22 @@ export interface RailModalProps {
    * (e.g. the Name field of a form dialog). The target must live in the first-shown tab.
    */
   readonly initialFocusRef?: RefObject<HTMLElement | null>;
+  /**
+   * Keep every panel the user has visited *this opening* mounted, hiding the inactive ones
+   * instead of unmounting them (issue #576).
+   *
+   * Set this for a rail whose panels hold state the user has not committed yet — the item-detail
+   * editor, whose facet editors each keep a draft in local state until an explicit Save. Without
+   * it, clicking across to another tab to check something destroys that draft with no warning and
+   * nothing to undo, which is the opposite of what a tab rail is understood to do.
+   *
+   * Left off by default because unmounting is the right behaviour for a panel that owns a live
+   * resource — the barcode scanner's camera preview should stop when you leave it, not keep
+   * running out of sight — and because mounting is when a panel's queries and effects run. Panels
+   * are mounted on first visit rather than all at once, so a rail costs no more than the sections
+   * actually opened, and the set resets when the dialog closes.
+   */
+  readonly keepPanelsMounted?: boolean;
 }
 
 /**
@@ -108,6 +124,7 @@ export function RailModal({
   onActiveTabChange,
   onSubmit,
   initialFocusRef,
+  keepPanelsMounted = false,
 }: RailModalProps) {
   // Uncontrolled fallback selection — used only when the caller does not pass `activeTabId`.
   const [internalId, setInternalId] = useState(initialTabId ?? tabs[0]!.id);
@@ -118,6 +135,17 @@ export function RailModal({
 
   // Guard against a stale selection if the tab set ever changes shape.
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0]!;
+
+  // Which panels are in the tree. Under `keepPanelsMounted` a panel joins the set the first time
+  // it is shown and stays there until the dialog closes, so a draft typed into one survives a
+  // trip to another tab and back. Tracked in a ref and updated during render because the answer
+  // is needed *this* render — deferring it to an effect would blank the panel for a frame on
+  // every tab change. The write is a pure function of (open, active.id), so a re-run of this
+  // render — StrictMode, a discarded concurrent attempt — reaches the same set.
+  const visitedRef = useRef(new Set<string>());
+  if (!open) visitedRef.current.clear();
+  visitedRef.current.add(active.id);
+  const mountedTabs = keepPanelsMounted ? tabs.filter((t) => visitedRef.current.has(t.id)) : [active];
 
   const select = (id: string) => {
     // Uncontrolled: track selection here. Controlled: leave it to the caller's state, which
@@ -225,18 +253,35 @@ export function RailModal({
             })}
           </div>
 
-          <div
-            // Keyed on the active tab so switching sections replays the fade-through
-            // entrance (`animate-swap-in`); the reduced-motion catch-all neutralises it.
-            key={active.id}
-            role="tabpanel"
-            id={`${idPrefix}-panel-${active.id}`}
-            aria-labelledby={`${idPrefix}-tab-${active.id}`}
-            tabIndex={0}
-            className="min-w-0 flex-1 animate-swap-in space-y-4 dialog-scroll focus-visible:outline-none"
-          >
-            {active.content}
-          </div>
+          {mountedTabs.map((tab) => {
+            const selected = tab.id === active.id;
+            return (
+              <div
+                key={tab.id}
+                role="tabpanel"
+                id={`${idPrefix}-panel-${tab.id}`}
+                aria-labelledby={`${idPrefix}-tab-${tab.id}`}
+                tabIndex={0}
+                // A kept-but-inactive panel is hidden *and* `inert` — the same pairing the
+                // Settings search uses for a filtered-out section. `display: none` alone leaves
+                // its controls in `querySelectorAll`, and focusing one does nothing, so the
+                // dialog's Tab trap would park on it and leave Tab a dead key; `inert` takes the
+                // subtree out of the cycle (see `focus-trap.ts`) and tells the platform the same.
+                inert={!selected}
+                // Hidden by `display: none` rather than visibility, which is also what replays
+                // the fade-through entrance on the panel being switched *to*: a CSS animation
+                // restarts from the beginning when an element leaves `display: none`, so
+                // `animate-swap-in` still fires per switch with no remount to key it off. The
+                // reduced-motion catch-all neutralises it as before.
+                className={cn(
+                  'min-w-0 flex-1 animate-swap-in space-y-4 dialog-scroll focus-visible:outline-none',
+                  !selected && 'hidden',
+                )}
+              >
+                {tab.content}
+              </div>
+            );
+          })}
         </div>
       )}
 
