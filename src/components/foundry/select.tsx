@@ -1,9 +1,28 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { fieldAria } from './field-aria';
 import { InfoHint } from './info-hint';
+import { LiveRegion } from './live-region';
+import {
+  SELECT_FILTER_THRESHOLD,
+  SELECT_WINDOW_THRESHOLD,
+  SELECT_OPTION_HEIGHT,
+  filterSelectOptions,
+  scrollTopForRow,
+  selectWindow,
+  trailingActionStart,
+} from './select-options';
 import { type TooltipSize } from './tooltip';
 import { useAnchoredPopover } from './use-anchored-popover';
 
@@ -30,7 +49,8 @@ export interface SelectOption {
    * `'action'` marks a command row (e.g. "＋ New location…") rather than a real value.
    * It is set apart with a top divider and an accent tint so it never reads as one of
    * the ordinary options — structural separation, not colour alone, makes it
-   * unmistakable even when the options span the whole hue wheel.
+   * unmistakable even when the options span the whole hue wheel. Command rows are
+   * pinned to the end of the list and always survive the filter.
    */
   readonly kind?: 'action';
 }
@@ -60,13 +80,32 @@ export interface SelectProps {
  * (e.g. an item count) and pinned command rows ("＋ New …") — none of which a browser
  * lets you style inside a native option.
  *
- * The combobox itself is the single tab stop; once focused the list is driven with the
- * keyboard (Up/Down/Home/End to move the active option, Enter/Space to choose, Escape
- * to dismiss) via `aria-activedescendant`, never moving DOM focus into the list.
- * Escape is stopped from bubbling so it closes the list rather than an enclosing Modal.
- * It is a **controlled** component — pass `value` + `onChange` (bind RHF via
- * `<Controller>`), and name it with `aria-labelledby` (or `aria-label`); {@link
- * SelectField} wires all of that up for the common labelled-field case.
+ * The combobox is the single tab stop; the list is driven with the keyboard (Up/Down/
+ * Home/End to move the active option, Enter/Space to choose, Escape to dismiss) via
+ * `aria-activedescendant`, never moving DOM focus into the list. Escape is stopped from
+ * bubbling so it closes the list rather than an enclosing Modal. It is a **controlled**
+ * component — pass `value` + `onChange` (bind RHF via `<Controller>`), and name it with
+ * `aria-labelledby` (or `aria-label`); {@link SelectField} wires all of that up for the
+ * common labelled-field case.
+ *
+ * **Long lists** (issue #563). Its biggest feeder is the location picker, which is handed
+ * the whole hierarchy uncapped — thousands of rows on a bin-level inventory. Two things
+ * scale it, both driven by the pure `select-options.ts` seam:
+ *
+ * - From {@link SELECT_FILTER_THRESHOLD} options the trigger becomes a **filter field**
+ *   while the list is open, so a row is found by typing rather than by scrolling. The
+ *   combobox role (and the id, ARIA and test id with it) moves onto that input for as long
+ *   as it exists, so there is still exactly one combobox and it still owns
+ *   `aria-activedescendant` — the contract above survives intact. Home/End and Space are
+ *   left to the text field while it is filtering, since they are editing keys there.
+ * - Past {@link SELECT_WINDOW_THRESHOLD} the list is **windowed**: only the rows near the
+ *   viewport exist in the DOM, with spacers standing in for the rest so the scrollbar
+ *   still measures the whole list. Nothing is capped — every row remains reachable by
+ *   scrolling — and `aria-setsize`/`aria-posinset` report the true list to assistive tech.
+ *
+ * The active-option highlight is keyboard-only and hover is a **CSS** state, so crossing an
+ * open list with the pointer costs nothing: it neither re-renders the options nor drags
+ * `aria-activedescendant` (and its screen-reader announcement) along behind the mouse.
  */
 export function Select({
   value,
@@ -82,19 +121,40 @@ export function Select({
   'aria-invalid': ariaInvalid,
   'data-testid': testId,
 }: SelectProps) {
+  const t = useT();
   const reactId = useId();
   const baseId = id ?? reactId;
   const listboxId = `${baseId}-listbox`;
   const optionId = (index: number) => `${baseId}-opt-${index}`;
 
   const [open, setOpen] = useState(false);
-  const selectedIndex = options.findIndex((o) => o.value === value);
-  const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
-  const [activeIndex, setActiveIndex] = useState(Math.max(0, selectedIndex));
+  const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
+  // Measured live rather than assumed: the window's spacers have to match the rows they stand
+  // in for, or a long list's scrollbar drifts away from its content.
+  const [rowHeight, setRowHeight] = useState(SELECT_OPTION_HEIGHT);
+  const [viewport, setViewport] = useState({ scrollTop: 0, height: 0 });
+
+  const selected = options.find((option) => option.value === value);
+  /** Filtering is offered only once scrolling the list is the problem, not the answer. */
+  const filtering = open && !disabled && options.length >= SELECT_FILTER_THRESHOLD;
+  const visible = filtering ? filterSelectOptions(options, query) : options;
+  // A filter that narrows the list can strand `activeIndex` outside it — past the end, or below
+  // zero once a query has matched nothing at all. Clamping on read is what keeps the highlight and
+  // `aria-activedescendant` pointing at a row that exists, however the list has moved underneath.
+  const active = Math.min(Math.max(0, activeIndex), Math.max(0, visible.length - 1));
+  const activeId = optionId(active);
+
+  const plainCount = trailingActionStart(visible);
+  const windowed = plainCount > SELECT_WINDOW_THRESHOLD;
+  const optionWindow = windowed
+    ? selectWindow(plainCount, viewport.scrollTop, viewport.height, rowHeight)
+    : null;
 
   const rootRef = useRef<HTMLDivElement>(null);
-  const comboRef = useRef<HTMLDivElement>(null);
-  const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   // The listbox is portalled out of the (clipping) dialog scroll box and positioned
   // against the trigger — see {@link useAnchoredPopover}.
   const { popoverRef, style: popoverStyle } = useAnchoredPopover(rootRef, open);
@@ -111,161 +171,315 @@ export function Select({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [open, popoverRef]);
 
-  // Keep the active option in view while navigating with the keyboard.
-  useEffect(() => {
-    if (open) optionRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' });
-  }, [open, activeIndex]);
+  // The filter field only exists while the list is open, so focus has to follow it there. The
+  // trigger box itself stays mounted throughout (it merely hands the combobox role over), which
+  // is what lets every close hand focus straight back without waiting for a re-render.
+  useLayoutEffect(() => {
+    if (filtering) filterRef.current?.focus();
+  }, [filtering]);
 
-  const openList = (toIndex = Math.max(0, selectedIndex)) => {
+  // A new filter is a new list — start it at the top rather than wherever the last one was left.
+  useLayoutEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0;
+    setViewport((prev) => (prev.scrollTop === 0 ? prev : { ...prev, scrollTop: 0 }));
+  }, [query]);
+
+  // Take the window's measurements from the rendered list rather than trusting the nominal
+  // figures, so a themed row height or a shorter popover still windows accurately.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!open || !windowed || !list) return;
+    const measured = list.querySelector<HTMLElement>('[role="option"]')?.getBoundingClientRect().height ?? 0;
+    if (measured > 0) setRowHeight((prev) => (Math.abs(prev - measured) > 0.5 ? measured : prev));
+    setViewport((prev) =>
+      prev.scrollTop === list.scrollTop && prev.height === list.clientHeight
+        ? prev
+        : { scrollTop: list.scrollTop, height: list.clientHeight },
+    );
+  }, [open, windowed, visible.length]);
+
+  // Keep the active option in view while navigating with the keyboard. A windowed row may not be
+  // in the DOM to scroll to, so its position is computed instead — see {@link scrollTopForRow}.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!open || !list) return;
+    if (windowed && active < plainCount) {
+      const next = scrollTopForRow(active, list.scrollTop, list.clientHeight, rowHeight);
+      if (next === list.scrollTop) return;
+      list.scrollTop = next;
+      setViewport({ scrollTop: list.scrollTop, height: list.clientHeight });
+      return;
+    }
+    document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' });
+  }, [open, active, activeId, windowed, plainCount, rowHeight]);
+
+  const openList = (
+    toIndex = Math.max(
+      0,
+      options.findIndex((option) => option.value === value),
+    ),
+  ) => {
+    setQuery('');
     setActiveIndex(toIndex);
     setOpen(true);
   };
 
-  const choose = (index: number) => {
-    const option = options[index];
-    if (option) onChange(option.value);
+  /** Close and hand focus back to the trigger — it never unmounts, so this needs no re-render. */
+  const close = () => {
     setOpen(false);
-    comboRef.current?.focus();
+    triggerRef.current?.focus();
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  const choose = (index: number) => {
+    const option = visible[index];
+    // A filter matching nothing leaves the list open rather than committing an absent choice.
+    if (!option) return;
+    onChange(option.value);
+    close();
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (disabled) return;
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();
-        if (open) setActiveIndex((i) => Math.min(options.length - 1, i + 1));
+        if (open) setActiveIndex(Math.min(visible.length - 1, active + 1));
         else openList();
         break;
       case 'ArrowUp':
         event.preventDefault();
-        if (open) setActiveIndex((i) => Math.max(0, i - 1));
+        if (open) setActiveIndex(Math.max(0, active - 1));
         else openList();
         break;
       case 'Home':
-        if (open) {
+        // While filtering these are caret keys; taking them would strand the user mid-query.
+        if (open && !filtering) {
           event.preventDefault();
           setActiveIndex(0);
         }
         break;
       case 'End':
-        if (open) {
+        if (open && !filtering) {
           event.preventDefault();
-          setActiveIndex(options.length - 1);
+          setActiveIndex(visible.length - 1);
         }
         break;
-      case 'Enter':
       case ' ':
+        if (filtering) break; // a space is text in the filter field, not a choice
         event.preventDefault();
-        if (open) choose(activeIndex);
+        if (open) choose(active);
+        else openList();
+        break;
+      case 'Enter':
+        event.preventDefault();
+        if (open) choose(active);
         else openList();
         break;
       case 'Escape':
-        if (open) {
-          // Close the list — not the enclosing Modal.
-          event.preventDefault();
-          event.stopPropagation();
-          setOpen(false);
+        if (!open) break;
+        // Close the list — not the enclosing Modal — clearing a filter first, so Escape never
+        // discards more than the user's last step.
+        event.preventDefault();
+        event.stopPropagation();
+        if (filtering && query.length > 0) {
+          setQuery('');
+          setActiveIndex(0);
+          break;
         }
+        close();
         break;
       case 'Tab':
-        if (open) setOpen(false);
+        if (open) close();
         break;
     }
   };
 
-  return (
-    <div ref={rootRef} className="relative">
-      {/* APG select-only combobox: the role="combobox" element is intentionally the focusable, keyboard-driven trigger. */}
+  /** The combobox itself: the trigger box while closed, the filter field while filtering. */
+  const comboboxProps = {
+    id: baseId,
+    role: 'combobox',
+    'aria-haspopup': 'listbox',
+    'aria-expanded': open,
+    'aria-controls': listboxId,
+    'aria-labelledby': ariaLabelledBy,
+    'aria-label': ariaLabel,
+    'aria-describedby': ariaDescribedBy,
+    'aria-invalid': ariaInvalid,
+    'aria-activedescendant': open && visible.length > 0 ? activeId : undefined,
+    'data-testid': testId,
+  } as const;
+
+  const renderOption = (option: SelectOption, index: number) => {
+    const isAction = option.kind === 'action';
+    const isActive = index === active;
+    const isSelected = option.value === value;
+    return (
+      // eslint-disable-next-line jsx-a11y/interactive-supports-focus, jsx-a11y/click-events-have-key-events -- APG combobox+listbox: focus stays on the role="combobox" trigger via aria-activedescendant, so options are deliberately not tab stops, and the combobox's onKeyDown handles Enter/Space selection — the option's onClick is a pointer affordance with full keyboard parity.
       <div
-        ref={comboRef}
-        id={baseId}
-        role="combobox"
-        tabIndex={disabled ? -1 : 0}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listboxId}
-        aria-labelledby={ariaLabelledBy}
-        aria-label={ariaLabel}
-        aria-describedby={ariaDescribedBy}
-        aria-invalid={ariaInvalid}
-        aria-disabled={disabled || undefined}
-        aria-activedescendant={open ? optionId(activeIndex) : undefined}
-        data-testid={testId}
-        onClick={() => {
-          if (disabled) return;
-          if (open) setOpen(false);
-          else openList();
-        }}
-        onKeyDown={onKeyDown}
+        key={option.value}
+        id={optionId(index)}
+        role="option"
+        aria-selected={isSelected}
+        // Only meaningful while windowing keeps most of the list out of the DOM; without them a
+        // screen reader would report the window's size as the whole list.
+        aria-setsize={windowed ? visible.length : undefined}
+        aria-posinset={windowed ? index + 1 : undefined}
+        onClick={() => choose(index)}
         className={cn(
-          'flex h-10 w-full items-center gap-2 rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors',
-          disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
-          'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40',
-          className,
+          'flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm',
+          // Hover is a pure CSS state: pointing at a row must not move the active option — which
+          // would re-render every option's class, and drag a spoken announcement, per mouse move.
+          isActive ? 'bg-secondary' : 'hover:bg-secondary/60',
+          isSelected ? 'font-medium text-primary' : 'text-foreground',
+          // A command row (e.g. "＋ New location…") is fenced off from the options
+          // above it with a divider so it never reads as one of them.
+          isAction && 'mt-1 border-t border-border/60 pt-2 font-medium',
         )}
       >
         <span
-          className={cn(
-            'min-w-0 flex-1 truncate text-left',
-            selected ? selected.colorClass : 'text-muted-foreground',
-          )}
+          className={cn('min-w-0 flex-1 truncate text-left', isAction ? 'text-accent' : option.colorClass)}
         >
-          {selected ? selected.label : (placeholder ?? '')}
+          {option.label}
         </span>
-        <ChevronDownIcon
-          aria-hidden="true"
-          className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')}
-        />
+        {option.meta ? <span className="shrink-0 tabular-nums text-item-count">{option.meta}</span> : null}
       </div>
+    );
+  };
+
+  const windowStart = optionWindow ? optionWindow.start : 0;
+  const windowEnd = optionWindow ? optionWindow.end : plainCount;
+
+  return (
+    <div ref={rootRef} className="relative">
+      {/* APG select-only combobox: the trigger is the focusable, keyboard-driven combobox — until
+          a filter field takes that role over, which is why the box itself outlives both states.
+          While it is filtering the box is inert chrome: the input inside is the control, and it
+          carries the role, the keyboard and the focus. */}
+      <div
+        ref={triggerRef}
+        {...(filtering
+          ? { tabIndex: -1 }
+          : {
+              ...comboboxProps,
+              tabIndex: disabled ? -1 : 0,
+              onClick: () => {
+                if (disabled) return;
+                if (open) close();
+                else openList();
+              },
+              onKeyDown,
+            })}
+        aria-disabled={disabled || undefined}
+        className={cn(
+          'flex h-10 w-full items-center gap-2 rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors',
+          disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+          // While filtering the ring belongs to the input inside, which is always the focused one.
+          filtering
+            ? 'border-ring ring-[3px] ring-ring/40'
+            : 'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40',
+          className,
+        )}
+      >
+        {filtering ? (
+          <input
+            ref={filterRef}
+            {...comboboxProps}
+            type="text"
+            value={query}
+            autoComplete="off"
+            spellCheck={false}
+            aria-autocomplete="list"
+            placeholder={t('select.filter')}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActiveIndex(0);
+            }}
+            onKeyDown={onKeyDown}
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+        ) : (
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate text-left',
+              selected ? selected.colorClass : 'text-muted-foreground',
+            )}
+          >
+            {selected ? selected.label : (placeholder ?? '')}
+          </span>
+        )}
+        {filtering ? (
+          // With the box itself inert, the chevron carries the pointer affordance for closing the
+          // list. Not a tab stop (the input is the one stop) and mouse-down-preventDefault so it
+          // never steals focus mid-filter — the same shape {@link Autocomplete}'s toggle uses.
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-hidden="true"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              close();
+            }}
+            className="-mr-1 flex size-6 shrink-0 items-center justify-center text-muted-foreground"
+          >
+            <ChevronDownIcon className="size-4 rotate-180 transition-transform" />
+          </button>
+        ) : (
+          <ChevronDownIcon
+            aria-hidden="true"
+            className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')}
+          />
+        )}
+      </div>
+
+      {/* Mounted for as long as the filter is, so the match count it reports is a change to a
+          region that already existed — a live region inserted with its message often goes unspoken. */}
+      {filtering ? (
+        <LiveRegion visuallyHidden>
+          {query.length > 0 ? <p>{t('select.matches', { vars: { count: plainCount } })}</p> : null}
+        </LiveRegion>
+      ) : null}
 
       {open && popoverStyle
         ? createPortal(
             <div
               ref={popoverRef}
-              role="listbox"
-              id={listboxId}
-              aria-labelledby={ariaLabelledBy}
-              aria-label={ariaLabel}
               style={popoverStyle}
-              className="z-[70] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg animate-fade-in"
+              className="z-[70] flex flex-col overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg animate-fade-in"
             >
-              {options.map((option, index) => {
-                const isAction = option.kind === 'action';
-                return (
-                  // eslint-disable-next-line jsx-a11y/interactive-supports-focus, jsx-a11y/click-events-have-key-events -- APG combobox+listbox: focus stays on the role="combobox" trigger via aria-activedescendant, so options are deliberately not tab stops, and the combobox's onKeyDown handles Enter/Space selection — the option's onClick is a pointer affordance with full keyboard parity.
-                  <div
-                    key={option.value}
-                    ref={(el) => {
-                      optionRefs.current[index] = el;
-                    }}
-                    id={optionId(index)}
-                    role="option"
-                    aria-selected={index === selectedIndex}
-                    onClick={() => choose(index)}
-                    onMouseEnter={() => setActiveIndex(index)}
-                    className={cn(
-                      'flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm',
-                      index === activeIndex && 'bg-secondary',
-                      index === selectedIndex ? 'font-medium text-primary' : 'text-foreground',
-                      // A command row (e.g. "＋ New location…") is fenced off from the options
-                      // above it with a divider so it never reads as one of them.
-                      isAction && 'mt-1 border-t border-border/60 pt-2 font-medium',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'min-w-0 flex-1 truncate text-left',
-                        isAction ? 'text-accent' : option.colorClass,
-                      )}
-                    >
-                      {option.label}
-                    </span>
-                    {option.meta ? (
-                      <span className="shrink-0 tabular-nums text-item-count">{option.meta}</span>
-                    ) : null}
-                  </div>
-                );
-              })}
+              {/* Counted over the *ordinary* options, and placed above them: a list whose only
+                  survivor is the pinned "＋ New location…" row has still matched nothing, and
+                  saying so first is what stops that row reading as the match. */}
+              {plainCount === 0 ? (
+                <p className="px-2 py-1.5 text-sm text-muted-foreground">{t('select.noMatches')}</p>
+              ) : null}
+              <div
+                ref={listRef}
+                role="listbox"
+                id={listboxId}
+                aria-labelledby={ariaLabelledBy}
+                aria-label={ariaLabel}
+                onScroll={(event) => {
+                  if (!windowed) return;
+                  const list = event.currentTarget;
+                  setViewport((prev) =>
+                    prev.scrollTop === list.scrollTop && prev.height === list.clientHeight
+                      ? prev
+                      : { scrollTop: list.scrollTop, height: list.clientHeight },
+                  );
+                }}
+                className="min-h-0 flex-1 overflow-y-auto"
+              >
+                {optionWindow && optionWindow.padTop > 0 ? (
+                  <div role="presentation" style={{ height: optionWindow.padTop }} />
+                ) : null}
+                {visible
+                  .slice(windowStart, windowEnd)
+                  .map((option, index) => renderOption(option, windowStart + index))}
+                {optionWindow && optionWindow.padBottom > 0 ? (
+                  <div role="presentation" style={{ height: optionWindow.padBottom }} />
+                ) : null}
+                {visible.slice(plainCount).map((option, index) => renderOption(option, plainCount + index))}
+              </div>
             </div>,
             document.body,
           )
