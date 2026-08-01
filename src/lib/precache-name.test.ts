@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  precacheCacheName,
-  precacheRequestSpec,
-  isPrecacheName,
-  PRECACHE_PREFIX,
-  type PrecacheEntry,
-} from './precache-name';
+import { precacheCacheName, precacheRequestSpec, isPrecacheName, type PrecacheEntry } from './precache-name';
 
 /**
  * Issue #499. The precache used to be a constant name every build shared, so an *installing*
@@ -26,10 +20,10 @@ const MANIFEST: readonly PrecacheEntry[] = [
 ];
 
 describe('precacheCacheName', () => {
-  it('names a cache under the shared precache prefix', () => {
-    const name = precacheCacheName(MANIFEST);
-    expect(name.startsWith(PRECACHE_PREFIX)).toBe(true);
-    expect(isPrecacheName(name)).toBe(true);
+  it('names a cache the worker recognises as one of its own', () => {
+    // The `activate` sweep and the `install` sweep both key off this: a precache the worker does
+    // not recognise is one it will never delete, so it would linger against the storage quota.
+    expect(isPrecacheName(precacheCacheName(MANIFEST))).toBe(true);
   });
 
   it('derives the same name for the same manifest, so an unchanged build reuses its cache', () => {

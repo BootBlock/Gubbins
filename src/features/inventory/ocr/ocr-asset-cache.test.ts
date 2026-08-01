@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 import { OCR_ASSET_CACHE, OCR_ASSET_GENERATION, isOcrAssetUrl } from './ocr-asset-cache';
 import { ocrAssetPaths } from './ocr-engine';
+import { isPrecacheName } from '../../../lib/precache-name';
 
 const require_ = createRequire(import.meta.url);
 
@@ -25,7 +26,10 @@ describe('OCR asset cache — generation tracks the installed Tesseract', () => 
 
   it('names a cache distinct from the app-shell precache', () => {
     expect(OCR_ASSET_CACHE).toContain(OCR_ASSET_GENERATION);
-    expect(OCR_ASSET_CACHE).not.toBe('gubbins-precache-v1');
+    // Asked of the seam that decides it, not of one retired literal: the precache is named per
+    // build (issue #499), so a name this cache merely differs from proves nothing. What matters
+    // is that the worker never mistakes these assets for a superseded precache and sweeps them.
+    expect(isPrecacheName(OCR_ASSET_CACHE)).toBe(false);
   });
 });
 

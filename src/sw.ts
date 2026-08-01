@@ -294,33 +294,40 @@ async function recordInServicePrecache(): Promise<void> {
  *
  * Naming the precache after its manifest means an unaccepted update leaves a fully-populated
  * cache behind: if the user ignores the banner across several deploys, each superseded build's
- * shell, chunks and WASM would linger forever against the same storage quota the app meters
- * (spec §7.6). `activate` sweeps them, but only for a build that actually gets accepted — so
- * `install` sweeps too, which is what bounds CacheStorage to at most the running build's
- * precache plus the incoming one.
+ * shell, chunks and WASM would linger against the same storage quota the app meters (spec §7.6).
+ * `activate` sweeps them, but only for a build that actually gets accepted — so `install` sweeps
+ * too, holding CacheStorage to the running build's precache plus the incoming one.
  *
- * Deliberately conservative: without a recorded in-service name (a first install after this
- * shipped, or a CacheStorage read that failed) nothing is deleted. Guessing wrong here means
- * deleting the cache the running app is being served from — a blank page, and offline it would
- * not even recover — whereas guessing nothing merely defers the sweep to the next `activate`,
- * which deletes every superseded cache regardless.
+ * Deliberately conservative: without a recorded in-service name nothing is deleted. Guessing
+ * wrong here means deleting the cache the running app is being served from — a blank page, and
+ * offline it would not even recover — whereas guessing nothing merely defers the sweep to the
+ * next `activate`, which deletes every superseded cache regardless. Two cases have no record:
+ * a CacheStorage read that failed, and — until the first `activate` after this shipped — a user
+ * whose worker still serves the old shared `gubbins-precache-v1`. For that second case the bound
+ * above does not yet hold, and an update ignored across several deploys can leave more than one
+ * cache behind; a single accepted update, or simply closing every tab, records a name and
+ * restores it. That is the right way round: the cost of waiting is disk, the cost of guessing is
+ * an app that will not start.
+ *
+ * Nothing here is allowed to fail `install`. The sweep is housekeeping — an update that cannot
+ * be installed because CacheStorage hiccuped while tidying is a far worse outcome than a cache
+ * swept one deploy later.
  */
 async function pruneSupersededPrecaches(): Promise<void> {
-  let inService: string;
   try {
     const cache = await caches.open(SW_STATE_CACHE);
     const stored = await cache.match(IN_SERVICE_PRECACHE_KEY);
     if (!stored) return;
-    inService = await stored.text();
+    const inService = await stored.text();
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((key) => isPrecacheName(key) && key !== CACHE && key !== inService)
+        .map((key) => caches.delete(key)),
+    );
   } catch {
-    return;
+    // Deliberately swallowed — see above.
   }
-  const keys = await caches.keys();
-  await Promise.all(
-    keys
-      .filter((key) => isPrecacheName(key) && key !== CACHE && key !== inService)
-      .map((key) => caches.delete(key)),
-  );
 }
 
 sw.addEventListener('fetch', (event) => {

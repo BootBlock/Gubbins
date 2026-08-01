@@ -25,10 +25,11 @@ export interface PrecacheEntry {
 
 /**
  * Shared prefix of every precache this app has ever named, including the retired constant
- * `gubbins-precache-v1`. The worker uses it to recognise *its own* superseded precaches among
- * `caches.keys()` — the one class of cache it may delete without knowing which build wrote it.
+ * `gubbins-precache-v1`. Exposed through {@link isPrecacheName} rather than directly: what the
+ * worker needs is to recognise *its own* superseded precaches among `caches.keys()` — the one
+ * class of cache it may delete without knowing which build wrote it — not the prefix itself.
  */
-export const PRECACHE_PREFIX = 'gubbins-precache-';
+const PRECACHE_PREFIX = 'gubbins-precache-';
 
 /**
  * FNV-1a over `text`, seeded with `basis`, as an unsigned 32-bit integer.
@@ -56,10 +57,13 @@ function fnv1a(text: string, basis: number): number {
  * URL and carry their content hash in `revision` instead, so hashing URLs alone would give a
  * shell-only change the previous build's name and reintroduce exactly the bug this prevents.
  *
- * Fingerprinted in **two independent lanes** and concatenated, giving 64 bits rather than 32. A
- * collision here is not a cosmetic near-miss — two different builds would share a cache and the
- * install-into-the-live-cache bug would be back for that pair — and a second lane costs one more
- * pass over a list of a few hundred short strings.
+ * Fingerprinted in two passes from different offset bases and concatenated. A collision here is
+ * not a cosmetic near-miss — two different builds would share a cache, and the
+ * install-into-the-live-cache bug would be back for that pair — so a second pass is worth its
+ * one extra loop over a few hundred short strings: two manifests have to collide under *both*
+ * bases to be confused. That is not the 64 bits the name's length suggests (the passes differ
+ * only in where they start, so they are not independent), but it is far beyond what
+ * distinguishing consecutive builds of one app needs.
  */
 export function precacheCacheName(entries: readonly PrecacheEntry[]): string {
   // ` ` separates the fields and `\n` the entries: neither can occur in a URL or a hex
