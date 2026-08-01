@@ -69,6 +69,9 @@ describe('countStockLevels', () => {
 
   it('excludes items with no bulk stock level, unlimited supply, and soft-deleted rows', async () => {
     const items = new ItemRepository(driver);
+    // A SERIALISED item is pinned at quantity 1 by a schema CHECK, so it can never reach the
+    // depleted state its mode exclusion guards against; it is here as a row that must not be
+    // counted, with the mode exclusion itself covered by the app's predicate parity guard.
     await items.create({ name: 'SerialisedUnit', trackingMode: 'SERIALISED' });
     await items.create({ name: 'UntrackedThing', trackingMode: 'UNTRACKED' });
     await items.create({ name: 'Mains water', trackingMode: 'DISCRETE', quantity: 0, isUnlimited: true });
