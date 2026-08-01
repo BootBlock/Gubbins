@@ -39,12 +39,10 @@ describe('projectItemStatuses', () => {
   });
 
   it('reports the same low/out-of-stock figures the /metrics exposition publishes', async () => {
-    // The two decide "low" separately — this counts with `lowStockPredicateSql` in SQL, `/metrics`
-    // with the pure `isLow` seam — but from the same thresholds, and the app's own drift guard
-    // (`stock-attention-parity.test.ts`) holds those two predicates to one answer. This asserts
-    // the bridge wires them to the same thresholds, so a threshold that moved on one surface and
-    // not the other shows up here. It is not a claim that the totals always match: `/metrics`
-    // stops at `MAX_ITEMS_SCANNED` active items, whereas these counts are a whole-table aggregate.
+    // Both now count through the same `applicableStatuses` seam over the whole table, with the
+    // same thresholds — so this is a true equality, not the "same idea of low, possibly different
+    // totals" it was while `/metrics` walked a capped page of items (issue #532). A threshold or a
+    // candidate set that moved on one surface and not the other still shows up here.
     const statuses = await projectItemStatuses(hydrated.driver);
     const metrics = await projectMetrics(hydrated.driver);
     expect(statuses['low-stock']).toBe(metrics.lowStockItems);
