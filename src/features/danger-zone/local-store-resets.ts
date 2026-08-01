@@ -38,6 +38,7 @@ import { useExportStore } from '@/features/export/useExportStore';
 import { usePwaUpdateSnoozeStore } from '@/components/foundry/usePwaUpdateSnoozeStore';
 import { useLocationExpansionStore } from '@/features/inventory/useLocationExpansionStore';
 import { useAuditSessionStore } from '@/features/lifecycle/useAuditSessionStore';
+import { useCountDraftStore } from '@/features/lifecycle/useCountDraftStore';
 import { EMOJI_PICKER_SIZE_KEY, LAST_ORPHAN_SWEEP_KEY, TEXTAREA_SIZES_KEY } from '@/lib/storage-keys';
 
 /** The slice of a Zustand store API this module needs — narrow enough to fake in a test. */
@@ -78,6 +79,10 @@ export const LOCAL_STORE_RESETS: Readonly<Record<string, (() => void) | null>> =
   'gubbins:pwa-update-snooze': toDefaults(usePwaUpdateSnoozeStore),
   'gubbins:location-expansion': toDefaults(useLocationExpansionStore),
   'gubbins:audit-session': toDefaults(useAuditSessionStore),
+  // The stock-take's unfinished count sheets (issue #587). A dialog left open holds its sheet in
+  // React state and would save it straight back on the next keystroke, so the live store has to
+  // be emptied too — otherwise the erase would appear to undo itself mid-count.
+  'gubbins:count-drafts': toDefaults(useCountDraftStore),
   'gubbins:milestones': toDefaults(useMilestonesStore),
   // Resetting the store also un-corrects the evaluation clock: `startClockSkew` subscribes to
   // `skewMs`, so clearing it here pushes 0 straight through to `setClockSkewMs`. The next boot

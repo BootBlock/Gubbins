@@ -11,6 +11,9 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CycleCountDialog } from './CycleCountDialog';
+import { CycleCountProvider } from '../CycleCountContext';
+import { useCountDraftStore } from '../useCountDraftStore';
+import { useLocationCycleCount, type LocationCycleCount } from '../useLocationCycleCount';
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -65,6 +68,10 @@ function renderDialog(client = makeClient()) {
 afterEach(() => {
   cleanup();
   authoriseCountSpy.mockResolvedValue({ discrete: [], serialised: [] });
+  // The count sheet is now saved to `localStorage` as it is typed (issue #587), so a count
+  // entered by one test would be restored into the next one's dialog.
+  useCountDraftStore.setState({ drafts: {} });
+  localStorage.clear();
 });
 
 // ---------------------------------------------------------------------------
@@ -76,14 +83,14 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
     renderDialog();
     // The LiveRegion (role=status, polite) must be in the DOM while the form is
     // displayed — not only after the result appears (WCAG 4.1.3 requires pre-existence).
-    const region = screen.getByRole('status');
-    expect(region).toBeTruthy();
+    const region = screen.getByTestId('cycle-count-result');
+    expect(region.getAttribute('role')).toBe('status');
     expect(region.textContent).toBe('');
   });
 
   it('the live region carries role="status" and aria-live="polite"', () => {
     renderDialog();
-    const region = screen.getByRole('status');
+    const region = screen.getByTestId('cycle-count-result');
     expect(region.getAttribute('aria-live')).toBe('polite');
     expect(region.getAttribute('aria-atomic')).toBe('true');
   });
@@ -109,7 +116,7 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
       fireEvent.click(screen.getByTestId('authorise-reconciliation'));
     });
 
-    const region = screen.getByRole('status');
+    const region = screen.getByTestId('cycle-count-result');
     expect(region.textContent).toContain('Reconciliation complete');
     expect(region.textContent).toContain('2 adjustments applied to the ledger');
   });
@@ -129,7 +136,7 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
       fireEvent.click(screen.getByTestId('authorise-reconciliation'));
     });
 
-    const region = screen.getByRole('status');
+    const region = screen.getByTestId('cycle-count-result');
     expect(region.textContent).toContain('1 adjustment applied');
     expect(region.textContent).not.toContain('1 adjustments');
   });
@@ -140,7 +147,7 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
     renderDialog();
 
     // Capture the live-region element reference while the form is active.
-    const regionBefore = screen.getByRole('status');
+    const regionBefore = screen.getByTestId('cycle-count-result');
 
     await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
 
@@ -154,7 +161,121 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
 
     // The SAME DOM element must still be the role=status node after reconciliation —
     // a remount would yield a different reference and prove the trap is present.
-    const regionAfter = screen.getByRole('status');
+    const regionAfter = screen.getByTestId('cycle-count-result');
     expect(regionBefore).toBe(regionAfter);
+  });
+});
+
+describe('CycleCountDialog — the count sheet survives being closed (issue #587)', () => {
+  /** Open the dialog, wait for the sheet, and type `value` into the one discrete line. */
+  async function countInto(value: string) {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+    fireEvent.change(screen.getByTestId(`count-${BATCH_LINE_KEY}`), { target: { value } });
+  }
+
+  it('keeps what was typed when the dialog is closed, and hands it back on reopening', async () => {
+    await countInto('8');
+    // Closing (Cancel, Escape or a backdrop tap) unmounts the provider — the count used to die
+    // with it, recoverable only by physically counting the shelf again.
+    cleanup();
+
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+    expect(screen.getByTestId<HTMLInputElement>(`count-${BATCH_LINE_KEY}`).value).toBe('8');
+  });
+
+  it('says so rather than repopulating the sheet silently', async () => {
+    await countInto('8');
+    cleanup();
+
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId('count-draft-notice')).toBeTruthy());
+    // A sheet saved seconds ago is said as "just now" — the relative formatter's bare "now"
+    // reads as a broken sentence in this position.
+    expect(screen.getByTestId('count-draft-notice').textContent).toContain(
+      'Restored 1 count entered here just now.',
+    );
+    // …and announces it, from a region that pre-existed the message (WCAG 4.1.3).
+    expect(screen.getByTestId('count-draft-live').textContent).toContain('Restored 1 count');
+  });
+
+  it('reports an older sheet by age rather than as "just now"', async () => {
+    useCountDraftStore.setState({
+      drafts: {
+        [LOC.id]: { counts: { [BATCH_LINE_KEY]: '8' }, missing: [], savedAt: Date.now() - 3 * 86_400_000 },
+      },
+    });
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId('count-draft-notice')).toBeTruthy());
+    expect(screen.getByTestId('count-draft-notice').textContent).toContain('entered here 3 days ago');
+  });
+
+  it('says "earlier" rather than inventing a date when the stored stamp was unusable', async () => {
+    useCountDraftStore.setState({
+      drafts: { [LOC.id]: { counts: { [BATCH_LINE_KEY]: '8' }, missing: [], savedAt: null } },
+    });
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId('count-draft-notice')).toBeTruthy());
+    expect(screen.getByTestId('count-draft-notice').textContent).toContain('entered here earlier');
+  });
+
+  it('says nothing on a location with no saved sheet', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+    expect(screen.queryByTestId('count-draft-notice')).not.toBeInTheDocument();
+    expect(screen.getByTestId('count-draft-live').textContent).toBe('');
+  });
+
+  it('"Start over" clears the restored sheet and the saved copy behind it', async () => {
+    await countInto('8');
+    cleanup();
+
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId('count-draft-discard')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('count-draft-discard'));
+
+    expect(screen.getByTestId<HTMLInputElement>(`count-${BATCH_LINE_KEY}`).value).toBe('');
+    expect(screen.queryByTestId('count-draft-notice')).not.toBeInTheDocument();
+    await waitFor(() => expect(useCountDraftStore.getState().drafts[LOC.id]).toBeUndefined());
+  });
+
+  it('drops the saved sheet once the count is authorised, so it is never offered back', async () => {
+    authoriseCountSpy.mockResolvedValue({ discrete: [{ id: 'item-abc' }], serialised: [] });
+    await countInto('8');
+    expect(useCountDraftStore.getState().drafts[LOC.id]).toBeDefined();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('authorise-reconciliation'));
+    });
+    expect(useCountDraftStore.getState().drafts[LOC.id]).toBeUndefined();
+  });
+
+  it('keeps the sheet when authorisation fails — a failed write must not cost the count', async () => {
+    // Driven through the hook rather than the button: the dialog fires `void authorise()`, so a
+    // rejection there escapes as an unhandled one (the mutation reports the failure to the user
+    // itself) and vitest would flag it. What matters is the ordering — the saved sheet is
+    // dropped *after* the write lands, never before it is attempted.
+    authoriseCountSpy.mockRejectedValue(new Error('disk full'));
+
+    let count: LocationCycleCount | null = null;
+    function Harness() {
+      count = useLocationCycleCount(LOC);
+      return null;
+    }
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <CycleCountProvider>
+          <Harness />
+        </CycleCountProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(count!.lines).toHaveLength(1));
+    act(() => count!.setCount(BATCH_LINE_KEY, '8'));
+    await waitFor(() => expect(useCountDraftStore.getState().drafts[LOC.id]).toBeDefined());
+
+    await expect(count!.authorise()).rejects.toThrow('disk full');
+    expect(useCountDraftStore.getState().drafts[LOC.id]?.counts).toEqual({ [BATCH_LINE_KEY]: '8' });
   });
 });

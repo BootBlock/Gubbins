@@ -102,8 +102,9 @@ need to reload:
   with any unresolved [[sync conflicts|Cloud-Sync]], so the next sync starts fresh. Your inventory
   is not deleted.
 - **Drafts & reminders** — the local odds and ends: export drafts, app-update reminders, an
-  in-progress [[stock-take|Cycle-Counts-and-Audit-Day]], which location groups are expanded,
-  remembered dialog and text-box sizes, and which one-off celebrations have already played.
+  in-progress [[stock-take|Cycle-Counts-and-Audit-Day]] and any counts entered but not yet
+  authorised, which location groups are expanded, remembered dialog and text-box sizes, and which
+  one-off celebrations have already played.
 
 > **⚠️ Heads-up**
 > These three — **App preferences**, **Dashboard layout** and **Saved searches** — are the ones

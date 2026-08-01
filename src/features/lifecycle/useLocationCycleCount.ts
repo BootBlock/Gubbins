@@ -27,6 +27,7 @@ import {
   type CycleCountLine,
 } from './cycle-count';
 import { useCycleCount } from './CycleCountContext';
+import { useCountDraftStore } from './useCountDraftStore';
 import { useAuthoriseCount } from './hooks';
 
 /** A count line's label: the item name, with the lot's batch/lot number appended if tracked. */
@@ -82,6 +83,10 @@ export interface LocationCycleCount {
   readonly serialised: ReturnType<typeof useCycleCount>['serialised'];
   readonly presence: ReturnType<typeof useCycleCount>['presence'];
   readonly setPresence: ReturnType<typeof useCycleCount>['setPresence'];
+  /** Set when this location opened onto a sheet saved earlier (issue #587), else null. */
+  readonly restored: ReturnType<typeof useCycleCount>['restored'];
+  /** Throw the saved sheet away and count this location from scratch. */
+  readonly discardDraft: ReturnType<typeof useCycleCount>['discardDraft'];
   /** Discrete lines whose entered count disagrees with the database. */
   readonly drift: ReturnType<typeof variances>;
   /** Serialised instances flagged missing. */
@@ -95,8 +100,10 @@ export interface LocationCycleCount {
 }
 
 export function useLocationCycleCount(location: { id: string; name: string }): LocationCycleCount {
-  const { lines, counts, serialised, presence, begin, setCount, setPresence } = useCycleCount();
+  const { lines, counts, serialised, presence, restored, begin, setCount, setPresence, discardDraft } =
+    useCycleCount();
   const authoriseCount = useAuthoriseCount();
+  const clearDraft = useCountDraftStore((s) => s.clear);
 
   // Load the items physically in this location (Phase 26 — per-location; Phase 28 — per-batch).
   // DISCRETE stock is read from the `stock_batches` ledger, so a drawer's lots are each
@@ -183,6 +190,11 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
       quantityAdjustments,
       serialisedAdjustments,
     });
+    // The sheet has been committed, so the saved copy that let a paused count resume (issue
+    // #587) has done its job — drop it, or reopening this location would offer to restore a
+    // count that is now the database's own state. Only *after* the write lands: a failed
+    // authorisation must leave the auditor's work exactly where it was.
+    clearDraft(location.id);
     return {
       variancesFound: totalToApply,
       adjustmentsMade: discrete.length + retired.length,
@@ -198,6 +210,8 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
     serialised,
     presence,
     setPresence,
+    restored,
+    discardDraft,
     drift,
     missing,
     totalToApply,
