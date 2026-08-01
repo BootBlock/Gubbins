@@ -1,6 +1,8 @@
 # Home Assistant query bridge — phased plan (2026-06-29)
 
-> **Living document.** Each phase is implemented in its own chat session. Tick the
+> **Status:** ✅ COMPLETE — phases HA-1 → HA-5 shipped; the phased plan is done.
+
+> **Historical process note.** Each phase is implemented in its own chat session. Tick the
 > `[ ]` boxes as work lands, append a one-paragraph "Outcome" note under each phase
 > when it completes (mirroring `docs/dev/deferred-features.md`), and re-schedule —
 > never silently drop — any deferred item.
@@ -20,8 +22,6 @@
 > context the fresh session needs (it starts cold). After the **final** phase, the
 > continuation prompt instead kicks off the first **Deferred work** item (the generic
 > REST API).
->
-> **Status:** ✅ COMPLETE — phases HA-1 → HA-5 shipped; the phased plan is done.
 >
 > On top of the HA-1
 > hydration, HA-2 query core, HA-3 HTTP server and HA-4 Home Assistant custom integration,

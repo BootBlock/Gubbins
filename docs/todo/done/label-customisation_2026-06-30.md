@@ -1,4 +1,4 @@
-# Label customisation — Phase 73 (living plan + outcome)
+# Label customisation — Phase 73 (plan + outcome)
 
 > **Status:** ✅ COMPLETE — Phase 73 shipped.
 

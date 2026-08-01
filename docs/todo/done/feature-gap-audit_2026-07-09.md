@@ -1,4 +1,4 @@
-# Feature-gap audit — backlog (living plan)
+# Feature-gap audit — backlog (plan)
 
 > **Status:** ✅ COMPLETE (2026-07-10) — every actionable item G1–G9 shipped.
 

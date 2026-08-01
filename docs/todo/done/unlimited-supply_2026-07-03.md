@@ -1,9 +1,9 @@
-# Phase 82 — Unlimited-supply items (living plan)
+# Phase 82 — Unlimited-supply items (plan)
 
 > **Status:** ✅ COMPLETE — Phase 82 shipped.
 
-> **Living document.** Implemented in its own worktree/session. Tick the `[ ]` boxes as work
-> lands, append a one-paragraph **Outcome** note when it completes (mirroring
+> **Historical process note.** Implemented in its own worktree/session. Tick the `[ ]` boxes
+> as work lands, append a one-paragraph **Outcome** note when it completes (mirroring
 > `docs/dev/deferred-features.md`), and re-schedule — never silently drop — any deferred item.
 >
 > **Continuation-prompt rule (mandatory).** When the phase completes you **must** emit the

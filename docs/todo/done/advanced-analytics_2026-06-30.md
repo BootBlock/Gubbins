@@ -1,4 +1,4 @@
-# Advanced inventory analytics — Phase 74 (living plan + outcome)
+# Advanced inventory analytics — Phase 74 (plan + outcome)
 
 > **Status:** ✅ COMPLETE — shipped.
 
