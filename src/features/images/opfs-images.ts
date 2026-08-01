@@ -9,7 +9,13 @@
  *
  * Browser-only (depends on `navigator.storage.getDirectory`); exercised by the
  * real-browser smoke test (§8.5.5), not the `:memory:` unit suite.
+ *
+ * These writes bypass the database worker entirely, so a `QuotaExceededError` here reaches none of
+ * the plumbing that watches SQLite — and the full-resolution WebP is by far the largest thing the
+ * app writes, which makes this the surface most likely to hit the ceiling first. Both writers below
+ * report the failure to `features/storage/exhaustion` on the way past (issue #504).
  */
+import { reportStorageFailure } from '@/features/storage/exhaustion';
 
 /** OPFS subdirectory holding the high-resolution image files. */
 const IMAGES_DIR = 'images';
@@ -28,6 +34,11 @@ function filenameOf(path: string): string | undefined {
 /**
  * Write a compressed image blob to OPFS as a new raw file, returning its relative
  * path (e.g. `images/3f2c….webp`) for storage via the ImageRepository.
+ *
+ * `close()` sits inside the `try`, and a failure aborts instead: OPFS *stages* a write, so a quota
+ * error normally surfaces at `close()` rather than at `write()` — closing from a `finally` would
+ * both commit a partial file on a device that has no room for it and let the close's own failure
+ * mask the quota error the caller (and the tier) needs to see.
  */
 export async function saveImageFile(blob: Blob, extension = 'webp'): Promise<string> {
   const path = reserveImagePath(extension);
@@ -37,8 +48,12 @@ export async function saveImageFile(blob: Blob, extension = 'webp'): Promise<str
   const writable = await handle.createWritable();
   try {
     await writable.write(blob);
-  } finally {
     await writable.close();
+  } catch (error) {
+    // Best-effort: the stream may already be errored, and that must not mask the real failure.
+    await writable.abort?.().catch(() => {});
+    reportStorageFailure(error);
+    throw error;
   }
   return path;
 }
@@ -209,11 +224,16 @@ export async function writeImageFiles(files: readonly OpfsImageFile[]): Promise<
   for (const { name, bytes } of files) {
     const handle = await dir.getFileHandle(name, { create: true });
     const writable = await handle.createWritable();
+    // Same close-inside-the-try contract as `saveImageFile`: re-hydrating an archive writes every
+    // full-resolution image this device has, so it is the likeliest of all of them to run out.
     try {
       await writable.write(bytes as BufferSource);
-      written += 1;
-    } finally {
       await writable.close();
+      written += 1;
+    } catch (error) {
+      await writable.abort?.().catch(() => {});
+      reportStorageFailure(error);
+      throw error;
     }
   }
   return written;

@@ -23,7 +23,8 @@
  */
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { estimateStorage } from '@/features/storage/storage-api';
-import { STORAGE_THRESHOLDS } from '@/features/storage/tiers';
+import { STORAGE_THRESHOLDS, isWriteSuspended } from '@/features/storage/tiers';
+import { useStorageStore } from '@/state/stores/useStorageStore';
 import { labFlag } from '@/state/stores/useLabStore';
 import { measureClockOffset } from './clock';
 import { mergeSnapshot } from './merge';
@@ -177,6 +178,15 @@ export async function runSync(
     if (estimate.supported && estimate.ratio >= STORAGE_THRESHOLDS.critical) {
       return hardStop(
         `Storage is ${(estimate.ratio * 100).toFixed(0)}% full — sync aborted to avoid eviction. Free space and retry.`,
+      );
+    }
+    // A write that actually ran out of space outranks that reading (issue #504): a padded quota,
+    // an opaque VFS pool or a full device all report exactly the headroom checked above. The
+    // reconciliation below is the largest write the app makes, so letting it start on the
+    // strength of a figure a write has already disproved is the one thing this gate is for.
+    if (isWriteSuspended(useStorageStore.getState().tier)) {
+      return hardStop(
+        'Storage is full — sync aborted to avoid a merge that cannot finish. Free space and retry.',
       );
     }
   }
