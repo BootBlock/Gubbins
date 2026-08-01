@@ -10,20 +10,22 @@
  * what the ledger records afterwards are the same computation rather than two that agree by
  * coincidence.
  *
- * How much comes out depends on how the part's stock is *counted*, which is the {@link
- * AssemblyDrawMode}:
- *   - `COUNT` — a DISCRETE or SERIALISED part: draw the required units from the per-location /
- *     batch ledger, leaving the remainder on the shelf.
- *   - `GAUGE` — a CONSUMABLE_GAUGE part: the requirement is a net-value draw (50 ml of adhesive),
- *     not a count of vessels.
- *   - `WHOLE` — an UNTRACKED part: presence-only, with no quantity to take a slice of, so the
- *     build takes the thing itself.
+ * How much comes out depends on how the part's stock is *counted* — and, for one mode, on what
+ * the build is becoming. That is the {@link AssemblyDrawMode}:
+ *   - `COUNT` — a DISCRETE part: draw the required units from the per-location / batch ledger,
+ *     leaving the remainder on the shelf.
+ *   - `GAUGE` — a CONSUMABLE_GAUGE part being consumed: the requirement is a net-value draw
+ *     (50 ml of adhesive), not a count of vessels.
+ *   - `WHOLE` — a part that is one physical thing rather than a divisible quantity: a SERIALISED
+ *     instance (its quantity is pinned at 1 and the ledger refuses to move it by count), an
+ *     UNTRACKED presence-only item (no quantity at all), or a gauge going into a *container* —
+ *     you can decant 50 ml out of a bottle, but a box holds the bottle. The build takes the thing.
  *   - `UNLIMITED` — an infinite source (Phase 82): the draw is recorded but never moves the
  *     ledger and can never run short (the no-op rule in `features/inventory/unlimited.ts`).
  *
  * Pure: no DB, no clock, no formatting — so every combination stays exhaustively unit-testable.
  */
-import type { TrackingMode } from '@/db/repositories';
+import type { AssemblyOutcome, TrackingMode } from '@/db/repositories';
 
 /** How a matched part's stock is counted, and so how a finalise draws it down. */
 export type AssemblyDrawMode = 'COUNT' | 'GAUGE' | 'WHOLE' | 'UNLIMITED';
@@ -73,38 +75,50 @@ export interface AssemblyDrawPlan {
 }
 
 /**
- * How this part's stock is counted. An infinite source is decided first: `is_unlimited` is a
- * modifier on a DISCRETE item, and being infinite outranks being countable.
+ * How this part's stock comes out, given what the build is becoming.
+ *
+ * An infinite source is decided first: `is_unlimited` is a modifier on a DISCRETE item, and being
+ * infinite outranks being countable. A serialised instance and a presence-only item are then
+ * whole-item cases for the same underlying reason — neither has a divisible quantity to slice, and
+ * the ledger's `CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1)` means drawing a serialised
+ * row by count would abort the transaction rather than move anything. A gauge is the one mode that
+ * depends on the outcome: consuming it takes a measure out of the vessel, but gathering a build
+ * into a container puts the vessel in the box.
  */
-function drawModeFor(part: AssemblyPart): AssemblyDrawMode {
+function drawModeFor(part: AssemblyPart, outcome: AssemblyOutcome): AssemblyDrawMode {
   if (part.isUnlimited) return 'UNLIMITED';
-  if (part.trackingMode === 'CONSUMABLE_GAUGE') return 'GAUGE';
-  if (part.trackingMode === 'UNTRACKED') return 'WHOLE';
+  if (part.trackingMode === 'SERIALISED' || part.trackingMode === 'UNTRACKED') return 'WHOLE';
+  if (part.trackingMode === 'CONSUMABLE_GAUGE') return outcome === 'CONTAINER' ? 'WHOLE' : 'GAUGE';
   return 'COUNT';
 }
 
 /** Plan one part's draw. */
-function planPart(part: AssemblyPart): AssemblyDraw {
-  const mode = drawModeFor(part);
+function planPart(part: AssemblyPart, outcome: AssemblyOutcome): AssemblyDraw {
+  const mode = drawModeFor(part, outcome);
   const requiredQty = Math.max(0, part.requiredQty);
   const onHand = Math.max(0, part.onHand);
-  // A presence-only part has no quantity to slice, so the build takes the item itself; every
-  // other mode takes exactly what the BOM asks for.
+  // A whole-item part has no quantity to slice, so the build takes the item itself; every other
+  // mode takes exactly what the BOM asks for.
   const takeQty = mode === 'WHOLE' ? 0 : requiredQty;
-  // Neither a presence-only part nor an infinite source can come up short: the first has nothing
-  // to count, the second can never run out.
+  // Neither a whole-item part nor an infinite source can come up short: the first draws no
+  // quantity at all, the second can never run out.
   const shortfallQty = mode === 'WHOLE' || mode === 'UNLIMITED' ? 0 : Math.max(0, requiredQty - onHand);
   const takesAll = mode === 'WHOLE' || (mode !== 'UNLIMITED' && takeQty > 0 && takeQty >= onHand);
   return { itemId: part.itemId, name: part.name, mode, requiredQty, onHand, takeQty, shortfallQty, takesAll };
 }
 
 /**
- * Plan what finalising takes from every matched part. Nothing is ordered or de-duplicated here —
- * the caller supplies one {@link AssemblyPart} per item with its lines already summed, so a part
- * appearing on three BOM lines is drawn once for the total rather than three times over.
+ * Plan what finalising into `outcome` takes from every matched part. Nothing is ordered or
+ * de-duplicated here — the caller supplies one {@link AssemblyPart} per item with its lines already
+ * summed, so a part appearing on three BOM lines is drawn once for the total rather than three
+ * times over.
+ *
+ * The outcome is an input because it genuinely changes the draw: a gauge is decanted by a
+ * consuming outcome and carried whole into a container, and planning it one way while executing
+ * the other is how a preview comes to promise something the write does not do.
  */
-export function planAssemblyDraw(parts: readonly AssemblyPart[]): AssemblyDrawPlan {
-  const draws = parts.map(planPart);
+export function planAssemblyDraw(parts: readonly AssemblyPart[], outcome: AssemblyOutcome): AssemblyDrawPlan {
+  const draws = parts.map((part) => planPart(part, outcome));
   const shortfalls = draws.filter((d) => d.shortfallQty > 0);
   return { draws, shortfalls, feasible: shortfalls.length === 0 };
 }

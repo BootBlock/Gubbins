@@ -4,6 +4,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { readAllPages } from '@/lib/read-all-pages';
+import { planAssemblyDraw } from '@/features/projects/assembly';
 import { IN_TRANSIT_LOCATION_ID, UNASSIGNED_LOCATION_ID } from './constants';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
@@ -756,23 +757,59 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect((await items.getById(manual.id))?.isActive).toBe(false);
   });
 
-  it('previews the same draw the finalise then performs', async () => {
+  it('takes a serialised instance whole rather than drawing its pinned quantity by count', async () => {
+    // A SERIALISED row's quantity is pinned at 1 by a table CHECK, so a count draw would abort the
+    // whole transaction instead of consuming the instance.
+    const p = await projects.create({ name: 'Meter job' });
+    const meter = await items.create({ name: 'Multimeter', trackingMode: 'SERIALISED' });
+    await projects.addLine(p.id, { itemId: meter.id, requiredQty: 1 });
+
+    await projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' });
+    const after = await items.getById(meter.id);
+    expect(after?.isActive).toBe(false);
+    expect(after?.quantity).toBe(1);
+  });
+
+  it('CONTAINER: carries a gauge vessel in whole, and never calls it short there', async () => {
+    // The bottle goes in the box; there is no slice of glue to move, so a requirement larger than
+    // what is left must not block the move.
+    const p = await projects.create({ name: 'Glue box' });
+    const glue = await items.create({
+      name: 'Adhesive',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'ml', grossCapacity: 500, tareWeight: 0, currentNetValue: 100 },
+    });
+    await projects.addLine(p.id, { itemId: glue.id, requiredQty: 600 });
+
+    const result = await projects.finaliseAssembly(p.id, { outcome: 'CONTAINER' });
+    const after = await items.getById(glue.id);
+    expect(after?.locationId).toBe(result.locationId);
+    // Moving the vessel consumes none of its contents.
+    expect(after?.gauge?.currentNetValue).toBe(100);
+  });
+
+  it('lists the parts a finalise plans from, and moves nothing doing so', async () => {
     const p = await projects.create({ name: 'Shelf' });
     const screws = await items.create({ name: 'M3 screw', quantity: 500 });
     const rare = await items.create({ name: 'Rare chip', quantity: 1 });
     await projects.addLine(p.id, { itemId: screws.id, requiredQty: 4 });
     await projects.addLine(p.id, { itemId: rare.id, requiredQty: 3 });
-    // An unmatched line has no part to draw and never reaches the preview.
+    // An unmatched line has no part to draw and never reaches the summary.
     await projects.addLine(p.id, { description: 'Custom bracket' });
 
-    const plan = await projects.previewAssembly(p.id);
-    expect(plan.draws.map((d) => [d.name, d.takeQty, d.onHand])).toEqual([
+    const parts = await projects.listAssemblyParts(p.id);
+    expect(parts.map((d) => [d.name, d.requiredQty, d.onHand])).toEqual([
       ['M3 screw', 4, 500],
       ['Rare chip', 3, 1],
     ]);
+    // The plan the dialog draws from is the one the write rejects on.
+    const plan = planAssemblyDraw(parts, 'PERMANENT_CONSUMPTION');
     expect(plan.feasible).toBe(false);
     expect(plan.shortfalls.map((s) => s.shortfallQty)).toEqual([2]);
-    // A preview moves nothing.
+    await expect(projects.finaliseAssembly(p.id, { outcome: 'PERMANENT_CONSUMPTION' })).rejects.toThrow(
+      /Rare chip/,
+    );
+    // Reading the parts moves nothing.
     expect((await items.getById(screws.id))?.quantity).toBe(500);
   });
 

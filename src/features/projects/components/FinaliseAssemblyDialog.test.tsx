@@ -2,40 +2,35 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { LocationWithCount } from '@/db/repositories';
-import type { AssemblyDraw, AssemblyDrawPlan } from '../assembly';
+import type { AssemblyPart } from '../assembly';
 import { FinaliseAssemblyDialog } from './FinaliseAssemblyDialog';
 
-// Both project hooks are mocked so the dialog can be exercised without a DB or QueryClient.
+// Both project hooks are mocked so the dialog can be exercised without a DB or QueryClient. The
+// plan itself is deliberately NOT mocked: the dialog runs the real `planAssemblyDraw` over these
+// parts, which is exactly the property under test — the summary is the write's own arithmetic.
 const mutate = vi.fn();
 const preview = vi.fn();
 vi.mock('../projects', () => ({
   useFinaliseAssembly: () => ({ mutate, isPending: false }),
-  useAssemblyPreview: () => preview(),
+  useAssemblyParts: () => preview(),
 }));
 
-function draw(overrides: Partial<AssemblyDraw> = {}): AssemblyDraw {
+function part(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
   return {
     itemId: 'i1',
     name: 'M3 screw',
-    mode: 'COUNT',
     requiredQty: 4,
     onHand: 500,
-    takeQty: 4,
-    shortfallQty: 0,
-    takesAll: false,
+    trackingMode: 'DISCRETE',
+    isUnlimited: false,
     ...overrides,
   };
-}
-
-function plan(draws: AssemblyDraw[]): AssemblyDrawPlan {
-  const shortfalls = draws.filter((d) => d.shortfallQty > 0);
-  return { draws, shortfalls, feasible: shortfalls.length === 0 };
 }
 
 const LOCATIONS = [{ id: 'loc1', name: 'Garage' }] as unknown as readonly LocationWithCount[];
 
 function renderDialog(
-  data: AssemblyDrawPlan | undefined,
+  data: AssemblyPart[] | undefined,
   state: Partial<{ isPending: boolean; isError: boolean }> = {},
 ) {
   preview.mockReturnValue({ data, isPending: false, isError: false, ...state });
@@ -59,9 +54,7 @@ beforeEach(() => {
 
 describe('FinaliseAssemblyDialog (issue #647)', () => {
   it('says how much of each part the build will take before it is taken', () => {
-    renderDialog(
-      plan([draw(), draw({ itemId: 'i2', name: 'Shade', takeQty: 1, onHand: 1, takesAll: true })]),
-    );
+    renderDialog([part(), part({ itemId: 'i2', name: 'Shade', requiredQty: 1, onHand: 1 })]);
 
     // The default outcome is CONTAINER, so the parts *move* rather than being consumed.
     expect(summary().getByText('Moves 4 of 500')).toBeInTheDocument();
@@ -70,46 +63,48 @@ describe('FinaliseAssemblyDialog (issue #647)', () => {
   });
 
   it('switches to consumption wording for the outcomes that consume', async () => {
-    const { user } = renderDialog(plan([draw()]));
+    const { user } = renderDialog([part()]);
     await user.click(screen.getByRole('radio', { name: /Permanent consumption/ }));
 
     expect(summary().getByText('Takes 4 of 500')).toBeInTheDocument();
   });
 
-  it('names the parts that are short and blocks the button', () => {
-    renderDialog(
-      plan([
-        draw(),
-        draw({
-          itemId: 'i2',
-          name: 'Rare chip',
-          requiredQty: 10,
-          onHand: 3,
-          takeQty: 10,
-          shortfallQty: 7,
-          takesAll: true,
-        }),
-      ]),
-    );
+  it('re-plans when the outcome changes — a gauge is decanted, or carried whole into a box', async () => {
+    const glue = part({ name: 'Adhesive', trackingMode: 'CONSUMABLE_GAUGE', requiredQty: 50, onHand: 500 });
+    const { user } = renderDialog([glue]);
+
+    expect(summary().getByText('Moves into the container')).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: /Permanent consumption/ }));
+    expect(summary().getByText('Takes 50 of 500')).toBeInTheDocument();
+  });
+
+  it('names the parts that are short and blocks the button', async () => {
+    const { user } = renderDialog([
+      part(),
+      part({ itemId: 'i2', name: 'Rare chip', requiredQty: 10, onHand: 3 }),
+    ]);
 
     expect(summary().getByText('Needs 10, only 3 on hand')).toBeInTheDocument();
     // A shortfall says what to do about it, not merely that something is wrong.
     expect(screen.getByRole('alert')).toHaveTextContent(
       '1 part hasn’t enough stock for what the bill of materials asks. Add stock or lower the quantity first.',
     );
-    expect(screen.getByRole('button', { name: 'Finalise' })).toBeDisabled();
 
-    // And the un-undoable write is never even attempted.
+    // Pressing the button does nothing: the un-undoable write is not merely discouraged, it is
+    // unreachable while a part is short.
+    const finalise = screen.getByRole('button', { name: 'Finalise' });
+    expect(finalise).toBeDisabled();
+    await user.click(finalise);
     expect(mutate).not.toHaveBeenCalled();
   });
 
   it('reads an infinite source as drawn but undepleted', () => {
-    renderDialog(plan([draw({ name: 'Tap water', mode: 'UNLIMITED', takeQty: 1000, onHand: 0 })]));
+    renderDialog([part({ name: 'Tap water', isUnlimited: true, requiredQty: 1000, onHand: 0 })]);
     expect(summary().getByText('Takes 1,000 — unlimited supply, stock unchanged')).toBeInTheDocument();
   });
 
   it('finalises with the chosen outcome once the summary is clear', async () => {
-    const { user } = renderDialog(plan([draw()]));
+    const { user } = renderDialog([part()]);
     await user.click(screen.getByRole('radio', { name: /Singular object/ }));
     await user.click(screen.getByRole('button', { name: 'Finalise' }));
 

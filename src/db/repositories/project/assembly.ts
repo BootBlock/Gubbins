@@ -9,9 +9,9 @@
  * per-location / batch ledger a kit assembly draws through, and the item is retired (or its
  * primary location repointed into the container) only when that draw actually empties it. A
  * requirement the stock cannot meet is a clean rejection rather than a silent success. The
- * arithmetic lives in the pure {@link planAssemblyDraw}, which the dialog previews through
- * {@link ProjectAssemblyRepository.previewAssembly} — so what a user is shown before pressing an
- * un-undoable button is the very plan that then runs.
+ * arithmetic lives in the pure {@link planAssemblyDraw}, which the finalise dialog runs over the
+ * same {@link ProjectAssemblyRepository.listAssemblyParts} read — so what a user is shown before
+ * pressing an un-undoable button is the very plan that then runs.
  */
 import { DbError } from '../../errors';
 import type { SqlStatement } from '../../rpc/driver';
@@ -21,7 +21,6 @@ import {
   isEmptyDraw,
   planAssemblyDraw,
   type AssemblyDraw,
-  type AssemblyDrawPlan,
   type AssemblyPart,
 } from '@/features/projects/assembly';
 import { UNASSIGNED_LOCATION_ID, type TrackingMode } from '../constants';
@@ -73,16 +72,18 @@ interface AssemblyPartRow {
 export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(Base: TBase) {
   return class ProjectAssemblyRepository extends Base {
     /**
-     * What finalising this project would take from each of its matched parts, and whether the
-     * stock can meet it — the summary the finalise dialog shows before the button is pressed.
+     * The project's matched parts as the finalise sees them — each with the quantity its BOM lines
+     * add up to and what it has on hand. The input the finalise dialog's summary is planned from.
      *
-     * Deliberately the *same* plan {@link ProjectAssemblyRepository.finaliseAssembly} runs on,
-     * built from the same read, so the preview can never describe a different operation from the
-     * one that follows. A read: it moves nothing and records nothing.
+     * Deliberately the parts rather than a finished plan: `planAssemblyDraw` is pure and the
+     * outcome the user is choosing between changes the answer, so the dialog re-plans locally as
+     * the radio moves instead of re-reading. Both sides then run the one function over the one
+     * read, which is what keeps the preview from describing an operation the write does not
+     * perform. A read: it moves nothing and records nothing.
      */
-    async previewAssembly(projectId: string): Promise<AssemblyDrawPlan> {
+    async listAssemblyParts(projectId: string): Promise<AssemblyPart[]> {
       await this.requireProject(projectId);
-      return planAssemblyDraw(await this.readAssemblyParts(projectId));
+      return this.readAssemblyParts(projectId);
     }
 
     /**
@@ -113,7 +114,7 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
         throw new DbError('SQLITE_CONSTRAINT', `Project "${project.name}" has already been finalised.`);
       }
 
-      const plan = planAssemblyDraw(await this.readAssemblyParts(projectId));
+      const plan = planAssemblyDraw(await this.readAssemblyParts(projectId), input.outcome);
       // Short on a part is a rejection, not a partial build: taking what little there is would
       // still complete the project and still be un-undoable (issue #647).
       if (!plan.feasible) {
@@ -211,9 +212,9 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
      * A counted part moves only the quantity the BOM asks for — first-expiry-first-out across
      * every location it sits in, lot identity preserved — and keeps its primary location where it
      * is, because the rest of the stock is still on that shelf. Only a move that takes the last
-     * of it repoints the item at the container, which is also the whole-item path a
-     * presence-only (UNTRACKED) or gauge part takes: neither has a countable slice to move, so
-     * the thing itself goes in the box.
+     * of it repoints the item at the container, which is also the whole-item path a part with no
+     * divisible quantity takes: a serialised instance, a presence-only item, and a gauge vessel
+     * are each one physical thing, so the thing itself goes in the box.
      *
      * An infinite source (Phase 82) is the exception that moves nothing at all: a build draws on
      * it without emptying it, so relocating it into the container would take the tap off the wall.
@@ -274,9 +275,10 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
      *
      * Each part is drawn by the quantity its BOM lines ask for: a counted part
      * first-expiry-first-out across every location it sits in, a gauge by a net-value decrement.
-     * A presence-only (UNTRACKED) part has no quantity to draw, so the item itself is what the
-     * build takes. The item is soft-deleted **only** when the draw leaves nothing behind — a
-     * build that used 4 of a box of 500 leaves the other 496 in active inventory.
+     * A part with no divisible quantity — a serialised instance, a presence-only (UNTRACKED) item —
+     * has nothing to draw, so the item itself is what the build takes. The item is soft-deleted
+     * **only** when the draw leaves nothing behind: a build that used 4 of a box of 500 leaves the
+     * other 496 in active inventory.
      *
      * An unlimited-supply part (Phase 82) is an infinite source: consuming it moves no stock and
      * never retires it — it stays in inventory for the next build — though the CONSUMED

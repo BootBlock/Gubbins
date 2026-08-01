@@ -120,12 +120,12 @@ item, or simply used up).
 
 **Finalise** turns the gathered parts into the finished thing. Choose what the build became:
 
-- **Container** — the project becomes a **[[location|Locations-and-Stock]]** holding its parts.
-  Good for a box of spares, a populated drawer, a machine you'll take apart again.
+- **Container** — the project becomes a **[[location|Locations-and-Stock]]** holding the parts the
+  build used. Good for a box of spares, a populated drawer, a machine you'll take apart again.
 - **Singular object** — the parts merge into **one new item**. Good for something you now own as a
   single thing: an assembled board, a built bike.
-- **Permanent consumption** — the parts are used up and leave active inventory. Good for glue,
-  solder, screws that are now inside something.
+- **Permanent consumption** — the quantities used are consumed and leave your active stock. Good
+  for glue, solder, screws that are now inside something.
 
 ### What it takes from stock
 
@@ -136,9 +136,11 @@ only archived (or, for a container, moved bodily into the new location) when the
 
 Before you commit, the dialog lists every matched part and what will happen to it — *"Takes 4 of
 500"*, *"Takes the last 2 — then archived"*, *"Moves into the container"* — so nothing is a
-surprise afterwards. Parts of a kind that has no count to slice, such as a
-[[presence-only item|Items]] or a [[gauge|Low-Stock-and-Gauges]] going into a container, are taken
-whole, and an **unlimited supply** records what the build drew without ever running down.
+surprise afterwards. A part that is **one physical thing** rather than a divisible quantity is
+taken whole: a [[serialised item|Items]], a presence-only item, or a
+[[gauge|Low-Stock-and-Gauges]] going into a container (you can decant glue out of a bottle, but a
+box holds the bottle). An **unlimited supply** records what the build drew without ever running
+down.
 
 If a part hasn't enough stock for what the BOM asks, finalising is **refused** and the dialog names
 the part along with what it needs and what's on hand. Add the stock, or lower that line's quantity,
