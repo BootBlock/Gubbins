@@ -171,17 +171,49 @@ describe('Select — filtering a long list', () => {
     expect(onChange).toHaveBeenCalledWith('bin-2');
   });
 
-  it('makes the chrome around the filter field inert, so a press there cannot reopen what it closed', () => {
+  it('keeps the focus when a shrinking list takes the filter field away underneath it', () => {
+    // Crossing back under the threshold unmounts the field rather than blurring it, so nothing
+    // hands the focus on. An open list whose focus has fallen to the body answers no key at all
+    // — and its Escape reaches the enclosing dialog and closes that instead.
+    const onChange = vi.fn();
+    const label = <span id="loc-label">Location</span>;
+    const view = render(
+      <>
+        {label}
+        <Select aria-labelledby="loc-label" value="" onChange={onChange} options={bins(20)} />
+      </>,
+    );
+    openList();
+    expect(combobox().tagName).toBe('INPUT');
+
+    view.rerender(
+      <>
+        {label}
+        <Select aria-labelledby="loc-label" value="" onChange={onChange} options={bins(3)} />
+      </>,
+    );
+
+    expect(combobox().tagName).toBe('DIV');
+    expect(document.activeElement).toBe(combobox());
+    fireEvent.keyDown(combobox(), { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('dismisses from the chrome around the filter field without losing focus or reopening', () => {
     renderSelect(longList);
     openList();
     const chrome = combobox().parentElement!;
 
-    // Not a pointer target at all: a press falls through to the page, which dismisses like any
-    // click outside. Were the box still clickable, the dismissal would re-arm its own toggle in
-    // time for the *same* press's click to reopen the list — discarding the typed query with it.
-    expect(chrome.className).toContain('pointer-events-none');
-    fireEvent.click(chrome);
+    // The press only holds the focus in place. Closing on it instead would re-arm this same box's
+    // open-toggle in time for the press's own click to reopen the list and discard the query.
+    expect(fireEvent.mouseDown(chrome)).toBe(false);
     expect(screen.getByRole('listbox')).toBeTruthy();
+
+    fireEvent.click(chrome);
+    expect(screen.queryByRole('listbox')).toBeNull();
+    // Focus stays on the control. Letting it fall to the dialog behind would strand the enclosing
+    // focus trap, which resolves Tab by finding the focused element among its own descendants.
+    expect(document.activeElement).toBe(combobox());
   });
 
   it('swallows the focus change on a press inside the list, so a touch tap still chooses', () => {

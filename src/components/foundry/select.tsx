@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -107,8 +108,10 @@ export interface SelectProps {
  *   since they are editing keys there; so is Tab, so that an enclosing Modal's focus trap can
  *   resolve it against the still-focused field — the field's own blur then closes the list.
  * - Past {@link SELECT_WINDOW_THRESHOLD} the ordinary options are **windowed** with
- *   `@tanstack/react-virtual` — the same virtualiser (and the same measurement floors) the
- *   location sidebar already windows this hierarchy with. Nothing is capped: the scroll
+ *   `@tanstack/react-virtual` — the same virtualiser the location sidebar already windows this
+ *   hierarchy with, and the same trick of flooring an unmeasured viewport and row rather than
+ *   letting a zero measurement collapse the window (the figures themselves are this control's
+ *   own — see `select-options.ts`). Nothing is capped: the scroll
  *   container still measures the whole list, `aria-setsize`/`aria-posinset` report its true
  *   size, and the active row is pinned into the rendered range so `aria-activedescendant`
  *   never dangles.
@@ -204,12 +207,17 @@ export function Select({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [open, popoverRef]);
 
-  // The filter field only exists while the list is open, so focus has to follow it there. The
-  // trigger box itself stays mounted throughout (it merely hands the combobox role over), which
-  // is what lets every close hand focus straight back without waiting for a re-render.
+  // Focus follows whichever element is carrying the combobox role. The filter field only exists
+  // while the list is open, so focus has to move there — and back when it goes, which it can do
+  // *underneath* the focus: a refetch that drops the option count below the threshold unmounts
+  // the field without ever blurring it. An open list whose focus has fallen to the body answers
+  // no key at all, and its Escape reaches the enclosing Modal and closes the whole dialog. The
+  // trigger box outlives both states, which is what makes handing focus back always possible.
   useLayoutEffect(() => {
+    if (!open) return;
     if (filtering) filterRef.current?.focus();
-  }, [filtering]);
+    else if (!triggerRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
+  }, [filtering, open]);
 
   // A new filter is a new list — start it at the top rather than wherever the last one was left.
   useLayoutEffect(() => {
@@ -382,10 +390,21 @@ export function Select({
       <div
         ref={triggerRef}
         {...(filtering
-          ? // Focusable only programmatically, so it never becomes a second tab stop beside the
-            // field it contains. Closing restores `tabIndex={0}` in the same commit that hands
-            // focus back here, so the enclosing trap finds it again on the next Tab.
-            { tabIndex: -1 }
+          ? {
+              // Focusable only programmatically, so it never becomes a second tab stop beside the
+              // field it contains. Closing restores `tabIndex={0}` in the same commit that hands
+              // focus back here, so the enclosing trap finds it again on the next Tab.
+              tabIndex: -1,
+              // The chrome around the field is a big target — the `h-10` box is twice the height
+              // of the text inside it — and pressing it must dismiss without either losing the
+              // focus or reopening. Preventing the mouse-down's default keeps the field focused
+              // through the press (so nothing else can claim it), and closing on the *click*
+              // rather than the press is what stops the dismissal re-arming this same box's
+              // open-toggle in time for that click to reopen the list and discard the query.
+              onMouseDown: (event: MouseEvent<HTMLDivElement>) => event.preventDefault(),
+              onClick: close,
+              onKeyDown,
+            }
           : {
               ...comboboxProps,
               tabIndex: disabled ? -1 : 0,
@@ -401,12 +420,8 @@ export function Select({
           'flex h-10 w-full items-center gap-2 rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors',
           disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
           // While filtering the ring belongs to the input inside, which is always the focused one.
-          // The box also stops being a pointer target: a press on the padding around the field
-          // would otherwise blur it, and the close that followed would re-arm the box's own
-          // toggle in time for the *same* press's click to reopen the list and discard the query.
-          // Presses fall through to the dialog instead, which dismisses like any click outside.
           filtering
-            ? 'pointer-events-none border-ring ring-[3px] ring-ring/40'
+            ? 'border-ring ring-[3px] ring-ring/40'
             : 'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40',
           className,
         )}
@@ -431,7 +446,7 @@ export function Select({
             // focus change on mouse-down, and the trigger's chrome around this field is not a
             // pointer target at all while it is here.
             onBlur={() => setOpen(false)}
-            className="pointer-events-auto min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         ) : (
           <span
@@ -458,7 +473,7 @@ export function Select({
               event.stopPropagation();
               close();
             }}
-            className="pointer-events-auto -mr-1 flex size-6 shrink-0 items-center justify-center text-muted-foreground"
+            className="-mr-1 flex size-6 shrink-0 items-center justify-center text-muted-foreground"
           >
             <ChevronDownIcon className="size-4 rotate-180 transition-transform" />
           </button>
