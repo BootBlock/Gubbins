@@ -340,8 +340,19 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
      * all items, newest-first, joined to `items` for the owning item's name + active
      * flag. This is the global counterpart to the per-item {@link getHistory}; both order
      * by `created_at DESC, rowid DESC` so same-millisecond inserts keep a deterministic
-     * order. Strictly paginated (§2.1) and bounded by the virtualised list window, so the
-     * feed stays light against 100,000+ ledger rows.
+     * order. Strictly paginated (§2.1) and bounded by the virtualised list window.
+     *
+     * What keeps this light against 100,000+ ledger rows is `idx_item_history_created_at`
+     * (issue #524), **not** the pagination: `LIMIT` bounds the rows returned, never the rows
+     * sorted, so until that index existed every page scanned the whole ledger into a temp
+     * B-tree. The index's keys are `(created_at, rowid)`, which walked in reverse *is* this
+     * ORDER BY — see the rationale on the index itself before changing either.
+     *
+     * So this ORDER BY and that index are one decision in two places: an ORDER BY the index
+     * cannot satisfy silently restores the full sort, costing no test and no type error. The
+     * plan tests in `ItemRepository.history-feed.test.ts` re-state this SQL by hand rather than
+     * importing it, so they pin the *index*, not this line — changing the order here needs the
+     * copy there changed with it, or the guard quietly stops covering the real query.
      *
      * Pruned rows are physically removed from `item_history`
      * ({@link StorageRepository.pruneHistoryBefore}), so reading the table already honours
@@ -377,18 +388,33 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
     /**
      * Total number of {@link getHistoryFeed} rows for the same `actions` filter — powers the
      * Activity feed's page count when the feed is shown paginated (issue #20). Mirrors the feed's
-     * `WHERE` exactly (same `action IN (…)` clause, same `items` join) so the count can never
-     * disagree with the pages it sizes; an explicit empty `actions` array is "match nothing" → 0.
+     * `WHERE` exactly (the same `action IN (…)` clause) so the count can never disagree with the
+     * pages it sizes; an explicit empty `actions` array is "match nothing" → 0.
+     *
+     * Reads `item_history` **alone**, deliberately, where the feed joins `items` (issue #524).
+     * The feed needs the join for the item's name and active flag; a count needs neither, and the
+     * join cannot change the number: `item_id` is `NOT NULL REFERENCES items(id) ON DELETE
+     * CASCADE`, foreign keys are enforced for the life of the connection
+     * (`sqlite-bootstrap.ts`), the erase path's `defer_foreign_keys` only postpones the check to
+     * COMMIT rather than skipping it, and a restored snapshot has its dangling `item_id`s repaired
+     * before it lands (`snapshot-integrity.ts`). So every ledger row has an item, and
+     * `ReportRepository` already leans on exactly this ("Joining `items` cannot drop history").
+     *
+     * Dropping it is what makes the count cheap. Unfiltered it becomes a bare `COUNT(*)`, which
+     * SQLite answers by counting b-tree entries in a covering index rather than walking rows —
+     * best-of-5 over a 200,000-row in-memory ledger, 21 ms → 0.04 ms. Filtered by kind it stops
+     * being a 200,000-row index-probe join, 21 ms → 8 ms. The win here is the dropped join, not
+     * `idx_item_history_created_at`: this read neither orders nor bounds `created_at`, and merely
+     * adopts that index as the narrowest one available to count entries in.
      */
     async countHistoryFeed(filters: Pick<ActivityFeedFilters, 'actions'> = {}): Promise<number> {
       const actions = filters.actions;
       if (actions !== undefined && actions.length === 0) return 0;
       const where =
-        actions && actions.length > 0 ? `WHERE h.action IN (${actions.map(() => '?').join(', ')})` : '';
+        actions && actions.length > 0 ? `WHERE action IN (${actions.map(() => '?').join(', ')})` : '';
       const row = await this.driver.queryOne<{ n: number }>(
         `SELECT COUNT(*) AS n
-         FROM item_history h
-         JOIN items i ON i.id = h.item_id
+         FROM item_history
          ${where};`,
         [...(actions ?? [])],
       );

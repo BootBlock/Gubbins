@@ -135,6 +135,12 @@
     },
     {
       "type": "index",
+      "name": "idx_item_history_created_at",
+      "tbl_name": "item_history",
+      "sql": "CREATE INDEX idx_item_history_created_at ON item_history(created_at)"
+    },
+    {
+      "type": "index",
       "name": "idx_item_history_item_id",
       "tbl_name": "item_history",
       "sql": "CREATE INDEX idx_item_history_item_id ON item_history(item_id, created_at)"
@@ -2649,21 +2655,28 @@
       ],
       "indexes": [
         {
-          "seq": 0,
+          "seq": 1,
           "name": "idx_item_history_actor_user_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 1,
-          "name": "idx_item_history_item_id",
+          "seq": 0,
+          "name": "idx_item_history_created_at",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
           "seq": 2,
+          "name": "idx_item_history_item_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 3,
           "name": "sqlite_autoindex_item_history_1",
           "unique": 1,
           "origin": "pk",
