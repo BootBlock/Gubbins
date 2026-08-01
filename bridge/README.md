@@ -388,11 +388,10 @@ response — the counts behind a dashboard tile or a Home Assistant binary senso
 These are the **same** counts the app's own inventory filter chips show: each status is counted
 through the app's own predicate, in a single pass over `items`, so a scraped figure can never
 drift from what the app displays. "Low" and "out of stock" mean here exactly what they mean to
-`/metrics` and the `item.low_stock` events — same thresholds, and a drift test holds the SQL and
-in-memory definitions to the same answer — but note the **totals** can differ on a very large
-vault: `/metrics` counts the first 50,000 active items by design, whereas these counts are over
-the whole of it. Every status is **always** present — a status matching nothing is a `0`, never a
-missing key — so a client never has to distinguish "none" from "not reported".
+`/metrics` and the `item.low_stock` events — same thresholds, the same whole-inventory count, and
+a drift test holds the SQL and in-memory definitions to the same answer. Every status is **always**
+present — a status matching nothing is a `0`, never a missing key — so a client never has to
+distinguish "none" from "not reported".
 
 Aggregates only: how many items match each status, and nothing about *which* items, so no loan,
 order or schedule detail is disclosed. It is deliberately separate from `/health`, which stays a
@@ -918,7 +917,7 @@ integration) at the subscribe-by-URL form.
 | --- | --- | --- |
 | `gubbins_items_total` | gauge | Total active items. |
 | `gubbins_low_stock_items` | gauge | Active items at/below their low-stock threshold. |
-| `gubbins_out_of_stock_items` | gauge | Active items fully depleted (a subset of low-stock). |
+| `gubbins_out_of_stock_items` | gauge | Active items fully depleted (counted independently of low-stock, **not** a subset of it — a depleted item with no reorder point is out of stock without ever being "low"). |
 | `gubbins_locations_total` | gauge | User-defined locations (system buckets excluded). |
 | `gubbins_location_items{location_id,location}` | gauge | Item count per location. |
 | `gubbins_location_capacity{location_id,location}` | gauge | Configured capacity (only when set). |

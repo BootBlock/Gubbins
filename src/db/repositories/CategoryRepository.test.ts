@@ -589,15 +589,64 @@ describe('CategoryRepository', () => {
     await categories.setItemFieldValues(a.id, { [voltage.id]: '5V' });
     await categories.setItemFieldValues(b.id, { [voltage.id]: '12V' });
 
-    const values = await categories.getItemFieldValues([a.id, b.id, c.id]);
+    const values = await categories.getItemFieldValues([a.id, b.id, c.id], [voltage.id]);
     expect(values.get(a.id)?.get(voltage.id)?.value).toBe('5V');
     expect(values.get(b.id)?.get(voltage.id)?.value).toBe('12V');
     // An item with no stored value simply has no entry (lenient defaulting happens at render).
     expect(values.has(c.id)).toBe(false);
   });
 
+  /**
+   * The read is scoped to the fields the card will draw (issue #560), not to the item's whole
+   * stored set — otherwise showing one short field on a card also ships every other value the
+   * item holds, an `IMAGE` field's half-megabyte base64 payload included, for every item in a
+   * virtualised list's resident window.
+   */
+  it('reads only the requested fields, not every value the item stores', async () => {
+    const cat = await categories.create({ name: 'Books' });
+    const title = await categories.addField(cat.id, { name: 'Title', fieldType: 'TEXT' });
+    const blurb = await categories.addField(cat.id, { name: 'Blurb', fieldType: 'LONG_TEXT' });
+    const book = await items.create({ name: 'B1', categoryId: cat.id });
+    await categories.setItemFieldValues(book.id, { [title.id]: 'Dune', [blurb.id]: 'A long blurb.' });
+
+    const values = await categories.getItemFieldValues([book.id], [title.id]);
+    expect(values.get(book.id)?.get(title.id)?.value).toBe('Dune');
+    expect(values.get(book.id)?.has(blurb.id)).toBe(false);
+  });
+
+  /**
+   * A definition shared by two categories has a `category_fields` row per category, and the
+   * result is keyed by *that* row's id. Asking for one category's use must not surface the
+   * other's — the renderer keys on the chosen id and would drop the stray value anyway, so
+   * fetching it would be pure transfer cost.
+   */
+  it('does not return another category’s use of the same shared definition', async () => {
+    const tools = await categories.create({ name: 'Tools' });
+    const spares = await categories.create({ name: 'Spares' });
+    // Same name ⇒ same dictionary definition, one `category_fields` row each.
+    const toolBrand = await categories.addField(tools.id, { name: 'Brand', fieldType: 'TEXT' });
+    const spareBrand = await categories.addField(spares.id, { name: 'Brand', fieldType: 'TEXT' });
+    const drill = await items.create({ name: 'Drill', categoryId: tools.id });
+    const belt = await items.create({ name: 'Belt', categoryId: spares.id });
+    await categories.setItemFieldValues(drill.id, { [toolBrand.id]: 'Ryobi' });
+    await categories.setItemFieldValues(belt.id, { [spareBrand.id]: 'Gates' });
+
+    const values = await categories.getItemFieldValues([drill.id, belt.id], [toolBrand.id]);
+    expect(values.get(drill.id)?.get(toolBrand.id)?.value).toBe('Ryobi');
+    expect(values.has(belt.id)).toBe(false);
+  });
+
   it('returns an empty map (no query) for no item ids', async () => {
-    expect((await categories.getItemFieldValues([])).size).toBe(0);
+    expect((await categories.getItemFieldValues([], ['field-1'])).size).toBe(0);
+  });
+
+  it('returns an empty map (no query) when no field is being rendered', async () => {
+    const cat = await categories.create({ name: 'Resistors' });
+    const voltage = await categories.addField(cat.id, { name: 'Voltage', fieldType: 'TEXT' });
+    const a = await items.create({ name: 'R1', categoryId: cat.id });
+    await categories.setItemFieldValues(a.id, { [voltage.id]: '5V' });
+
+    expect((await categories.getItemFieldValues([a.id], [])).size).toBe(0);
   });
 
   /**
