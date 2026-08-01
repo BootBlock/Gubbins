@@ -386,6 +386,7 @@ export function TarePresetPicker({
               })
             : undefined
         }
+        busy={deletePreset.isPending}
       >
         {deletePreset.isError ? (
           <p role="alert" className="mb-3 text-xs text-destructive" data-testid="tare-preset-delete-error">

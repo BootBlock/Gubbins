@@ -22,6 +22,8 @@ import {
   Spinner,
   Tooltip,
   useBurst,
+  useDialogIsBusy,
+  useReportDialogBusy,
   type SelectOption,
 } from '@/components/foundry';
 import { CheckIcon, ChevronRightIcon, CycleCountIcon, SuccessIcon, WarningIcon } from '@/components/icons';
@@ -310,6 +312,11 @@ function AuditProgressBar({ done, total }: { done: number; total: number }) {
 }
 
 function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: () => void }) {
+  // Both footer buttons below call the host's `onClose` directly, so they would take the walk down
+  // mid-transaction without the frame's guard ever seeing them. The location panel two levels
+  // down is what reports the authorise, so this reads the frame's answer rather than keeping a
+  // second copy of the flag (issue #654).
+  const busy = useDialogIsBusy();
   const session = useAuditSessionStore((s) => s.session)!;
   const recordCurrent = useAuditSessionStore((s) => s.recordCurrent);
   const skipCurrent = useAuditSessionStore((s) => s.skipCurrent);
@@ -382,6 +389,7 @@ function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: 
                 onAbandon();
                 onClose();
               }}
+              disabled={busy}
               data-testid="audit-abandon"
             >
               Abandon
@@ -393,7 +401,7 @@ function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: 
           triggerTabIndex={-1}
         >
           <span>
-            <Button variant="ghost" size="sm" onClick={onClose} data-testid="audit-pause">
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={busy} data-testid="audit-pause">
               Pause &amp; close
             </Button>
           </span>
@@ -419,6 +427,11 @@ function AuditLocationPanel({
 }) {
   const count = useLocationCycleCount(location);
   const { isLoading, isEmpty, missing, totalToApply, pending, restored, clearSheet } = count;
+
+  // Authorising writes this location's adjustments and its counted-at stamp in one transaction,
+  // and the walk only advances once that lands. A dismissal mid-write would still alter the
+  // ledger while stranding the walk on a location it has already reconciled (issue #654).
+  useReportDialogBusy(pending);
 
   // Every "done with this location" path — an empty location, a clean count, or one with
   // variances — funnels through `authorise()` so the durable `lastCountedAt` stamp (spec

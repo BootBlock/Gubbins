@@ -84,6 +84,7 @@ export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFor
       title={role ? t('roles.form.title.edit') : t('roles.form.title.create')}
       description={t('roles.form.description')}
       scrollBody
+      busy={busy}
     >
       <form
         className="flex flex-col gap-4"

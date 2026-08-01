@@ -696,17 +696,31 @@ export class CategoryRepository extends BaseRepository {
    * so a card shows the same value the item's detail view does — a card that silently
    * omitted inherited values would read as missing data. Only fields with an effective
    * value appear; lenient defaulting is still applied at render from the field catalog.
-   * Empty ids ⇒ empty map (no query).
+   *
+   * `fieldIds` is **required**, and names the `category_fields.id`s the caller will actually
+   * render (issue #560). Without it this returned an item's *whole* stored field set for
+   * every id in a virtualised list's resident window — up to `MAX_LIST_PAGES` pages of
+   * items — so a card showing one short `TEXT` field also dragged every `LONG_TEXT` beside
+   * it across the worker boundary, and an `IMAGE` field nobody had chosen shipped its
+   * base64 payload (bounded only by `MAX_FIELD_IMAGE_BYTES`, 512 KiB) with them. The caller
+   * always knows its field set, so the restriction belongs in the query rather than in a
+   * post-filter that has already paid the transfer cost. Empty ids *or* empty fields ⇒
+   * empty map (no query).
    */
   async getItemFieldValues(
     itemIds: readonly string[],
+    fieldIds: readonly string[],
   ): Promise<Map<string, Map<string, CardFieldStoredValue>>> {
     const out = new Map<string, Map<string, CardFieldStoredValue>>();
-    if (itemIds.length === 0) return out;
-    const placeholders = itemIds.map(() => '?').join(', ');
+    if (itemIds.length === 0 || fieldIds.length === 0) return out;
+    const itemPlaceholders = itemIds.map(() => '?').join(', ');
+    const fieldPlaceholders = fieldIds.map(() => '?').join(', ');
 
     // Join through the item's own category so the result is keyed by the card-field id
     // (the category's use of the definition) while the value rows key on the definition.
+    // The `cf.id` restriction is on that same joined row, so a definition shared by two
+    // categories still only yields the *chosen* category's use of it — which is exactly
+    // what the renderer keys on, and what it would discard anyway.
     const rows = await this.driver.query<{
       item_id: string;
       field_id: string;
@@ -719,8 +733,9 @@ export class CategoryRepository extends BaseRepository {
        FROM item_field_values ifv
        JOIN items i ON i.id = ifv.item_id
        JOIN category_fields cf ON cf.def_id = ifv.def_id AND cf.category_id = i.category_id
-       WHERE ifv.item_id IN (${placeholders});`,
-      itemIds as SqlValue[],
+       WHERE ifv.item_id IN (${itemPlaceholders})
+         AND cf.id IN (${fieldPlaceholders});`,
+      [...itemIds, ...fieldIds] as SqlValue[],
     );
 
     // Only pay for the location tree when a row actually defers to it. This runs per

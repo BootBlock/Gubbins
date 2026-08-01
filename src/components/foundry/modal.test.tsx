@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { Modal } from './modal';
 import { useReportUnsavedChanges } from './unsaved-changes';
+import { useDialogIsBusy, useReportDialogBusy } from './dialog-busy';
 
 afterEach(cleanup);
 
@@ -456,5 +457,228 @@ describe('Modal — guarding unsaved work on dismissal (#576)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save first' }));
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(itemDialog()).toBeNull());
+  });
+});
+
+describe('Modal — refusing a dismissal while work is in flight (#654)', () => {
+  const dialog = () => screen.queryByRole('dialog', { name: 'Restore backup' });
+  const closeButton = () => screen.getByRole('button', { name: 'Close' });
+  const announcement = () => screen.queryByTestId('dialog-dismiss-blocked')?.textContent ?? null;
+  const start = () => fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+  const finish = () => fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
+
+  /** Press → release → click on the backdrop, the gesture `backdrop-dismiss.ts` acts on. */
+  function tapBackdrop() {
+    const backdrop = dialog()!.firstElementChild!;
+    const pointer = { pointerId: 1, isPrimary: true, button: 0 };
+    fireEvent.pointerDown(backdrop, pointer);
+    fireEvent.pointerUp(backdrop, pointer);
+    fireEvent.click(backdrop, { ...pointer, detail: 1 });
+  }
+
+  /** A dialog that really unmounts on close, driving the frame's own `busy` prop. */
+  function PropHarness() {
+    const [open, setOpen] = useState(true);
+    const [busy, setBusy] = useState(false);
+    return (
+      <Modal open={open} onClose={() => setOpen(false)} title="Restore backup" busy={busy}>
+        <button onClick={() => setBusy(true)}>Start</button>
+        <button onClick={() => setBusy(false)}>Finish</button>
+      </Modal>
+    );
+  }
+
+  /** Stands in for a panel below the frame — the restore panel, the import workbench. */
+  function Panel({ busy }: { busy: boolean }) {
+    useReportDialogBusy(busy);
+    return <span>Working: {String(busy)}</span>;
+  }
+
+  /** The same dialog, but with the flag held in a descendant that reports it upward. */
+  function ReportingHarness() {
+    const [open, setOpen] = useState(true);
+    const [busy, setBusy] = useState(false);
+    const [mounted, setMounted] = useState(true);
+    return (
+      <Modal open={open} onClose={() => setOpen(false)} title="Restore backup">
+        {mounted ? <Panel busy={busy} /> : null}
+        <button onClick={() => setBusy(true)}>Start</button>
+        <button onClick={() => setBusy(false)}>Finish</button>
+        <button onClick={() => setMounted(false)}>Unmount panel</button>
+      </Modal>
+    );
+  }
+
+  it('refuses Escape while the work is running, and obeys it once the work lands', async () => {
+    render(<PropHarness />);
+    start();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    // Still up: the operation is not tied to this component, so closing would only hide it.
+    expect(dialog()).not.toBeNull();
+
+    finish();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(dialog()).toBeNull());
+  });
+
+  it('refuses a backdrop tap while the work is running', async () => {
+    render(<PropHarness />);
+    start();
+
+    tapBackdrop();
+    expect(dialog()).not.toBeNull();
+
+    finish();
+    tapBackdrop();
+    await waitFor(() => expect(dialog()).toBeNull());
+  });
+
+  it('disables the ✕ while the work is running, so the refusal is visible before it is pressed', () => {
+    render(<PropHarness />);
+    expect(closeButton()).not.toBeDisabled();
+
+    start();
+    expect(closeButton()).toBeDisabled();
+
+    finish();
+    expect(closeButton()).not.toBeDisabled();
+  });
+
+  it('says why a refused dismissal did nothing, rather than leaving Escape a dead key', async () => {
+    render(<PropHarness />);
+    // An idle dialog carries no region of its own, so it never crowds the announcements its own
+    // body makes.
+    expect(announcement()).toBeNull();
+
+    // It appears — empty — as soon as there is something to refuse, which is a commit ahead of
+    // any refusal: a region inserted along with its message is often never announced.
+    start();
+    expect(announcement()).toBe('');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(announcement()).toContain('can’t be closed'));
+
+    // And it goes away again the moment leaving is allowed.
+    finish();
+    await waitFor(() => expect(announcement()).toBeNull());
+  });
+
+  it('starts each spell of work silent, so a second one never re-speaks the first’s refusal', async () => {
+    // Several dialogs run one operation after another behind a single opening — each maintenance
+    // task, a backup and then a restore. A refusal counted during the first would put the message
+    // into the region at the instant the second mounts it: a refusal nobody made, announced by a
+    // region that came into existence already holding it.
+    render(<PropHarness />);
+    start();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(announcement()).toContain('can’t be closed'));
+    finish();
+
+    start();
+    expect(announcement()).toBe('');
+  });
+
+  it('pulls focus back inside when work starts with nothing in the dialog focused', () => {
+    render(<PropHarness />);
+    // What a browser leaves behind when the control under the user's finger is disabled: it
+    // blurs the element, dropping focus to <body> — outside the dialog, outside its Tab trap,
+    // and nowhere a screen reader can describe. Reproduced directly, because the test DOM does
+    // not blur a focused element on `disabled` the way a real browser does, so pressing the ✕
+    // and going busy would leave focus exactly where it started and assert nothing.
+    closeButton().focus();
+    (document.activeElement as HTMLElement).blur();
+    expect(dialog()!.contains(document.activeElement)).toBe(false);
+
+    start();
+    expect(document.activeElement).toBe(dialog());
+  });
+
+  it('holds the frame for a panel below it, which is where the flag usually lives', async () => {
+    render(<ReportingHarness />);
+    start();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(dialog()).not.toBeNull();
+    expect(closeButton()).toBeDisabled();
+
+    finish();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(dialog()).toBeNull());
+  });
+
+  it('retracts a panel’s report when it unmounts, so nothing can wedge the dialog shut', async () => {
+    render(<ReportingHarness />);
+    start();
+    fireEvent.click(screen.getByRole('button', { name: 'Unmount panel' }));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(dialog()).toBeNull());
+  });
+
+  it('publishes the answer to controls inside the dialog, so a tab rail agrees with the frame', () => {
+    // A rail that swapped panels mid-operation would unmount the one holding the work as
+    // surely as closing the dialog would, so it reads the frame's answer rather than its own.
+    function RailHarness() {
+      const [busy, setBusy] = useState(false);
+      return (
+        <Modal open onClose={() => {}} title="Restore backup" busy={busy}>
+          <Tab />
+          <button onClick={() => setBusy(true)}>Start</button>
+          <button onClick={() => setBusy(false)}>Finish</button>
+        </Modal>
+      );
+    }
+    function Tab() {
+      const busy = useDialogIsBusy();
+      return (
+        <button role="tab" disabled={busy}>
+          Create backup
+        </button>
+      );
+    }
+    render(<RailHarness />);
+    const tab = screen.getByRole('tab', { name: 'Create backup' });
+    expect(tab).not.toBeDisabled();
+
+    start();
+    expect(tab).toBeDisabled();
+
+    finish();
+    expect(tab).not.toBeDisabled();
+  });
+
+  it('refuses outright rather than offering to discard, when the dialog is also holding a draft', async () => {
+    function DirtyAndBusy() {
+      const [open, setOpen] = useState(true);
+      const [busy, setBusy] = useState(false);
+      return (
+        <Modal open={open} onClose={() => setOpen(false)} title="Restore backup" busy={busy}>
+          <Draft />
+          <button onClick={() => setBusy(true)}>Start</button>
+          <button onClick={() => setBusy(false)}>Finish</button>
+        </Modal>
+      );
+    }
+    function Draft() {
+      useReportUnsavedChanges(true);
+      return <span>Draft</span>;
+    }
+    render(<DirtyAndBusy />);
+    start();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    // "Discard" is an answer the frame could not honour — it would not stop the work, only
+    // hide the outcome — so the question is never asked while something is running.
+    await waitFor(() => expect(announcement()).toContain('can’t be closed'));
+    expect(screen.queryByRole('dialog', { name: 'Discard unsaved changes?' })).toBeNull();
+    expect(dialog()).not.toBeNull();
+
+    // Once the work lands the ordinary unsaved-work guard takes over again.
+    finish();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Discard unsaved changes?' })).not.toBeNull(),
+    );
   });
 });

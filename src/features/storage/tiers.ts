@@ -26,6 +26,21 @@ export function classifyStorageTier(ratio: number): StorageTier {
   return 'locked';
 }
 
+/** The tiers from most headroom to least — the order every comparison below reads from. */
+export const STORAGE_TIER_ORDER: readonly StorageTier[] = ['ok', 'warning', 'critical', 'locked'];
+
+/**
+ * The worse (more degraded) of two tiers.
+ *
+ * The tier is no longer a single measurement: a write that actually failed for lack of space is
+ * evidence the estimate is wrong, and it pins a floor under whatever `classifyStorageTier` says
+ * (issue #504, see `./exhaustion`). Combining them is always "take the worse of the two", so it
+ * lives here beside the ordering it depends on rather than being open-coded in the store.
+ */
+export function worstStorageTier(a: StorageTier, b: StorageTier): StorageTier {
+  return STORAGE_TIER_ORDER.indexOf(a) >= STORAGE_TIER_ORDER.indexOf(b) ? a : b;
+}
+
 /**
  * The Hard Stop (spec §7.6.1): at the locked tier all INSERT/UPDATE operations are
  * suspended; only DELETEs (to reclaim space) are allowed. Repository writes in

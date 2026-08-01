@@ -85,6 +85,7 @@ export function ExpenseDialog({
       title={editing ? 'Edit expense' : 'Add expense'}
       description="Record a cost against this project — parts, shipping, labour or anything else."
       initialFocusRef={descriptionRef}
+      busy={pending}
     >
       <div className="space-y-4">
         <FormField label="Description">

@@ -9,6 +9,7 @@ import {
   ErrorIcon,
 } from '@/components/icons';
 import { useStorageStore, useStoragePersisted } from '@/state/stores/useStorageStore';
+import { useT } from '@/features/i18n';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { isLikelyMobile } from '@/lib/env/feature-detection';
@@ -24,10 +25,18 @@ import { StorageTriageDialog } from './StorageTriageDialog';
  *    install (mobile eviction mitigation; Cloud Sync arrives in Phase 7).
  *  • Tiered quota degradation banners: dismissible at 80%, persistent at 90%, and
  *    a Hard-Stop notice at 95%.
+ *
+ * The Hard Stop has two faces (issue #504). Usually the *measurement* reached 95% and quoting it
+ * explains everything. But a write can fail for lack of space while the estimate still shows
+ * plenty — a padded quota, an opaque VFS pool, a full device the Storage API cannot see — and
+ * there the same numbers would read as nonsense ("saving paused… 12% used"). That case gets its
+ * own copy, which says what actually happened and why the figure disagrees.
  */
 export function StorageBanners() {
   const persisted = useStoragePersisted();
   const tier = useStorageStore((state) => state.tier);
+  const measuredTier = useStorageStore((state) => state.measuredTier);
+  const observedFull = useStorageStore((state) => state.exhaustion !== null);
   const estimate = useStorageStore((state) => state.estimate);
   const ratio = useStorageStore((state) => state.ratio);
   const warningDismissed = useStorageStore((state) => state.warningDismissed);
@@ -43,6 +52,7 @@ export function StorageBanners() {
   const [triageOpen, setTriageOpen] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const fmt = useFormatters();
+  const t = useT();
   const { canInstall, promptInstall } = useInstallPrompt();
   const { show } = useToast();
 
@@ -215,7 +225,27 @@ export function StorageBanners() {
     );
   }
 
-  if (tier === 'locked') {
+  if (tier === 'locked' && observedFull && measuredTier !== 'locked') {
+    // The Hard Stop came from a write that genuinely ran out of space, not from the reading —
+    // so the reading is the thing that needs explaining, not the thing to quote as evidence.
+    banners.push(
+      <Banner
+        key="locked"
+        tone="danger"
+        role="alert"
+        icon={<CriticalIcon />}
+        heading={t('storage.hardStop.observed.heading')}
+        action={manageStorage}
+      >
+        {/* Only quote the browser's figure where there *is* one: with no quota reported, `ratio`
+            is the 0 that `estimateStorage` returns for "no reading", and calling that "0% used"
+            would invent the very number this copy exists to explain away. */}
+        {estimate?.supported
+          ? t('storage.hardStop.observed.body', { vars: { percent } })
+          : t('storage.hardStop.observed.bodyNoEstimate')}
+      </Banner>,
+    );
+  } else if (tier === 'locked') {
     banners.push(
       <Banner
         key="locked"

@@ -1404,6 +1404,7 @@
   "dialog.unsaved.description": "Something in this dialog has changes you haven’t saved yet. Closing it now throws them away, and they can’t be brought back.",
   "dialog.unsaved.keepEditing": "Keep editing",
   "dialog.unsaved.discard": "Discard changes",
+  "dialog.busy.blocked": "This dialog can’t be closed until the work it started has finished.",
   "common.writeFailed": "Your change could not be saved.",
   "common.writeUnknown.heading": "Not sure whether that saved",
   "common.writeUnknown": "The database took too long to answer, so Gubbins can’t tell whether your change was saved. Check before making the change again.",
@@ -2018,5 +2019,9 @@
   "settings.lookupConsent.description": "The open databases this device may contact when you fill an item’s fields from one. Remove any to be asked again.",
   "settings.lookupConsent.hint": "A category can be set up to **fill an item’s fields from an open database**. Before this device contacts one for the first time, Gubbins asks your permission and names the exact site.\n\nEach site is agreed to **separately** — saying yes to a film database is not saying yes to everything — and only the item’s name is ever sent, only when you press the button.\n\nRemoving a site here **withdraws** that agreement: nothing is contacted until you agree again. This choice stays on **this device**: it is never shared by settings sync, and a backup only restores it if you include the *This device* group.",
   "settings.lookupConsent.empty": "You haven’t agreed to any yet.",
-  "settings.lookupConsent.withdraw": "Withdraw agreement for {host}"
+  "settings.lookupConsent.withdraw": "Withdraw agreement for {host}",
+  "storage.hardStop.observed.heading": "Storage full — saving paused",
+  "storage.hardStop.observed.body": "A save failed because this device has no room left, so Gubbins has paused writes to protect your data. Your browser still reports only {percent} used — it cannot always tell when the device itself is full. Free up some space to carry on.",
+  "storage.hardStop.observed.bodyNoEstimate": "A save failed because this device has no room left, so Gubbins has paused writes to protect your data. Your browser does not report how much storage is in use, so there was no warning beforehand. Free up some space to carry on.",
+  "storage.triage.observedFull": "A save has failed for lack of space, so saving is paused. The figures above may understate how full this device really is."
 }

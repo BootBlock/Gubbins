@@ -50,6 +50,7 @@ export function RenewLoanDialog({
       title="Renew loan"
       description={`${checkout.itemName} — on loan to ${checkout.borrowerName}`}
       initialFocusRef={dueDateRef}
+      busy={renew.isPending}
     >
       <div className="space-y-4">
         <FormField

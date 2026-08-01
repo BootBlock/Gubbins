@@ -101,20 +101,34 @@ export function useAllCategoryFields() {
 
 /**
  * Stored custom-field values for a set of on-screen items, so the item cards can render
- * chosen custom fields without an async fetch per card (backlog E1). Pass `enabled: false`
- * (no custom field is shown) to skip the read entirely — zero cost for the common case.
+ * chosen custom fields without an async fetch per card (backlog E1). `fieldIds` names the
+ * custom fields the cards will actually draw (`useCardFieldsConfig().visibleCustomFieldIds`);
+ * an empty list — the default configuration, where no custom field is shown — skips the read
+ * entirely, so the common case still costs nothing.
+ *
+ * Passing the fields rather than a bare "any custom field is shown" flag is what keeps the
+ * read proportional to what is on screen (issue #560): the repository restricts the query to
+ * those fields instead of returning each item's whole stored set, which for a resident window
+ * of up to `MAX_LIST_PAGES × DEFAULT_PAGE_SIZE` items meant every unshown `LONG_TEXT` — and
+ * every unshown `IMAGE` field's base64 payload — crossing the worker boundary to render a
+ * card that never referred to them.
+ *
+ * The ids are **sorted** before they reach the key so the identity is the *set* of fields, not
+ * the order they happen to be drawn in — reordering the card fields renders differently but
+ * fetches the same values, and re-keying there would throw the whole window's cache away.
  *
  * The window is read one fixed-size id bucket at a time rather than as a single whole-window
  * query, so a scrolling list reads each item's values exactly once instead of re-reading
  * every resident id on every page (issue #169 — see {@link bucketIds}).
  */
-export function useItemFieldValues(itemIds: readonly string[], enabled = true) {
+export function useItemFieldValues(itemIds: readonly string[], fieldIds: readonly string[]) {
   const buckets = useMemo(() => bucketIds(itemIds), [itemIds]);
+  const fields = useMemo(() => [...fieldIds].sort(), [fieldIds]);
   return useQueries({
     queries: buckets.map((bucket) => ({
-      queryKey: inventoryKeys.itemFieldValues(bucket),
-      queryFn: () => getCategoryRepository().getItemFieldValues(bucket),
-      enabled,
+      queryKey: inventoryKeys.itemFieldValues(bucket, fields),
+      queryFn: () => getCategoryRepository().getItemFieldValues(bucket, fields),
+      enabled: fields.length > 0,
       // Only the partly-filled tail bucket ever re-keys; hold its last values in place while
       // it reloads so those cards don't flicker.
       placeholderData: (prev: Map<string, Map<string, CardFieldStoredValue>> | undefined) => prev,

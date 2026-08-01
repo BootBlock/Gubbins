@@ -45,6 +45,8 @@ beforeEach(() => {
   useStorageStore.setState({
     persisted: false,
     tier: 'ok',
+    measuredTier: 'ok',
+    exhaustion: null,
     warningDismissed: false,
     estimate: null,
     ratio: 0,
@@ -101,6 +103,63 @@ describe('StorageBanners — `storage-persistence-denied` lab flag', () => {
     useLabStore.getState().setFlag('storage-persistence-denied', true);
     renderBanners();
     expect(screen.getByText('Your data may be cleared by the browser')).toBeTruthy();
+  });
+});
+
+/**
+ * Issue #504: the Hard Stop can now be reached by a write that actually ran out of space, not only
+ * by the estimate crossing 95%. Quoting the estimate then would read as nonsense ("saving paused…
+ * 12% used"), so that case explains the disagreement instead.
+ */
+describe('StorageBanners — the Hard Stop', () => {
+  it('quotes the measured usage when the measurement is what tripped it', () => {
+    useStorageStore.setState({
+      tier: 'locked',
+      measuredTier: 'locked',
+      ratio: 0.97,
+      estimate: { usage: 97, quota: 100, ratio: 0.97, supported: true },
+    });
+    renderBanners();
+    expect(screen.getByText(/Gubbins has paused all writes to protect your data/)).toBeTruthy();
+    expect(screen.getByTestId('open-storage-triage')).toBeTruthy();
+  });
+
+  it('explains the disagreement when a failed write is what tripped it', () => {
+    // The estimate still shows ample headroom — a padded quota, an opaque VFS pool, or a device
+    // the Storage API cannot see is full. The banner must not present that figure as the reason.
+    useStorageStore.setState({
+      tier: 'locked',
+      measuredTier: 'ok',
+      ratio: 0.12,
+      estimate: { usage: 12, quota: 100, ratio: 0.12, supported: true },
+      exhaustion: { afterMeasurement: 1, measured: true, baselineAvailable: 88 },
+    });
+    renderBanners();
+
+    expect(screen.getByText('Storage full — saving paused')).toBeTruthy();
+    expect(screen.getByText(/A save failed because this device has no room left/)).toBeTruthy();
+    expect(screen.getByText(/still reports only 12% used/)).toBeTruthy();
+    // The route out is still offered, exactly as it is from the measured Hard Stop.
+    expect(screen.getByTestId('open-storage-triage')).toBeTruthy();
+    expect(screen.queryByText(/Gubbins has paused all writes to protect your data/)).toBeNull();
+  });
+
+  it('does not invent a percentage when the browser reports no quota at all', () => {
+    // `estimateStorage` returns `ratio: 0` as its "no reading" sentinel, so quoting it would
+    // assert a figure the browser never gave — the same state Triage describes as "does not
+    // report a storage quota".
+    useStorageStore.setState({
+      tier: 'locked',
+      measuredTier: 'ok',
+      ratio: 0,
+      estimate: { usage: 0, quota: 0, ratio: 0, supported: false },
+      exhaustion: { afterMeasurement: 1, measured: true, baselineAvailable: null },
+    });
+    renderBanners();
+
+    expect(screen.getByText('Storage full — saving paused')).toBeTruthy();
+    expect(screen.getByText(/does not report how much storage is in use/)).toBeTruthy();
+    expect(screen.queryByText(/reports only 0% used/)).toBeNull();
   });
 });
 

@@ -101,6 +101,7 @@ export function BulkEditDialog({
       onClose={onClose}
       title="Bulk edit"
       description={`Apply changes to ${itemIds.length} selected ${plural(itemIds.length, 'item')}.`}
+      busy={bulkEdit.isPending}
     >
       <div className="space-y-3">
         {/* Category ----------------------------------------------------- */}
@@ -179,7 +180,7 @@ export function BulkEditDialog({
         </FieldRow>
 
         <div className="flex items-center justify-end gap-2 pt-1">
-          <Button type="button" variant="ghost" onClick={onClose}>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={bulkEdit.isPending}>
             Cancel
           </Button>
           <Button

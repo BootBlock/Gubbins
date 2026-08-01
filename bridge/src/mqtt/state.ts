@@ -6,11 +6,11 @@
  * MQTT topics (and that Home Assistant turns into sensors): the total active item count, the
  * low-stock and out-of-stock counts, and a per-location item count.
  *
- * The low-stock / out-of-stock counts reuse the **exact same seams** as the EI-1 event model —
- * `isLow` and `isOutOfStock` (the app's reorder policy) with the app-default low-stock thresholds —
- * so the published counts can never drift from the `item.low_stock` / `item.out_of_stock` events.
- * Everything is bounded (paged at the repository ceiling up to {@link MAX_ITEMS_SCANNED}) so a huge
- * vault can't produce an unbounded scan.
+ * The low-stock / out-of-stock counts come from the shared {@link countStockLevels} — a
+ * whole-inventory aggregate over the app's own low/out-of-stock predicates, with the app-default
+ * low-stock thresholds — so the published counts can never drift from the `item.low_stock` /
+ * `item.out_of_stock` events. The per-location walk is bounded (paged at the repository ceiling up
+ * to {@link MAX_LOCATIONS_SCANNED}) so a huge hierarchy can't produce an unbounded scan.
  */
 import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';

@@ -685,6 +685,58 @@ const baselineStatements: SqlStatement[] = [
     sql: `CREATE INDEX idx_item_history_item_id ON item_history(item_id, created_at);`,
   },
   { sql: `CREATE INDEX idx_item_history_actor_user_id ON item_history(actor_user_id);` },
+  // The cross-item newest-first reads (issue #524), mirroring `idx_location_history_created_at`.
+  // `created_at` is only the *second* column of the per-item index above, so it can be seeked
+  // within one item and nowhere else — which left every read that looks at the ledger *across*
+  // items scanning the whole table. The Activity Log and the dashboard's recent-activity widget
+  // (`getHistoryFeed`) then *also* sorted it into a temp B-tree, because they order by
+  // `created_at`; `consumptionRate`, `movement` and `salesAnalytics` scan without sorting, as does
+  // the history prune. The ledger grows per *event* rather than per item, so it is the
+  // fastest-growing table here and the one least able to afford a scan.
+  //
+  // `valuationTrend` is deliberately absent from that list: although it writes the same
+  // `created_at` range, the planner drives it from `items` (its `is_active = 1` arm seeks
+  // `idx_items_is_active`) and reaches the ledger through `idx_item_history_item_id`, whose
+  // second column already bounds `created_at` *within* each item. Its plan is byte-identical
+  // with and without this index.
+  //
+  // Three deliberate choices, each checked against the query plan it actually produces — this
+  // table's access patterns punish a plausible-looking guess. Timings below are best-of-5 over a
+  // 200,000-row in-memory ledger with no statistics, which is how the app runs (see below);
+  // treat them as ratios, not absolutes.
+  //
+  //  - **Single-column, and ASC — not `created_at DESC`.** The feed orders by
+  //    `created_at DESC, rowid DESC`, and SQLite appends the rowid to every index on a rowid
+  //    table, so this index's keys *are* `(created_at, rowid)` ascending. Walked in reverse that
+  //    yields `created_at DESC, rowid DESC` — the ORDER BY exactly, tie-break included, so the
+  //    sort disappears entirely (28 ms → 0.07 ms for page 1). A `DESC` index gets close but not
+  //    there: its keys are `(created_at DESC, rowid ASC)`, so SQLite still walks it for the
+  //    leading term and block-sorts each equal-`created_at` group —
+  //    `USE TEMP B-TREE FOR LAST TERM OF ORDER BY`. That residual sort is bounded and costs
+  //    little here, but it is strictly worse for nothing gained, and it grows with the number of
+  //    entries sharing a millisecond — which a bulk write produces readily, since the ledger
+  //    insert takes `created_at`'s DEFAULT and a whole batch lands in one transaction.
+  //  - **No `action` column.** Serving the kind-filter chips with a composite looks appealing —
+  //    `WHERE h.action IN (…)` has no index today — but it is a trap. With one, the no-stats
+  //    planner prefers seeking `action` and then re-sorts the matches by `created_at`; measured,
+  //    that turned a three-chip filtered page from 0.07 ms *back* into 29 ms, ~400× worse, while
+  //    helping only the single-chip case. Reverse-walking this index and testing `action` per row
+  //    stops at the first `LIMIT` rows instead, so the chips ride the same ordered walk the
+  //    unfiltered feed does (54 ms → 0.07 ms).
+  //  - **Not partial.** Every read here wants the whole ledger; there is no subset to narrow to.
+  //
+  // Robust to the no-stats planner (Gubbins only runs `ANALYZE` on the manual "Compact database"
+  // action — the same rationale as `idx_items_active_location`): a single-column index over the
+  // column the reads both order *and* range-filter by is what the planner picks with or without
+  // statistics, and the feed's plan is identical either way.
+  //
+  // What this index does **not** do is speed the reports up uniformly. For the three that do read
+  // the ledger directly it makes the window seekable, and the gain scales with how narrow that
+  // window is: measured on `salesAnalytics` and `movement`, ~8× at a 7-day window, ~2.5× at 30
+  // days, roughly break-even by 90, and a shade *slower* at 365 — a year-long window over a year
+  // of data is the whole table, so a seek has nothing to skip. The feed, not the reports, is what
+  // this index is for.
+  { sql: `CREATE INDEX idx_item_history_created_at ON item_history(created_at);` },
   {
     // Scoped to the substantive columns rather than the whole row: the ledger's *facts* are
     // immutable, but re-attributing an entry to System when its author is deleted is not a

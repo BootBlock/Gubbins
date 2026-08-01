@@ -94,6 +94,7 @@ export function EditProjectDialog({
       title="Edit project"
       description="Update this project's details."
       initialFocusRef={nameRef}
+      busy={updateProject.isPending}
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <ProjectFormFields

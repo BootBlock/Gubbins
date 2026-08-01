@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { plural } from '@/lib/plural';
-import { Button, LiveRegion, Modal, Tooltip, useBurst } from '@/components/foundry';
+import { Button, LiveRegion, Modal, Tooltip, useBurst, useReportDialogBusy } from '@/components/foundry';
 import { CycleCountProvider } from '../CycleCountContext';
 import { useLocationCycleCount } from '../useLocationCycleCount';
 import { CountDraftNotice } from './CountDraftNotice';
@@ -54,6 +54,12 @@ function CycleCountBody({
   const count = useLocationCycleCount(location);
   const { isLoading, isEmpty, drift, missing, totalToApply, pending, restored, clearSheet } = count;
   const [applied, setApplied] = useState<number | null>(null);
+
+  // Authorising writes the adjustments, the presence audit and the location's counted-at stamp in
+  // one transaction, and the count of what it applied is reported here and nowhere else. A
+  // dismissal mid-write would still alter the ledger, only silently — so the frame holds until it
+  // is done (issue #654).
+  useReportDialogBusy(pending);
 
   // Celebrate a completed count with a one-shot milestone burst (visual-flair F4) as the result
   // view appears. Edge-detected on the `null → confirmed` transition via a ref so it fires exactly
@@ -146,7 +152,7 @@ function CycleCountBody({
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">No countable items in this location to audit.</p>
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={onClose}>
+              <Button variant="ghost" onClick={onClose} disabled={pending}>
                 Close
               </Button>
               <Button
@@ -174,13 +180,22 @@ function CycleCountBody({
                   leaving no longer throws the count away and a button promising to cancel it
                   would now be the lie in the other direction. The tooltip says what is kept,
                   and the notice at the top offers to discard it on the way back in.
+
+                  Held while an authorise is in flight, like the frame's own routes: this calls
+                  the host's `onClose` directly, so it would take the dialog down mid-transaction
+                  without the guard ever seeing it (issue #654).
                 */}
                 <Tooltip
                   content="Leave without authorising. The counts entered here are kept, so reopening this location picks them back up."
                   triggerTabIndex={-1}
                 >
                   <span>
-                    <Button variant="ghost" onClick={onClose} data-testid="cycle-count-close">
+                    <Button
+                      variant="ghost"
+                      onClick={onClose}
+                      disabled={pending}
+                      data-testid="cycle-count-close"
+                    >
                       Close
                     </Button>
                   </span>

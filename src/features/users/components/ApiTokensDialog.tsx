@@ -62,6 +62,9 @@ export function ApiTokensDialog({
       scrollBody
       title={t('users.tokens.title', { vars: { name: user.displayName } })}
       description={t('users.tokens.description')}
+      // Dismissing mid-mint would take down the only copy of the new token's plaintext, which is
+      // shown here once and never stored.
+      busy={busy}
     >
       <div className="flex flex-col gap-4">
         {error ? (

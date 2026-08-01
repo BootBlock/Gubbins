@@ -18,6 +18,12 @@
  * effect through a query invalidation with no reload. {@link restoreBackup} reports which is
  * needed so the caller can either reload (carrying a one-off notice via
  * {@link consumeRestoreNotice}) or refresh in place.
+ *
+ * The images are re-hydrated *after* the data has committed, so they can never fail the restore
+ * (issue #639): whatever could not be written is counted into {@link RestoreOutcome.imagesMissed}
+ * and reported as a partial success. Past the commit there is nothing to unwind — the backup's
+ * data is already the data on this device, and saying otherwise sends the user looking for
+ * records that are no longer anywhere else.
  */
 import { getDatabaseDriver } from '@/db/client';
 import {
@@ -31,6 +37,7 @@ import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE } from '@/db/repositories';
 import { overwriteDatabaseFile, StaleJournalError } from '@/app/error/safe-mode-actions';
 import { writeImageFiles } from '@/features/images/opfs-images';
 import { BASELINE_REVISION } from '@/db/migrations';
+import { plural } from '@/lib/plural';
 import { narrowSnapshotSettings, readBackupFile, type ParsedBackup } from './backup-format';
 import { applySettings } from './backup-settings';
 import { DEFAULT_SETTINGS_GROUPS, type SettingsGroupSelection } from './settings-groups';
@@ -45,21 +52,40 @@ export async function readBackup(file: File): Promise<ParsedBackup> {
 
 const RESTORE_NOTICE_KEY = 'gubbins:backup-restored';
 
-/** Record a one-off success message to show after a post-restore reload. */
-export function rememberRestoreNotice(message: string): void {
+/**
+ * How loudly a restore's outcome should be said: `warning` when it landed but left something
+ * out — a partial success is not news to deliver in the same voice as a clean one (issue #639).
+ */
+export type RestoreNoticeTone = 'info' | 'warning';
+
+/** The one-off message shown after a restore, and how loudly to say it. */
+export interface RestoreNotice {
+  readonly message: string;
+  readonly tone: RestoreNoticeTone;
+}
+
+/** Record a one-off outcome message to show after a post-restore reload. */
+export function rememberRestoreNotice(notice: RestoreNotice): void {
   try {
-    sessionStorage.setItem(RESTORE_NOTICE_KEY, message);
+    sessionStorage.setItem(RESTORE_NOTICE_KEY, JSON.stringify(notice));
   } catch {
     // sessionStorage unavailable — the restore still succeeds; we just skip the notice.
   }
 }
 
-/** Read-and-clear the post-restore success message (the Sync screen shows it on mount). */
-export function consumeRestoreNotice(): string | null {
+/** Read-and-clear the post-restore outcome message (the Sync screen shows it on mount). */
+export function consumeRestoreNotice(): RestoreNotice | null {
   try {
-    const message = sessionStorage.getItem(RESTORE_NOTICE_KEY);
-    if (message) sessionStorage.removeItem(RESTORE_NOTICE_KEY);
-    return message;
+    const raw = sessionStorage.getItem(RESTORE_NOTICE_KEY);
+    if (!raw) return null;
+    // Cleared before it is decoded: a notice that cannot be read is still a notice that has
+    // been delivered as far as it ever will be, and leaving it would re-run this every mount.
+    sessionStorage.removeItem(RESTORE_NOTICE_KEY);
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const { message, tone } = parsed as Record<string, unknown>;
+    if (typeof message !== 'string' || message.length === 0) return null;
+    return { message, tone: tone === 'warning' ? 'warning' : 'info' };
   } catch {
     return null;
   }
@@ -69,6 +95,12 @@ export function consumeRestoreNotice(): string | null {
 export interface RestoreOutcome {
   /** True when the app must reload (worker disposed, or settings re-hydrate at boot). */
   readonly reloadRequired: boolean;
+  /**
+   * How many of the backup's full-resolution images could not be written back to this device
+   * (issue #639). Non-zero makes this a **partial** success, never a failure: the data itself
+   * has already committed, so the caller still reloads or invalidates — it just says so.
+   */
+  readonly imagesMissed: number;
   /** A short human summary of what was restored. */
   readonly message: string;
 }
@@ -96,32 +128,64 @@ export async function restoreBackup(
   };
 
   let reloadRequired = false;
+  let imagesMissed = 0;
   if (mode === 'replace') {
-    reloadRequired = await restoreReplace(narrowed);
+    ({ reloadRequired, imagesMissed } = await restoreReplace(narrowed));
   } else {
-    await restoreMerge(narrowed);
+    imagesMissed = await restoreMerge(narrowed);
   }
 
   const settingsRestored = parsed.settings ? applySettings(parsed.settings, settingGroups) : 0;
   if (settingsRestored > 0) reloadRequired = true; // stores only re-hydrate on boot
 
-  return { reloadRequired, message: restoreSummary(parsed, mode, settingsRestored) };
+  return {
+    reloadRequired,
+    imagesMissed,
+    message: restoreSummary(parsed, mode, settingsRestored, imagesMissed),
+  };
 }
 
 /** Non-destructive UPSERT from the portable snapshot, then re-hydrate images. */
-async function restoreMerge(parsed: ParsedBackup): Promise<void> {
+async function restoreMerge(parsed: ParsedBackup): Promise<number> {
   const driver = getDatabaseDriver();
   await restoreSnapshot(driver, parsed.snapshot);
-  if (parsed.images.length > 0) await writeImageFiles(parsed.images);
+  return await rehydrateImages(parsed);
+}
+
+/** What {@link restoreReplace} did: whether the worker went, and what the images cost. */
+interface ReplaceResult {
+  readonly reloadRequired: boolean;
+  readonly imagesMissed: number;
+}
+
+/**
+ * Write the backup's full-resolution images beside data that has *already* committed, and
+ * report how many could not be written (issue #639).
+ *
+ * Every call site is past the point of no return, so this never throws: a re-hydration that
+ * falls short is a restore that happened minus some images, and unwinding it would tell the
+ * user their data is where they left it when it is not. The cause is logged for diagnostics,
+ * because the number is all the sentence the user gets.
+ */
+async function rehydrateImages(parsed: ParsedBackup): Promise<number> {
+  if (parsed.images.length === 0) return 0;
+  const report = await writeImageFiles(parsed.images);
+  if (report.failed.length > 0) {
+    console.warn(
+      `[gubbins] restore: ${report.failed.length} of ${parsed.images.length} images could not be written`,
+      report.failure,
+    );
+  }
+  return report.failed.length;
 }
 
 /**
  * Exact point-in-time restore. With an embedded `.sqlite` copy, replace the stored database
  * verbatim (then re-hydrate images) — that releases the worker, so a reload is required.
  * Without it, wipe-and-clone the portable snapshot in one transaction through the live worker
- * (no reload needed). Returns whether the worker was disposed.
+ * (no reload needed). Returns whether the worker was disposed, and what the images cost.
  */
-async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
+async function restoreReplace(parsed: ParsedBackup): Promise<ReplaceResult> {
   if (parsed.sqlite) {
     // Refuse an exact-copy restore from an incompatible schema *before* touching OPFS. Gubbins
     // is pre-release and does not migrate across baseline changes, so such a database would be
@@ -155,9 +219,12 @@ async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
       if (!(error instanceof StaleJournalError)) throw error;
       staleJournal = error;
     }
-    if (parsed.images.length > 0) await writeImageFiles(parsed.images);
+    const imagesMissed = await rehydrateImages(parsed);
+    // A stale journal outranks a shortfall of images: it is the one thing here that must be
+    // read and acted on *before* the app is reloaded at all, and burying that single
+    // instruction under a lesser one would risk the restored database being rolled back.
     if (staleJournal) throw staleJournal;
-    return true;
+    return { reloadRequired: true, imagesMissed };
   }
 
   const driver = getDatabaseDriver();
@@ -169,15 +236,29 @@ async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
   // Issue #188: the clone re-inserts stock rows whose deltas travel in the unioned ledger, so the
   // whole batch runs capture-disabled (buildCloneStatements is now a plain, unguarded builder).
   await driver.transaction(withCaptureDisabled(buildCloneStatements(parsed.snapshot, dictionary)));
-  if (parsed.images.length > 0) await writeImageFiles(parsed.images);
-  return false;
+  const imagesMissed = await rehydrateImages(parsed);
+  return { reloadRequired: false, imagesMissed };
 }
 
 /** A short human summary of what was restored, shown once after the reload. */
-function restoreSummary(parsed: ParsedBackup, mode: RestoreMode, settingsRestored: number): string {
+function restoreSummary(
+  parsed: ParsedBackup,
+  mode: RestoreMode,
+  settingsRestored: number,
+  imagesMissed: number,
+): string {
   const verb = mode === 'replace' ? 'Replaced from' : 'Merged in';
-  const parts = [`${parsed.snapshot.tables.items?.length ?? 0} items`];
-  if (parsed.images.length > 0) parts.push(`${parsed.images.length} images`);
+  const items = parsed.snapshot.tables.items?.length ?? 0;
+  const parts = [`${items} ${plural(items, 'item')}`];
+  const images = parsed.images.length;
+  if (images > 0) parts.push(`${images} ${plural(images, 'image')}`);
   if (settingsRestored > 0) parts.push('settings');
-  return `${verb} backup — ${parts.join(', ')}.`;
+  const summary = `${verb} backup — ${parts.join(', ')}.`;
+  if (imagesMissed === 0) return summary;
+  // Says what is missing and what is not, because the alternative reading — that the whole
+  // restore came apart — is the one the user will otherwise reach for (issue #639).
+  return (
+    `${summary} ${imagesMissed} ${plural(imagesMissed, 'image')} could not be saved to this device, ` +
+    'which may be out of storage — everything else was restored.'
+  );
 }

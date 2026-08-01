@@ -147,8 +147,13 @@ export const inventoryKeys = {
   /** The prefix every on-card custom-field read shares (one query per resident window, so a
    *  field write invalidates *this* rather than trying to name each window's item ids). */
   itemFieldValuesAll: () => [...inventoryKeys.items(), 'fieldValues'] as const,
-  /** Stored custom-field values for a set of on-screen items (item cards, E1). */
-  itemFieldValues: (itemIds: readonly string[]) => [...inventoryKeys.itemFieldValuesAll(), itemIds] as const,
+  /** Stored custom-field values for a set of on-screen items (item cards, E1), restricted to
+   *  the card-field ids being rendered (issue #560) — so the *fields* are part of the identity
+   *  of what was fetched, and choosing another field can't be answered from a narrower cache
+   *  entry. `fieldIds` is expected sorted (see `useItemFieldValues`), so merely *reordering*
+   *  the card fields doesn't re-key the read. */
+  itemFieldValues: (itemIds: readonly string[], fieldIds: readonly string[]) =>
+    [...inventoryKeys.itemFieldValuesAll(), itemIds, fieldIds] as const,
   tags: () => [...inventoryKeys.all, 'tags'] as const,
   /** One server-side page of the counted dictionary, for one filter and ordering (#84, #137). */
   tagList: (offset: number, limit: number, browse: TagBrowse = {}) =>

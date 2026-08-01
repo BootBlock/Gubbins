@@ -366,7 +366,9 @@ A **search box** above the sections filters the library as you type, matching pr
 descriptions and field names alike — so `isbn` finds the `Book` preset and `expiry` finds
 `Food` and `Adhesive`. While you're searching, each section shows how many of its presets
 match. Press the **✕** button — or **Escape** while typing in the search box — to clear the
-search; pressing **Escape** anywhere else (or with the search box empty) closes the picker.
+search; pressing **Escape** anywhere else (or with the search box empty) closes the picker — except
+while a preset is being added, when the picker stays put until its category and fields have all
+landed.
 
 > **ℹ️ Note**
 > A preset whose category already exists is marked **Added** and can't be imported twice, so

@@ -275,11 +275,12 @@ function SectionItems({
   // the front of a deeply-paged section, which the virtualised body renders around.
   const firstItemIndex = query.data?.pages[0]?.offset ?? 0;
 
-  // Custom-field values for just this section's loaded items (backlog E1). Skipped entirely
-  // unless a custom field is actually shown, so a section costs no extra query in the default
-  // configuration. The context bundles the shared config with these per-section values.
+  // Custom-field values for just this section's loaded items (backlog E1), and only for the
+  // custom fields the cards draw (#560). Skipped entirely unless a custom field is actually
+  // shown, so a section costs no extra query in the default configuration. The context bundles
+  // the shared config with these per-section values.
   const itemIds = useMemo(() => items.map((i) => i.id), [items]);
-  const fieldValues = useItemFieldValues(itemIds, cardFieldsConfig.hasCustomFields);
+  const fieldValues = useItemFieldValues(itemIds, cardFieldsConfig.visibleCustomFieldIds);
   const tagValues = useItemsTags(itemIds, cardFieldsConfig.hasTagsField);
   const cardFields: CardFieldsListContext = {
     ...cardFieldsConfig,

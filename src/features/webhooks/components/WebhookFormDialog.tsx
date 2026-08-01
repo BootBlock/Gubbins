@@ -205,6 +205,7 @@ export function WebhookFormDialog({ subscription, onClose, onSubmit, busy, error
       description={t('webhooks.form.description')}
       initialFocusRef={nameRef}
       className="max-w-3xl"
+      busy={busy}
     >
       <form
         className="flex flex-col gap-5"

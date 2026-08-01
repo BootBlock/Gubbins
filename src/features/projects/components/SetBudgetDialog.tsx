@@ -56,6 +56,7 @@ export function SetBudgetDialog({
       title="Project budget"
       description="Set an overall budget for this project, or clear the field to remove it."
       initialFocusRef={valueRef}
+      busy={setBudget.isPending}
     >
       <div className="space-y-4">
         <FormField label="Budget">

@@ -99,6 +99,7 @@ export function MergeSuppliersDialog({ initialSource, onClose, onAnnounce }: Mer
       onClose={onClose}
       title={t('suppliers.merge.title')}
       description={t('suppliers.merge.description')}
+      busy={merge.isPending}
     >
       <div className="space-y-5">
         <SupplierSearchField
