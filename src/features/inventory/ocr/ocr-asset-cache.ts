@@ -11,7 +11,8 @@
  * connection each time (#159).
  *
  * Hence a **separate, cache-first cache**: the assets land here on first use and are served from
- * here forever after, while the precache still holds exactly the manifest set its prune assumes.
+ * here forever after, while the precache still holds exactly the build manifest it is named after
+ * — and so survives no longer than the build that wrote it.
  *
  * The cache name carries {@link OCR_ASSET_GENERATION} because these files are *unhashed* — a
  * Tesseract upgrade republishes `worker.min.js` and the cores at the same URLs, and a stale worker
