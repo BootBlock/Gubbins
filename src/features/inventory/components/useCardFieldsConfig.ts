@@ -27,8 +27,14 @@ export interface CardFieldsConfigBundle {
    * never needs to know the setting itself.
    */
   readonly categoryGlyph: (categoryId: string | null) => string | null;
-  /** Whether any *visible* field is a custom field — gates the per-window value fetch. */
-  readonly hasCustomFields: boolean;
+  /**
+   * The `category_fields.id`s of the *visible* custom fields — what the per-window value fetch
+   * reads, and all it reads (issue #560). Empty in the default configuration, which is what
+   * skips that fetch altogether; naming the fields rather than answering "are there any?" is
+   * what stops a card showing one short field from also pulling every unshown value — an
+   * `IMAGE` field's base64 payload included — for every item in the resident window.
+   */
+  readonly visibleCustomFieldIds: readonly string[];
   /** Whether the Tags field is visible (issue #84) — gates the per-window tags fetch. */
   readonly hasTagsField: boolean;
 }
@@ -81,7 +87,12 @@ export function useCardFieldsConfig(): CardFieldsConfigBundle {
     return map;
   }, [categories.data]);
 
-  const hasCustomFields = useMemo(() => order.some((id) => parseCustomCardFieldId(id) !== null), [order]);
+  // Memoised because it is part of the per-window value query's key: a fresh array each render
+  // would re-key that read on every render rather than only when the chosen fields change.
+  const visibleCustomFieldIds = useMemo(
+    () => order.map((id) => parseCustomCardFieldId(id)).filter((id): id is string => id !== null),
+    [order],
+  );
   const hasTagsField = useMemo(() => order.includes('tags'), [order]);
 
   // Plain closures (not memoised): they're called during the list's own render to produce a
@@ -94,5 +105,5 @@ export function useCardFieldsConfig(): CardFieldsConfigBundle {
   const categoryGlyph = (categoryId: string | null): string | null =>
     categoryWatermarks && categoryId ? (categoryGlyphsById.get(categoryId) ?? null) : null;
 
-  return { order, customFields, categoryName, categoryGlyph, hasCustomFields, hasTagsField };
+  return { order, customFields, categoryName, categoryGlyph, visibleCustomFieldIds, hasTagsField };
 }

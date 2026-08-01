@@ -449,7 +449,7 @@ describe('CategoryRepository — location-inherited fields (issue #97)', () => {
       await categories.setItemFieldValues(stored.id, { [field.id]: 'Makita' });
 
       // A card that omitted inherited values would read as missing data.
-      const values = await categories.getItemFieldValues([drill.id, stored.id]);
+      const values = await categories.getItemFieldValues([drill.id, stored.id], [field.id]);
       expect(values.get(drill.id)?.get(field.id)?.value).toBe('Ryobi');
       expect(values.get(stored.id)?.get(field.id)?.value).toBe('Makita');
     });
@@ -667,7 +667,7 @@ describe('CategoryRepository — custom-field value attribution (#621, W1g)', ()
     });
     await categories.setItemFieldValues(boiler.id, { [field.id]: INHERIT_VALUE });
 
-    const byItem = await categories.getItemFieldValues([boiler.id]);
+    const byItem = await categories.getItemFieldValues([boiler.id], [field.id]);
     expect(byItem.get(boiler.id)?.get(field.id)).toEqual({ value: PATH, originDeviceId: OTHER_DEVICE });
   });
 
