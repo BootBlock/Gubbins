@@ -2,10 +2,10 @@
  * Behaviour tests for the {@link useScanner} camera-acquisition effect — specifically the
  * `no-camera` lab flag (`/lab`, hidden testing screen) — and for the decode loop's handling of a
  * decoder that dies under it (issue #678). The visibility / teardown effects are covered
- * indirectly by the component tests that neuter this hook entirely
- * (`vi.mock('../useScanner', () => ({ useScanner: () => {} }))`). This file pins the things only
- * `useScanner` itself can prove: what happens when the permission-request effect runs, and what
- * the polling loop does with the decoder it resolved.
+ * indirectly by the component tests, which mock this hook away entirely and drive the surfaces
+ * through the callbacks it would have called. This file pins the things only `useScanner` itself
+ * can prove: what happens when the permission-request effect runs, and what the polling loop does
+ * with the decoder it resolved.
  *
  * The decoder is faked wholesale, so no real `Worker` is ever spawned and its engine can be
  * killed mid-scan on demand.
