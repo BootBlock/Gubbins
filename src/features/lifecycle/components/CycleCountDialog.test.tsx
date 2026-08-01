@@ -211,6 +211,49 @@ describe('CycleCountDialog — the count sheet survives being closed (issue #587
     expect(screen.getByTestId('count-draft-notice').textContent).toContain('entered here 3 days ago');
   });
 
+  it('does not restamp a sheet just for opening it, even when a dead line is pruned away', async () => {
+    // The age is the load-bearing part of the notice — it is what the wiki tells the auditor to
+    // judge "check the shelf before authorising" by. Opening a location re-seeds the sheet, and
+    // if a lot has been consumed since, the restore prunes its count; that makes the sheet's
+    // content differ from the stored copy, so a blind mirror would write it back stamped *now*
+    // and the next visit would call a days-old count "just now".
+    const threeDaysAgo = Date.now() - 3 * 86_400_000;
+    useCountDraftStore.setState({
+      drafts: {
+        [LOC.id]: {
+          counts: { [BATCH_LINE_KEY]: '8', 'gone-lot|default': '3' },
+          missing: [],
+          savedAt: threeDaysAgo,
+        },
+      },
+    });
+
+    renderDialog();
+    // The pruned line is gone from the sheet the auditor sees…
+    await waitFor(() => expect(screen.getByTestId('count-draft-notice')).toBeTruthy());
+    expect(screen.getByTestId('count-draft-notice').textContent).toContain('Restored 1 count');
+    expect(screen.getByTestId('count-draft-notice').textContent).toContain('3 days ago');
+
+    // …and merely looking at the location has not aged the stored sheet forward.
+    expect(useCountDraftStore.getState().drafts[LOC.id]?.savedAt).toBe(threeDaysAgo);
+  });
+
+  it('does restamp once the auditor actually enters something', async () => {
+    const threeDaysAgo = Date.now() - 3 * 86_400_000;
+    useCountDraftStore.setState({
+      drafts: { [LOC.id]: { counts: { [BATCH_LINE_KEY]: '8' }, missing: [], savedAt: threeDaysAgo } },
+    });
+
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+    fireEvent.change(screen.getByTestId(`count-${BATCH_LINE_KEY}`), { target: { value: '9' } });
+
+    await waitFor(() =>
+      expect(useCountDraftStore.getState().drafts[LOC.id]?.counts).toEqual({ [BATCH_LINE_KEY]: '9' }),
+    );
+    expect(useCountDraftStore.getState().drafts[LOC.id]!.savedAt).toBeGreaterThan(threeDaysAgo);
+  });
+
   it('says "earlier" rather than inventing a date when the stored stamp was unusable', async () => {
     useCountDraftStore.setState({
       drafts: { [LOC.id]: { counts: { [BATCH_LINE_KEY]: '8' }, missing: [], savedAt: null } },

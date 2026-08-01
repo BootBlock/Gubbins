@@ -103,6 +103,15 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
   // reseeds the sheet.
   const seededLocationRef = useRef<string | null>(null);
 
+  // Whether the auditor has touched the sheet since it was seeded. The mirror below writes only
+  // while this is set, so *opening* a location never rewrites its stored sheet. That matters
+  // because seeding is not always a faithful echo of what is stored: stock moves while an audit
+  // is paused, and the restore prunes a count whose lot has since been consumed — which makes
+  // the seeded sheet differ from the stored one, and a blind mirror would write it back stamped
+  // now. The age the resume notice reports has to mean "when this was entered", or the "check
+  // the shelf before authorising" judgement it exists to support is being made on a fiction.
+  const editedSinceSeedRef = useRef(false);
+
   const begin = useCallback(
     (
       loc: { id: string; name: string },
@@ -121,6 +130,7 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
         return;
       }
       seededLocationRef.current = loc.id;
+      editedSinceSeedRef.current = false;
 
       const sheet = restoreCountSheet(
         useCountDraftStore.getState().drafts[loc.id],
@@ -137,10 +147,12 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
   );
 
   const setCount = useCallback((lineKey: string, value: string) => {
+    editedSinceSeedRef.current = true;
     setCounts((prev) => ({ ...prev, [lineKey]: value }));
   }, []);
 
   const setPresence = useCallback((itemId: string, value: SerialisedPresence) => {
+    editedSinceSeedRef.current = true;
     setPresenceMap((prev) => ({ ...prev, [itemId]: value }));
   }, []);
 
@@ -150,6 +162,7 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
     // reach): both callers are deliberate, so the stored sheet goes then and there rather than
     // depending on a later effect to notice.
     if (locationId) useCountDraftStore.getState().clear(locationId);
+    editedSinceSeedRef.current = false;
     setCounts({});
     setPresenceMap(reconcilePresence(serialised, {}));
     setRestored(null);
@@ -162,6 +175,7 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const locationId = location?.id;
     if (!locationId || seededLocationRef.current !== locationId) return;
+    if (!editedSinceSeedRef.current) return; // seeding is not the auditor's work — see the ref above
     useCountDraftStore.getState().save(locationId, counts, presence);
   }, [location, counts, presence]);
 

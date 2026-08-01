@@ -3,7 +3,7 @@
  * (each with a live variance chip) and the SERIALISED presence toggles. Extracted from
  * {@link CycleCountDialog} so the standalone dialog and the guided audit-day stepper
  * render the identical sheet — the only thing that differs between the two is the footer
- * (Cancel/Authorise vs Skip/Authorise-&-continue), which each caller owns.
+ * (Close/Authorise vs Skip/Authorise-&-continue), which each caller owns.
  *
  * Purely presentational: all state (counts, presence) is threaded in from
  * {@link useLocationCycleCount}; this component holds none of its own.
