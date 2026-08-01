@@ -33,12 +33,14 @@ export const HAS_VARIANTS_SUBQUERY = `${variantParentSql('items.id')} AS has_var
  * The projection for a read whose rows become `Item`s but whose consumers render **text
  * only** — the raw item columns plus `has_variants`, without the thumbnail BLOB (issue #529).
  *
- * `thumbnail_blob` is much the largest column an item read projects, and the only one whose
- * size a row cap does not bound: the attention feeds are capped at 100 rows a widget and 500 an
- * agenda lane, but each of those rows drags a WebP thumbnail out of the worker and through
- * structured clone to render a name beside a quantity or a date. The bill therefore grows with
- * photo coverage rather than with inventory size — invisible until most items have a picture,
- * and then tens of megabytes on the two screens opened first and most often.
+ * `thumbnail_blob` is in practice the heaviest column an item read projects, and the row caps
+ * do not bound it: the attention feeds cap at 100 rows a widget and 500 an agenda lane, but each
+ * of those rows drags a WebP thumbnail out of the worker and through structured clone to render
+ * a name beside a quantity or a date. The bill therefore grows with photo coverage rather than
+ * with inventory size — nothing at all until items start carrying pictures, then megabytes per
+ * load on the screens opened first and most often, every one of those bytes discarded unread.
+ * (A stored thumbnail is deliberately small — `compression.ts` caps it at 150px WebP — so this
+ * is a waste worth removing, not a stall worth panicking about.)
  *
  * Omitting the column is deliberate, and is **not** the same as selecting `NULL AS
  * thumbnail_blob` (what the report reads do — see `ReportRepository.partsCatalogue`). `Item`
