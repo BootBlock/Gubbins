@@ -210,33 +210,98 @@ export async function imagesBytesOnDisk(): Promise<number | null> {
   }
 }
 
+/** What a re-hydration run could not manage: the files that did not land, and why. */
+export interface ImageWriteReport {
+  /** The names of the files that could not be written, in the order they were attempted. */
+  readonly failed: readonly string[];
+  /** The first failure, so a caller can chain it as a `cause` for diagnostics. */
+  readonly failure?: unknown;
+}
+
 /**
  * Write full-resolution image files back into OPFS (§2.7 archive restore — the inverse of
  * {@link readAllImages}). Used when re-hydrating a full archive onto a fresh device so the
  * detail-view full-res images return alongside the restored database. Each file keeps its
  * original name (the UUID the stored `images/<uuid>.webp` path points at), so it lines up
- * with `item_images.full_res_opfs_path` with no remapping. Returns the count written.
+ * with `item_images.full_res_opfs_path` with no remapping.
+ *
+ * **Reports rather than throws** (issue #639). Every caller runs this *after* the restored
+ * database has already committed, so there is nothing left to unwind: abandoning the remaining
+ * files on the first failure would lose images the device had room for, and letting the failure
+ * propagate would have the caller announce a restore that had in fact already happened. A file
+ * that cannot be written is named in {@link ImageWriteReport.failed} and the run carries on —
+ * sizes vary, so the file after the one that exhausted the quota may well still fit.
  */
-export async function writeImageFiles(files: readonly OpfsImageFile[]): Promise<number> {
-  if (files.length === 0) return 0;
-  const dir = await imagesDirectory(true);
-  let written = 0;
+export async function writeImageFiles(files: readonly OpfsImageFile[]): Promise<ImageWriteReport> {
+  if (files.length === 0) return { failed: [] };
+
+  let dir: FileSystemDirectoryHandle;
+  try {
+    dir = await imagesDirectory(true);
+  } catch (error) {
+    // No directory means no file can land; report the whole set rather than throwing, so the
+    // caller still finishes and reports the restore that already committed. Creating the
+    // directory is itself a write, so the tier hears about it either way (issue #504).
+    reportStorageFailure(error);
+    return { failed: files.map((file) => file.name), failure: error };
+  }
+
+  const failed: string[] = [];
+  let failure: unknown;
   for (const { name, bytes } of files) {
-    const handle = await dir.getFileHandle(name, { create: true });
-    const writable = await handle.createWritable();
-    // Same close-inside-the-try contract as `saveImageFile`: re-hydrating an archive writes every
-    // full-resolution image this device has, so it is the likeliest of all of them to run out.
     try {
-      await writable.write(bytes as BufferSource);
-      await writable.close();
-      written += 1;
+      const handle = await dir.getFileHandle(name, { create: true });
+      const writable = await handle.createWritable();
+      // Same close-inside-the-try contract as `saveImageFile`: re-hydrating an archive writes
+      // every full-resolution image this device has, so it is the likeliest of all of them to
+      // run out — and the bytes are not committed to the file until the stream closes, so a
+      // close that fails is a file that did not land.
+      try {
+        await writable.write(bytes as BufferSource);
+        await writable.close();
+      } catch (error) {
+        // Best-effort: the stream may already be errored, and that must not mask the real
+        // failure. `abort()` is also what releases the scratch copy's space, which matters most
+        // in the case that put us here (a full disk).
+        await writable.abort?.().catch(() => {});
+        throw error;
+      }
     } catch (error) {
-      await writable.abort?.().catch(() => {});
+      failed.push(name);
+      failure ??= error;
+      // The tier watches this too (issue #504). Reported per file rather than once at the end:
+      // the run continues past a failure now, so the last error is not necessarily the one that
+      // ran the device out of room.
       reportStorageFailure(error);
-      throw error;
+      await discardEmptyFile(dir, name);
     }
   }
-  return written;
+  return { failed, failure };
+}
+
+/**
+ * Remove `name` from the images directory if the failed write left it empty.
+ *
+ * `getFileHandle(…, { create: true })` mints the directory entry before a single byte is
+ * written, and aborting the stream discards only its scratch copy — so without this a write
+ * that failed leaves a zero-byte file behind. That is *worse* than no file at all:
+ * {@link readImageBlob} would hand back an empty blob rather than the `undefined` that makes
+ * callers fall back to the stored thumbnail, so a photo the device merely lacked would render
+ * broken instead, and the next backup would carry the empty file forward.
+ *
+ * Only an empty entry is removed. An aborted write over an image this device already held
+ * leaves the original bytes intact (the swap copy never reaches the file), and those must
+ * survive — a merge restore that ran out of room must not delete the photos already there.
+ */
+async function discardEmptyFile(dir: FileSystemDirectoryHandle, name: string): Promise<void> {
+  try {
+    const handle = await dir.getFileHandle(name, { create: false });
+    if ((await handle.getFile()).size > 0) return;
+    await dir.removeEntry(name);
+  } catch {
+    // No entry (the failure came before one was made), or OPFS refused — either way there is
+    // nothing useful to do, and this must never displace the write failure being reported.
+  }
 }
 
 /**

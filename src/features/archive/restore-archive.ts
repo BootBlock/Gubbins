@@ -135,6 +135,14 @@ export function readArchive(zip: Uint8Array): ArchiveContents {
   return parseArchive(entries);
 }
 
+/** What a completed archive restore left behind for the caller to say (issue #639). */
+export interface ArchiveRestoreOutcome {
+  /** How many full-resolution images the archive carried. */
+  readonly images: number;
+  /** How many of them could not be written back to this device — 0 on a clean restore. */
+  readonly imagesMissed: number;
+}
+
 /**
  * Restore a full archive (`.zip`) onto this device (§2.7 / §3). **Destructive** — the
  * caller must confirm first. Unzips the archive, checks the archived database is sound and
@@ -143,8 +151,14 @@ export function readArchive(zip: Uint8Array): ArchiveContents {
  * database. Throws {@link InvalidArchiveError} for a malformed archive, or
  * `DamagedDatabaseError` / `IncompatibleDatabaseError` / `RestorePointError` /
  * `RestorePointNotSavedError` from the pre-flight — all before any OPFS write.
+ *
+ * **Reloads itself only on a clean restore** (issue #639). Where an image could not be written
+ * the database is already replaced and the worker already released, so this returns instead —
+ * the shortfall is the caller's to report, and the reload is the caller's to offer once it has
+ * been read. Returning is never a failure: by this point the archive's data *is* this device's
+ * data, whatever the image count says.
  */
-export async function restoreArchive(file: File, options: RestoreOptions): Promise<void> {
+export async function restoreArchive(file: File, options: RestoreOptions): Promise<ArchiveRestoreOutcome> {
   const zip = new Uint8Array(await file.arrayBuffer());
   const { sqlite, images, manifest } = readArchive(zip); // validates before we touch OPFS
 
@@ -169,8 +183,16 @@ export async function restoreArchive(file: File, options: RestoreOptions): Promi
     if (!(error instanceof StaleJournalError)) throw error;
     staleJournal = error;
   }
-  await writeImageFiles(images);
+  const report = await writeImageFiles(images);
+  if (report.failed.length > 0) {
+    // The count is all the sentence the user gets; keep the reason for the console.
+    console.warn(
+      `[gubbins] archive restore: ${report.failed.length} of ${images.length} images could not be written`,
+      report.failure,
+    );
+  }
   if (staleJournal) throw staleJournal;
 
-  location.reload();
+  if (report.failed.length === 0) location.reload();
+  return { images: images.length, imagesMissed: report.failed.length };
 }

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Button, LiveRegion } from '@/components/foundry';
+import { Banner, Button, LiveRegion } from '@/components/foundry';
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -9,10 +9,11 @@ import {
   ResetIcon,
   RestoreIcon,
 } from '@/components/icons';
-import { restoreArchive } from '@/features/archive/restore-archive';
+import { restoreArchive, type ArchiveRestoreOutcome } from '@/features/archive/restore-archive';
 import { createRescueBackup } from '@/features/backup/build-backup';
 import { useErrorMessage } from '@/features/errors';
 import { assertExhaustive } from '@/lib/exhaustive';
+import { plural } from '@/lib/plural';
 import { prepareSave } from '@/lib/save-file';
 import { useConfirmSaved } from '@/components/useConfirmSaved';
 import {
@@ -98,6 +99,12 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
   const [refusal, setRefusal] = useState<RestoreRefusal | null>(null);
   /** What the rescue backup actually captured, once one has been taken (issue #197). */
   const [backupNote, setBackupNote] = useState<string | null>(null);
+  /**
+   * An archive restore that landed but could not write every image (issue #639). Non-null means
+   * the database has *already* been replaced — so this is a partial success awaiting a reload,
+   * never a failure to retry, and it is held apart from `actionError` for exactly that reason.
+   */
+  const [partialRestore, setPartialRestore] = useState<ArchiveRestoreOutcome | null>(null);
   const describeError = useErrorMessage();
   // The restore point's fallback proof-of-save, where the browser cannot give one (issue #502).
   const { confirmSaved, confirmSavedDialog } = useConfirmSaved();
@@ -183,8 +190,20 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
     try {
       // Both reload on success. Each saves a restore point of the current database first, so a
       // restore that turns out wrong can still be undone from that copy.
-      if (pending.kind === 'archive') await restoreArchive(pending.file, { force, save });
-      else await restoreRawSqlite(pending.file, { force, save });
+      if (pending.kind === 'archive') {
+        const outcome = await restoreArchive(pending.file, { force, save });
+        // Reached only when the archive landed but some of its images did not (issue #639):
+        // a clean restore has already navigated away. The data is in place either way, so
+        // this reports the shortfall and hands the reload to the user rather than unwinding.
+        if (outcome.imagesMissed > 0) {
+          setPartialRestore(outcome);
+          setPending(null);
+          setRefusal(null);
+          setBusy(null);
+        }
+        return;
+      }
+      await restoreRawSqlite(pending.file, { force, save });
     } catch (error) {
       console.error('[gubbins] rescue action failed', error);
       // Nothing was written, and the user may simply want another go at saving the copy — so
@@ -213,6 +232,38 @@ export function RescueActions({ allowHardReset = true, restoreOnly = false }: Re
       setRefusal(null);
     }
   };
+
+  /*
+   * The restore is done — only some of its images are not (issue #639). This replaces the whole
+   * action set rather than joining it, because every other button here addresses a database that
+   * has just been overwritten and released: there is one useful thing left to do, and the user
+   * has to be told it is *reloading*, not restoring again. Closing the tab instead is harmless —
+   * the restored database is already on disk and opens on the next start.
+   *
+   * Left untranslated like the rest of this screen: it renders after the app below it has failed
+   * (see the note further down), so its copy must not depend on the i18n catalog answering.
+   */
+  if (partialRestore) {
+    return (
+      <div className="flex flex-col gap-2">
+        <Banner tone="warning" role="alert" heading="Your data was restored">
+          <p>
+            {partialRestore.imagesMissed} of {partialRestore.images} full-resolution{' '}
+            {plural(partialRestore.images, 'image')} could not be saved to this device, which may be out of
+            storage. Your records and settings are all in place, and the images are still in the archive file.
+          </p>
+          <p className="mt-2">Reload to start using the restored data.</p>
+        </Banner>
+        <Button
+          variant="primary"
+          onClick={() => location.reload()}
+          data-testid="reload-after-partial-restore"
+        >
+          <RefreshIcon /> Reload Gubbins
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2">

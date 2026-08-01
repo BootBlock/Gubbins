@@ -7,7 +7,7 @@
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RescueActions } from './RescueActions';
 
 vi.mock('./safe-mode-actions', () => ({
@@ -58,6 +58,7 @@ vi.mock('@/features/errors', () => ({
 
 const actions = await import('./safe-mode-actions');
 const { createRescueBackup } = await import('@/features/backup/build-backup');
+const { restoreArchive } = await import('@/features/archive/restore-archive');
 
 /**
  * The restore point's destination, reserved in the click and threaded into the restore
@@ -368,6 +369,57 @@ describe('RescueActions', () => {
       await user.click(screen.getByRole('button', { name: /back up everything/i }));
 
       expect(await screen.findByRole('alert')).toHaveTextContent('Database unreadable.');
+    });
+  });
+
+  /**
+   * Issue #639: the archive's images are written after its database has already replaced the
+   * live one, so a write that fails there cannot be unwound. Reporting it as "restore failed"
+   * pointed the user back at data that no longer existed, and the reload that the disposed
+   * worker made mandatory never ran — leaving the app unable to answer a single query.
+   */
+  describe('an archive restore that could not save every image (issue #639)', () => {
+    async function restoreArchiveFile(user: ReturnType<typeof userEvent.setup>) {
+      const file = new File(['irrelevant'], 'gubbins-archive.zip', { type: 'application/zip' });
+      await user.upload(screen.getByTestId('restore-archive-input'), file);
+      await user.click(screen.getByTestId('confirm-archive-restore'));
+    }
+
+    beforeEach(() => {
+      vi.stubGlobal('location', { reload: vi.fn() });
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('calls it a partial success, and offers the reload the restore now depends on', async () => {
+      vi.mocked(restoreArchive).mockResolvedValue({ images: 12, imagesMissed: 3 });
+      const user = userEvent.setup();
+      render(<RescueActions />);
+
+      await restoreArchiveFile(user);
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/your data was restored/i);
+      expect(alert).toHaveTextContent('3 of 12');
+      // The exact misreport this fixes: the data landed, so nothing here may say otherwise.
+      expect(alert).not.toHaveTextContent(/failed/i);
+
+      await user.click(screen.getByTestId('reload-after-partial-restore'));
+      expect(location.reload).toHaveBeenCalledOnce();
+    });
+
+    it('says nothing when every image lands — that restore reloads on its own', async () => {
+      vi.mocked(restoreArchive).mockResolvedValue({ images: 12, imagesMissed: 0 });
+      const user = userEvent.setup();
+      render(<RescueActions />);
+
+      await restoreArchiveFile(user);
+
+      await waitFor(() => expect(restoreArchive).toHaveBeenCalledOnce());
+      expect(screen.queryByTestId('reload-after-partial-restore')).not.toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
   });
 

@@ -98,6 +98,30 @@ just *offer* you the file and carry on — it waits until the copy is really the
 > Take a backup before any big change — a large import, a bulk edit, or a Replace restore. The
 > automatic restore-point has your back, but your own recent `.zip` is the surest safety net.
 
+### If some of the images can't be saved
+
+Your records go in first and the full-resolution photos are written afterwards, so the photos are
+what a device short on space runs out of room for. A **Replace** is likeliest to hit it, because it
+saves a restore point of your current data before it starts — a second full copy of your database,
+written moments earlier.
+
+If it happens the restore is **not** undone, because by then it has already taken effect: your
+items, locations and settings are in place, and the photos that wouldn't fit are the only thing
+missing. So Gubbins says that rather than calling the whole restore a failure — *"3 images could
+not be saved to this device"* — and finishes the job either way. It carries on past a photo it
+can't write, too, so a single large one doesn't cost you all the ones after it.
+
+Restoring a full archive from the recovery screen is the one case that then stops and asks you to
+**reload**, with a button to do it: that restore replaces the database file itself, which closes
+the one Gubbins was using, and reloading is what picks the restored one up. Everywhere else Gubbins
+carries on by itself — reloading without asking where it has to, and simply refreshing the screen
+where it doesn't.
+
+> **💡 Tip**
+> The photos are still in the `.zip`. Free up some space — **[[Storage triage|Storage-Triage]]** is
+> the quickest way — then restore the same file again with **Merge**. Everything already there is
+> simply written over, and the images that were missing land this time.
+
 ## Backing up when Gubbins won't start
 
 If Gubbins can't open your database — most often because an update changed its shape while Gubbins

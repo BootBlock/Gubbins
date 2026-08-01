@@ -36,7 +36,7 @@ vi.mock('@/app/error/safe-mode-actions', async () => {
 });
 vi.mock('@/features/images/opfs-images', () => ({ writeImageFiles }));
 
-import { IncompatibleDatabaseError } from '@/app/error/safe-mode-actions';
+import { IncompatibleDatabaseError, StaleJournalError } from '@/app/error/safe-mode-actions';
 import { InvalidArchiveError, parseArchive, readArchive, restoreArchive } from './restore-archive';
 import type { SafeSave } from '@/lib/save-file';
 
@@ -53,6 +53,13 @@ const SAVE: SafeSave = {
 /** Bytes that begin with the SQLite 3 magic header, so they pass the file guard. */
 function fakeSqlite(tail = 'payload'): Uint8Array {
   return strToU8(`SQLite format 3\0${tail}`);
+}
+
+/** An archive `.zip` as a chosen `File`, so the real read/unzip/parse path runs. */
+function archiveFile(entries: Record<string, Uint8Array>): File {
+  return new File([zipSync(entries) as unknown as BlobPart], 'gubbins-archive.zip', {
+    type: 'application/zip',
+  });
 }
 
 describe('parseArchive', () => {
@@ -173,15 +180,9 @@ describe('parseArchive — manifest (issue #501)', () => {
 });
 
 describe('restoreArchive — schema baseline (issue #501)', () => {
-  /** An archive `.zip` as a chosen `File`, so the real read/unzip/parse path runs. */
-  function archiveFile(entries: Record<string, Uint8Array>): File {
-    return new File([zipSync(entries) as unknown as BlobPart], 'gubbins-archive.zip', {
-      type: 'application/zip',
-    });
-  }
-
   beforeEach(() => {
     vi.stubGlobal('location', { reload: vi.fn() });
+    writeImageFiles.mockResolvedValue({ failed: [] });
   });
 
   afterEach(() => {
@@ -233,5 +234,71 @@ describe('restoreArchive — schema baseline (issue #501)', () => {
     await restoreArchive(file, { force: true, save: SAVE });
 
     expect(overwriteDatabaseFile).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * Issue #639: the images are written *after* the database bytes have committed, so a write that
+ * fails there is a restore that already happened minus some pictures. Unwinding it told the user
+ * "the restore failed" over data that was already gone, and — because the worker is disposed by
+ * the overwrite — skipped the reload that is the only thing making the app usable again.
+ */
+describe('restoreArchive — images that will not write (issue #639)', () => {
+  const IMAGES = {
+    [`${ARCHIVE_IMAGES_PREFIX}one.webp`]: new Uint8Array([1]),
+    [`${ARCHIVE_IMAGES_PREFIX}two.webp`]: new Uint8Array([2]),
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal('location', { reload: vi.fn() });
+    writeImageFiles.mockResolvedValue({ failed: [] });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('reloads and reports nothing missed when every image lands', async () => {
+    writeImageFiles.mockResolvedValue({ failed: [] });
+
+    const outcome = await restoreArchive(archiveFile({ [ARCHIVE_DB_ENTRY]: fakeSqlite(), ...IMAGES }), {
+      save: SAVE,
+    });
+
+    expect(outcome).toEqual({ images: 2, imagesMissed: 0 });
+    expect(location.reload).toHaveBeenCalledOnce();
+  });
+
+  it('reports the shortfall instead of throwing, and leaves the reload to the caller', async () => {
+    writeImageFiles.mockResolvedValue({
+      failed: ['two.webp'],
+      failure: new DOMException('The quota has been exceeded.', 'QuotaExceededError'),
+    });
+
+    const outcome = await restoreArchive(archiveFile({ [ARCHIVE_DB_ENTRY]: fakeSqlite(), ...IMAGES }), {
+      save: SAVE,
+    });
+
+    expect(outcome).toEqual({ images: 2, imagesMissed: 1 });
+    // The database is already replaced and the worker released; reloading before the user has
+    // read what is missing would bury the only news this restore has to give.
+    expect(location.reload).not.toHaveBeenCalled();
+  });
+
+  it('still refuses to reload when the database landed beside a stale journal (#203)', async () => {
+    // Deliberately a *clean* image run: with images missed as well, the reload would be blocked
+    // by the shortfall alone and this would pass however the two were ordered. Every image
+    // landing leaves the stale journal as the only thing that can stop it — which is the
+    // ordering #203 depends on, since reloading beside a hot journal rolls the restore back.
+    overwriteDatabaseFile.mockRejectedValueOnce(new StaleJournalError('gubbins.sqlite3-wal'));
+    writeImageFiles.mockResolvedValue({ failed: [] });
+
+    await expect(
+      restoreArchive(archiveFile({ [ARCHIVE_DB_ENTRY]: fakeSqlite(), ...IMAGES }), { save: SAVE }),
+    ).rejects.toBeInstanceOf(StaleJournalError);
+
+    expect(writeImageFiles).toHaveBeenCalledOnce();
+    expect(location.reload).not.toHaveBeenCalled();
   });
 });
