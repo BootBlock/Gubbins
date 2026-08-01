@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, InfoHint, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, InfoHint, Tooltip, INFO_OPEN_DELAY_MS, useReportUnsavedChanges } from '@/components/foundry';
 import { fieldAria } from '@/components/foundry/field-aria';
 import { InfoIcon, UnlinkIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
@@ -40,6 +40,17 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
     );
   }, [fields]);
 
+  /** The draft entry a field started at, so "changed" compares intent with intent. */
+  const initialOf = (f: NonNullable<typeof fields>[number]) =>
+    f.mode === 'inherit' ? INHERIT_DRAFT_VALUE : (f.value ?? '');
+
+  // Resolved above the bail-outs below, because the report that follows is a hook and so cannot
+  // sit behind an early return. An item still loading its fields, or with none, has no draft.
+  const changed = (fields ?? []).filter((f) => (draft[f.id] ?? '') !== initialOf(f));
+  // Tell the dialog frame these values are uncommitted, so a dismissal asks rather than
+  // discarding them (issue #576). Matches the Save button's own count below.
+  useReportUnsavedChanges(changed.length > 0);
+
   if (isLoading) return <p className="text-xs text-muted-foreground">Loading fields…</p>;
   if (!fields || fields.length === 0) {
     return (
@@ -48,12 +59,6 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
       </p>
     );
   }
-
-  /** The draft entry a field started at, so "changed" compares intent with intent. */
-  const initialOf = (f: (typeof fields)[number]) =>
-    f.mode === 'inherit' ? INHERIT_DRAFT_VALUE : (f.value ?? '');
-
-  const changed = fields.filter((f) => (draft[f.id] ?? '') !== initialOf(f));
 
   // Validate every changed field through the same seam the repository enforces, so
   // the editor blocks a save the worker would reject and shows *why*, per field.
