@@ -138,9 +138,28 @@ describe('StorageBanners — the Hard Stop', () => {
 
     expect(screen.getByText('Storage full — saving paused')).toBeTruthy();
     expect(screen.getByText(/A save failed because this device has no room left/)).toBeTruthy();
+    expect(screen.getByText(/still reports only 12% used/)).toBeTruthy();
     // The route out is still offered, exactly as it is from the measured Hard Stop.
     expect(screen.getByTestId('open-storage-triage')).toBeTruthy();
     expect(screen.queryByText(/Gubbins has paused all writes to protect your data/)).toBeNull();
+  });
+
+  it('does not invent a percentage when the browser reports no quota at all', () => {
+    // `estimateStorage` returns `ratio: 0` as its "no reading" sentinel, so quoting it would
+    // assert a figure the browser never gave — the same state Triage describes as "does not
+    // report a storage quota".
+    useStorageStore.setState({
+      tier: 'locked',
+      measuredTier: 'ok',
+      ratio: 0,
+      estimate: { usage: 0, quota: 0, ratio: 0, supported: false },
+      exhaustion: { afterMeasurement: 1, measured: true, baselineAvailable: null },
+    });
+    renderBanners();
+
+    expect(screen.getByText('Storage full — saving paused')).toBeTruthy();
+    expect(screen.getByText(/does not report how much storage is in use/)).toBeTruthy();
+    expect(screen.queryByText(/reports only 0% used/)).toBeNull();
   });
 });
 

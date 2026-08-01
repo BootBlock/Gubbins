@@ -237,7 +237,12 @@ export function StorageBanners() {
         heading={t('storage.hardStop.observed.heading')}
         action={manageStorage}
       >
-        {t('storage.hardStop.observed.body', { vars: { percent } })}
+        {/* Only quote the browser's figure where there *is* one: with no quota reported, `ratio`
+            is the 0 that `estimateStorage` returns for "no reading", and calling that "0% used"
+            would invent the very number this copy exists to explain away. */}
+        {estimate?.supported
+          ? t('storage.hardStop.observed.body', { vars: { percent } })
+          : t('storage.hardStop.observed.bodyNoEstimate')}
       </Banner>,
     );
   } else if (tier === 'locked') {

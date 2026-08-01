@@ -24,6 +24,7 @@ import { acknowledgeDbLoss, clearDbPresence } from '@/db/db-presence';
 import { inspectRestoreCandidate } from '@/db/restore-candidate';
 import { isSqliteFile } from '@/db/sqlite-header';
 import { removeImagesDirectory } from '@/features/images/opfs-images';
+import { reportStorageFailure } from '@/features/storage/exhaustion';
 
 /** Download the live database as a raw .sqlite binary (spec §3 — the key rescue). */
 export async function downloadRawSqlite(): Promise<void> {
@@ -60,7 +61,15 @@ export { isSqliteFile } from '@/db/sqlite-header';
 export async function overwriteDatabaseFile(bytes: Uint8Array): Promise<void> {
   if ((await detectDbStorageLayout()) === 'opfs') {
     await disposeDatabase();
-    const { staleSidecar, cause } = await writePlainDatabaseFile(bytes);
+    const { staleSidecar, cause } = await writePlainDatabaseFile(bytes).catch((error: unknown) => {
+      // The one raw OPFS write the database worker never sees, and it backs the ordinary backup
+      // restore as well as the crash screen. Replacing the whole database is the heaviest thing
+      // the app writes, so running out of room here is exactly what the storage tier needs to
+      // hear about — reported at the call site, since `db-storage` deliberately depends on
+      // nothing but the File System Access API (issue #504).
+      reportStorageFailure(error);
+      throw error;
+    });
     acknowledgeDbLoss();
     if (staleSidecar) throw new StaleJournalError(staleSidecar, cause);
     return;

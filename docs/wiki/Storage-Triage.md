@@ -76,14 +76,17 @@ still tell Gubbins there is plenty of room. So the percentage is not the last wo
 - If a save actually fails for lack of space, Gubbins pauses saving there and then, whatever the
   percentage says, and the banner explains the disagreement rather than quoting a figure that
   contradicts it. Storage triage opens from that banner as usual.
-- Saving resumes on its own once space genuinely comes back — either because something you deleted
-  or downgraded here saved successfully, or because free space reappears on the device. There is
-  nothing to switch back on by hand.
+- Saving resumes on its own once space genuinely comes back, and there is nothing to switch back on
+  by hand. Reclaiming space **here** always lifts the pause — deleting something, or running one of
+  the cleanups above, is enough as soon as it saves. Freeing space on the **device** lifts it too,
+  provided your browser reports a storage figure Gubbins can compare against.
 
 > **💡 Tip**
 > If the banner says storage is full but the percentage looks low, the space is being used by
 > something *other* than Gubbins. Free some up on the device itself — empty the trash, clear
-> downloads — and Gubbins picks it up on its own shortly afterwards.
+> downloads — and Gubbins picks it up on its own shortly afterwards. If the pause is still there a
+> few minutes later, your browser isn't reporting a figure that moves; delete or downgrade
+> something here instead and saving resumes from there.
 
 > **💡 Tip**
 > Sending your data *out* keeps working, so you're never stuck with no way to preserve it:

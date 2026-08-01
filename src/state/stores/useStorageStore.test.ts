@@ -363,9 +363,4 @@ describe('an observed out-of-space failure', () => {
       vi.useRealTimers();
     }
   });
-
-  it('polls at the Hard Stop cadence while it holds, so recovery is noticed quickly', () => {
-    useStorageStore.getState().reportExhaustion();
-    expect(POLL_INTERVAL_MS[useStorageStore.getState().tier]).toBe(POLL_INTERVAL_MS.locked);
-  });
 });

@@ -55,12 +55,31 @@ function isQuotaExceeded(value: object): boolean {
 }
 
 /**
+ * True when `message` is the browser's quota wording — the last thing left of a
+ * `QuotaExceededError` raised *inside the database worker*.
+ *
+ * That one hop loses everything else this module matches on: the worker normalises the rejection
+ * with `DbError.fromUnknown`, which finds no SQLite result code and so settles on `UNKNOWN`, and
+ * `toSerialized` carries neither the DOMException's `name` nor its `cause` across the bridge. Only
+ * the text survives, and the restore that writes the whole database is exactly the write that
+ * reaches it.
+ *
+ * Both words are required, and only ever on an error, so a message that merely mentions a quota
+ * cannot suspend every write on the device. The exact phrasing varies by browser ("The quota has
+ * been exceeded.", "Quota exceeded."), which is why this is not a fixed string.
+ */
+function looksLikeQuotaMessage(message: string): boolean {
+  return /quota/i.test(message) && /exceed/i.test(message);
+}
+
+/**
  * True when `error` proves a write failed because there was no room for it.
  *
  * Deliberately narrow: this raises the tier to the Hard Stop, so it must recognise genuine
  * exhaustion and nothing else. A `SQLITE_FULL` from the database worker, a `QuotaExceededError`
- * from a raw OPFS write, or SQLite's own full-disk wording — each wrapped to any depth, since
- * `DbError.fromUnknown` keeps the original as its `cause`.
+ * from a raw OPFS write, SQLite's own full-disk wording, or the browser's quota wording left
+ * behind by the RPC bridge — each wrapped to any depth, since `DbError.fromUnknown` keeps the
+ * original as its `cause`.
  */
 export function isStorageExhaustionError(error: unknown): boolean {
   let current: unknown = error;
@@ -69,7 +88,12 @@ export function isStorageExhaustionError(error: unknown): boolean {
     if (current instanceof DbError && current.code === 'SQLITE_FULL') return true;
     if (isQuotaExceeded(current)) return true;
     const message = (current as { message?: unknown }).message;
-    if (typeof message === 'string' && SQLITE_FULL_MESSAGE.test(message)) return true;
+    if (
+      typeof message === 'string' &&
+      (SQLITE_FULL_MESSAGE.test(message) || looksLikeQuotaMessage(message))
+    ) {
+      return true;
+    }
     current = (current as { cause?: unknown }).cause;
   }
   return false;

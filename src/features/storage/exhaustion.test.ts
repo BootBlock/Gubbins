@@ -24,6 +24,15 @@ describe('isStorageExhaustionError', () => {
     expect(isStorageExhaustionError(new DbError('SQLITE_FULL', 'database or disk is full'))).toBe(true);
   });
 
+  it('recognises SQLITE_FULL by its code, whatever the message says', () => {
+    // The code is the primary signal and the text is only a fallback, but SQLite's own wording
+    // satisfies both — so without a case whose message deliberately misses the text, the code
+    // branch is never the thing under test and could be deleted with the suite still green.
+    expect(isStorageExhaustionError(new DbError('SQLITE_FULL', 'unable to complete the statement'))).toBe(
+      true,
+    );
+  });
+
   it('recognises a QuotaExceededError from a raw OPFS write', () => {
     expect(isStorageExhaustionError(quotaExceeded())).toBe(true);
   });
@@ -37,6 +46,24 @@ describe('isStorageExhaustionError', () => {
   it('unwraps a cause chain, which is how DbError carries the original', () => {
     const wrapped = DbError.fromUnknown(quotaExceeded(), 'UNKNOWN');
     expect(isStorageExhaustionError(wrapped)).toBe(true);
+  });
+
+  it('recognises a quota failure that crossed the worker bridge, where only the text survives', () => {
+    // The worker normalises its rejection with `DbError.fromUnknown` (no SQLite result code, so
+    // `UNKNOWN`) and `toSerialized` carries neither the DOMException's name nor its cause — which
+    // is exactly what a restore writing the whole database through the worker would hit.
+    const overTheWire = DbError.fromSerialized(
+      DbError.fromUnknown(quotaExceeded(), 'UNKNOWN').toSerialized(),
+    );
+    expect(overTheWire.code).toBe('UNKNOWN');
+    expect(overTheWire.cause).toBeUndefined();
+    expect(isStorageExhaustionError(overTheWire)).toBe(true);
+  });
+
+  it('does not read a passing mention of a quota as an out-of-space failure', () => {
+    expect(isStorageExhaustionError(new DbError('UNKNOWN', 'Sync quota refreshed for this account'))).toBe(
+      false,
+    );
   });
 
   it('gives up rather than looping on a self-referential cause chain', () => {

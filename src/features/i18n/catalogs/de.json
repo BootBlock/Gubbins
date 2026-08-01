@@ -1995,5 +1995,6 @@
   "settings.lookupConsent.withdraw": "Zustimmung für {host} widerrufen",
   "storage.hardStop.observed.heading": "Speicher voll – Speichern angehalten",
   "storage.hardStop.observed.body": "Ein Speichervorgang ist fehlgeschlagen, weil auf diesem Gerät kein Platz mehr frei ist. Gubbins hat deshalb alle Schreibvorgänge angehalten, um Ihre Daten zu schützen. Ihr Browser meldet weiterhin nur {percent} belegt – er erkennt nicht immer, wenn das Gerät selbst voll ist. Geben Sie Speicherplatz frei, um fortzufahren.",
+  "storage.hardStop.observed.bodyNoEstimate": "Ein Speichervorgang ist fehlgeschlagen, weil auf diesem Gerät kein Platz mehr frei ist. Gubbins hat deshalb alle Schreibvorgänge angehalten, um Ihre Daten zu schützen. Ihr Browser meldet nicht, wie viel Speicher belegt ist, daher gab es vorher keine Warnung. Geben Sie Speicherplatz frei, um fortzufahren.",
   "storage.triage.observedFull": "Ein Speichervorgang ist aus Platzmangel fehlgeschlagen, deshalb ist das Speichern angehalten. Die Werte oben geben möglicherweise nicht wieder, wie voll dieses Gerät tatsächlich ist."
 }
