@@ -14,7 +14,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { setStorageWriteGate, writeSuspendedError } from '@/features/storage/write-gate';
 import { useStorageStore } from '@/state/stores/useStorageStore';
-import type { CloudProvider } from './types';
+import type { CloudProvider } from './provider';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { restoreSnapshot } from './snapshot';
 import { runSync } from './sync-engine';
