@@ -358,7 +358,7 @@ function CategoryDetail({
           'An optional emoji shown as a faint **watermark** on the Visual cards of items in this ' +
           'category — e.g. 🔋 for batteries, 📖 for books. Pick one from the glyph browser, or ' +
           'clear it for none. Purely decorative; you can turn all category watermarks off in ' +
-          '**Settings → Item cards**.'
+          '**Settings → Inventory → Item cards**.'
         }
       >
         <EmojiPickerButton

@@ -2,10 +2,11 @@
 
 > **Status:** ✅ COMPLETE — Phases 71–72 shipped (search/filter, CSV import/export).
 
-> **Living document.** Each phase is implemented in its own worktree/session. Tick the
-> `[ ]` boxes as work lands, append a one-paragraph **Outcome** note under each phase when it
-> completes (mirroring `docs/dev/deferred-features.md`), and re-schedule — never silently
-> drop — any deferred item (tag it → a concrete later phase in `docs/dev/deferred-features.md`).
+> **Historical process note — no longer in force.** Each phase is implemented in its own
+> worktree/session. Tick the `[ ]` boxes as work lands, append a one-paragraph **Outcome**
+> note under each phase when it completes (mirroring `docs/dev/deferred-features.md`), and
+> re-schedule — never silently drop — any deferred item (tag it → a concrete later phase in
+> `docs/dev/deferred-features.md`).
 >
 > **Continuation-prompt rule (mandatory).** When a phase (or a parallel wave) completes you
 > **must** do **both** before ending the session:

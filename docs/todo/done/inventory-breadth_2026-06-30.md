@@ -2,10 +2,10 @@
 
 > **Status:** ✅ COMPLETE — shipped.
 
-> **Living document.** Each phase is implemented in its own worktree/session. Tick the
-> `[ ]` boxes as work lands, append a one-paragraph **Outcome** note under each phase when it
-> completes (mirroring `docs/dev/deferred-features.md`), and re-schedule — never silently
-> drop — any deferred item.
+> **Historical process note — no longer in force.** Each phase is implemented in its own
+> worktree/session. Tick the `[ ]` boxes as work lands, append a one-paragraph **Outcome**
+> note under each phase when it completes (mirroring `docs/dev/deferred-features.md`), and
+> re-schedule — never silently drop — any deferred item.
 >
 > **Continuation-prompt rule (mandatory).** When a phase (or a parallel wave) completes you
 > **must** do **both** before ending the session:

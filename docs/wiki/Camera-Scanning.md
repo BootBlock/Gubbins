@@ -120,6 +120,12 @@ settings and tap **Scan** again, or type the code in by hand in the meantime.
 > On iPhone and iPad, a browser may refuse to start a live picture in some situations — for
 > example inside another app's in-app browser. Opening Gubbins in Safari itself usually clears it.
 
+Very occasionally the reader behind the camera stops working part-way through — most often when
+Gubbins has been updated in the background while a tab was left open. The picture stays live but
+nothing is ever read from it, so Gubbins says **live scanning has stopped working** under the
+viewfinder rather than leaving you waving a barcode at a camera that isn't listening. Reload
+Gubbins and it comes back; in the meantime, the box at the bottom still takes a typed code.
+
 ## When the code itself is damaged
 
 A scuffed QR or a smudged barcode is nobody's fault, and it doesn't leave you stuck. Every label

@@ -79,7 +79,8 @@ On a screen that offers neither, the key is left alone and behaves normally.
 
 These ship **without** a key so the default set stays small, but they're in the list ready for you
 to give them one: **Add item**, **Start a scan**, **New project**, **New purchase order**, **Toggle
-full width** and **Toggle light/dark**.
+full width**, **Toggle light/dark** and **Keyboard shortcuts** — the last of which opens the
+shortcut list described below.
 
 ### Changing a shortcut
 

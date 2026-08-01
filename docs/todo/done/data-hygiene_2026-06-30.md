@@ -1,4 +1,4 @@
-# Phase 77 — Data-hygiene / quality report (living plan)
+# Phase 77 — Data-hygiene / quality report (plan)
 
 > **Status:** ✅ COMPLETE — Phase 77 shipped (the data-hygiene report on Reports).
 

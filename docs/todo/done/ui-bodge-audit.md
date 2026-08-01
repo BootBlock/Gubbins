@@ -2,10 +2,10 @@
 
 > **Status:** ✅ COMPLETE — all five categories resolved.
 
-> **Effort:** multi-phase, multi-session, review-gated. Phase 0 = audit only (this doc).
-> Each later phase fixes **exactly one category**, runs the checks, updates this register,
-> and stops for review. When every finding below is `done`, move this file to
-> `docs/todo/done/ui-bodge-audit.md`.
+> **Historical process note — no longer in force.** Effort: multi-phase, multi-session,
+> review-gated. Phase 0 = audit only (this doc). Each later phase fixes **exactly one
+> category**, runs the checks, updates this register, and stops for review. When every
+> finding below is `done`, move this file to `docs/todo/done/ui-bodge-audit.md`.
 
 Scope swept: all of `src/**` (features, screens, nav/`AppNav`/`PageHeader`, boot/error
 screens, the Foundry primitives, app-shell, `src/styles/index.css`). House rules per

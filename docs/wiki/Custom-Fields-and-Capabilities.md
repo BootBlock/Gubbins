@@ -472,9 +472,9 @@ clear the search, or again to close. The browser can be resized by dragging its 
 remembers the size you set.
 
 > **💡 Tip**
-> Prefer a cleaner grid? Turn all category watermarks off in one place under **Settings → Item
-> cards → Category watermarks** — that hides every watermark without clearing any category's
-> glyph, so you can switch them back on any time.
+> Prefer a cleaner grid? Turn all category watermarks off in one place under **Settings →
+> Inventory → Item cards → Category watermarks** — that hides every watermark without clearing
+> any category's glyph, so you can switch them back on any time.
 
 ## Capabilities
 

@@ -4,7 +4,7 @@
 
 > Wave 3, add-on #7 (the LAST candidate) of the third feature-gap audit
 > (`feature-gap-audit-2026-06-30c`). The wave's **one** migration: `user_version` 2 → **3**
-> (new synced `supplier_part_price_history` table). Living plan doc.
+> (new synced `supplier_part_price_history` table). Plan doc.
 
 ## Problem
 
