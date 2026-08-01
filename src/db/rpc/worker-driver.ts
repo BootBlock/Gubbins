@@ -20,12 +20,32 @@
  *
  * A timeout deliberately does **not** latch: one slow statement is not proof the worker
  * is gone, and a late reply is harmless (its correlation id no longer matches anything).
+ *
+ * **A budget measures the worker's work, not the caller's wait (issue #554).** The worker runs
+ * one request at a time off a strict FIFO chain (spec §2.2.4), so a request posted behind a bulk
+ * import is not late — it has not started. Spending its budget while it queued was how an
+ * ordinary `execute` (30s) came to reject behind a `transaction` (300s) *while remaining alive*:
+ * nothing cancels a timed-out request, so the worker went on to run and commit it, and the caller
+ * had already been told it failed. So the budget is armed for the one request the worker is
+ * actually working on — the front of `#pending`, which is insertion-ordered on the same posting
+ * order — and the next is armed as each reply arrives. Everything behind waits its turn, and the
+ * total wait stays bounded because each request ahead is itself bounded.
+ *
+ * The exception is {@link POST_TIME_BUDGET_KINDS}, the two teardown calls, whose budget is the
+ * caller's patience rather than an estimate of the work.
+ *
+ * One residual imprecision, which needs a cancellation message in the protocol to close properly:
+ * a request evicted *by its own timeout* is still running in the worker, so the next request's
+ * budget starts before the worker has actually reached it. That only applies once a genuine
+ * breach has already happened, and callers treat `WORKER_TIMEOUT` as an unknown outcome rather
+ * than a refusal (see `isUnknownWriteOutcome`) precisely because of it.
  */
 import { DbError } from '../errors';
 import {
   isRpcResponseEnvelope,
   type DbDiagnostics,
   type DbRequest,
+  type DbRequestKind,
   type RpcRequestEnvelope,
   type VerifyBinaryResult,
   type WriteDatabaseFileResult,
@@ -39,6 +59,11 @@ import type { SnapshotMergeRequest, SnapshotMergeResult } from '@/features/sync/
  * legitimately long operation is the failure mode worth avoiding. `init` (which runs
  * migrations), `exportBinary` (which serialises the whole database) and `transaction`
  * (which carries bulk imports) get the long budget for exactly that reason.
+ *
+ * Each is how long the **worker** may spend on that one request, counted from the moment it
+ * reaches the front of the queue rather than from the moment it was posted (issue #554) — so
+ * these numbers can be read as "how long this operation could reasonably take" without also
+ * having to allow for whatever else the tab might have in flight at the time.
  *
  * @internal Exported for unit tests only.
  */
@@ -58,16 +83,39 @@ export const RPC_TIMEOUT_MS: Readonly<Record<DbRequest['kind'], number>> = {
   // Budgeted like `close`, and for the same reason: it only blanks the VFS's handful of file
   // slots, and it is awaited by the Safe Mode purge — which a user reaches for precisely when
   // the worker is wedged. Waiting 30s before falling through to the file-system sweep that
-  // follows it would just freeze the recovery path.
+  // follows it would just freeze the recovery path. See POST_TIME_BUDGET_KINDS.
   wipeDatabaseFiles: 5_000,
   // Reads, reconciles and rewrites the whole syncable database (#173), so it is budgeted like
   // the other whole-database operations rather than like a query.
   snapshotMerge: 300_000,
   // Deliberately the shortest: `close` is awaited by the Safe Mode reset, and a wedged worker is
   // exactly the state a user reaches for that reset in. Waiting 30s to give up on a teardown that
-  // ends in `terminate()` anyway just freezes the recovery path.
+  // ends in `terminate()` anyway just freezes the recovery path. See POST_TIME_BUDGET_KINDS.
   close: 5_000,
 };
+
+/**
+ * The requests whose budget runs from the moment they are **posted** rather than from the moment
+ * the worker reaches them (issue #554).
+ *
+ * Both are teardown calls that Safe Mode awaits, and both end with the worker terminated whichever
+ * way they settle. Their budget is the caller's patience, not an estimate of the work — so letting
+ * them queue behind a long or wedged request is precisely what would freeze the screen a user
+ * reached for *because* the database is stuck.
+ *
+ * What makes giving up early *safe* for these two, and only these two, is that the worker running
+ * them late is harmless: closing a connection that is about to be terminated changes nothing, and
+ * `wipeDatabaseFiles` is called by the purge that goes on to delete those same files by hand (it
+ * catches and continues for exactly that reason). Every other kind waits its turn, because for
+ * every other kind a wait is not a failure and a late execution is not harmless —
+ * `writeDatabaseFile` is the one to hold in mind: abandoning it early and letting it run anyway
+ * would overwrite the database *after* the screen had reported the restore as failed, which is
+ * this issue's own bug at its worst.
+ */
+const POST_TIME_BUDGET_KINDS: ReadonlySet<DbRequestKind> = new Set<DbRequestKind>([
+  'close',
+  'wipeDatabaseFiles',
+]);
 
 /** The `id` of a message that failed the envelope guard, where it carries a usable one. */
 function correlationIdOf(value: unknown): string | undefined {
@@ -77,9 +125,16 @@ function correlationIdOf(value: unknown): string | undefined {
 }
 
 interface PendingCall {
+  /** Kept so a call can be armed later, once the worker reaches it, without holding its payload. */
+  readonly kind: DbRequestKind;
   readonly resolve: (value: unknown) => void;
   readonly reject: (reason: unknown) => void;
-  readonly timer: ReturnType<typeof setTimeout>;
+  /**
+   * This call's armed budget, or `null` while it is still queued behind another. Mutable because
+   * an ordinary call is armed when it reaches the front of the queue, not when it is posted
+   * (issue #554) — see `#armHead`.
+   */
+  timer: ReturnType<typeof setTimeout> | null;
 }
 
 export class WorkerDatabaseDriver implements IDatabaseDriver {
@@ -205,21 +260,21 @@ export class WorkerDatabaseDriver implements IDatabaseDriver {
       return Promise.reject(DbError.fromSerialized(fatal.toSerialized()));
     }
     const id = crypto.randomUUID();
-    // Bind the budget and kind to locals so the timer's closure holds neither the request nor
-    // its payload — a bulk `transaction` would otherwise stay reachable for the whole budget.
+    // Bound to a local so nothing below closes over the request or its payload — a bulk
+    // `transaction` would otherwise stay reachable for as long as the call is pending.
     const kind = request.kind;
-    const budget = RPC_TIMEOUT_MS[kind];
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.#pending.delete(id);
-        reject(
-          new DbError(
-            'WORKER_TIMEOUT',
-            `The database did not answer a "${kind}" request within ${budget}ms.`,
-          ),
-        );
-      }, budget);
-      this.#pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
+      const pending: PendingCall = {
+        kind,
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        timer: null,
+      };
+      this.#pending.set(id, pending);
+      // A recovery call cannot afford to wait for the queue, so its budget starts now; anything
+      // else is armed by `#armHead` below, and only if the worker is free to run it (#554).
+      if (POST_TIME_BUDGET_KINDS.has(kind)) pending.timer = this.#arm(id, kind);
+      this.#armHead();
       const envelope: RpcRequestEnvelope = { id, request };
       try {
         this.#worker.postMessage(envelope);
@@ -227,11 +282,56 @@ export class WorkerDatabaseDriver implements IDatabaseDriver {
         // A payload that cannot be structured-cloned never reaches the worker, so nothing will
         // ever answer this id. Evict it now rather than leaving an armed timer on a dead entry —
         // that is the same unbounded-`#pending` growth this class exists to prevent.
-        this.#pending.delete(id);
-        clearTimeout(timer);
+        this.#forget(id);
         reject(DbError.fromUnknown(error));
       }
     });
+  }
+
+  /**
+   * Arm `id`'s budget, returning the timer. Closes over the id and kind only — never the pending
+   * entry — so a rejection always reads the map rather than a captured reference that may since
+   * have been evicted and re-armed.
+   */
+  #arm(id: string, kind: DbRequestKind): ReturnType<typeof setTimeout> {
+    const budget = RPC_TIMEOUT_MS[kind];
+    return setTimeout(() => {
+      const pending = this.#pending.get(id);
+      if (!pending) return;
+      this.#forget(id);
+      pending.reject(
+        new DbError('WORKER_TIMEOUT', `The database did not answer a "${kind}" request within ${budget}ms.`),
+      );
+    }, budget);
+  }
+
+  /**
+   * Drop a call that will never be settled from `#pending` again — answered, timed out, or never
+   * posted — clearing its timer and arming whatever the worker moves on to.
+   */
+  #forget(id: string): void {
+    const pending = this.#pending.get(id);
+    if (!pending) return;
+    this.#pending.delete(id);
+    if (pending.timer !== null) clearTimeout(pending.timer);
+    this.#armHead();
+  }
+
+  /**
+   * Arm the budget of the request the worker is now working on, unless it is armed already.
+   *
+   * The worker takes one request at a time off a strict FIFO chain (spec §2.2.4) fed by this
+   * driver's `postMessage` order, and `#pending` is insertion-ordered on that same order — so its
+   * first entry *is* the request being worked on. Everything behind it is queued, and a queued
+   * request is not late, so it carries no timer at all until its turn comes (issue #554).
+   */
+  #armHead(): void {
+    for (const [id, pending] of this.#pending) {
+      if (pending.timer === null) pending.timer = this.#arm(id, pending.kind);
+      // The first entry and no further: this is a "peek at the head", not a sweep. (A
+      // POST_TIME_BUDGET_KINDS call reaching the head is already armed, hence the null check.)
+      break;
+    }
   }
 
   #handleMessage = (event: MessageEvent): void => {
@@ -246,8 +346,9 @@ export class WorkerDatabaseDriver implements IDatabaseDriver {
     // Either a reply to something we never sent, or one that arrived after its own timeout
     // fired — both are already settled, so dropping it is correct.
     if (!pending) return;
-    this.#pending.delete(id);
-    clearTimeout(pending.timer);
+    // Before settling, not after: this reply is the worker announcing it has moved on, so the
+    // next request's budget starts here — and it starts even if a caller's `.then` throws.
+    this.#forget(id);
     if (!response) {
       pending.reject(new DbError('UNKNOWN', 'The database worker sent a response that could not be read.'));
     } else if (response.ok) {
@@ -273,7 +374,7 @@ export class WorkerDatabaseDriver implements IDatabaseDriver {
     this.#worker.removeEventListener('messageerror', this.#handleWorkerFailure);
     this.#worker.terminate();
     for (const { reject, timer } of this.#pending.values()) {
-      clearTimeout(timer);
+      if (timer !== null) clearTimeout(timer);
       reject(error);
     }
     this.#pending.clear();

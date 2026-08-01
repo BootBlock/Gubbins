@@ -15,6 +15,14 @@
  * `code`, keeps a repository's authored sentence where there is one, and degrades to the call site's
  * `fallbackKey` otherwise. The default fallback is the optimistic "…has been undone" line; a
  * non-optimistic write, where nothing was undone, passes its own "…could not be saved" key.
+ *
+ * **One error is not a failure at all** (issue #554): a `WORKER_TIMEOUT` means the database did not
+ * answer in time, not that it refused the write — it may still be running and commit moments later.
+ * Every heading here names a verb that *didn't* happen ("Couldn't adjust the quantity"), which is
+ * exactly what isn't known, so that case takes its own heading and body — see
+ * {@link isUnknownWriteOutcome} — rather than the call site's. (The shared `db.error.workerTimeout`
+ * sentence is honest about it too, for the dialogs that resolve their own copy through
+ * {@link useErrorMessage} rather than reporting through here.)
  */
 import { useCallback, useRef } from 'react';
 // Imported from the subpath, not the `@/components/foundry` barrel: the barrel re-exports
@@ -23,6 +31,7 @@ import { useCallback, useRef } from 'react';
 import { useOptionalToast } from '@/components/foundry/toast';
 import { useT, type MessageKey } from '@/features/i18n';
 import { useErrorMessage } from './useErrorMessage';
+import { isUnknownWriteOutcome } from './write-outcome';
 
 /**
  * A `*.writeError.heading.*` catalog key — the toast heading naming the verb that failed. Derived
@@ -57,8 +66,12 @@ export function useReportWriteFailure(
   const lastReport = useRef<{ signature: string; at: number } | null>(null);
   return useCallback(
     (error: unknown) => {
-      const detail = describeError(error, t(fallbackKey));
-      const signature = `${headingKey} ${detail}`;
+      // An unknown outcome overrides the call site's copy entirely, heading included: every
+      // heading here asserts the write did not happen, which is exactly what isn't known (#554).
+      const unknownOutcome = isUnknownWriteOutcome(error);
+      const heading = t(unknownOutcome ? 'common.writeUnknown.heading' : headingKey);
+      const detail = unknownOutcome ? t('common.writeUnknown') : describeError(error, t(fallbackKey));
+      const signature = `${heading} ${detail}`;
       const now = Date.now();
 
       // Report the first failure, then swallow identical repeats for a short window. The window is
@@ -68,7 +81,9 @@ export function useReportWriteFailure(
       if (last && last.signature === signature && now - last.at < WRITE_FAILURE_REPEAT_MS) return;
       lastReport.current = { signature, at: now };
 
-      toast?.show({ tone: 'danger', heading: t(headingKey), message: detail });
+      // `warning`, not `danger`, when the outcome is unknown: nothing is known to have gone
+      // wrong, and the message asks the user to check rather than reporting a loss.
+      toast?.show({ tone: unknownOutcome ? 'warning' : 'danger', heading, message: detail });
     },
     [toast, t, headingKey, fallbackKey, describeError],
   );

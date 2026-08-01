@@ -71,12 +71,21 @@ rather than guessing, so if you're certain no other tab has Gubbins open, choose
 tab — open anyway** to carry on. That choice applies to that tab only and is forgotten once you
 close it.
 
-**Gubbins says it lost its connection to my data, or that the database took too long to respond.**
+**Gubbins says it lost its connection to my data.**
 Gubbins keeps your data in a background component of the page, and very occasionally that component
 stops — a browser reclaiming memory is the usual reason. When it does, Gubbins tells you instead of
 leaving the screen spinning, and **reloading the page** restores it. Nothing is lost: your data is
-on the device, not in that component. If it says the database merely took too long, try the action
-again first; reload only if it keeps happening.
+on the device, not in that component. If it says the database merely **took too long**, that's a
+different thing — see the next question.
+
+**Gubbins says the database took too long to answer, or that it isn't sure whether a change saved.**
+Either message means the database didn't answer in time — *not* that it refused the change, which
+may still be saved a moment later. **Check the item (or the list) first, and only make the change
+again if it isn't there.** Repeating it blindly is the one thing worth avoiding: some records — a
+value change, a stock movement, a test result, an [[Activity Log|Activity-Log]] entry — are added
+rather than overwritten, so doing it twice leaves two of an event that happened once. It's an
+uncommon message, and usually means something large was running at the same time, such as an import,
+a [[restore|Backup-and-Restore]] or a [[sync|Cloud-Sync]].
 
 **Gubbins can't reach my [[bridge|Bridge-Overview]], but the bridge is definitely running.**
 If you have *just* entered the bridge's address, look for a **Reload to connect to this bridge**
