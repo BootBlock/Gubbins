@@ -1361,6 +1361,8 @@
   "contacts.list.truncated.other": "Showing the first {shown} contacts — {count} more aren’t shown. Turn on Paginate list to reach them all.",
   "bookings.list.truncated": "Showing the first {shown} bookings — there may be more than this screen can read at once.",
   "common.writeFailed": "Your change could not be saved.",
+  "common.writeUnknown.heading": "Not sure whether that saved",
+  "common.writeUnknown": "The database took too long to answer, so Gubbins can’t tell whether your change was saved. It has refreshed this data — check it before making the change again.",
   "common.rows.categories": "categories",
   "common.rows.locations": "locations",
   "common.rows.items": "items",

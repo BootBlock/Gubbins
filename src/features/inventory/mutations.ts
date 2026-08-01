@@ -9,7 +9,9 @@
  * concurrent optimistic patch from an overlapping write in the same burst survives the
  * rollback. It reconciles with the worker in `onSettled` via targeted invalidation. A
  * rollback also **tells the user why** (issue #307) — see {@link useReportWriteFailure};
- * a revert that says nothing is indistinguishable from a UI glitch.
+ * a revert that says nothing is indistinguishable from a UI glitch. The one failure it does
+ * *not* roll back on is a database timeout, which proves nothing about whether the write
+ * landed — see {@link undoItem} (issue #554).
  *
  * Location mutations reshape a tree whose optimistic mutation is error-prone and
  * low-frequency, so they use straightforward invalidation rather than optimistic
@@ -22,7 +24,7 @@
  * "…has been undone" line (issue #389).
  */
 import { useMutation, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
-import { useReportWriteFailure } from '@/features/errors';
+import { isUnknownWriteOutcome, useReportWriteFailure } from '@/features/errors';
 import {
   getCategoryRepository,
   getItemRepository,
@@ -156,8 +158,17 @@ function invertFields(
   return (item) => ({ ...item, ...before });
 }
 
-/** Apply an `onError` rollback: invert this mutation's own patch across the item's cache slices. */
-function undoItem(client: QueryClient, id: string, ctx: UndoContext | undefined): void {
+/**
+ * Apply an `onError` rollback: invert this mutation's own patch across the item's cache slices.
+ *
+ * **Unless the outcome is unknown** (issue #554). A rollback asserts the write did not happen, and
+ * a `WORKER_TIMEOUT` does not establish that: nothing cancels a request that timed out, so the
+ * worker may still be queued on it or mid-statement and commit it moments later. Inverting there
+ * shows the user a value the very next read contradicts. The patch stays, and `onSettled`'s
+ * invalidation — which runs whichever way the write went — is what settles it truthfully.
+ */
+function undoItem(client: QueryClient, id: string, ctx: UndoContext | undefined, error: unknown): void {
+  if (isUnknownWriteOutcome(error)) return;
   if (ctx) patchItem(client, id, ctx.undo);
 }
 
@@ -219,7 +230,7 @@ export function useUpdateItem() {
       return { undo };
     },
     onError: (e, { id }, ctx) => {
-      undoItem(client, id, ctx);
+      undoItem(client, id, ctx, e);
       reportFailure(e);
     },
     onSettled: (_d, _e, { id }) => {
@@ -376,7 +387,7 @@ export function useMoveItem() {
       return { undo };
     },
     onError: (e, { id }, ctx) => {
-      undoItem(client, id, ctx);
+      undoItem(client, id, ctx, e);
       reportFailure(e);
     },
     onSettled: () => {
@@ -404,7 +415,7 @@ export function useAdjustQuantity() {
       return { undo: (item) => ({ ...item, quantity: Math.max(0, item.quantity - delta) }) };
     },
     onError: (e, { id }, ctx) => {
-      undoItem(client, id, ctx);
+      undoItem(client, id, ctx, e);
       reportFailure(e);
     },
     onSettled: (_d, _e, { id }) => {
@@ -448,7 +459,7 @@ export function useAdjustGauge() {
       };
     },
     onError: (e, { id }, ctx) => {
-      undoItem(client, id, ctx);
+      undoItem(client, id, ctx, e);
       reportFailure(e);
     },
     onSettled: (_d, _e, { id }) => {
@@ -530,7 +541,7 @@ export function useSoftDeleteItem() {
       return { undo };
     },
     onError: (e, { id }, ctx) => {
-      undoItem(client, id, ctx);
+      undoItem(client, id, ctx, e);
       reportFailure(e);
     },
     onSettled: () => {

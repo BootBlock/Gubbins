@@ -177,6 +177,25 @@ describe('optimistic item writes surface their rollback', () => {
     expect(screen.getAllByTestId('toast')).toHaveLength(1);
   });
 
+  it('says the outcome is unknown, not that the write failed, when the database times out', async () => {
+    // A `WORKER_TIMEOUT` is the one error that establishes nothing: the worker never answered, and
+    // nothing cancels the request, so it may still commit. Every heading here names a verb that
+    // didn't happen, and the humanised body used to end "Try again" — the instruction that turns
+    // an append-only write into two of the same event (issue #554).
+    repo.update.mockRejectedValue(
+      new DbError('WORKER_TIMEOUT', 'The database did not answer a "execute" request within 30000ms.'),
+    );
+
+    const { result } = renderHook(() => useUpdateItem(), { wrapper });
+    act(() => result.current.mutate({ id: 'item-1', input: { name: 'Renamed' } }));
+
+    const toast = await screen.findByTestId('toast');
+    expect(toast).toHaveTextContent('Not sure whether that saved');
+    expect(toast).toHaveTextContent('check it before making the change again');
+    expect(toast).not.toHaveTextContent('Couldn’t update the item');
+    expect(toast).not.toHaveTextContent('Try again');
+  });
+
   it('stays silent when the write succeeds', async () => {
     repo.update.mockResolvedValue({ id: 'item-1' });
 
@@ -267,6 +286,35 @@ describe('optimistic item writes guard the detail cache', () => {
     // Only the failed tap's +1 is undone. The old snapshot-restore reverted to 11 (dropping the
     // last tap) — the two surviving taps must remain, so the cache reads 12, not 11 or 10.
     await waitFor(() => expect(client.getQueryData(DETAIL_KEY)).toMatchObject({ quantity: 12 }));
+  });
+
+  it('keeps the optimistic patch when the database times out (issue #554)', async () => {
+    // The worker processes one request at a time and nothing cancels a timed-out one, so a
+    // `WORKER_TIMEOUT` may well be a write that lands moments later. Reverting would show the
+    // user the pre-write value and call it settled, only for the next read to contradict it —
+    // so the patch stays put, and `onSettled`'s invalidation is what reconciles.
+    let failWrite = () => {};
+    repo.adjustQuantity.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          failWrite = () =>
+            reject(
+              new DbError(
+                'WORKER_TIMEOUT',
+                'The database did not answer a "execute" request within 30000ms.',
+              ),
+            );
+        }),
+    );
+    const { client, wrapper: local } = withClient();
+
+    const { result } = renderHook(() => useAdjustQuantity(), { wrapper: local });
+    act(() => result.current.mutate({ id: 'item-1', delta: 5 }));
+    await waitFor(() => expect(client.getQueryData(DETAIL_KEY)).toMatchObject({ quantity: 15 }));
+
+    act(() => failWrite());
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(client.getQueryData(DETAIL_KEY)).toMatchObject({ quantity: 15 });
   });
 
   it('cancels an in-flight detail fetch so it cannot clobber the optimistic value', async () => {

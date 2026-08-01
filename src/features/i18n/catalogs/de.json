@@ -1361,6 +1361,8 @@
   "contacts.list.truncated.other": "Es werden die ersten {shown} Kontakte angezeigt — {count} weitere werden nicht angezeigt. Aktiviere „Liste paginieren“, um alle zu erreichen.",
   "bookings.list.truncated": "Es werden die ersten {shown} Buchungen angezeigt — möglicherweise gibt es mehr, als dieser Bildschirm auf einmal lesen kann.",
   "common.writeFailed": "Ihre Änderung konnte nicht gespeichert werden.",
+  "common.writeUnknown.heading": "Unklar, ob das gespeichert wurde",
+  "common.writeUnknown": "Die Datenbank hat zu lange nicht geantwortet, daher kann Gubbins nicht feststellen, ob Ihre Änderung gespeichert wurde. Diese Daten wurden neu geladen — prüfen Sie sie, bevor Sie die Änderung erneut vornehmen.",
   "common.rows.categories": "Kategorien",
   "common.rows.locations": "Orte",
   "common.rows.items": "Artikel",

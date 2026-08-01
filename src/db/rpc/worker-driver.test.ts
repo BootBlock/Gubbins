@@ -231,9 +231,95 @@ describe('WorkerDatabaseDriver', () => {
       const calls = Array.from({ length: 5 }, () => driver.query('SELECT 1'));
       const assertions = calls.map((call) => expect(call).rejects.toBeInstanceOf(DbError));
 
-      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.query);
+      // A wedged worker gives up one queued call per budget, not all five at once: each is only
+      // late once it is the one the worker should be running (#554). Bounded either way, which
+      // is what this test is for — nothing is left parked in `#pending`.
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.query * calls.length);
       await Promise.all(assertions);
       expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  /**
+   * Issue #554. The worker runs one request at a time, so a request behind a long one has not
+   * started — and spending its budget while it queued rejected calls the worker went on to run
+   * and commit, telling the caller a write had failed that the database had kept.
+   */
+  describe('queued requests (issue #554)', () => {
+    it('does not spend a queued request’s budget while the worker is busy with another', async () => {
+      const driver = createDriver();
+      const bulk = driver.transaction([{ sql: 'INSERT INTO items VALUES (1)' }]);
+      const settled = vi.fn();
+      const write = driver.execute('UPDATE items SET name = ?', ['x']).then(settled, settled);
+
+      // Five times the `execute` budget passes with the import still running (and still inside
+      // its own). The write is queued behind it, not late: the old post-time budget rejected it
+      // here while it was perfectly alive, and the worker went on to commit it.
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.execute * 5);
+      expect(settled).not.toHaveBeenCalled();
+
+      // Both still resolve normally once the worker drains the queue.
+      worker.reply(0, { ok: true, result: null });
+      worker.reply(1, { ok: true, result: { rowsModified: 1, lastInsertRowId: null } });
+      await expect(bulk).resolves.toBeUndefined();
+      await write;
+      expect(settled).toHaveBeenCalledWith({ rowsModified: 1, lastInsertRowId: null });
+    });
+
+    it('starts a queued request’s budget only once the one ahead of it is answered', async () => {
+      const driver = createDriver();
+      const bulk = driver.transaction([{ sql: 'INSERT INTO items VALUES (1)' }]);
+      const write = driver.execute('UPDATE items SET name = ?', ['x']);
+      const assertions = [
+        expect(bulk).resolves.toBeUndefined(),
+        expect(write).rejects.toMatchObject({ code: 'WORKER_TIMEOUT' }),
+      ];
+
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.transaction - 1);
+      worker.reply(0, { ok: true, result: null });
+
+      // Its own full budget from the moment the worker became free — not what was left of it.
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.execute);
+      await Promise.all(assertions);
+    });
+
+    it('still bounds a wedged worker: each pending call gives up in turn', async () => {
+      const driver = createDriver();
+      const first = driver.query('SELECT 1');
+      const second = driver.query('SELECT 2');
+      const firstAssertion = expect(first).rejects.toMatchObject({ code: 'WORKER_TIMEOUT' });
+      const secondAssertion = expect(second).rejects.toMatchObject({ code: 'WORKER_TIMEOUT' });
+      const secondSettled = vi.fn();
+      const watched = second.then(secondSettled, secondSettled);
+
+      // The worker answers nothing at all. The first is genuinely overdue…
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.query);
+      await firstAssertion;
+      expect(secondSettled).not.toHaveBeenCalled();
+
+      // …and the second, now the one the worker should be on, follows a budget later (#299).
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.query);
+      await secondAssertion;
+      await watched;
+      expect(vi.getTimerCount()).toBe(0);
+      expect(driver.isUnavailable).toBe(false);
+    });
+
+    it('gives close() its budget from the moment it is posted, so recovery never queues', async () => {
+      const driver = createDriver();
+      const bulk = driver.transaction([{ sql: 'INSERT INTO items VALUES (1)' }]);
+      const bulkAssertion = expect(bulk).rejects.toBeInstanceOf(DbError);
+
+      // `close` is awaited by the Safe Mode reset and ends in `terminate()` regardless, so its
+      // budget is the caller's patience — waiting out a 300s import would freeze the very screen
+      // the user reached for because the database is stuck.
+      const closed = driver.close();
+      const closedAssertion = expect(closed).rejects.toMatchObject({ code: 'WORKER_TIMEOUT' });
+      await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS.close);
+      await closedAssertion;
+      expect(worker.terminated).toBe(true);
+
+      await bulkAssertion;
     });
   });
 

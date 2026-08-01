@@ -7,7 +7,7 @@
 import { useMemo } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getTagRepository } from '@/db/repositories';
-import { useReportWriteFailure, type WriteFailureHeadingKey } from '@/features/errors';
+import { isUnknownWriteOutcome, useReportWriteFailure, type WriteFailureHeadingKey } from '@/features/errors';
 import type { Tag } from '@/db/repositories/types/tags';
 import { bucketIds, mergeBucketMaps } from './id-buckets';
 import { inventoryKeys, type TagBrowse } from './queries';
@@ -176,8 +176,12 @@ function useSetTagsFor({
     onError: (error, _names, context) => {
       // Only roll back to a snapshot we actually took. With no snapshot (the query had not
       // loaded when the write started) there is nothing to restore, and `onSettled`'s refetch
-      // is what clears the patch.
-      if (context?.previous) client.setQueryData(tagsKey, context.previous);
+      // is what clears the patch. A timeout is likewise not restored: it does not establish that
+      // the write failed, and reverting would assert a tag set the next read may contradict
+      // (issue #554) — the same refetch settles it either way.
+      if (context?.previous && !isUnknownWriteOutcome(error)) {
+        client.setQueryData(tagsKey, context.previous);
+      }
       // The revert used to be the whole story, so a rejected tag edit read as a UI glitch (#389).
       reportFailure(error);
     },
