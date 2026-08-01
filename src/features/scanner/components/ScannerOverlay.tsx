@@ -31,7 +31,7 @@ import { ProductLookupPanel, type ProductLookupResultPayload } from '@/features/
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { runBatch, summariseBatch } from '../batch-actions';
 import { ScanFeedback } from '../feedback';
-import type { ScannerEngine } from '../barcode-decoder';
+import type { ScannerEngineStatus } from '../barcode-decoder';
 import { isShortItemCode, isStructuredQrPayload, parseScannedCode } from '../scan-payload';
 import { initialScannerState, scannerReducer, type ScannerMode } from '../scanner-machine';
 import { ScannerQueueProvider, useScannerQueue } from '../ScannerQueueContext';
@@ -144,8 +144,9 @@ function ScannerOverlayInner({
   const scanned = discreteResult ? (liveDiscrete.data ?? discreteResult) : null;
   // The decoding engine is resolved asynchronously by useScanner (native → lazy WASM
   // → none); null until the camera is live. We only warn about manual-only entry once
-  // it definitively resolves to 'none' (§6.6).
-  const [engine, setEngine] = useState<ScannerEngine | null>(null);
+  // it definitively resolves to 'none' (§6.6) — or to 'failed', when an engine that did
+  // resolve later died under us (issue #678).
+  const [engine, setEngine] = useState<ScannerEngineStatus | null>(null);
 
   // Open the camera once on mount; prime audio from this user gesture (§6.5).
   useEffect(() => {
@@ -669,19 +670,26 @@ function ScannerOverlayInner({
 
       {/* Manual entry — graceful fallback (§6.6) and always-available aid */}
       <div className="space-y-2 p-4">
-        {engine === 'none' ? (
-          <p className="text-center text-xs text-white/70" data-testid="scanner-engine-none">
-            Live scanning isn’t supported on this browser — enter a code below.
-          </p>
-        ) : engine === 'wasm' || engine === 'wasm-canvas' ? (
-          <p className="text-center text-xs text-white/70" data-testid={`scanner-engine-${engine}`}>
-            Using the compatibility scanner — point steadily at the code, or enter it below.
-          </p>
-        ) : null}
-        {/* Manual-entry feedback ("No matching item found." etc.) is the screen-reader
-            channel for the scanner: a blind user types a code and would otherwise get
-            nothing back. Always-mounted polite region so the message is announced. */}
-        <LiveRegion data-testid="scanner-notice">
+        {/* The scanner's screen-reader channel, and the one region both its in-place messages
+            live in: which engine resolved (or that it died mid-scan, issue #678) and the
+            manual-entry feedback ("No matching item found." etc.) — a blind user types a code
+            and would otherwise get nothing back. Both arrive *after* mount, so the region is
+            always mounted and only its children change; a region inserted alongside its message
+            is frequently never announced. */}
+        <LiveRegion className="space-y-2" data-testid="scanner-notice">
+          {engine === 'none' ? (
+            <p className="text-center text-xs text-white/70" data-testid="scanner-engine-none">
+              Live scanning isn’t supported on this browser — enter a code below.
+            </p>
+          ) : engine === 'failed' ? (
+            <p className="text-center text-xs text-white/70" data-testid="scanner-engine-failed">
+              {t('scanner.engine.stopped')}
+            </p>
+          ) : engine === 'wasm' || engine === 'wasm-canvas' ? (
+            <p className="text-center text-xs text-white/70" data-testid={`scanner-engine-${engine}`}>
+              Using the compatibility scanner — point steadily at the code, or enter it below.
+            </p>
+          ) : null}
           {notice ? <p className="text-center text-xs text-warning">{notice}</p> : null}
         </LiveRegion>
         <div className="mx-auto flex max-w-md gap-2">

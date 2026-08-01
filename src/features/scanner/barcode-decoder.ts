@@ -20,6 +20,16 @@
  * regardless of which resolved. Everything is feature-detected and fails soft (a transient
  * decode error yields no codes, not a throw); a browser with no native API and no `Worker`/DOM
  * canvas degrades to manual entry (`engine: 'none'`).
+ *
+ * **A dead worker stays dead, and every frame is bounded (issue #678.)** That lazy chunk can fail
+ * to load — a stale tab whose hashed chunk the new build dropped (the case `stale-chunk-reload`
+ * exists for), a half-propagated deploy — and the browser can reclaim a worker under memory
+ * pressure. Neither makes `new Worker(...)` throw, because module loading is asynchronous, so the
+ * decoder is handed out looking healthy and only the `error` event says otherwise. Left unlatched,
+ * the next frame posts into a worker that can never receive it, waits for a reply that never comes,
+ * and the single-flight guard sticks — a live viewfinder over an engine that silently decodes
+ * nothing for the rest of the session. So a worker-level error latches {@link FrameDecoder.failed},
+ * and each frame's round trip carries a {@link DECODE_TIMEOUT_MS} budget.
  */
 import { hasBarcodeDetector } from '@/lib/env/feature-detection';
 import { computeCoverRoi, type FrameRoi } from './roi';
@@ -27,6 +37,29 @@ import { DEFAULT_SCANNER_SYMBOLOGY, nativeFormatsFor, type ScannerSymbology } fr
 
 /** Which decoding engine backs the live scanner. `none` → manual entry only. */
 export type ScannerEngine = 'native' | 'wasm' | 'wasm-canvas' | 'none';
+
+/**
+ * What the scanner reports to its UI: the {@link ScannerEngine} that resolved, plus `failed` for
+ * one that resolved and then died under it (issue #678). Deliberately not the same as `none` —
+ * `none` means this browser never had a live engine and never will, while `failed` means the one
+ * it had stopped working and a reload is likely to bring it back. Both steer to manual entry, but
+ * only one of them is worth retrying.
+ */
+export type ScannerEngineStatus = ScannerEngine | 'failed';
+
+/**
+ * How long one frame may go unanswered by the decode worker before it is abandoned (issue #678).
+ * Generous by design: this exists to convert an infinite wait into "no codes this frame", not to
+ * police a slow decode, so a false positive on a genuinely slow device is the failure worth
+ * avoiding — a real zxing decode is orders of magnitude quicker than this.
+ *
+ * A timeout deliberately does **not** latch the decoder (the same call `worker-driver.ts` makes
+ * for a database RPC): one unanswered frame is not proof the worker is gone, and the next frame
+ * simply tries again. Only an `error` event is proof.
+ *
+ * @internal Exported for unit tests only.
+ */
+export const DECODE_TIMEOUT_MS = 10_000;
 
 /**
  * Resolve the source-pixel {@link FrameRoi} to analyse for a frame, or `null` to decode the whole
@@ -37,6 +70,13 @@ export type ComputeRoi = (source: HTMLVideoElement) => FrameRoi | null;
 
 export interface FrameDecoder {
   readonly engine: ScannerEngine;
+  /**
+   * True once this decoder has died and can never decode again — its worker failed to load or was
+   * reclaimed (issue #678). Every later {@link detect} short-circuits, and {@link useScanner}
+   * watches this to stop polling and report `failed`, so the user is steered to manual entry
+   * instead of a viewfinder that cannot work. Never true for an engine that simply found no code.
+   */
+  readonly failed: boolean;
   /** Decode any codes in the current video frame; `[]` when none found or on error. */
   detect(source: HTMLVideoElement): Promise<string[]>;
   /** Release any retained resources (worker / reader). Safe to call repeatedly. */
@@ -57,6 +97,8 @@ interface BarcodeDetectorCtor {
 /** A decoder that finds nothing — the graceful "no engine" state (manual entry only). */
 const NO_DECODER: FrameDecoder = {
   engine: 'none',
+  // Absent, not broken: there was never an engine here to lose.
+  failed: false,
   detect: async () => [],
   dispose: () => {},
 };
@@ -91,6 +133,8 @@ function makeNativeDecoder(symbology: ScannerSymbology, computeRoi: ComputeRoi):
     const crop = makeVideoCropper();
     return {
       engine: 'native',
+      // Hardware-backed and in-process: a detect that throws is transient, never terminal.
+      failed: false,
       async detect(source) {
         try {
           // Decode only the reticle region (issue #59) — or the visible viewfinder region — when
@@ -182,36 +226,64 @@ interface WorkerBackedDeps {
   prepareFrame: (source: HTMLVideoElement, id: number) => Promise<PreparedFrame | null>;
 }
 
+/** A frame awaiting its worker reply, with the timer that bounds the wait. */
+interface PendingDecode {
+  readonly resolve: (text: string | null) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
 /**
  * The shared engine behind both off-thread fallbacks: capture a frame (via `prepareFrame`),
  * transfer it to the worker, and resolve when it replies with the id-correlated result.
  * Single-flight — `useScanner` awaits each `detect` before the next, and an explicit guard
  * skips overlap. Fails soft: a capture/worker error yields no codes, never a throw.
+ *
+ * Every wait is bounded and a worker failure is terminal (issue #678) — see the module docblock.
  */
 function makeWorkerBackedDecoder(deps: WorkerBackedDeps): FrameDecoder {
   const worker = deps.spawnWorker();
   let nextId = 1;
   let inFlight = false;
   let disposed = false;
-  const pending = new Map<number, (text: string | null) => void>();
+  /** Latched once the worker can never answer again, so `detect` stops posting into a corpse. */
+  let failed = false;
+  const pending = new Map<number, PendingDecode>();
 
-  worker.onmessage = ({ data }) => {
-    const resolve = pending.get(data.id);
-    if (resolve) {
-      pending.delete(data.id);
-      resolve(data.text);
-    }
+  /** Settle one awaited frame and disarm its timeout; a reply for anything else is dropped. */
+  const settle = (id: number, text: string | null) => {
+    const entry = pending.get(id);
+    if (!entry) return;
+    pending.delete(id);
+    clearTimeout(entry.timer);
+    entry.resolve(text);
   };
-  worker.onerror = () => {
-    // A worker-level error fails the in-flight decode softly (no codes), never throws.
-    for (const resolve of pending.values()) resolve(null);
+
+  /** Abandon every awaited frame as "no codes", disarming their timeouts. */
+  const abandonPending = () => {
+    for (const { resolve, timer } of pending.values()) {
+      clearTimeout(timer);
+      resolve(null);
+    }
     pending.clear();
+  };
+
+  worker.onmessage = ({ data }) => settle(data.id, data.text);
+  worker.onerror = () => {
+    // A worker-level error fails the in-flight decode softly (no codes), never throws — and
+    // latches (issue #678). Latching is the whole point: the error that matters is a worker
+    // that failed to load or was reclaimed, which can never receive another message, so
+    // without this the next frame posts into a dead worker and waits for ever.
+    failed = true;
+    abandonPending();
   };
 
   return {
     engine: deps.engine,
+    get failed() {
+      return failed;
+    },
     async detect(source) {
-      if (disposed || inFlight) return [];
+      if (disposed || failed || inFlight) return [];
       if (source.videoWidth === 0 || source.videoHeight === 0) return [];
       inFlight = true;
       try {
@@ -223,13 +295,26 @@ function makeWorkerBackedDecoder(deps: WorkerBackedDeps): FrameDecoder {
           return []; // frame capture failed transiently — skip this frame
         }
         if (!frame) return []; // nothing to decode this frame (e.g. no canvas context)
-        if (disposed) {
+        // Re-checked after the await: the worker can have died (or been disposed) while the
+        // frame was being captured, and posting the capture into it would strand this decode.
+        if (disposed || failed) {
           frame.release();
           return [];
         }
+        const captured = frame;
         const text = await new Promise<string | null>((resolve) => {
-          pending.set(id, resolve);
-          worker.postMessage(frame.message, frame.transfer);
+          const timer = setTimeout(() => settle(id, null), DECODE_TIMEOUT_MS);
+          pending.set(id, { resolve, timer });
+          try {
+            worker.postMessage(captured.message, captured.transfer);
+          } catch {
+            // The frame could not be handed over (an unclonable or already-detached payload), so
+            // nothing will ever answer this id. Settle it now rather than waiting out the budget,
+            // and free the capture the worker never took. Deliberately not a throw: a rejected
+            // `detect` would take the caller's polling loop down with it.
+            captured.release();
+            settle(id, null);
+          }
         });
         return text ? [text] : [];
       } finally {
@@ -239,8 +324,7 @@ function makeWorkerBackedDecoder(deps: WorkerBackedDeps): FrameDecoder {
     dispose() {
       if (disposed) return;
       disposed = true;
-      for (const resolve of pending.values()) resolve(null);
-      pending.clear();
+      abandonPending();
       worker.terminate();
     },
   };

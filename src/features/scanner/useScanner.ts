@@ -18,7 +18,9 @@
  *    frame-skip cadence** ({@link decode-cadence}) that backs off as the camera stays idle and
  *    snaps back the instant a code is decoded — saving battery on low-end devices without
  *    sacrificing acquisition latency. The resolved engine is reported back via `onEngine` so the
- *    overlay can tailor its messaging.
+ *    overlay can tailor its messaging — and re-reported as `failed` if that engine later dies
+ *    under us (issue #678), which stops the loop and steers the user to manual entry rather than
+ *    leaving a live viewfinder over a decoder that can never answer again.
  *  - the **Visibility API** (§6.1): backgrounding stops the track (SUSPEND) to save
  *    battery; returning re-opens. Unmount definitively tears down stream + RAF + decoder.
  *
@@ -34,7 +36,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject
 import type { ScannerAction, ScannerStatus } from './scanner-machine';
 import { useLabFlag } from '@/state/stores/useLabStore';
 import { useT } from '@/features/i18n';
-import { createDecoder, type FrameDecoder, type ScannerEngine } from './barcode-decoder';
+import { createDecoder, type FrameDecoder, type ScannerEngineStatus } from './barcode-decoder';
 import { DEFAULT_SCANNER_SYMBOLOGY, type ScannerSymbology } from './scanner-formats';
 import { initialCadence, nextCadence, DEFAULT_WASM_CADENCE } from './decode-cadence';
 import { elementRoiOf } from './roi';
@@ -85,8 +87,11 @@ export function useScanner({
   dispatch: Dispatch<ScannerAction>;
   /** Called with each raw decoded string while the stream is active. */
   onDecode: (raw: string) => void;
-  /** Called once the decoding engine is resolved (`native` | `wasm` | `wasm-canvas` | `none`). */
-  onEngine?: (engine: ScannerEngine) => void;
+  /**
+   * Called once the decoding engine is resolved (`native` | `wasm` | `wasm-canvas` | `none`), and
+   * again with `failed` if that engine later dies under us (issue #678).
+   */
+  onEngine?: (engine: ScannerEngineStatus) => void;
   /**
    * A soft camera problem for the caller to show in its own notice region (issue #135) — a torch
    * the camera refused, or a remembered camera that has gone away and was swapped for the default.
@@ -314,6 +319,13 @@ export function useScanner({
       let cadence = initialCadence(DEFAULT_WASM_CADENCE);
       const tick = async (now: number) => {
         if (!active) return;
+        // The decoder's worker has died and can never decode again (issue #678). Stop polling and
+        // say so: an engine that silently answers nothing, behind a live viewfinder and a UI
+        // claiming it is running, is the one failure the `none` fallback exists to prevent.
+        if (decoder.failed) {
+          onEngineRef.current?.('failed');
+          return;
+        }
         const video = videoRef.current;
         const minInterval = adaptive ? cadence.intervalMs : 0;
         if (video && video.readyState >= 2 && video.videoWidth > 0 && now - lastDecodeAt >= minInterval) {
