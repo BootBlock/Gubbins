@@ -4,14 +4,16 @@
  *
  * A **read-only projection through the app's own repositories** — never bespoke SQL, mirroring the
  * iCal feed and the MQTT state projection. The low/out-of-stock counts come from the shared
- * {@link countStockLevels} (reusing the app reorder policy's `isLow` / `isOutOfStock` seams), the
- * *same* helper the EI-5 MQTT state projection uses — so a scraped `gubbins_low_stock_items` can
- * never drift from the `item.low_stock` events or the MQTT `gubbins/summary` counts. Per-location
- * fullness reuses the app's own `locationFullness` seam (the maths behind the Edit-location gauge).
+ * {@link countStockLevels} (reusing the app's own low/out-of-stock predicates), the *same* helper
+ * the EI-5 MQTT state projection uses — so a scraped `gubbins_low_stock_items` can never drift from
+ * the `item.low_stock` events or the MQTT `gubbins/summary` counts. Per-location fullness reuses
+ * the app's own `locationFullness` seam (the maths behind the Edit-location gauge).
  *
- * Everything is bounded (paged at the repository ceiling up to {@link MAX_ITEMS_SCANNED} /
- * {@link MAX_LOCATIONS_SCANNED}), so a pathological vault can't produce an unbounded scan. The
- * pure serialisation lives in `metrics-format.ts`, so it tests without a database.
+ * Prometheus rescrapes this on a fixed interval — 15 seconds by default, and without the
+ * conditional-request headers that would let the server answer `304` — so every read here runs on
+ * every scrape. The stock counts are therefore a single whole-inventory aggregate rather than a
+ * walk (issue #532); the location enumeration is bounded by {@link MAX_LOCATIONS_SCANNED}. The pure
+ * serialisation lives in `metrics-format.ts`, so it tests without a database.
  */
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { LocationRepository } from '@/db/repositories/LocationRepository.ts';

@@ -11,8 +11,15 @@
  * (one conditional `SUM` per status, one pass over `items`), and each status inside it reuses its
  * own SSOT predicate. The low-stock thresholds are the same {@link DEFAULT_LOW_STOCK} the derived
  * `item.low_stock` events and the `/metrics` counts use, so no bridge surface can apply a
- * different idea of "low" from another. (The *totals* still need not match `/metrics`, which
- * bounds its scan at `MAX_ITEMS_SCANNED` active items where this aggregates the whole table.)
+ * different idea of "low" from another — and since `/metrics` now counts its two stock statuses
+ * through this same repository seam, its figures are these figures, not merely thresholds that
+ * agree.
+ *
+ * Unlike the app's filter bar, this deliberately probes **every** status rather than a
+ * module-enabled subset: which modules are on is per-device UI state (the `gubbins:modules` store),
+ * never part of the synced data the bridge hydrates, so there is no enabled set to narrow to here —
+ * and narrowing would in any case report a real count as `0` to a client that has no filter bar to
+ * hide the chip from.
  *
  * `applicableStatuses` omits zero counts (the filter bar hides a chip that matches nothing); an
  * API consumer needs the opposite — every status present, so "nothing is overdue" is a `0` rather
