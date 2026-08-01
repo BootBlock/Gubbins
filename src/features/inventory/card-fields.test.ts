@@ -64,12 +64,23 @@ const gaugeState = (overrides: Partial<NonNullable<Item['gauge']>> = {}): NonNul
 
 const fmt = { quantity: (n: number) => String(n), relativeTime: (ms: number) => `t-${ms}` };
 
+/** This device, for the W1g attribution comparison. */
+const THIS_DEVICE = 'device-this';
+
+/**
+ * Build the `customValues` map from plain `{ fieldId: value }`, unattributed unless an origin
+ * is given — so a test that has nothing to say about W1g reads exactly as it did before it.
+ */
+const storedValues = (entries: Record<string, string>, originDeviceId: string | null = null) =>
+  new Map(Object.entries(entries).map(([id, value]) => [id, { value, originDeviceId }]));
+
 function ctx(overrides: Partial<CardFieldContext> = {}): CardFieldContext {
   return {
     locationName: 'Workshop',
     categoryName: null,
     customFields: new Map(),
     customValues: undefined,
+    currentDeviceId: THIS_DEVICE,
     fmt,
     ...overrides,
   };
@@ -291,7 +302,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields, customValues: new Map([['f1', '5V']]) }),
+      ctx({ customFields, customValues: storedValues({ f1: '5V' }) }),
     );
     expect(resolved[0]).toEqual({
       id: customCardFieldId('f1'),
@@ -313,7 +324,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'other' }),
-      ctx({ customFields, customValues: new Map([['f1', '5V']]) }),
+      ctx({ customFields, customValues: storedValues({ f1: '5V' }) }),
     );
     expect(resolved[0]).toEqual({ id: customCardFieldId('f1'), label: 'Voltage', value: { kind: 'empty' } });
   });
@@ -323,7 +334,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', boolField]]), customValues: new Map([['f1', 'true']]) }),
+      ctx({ customFields: new Map([['f1', boolField]]), customValues: storedValues({ f1: 'true' }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'text', text: 'Yes' });
   });
@@ -333,7 +344,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', onOffField]]), customValues: new Map([['f1', 'false']]) }),
+      ctx({ customFields: new Map([['f1', onOffField]]), customValues: storedValues({ f1: 'false' }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'text', text: 'Off' });
   });
@@ -343,7 +354,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', voltage]]), customValues: new Map([['f1', '5']]) }),
+      ctx({ customFields: new Map([['f1', voltage]]), customValues: storedValues({ f1: '5' }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'measure', text: '5', unit: 'V' });
   });
@@ -353,7 +364,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', plain]]), customValues: new Map([['f1', '5']]) }),
+      ctx({ customFields: new Map([['f1', plain]]), customValues: storedValues({ f1: '5' }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'text', text: '5' });
   });
@@ -365,7 +376,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', retyped]]), customValues: new Map([['f1', 'true']]) }),
+      ctx({ customFields: new Map([['f1', retyped]]), customValues: storedValues({ f1: 'true' }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'text', text: 'Yes' });
   });
@@ -379,7 +390,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', noUnitKey]]), customValues: new Map([['f1', '5']]) }),
+      ctx({ customFields: new Map([['f1', noUnitKey]]), customValues: storedValues({ f1: '5' }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'text', text: '5' });
   });
@@ -390,7 +401,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', torque]]), customValues: new Map([['f1', '5.5']]) }),
+      ctx({ customFields: new Map([['f1', torque]]), customValues: storedValues({ f1: '5.5' }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'measure', text: '5.50', unit: 'Nm' });
   });
@@ -400,7 +411,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', plain]]), customValues: new Map([['f1', '5']]) }),
+      ctx({ customFields: new Map([['f1', plain]]), customValues: storedValues({ f1: '5' }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'text', text: '5.000' });
   });
@@ -410,7 +421,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', shelves]]), customValues: new Map([['f1', '12.6']]) }),
+      ctx({ customFields: new Map([['f1', shelves]]), customValues: storedValues({ f1: '12.6' }) }),
     );
     // Rounded rather than shown at a precision the field says it does not use. A value like this
     // only arrives out of band — validation refuses it on the way in.
@@ -424,7 +435,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', retyped]]), customValues: new Map([['f1', '2026-07-31']]) }),
+      ctx({ customFields: new Map([['f1', retyped]]), customValues: storedValues({ f1: '2026-07-31' }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'text', text: '2026-07-31' });
   });
@@ -437,7 +448,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', noPrecisionKey]]), customValues: new Map([['f1', '5.5']]) }),
+      ctx({ customFields: new Map([['f1', noPrecisionKey]]), customValues: storedValues({ f1: '5.5' }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'text', text: '5.5' });
   });
@@ -448,7 +459,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', imageField]]), customValues: new Map([['f1', tinyImage]]) }),
+      ctx({ customFields: new Map([['f1', imageField]]), customValues: storedValues({ f1: tinyImage }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'image', src: tinyImage });
   });
@@ -461,7 +472,7 @@ describe('resolveCardFields — custom fields', () => {
       makeItem({ categoryId: 'cat-1' }),
       ctx({
         customFields: new Map([['f1', imageField]]),
-        customValues: new Map([['f1', `  ${tinyImage}  `]]),
+        customValues: storedValues({ f1: `  ${tinyImage}  ` }),
       }),
     );
     expect(resolved[0].value).toEqual({ kind: 'image', src: tinyImage });
@@ -482,7 +493,7 @@ describe('resolveCardFields — custom fields', () => {
     const resolved = resolveCardFields(
       [customCardFieldId('f1')],
       makeItem({ categoryId: 'cat-1' }),
-      ctx({ customFields: new Map([['f1', imageField]]), customValues: new Map([['f1', hostile]]) }),
+      ctx({ customFields: new Map([['f1', imageField]]), customValues: storedValues({ f1: hostile }) }),
     );
     expect(resolved[0].value).toEqual({ kind: 'empty' });
   });
@@ -498,13 +509,17 @@ describe('resolveCardFields — custom fields', () => {
    * own string decides which arm it takes.
    */
   describe('URL / FILE values (W1f)', () => {
-    const resolveValue = (fieldType: CardCustomField['fieldType'], raw: string) =>
+    const resolveValue = (
+      fieldType: CardCustomField['fieldType'],
+      raw: string,
+      originDeviceId: string | null = null,
+    ) =>
       resolveCardFields(
         [customCardFieldId('f1')],
         makeItem({ categoryId: 'cat-1' }),
         ctx({
           customFields: new Map([['f1', { ...field, fieldType }]]),
-          customValues: new Map([['f1', raw]]),
+          customValues: storedValues({ f1: raw }, originDeviceId),
         }),
       )[0].value;
 
@@ -537,7 +552,7 @@ describe('resolveCardFields — custom fields', () => {
       ['a POSIX path', '/srv/manuals/boiler.pdf'],
       ['a file:// URI', 'file:///srv/manuals/boiler.pdf'],
     ])('renders a FILE value holding %s as a pointer, not a link', (_label, raw) => {
-      expect(resolveValue('FILE', raw)).toEqual({ kind: 'pointer', text: raw });
+      expect(resolveValue('FILE', raw)).toEqual({ kind: 'pointer', text: raw, foreign: false });
     });
 
     /**
@@ -560,12 +575,99 @@ describe('resolveCardFields — custom fields', () => {
       expect(resolveValue('FILE', 'javascript:alert(1)')).toEqual({
         kind: 'pointer',
         text: 'javascript:alert(1)',
+        foreign: false,
       });
     });
 
     it('renders empty for a blank URL/FILE value, like every other type', () => {
       expect(resolveValue('URL', '   ')).toEqual({ kind: 'empty' });
       expect(resolveValue('FILE', '')).toEqual({ kind: 'empty' });
+    });
+  });
+
+  /**
+   * W1g — the origin device stamped on the value, which turns "a path" into "a path from
+   * somewhere else". Only the `pointer` arm ever consults it.
+   */
+  describe('FILE value attribution (W1g)', () => {
+    const PATH = '\\\\server\\share\\boiler.pdf';
+    const resolveValue = (
+      fieldType: CardCustomField['fieldType'],
+      raw: string,
+      originDeviceId: string | null,
+    ) =>
+      resolveCardFields(
+        [customCardFieldId('f1')],
+        makeItem({ categoryId: 'cat-1' }),
+        ctx({
+          customFields: new Map([['f1', { ...field, fieldType }]]),
+          customValues: storedValues({ f1: raw }, originDeviceId),
+        }),
+      )[0].value;
+
+    it('marks a path recorded on another device as foreign', () => {
+      expect(resolveValue('FILE', PATH, 'device-other')).toEqual({
+        kind: 'pointer',
+        text: PATH,
+        foreign: true,
+      });
+    });
+
+    it('does not mark a path recorded on this device', () => {
+      expect(resolveValue('FILE', PATH, THIS_DEVICE)).toEqual({
+        kind: 'pointer',
+        text: PATH,
+        foreign: false,
+      });
+    });
+
+    /**
+     * Every row written before the column existed, and every writer that deliberately makes no
+     * claim (a clone, a spreadsheet import), stores NULL — so NULL has to read as "not foreign"
+     * or the app would warn about values nothing is wrong with. Mirrors the legacy rule
+     * `resolveAttachmentLink` has applied to a pre-v18 pointer since it shipped.
+     */
+    it('treats an unattributed path as local, never as foreign', () => {
+      expect(resolveValue('FILE', PATH, null)).toEqual({ kind: 'pointer', text: PATH, foreign: false });
+    });
+
+    /**
+     * A web address opens on any device, so a foreign origin says nothing worth saying about
+     * it — the same carve-out `resolveAttachmentLink` makes by answering `url` before it looks
+     * at the origin at all.
+     */
+    it('never marks a FILE value holding a web address, whatever its origin', () => {
+      expect(resolveValue('FILE', 'https://example.com/boiler.pdf', 'device-other')).toEqual({
+        kind: 'link',
+        href: 'https://example.com/boiler.pdf',
+      });
+    });
+
+    it('ignores the origin on a non-FILE type', () => {
+      // A foreign-origin TEXT value is still just text: only a *path* is device-specific.
+      expect(resolveValue('TEXT', 'Acme', 'device-other')).toEqual({ kind: 'text', text: 'Acme' });
+    });
+
+    /**
+     * A field showing the category *default* has no stored row, so there is nothing attributed —
+     * and the default is schema rather than something a device authored.
+     */
+    it('never marks a value that is really the category default', () => {
+      const fileField: CardCustomField = {
+        ...field,
+        fieldType: 'FILE',
+        defaultValue: '\\\\server\\share\\default.pdf',
+      };
+      const resolved = resolveCardFields(
+        [customCardFieldId('f1')],
+        makeItem({ categoryId: 'cat-1' }),
+        ctx({ customFields: new Map([['f1', fileField]]), customValues: undefined }),
+      );
+      expect(resolved[0].value).toEqual({
+        kind: 'pointer',
+        text: '\\\\server\\share\\default.pdf',
+        foreign: false,
+      });
     });
   });
 });

@@ -42,12 +42,25 @@ function makeField(overrides: Partial<LocationFieldValue> = {}): LocationFieldVa
     fieldType: 'TEXT',
     options: null,
     description: null,
+    unit: null,
+    minValue: null,
+    maxValue: null,
+    precision: null,
+    prominence: null,
     value: '30 kg',
     isInheritable: false,
+    // Unattributed by default (W1g), which is what a real row holds unless a device authored
+    // the value. Spelling it out matters: this file is not typechecked, and an *absent* origin
+    // is not the same as a null one — it compares unequal to this device and would mark every
+    // FILE path as foreign.
+    originDeviceId: null,
     updatedAt: 1_700_000_000_000,
     ...overrides,
   };
 }
+
+/** The device the component reads via `getDeviceId`, pinned so attribution is decidable. */
+vi.mock('@/lib/env/device-id', () => ({ getDeviceId: () => 'device-this' }));
 
 afterEach(() => {
   cleanup();
@@ -129,6 +142,23 @@ describe('LocationDetailCard', () => {
       expect(screen.queryByRole('link')).not.toBeInTheDocument();
       expect(screen.getByText('\\\\nas\\docs\\wiring.pdf')).toBeInTheDocument();
       expect(screen.getByText('File path:')).toBeInTheDocument();
+    });
+
+    it('marks a FILE path the location recorded on another device (W1g)', () => {
+      fieldValues.current = [
+        makeField({
+          name: 'Wiring diagram',
+          fieldType: 'FILE',
+          value: '\\\\nas\\docs\\wiring.pdf',
+          originDeviceId: 'device-other',
+        }),
+      ];
+      render(<LocationDetailCard location={makeLocation({ description: null })} />);
+      // The path is still shown — it is the only thing that identifies what was pointed at —
+      // but it is named for what it is rather than passing as an ordinary file path.
+      expect(screen.getByText('\\\\nas\\docs\\wiring.pdf')).toBeInTheDocument();
+      expect(screen.getByText('File path from another device:')).toBeInTheDocument();
+      expect(screen.queryByText('File path:')).not.toBeInTheDocument();
     });
 
     it('renders a FILE value holding a web address as a link', () => {

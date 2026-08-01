@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, InfoHint, Select } from '@/components/foundry';
-import { DeleteIcon } from '@/components/icons';
+import { DeleteIcon, UnlinkIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
+import { getDeviceId } from '@/lib/env/device-id';
+import { isForeignFilePointer } from '../device-origin';
 import {
   useFieldDefs,
   useLocationFieldValues,
@@ -35,6 +37,7 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
   const removeValue = useRemoveLocationFieldValue(locationId);
   const [adding, setAdding] = useState('');
   const [managerOpen, setManagerOpen] = useState(false);
+  const deviceId = useMemo(() => getDeviceId(), []);
 
   if (isLoading) {
     return <p className="text-xs text-muted-foreground">{t('inventory.location.fields.saving')}</p>;
@@ -109,9 +112,27 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
                       defId: value.defId,
                       value: next,
                       isInheritable: value.isInheritable,
+                      // The box only commits when the value actually changed, so this device
+                      // did author what is being written (W1g). The tick below deliberately
+                      // sends none — see the note there.
+                      originDeviceId: deviceId,
                     })
                   }
                 />
+
+                {/* A path recorded on another device (W1g). Sits under the box because the box
+                    is the re-link: typing a path this device can reach, or a web address,
+                    re-homes the value. Not gated on a draft comparison the way the item
+                    editor's is — this control commits per edit, so the row reloads and the
+                    note clears itself the moment a new value is stored. */}
+                {isForeignFilePointer(value.fieldType, value.value, value.originDeviceId, deviceId) ? (
+                  <span className="mt-field-gap-compact flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <span aria-hidden className="mt-0.5 shrink-0 text-warning [&_svg]:size-3.5">
+                      <UnlinkIcon />
+                    </span>
+                    {t('inventory.fields.file.foreignHint')}
+                  </span>
+                ) : null}
 
                 <label className="mt-field-gap-compact flex items-center gap-2 text-xs">
                   <Checkbox
@@ -119,6 +140,10 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
                     onChange={(e) =>
                       setValue.mutate({
                         defId: value.defId,
+                        // No `originDeviceId` (W1g): this write re-sends the value untouched to
+                        // change only the tick, so it authored nothing. The repository would
+                        // refuse to re-stamp an unchanged value anyway — this states the same
+                        // thing at the call site rather than relying on that alone.
                         value: value.value,
                         isInheritable: e.target.checked,
                       })

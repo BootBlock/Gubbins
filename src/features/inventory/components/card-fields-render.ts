@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import type { Item } from '@/db/repositories';
+import type { CardFieldStoredValue, Item } from '@/db/repositories';
+import { getDeviceId } from '@/lib/env/device-id';
 import { useFormatters } from '@/lib/useFormatters';
 import { resolveCardFields, type CardCustomField, type ResolvedCardField } from '../card-fields';
 
@@ -21,7 +22,7 @@ export interface CardFieldsInputs {
   /** The live custom-field catalog, keyed by field id. */
   readonly customFields: ReadonlyMap<string, CardCustomField>;
   /** This item's stored custom-field values, if loaded. */
-  readonly customValues: ReadonlyMap<string, string> | undefined;
+  readonly customValues: ReadonlyMap<string, CardFieldStoredValue> | undefined;
   /** This item's tag names (issue #84), if the Tags field is shown and they've loaded. */
   readonly tags: readonly string[] | undefined;
 }
@@ -29,6 +30,9 @@ export interface CardFieldsInputs {
 /** Resolve an item's visible fields, binding the shared formatters (memoised per item/config). */
 export function useResolvedCardFields(item: Item, inputs: CardFieldsInputs): ResolvedCardField[] {
   const fmt = useFormatters();
+  // Read once per card rather than threaded down from the list: it is a process-stable string
+  // (`localStorage`, generated on first read), so hoisting it would be plumbing for no gain.
+  const currentDeviceId = useMemo(() => getDeviceId(), []);
   const { order, locationName, categoryName, customFields, customValues, tags } = inputs;
   return useMemo(
     () =>
@@ -37,10 +41,11 @@ export function useResolvedCardFields(item: Item, inputs: CardFieldsInputs): Res
         categoryName,
         customFields,
         customValues,
+        currentDeviceId,
         tags,
         fmt: { quantity: fmt.quantity, relativeTime: fmt.relativeTime },
       }),
-    [order, item, locationName, categoryName, customFields, customValues, tags, fmt],
+    [order, item, locationName, categoryName, customFields, customValues, currentDeviceId, tags, fmt],
   );
 }
 
@@ -55,8 +60,8 @@ export interface CardFieldsListContext {
   readonly categoryName: (categoryId: string | null) => string | null;
   /** Resolve a category id to its card-watermark glyph, or null (issue #83). */
   readonly categoryGlyph: (categoryId: string | null) => string | null;
-  /** itemId → (fieldId → stored value) for the on-screen items, or undefined while loading. */
-  readonly values: ReadonlyMap<string, ReadonlyMap<string, string>> | undefined;
+  /** itemId → (fieldId → stored value + origin) for the on-screen items, or undefined while loading. */
+  readonly values: ReadonlyMap<string, ReadonlyMap<string, CardFieldStoredValue>> | undefined;
   /** itemId → tag names for the on-screen items (issue #84), or undefined while loading. */
   readonly itemTags: ReadonlyMap<string, readonly string[]> | undefined;
 }

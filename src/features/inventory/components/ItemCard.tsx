@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import { Checkbox, Surface, usePointerTilt } from '@/components/foundry';
-import type { Item, LocationWithCount } from '@/db/repositories';
+import type { CardFieldStoredValue, Item, LocationWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useHighlightTarget } from '@/lib/highlight';
 import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
@@ -71,7 +71,7 @@ const ItemCardBody = memo(function ItemCard({
   /** The live custom-field catalog, keyed by field id (stable across the list). */
   customFields?: ReadonlyMap<string, CardCustomField>;
   /** This item's stored custom-field values (fieldId → raw value), if loaded. */
-  customValues?: ReadonlyMap<string, string>;
+  customValues?: ReadonlyMap<string, CardFieldStoredValue>;
   /** This item's tag names (issue #84), if the Tags card field is shown and they've loaded. */
   tags?: readonly string[];
 }) {

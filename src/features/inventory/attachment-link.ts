@@ -16,6 +16,7 @@
  * small-pure-mapping seams (`resolveMode` / `liveRegionAttrs` / `describeHistoryEntry`).
  */
 import type { AttachmentKind } from '@/db/repositories';
+import { isForeignOrigin } from './device-origin';
 
 export type AttachmentLinkState =
   /** External URL — open directly; valid on any device. */
@@ -46,7 +47,9 @@ export function resolveAttachmentLink(
     return { state: 'url', value: attachment.value };
   }
   // LOCAL_POINTER: a NULL origin (legacy) or a match to this device is shown as local;
-  // anything attributed to a *different* device is the foreign, unlinked case (§4).
-  const foreign = attachment.originDeviceId !== null && attachment.originDeviceId !== currentDeviceId;
+  // anything attributed to a *different* device is the foreign, unlinked case (§4). The
+  // comparison itself is shared with the custom-field `FILE` surface (W1g) so the two cannot
+  // come to disagree about what an unattributed row means — see {@link isForeignOrigin}.
+  const foreign = isForeignOrigin(attachment.originDeviceId, currentDeviceId);
   return { state: foreign ? 'unlinked' : 'local', value: attachment.value };
 }

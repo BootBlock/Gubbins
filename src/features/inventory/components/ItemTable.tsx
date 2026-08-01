@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
-import type { Item, ItemSortField, LocationWithCount } from '@/db/repositories';
+import type { CardFieldStoredValue, Item, ItemSortField, LocationWithCount } from '@/db/repositories';
 import { Checkbox } from '@/components/foundry';
 import { SortAscIcon, SortDescIcon } from '@/components/icons';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
@@ -158,7 +158,7 @@ const ItemTableRowBody = memo(function ItemTableRow({
   ariaRowIndex: number;
   categoryName?: string | null;
   customFields?: ReadonlyMap<string, CardCustomField>;
-  customValues?: ReadonlyMap<string, string>;
+  customValues?: ReadonlyMap<string, CardFieldStoredValue>;
   /** This item's tag names (issue #84), if the Tags column is shown and they've loaded. */
   tags?: readonly string[];
 }) {

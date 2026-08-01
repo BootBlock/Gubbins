@@ -104,6 +104,31 @@ share from a web page. The path is still there to read, copy, or paste into your
 > put it somewhere with a web address and use a **URL / Link** field — or attach it as a
 > [[datasheet|Tags-Attachments-and-Related-Items]] on the item.
 
+### A file path recorded on another device
+
+Gubbins remembers **which device** a file path was typed on. When you're looking at a device
+other than that one, the path is shown with a small broken-link mark instead of the ordinary
+file icon — so a path that won't open here says so, rather than looking like any other value
+and leaving you to work out why nothing happens.
+
+You'll see it wherever the field is shown: on the item's card, in the list and table rows, and
+on a location's own detail panel.
+
+To fix it, open the item (or the location) and edit that field — the box holding the path *is*
+the re-link. Type a path that works on **this** device, or paste a web address, and the mark
+clears. A note under the box says the same thing while the old path is still there.
+
+> **ℹ️ Note**
+> Only the device is remembered — never anything about it, and never the file. Editing the
+> field is what re-points it, so simply saving an item without touching the path leaves the
+> mark exactly as it was.
+
+> **⚠️ Heads-up**
+> Values that arrived some other way — from a [[spreadsheet import|Export-and-Import]], or on a
+> [[duplicated item|Bulk-Edit-and-Clone]] — aren't marked, because Gubbins doesn't know where
+> those paths were written. The same is true of paths recorded before this was added. They're
+> shown as ordinary file paths.
+
 ### Turning a date into a deadline
 
 Most dates just record a fact — *Date acquired*, *Date signed* — and Gubbins leaves them alone.

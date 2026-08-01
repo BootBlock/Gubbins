@@ -655,6 +655,11 @@ export function useCloneItem() {
       }
 
       // Stored custom-field values (the clone keeps the same category, so they remain valid).
+      // No `originDeviceId` (W1g): a clone copies strings rather than authoring them, so it
+      // makes no claim about where a `FILE` path would resolve — the copy lands unattributed,
+      // exactly as a value written before the column existed does. Stamping *this* device would
+      // be the one clearly wrong answer, since cloning a desktop path on a phone would then
+      // assert the phone can reach it.
       const fields = await getCategoryRepository().resolveItemFields(sourceId);
       const values = clonedFieldValues(fields);
       if (Object.keys(values).length > 0) {

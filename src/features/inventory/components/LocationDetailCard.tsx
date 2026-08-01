@@ -2,6 +2,7 @@ import { Fragment, useMemo } from 'react';
 import { Markdown } from '@/components/foundry';
 import type { LocationWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
+import { getDeviceId } from '@/lib/env/device-id';
 import { resolveLocationDetailFields } from '../location-detail';
 import { useLocationFieldValues } from '../categories';
 import { FieldValue } from './ItemCardFields';
@@ -29,7 +30,8 @@ import { FieldValue } from './ItemCardFields';
 export function LocationDetailCard({ location }: { location: LocationWithCount }) {
   const t = useT();
   const { data: values } = useLocationFieldValues(location.id);
-  const fields = useMemo(() => resolveLocationDetailFields(values ?? []), [values]);
+  const deviceId = useMemo(() => getDeviceId(), []);
+  const fields = useMemo(() => resolveLocationDetailFields(values ?? [], deviceId), [values, deviceId]);
   const description = location.description?.trim() ?? '';
 
   if (description.length === 0 && fields.length === 0) return null;

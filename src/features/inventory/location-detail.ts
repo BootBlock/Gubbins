@@ -41,6 +41,12 @@ export interface LocationDetailField {
   readonly precision: number | null;
   /** The stored value; `null` when the location holds the field but has not filled it in. */
   readonly value: string | null;
+  /**
+   * The device the value was authored on, or null when unattributed (W1g). A location's `FILE`
+   * value is the one an item can *inherit*, so a path recorded elsewhere has to be marked here
+   * too — otherwise the place that offers it is the one surface that never says so.
+   */
+  readonly originDeviceId: string | null;
 }
 
 /**
@@ -52,10 +58,16 @@ export interface LocationDetailField {
  * up with. An em-dash row here would only add noise — a location holding an as-yet-unfilled field
  * has nothing to say about itself yet.
  */
-export function resolveLocationDetailFields(values: readonly LocationDetailField[]): ResolvedCardField[] {
+export function resolveLocationDetailFields(
+  values: readonly LocationDetailField[],
+  currentDeviceId: string,
+): ResolvedCardField[] {
   const out: ResolvedCardField[] = [];
   for (const field of values) {
-    const value = customFieldValue(field.fieldType, field.value, field.unit, field.precision);
+    const value = customFieldValue(field.fieldType, field.value, field.unit, field.precision, {
+      originDeviceId: field.originDeviceId,
+      currentDeviceId,
+    });
     if (value.kind === 'empty') continue;
     out.push({ id: field.defId, label: field.name, value });
   }

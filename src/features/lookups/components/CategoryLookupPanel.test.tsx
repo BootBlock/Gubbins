@@ -322,7 +322,7 @@ describe('CategoryLookupPanel — reviewing and applying', () => {
     expect(screen.getByText(/no “Cast” field|no "Cast" field/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('lookup-review-apply'));
-    await waitFor(() => expect(setFieldValues).toHaveBeenCalledWith({ 'f-dir': 'Ridley Scott' }));
+    await waitFor(() => expect(setFieldValues).toHaveBeenCalledWith({ values: { 'f-dir': 'Ridley Scott' } }));
     // The item is already named "Blade Runner", so the built-in is UNCHANGED and never written.
     expect(updateItem).not.toHaveBeenCalled();
   });
@@ -344,7 +344,7 @@ describe('CategoryLookupPanel — reviewing and applying', () => {
     expect(screen.getByTestId('lookup-review-apply')).toBeDisabled();
     fireEvent.click(screen.getByTestId('lookup-overwrite-director'));
     fireEvent.click(screen.getByTestId('lookup-review-apply'));
-    await waitFor(() => expect(setFieldValues).toHaveBeenCalledWith({ 'f-dir': 'Ridley Scott' }));
+    await waitFor(() => expect(setFieldValues).toHaveBeenCalledWith({ values: { 'f-dir': 'Ridley Scott' } }));
   });
 
   it('offers no Apply when a category’s fields match nothing the source returned', async () => {
@@ -371,7 +371,7 @@ describe('CategoryLookupPanel — reviewing and applying', () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('lookup-review-apply'));
     // The director still lands; one unusable key never blocks the rest.
-    await waitFor(() => expect(setFieldValues).toHaveBeenCalledWith({ 'f-dir': 'Ridley Scott' }));
+    await waitFor(() => expect(setFieldValues).toHaveBeenCalledWith({ values: { 'f-dir': 'Ridley Scott' } }));
   });
 
   it('renames the item when the source has a different title and the user opts in', async () => {
@@ -409,7 +409,7 @@ describe('CategoryLookupPanel — reviewing and applying', () => {
     expect(screen.getByTestId('lookup-review-apply')).not.toBeDisabled();
     expect(screen.queryByTestId('lookup-overwrite-director')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('lookup-review-apply'));
-    await waitFor(() => expect(setFieldValues).toHaveBeenCalledWith({ 'f-dir': 'Ridley Scott' }));
+    await waitFor(() => expect(setFieldValues).toHaveBeenCalledWith({ values: { 'f-dir': 'Ridley Scott' } }));
   });
 
   it('keeps the reviewed plan on screen when the write fails', async () => {
@@ -463,6 +463,8 @@ describe('CategoryLookupPanel — the fieldMap override', () => {
     ];
     await reachReview();
     fireEvent.click(screen.getByTestId('lookup-review-apply'));
-    await waitFor(() => expect(setFieldValues).toHaveBeenCalledWith({ 'f-helm': 'Ridley Scott' }));
+    await waitFor(() =>
+      expect(setFieldValues).toHaveBeenCalledWith({ values: { 'f-helm': 'Ridley Scott' } }),
+    );
   });
 });
