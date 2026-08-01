@@ -76,6 +76,32 @@ describe('FormField — accessible labelled control (spec §3 / WCAG 3.3.1, 1.3.
   });
 });
 
+describe('FormField — compact density for nested editors', () => {
+  it('keeps the full label/error wiring while rendering the denser caption', () => {
+    render(
+      <FormField compact label="Purchase price" error="This can’t be a negative number.">
+        <Input />
+      </FormField>,
+    );
+    const control = screen.getByLabelText('Purchase price');
+    const alert = screen.getByRole('alert');
+    expect(control.getAttribute('aria-invalid')).toBe('true');
+    expect(control.getAttribute('aria-describedby')).toBe(alert.id);
+  });
+
+  it('drops the label to the compact type scale and gap', () => {
+    const { container } = render(
+      <FormField compact label="Purchase price">
+        <Input />
+      </FormField>,
+    );
+    const caption = container.querySelector('label > span');
+    expect(caption?.className).toContain('text-xs');
+    expect(caption?.className).toContain('mb-field-gap-compact');
+    expect(caption?.className).not.toContain('text-sm');
+  });
+});
+
 describe('FormField — advisory warning tier (issue #344)', () => {
   it('shows the warning and describes it to the control, but never marks it invalid', () => {
     render(
