@@ -270,3 +270,51 @@ export async function itemConsumeStatements(
     params: [c.amount, stockBatchRowId(itemId, c.locationId, c.batchKey)],
   }));
 }
+
+/**
+ * Build the statements to move `amount` units of an item **into** `toLocationId`, drawn
+ * first-expiry-first-out across every location it currently sits in and re-landed under the
+ * *same* lot identity (issue #647) — a **partial** whole-item move, where `stock.ts`'s
+ * `consolidateStockStatements` moves everything.
+ *
+ * Each slice becomes a decrement of its source row paired with an increment of the matching
+ * batch at the destination, so a lot never loses its batch/expiry identity by being moved. Slices
+ * already sitting at the destination net to zero (the decrement and the increment address the
+ * same row id) — units that are already there are already gathered, so the move leaves them
+ * alone rather than double-counting them. Availability is the caller's to validate, exactly as
+ * for {@link itemConsumeStatements}: any shortfall simply leaves the deficit unmoved.
+ */
+export async function itemMoveStatements(
+  driver: IDatabaseDriver,
+  itemId: string,
+  amount: number,
+  toLocationId: string,
+): Promise<SqlStatement[]> {
+  if (amount <= 0) return [];
+  const batches = await readItemBatches(driver, itemId);
+  const plan = planItemConsumption(batches, amount);
+  const statements: SqlStatement[] = [];
+  for (const slice of plan.consumed) {
+    const source = batches.find((b) => b.locationId === slice.locationId && b.batchKey === slice.batchKey);
+    // Non-null in practice — the plan is built from these very rows — but a missing line would
+    // mean taking stock out with nowhere to put it, so skip rather than lose the units.
+    if (!source) continue;
+    statements.push(
+      {
+        sql: `UPDATE stock_batches SET quantity = quantity - ? WHERE id = ?;`,
+        params: [slice.amount, stockBatchRowId(itemId, slice.locationId, slice.batchKey)],
+      },
+      addBatchStatement(
+        itemId,
+        toLocationId,
+        {
+          batchNumber: source.batchNumber,
+          lotNumber: source.lotNumber,
+          expiryDate: source.expiryDate,
+        },
+        slice.amount,
+      ),
+    );
+  }
+  return statements;
+}
