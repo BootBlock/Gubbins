@@ -2,9 +2,10 @@
 
 > **Status:** ✅ COMPLETE — Phase 82 shipped.
 
-> **Historical process note.** Implemented in its own worktree/session. Tick the `[ ]` boxes
-> as work lands, append a one-paragraph **Outcome** note when it completes (mirroring
-> `docs/dev/deferred-features.md`), and re-schedule — never silently drop — any deferred item.
+> **Historical process note — no longer in force.** Implemented in its own worktree/session.
+> Tick the `[ ]` boxes as work lands, append a one-paragraph **Outcome** note when it
+> completes (mirroring `docs/dev/deferred-features.md`), and re-schedule — never silently
+> drop — any deferred item.
 >
 > **Continuation-prompt rule (mandatory).** When the phase completes you **must** emit the
 > next kick-off prompt as a **raw, fenced Markdown code block** in the chat reply (the last

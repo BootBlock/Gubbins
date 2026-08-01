@@ -1,11 +1,22 @@
 # Home Assistant query bridge — phased plan (2026-06-29)
 
 > **Status:** ✅ COMPLETE — phases HA-1 → HA-5 shipped; the phased plan is done.
+>
+> On top of the HA-1 hydration, HA-2 query core, HA-3 HTTP server and HA-4 Home Assistant
+> custom integration, Phase HA-5 packaged and hardened the bridge: a build-free `node:slim`
+> Docker image, a hardened systemd unit, a rewritten `bridge/README.md` (quick-start, config
+> reference, Docker/systemd, where-to-run), a per-IP rate limit, a full read-only/no-PII
+> security audit, repo-hygiene tightening, a top-level README pointer, and CI that runs the
+> bridge tests alongside the app suite. **Update:** all six **Deferred-work** items have since
+> shipped too — the generic REST API, the MCP server wrapper, mDNS / zeroconf discovery, Read
+> + limited writes, the Direct `.sqlite` data source, and the PWA "push to bridge". **All
+> planned and deferred work is now complete** — see each item's Outcome below and
+> [Continuation prompt](#continuation-prompt).
 
-> **Historical process note.** Each phase is implemented in its own chat session. Tick the
-> `[ ]` boxes as work lands, append a one-paragraph "Outcome" note under each phase
-> when it completes (mirroring `docs/dev/deferred-features.md`), and re-schedule —
-> never silently drop — any deferred item.
+> **Historical process note — no longer in force.** Each phase is implemented in its own
+> chat session. Tick the `[ ]` boxes as work lands, append a one-paragraph "Outcome" note
+> under each phase when it completes (mirroring `docs/dev/deferred-features.md`), and
+> re-schedule — never silently drop — any deferred item.
 >
 > **Continuation-prompt rule (mandatory).** When a phase is completed, you **must** do
 > **both** of the following before ending the session — not one or the other:
@@ -22,18 +33,6 @@
 > context the fresh session needs (it starts cold). After the **final** phase, the
 > continuation prompt instead kicks off the first **Deferred work** item (the generic
 > REST API).
->
-> On top of the HA-1
-> hydration, HA-2 query core, HA-3 HTTP server and HA-4 Home Assistant custom integration,
-> Phase HA-5 packaged and hardened the bridge: a build-free `node:slim` Docker image, a
-> hardened systemd unit, a rewritten `bridge/README.md` (quick-start, config reference,
-> Docker/systemd, where-to-run), a per-IP rate limit, a full read-only/no-PII security
-> audit, repo-hygiene tightening, a top-level README pointer, and CI that runs the bridge
-> tests alongside the app suite. **Update:** all six **Deferred-work** items have since shipped
-> too — the generic REST API, the MCP server wrapper, mDNS / zeroconf discovery, Read + limited
-> writes, the Direct `.sqlite` data source, and the PWA "push to bridge". **All planned and
-> deferred work is now complete** — see each item's Outcome below and
-> [Continuation prompt](#continuation-prompt).
 
 ## The idea
 
