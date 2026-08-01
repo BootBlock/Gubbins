@@ -46,7 +46,12 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
 
   // Resolved above the bail-outs below, because the report that follows is a hook and so cannot
   // sit behind an early return. An item still loading its fields, or with none, has no draft.
-  const changed = (fields ?? []).filter((f) => (draft[f.id] ?? '') !== initialOf(f));
+  //
+  // A field is only compared once the effect above has seeded it. The fields arrive from a query
+  // and the seeding runs after that render, so for one commit every field is absent from `draft`
+  // and would read as "cleared" — long enough for the report below to claim unsaved work nobody
+  // typed, and for the Save button to offer changes nobody made.
+  const changed = (fields ?? []).filter((f) => f.id in draft && draft[f.id] !== initialOf(f));
   // Tell the dialog frame these values are uncommitted, so a dismissal asks rather than
   // discarding them (issue #576). Matches the Save button's own count below.
   useReportUnsavedChanges(changed.length > 0);
