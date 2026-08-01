@@ -1314,6 +1314,11 @@ export interface CatalogItemRepository {
  * write path; the importer never inserts `item_field_values` rows itself. The
  * values supplied are already validated/coerced (Phase-70 seam); `setItemFieldValues`
  * re-validates and enforces that each field belongs to the item's current category.
+ *
+ * Deliberately narrower than the repository method: it takes no `originDeviceId` (W1g), so an
+ * imported value is unattributed. A spreadsheet's cells were authored wherever the spreadsheet
+ * was, which the importing device has no way to know — and a `FILE` path claimed for this
+ * device when it in fact came from another is precisely the false statement W1g removes.
  */
 export interface CatalogCategoryRepository {
   setItemFieldValues(itemId: string, values: Readonly<Record<string, string | null>>): Promise<void>;

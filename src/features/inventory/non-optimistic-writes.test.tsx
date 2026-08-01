@@ -95,7 +95,7 @@ const CASES = [
     repo: categoryRepo,
     method: 'setItemFieldValues' as const,
     hook: () => useSetItemFieldValues('item-1'),
-    mutate: (m: any) => m({ 'field-1': 'value' }),
+    mutate: (m: any) => m({ values: { 'field-1': 'value' } }),
     heading: 'Couldn’t save the custom fields',
   },
   {

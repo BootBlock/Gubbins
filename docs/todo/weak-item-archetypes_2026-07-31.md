@@ -1,9 +1,9 @@
 # What Gubbins is weakest at tracking — archetype audit (2026-07-31)
 
 > **Status:** 🟢 ACTIVE — research complete. `W1a` (custom-field due dates), `W1b`/`W1c` (a
-> number's unit and range), `W1d` (the key-field rank), `W1e` (a number's decimal places) and
-> `W1f` (an actionable `URL`/`FILE` value) have shipped; `W1g` (a `FILE` value's origin device)
-> and `W2`–`W10` remain open.
+> number's unit and range), `W1d` (the key-field rank), `W1e` (a number's decimal places),
+> `W1f` (an actionable `URL`/`FILE` value) and `W1g` (a `FILE` value's origin device) have
+> shipped, completing `W1`; `W2`–`W10` remain open.
 
 Answers issue [#621](https://github.com/BootBlock/Gubbins/issues/621): *which items, or types of
 item, is Gubbins weakest at tracking or managing?*
@@ -310,8 +310,8 @@ says so), so it belongs here as context, not as a gap.
 
 Ranked by *(breadth of archetypes unlocked) ÷ (cost)*. Deliberately weighted toward fixing a **cause**
 rather than adding a domain's fields, because the preset library already proves that adding fields
-does not make the app track anything better. `W1a`–`W1f` have shipped; `W1g` and `W2`–`W10` are
-open.
+does not make the app track anything better. `W1a`–`W1g` have shipped, completing `W1`; `W2`–`W10`
+are open.
 
 - **`W1` — Make custom fields live.** The single highest-leverage change in the list: give
   `field_defs` a unit, a min/max, and a "surface this" flag, and teach the alert/agenda feeds to
@@ -319,8 +319,8 @@ open.
   dates, substrate-decay dates and curing windows **at once**, and turns the existing 72 presets
   from decoration into behaviour. Addresses C1. Note the split: the "surface this" half is adjacent
   to issue [#619](https://github.com/BootBlock/Gubbins/issues/619) (which is purely presentational),
-  but the load-bearing half — feeds reading `DATE` fields — is untouched by it. Six have now
-  shipped; the newly-split `W1g` (a `FILE` value's origin device) remains.
+  but the load-bearing half — feeds reading `DATE` fields — is untouched by it. ✅ **All seven
+  sub-items have now shipped**, so `W1` is complete.
   - **`W1a` — DATE fields as due dates. ✅ Shipped** (see [§4.1](#41-w1a--the-due-date-opt-in-shipped)).
   - **`W1b` — a per-definition unit** on `field_defs`, so a `NUMBER` field carries one.
     ✅ **Shipped** (see [§4.2](#42-w1bw1c--a-numbers-unit-and-range-shipped)).
@@ -367,7 +367,10 @@ open.
     to an `<a href>`, so the arm must decide what is openable — the same judgement
     `resolveAttachmentLink` already encodes, so reuse that seam rather than restating it.
     (§4.4 point 2 records why that last instruction turned out not to be followable.)
-  - **`W1g` — a `FILE` value's origin device.** Open, split out of `W1f`'s part **(ii)** for
+  - **`W1g` — a `FILE` value's origin device.** ✅ **Shipped** (see
+    [§4.6](#46-w1g--a-file-values-origin-device-shipped) for the two questions it had to settle
+    first, and for what building it proved wrong about the description that follows). Split out
+    of `W1f`'s part **(ii)** for
     the reasons in [§4.4](#44-w1f--an-actionable-urlfile-value-shipped). Neither
     `item_field_values` nor `location_field_values` carries an `origin_device_id`, so a `FILE`
     value synced from another device is shown honestly as *a path* (`W1f`) but not
@@ -381,9 +384,10 @@ open.
     surfaces have nowhere to put. Scope it before starting on two questions §4.4 could not
     settle from the read side: whether an origin is stamped on **every** field value or only a
     `FILE` one, and where the re-link flow lives given that these surfaces do not edit.
-    Concrete target: **next** — `W1e` has now shipped, and `W1g` still goes before `W2` for the
-    reason recorded when it was split: it shares `W2`'s two-subject shape and the same two
-    tables, so doing it first keeps `W2`'s migration from having to carry it.
+    It was taken before `W2` for the reason recorded when it was split: it shares `W2`'s
+    two-subject shape and the same two tables, so doing it first keeps `W2`'s migration from
+    having to carry it. That held — the column landed on both tables in one baseline edit, and
+    `W2` now inherits it.
 - **`W2` — A repeating (table-valued) field.** Removes the `UNIQUE (item_id, def_id)` ceiling for
   opted-in definitions. Unlocks telemetry logs, per-position measurements, prior owners, lineage
   notes — every archetype whose data is a *series*. Addresses C1. Larger and schema-visible; do
@@ -913,6 +917,179 @@ without grouping (which keeps reason 2 and most of reason 3 while gaining almost
 - **The preset library sets none.** Same call as `W1b`'s and `W1d`'s: seeding precisions would
   reformat existing users' values on adoption. It pairs with the preset unit-renaming work `W1b`
   deferred.
+
+### 4.6 `W1g` — a `FILE` value's origin device (shipped)
+
+A custom-field value now records **which device recorded it**. A `FILE` value holding a path
+that came from a *different* device is marked as such wherever it is shown — the item card, the
+dense row, the table cell and the location detail panel — instead of passing as an ordinary
+path, and the editor says so beside the box that fixes it. `W1f` removed §11.7's *"with no
+explanation"*; this removes the *specific* half it left: **this** path came from **another**
+device, and here is how to re-home it.
+
+**The two questions §4.4 could not settle from the read side, and how each was answered.**
+
+**1. Every field value carries an origin, not only a `FILE` one — and the reason is not a
+trade-off, it is that the alternative is unavailable.** `W1b`, `W1c` and `W1e` all gate their
+column on `field_type` with a table CHECK, and the obvious move was to copy that. It cannot be
+copied: those columns sit on `field_defs`, *beside* `field_type`, whereas a value row carries
+only `def_id` — and a SQLite CHECK may not reach into another table. So there is no
+type-gated shape to have. Three things follow, and they point the same way:
+
+- **A type gate would have to be enforced in the write seam alone**, with nothing under it —
+  the opposite of the arrangement §4.1/§4.2 chose deliberately, where the write seam gives the
+  readable message and the CHECK is the backstop "under it (and under sync and restore)".
+- **Retype-clearing would change scale.** `W1b`/`W1c`/`W1e` clear one `field_defs` row when a
+  definition is retyped. Type-gating here would mean clearing every *value* of that definition
+  across two tables on every retype — real cost for a column that is simply unread on any other
+  type.
+- **The fact is about the write, not the type, and it survives a retype.** "Which device
+  recorded this string" stays true when a definition is later retyped `TEXT` → `FILE`; a
+  type-gated column would hold NULL there, which reads as *unattributed*, which reads as
+  **local** — a foreign path silently passing as this device's. The type-gated version is not
+  merely more expensive, it is wrong in a case that actually occurs.
+
+So the stored value is the plain fact of the write, and deciding whether it *matters* is the
+render boundary's job — the same shape as `W1e`'s "applied on the way out, not baked into
+storage". It carries **no CHECK**, for `W1d`'s reason rather than by omission: an opaque device
+id has nothing to validate, and a peer's whole sync apply must never fail over an attribution.
+
+**2. The re-linking flow is the editor that already exists — no second flow was built, and
+`W1f`'s "editors deliberately not in scope" is not reversed.** `AttachmentManager` needs its
+**Re-link** / **Use URL** pair because an attachment row has no inline editor at all: the pair
+opens a draft input *and* chooses which `kind` to write. A custom-field value has neither
+problem — it has one always-present box, and no `kind` to choose. Typing a path this device can
+reach **is** Re-link; pasting a web address **is** Use URL. Adding buttons that focus a box
+already on screen would be ceremony.
+
+What was genuinely missing was therefore not a flow but two facts and a rule:
+
+- the read surfaces say *this came from elsewhere* (a distinct icon on the warning token, and
+  an assistive-technology label that names it — `title` too, since the icon alone cannot carry
+  "and that device isn't this one");
+- the editors repeat it under the control, so someone who arrived to fix it is told what to do;
+- and the write **re-stamps the origin exactly when the value changes**, which is what makes
+  re-linking work at all.
+
+`W1f`'s scope note said editors are for *setting* a value and that `C1`'s "readable but never
+actionable" charge is not about them. That still stands: nothing here adds a way to *open* a
+value in an editor. This adds an explanation to the surface that already edits it.
+
+**The re-stamp guard is the load-bearing part, and it is a guard rather than a plain
+assignment.** Two callers re-send a value the user did not touch — one on each table — and the
+thing to notice is that **both of them claim nothing while doing it**:
+
+- A location's *Offer to items here* tick is stored by the same upsert, re-sending `value`
+  unaltered to change only the flag, and passing no origin.
+- A CSV import re-states **every** field value on a row it matched, unchanged ones included,
+  through a port that takes no origin at all.
+
+So the failure an unconditional assignment would cause today is the *same* on both tables: NULL
+pushed over a good attribution, quietly downgrading a marked foreign path to an unmarked one.
+The guard is symmetric, so it also stops the opposite error — a caller that *does* name a device
+claiming a value it did not change — but no current caller can reach that, because the one
+writer that names a device (the item editor) sends only the fields whose value actually changed.
+That half is a standing guarantee, not a fix for a live bug, and it is worth saying which is
+which. The assignment uses SQLite's null-safe `IS`, so clearing to blank and setting again is
+judged as the change it is rather than collapsing to unknown.
+
+**Only an *author* attributes; every other writer stays silent.** The stamp is passed per call
+rather than read inside the repository or the mutation hook, because the callers genuinely
+differ:
+
+| writer | claims | why |
+| --- | --- | --- |
+| the item and location field editors | **this device** | a person typed the path here |
+| clone | nothing | it copies a string; stamping the cloning device would assert a desktop path is reachable from the phone that cloned it |
+| CSV import | nothing | a spreadsheet's cells were authored wherever the spreadsheet was, which the importing device cannot know |
+| lookup auto-fill | nothing | the value came out of an external catalogue |
+
+NULL therefore means *unattributed*, and unattributed reads as **local** — the legacy rule
+`resolveAttachmentLink` has applied to a pre-v18 pointer since it shipped. That is deliberate in
+both directions: the three copying paths above, and every row written before the column existed,
+must not be warned about, because a warning on values nothing is wrong with is worse than the
+silence `W1g` removes. The cost is stated rather than hidden: a cloned or imported foreign path
+is **not** marked, and the wiki says so.
+
+**What building it proved wrong, or made concrete, about the description above.**
+
+1. **The effective-value view needed no change, and the touch-point list in the `W1g` entry
+   above is wrong to name it.** `item_field_effective_values` projects `item_id, def_id, value`
+   and has exactly two readers — the search AST translator and the due-date feed — neither of
+   which wants an origin. The *rendered* item path does not go through the view at all:
+   `resolveItemFields` resolves inheritance **in JS**, through the pure `location-inheritance`
+   seam, from a separate whole-table read of the inheritable offers. So the origin follows
+   `value` through `resolveFieldValue`, and the view was left alone. Adding it there would have
+   doubled the recursive ancestor subquery on the search path to serve no reader.
+2. **Sync and backup needed nothing, exactly as `W1e` found — but the bridge needed nothing
+   either, and that was not safe to assume.** `buildSchemaDictionary` reads columns from
+   `PRAGMA table_info` and the snapshot reads `SELECT *`, so the column syncs, backs up and
+   restores untouched; `tombstone.ts` keys on tables, so its drift test is silent. The bridge is
+   the part §4.4 flagged as possibly different, and it is — but the answer is still *no change*,
+   and it is worth being exact about what stops the column at the wire, because it is **not** the
+   repository read. The bridge reads item field values through `resolveItemFields` and location
+   values through `listLocationFieldValues`, and this change widened **both** — the editors need
+   the origin, and the bridge takes the same seams. What holds the line is one layer further out:
+   `toItemFieldValues` and `toLocationFieldValues` (`bridge/src/api/dto.ts`) build their DTOs as
+   explicit object literals, so a new property on the app's type is silently dropped rather than
+   published. And it should be: a device id is only meaningful *compared against the reading
+   device*, and the bridge is not a device — it has no Gubbins device identity to compare with,
+   so publishing the id would be publishing an opaque token no consumer can interpret. (`item_attachments`, the existing device-stamped pointer, is likewise not exposed
+   by the bridge at all.) The standing gap is still the **five** definition attributes
+   `W1a`–`W1e` added, unchanged by this.
+3. **`resolveAttachmentLink` is now partly reusable, which is precisely what §4.4 point 2 said
+   it was not — and the shared part is the comparison, not the seam.** That note recorded that
+   a field value had "neither column" the attachment seam reads, so calling it would be
+   ceremony. Adding the origin column supplies one of the two. The other, `kind`, is still
+   absent — a field value's openability is decided from the *string* by `external-href.ts` — so
+   the seam as a whole still cannot be called. What is now genuinely shared is the one-line
+   comparison **and its NULL rule**, lifted into `inventory/device-origin.ts` and called by
+   both. Worth doing for a single line because the rule that *unattributed is not foreign* is
+   the one both surfaces must never disagree about.
+4. **The card's value map had to become an object, and a parallel map would have been the wrong
+   economy.** `getItemFieldValues` returned `itemId → fieldId → string`; the card now needs a
+   second fact per value. Threading a second `fieldId → origin` map beside it would have left
+   nothing preventing the two describing different rows — precisely the failure a single entry
+   rules out. The blast radius turned out to be small: the map is built once and spread onto the
+   item surfaces by `cardFieldProps`, so the shape change cost three prop-type lines plus the
+   resolver, and reached the card, the dense row and the table cell without any of *those* being
+   otherwise touched. The location detail panel is **not** on that path — it reads
+   `listLocationFieldValues` and calls `resolveLocationDetailFields`, so it took the origin by a
+   separate route (one argument, and the `getDeviceId()` read to supply it) and had to be edited.
+   That asymmetry is the pre-existing shape of the two subjects, not something this change
+   introduced: `W1f` reached all four surfaces through one `customFieldValue` seam precisely
+   because that seam is where they *do* converge, and it is still the only edit the renderers
+   themselves needed here.
+5. **An incomplete hand-built test fixture produced the exact inverse of the intended
+   behaviour, and only running the tests caught it.** `LocationDetailCard.test.tsx` builds its
+   `LocationFieldValue` objects by hand and had never listed the newer definition columns. With
+   `originDeviceId` *absent* rather than null, `undefined !== null && undefined !== deviceId` is
+   **true** — so every `FILE` path in that suite read as foreign. Types could not catch it
+   (test files are excluded from `tsconfig.app.json`), and the failure surfaced only as a
+   missing label. The fixture now spells the column out with a note saying why; the guard was
+   deliberately *not* loosened to `!= null`, because in production the value comes from a typed
+   mapper and defending against a shape the types forbid would be defending against nothing.
+6. **A runtime probe proved the whole chain in a way no test does.** Changing
+   `gubbins:device-id` in `localStorage` and reloading reproduces exactly what a synced row
+   looks like from the other side, without needing a second device or a sync round trip. Driven
+   against a dev server it confirmed: the save stamps this device; the card then marks the path
+   and still shows it; the editor explains it; an untouched editor offers *nothing to save*, so
+   the path cannot be re-homed by accident; and re-linking moves the origin and clears the mark
+   everywhere.
+
+**Deliberately not in scope:**
+
+- **Search and export stay raw**, as `W1f` and `W1e` left them. The origin is not a value: it is
+  metadata about where one was typed, meaningless in a `field:` comparison and meaningless in a
+  spreadsheet cell.
+- **No "re-link this everywhere" bulk action.** Several items can share a definition and each
+  hold a different path, so there is no single substitution to apply. A find-and-replace across
+  field values is a coherent, separate request.
+- **The datasheet list is unchanged.** `item_attachments` has carried this since v18; the point
+  of `W1g` is that the custom-field surfaces now agree with it, not that either changes.
+- **Nothing is recorded *about* a device — only that it differed.** A device name would need a
+  device registry that syncs, which is a much larger thing than the comparison this needs; and
+  the id is device-local by design (`lib/env/device-id`).
 
 ## 5. Defects found while surveying
 

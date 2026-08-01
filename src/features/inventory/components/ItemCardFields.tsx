@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import { cn } from '@/lib/utils';
 import { assertExhaustive } from '@/lib/exhaustive';
 import { Money } from '@/components/foundry';
-import { LinkIcon, LocalFileIcon, TagIcon } from '@/components/icons';
+import { LinkIcon, LocalFileIcon, TagIcon, UnlinkIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import type { ResolvedCardField } from '../card-fields';
 import { CONDITION_COLOR_CLASS, CONDITION_LABELS } from './inventory-ui';
@@ -121,12 +121,34 @@ export function FieldValue({
       // anchor: a browser cannot navigate an http(s) page to `file://` or `\\server\share`, so
       // a link here would look live and do nothing. The icon says "file pointer" to sighted
       // users and the sr-only label says it to AT — see the wiki for the whole story.
+      //
+      // A path recorded on *another* device (W1g) swaps both (`Unlink` on the warning token,
+      // and a label naming where it came from) and says so in the `title` too, since the icon
+      // alone cannot carry "and that device isn't this one" to a sighted user. Both branches
+      // stay one `<span>` with one truncation rule: only the two leaves differ.
       return (
-        <span title={value.text} className={VALUE_BOX}>
-          <span aria-hidden className="shrink-0 self-center text-muted-foreground [&_svg]:size-3.5">
-            <LocalFileIcon />
+        <span
+          title={
+            value.foreign
+              ? t('inventory.field.filePointer.foreignTitle', { vars: { path: value.text } })
+              : value.text
+          }
+          className={VALUE_BOX}
+        >
+          <span
+            aria-hidden
+            className={cn(
+              'shrink-0 self-center [&_svg]:size-3.5',
+              value.foreign ? 'text-warning' : 'text-muted-foreground',
+            )}
+          >
+            {value.foreign ? <UnlinkIcon /> : <LocalFileIcon />}
           </span>
-          <span className="sr-only">{t('inventory.field.filePointer.label')} </span>
+          <span className="sr-only">
+            {value.foreign
+              ? t('inventory.field.filePointer.foreignLabel')
+              : t('inventory.field.filePointer.label')}{' '}
+          </span>
           <span className={cn('min-w-0', wrap ? 'break-words' : 'truncate')}>{value.text}</span>
         </span>
       );

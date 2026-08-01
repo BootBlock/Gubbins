@@ -295,7 +295,10 @@ export function CategoryLookupPanel({
     setIsApplying(true);
     try {
       const fieldCount = Object.keys(write.fieldValues).length;
-      if (fieldCount > 0) await setFieldValues.mutateAsync({ ...write.fieldValues });
+      // No `originDeviceId` (W1g): these values came out of an external catalogue, not off this
+      // device, so attributing them here would claim a provenance nothing established. They land
+      // unattributed, which reads exactly as an ordinary value does.
+      if (fieldCount > 0) await setFieldValues.mutateAsync({ values: { ...write.fieldValues } });
       // Spread conditionally rather than passing `undefined`: `useUpdateItem` strips undefined
       // before it patches, but an explicit key is clearer about what the write actually touches.
       const builtinPatch = {

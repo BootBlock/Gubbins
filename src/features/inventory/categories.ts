@@ -17,6 +17,7 @@ import {
 import {
   getCategoryRepository,
   getItemRepository,
+  type CardFieldStoredValue,
   type CategoryWithFieldCount,
   type CreateCategoryFieldInput,
   type CreateCategoryInput,
@@ -116,7 +117,7 @@ export function useItemFieldValues(itemIds: readonly string[], enabled = true) {
       enabled,
       // Only the partly-filled tail bucket ever re-keys; hold its last values in place while
       // it reloads so those cards don't flicker.
-      placeholderData: (prev: Map<string, Map<string, string>> | undefined) => prev,
+      placeholderData: (prev: Map<string, Map<string, CardFieldStoredValue>> | undefined) => prev,
     })),
     combine: (results) => ({ data: mergeBucketMaps(results.map((r) => r.data)) }),
   });
@@ -212,13 +213,21 @@ export function useDeleteCategoryField() {
   });
 }
 
-/** Upsert/clear an item's custom-field values, then refresh its resolved fields. */
+/**
+ * Upsert/clear an item's custom-field values, then refresh its resolved fields.
+ *
+ * `originDeviceId` (W1g) is per *call*, not baked into the hook, precisely because the two
+ * callers differ: the editor is a person authoring a value on this device and says so, while
+ * the lookup panel is copying a string out of an external catalogue and makes no claim about
+ * where it would resolve. A hook-level `getDeviceId()` would silently give both the first
+ * answer.
+ */
 export function useSetItemFieldValues(itemId: string) {
   const client = useQueryClient();
   const reportFailure = useReportWriteFailure('inventory.writeError.heading.fields', 'common.writeFailed');
   return useMutation({
-    mutationFn: (values: Record<string, string | null>) =>
-      getCategoryRepository().setItemFieldValues(itemId, values),
+    mutationFn: (vars: { values: Record<string, string | null>; originDeviceId?: string | null }) =>
+      getCategoryRepository().setItemFieldValues(itemId, vars.values, vars.originDeviceId ?? null),
     // The editor validates before it saves, but the write can still be rejected by the
     // repository (a value it re-checks, the storage hard stop) after the "Save" click — which
     // `CustomFieldsEditor` fires fire-and-forget — so surface that reason rather than swallow it

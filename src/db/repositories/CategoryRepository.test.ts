@@ -590,8 +590,8 @@ describe('CategoryRepository', () => {
     await categories.setItemFieldValues(b.id, { [voltage.id]: '12V' });
 
     const values = await categories.getItemFieldValues([a.id, b.id, c.id]);
-    expect(values.get(a.id)?.get(voltage.id)).toBe('5V');
-    expect(values.get(b.id)?.get(voltage.id)).toBe('12V');
+    expect(values.get(a.id)?.get(voltage.id)?.value).toBe('5V');
+    expect(values.get(b.id)?.get(voltage.id)?.value).toBe('12V');
     // An item with no stored value simply has no entry (lenient defaulting happens at render).
     expect(values.has(c.id)).toBe(false);
   });

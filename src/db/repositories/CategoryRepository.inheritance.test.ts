@@ -450,8 +450,8 @@ describe('CategoryRepository — location-inherited fields (issue #97)', () => {
 
       // A card that omitted inherited values would read as missing data.
       const values = await categories.getItemFieldValues([drill.id, stored.id]);
-      expect(values.get(drill.id)?.get(field.id)).toBe('Ryobi');
-      expect(values.get(stored.id)?.get(field.id)).toBe('Makita');
+      expect(values.get(drill.id)?.get(field.id)?.value).toBe('Ryobi');
+      expect(values.get(stored.id)?.get(field.id)?.value).toBe('Makita');
     });
   });
 
@@ -530,5 +530,233 @@ describe('CategoryRepository — location-inherited fields (issue #97)', () => {
       );
       expect(tomb?.id).toBe(field.defId);
     });
+  });
+});
+
+/**
+ * W1g — the device a custom-field value was authored on, end-to-end through a real database.
+ *
+ * The routing rules are unit-tested in the pure `location-inheritance` seam; these cover what
+ * only SQL exercises: the `ON CONFLICT` re-stamp guard, and that an inherited value's origin
+ * comes off the location's row.
+ */
+describe('CategoryRepository — custom-field value attribution (#621, W1g)', () => {
+  const THIS_DEVICE = 'device-this';
+  const OTHER_DEVICE = 'device-other';
+  const PATH = '\\\\server\\share\\boiler.pdf';
+
+  let driver: MemoryDriver;
+  let categories: CategoryRepository;
+  let items: ItemRepository;
+  let locations: LocationRepository;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    categories = new CategoryRepository(driver);
+    items = new ItemRepository(driver);
+    locations = new LocationRepository(driver);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  /** A category with one FILE field, and an item in a cabinet inside a workshop. */
+  async function scenario() {
+    const workshop = await locations.create({ name: 'Workshop' });
+    const cabinet = await locations.create({ name: 'Cabinet A', parentId: workshop.id });
+    const boilers = await categories.create({ name: 'Boilers' });
+    const field = await categories.addField(boilers.id, { name: 'Manual', fieldType: 'FILE' });
+    const boiler = await items.create({ name: 'Boiler', categoryId: boilers.id, locationId: cabinet.id });
+    return { workshop, cabinet, boilers, field, boiler };
+  }
+
+  const storedOrigin = (itemId: string) =>
+    driver.queryOne<{ origin_device_id: string | null }>(
+      'SELECT origin_device_id FROM item_field_values WHERE item_id = ?;',
+      [itemId],
+    );
+
+  it('stamps the writing device on a value it authors', async () => {
+    const { field, boiler } = await scenario();
+    await categories.setItemFieldValues(boiler.id, { [field.id]: PATH }, THIS_DEVICE);
+    expect((await storedOrigin(boiler.id))?.origin_device_id).toBe(THIS_DEVICE);
+  });
+
+  it('leaves a value unattributed when the caller makes no claim', async () => {
+    // A clone and a spreadsheet import both take this path: they copy a string rather than
+    // authoring it, so they must not assert it resolves on the device doing the copying.
+    const { field, boiler } = await scenario();
+    await categories.setItemFieldValues(boiler.id, { [field.id]: PATH });
+    expect((await storedOrigin(boiler.id))?.origin_device_id).toBeNull();
+  });
+
+  it('does not re-stamp a value that was re-sent unchanged', async () => {
+    const { field, boiler } = await scenario();
+    await categories.setItemFieldValues(boiler.id, { [field.id]: PATH }, OTHER_DEVICE);
+    await categories.setItemFieldValues(boiler.id, { [field.id]: PATH }, THIS_DEVICE);
+    expect((await storedOrigin(boiler.id))?.origin_device_id).toBe(OTHER_DEVICE);
+  });
+
+  /**
+   * The item-table half of why the re-stamp is guarded. A CSV import re-states **every** field
+   * value on a row it matched — unchanged ones included — and claims nothing, so an
+   * unconditional assignment would push NULL over a good attribution and quietly downgrade a
+   * marked foreign path to an unmarked one.
+   */
+  it('does not erase an existing origin when an unattributed writer re-sends the same value', async () => {
+    const { field, boiler } = await scenario();
+    await categories.setItemFieldValues(boiler.id, { [field.id]: PATH }, OTHER_DEVICE);
+    await categories.setItemFieldValues(boiler.id, { [field.id]: PATH });
+    expect((await storedOrigin(boiler.id))?.origin_device_id).toBe(OTHER_DEVICE);
+  });
+
+  it('does erase it when that writer supplies a genuinely different value', async () => {
+    // The counterpart: an import that *changes* the path has replaced what was attributed, so
+    // keeping the old device would attribute a string it never wrote.
+    const { field, boiler } = await scenario();
+    await categories.setItemFieldValues(boiler.id, { [field.id]: PATH }, OTHER_DEVICE);
+    await categories.setItemFieldValues(boiler.id, { [field.id]: 'D:\\manuals\\boiler.pdf' });
+    expect((await storedOrigin(boiler.id))?.origin_device_id).toBeNull();
+  });
+
+  it('re-stamps when the value actually changes — which is what re-linking is', async () => {
+    const { field, boiler } = await scenario();
+    await categories.setItemFieldValues(boiler.id, { [field.id]: PATH }, OTHER_DEVICE);
+    await categories.setItemFieldValues(boiler.id, { [field.id]: 'D:\\manuals\\boiler.pdf' }, THIS_DEVICE);
+    expect((await storedOrigin(boiler.id))?.origin_device_id).toBe(THIS_DEVICE);
+  });
+
+  it('clears the origin when a field switches to inheriting, leaving nothing stale behind', async () => {
+    const { field, boiler, workshop } = await scenario();
+    await categories.setItemFieldValues(boiler.id, { [field.id]: PATH }, OTHER_DEVICE);
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: '\\\\nas\\docs\\boiler.pdf',
+      isInheritable: true,
+    });
+    await categories.setItemFieldValues(boiler.id, { [field.id]: INHERIT_VALUE });
+
+    // An inherit row holds no value, so it has nothing of its own to attribute.
+    expect((await storedOrigin(boiler.id))?.origin_device_id).toBeNull();
+  });
+
+  it('reports an inherited value origin from the location that offers it', async () => {
+    const { field, boiler, workshop } = await scenario();
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      isInheritable: true,
+      originDeviceId: OTHER_DEVICE,
+    });
+    await categories.setItemFieldValues(boiler.id, { [field.id]: INHERIT_VALUE });
+
+    const [resolved] = await categories.resolveItemFields(boiler.id);
+    expect(resolved?.source).toBe('inherited');
+    expect(resolved?.originDeviceId).toBe(OTHER_DEVICE);
+  });
+
+  it('carries the origin onto the card read, inherited values included', async () => {
+    const { field, boiler, workshop } = await scenario();
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      isInheritable: true,
+      originDeviceId: OTHER_DEVICE,
+    });
+    await categories.setItemFieldValues(boiler.id, { [field.id]: INHERIT_VALUE });
+
+    const byItem = await categories.getItemFieldValues([boiler.id]);
+    expect(byItem.get(boiler.id)?.get(field.id)).toEqual({ value: PATH, originDeviceId: OTHER_DEVICE });
+  });
+
+  /**
+   * The location-table counterpart of the import case, and the shape the real caller actually
+   * sends: a location's *Offer to items here* tick is saved through this same upsert, re-sending
+   * the value untouched and claiming nothing. Without the guard, ticking a box would wipe the
+   * attribution off a path every item beneath it inherits.
+   */
+  it('does not erase a location value’s origin when only its inheritable flag changes', async () => {
+    const { field, workshop } = await scenario();
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      isInheritable: false,
+      originDeviceId: OTHER_DEVICE,
+    });
+    // Exactly what `LocationFieldsEditor`'s checkbox sends: same value, no origin.
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      isInheritable: true,
+    });
+
+    const [stored] = await categories.listLocationFieldValues(workshop.id);
+    expect(stored?.isInheritable).toBe(true);
+    expect(stored?.originDeviceId).toBe(OTHER_DEVICE);
+  });
+
+  /**
+   * The symmetric half of the guard. No caller reaches this today — the only writer that names
+   * a device (the item editor) sends only changed fields — so this pins a guarantee rather than
+   * covering a live path: naming a device must not let you claim a value you did not change.
+   */
+  it('does not let a named device claim a location value it did not change', async () => {
+    const { field, workshop } = await scenario();
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      originDeviceId: OTHER_DEVICE,
+    });
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      originDeviceId: THIS_DEVICE,
+    });
+
+    const [stored] = await categories.listLocationFieldValues(workshop.id);
+    expect(stored?.originDeviceId).toBe(OTHER_DEVICE);
+  });
+
+  it('re-stamps a location value whose text the user replaced', async () => {
+    const { field, workshop } = await scenario();
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      originDeviceId: OTHER_DEVICE,
+    });
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: 'D:\\manuals\\boiler.pdf',
+      originDeviceId: THIS_DEVICE,
+    });
+
+    const [stored] = await categories.listLocationFieldValues(workshop.id);
+    expect(stored?.originDeviceId).toBe(THIS_DEVICE);
+  });
+
+  /**
+   * `IS` rather than `=` in the re-stamp guard: SQLite's `=` yields unknown against NULL, so a
+   * value cleared to NULL and then set again would compare as "unchanged" and keep a stale
+   * origin — the one case a plain equality test gets wrong.
+   */
+  it('re-stamps a location value set again after being cleared to blank', async () => {
+    const { field, workshop } = await scenario();
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      originDeviceId: OTHER_DEVICE,
+    });
+    await categories.setLocationFieldValue(workshop.id, { defId: field.defId, value: '' });
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      originDeviceId: THIS_DEVICE,
+    });
+
+    const [stored] = await categories.listLocationFieldValues(workshop.id);
+    expect(stored?.value).toBe(PATH);
+    expect(stored?.originDeviceId).toBe(THIS_DEVICE);
   });
 });

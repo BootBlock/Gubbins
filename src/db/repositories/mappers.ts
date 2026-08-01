@@ -707,6 +707,7 @@ export function rowToLocationFieldValue(
     prominence: row.prominence,
     value: row.value,
     isInheritable: row.is_inheritable === 1,
+    originDeviceId: row.origin_device_id,
     updatedAt: row.updated_at,
   };
 }

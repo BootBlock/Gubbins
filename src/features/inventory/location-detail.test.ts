@@ -20,16 +20,22 @@ function field(overrides: Partial<LocationDetailField> = {}): LocationDetailFiel
     unit: null,
     precision: null,
     value: '30 kg',
+    originDeviceId: null,
     ...overrides,
   };
 }
 
+/** This device, for the W1g attribution comparison. */
+const THIS_DEVICE = 'device-this';
+
+/** The seam under test, bound to a fixed "this device" so each case names only what it varies. */
+const resolveLocationDetail = (values: readonly LocationDetailField[]) =>
+  resolveLocationDetailFields(values, THIS_DEVICE);
+
 describe('resolveLocationDetailFields', () => {
   it('shows a number field’s unit beside the value, as an item card does (W1b)', () => {
     expect(
-      resolveLocationDetailFields([
-        field({ fieldType: 'NUMBER', name: 'Load rating', unit: 'kg', value: '30' }),
-      ]),
+      resolveLocationDetail([field({ fieldType: 'NUMBER', name: 'Load rating', unit: 'kg', value: '30' })]),
     ).toEqual([{ id: 'def-1', label: 'Load rating', value: { kind: 'measure', text: '30', unit: 'kg' } }]);
   });
 
@@ -37,14 +43,14 @@ describe('resolveLocationDetailFields', () => {
     // How a number is written belongs to the definition, so a location's value must not read
     // "30" where an item's inheriting the same definition reads "30.00".
     expect(
-      resolveLocationDetailFields([
+      resolveLocationDetail([
         field({ fieldType: 'NUMBER', name: 'Load rating', unit: 'kg', precision: 2, value: '30' }),
       ]),
     ).toEqual([{ id: 'def-1', label: 'Load rating', value: { kind: 'measure', text: '30.00', unit: 'kg' } }]);
   });
 
   it('resolves a value into the same descriptor an item card renders', () => {
-    expect(resolveLocationDetailFields([field()])).toEqual([
+    expect(resolveLocationDetail([field()])).toEqual([
       { id: 'def-1', label: 'Load rating', value: { kind: 'text', text: '30 kg' } },
     ]);
   });
@@ -52,13 +58,11 @@ describe('resolveLocationDetailFields', () => {
   it('drops unset and blank values rather than showing an em-dash row', () => {
     // Unlike an item card — where every configured field keeps a row so cards in a list stay the
     // same height — this panel shows one location and has nothing to line up with.
-    expect(
-      resolveLocationDetailFields([field({ value: null }), field({ defId: 'd2', value: '   ' })]),
-    ).toEqual([]);
+    expect(resolveLocationDetail([field({ value: null }), field({ defId: 'd2', value: '   ' })])).toEqual([]);
   });
 
   it('formats by field type, exactly as the item card does', () => {
-    const resolved = resolveLocationDetailFields([
+    const resolved = resolveLocationDetail([
       field({ defId: 'b', name: 'Ventilated', fieldType: 'BOOLEAN', value: 'true' }),
       field({ defId: 'o', name: 'Heating', fieldType: 'ON_OFF', value: 'false' }),
     ]);
@@ -70,7 +74,7 @@ describe('resolveLocationDetailFields', () => {
 
   it('renders an IMAGE value as a thumbnail, not its base64 text', () => {
     const src = 'data:image/webp;base64,AAAA';
-    const [resolved] = resolveLocationDetailFields([
+    const [resolved] = resolveLocationDetail([
       field({ defId: 'i', name: 'Shelf photo', fieldType: 'IMAGE', value: src }),
     ]);
     expect(resolved?.value).toEqual({ kind: 'image', src });
@@ -80,21 +84,44 @@ describe('resolveLocationDetailFields', () => {
     // The panel's own doc comment offers "a link to the boiler manual" as its worked example;
     // this is the assertion that it really is one, and that it came from the shared seam
     // rather than a second answer invented for locations.
-    const [resolved] = resolveLocationDetailFields([
+    const [resolved] = resolveLocationDetail([
       field({ defId: 'u', name: 'Boiler manual', fieldType: 'URL', value: 'https://example.com/b.pdf' }),
     ]);
     expect(resolved?.value).toEqual({ kind: 'link', href: 'https://example.com/b.pdf' });
   });
 
   it('renders a FILE value that is a path as a pointer, not a link (W1f)', () => {
-    const [resolved] = resolveLocationDetailFields([
+    const [resolved] = resolveLocationDetail([
       field({ defId: 'f', name: 'Wiring diagram', fieldType: 'FILE', value: '\\\\nas\\docs\\wiring.pdf' }),
     ]);
-    expect(resolved?.value).toEqual({ kind: 'pointer', text: '\\\\nas\\docs\\wiring.pdf' });
+    expect(resolved?.value).toEqual({
+      kind: 'pointer',
+      text: '\\\\nas\\docs\\wiring.pdf',
+      foreign: false,
+    });
+  });
+
+  it('marks a FILE path the location recorded on another device (W1g)', () => {
+    // A location's value is the one an *item* can inherit, so the place offering it has to say
+    // where it came from too — otherwise the item warns and the location it inherits from does not.
+    const [resolved] = resolveLocationDetail([
+      field({
+        defId: 'f',
+        name: 'Wiring diagram',
+        fieldType: 'FILE',
+        value: '\\\\nas\\docs\\wiring.pdf',
+        originDeviceId: 'device-other',
+      }),
+    ]);
+    expect(resolved?.value).toEqual({
+      kind: 'pointer',
+      text: '\\\\nas\\docs\\wiring.pdf',
+      foreign: true,
+    });
   });
 
   it('preserves the order it is given', () => {
-    const resolved = resolveLocationDetailFields([
+    const resolved = resolveLocationDetail([
       field({ defId: 'a', name: 'Access code' }),
       field({ defId: 'z', name: 'Zone' }),
     ]);

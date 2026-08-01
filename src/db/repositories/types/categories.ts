@@ -534,6 +534,30 @@ export interface ResolvedItemField extends CategoryField {
    * ancestor offers one (in which case `<Inherit>` is not offered at all).
    */
   readonly inheritable: InheritableFieldValue | null;
+  /**
+   * The device {@link value} was authored on, or null when nothing attributed it (W1g).
+   *
+   * Tracks `value` through the same precedence: an **inherited** value carries the *location*
+   * row's origin, because that is the row the string actually lives on — the item's own row
+   * holds no value to attribute. A default carries none: a category default is part of the
+   * schema, authored nowhere in particular.
+   */
+  readonly originDeviceId: string | null;
+}
+
+/**
+ * One item's effective value for one card field, as the card surfaces read it.
+ *
+ * An object rather than the bare string it used to be, because the card has to render two facts
+ * about a `FILE` value — what it says, and whether the device that recorded it is this one
+ * (W1g). Keeping them on one entry is what stops a value and an attribution that describe
+ * different rows ever being paired, which a second parallel map could not rule out.
+ */
+export interface CardFieldStoredValue {
+  /** The effective value — inheritance already resolved. Never null: unset fields are omitted. */
+  readonly value: string;
+  /** The device it was authored on, or null when unattributed. */
+  readonly originDeviceId: string | null;
 }
 
 /** An inheritable value offered to an item by one of its ancestor locations. */
@@ -543,6 +567,8 @@ export interface InheritableFieldValue {
   /** The location the value came from — shown so the user knows *where* it is set. */
   readonly locationId: string;
   readonly locationName: string;
+  /** The device the ancestor's value was authored on, or null when unattributed (W1g). */
+  readonly originDeviceId: string | null;
 }
 
 // --- Location field values (issue #97) -----------------------------------------
@@ -553,6 +579,7 @@ export interface LocationFieldValueRow {
   readonly def_id: string;
   readonly value: string | null;
   readonly is_inheritable: number;
+  readonly origin_device_id: string | null;
   readonly updated_at: number;
 }
 
@@ -591,6 +618,11 @@ export interface LocationFieldValue {
   readonly value: string | null;
   /** Opt-in: when false the value is the location's own metadata and is not offered. */
   readonly isInheritable: boolean;
+  /**
+   * The device this value was authored on, or null when nothing attributed it (W1g). Read by
+   * the `FILE` surfaces, which have to be able to say that a path came from somewhere else.
+   */
+  readonly originDeviceId: string | null;
   readonly updatedAt: number;
 }
 
@@ -598,6 +630,15 @@ export interface SetLocationFieldValueInput {
   readonly defId: string;
   readonly value: string | null;
   readonly isInheritable?: boolean;
+  /**
+   * The device authoring this value (W1g) — omitted, or null, to make no attribution claim.
+   *
+   * Only ever applied when the value **changes**. That matters here because this write is also
+   * how the *Offer to items here* tick is saved: it re-sends the value unaltered and passes no
+   * origin, so applying it unconditionally would wipe the attribution off a path merely because
+   * someone changed the flag.
+   */
+  readonly originDeviceId?: string | null;
 }
 
 /**

@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, InfoHint, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { fieldAria } from '@/components/foundry/field-aria';
-import { InfoIcon } from '@/components/icons';
+import { InfoIcon, UnlinkIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
+import { getDeviceId } from '@/lib/env/device-id';
 import { useItemFields, useSetItemFieldValues } from '../categories';
+import { isForeignFilePointer } from '../device-origin';
 import { validateFieldValue } from '../custom-fields';
 import { InheritableFieldControl, INHERIT_DRAFT_VALUE } from './InheritableFieldControl';
 
@@ -23,6 +25,7 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
   const t = useT();
   const { data: fields, isLoading } = useItemFields(itemId);
   const setValues = useSetItemFieldValues(itemId);
+  const deviceId = useMemo(() => getDeviceId(), []);
   const [draft, setDraft] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -81,7 +84,10 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
       const result = validateFieldValue(f, raw);
       patch[f.id] = result.ok ? result.value : null;
     }
-    setValues.mutate(patch);
+    // This device authored these values, so it attributes them (W1g) — and only these, since
+    // `patch` already carries just the fields whose value actually changed. That is what makes
+    // re-linking a foreign path work: writing a new one here is what re-homes it.
+    setValues.mutate({ values: patch, originDeviceId: deviceId });
   };
 
   return (
@@ -130,6 +136,21 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
               fieldName={field.name}
               inheritable={field.inheritable}
             />
+            {/* A `FILE` value holding a path recorded elsewhere (W1g). Shown only while the
+                draft still *is* that value: once the user types over it the note describes
+                something that is about to stop being true, and the box they are typing in is
+                itself the re-link — replacing the path, or pasting a web address, is the whole
+                flow, which is why no separate Re-link / Use URL pair is offered here the way
+                the datasheet list offers one for a row it cannot otherwise edit. */}
+            {isForeignFilePointer(field.fieldType, field.value, field.originDeviceId, deviceId) &&
+            (draft[field.id] ?? '') === initialOf(field) ? (
+              <span className="mt-field-gap-compact flex items-start gap-1.5 text-xs text-muted-foreground">
+                <span aria-hidden className="mt-0.5 shrink-0 text-warning [&_svg]:size-3.5">
+                  <UnlinkIcon />
+                </span>
+                {t('inventory.fields.file.foreignHint')}
+              </span>
+            ) : null}
             {hasError ? (
               <span id={errorId} role="alert" className="mt-1 block text-xs text-destructive">
                 {error}

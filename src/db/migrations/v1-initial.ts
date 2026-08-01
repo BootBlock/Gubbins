@@ -2092,6 +2092,29 @@ const baselineStatements: SqlStatement[] = [
   {
     sql: `ALTER TABLE locations ADD COLUMN walk_order INTEGER CHECK (walk_order IS NULL OR walk_order >= 0);`,
   },
+  // --- Custom-field value attribution: which device recorded it (#621, W1g) --------------
+  // The device a custom-field value was authored on, as `lib/env/device-id` supplies it —
+  // the same identity, and the same NULL-means-unattributed rule, as the older
+  // `item_attachments.origin_device_id` above. It exists for one reader: a `FILE` value
+  // holding a *path* is only meaningful on the device that can reach that path, so a value
+  // synced from elsewhere has to be able to say so instead of showing a dead string.
+  //
+  // Stamped on **every** literal value write rather than only on a `FILE` one, and carrying
+  // no CHECK. Both follow from where the column sits: a value row holds only `def_id`, so
+  // the field's type lives in another table — which puts a `field_type` CHECK (the shape
+  // `due_lead_days`, `unit`, `min_value`, `max_value` and `precision` all take on
+  // `field_defs`) out of reach, since a CHECK may not reference another row. What is stored
+  // is therefore the plain fact of the write; deciding it *matters* is the render boundary's
+  // job (`inventory/device-origin.ts`), which is also why an unrecognised value can do no
+  // harm and a peer's whole sync apply must never fail over one (`categories.field_prominence`
+  // and `field_defs.prominence` take that same position).
+  //
+  // Not an FK: a device id is a synthetic identity with no row to point at, exactly as the
+  // attachments column is — so no `FK_REFS` entry. It *does* sync (it is absent from
+  // `SYNC_EXCLUDED_COLUMNS`), because comparing it against the reading device is the whole
+  // point of storing it.
+  { sql: `ALTER TABLE item_field_values ADD COLUMN origin_device_id TEXT;` },
+  { sql: `ALTER TABLE location_field_values ADD COLUMN origin_device_id TEXT;` },
   // The report filters to opted-in items, so the mode is a selective predicate on a
   // table that grows to 100k+ rows. A partial index keeps it off the full scan while
   // costing nothing for the overwhelmingly common 'inherit' default.

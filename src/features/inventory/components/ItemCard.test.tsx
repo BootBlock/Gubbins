@@ -97,6 +97,16 @@ const BASE: Item = {
 };
 const makeItem = (overrides: Partial<Item> = {}): Item => ({ ...BASE, ...overrides });
 
+/** Pin this device so the W1g attribution comparison is decidable. */
+vi.mock('@/lib/env/device-id', () => ({ getDeviceId: () => 'device-this' }));
+
+/**
+ * Build the `customValues` map from plain `{ fieldId: value }`, unattributed unless an origin
+ * is given (W1g) — so a case with nothing to say about attribution reads as it always did.
+ */
+const storedValues = (entries: Record<string, string>, originDeviceId: string | null = null) =>
+  new Map(Object.entries(entries).map(([id, value]) => [id, { value, originDeviceId }]));
+
 /** Scan short synthetic names for the first that satisfies `pred` (both cases exist well within). */
 function firstName(pred: (name: string) => boolean): string {
   for (let i = 0; i < 100000; i++) {
@@ -291,7 +301,7 @@ describe('ItemCard — content branches', () => {
       fieldOrder: ['condition', 'value', 'custom:f1'],
       categoryName: 'Resistors',
       customFields,
-      customValues: new Map([['f1', '5V']]),
+      customValues: storedValues({ f1: '5V' }),
     });
     // Field labels (dt) and their resolved values (dd).
     expect(screen.getByText('Condition')).toBeInTheDocument();
@@ -431,5 +441,66 @@ describe('ItemCard — crash containment (issue #313)', () => {
     // …and the healthy sibling beside it is untouched.
     expect(screen.getByRole('heading', { name: /NE555 timer/ })).not.toBeNull();
     expect(container.querySelectorAll('[data-testid="item-crashed"]')).toHaveLength(1);
+  });
+});
+
+/**
+ * W1g — a `FILE` value holding a path recorded on another device, on the card. The card is
+ * read-only, so the whole effect here is *naming* the value; the editor is where it is fixed.
+ */
+describe('ItemCard — a file path from another device (W1g)', () => {
+  const PATH = '\\\\server\\share\\boiler.pdf';
+
+  const fileCatalog = () =>
+    new Map([
+      [
+        'f1',
+        {
+          id: 'f1',
+          categoryId: 'cat',
+          name: 'Manual',
+          fieldType: 'FILE' as const,
+          defaultValue: null,
+          unit: null,
+          precision: null,
+        },
+      ],
+    ]);
+
+  const renderPath = (originDeviceId: string | null) =>
+    renderCard(makeItem({ categoryId: 'cat' }), {
+      fieldOrder: ['custom:f1'],
+      categoryName: 'Boilers',
+      customFields: fileCatalog(),
+      customValues: storedValues({ f1: PATH }, originDeviceId),
+    });
+
+  it('names a path recorded elsewhere for what it is, and still shows it', () => {
+    renderPath('device-other');
+    expect(screen.getByText('File path from another device:')).toBeInTheDocument();
+    expect(screen.getByText(PATH)).toBeInTheDocument();
+    // Still not a link — a browser cannot navigate to a share, whoever recorded it.
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('says only "File path" for one recorded on this device', () => {
+    renderPath('device-this');
+    expect(screen.getByText('File path:')).toBeInTheDocument();
+    expect(screen.queryByText('File path from another device:')).not.toBeInTheDocument();
+  });
+
+  it('treats an unattributed path as ordinary, never as foreign', () => {
+    // Every row written before the column existed holds NULL, as does every value a clone or an
+    // import copied — warning about all of them would be worse than the silence W1g removes.
+    renderPath(null);
+    expect(screen.getByText('File path:')).toBeInTheDocument();
+  });
+
+  it('tells a sighted user too, via the value title', () => {
+    // The icon alone cannot carry "and that device isn't this one".
+    renderPath('device-other');
+    expect(
+      screen.getByTitle(`${PATH} — recorded on another device, so it may not open here`),
+    ).toBeInTheDocument();
   });
 });

@@ -575,7 +575,7 @@
       "type": "table",
       "name": "item_field_values",
       "tbl_name": "item_field_values",
-      "sql": "CREATE TABLE item_field_values (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          def_id     TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,\n          value      TEXT,\n          mode       TEXT    NOT NULL DEFAULT 'literal',\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          UNIQUE (item_id, def_id),\n          CHECK (mode IN ('literal', 'inherit')),\n          CHECK (mode <> 'inherit' OR value IS NULL)\n        ) STRICT"
+      "sql": "CREATE TABLE item_field_values (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          def_id     TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,\n          value      TEXT,\n          mode       TEXT    NOT NULL DEFAULT 'literal',\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), origin_device_id TEXT,\n          UNIQUE (item_id, def_id),\n          CHECK (mode IN ('literal', 'inherit')),\n          CHECK (mode <> 'inherit' OR value IS NULL)\n        ) STRICT"
     },
     {
       "type": "table",
@@ -659,7 +659,7 @@
       "type": "table",
       "name": "location_field_values",
       "tbl_name": "location_field_values",
-      "sql": "CREATE TABLE location_field_values (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          location_id    TEXT    NOT NULL REFERENCES locations(id) ON DELETE CASCADE,\n          def_id         TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,\n          value          TEXT,\n          is_inheritable INTEGER NOT NULL DEFAULT 0,\n          updated_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          UNIQUE (location_id, def_id),\n          CHECK (is_inheritable IN (0, 1))\n        ) STRICT"
+      "sql": "CREATE TABLE location_field_values (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          location_id    TEXT    NOT NULL REFERENCES locations(id) ON DELETE CASCADE,\n          def_id         TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,\n          value          TEXT,\n          is_inheritable INTEGER NOT NULL DEFAULT 0,\n          updated_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), origin_device_id TEXT,\n          UNIQUE (location_id, def_id),\n          CHECK (is_inheritable IN (0, 1))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -2487,6 +2487,14 @@
           "notnull": 1,
           "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
           "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "origin_device_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
         }
       ],
       "foreignKeys": [
@@ -3906,6 +3914,14 @@
           "type": "INTEGER",
           "notnull": 1,
           "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "origin_device_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
           "pk": 0
         }
       ],

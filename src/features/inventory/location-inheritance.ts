@@ -29,12 +29,16 @@ export interface InheritableOffer {
   readonly locationId: string;
   readonly defId: string;
   readonly value: string | null;
+  /** The device the location's value was authored on, or null when unattributed (W1g). */
+  readonly originDeviceId: string | null;
 }
 
 /** What an item has stored for one definition (absent ⇒ never set). */
 export interface StoredFieldValue {
   readonly mode: FieldValueMode;
   readonly value: string | null;
+  /** The device the item's own value was authored on, or null when unattributed (W1g). */
+  readonly originDeviceId: string | null;
 }
 
 /** The outcome of resolving one field for one item. */
@@ -44,6 +48,8 @@ export interface ResolvedFieldValue {
   readonly mode: FieldValueMode;
   /** The offer in play for this def, whether or not it is currently being used. */
   readonly inheritable: InheritableFieldValue | null;
+  /** The device {@link value} was authored on — see {@link ResolvedItemField.originDeviceId}. */
+  readonly originDeviceId: string | null;
 }
 
 /**
@@ -75,7 +81,12 @@ export function findInheritedValue(
   for (const link of chain) {
     const offer = forDef.get(link.id);
     if (offer === undefined) continue;
-    return { value: offer.value, locationId: link.id, locationName: link.name };
+    return {
+      value: offer.value,
+      locationId: link.id,
+      locationName: link.name,
+      originDeviceId: offer.originDeviceId,
+    };
   }
   return null;
 }
@@ -100,19 +111,36 @@ export function resolveFieldValue(
 ): ResolvedFieldValue {
   const mode: FieldValueMode = stored?.mode ?? 'literal';
 
+  // The origin (W1g) follows `value` rather than being resolved separately, which is what
+  // keeps the two from ever describing different rows: an inherited value takes the offering
+  // *location's* origin (the item's own row holds no value to attribute), a stored literal
+  // takes its own, and a category default takes none — a default is schema, not something a
+  // device authored.
   if (mode === 'inherit') {
     if (inheritable !== null) {
-      return { value: inheritable.value, source: 'inherited', mode, inheritable };
+      return {
+        value: inheritable.value,
+        source: 'inherited',
+        mode,
+        inheritable,
+        originDeviceId: inheritable.originDeviceId,
+      };
     }
-    return { value: defaultValue, source: 'default', mode, inheritable };
+    return { value: defaultValue, source: 'default', mode, inheritable, originDeviceId: null };
   }
 
   // A stored literal row is authoritative even when its value is null — clearing a
   // field is not the same as never having set it. Only the *absence* of a row defaults.
   if (stored !== undefined) {
-    return { value: stored.value, source: 'stored', mode, inheritable };
+    return {
+      value: stored.value,
+      source: 'stored',
+      mode,
+      inheritable,
+      originDeviceId: stored.originDeviceId,
+    };
   }
-  return { value: defaultValue, source: 'default', mode, inheritable };
+  return { value: defaultValue, source: 'default', mode, inheritable, originDeviceId: null };
 }
 
 /**

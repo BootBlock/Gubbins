@@ -44,6 +44,7 @@ import type {
   CreateCategoryFieldInput,
   CreateCategoryInput,
   FieldDef,
+  CardFieldStoredValue,
   FieldDefRow,
   FieldValueMode,
   LocationFieldValue,
@@ -122,10 +123,45 @@ const CATEGORY_FIELD_COLUMNS = `
  */
 const FIELD_PROMINENCE_RANK = `CASE WHEN fd.prominence = '${KEY_FIELD_PROMINENCE}' THEN 0 ELSE 1 END`;
 
+/**
+ * The `ON CONFLICT … DO UPDATE` assignment that attributes a custom-field value to the device
+ * writing it (W1g) — applied **only when the value itself changed**.
+ *
+ * The guard is load-bearing, not a refinement, because two callers re-send a value the user did
+ * not touch — one on each table — and **both claim nothing while doing it**:
+ *
+ * - A location's *Offer to items here* tick is stored by this same upsert, re-sending `value`
+ *   unaltered to change only the flag, and passing no origin.
+ * - A CSV import re-states **every** field value on a matched row, unchanged ones included; its
+ *   `CatalogCategoryRepository` port takes no origin at all.
+ *
+ * So the failure an unconditional assignment would cause today is the same on both tables:
+ * NULL pushed over a good attribution, silently downgrading a marked foreign path to an
+ * unmarked one — losing the very statement W1g exists to make.
+ *
+ * The guard is symmetric, so it equally stops the opposite error: a caller that *does* name a
+ * device cannot claim a value it did not change. No current caller can hit that — the item
+ * editor names this device but sends only the fields whose value actually changed — so that
+ * half is a standing guarantee rather than a fix for a live bug.
+ *
+ * A row whose value is unchanged keeps whatever origin it already had.
+ *
+ * `IS` rather than `=`: SQLite's null-safe comparison, so clearing to NULL and back is judged
+ * as the change it is instead of collapsing to unknown. `table` is a literal from this module,
+ * never caller input — the same rule every interpolated identifier here follows.
+ */
+function originOnValueChange(table: 'item_field_values' | 'location_field_values'): string {
+  return (
+    `origin_device_id = CASE WHEN ${table}.value IS excluded.value ` +
+    `THEN ${table}.origin_device_id ELSE excluded.origin_device_id END`
+  );
+}
+
 interface ResolvedFieldRow extends CategoryFieldRow {
   readonly stored_value: string | null;
   readonly has_stored: number;
   readonly stored_mode: FieldValueMode | null;
+  readonly stored_origin_device_id: string | null;
 }
 
 /**
@@ -618,8 +654,13 @@ export class CategoryRepository extends BaseRepository {
       this.driver.query<{ id: string; name: string; parent_id: string | null }>(
         'SELECT id, name, parent_id FROM locations;',
       ),
-      this.driver.query<{ location_id: string; def_id: string; value: string | null }>(
-        'SELECT location_id, def_id, value FROM location_field_values WHERE is_inheritable = 1;',
+      this.driver.query<{
+        location_id: string;
+        def_id: string;
+        value: string | null;
+        origin_device_id: string | null;
+      }>(
+        'SELECT location_id, def_id, value, origin_device_id FROM location_field_values WHERE is_inheritable = 1;',
       ),
     ]);
 
@@ -628,6 +669,7 @@ export class CategoryRepository extends BaseRepository {
       locationId: r.location_id,
       defId: r.def_id,
       value: r.value,
+      originDeviceId: r.origin_device_id,
     }));
 
     // Chains are memoised per *location*, not per item: items sharing a location (the
@@ -647,8 +689,8 @@ export class CategoryRepository extends BaseRepository {
 
   /**
    * The custom-field values for a set of items (backlog E1 — item cards render chosen
-   * custom fields), keyed `cardFieldId → value` per item where the card-field id is the
-   * item's category's `category_fields.id`.
+   * custom fields), keyed `cardFieldId → {@link CardFieldStoredValue}` per item where the
+   * card-field id is the item's category's `category_fields.id`.
    *
    * Values that the item **inherits** from its location (issue #97) are resolved here too,
    * so a card shows the same value the item's detail view does — a card that silently
@@ -656,8 +698,10 @@ export class CategoryRepository extends BaseRepository {
    * value appear; lenient defaulting is still applied at render from the field catalog.
    * Empty ids ⇒ empty map (no query).
    */
-  async getItemFieldValues(itemIds: readonly string[]): Promise<Map<string, Map<string, string>>> {
-    const out = new Map<string, Map<string, string>>();
+  async getItemFieldValues(
+    itemIds: readonly string[],
+  ): Promise<Map<string, Map<string, CardFieldStoredValue>>> {
+    const out = new Map<string, Map<string, CardFieldStoredValue>>();
     if (itemIds.length === 0) return out;
     const placeholders = itemIds.map(() => '?').join(', ');
 
@@ -669,8 +713,9 @@ export class CategoryRepository extends BaseRepository {
       def_id: string;
       value: string | null;
       mode: FieldValueMode;
+      origin_device_id: string | null;
     }>(
-      `SELECT ifv.item_id, cf.id AS field_id, ifv.def_id, ifv.value, ifv.mode
+      `SELECT ifv.item_id, cf.id AS field_id, ifv.def_id, ifv.value, ifv.mode, ifv.origin_device_id
        FROM item_field_values ifv
        JOIN items i ON i.id = ifv.item_id
        JOIN category_fields cf ON cf.def_id = ifv.def_id AND cf.category_id = i.category_id
@@ -686,19 +731,23 @@ export class CategoryRepository extends BaseRepository {
       : EMPTY_INHERITANCE_CONTEXT;
 
     for (const row of rows) {
-      const effective =
-        row.mode === 'inherit'
-          ? (findInheritedValue(context.chainByItem.get(row.item_id) ?? [], context.offers, row.def_id)
-              ?.value ?? null)
-          : row.value;
+      // An inherited value's *origin* travels with it (W1g): the string on screen lives on the
+      // offering location's row, so attributing it to the item's own row — which holds no value
+      // at all under `mode = 'inherit'` — would name the wrong device.
+      const inherited = row.mode === 'inherit';
+      const offer = inherited
+        ? findInheritedValue(context.chainByItem.get(row.item_id) ?? [], context.offers, row.def_id)
+        : null;
+      const effective = inherited ? (offer?.value ?? null) : row.value;
       if (effective === null) continue;
+      const originDeviceId = inherited ? (offer?.originDeviceId ?? null) : row.origin_device_id;
 
       let byField = out.get(row.item_id);
       if (byField === undefined) {
-        byField = new Map<string, string>();
+        byField = new Map<string, CardFieldStoredValue>();
         out.set(row.item_id, byField);
       }
-      byField.set(row.field_id, effective);
+      byField.set(row.field_id, { value: effective, originDeviceId });
     }
     return out;
   }
@@ -1004,6 +1053,7 @@ export class CategoryRepository extends BaseRepository {
         `SELECT ${CATEGORY_FIELD_COLUMNS},
                 ifv.value AS stored_value,
                 ifv.mode  AS stored_mode,
+                ifv.origin_device_id AS stored_origin_device_id,
                 (ifv.id IS NOT NULL) AS has_stored
          FROM category_fields cf
          JOIN field_defs fd ON fd.id = cf.def_id
@@ -1022,7 +1072,13 @@ export class CategoryRepository extends BaseRepository {
       const hasStored = row.has_stored === 1;
       const inheritable = findInheritedValue(chain, context.offers, field.defId);
       const resolved = resolveFieldValue(
-        hasStored ? { mode: row.stored_mode ?? 'literal', value: row.stored_value } : undefined,
+        hasStored
+          ? {
+              mode: row.stored_mode ?? 'literal',
+              value: row.stored_value,
+              originDeviceId: row.stored_origin_device_id,
+            }
+          : undefined,
         inheritable,
         field.defaultValue,
       );
@@ -1033,6 +1089,7 @@ export class CategoryRepository extends BaseRepository {
         mode: resolved.mode,
         source: resolved.source,
         inheritable: resolved.inheritable,
+        originDeviceId: resolved.originDeviceId,
       };
     });
   }
@@ -1049,8 +1106,16 @@ export class CategoryRepository extends BaseRepository {
    *
    * Keys are `category_fields.id` (what callers hold); they are translated to the
    * definition id the value rows key on.
+   *
+   * `originDeviceId` (W1g) attributes the values being written to a device — see
+   * {@link originOnValueChange} for when it is actually applied, and
+   * {@link SetLocationFieldValueInput.originDeviceId} for what omitting it means.
    */
-  async setItemFieldValues(itemId: string, values: Readonly<Record<string, string | null>>): Promise<void> {
+  async setItemFieldValues(
+    itemId: string,
+    values: Readonly<Record<string, string | null>>,
+    originDeviceId: string | null = null,
+  ): Promise<void> {
     this.assertPermission('items:write');
     this.assertWritable();
     const entries = Object.entries(values);
@@ -1116,10 +1181,14 @@ export class CategoryRepository extends BaseRepository {
           );
         }
         statements.push({
-          sql: `INSERT INTO item_field_values (id, item_id, def_id, value, mode)
-                VALUES (?, ?, ?, NULL, 'inherit')
+          // An inherit row holds no value of its own (the table's own
+          // `CHECK (mode <> 'inherit' OR value IS NULL)`), so it has nothing to attribute:
+          // the origin is cleared alongside the value rather than left pointing at whatever
+          // device wrote the literal this row used to be (W1g).
+          sql: `INSERT INTO item_field_values (id, item_id, def_id, value, mode, origin_device_id)
+                VALUES (?, ?, ?, NULL, 'inherit', NULL)
                 ON CONFLICT (item_id, def_id)
-                  DO UPDATE SET value = NULL, mode = 'inherit';`,
+                  DO UPDATE SET value = NULL, mode = 'inherit', origin_device_id = NULL;`,
           params: [crypto.randomUUID(), itemId, def.defId],
         });
         continue;
@@ -1145,11 +1214,12 @@ export class CategoryRepository extends BaseRepository {
         }
       } else {
         statements.push({
-          sql: `INSERT INTO item_field_values (id, item_id, def_id, value, mode)
-                VALUES (?, ?, ?, ?, 'literal')
+          sql: `INSERT INTO item_field_values (id, item_id, def_id, value, mode, origin_device_id)
+                VALUES (?, ?, ?, ?, 'literal', ?)
                 ON CONFLICT (item_id, def_id)
-                  DO UPDATE SET value = excluded.value, mode = 'literal';`,
-          params: [crypto.randomUUID(), itemId, def.defId, value],
+                  DO UPDATE SET value = excluded.value, mode = 'literal',
+                                ${originOnValueChange('item_field_values')};`,
+          params: [crypto.randomUUID(), itemId, def.defId, value, originDeviceId],
         });
       }
     }
@@ -1267,16 +1337,18 @@ export class CategoryRepository extends BaseRepository {
     }
 
     await this.driver.execute(
-      `INSERT INTO location_field_values (id, location_id, def_id, value, is_inheritable)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO location_field_values (id, location_id, def_id, value, is_inheritable, origin_device_id)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (location_id, def_id)
-         DO UPDATE SET value = excluded.value, is_inheritable = excluded.is_inheritable;`,
+         DO UPDATE SET value = excluded.value, is_inheritable = excluded.is_inheritable,
+                       ${originOnValueChange('location_field_values')};`,
       [
         existing?.id ?? crypto.randomUUID(),
         locationId,
         input.defId,
         result.value,
         input.isInheritable ? 1 : 0,
+        input.originDeviceId ?? null,
       ],
     );
     const rows = await this.listLocationFieldValues(locationId);

@@ -11,9 +11,10 @@
  * ordered list of `{ label, value }` the card component draws. No React, no DB — the whole
  * thing is exhaustively unit-testable.
  */
-import type { Item } from '@/db/repositories';
+import type { CardFieldStoredValue, Item } from '@/db/repositories';
 import type { Condition, FieldType } from '@/db/repositories/constants';
 import { isImageDataUrl } from '@/lib/image-data-url';
+import { isForeignOrigin } from './device-origin';
 import { isExternalHref } from './external-href';
 import { formatFieldNumber } from './field-number-format';
 import { UNLIMITED_GLYPH } from './unlimited';
@@ -246,8 +247,15 @@ export type CardFieldValue =
    * the pointer it is: a browser can neither verify nor navigate to it, and only a device that
    * can reach that path will find anything there, so presenting it as a link would be a
    * control that looks live and does nothing.
+   *
+   * `foreign` says the value was recorded on a *different* device (W1g), which turns "only a
+   * device that can reach this path will find anything" from a general caveat into a statement
+   * about this value. A field on the arm rather than a fifth arm of its own, because the split
+   * this union makes is about **capability** — `link` is an `<a>`, `pointer` is not, and that
+   * decides which element gets rendered — whereas provenance changes only which icon and which
+   * assistive-technology label the same box carries.
    */
-  | { readonly kind: 'pointer'; readonly text: string }
+  | { readonly kind: 'pointer'; readonly text: string; readonly foreign: boolean }
   | { readonly kind: 'money'; readonly amount: number }
   | { readonly kind: 'condition'; readonly condition: Condition }
   | { readonly kind: 'tags'; readonly tags: readonly string[] }
@@ -261,6 +269,14 @@ export interface ResolvedCardField {
 }
 
 const EMPTY: CardFieldValue = { kind: 'empty' };
+
+/** What {@link customFieldValue} needs to tell "recorded here" from "recorded elsewhere" (W1g). */
+export interface CardFieldOrigin {
+  /** The device the value was authored on, or null when unattributed. */
+  readonly originDeviceId: string | null;
+  /** The device now reading it. */
+  readonly currentDeviceId: string;
+}
 
 /** The formatter functions the resolver needs (a pure subset of `useFormatters`). */
 export interface CardFieldFormatters {
@@ -276,8 +292,14 @@ export interface CardFieldContext {
   readonly categoryName: string | null;
   /** The live custom-field catalog, keyed by field id (stable across the list). */
   readonly customFields: ReadonlyMap<string, CardCustomField>;
-  /** This item's stored custom-field values (fieldId → raw value), if they've loaded. */
-  readonly customValues: ReadonlyMap<string, string> | undefined;
+  /** This item's stored custom-field values (fieldId → value + origin), if they've loaded. */
+  readonly customValues: ReadonlyMap<string, CardFieldStoredValue> | undefined;
+  /**
+   * The device rendering these fields, so a `FILE` value recorded elsewhere can be marked as
+   * such (W1g). Passed in rather than read here because this seam is pure — the id comes from
+   * `localStorage` via `lib/env/device-id`, which is the caller's business.
+   */
+  readonly currentDeviceId: string;
   /** This item's tag names (issue #84), if the Tags field is shown and they've loaded. */
   readonly tags?: readonly string[];
   readonly fmt: CardFieldFormatters;
@@ -309,11 +331,17 @@ function resolveOne(id: string, item: Item, ctx: CardFieldContext): ResolvedCard
     // A custom field applies only to items in its own category; for any other item the
     // line still renders (as em-dash) so cards keep a uniform height.
     if (item.categoryId !== field.categoryId) return { id, label: field.name, value: EMPTY };
-    const raw = ctx.customValues?.get(customId) ?? field.defaultValue;
+    // A stored value carries its own attribution; the category *default* falls back to none,
+    // which is right — a default is part of the schema, authored on no particular device.
+    const stored = ctx.customValues?.get(customId);
+    const raw = stored?.value ?? field.defaultValue;
     return {
       id,
       label: field.name,
-      value: customFieldValue(field.fieldType, raw, field.unit, field.precision),
+      value: customFieldValue(field.fieldType, raw, field.unit, field.precision, {
+        originDeviceId: stored?.originDeviceId ?? null,
+        currentDeviceId: ctx.currentDeviceId,
+      }),
     };
   }
 
@@ -380,12 +408,17 @@ function quantityValue(item: Item, fmt: CardFieldFormatters): CardFieldValue {
  * properties of the definition and so the same in both places — and, since W1f, the openability
  * of a `URL`/`FILE` value, so a link to the boiler manual is clickable on the place that holds it
  * exactly as on an item inside it.
+ *
+ * `origin` (W1g) is what lets a `FILE` *path* say it came from another device. Optional, and
+ * absent means unattributed: a caller with no attribution to offer gets exactly the pre-W1g
+ * presentation rather than a wrong claim in either direction.
  */
 export function customFieldValue(
   type: FieldType,
   raw: string | null,
   unit: string | null,
   precision: number | null,
+  origin?: CardFieldOrigin,
 ): CardFieldValue {
   if (raw === null || raw.trim() === '') return EMPTY;
   if (type === 'BOOLEAN') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'Yes' : 'No' };
@@ -415,12 +448,21 @@ export function customFieldValue(
   // stray space can never be the difference between a link and a dead string.
   if (type === 'URL' || type === 'FILE') {
     const trimmed = raw.trim();
+    // An address is device-independent, so it never consults the origin — the same reason
+    // `resolveAttachmentLink` returns `url` before it looks at `origin_device_id` at all.
     if (isExternalHref(trimmed)) return { kind: 'link', href: trimmed };
     // A URL value is validated http(s) on save, so one that isn't only arrives out of band (a
     // peer on a newer build, an import, a hand-edited backup). It degrades to plain text
     // rather than to `pointer`, whose "this is a file path" framing would be a claim about it
     // that nothing has established.
-    return type === 'FILE' ? { kind: 'pointer', text: trimmed } : { kind: 'text', text: trimmed };
+    if (type !== 'FILE') return { kind: 'text', text: trimmed };
+    // Only the origin clause is left to test: this line is reached having already established
+    // the type is `FILE` and the string is not an address, which are the other two clauses of
+    // `device-origin.ts`'s `isForeignFilePointer` — the same rule, spelled out there for a
+    // caller that has not classified the value yet, and pinned to this one by a test. Absent
+    // `origin` means unattributed, which is never foreign.
+    const foreign = origin !== undefined && isForeignOrigin(origin.originDeviceId, origin.currentDeviceId);
+    return { kind: 'pointer', text: trimmed, foreign };
   }
   // An IMAGE value is an image `data:` URL — render it as a thumbnail, not its base64 text.
   // Only a value of exactly that shape becomes a `src` (see {@link isImageDataUrl}); anything
