@@ -17,6 +17,7 @@ import { AuditDayDialog } from './AuditDayDialog';
 import { BurstProvider, type MediaQueryProvider } from '@/components/foundry';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useAuditSessionStore } from '../useAuditSessionStore';
+import { useCountDraftStore } from '../useCountDraftStore';
 import { startAudit, markLocation } from '../audit-session';
 
 // ---------------------------------------------------------------------------
@@ -85,8 +86,10 @@ beforeEach(() => usePreferencesStore.setState({ animationLevel: 'headache' }));
 afterEach(() => {
   cleanup();
   usePreferencesStore.setState({ animationLevel: 'balanced' });
-  // Reset the persisted session between tests.
+  // Reset the persisted session — and the saved count sheets (issue #587), or a count entered
+  // by one test would be restored into the next one's walk.
   useAuditSessionStore.setState({ session: null });
+  useCountDraftStore.setState({ drafts: {} });
   localStorage.clear();
   authoriseCountSpy.mockResolvedValue({ discrete: [], serialised: [] });
 });
@@ -227,6 +230,80 @@ describe('AuditDayDialog — resume', () => {
     expect(screen.getByTestId('audit-stat-audited').textContent).toBe('2');
     expect(screen.getByTestId('audit-stat-variances').textContent).toBe('2');
     expect(screen.getByTestId('audit-stat-adjustments').textContent).toBe('2');
+  });
+});
+
+describe('AuditDayDialog — "Pause & close" keeps the counts (issue #587)', () => {
+  /** Start a walk over both locations and type `value` at Drawer A. */
+  async function startAndCount(value: string) {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId('audit-start')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('audit-start'));
+    await waitForCountInput();
+    fireEvent.change(screen.getByTestId(COUNT_TESTID), { target: { value } });
+  }
+
+  it('hands the counts back when the paused walk is resumed', async () => {
+    await startAndCount('8');
+    // Pause & close unmounts the dialog (as Escape and a backdrop tap also do) — this used to
+    // throw away every quantity typed at the location in hand.
+    fireEvent.click(screen.getByTestId('audit-pause'));
+    cleanup();
+
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId('audit-step-heading').textContent).toContain('Drawer A'));
+    await waitForCountInput();
+    expect(screen.getByTestId<HTMLInputElement>(COUNT_TESTID).value).toBe('8');
+    expect(screen.getByTestId('count-draft-notice').textContent).toContain('Restored 1 count');
+  });
+
+  it('shows no restore notice when the walk was paused before anything was typed', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId('audit-start')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('audit-start'));
+    await waitForCountInput();
+    fireEvent.click(screen.getByTestId('audit-pause'));
+    cleanup();
+
+    renderDialog();
+    await waitForCountInput();
+    expect(screen.queryByTestId('count-draft-notice')).not.toBeInTheDocument();
+    expect(useCountDraftStore.getState().drafts.locA).toBeUndefined();
+  });
+
+  it('drops a location’s sheet when it is skipped rather than counted', async () => {
+    await startAndCount('8');
+    expect(useCountDraftStore.getState().drafts.locA).toBeDefined();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('audit-skip'));
+    });
+    expect(useCountDraftStore.getState().drafts.locA).toBeUndefined();
+  });
+
+  it('discards every unfinished sheet in scope when the whole walk is abandoned', async () => {
+    await startAndCount('8');
+    expect(useCountDraftStore.getState().drafts.locA).toBeDefined();
+
+    fireEvent.click(screen.getByTestId('audit-abandon'));
+    expect(useCountDraftStore.getState().drafts).toEqual({});
+    // …and the next stock-take starts from the scope picker with nothing carried over.
+    await waitFor(() => expect(screen.getByTestId('audit-scope-count')).toBeTruthy());
+  });
+
+  it('keeps each location’s sheet to itself as the walk advances', async () => {
+    await startAndCount('8');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('audit-authorise-continue'));
+    });
+
+    // Drawer B opens blind — Drawer A's count must not follow the walk to the next shelf.
+    await waitFor(() => expect(screen.getByTestId('audit-step-heading').textContent).toContain('Drawer B'));
+    await waitForCountInput();
+    expect(screen.getByTestId<HTMLInputElement>(COUNT_TESTID).value).toBe('');
+    expect(screen.queryByTestId('count-draft-notice')).not.toBeInTheDocument();
+    // Drawer A's sheet was committed, so it is gone rather than waiting to be offered back.
+    expect(useCountDraftStore.getState().drafts.locA).toBeUndefined();
   });
 });
 

@@ -25,6 +25,13 @@ export interface FormFieldProps {
   readonly hint?: string;
   /** Widen the hint bubble for richer help (tables, code, longer docs). Defaults to `sm`. */
   readonly hintSize?: TooltipSize;
+  /**
+   * Render the denser label a *nested* editor uses — a muted `text-xs` caption at the compact
+   * field gap, rather than the `text-sm font-medium` of a top-level form. Only the label changes;
+   * the control, error and warning wiring is identical, so a panel inside a dialog gets the same
+   * accessibility for free instead of hand-rolling a labelled `<div>` to keep its type scale.
+   */
+  readonly compact?: boolean;
   /** The single form control (Input/Select/…) the label and error describe. */
   readonly children: ReactNode;
 }
@@ -52,7 +59,16 @@ export interface FormFieldProps {
  * {...register('name')} /></FormField>`. The child's own props always win, so an
  * explicit `aria-*` at the call site is never clobbered.
  */
-export function FormField({ label, error, warning, className, hint, hintSize, children }: FormFieldProps) {
+export function FormField({
+  label,
+  error,
+  warning,
+  className,
+  hint,
+  hintSize,
+  compact,
+  children,
+}: FormFieldProps) {
   const fieldId = useId();
   const { controlProps, errorId, warningId, hasError, hasWarning } = fieldAria(fieldId, error, warning);
   // The advisory slot is opt-in: passing a string (empty included) mounts the live region,
@@ -72,11 +88,21 @@ export function FormField({ label, error, warning, className, hint, hintSize, ch
   return (
     <div className={cn('relative', className)}>
       <label className="block">
-        <span className={cn('mb-field-gap block text-sm font-medium', hint && 'pr-6')}>{label}</span>
+        <span
+          className={cn(
+            'block',
+            compact
+              ? 'mb-field-gap-compact text-xs text-muted-foreground'
+              : 'mb-field-gap text-sm font-medium',
+            hint && (compact ? 'pr-5' : 'pr-6'),
+          )}
+        >
+          {label}
+        </span>
         {control}
       </label>
       {hint ? (
-        <span className="absolute right-0 top-0.5">
+        <span className={cn('absolute right-0', compact ? 'top-0' : 'top-0.5')}>
           <InfoHint content={hint} size={hintSize} />
         </span>
       ) : null}

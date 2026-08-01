@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Banner,
   Button,
   LiveRegion,
+  Modal,
   Money,
   PageContainer,
   PageHeader,
@@ -9,6 +11,7 @@ import {
   Spinner,
   Surface,
   pageCount,
+  useToast,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import {
@@ -451,6 +454,7 @@ function OrderListRow({
 function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () => void }) {
   const f = useFormatters();
   const t = useT();
+  const { show } = useToast();
   const poQuery = usePurchaseOrder(poId);
   const itemsQuery = useInventoryItems({}, 100);
   const locationsQuery = useLocations();
@@ -474,6 +478,18 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   const [importOpen, setImportOpen] = useState(false);
   const [receiving, setReceiving] = useState<PurchaseOrderLine | null>(null);
   const [returning, setReturning] = useState<PurchaseOrderLine | null>(null);
+  // Deleting an order — and removing one of its lines — is a hard delete that reaches every
+  // synced device and has no restore path, so each is confirmed in its own dialog rather than
+  // happening on the click that opened it (issue #588).
+  const [confirmDeleteOrder, setConfirmDeleteOrder] = useState(false);
+  // The line *id*, not the row: the order refetches while the dialog is open, so resolving the
+  // row each render keeps the copy on the live figures — and a line that has gone (removed on
+  // another device) closes the dialog rather than confirming against a row that no longer exists.
+  const [confirmRemoveLineId, setConfirmRemoveLineId] = useState<string | null>(null);
+  // Initial focus lands on the safe answer in both dialogs, so a reflex Enter keeps the record —
+  // the same reason the destructive button is second in the row (see `UnsavedChangesPrompt`).
+  const cancelDeleteOrderRef = useRef<HTMLButtonElement>(null);
+  const cancelRemoveLineRef = useRef<HTMLButtonElement>(null);
 
   // WCAG 4.1.3 Status Messages — the badge transition and the receipt-progress
   // counter both change silently; announce each change via the always-mounted
@@ -514,6 +530,19 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
     for (const opt of itemOptions) map.set(opt.id, opt.name);
     return map;
   }, [itemOptions]);
+
+  /**
+   * How a line is named on screen — the matched item's name, else the typed description. Shared
+   * by the row, its remove button's accessible name and the confirmation copy, so all three
+   * refer to the line the same way.
+   */
+  const describeLine = useCallback(
+    (line: PurchaseOrderLine) =>
+      line.itemId
+        ? (itemNameById.get(line.itemId) ?? line.description ?? 'Linked item')
+        : (line.description ?? 'Unnamed line'),
+    [itemNameById],
+  );
 
   // Announce receipt-progress changes (e.g. after "Receive" dialog completes).
   // Keyed on the derived totals so every new receipt fires a fresh announcement.
@@ -559,6 +588,46 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   const ordered = totalOrdered(po.lines);
   const received = totalReceived(po.lines);
   const isActive = po.effectiveStatus !== 'DRAFT' && po.effectiveStatus !== 'CANCELLED';
+  // How the confirmation names the order: its reference when it has one — the thing a user
+  // reconciles against an invoice — else the supplier it was raised against.
+  const orderLabel = po.reference ?? po.supplierName ?? t('supplier.unknown');
+  const removingLine = po.lines.find((l) => l.id === confirmRemoveLineId) ?? null;
+
+  const deleteOrder = () => {
+    deletePo.mutate(po.id, {
+      onSuccess: () => {
+        setConfirmDeleteOrder(false);
+        show({
+          tone: 'success',
+          icon: <DeleteIcon />,
+          heading: t('purchasing.orders.delete.toast.heading'),
+          message: t('purchasing.orders.delete.toast.body', { vars: { order: orderLabel } }),
+        });
+        onDeleted();
+      },
+      // The mutation's own error toast names the failure; closing the dialog here would leave
+      // it looking as though the order had gone, so it stays open for a second attempt.
+    });
+  };
+
+  const removeLineNow = (line: PurchaseOrderLine) => {
+    removeLine.mutate(
+      { poId: po.id, lineId: line.id },
+      {
+        onSuccess: () => {
+          setConfirmRemoveLineId(null);
+          show({
+            tone: 'success',
+            icon: <DeleteIcon />,
+            heading: t('purchasing.orders.line.remove.toast.heading'),
+            message: t('purchasing.orders.line.remove.toast.body', {
+              vars: { line: describeLine(line) },
+            }),
+          });
+        },
+      },
+    );
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -604,8 +673,11 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
               Reopen as draft
             </Button>
           ) : (
+            // Cancelling is *reversible* — "Reopen as draft" above puts it straight back — so it
+            // is not styled as the row's destructive action. Carrying the same solid red as
+            // Delete order made the two read as the same weight of decision (issue #588).
             <Button
-              variant="destructive"
+              variant="outline"
               onClick={() =>
                 setStatus.mutate(
                   { id: po.id, status: 'CANCELLED' },
@@ -618,13 +690,18 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
               Cancel order
             </Button>
           )}
+          {/* The irreversible action in this row, so it reads as its own thing: a text label
+              rather than a bare bin beside "Cancel order", and de-emphasised so it is never the
+              button reached for by accident. It asks before deleting. */}
           <Button
-            variant="destructive"
-            onClick={() => deletePo.mutate(po.id, { onSuccess: onDeleted })}
+            variant="ghost"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setConfirmDeleteOrder(true)}
             disabled={deletePo.isPending}
-            aria-label="Delete order"
+            data-testid="po-delete"
           >
             <DeleteIcon />
+            {t('purchasing.orders.delete.trigger')}
           </Button>
         </div>
       </Surface>
@@ -652,9 +729,7 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
           <ul className="flex flex-col divide-y divide-border">
             {po.lines.map((line) => {
               const outstanding = Math.max(0, line.orderedQty - line.receivedQty);
-              const label = line.itemId
-                ? (itemNameById.get(line.itemId) ?? line.description ?? 'Linked item')
-                : (line.description ?? 'Unnamed line');
+              const label = describeLine(line);
               return (
                 <li
                   key={line.id}
@@ -692,13 +767,18 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
                       Return
                     </Button>
                   )}
+                  {/* Named after the line it removes, so a screen reader hears which of the
+                      several "remove" buttons in this list it has landed on — and ghost, not
+                      solid red, so it doesn't outweigh the Receive/Return buttons beside it.
+                      Removing the line is confirmed first (issue #588). */}
                   <Button
-                    variant="destructive"
-                    onClick={() => removeLine.mutate({ poId: po.id, lineId: line.id })}
+                    variant="ghost"
+                    onClick={() => setConfirmRemoveLineId(line.id)}
                     disabled={removeLine.isPending}
-                    aria-label="Remove line"
+                    aria-label={t('purchasing.orders.line.remove.label', { vars: { line: label } })}
+                    data-testid="po-remove-line"
                   >
-                    <DeleteIcon />
+                    <DeleteIcon className="text-glyph-danger" />
                   </Button>
                 </li>
               );
@@ -706,6 +786,102 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
           </ul>
         )}
       </Surface>
+
+      {/*
+       * Confirming the order-level delete. It is a *hard* delete — the order and every line go,
+       * a tombstone carries the deletion to every synced device, and nothing short of a backup
+       * brings it back — so the copy names what is lost rather than asking a bare "are you sure":
+       * which order, how many lines, and what happens to stock already received against it.
+       */}
+      <Modal
+        open={confirmDeleteOrder}
+        onClose={() => setConfirmDeleteOrder(false)}
+        title={t('purchasing.orders.delete.title')}
+        description={
+          po.lines.length === 0
+            ? t('purchasing.orders.delete.bodyEmpty', { vars: { order: orderLabel } })
+            : t('purchasing.orders.delete.body', {
+                vars: { order: orderLabel, count: po.lines.length },
+              })
+        }
+        initialFocusRef={cancelDeleteOrderRef}
+      >
+        <div className="flex flex-col gap-4">
+          {received > 0 ? (
+            // The part that isn't obvious: the goods stay on the shelf, but the record of what
+            // they cost and who they came from goes with the order.
+            <Banner tone="warning">
+              {t('purchasing.orders.delete.receivedNote', {
+                vars: { received: f.quantity(received), ordered: f.quantity(ordered) },
+              })}
+            </Banner>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button
+              ref={cancelDeleteOrderRef}
+              variant="ghost"
+              onClick={() => setConfirmDeleteOrder(false)}
+              disabled={deletePo.isPending}
+            >
+              {t('purchasing.orders.delete.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={deleteOrder}
+              disabled={deletePo.isPending}
+              data-testid="po-delete-confirm"
+            >
+              {deletePo.isPending ? <Spinner /> : <DeleteIcon />}
+              {t('purchasing.orders.delete.confirm')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Confirming a line removal — the same hard delete, one line at a time. */}
+      <Modal
+        open={removingLine !== null}
+        onClose={() => setConfirmRemoveLineId(null)}
+        title={t('purchasing.orders.line.remove.title')}
+        description={
+          removingLine
+            ? t('purchasing.orders.line.remove.body', { vars: { line: describeLine(removingLine) } })
+            : undefined
+        }
+        initialFocusRef={cancelRemoveLineRef}
+      >
+        <div className="flex flex-col gap-4">
+          {removingLine && removingLine.receivedQty > 0 ? (
+            <Banner tone="warning">
+              {t('purchasing.orders.delete.receivedNote', {
+                vars: {
+                  received: f.quantity(removingLine.receivedQty),
+                  ordered: f.quantity(removingLine.orderedQty),
+                },
+              })}
+            </Banner>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button
+              ref={cancelRemoveLineRef}
+              variant="ghost"
+              onClick={() => setConfirmRemoveLineId(null)}
+              disabled={removeLine.isPending}
+            >
+              {t('purchasing.orders.line.remove.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => removingLine && removeLineNow(removingLine)}
+              disabled={removeLine.isPending}
+              data-testid="po-remove-line-confirm"
+            >
+              {removeLine.isPending ? <Spinner /> : <DeleteIcon />}
+              {t('purchasing.orders.line.remove.confirm')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <ImportPurchaseListDialog
         open={importOpen}

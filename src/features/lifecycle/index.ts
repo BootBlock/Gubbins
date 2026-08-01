@@ -23,6 +23,7 @@ export { MaintenanceEditor } from './components/MaintenanceEditor';
 export { CycleCountDialog } from './components/CycleCountDialog';
 export { AuditDayDialog } from './components/AuditDayDialog';
 export { useAuditSessionStore } from './useAuditSessionStore';
+export { useCountDraftStore } from './useCountDraftStore';
 export {
   useItemVariants,
   useCreateVariant,

@@ -114,6 +114,29 @@ Received stock lands in your inventory and the in-transit figure drops according
 > total is in that order's own currency, named in the adjacent column. See
 > [[Export & import|Export-and-Import]].
 
+## Cancelling or deleting an order
+
+These are two different things, and only one of them can be taken back:
+
+- **Cancel order** marks the order as cancelled but keeps it. Everything on it — lines, prices,
+  what was received — stays readable, and **Reopen as draft** puts it back whenever you want.
+  This is the one you usually want when an order falls through.
+- **Delete order** removes the order and all of its lines for good. It can't be undone, there's
+  no restore short of a [[backup|Backup-and-Restore]], and the deletion travels to your other
+  devices the next time they [[sync|Cloud-Sync]].
+
+Because deleting is permanent, Gubbins asks first: the confirmation names the order and how many
+lines go with it, and — if anything has already been delivered against it — says so before you
+commit. Removing a single **line** asks in the same way.
+
+> **ℹ️ Note**
+> Deleting an order doesn't touch stock you've already received from it. Those goods stay in your
+> inventory exactly as they are; what goes is the record of what they cost and which supplier
+> they came from. If you want that history, cancel the order instead of deleting it.
+
+The same applies on the [[Wishlist]] — removing a wish takes its note, link and target price with
+it, so that asks before it removes anything too.
+
 ## Related pages
 
 - **[[Reorder & shopping list|Reorder-and-Shopping-List]]** — deciding what to order.

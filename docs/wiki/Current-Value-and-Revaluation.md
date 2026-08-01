@@ -31,6 +31,11 @@ how a collectible has appreciated over the years, not just its latest number.
 > history explains itself later. It's a running record of provenance as well as value.
 
 > **ℹ️ Note**
+> Enter the new value as plain digits — `1250`, not `1,250` — with a full stop for any decimals.
+> Anything that can't be read as a figure is explained beneath the box rather than leaving
+> **Record revaluation** unavailable without saying why.
+
+> **ℹ️ Note**
 > Current value stays **manual** and offline — Gubbins never fetches live market prices (that
 > would need a cloud service and a key, against its local-first, secret-free design). You decide
 > when and to what a value changes.

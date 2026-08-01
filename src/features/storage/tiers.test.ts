@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { classifyStorageTier, isWriteSuspended, areNonEssentialFeaturesDisabled } from './tiers';
+import {
+  classifyStorageTier,
+  isWriteSuspended,
+  areNonEssentialFeaturesDisabled,
+  worstStorageTier,
+  STORAGE_TIER_ORDER,
+} from './tiers';
 
 describe('storage tier classification (spec §7.6.1)', () => {
   it('classifies below 80% usage as ok', () => {
@@ -41,5 +47,30 @@ describe('storage tier classification (spec §7.6.1)', () => {
     expect(areNonEssentialFeaturesDisabled('warning')).toBe(false);
     expect(areNonEssentialFeaturesDisabled('critical')).toBe(true);
     expect(areNonEssentialFeaturesDisabled('locked')).toBe(true);
+  });
+});
+
+/** Issue #504: the tier is now a measurement floored by an observation, so the two must combine. */
+describe('worstStorageTier', () => {
+  it('takes the more degraded of the two, in either argument order', () => {
+    expect(worstStorageTier('ok', 'locked')).toBe('locked');
+    expect(worstStorageTier('locked', 'ok')).toBe('locked');
+    expect(worstStorageTier('warning', 'critical')).toBe('critical');
+    expect(worstStorageTier('critical', 'warning')).toBe('critical');
+  });
+
+  it('returns the tier itself when both are the same', () => {
+    for (const tier of STORAGE_TIER_ORDER) expect(worstStorageTier(tier, tier)).toBe(tier);
+  });
+
+  it('never improves a tier — an observation can only ever floor a measurement', () => {
+    for (const measured of STORAGE_TIER_ORDER) {
+      for (const observed of STORAGE_TIER_ORDER) {
+        const combined = worstStorageTier(measured, observed);
+        expect(STORAGE_TIER_ORDER.indexOf(combined)).toBeGreaterThanOrEqual(
+          Math.max(STORAGE_TIER_ORDER.indexOf(measured), STORAGE_TIER_ORDER.indexOf(observed)),
+        );
+      }
+    }
   });
 });

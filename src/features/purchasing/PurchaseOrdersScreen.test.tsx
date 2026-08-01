@@ -22,6 +22,8 @@ import type { PurchaseOrderWithLines } from '@/db/repositories';
 let poData: PurchaseOrderWithLines | undefined;
 let setStatusSpy: ReturnType<typeof vi.fn>;
 let receiveLineSpy: ReturnType<typeof vi.fn>;
+let deletePoSpy: ReturnType<typeof vi.fn>;
+let removeLineSpy: ReturnType<typeof vi.fn>;
 const refetchOrders = vi.fn();
 
 /** Controls usePurchaseOrderCount — the total across every page (issue #149). */
@@ -85,9 +87,9 @@ vi.mock('./queries', () => ({
   }),
   useCreatePurchaseOrder: () => ({ mutate: vi.fn(), isPending: false }),
   useSetPurchaseOrderStatus: () => ({ mutate: setStatusSpy, isPending: false }),
-  useDeletePurchaseOrder: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeletePurchaseOrder: () => ({ mutate: deletePoSpy, isPending: false }),
   useAddPurchaseOrderLine: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemovePurchaseOrderLine: () => ({ mutate: vi.fn(), isPending: false }),
+  useRemovePurchaseOrderLine: () => ({ mutate: removeLineSpy, isPending: false }),
   useReceivePurchaseOrderLine: () => ({ mutate: receiveLineSpy, isPending: false }),
   useReturnPurchaseOrderLine: () => ({ mutate: vi.fn(), isPending: false }),
   // Phase 65 — Reorder / Shopping-list tab
@@ -172,7 +174,17 @@ vi.mock('./components/ImportPurchaseListDialog', () => ({
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 import { PurchaseOrdersScreen } from './PurchaseOrdersScreen';
+import { ToastProvider } from '@/components/foundry';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+
+/**
+ * The screen under a ToastProvider — deleting an order or removing a line reports its outcome
+ * through a toast, so the provider is part of the screen's real wiring rather than test scaffolding.
+ * `rerender` keeps the wrapper, so the receipt-progress test still works through it.
+ */
+function renderScreen() {
+  return render(<PurchaseOrdersScreen />, { wrapper: ToastProvider });
+}
 
 /** A minimal Draft PO with one line (10 ordered, 0 received). */
 function makeDraftPo(overrides: Partial<PurchaseOrderWithLines> = {}): PurchaseOrderWithLines {
@@ -232,13 +244,21 @@ beforeEach(() => {
   receiveLineSpy = vi.fn((_vars: unknown, callbacks?: { onSuccess?: () => void }) => {
     callbacks?.onSuccess?.();
   });
+
+  // The two destructive writes (issue #588), each calling back synchronously on success.
+  deletePoSpy = vi.fn((_id: unknown, callbacks?: { onSuccess?: () => void }) => {
+    callbacks?.onSuccess?.();
+  });
+  removeLineSpy = vi.fn((_vars: unknown, callbacks?: { onSuccess?: () => void }) => {
+    callbacks?.onSuccess?.();
+  });
 });
 
 // ─── tests ───────────────────────────────────────────────────────────────────
 
 describe('PurchaseOrdersScreen — aria-live status messages (WCAG 4.1.3)', () => {
   it('mounts the status live region before any action is taken', () => {
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     // role="status" is the polite live region rendered by <LiveRegion>.
     // There will be two in the detail panel; at least one should be empty on mount.
     const regions = screen.getAllByRole('status');
@@ -249,7 +269,7 @@ describe('PurchaseOrdersScreen — aria-live status messages (WCAG 4.1.3)', () =
   });
 
   it('announces "Ordered" after Mark as ordered succeeds', () => {
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
 
     const markOrderedBtn = screen.getByTestId('po-mark-ordered');
     fireEvent.click(markOrderedBtn);
@@ -261,7 +281,7 @@ describe('PurchaseOrdersScreen — aria-live status messages (WCAG 4.1.3)', () =
   });
 
   it('announces "Cancelled" after Cancel order succeeds', () => {
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
 
     const cancelBtn = screen.getByTestId('po-cancel');
     fireEvent.click(cancelBtn);
@@ -272,13 +292,13 @@ describe('PurchaseOrdersScreen — aria-live status messages (WCAG 4.1.3)', () =
   });
 
   it('mounts the receipt live region before any receipt action', () => {
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const receiptRegion = screen.getByTestId('po-receipt-live');
     expect(receiptRegion.textContent).toBe('');
   });
 
   it('announces the updated receipt progress when currentReceived increases', async () => {
-    const { rerender } = render(<PurchaseOrdersScreen />);
+    const { rerender } = renderScreen();
 
     // Simulate a receipt: the PO refetches with receivedQty updated.
     act(() => {
@@ -316,7 +336,7 @@ describe('PurchaseOrdersScreen — aria-live status messages (WCAG 4.1.3)', () =
 describe('PurchaseOrdersScreen — master-list result-count aria-live (WCAG 4.1.3, Phase 64)', () => {
   it('mounts the master-list count live region before data resolves', () => {
     ordersState = { isLoading: true };
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const region = screen.getByTestId('po-list-count-live');
     expect(region).toBeTruthy();
     expect(region.getAttribute('role')).toBe('status');
@@ -324,28 +344,28 @@ describe('PurchaseOrdersScreen — master-list result-count aria-live (WCAG 4.1.
   });
 
   it('the master-list count region is visually hidden (sr-only)', () => {
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const region = screen.getByTestId('po-list-count-live');
     expect(region.className).toContain('sr-only');
   });
 
   it('announces "Loading" while the orders query is in-flight', () => {
     ordersState = { isLoading: true };
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const region = screen.getByTestId('po-list-count-live');
     expect(region.textContent?.toLowerCase()).toContain('loading');
   });
 
   it('announces the order count once orders resolve', () => {
     // ordersState is reset in beforeEach to one order.
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const region = screen.getByTestId('po-list-count-live');
     expect(region.textContent).toContain('1');
     expect(region.textContent?.toLowerCase()).toContain('purchase order');
   });
 
   it('uses singular form for exactly one order', () => {
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const region = screen.getByTestId('po-list-count-live');
     expect(region.textContent).toContain('1 purchase order');
     expect(region.textContent).not.toContain('1 purchase orders');
@@ -353,7 +373,7 @@ describe('PurchaseOrdersScreen — master-list result-count aria-live (WCAG 4.1.
 
   it('announces the empty state when there are no orders', () => {
     ordersState = { isLoading: false, data: { rows: [] } };
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const region = screen.getByTestId('po-list-count-live');
     expect(region.textContent?.toLowerCase()).toContain('no purchase orders');
   });
@@ -369,7 +389,7 @@ describe('PurchaseOrdersScreen — master-list result-count aria-live (WCAG 4.1.
         ] as PurchaseOrderWithLines[],
       },
     };
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const region = screen.getByTestId('po-list-count-live');
     expect(region.textContent).toContain('3');
     expect(region.textContent?.toLowerCase()).toContain('purchase orders');
@@ -403,7 +423,7 @@ describe("PurchaseOrdersScreen — an order's total renders in the order's curre
     // The line costs were copied verbatim from a EUR supplier quote and are never converted,
     // so showing €100 as "£100.00" would misstate the order by the exchange rate.
     ordersState = { isLoading: false, data: { rows: [orderIn('EUR')] } };
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const row = screen.getAllByTestId('po-list-row')[0]!;
     expect(row.textContent).toContain('€100.00');
     expect(row.textContent).not.toContain('£');
@@ -411,7 +431,7 @@ describe("PurchaseOrdersScreen — an order's total renders in the order's curre
 
   it('falls back to the base currency when the order carries no code', () => {
     ordersState = { isLoading: false, data: { rows: [orderIn(null)] } };
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const row = screen.getAllByTestId('po-list-row')[0]!;
     expect(row.textContent).toContain('£100.00');
   });
@@ -423,7 +443,7 @@ describe("PurchaseOrdersScreen — an order's total renders in the order's curre
       ...poData,
       lines: [{ ...poData.lines[0]!, unitCost: 50 }],
     } as unknown as PurchaseOrderWithLines;
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     const line = screen.getAllByTestId('po-line-row')[0]!;
     expect(line.textContent).toContain('€50.00');
     expect(line.textContent).not.toContain('£');
@@ -433,21 +453,21 @@ describe("PurchaseOrdersScreen — an order's total renders in the order's curre
 describe('PurchaseOrdersScreen — failed order-list load (issue #306)', () => {
   it('reports the error instead of the "no purchase orders yet" empty state', () => {
     ordersState = { isLoading: false, isError: true };
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     expect(screen.getByTestId('po-error').textContent).toContain('couldn’t be loaded');
     expect(screen.queryByTestId('po-empty')).toBeNull();
   });
 
   it('offers a retry that refetches', () => {
     ordersState = { isLoading: false, isError: true };
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(refetchOrders).toHaveBeenCalled();
   });
 
   it('the count live region stays silent on failure (the alert speaks instead)', () => {
     ordersState = { isLoading: false, isError: true };
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     expect(screen.getByTestId('po-list-count-live').textContent).toBe('');
   });
 });
@@ -477,7 +497,7 @@ describe('PurchaseOrdersScreen — a list longer than one read (issue #149)', ()
 
   it('says how many orders the capped read leaves out when pagination is off', () => {
     ordersState = manyOrders;
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
 
     const notice = screen.getByTestId('po-truncated');
     expect(notice.textContent).toContain('100');
@@ -487,14 +507,14 @@ describe('PurchaseOrdersScreen — a list longer than one read (issue #149)', ()
 
   it('reports the whole set in the live region, not just the page in view', () => {
     ordersState = manyOrders;
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     expect(screen.getByTestId('po-list-count-live').textContent).toContain('125 purchase orders');
   });
 
   it('reaches the orders past the first read once pagination is on', () => {
     usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 100 });
     ordersState = manyOrders;
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
 
     expect(screen.queryByTestId('po-truncated')).toBeNull();
     expect(screen.getByTestId('po-pagination-summary')).toHaveTextContent('1–100 of 125');
@@ -505,7 +525,7 @@ describe('PurchaseOrdersScreen — a list longer than one read (issue #149)', ()
   });
 
   it('shows no truncation notice when every order fits in one read', () => {
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     expect(screen.queryByTestId('po-truncated')).toBeNull();
   });
 });
@@ -517,20 +537,134 @@ describe('PurchaseOrdersScreen — a list longer than one read (issue #149)', ()
  */
 describe('PurchaseOrdersScreen — export', () => {
   it('offers an export on the Orders tab', () => {
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     expect(screen.getByTestId('export-purchase-orders')).not.toBeDisabled();
   });
 
   it('disables it while there are no orders to write', () => {
     ordersState = { isLoading: false, data: { rows: [] } };
     orderCountState = 0;
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     expect(screen.getByTestId('export-purchase-orders')).toBeDisabled();
   });
 
   it('is offered only on the Orders tab, not the Reorder or Wishlist ones', () => {
-    render(<PurchaseOrdersScreen />);
+    renderScreen();
     fireEvent.click(screen.getByTestId('po-tab-wishlist'));
     expect(screen.queryByTestId('export-purchase-orders')).toBeNull();
+  });
+});
+
+/**
+ * Deleting an order — or one of its lines — is a hard delete that reaches every synced device
+ * and has no restore path, so each asks first (issue #588). These assert the gate itself: the
+ * write does not happen on the click that opens the dialog, the copy names what is lost, and
+ * dismissing leaves the record alone.
+ */
+describe('PurchaseOrdersScreen — deleting an order asks first (issue #588)', () => {
+  it('does not delete on the click that opens the confirmation', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('po-delete'));
+    expect(deletePoSpy).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('names the order and how many lines go with it', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('po-delete'));
+    // The fixture order carries one line, so the singular variant is chosen.
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain('REF-001');
+    expect(dialog.textContent).toContain('1 line');
+    expect(dialog.textContent).not.toContain('1 lines');
+  });
+
+  it('says what happens to stock already received against the order', () => {
+    poData = makeDraftPo({
+      lines: [
+        {
+          id: 'line-1',
+          poId: 'po-1',
+          itemId: null,
+          description: 'Resistor 10k',
+          orderedQty: 10,
+          receivedQty: 4,
+          unitCost: null,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ],
+    });
+    renderScreen();
+    fireEvent.click(screen.getByTestId('po-delete'));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain('Already received: 4 of 10');
+    expect(dialog.textContent).toContain('stays in your inventory');
+  });
+
+  it('leaves the received note out when nothing has been received', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('po-delete'));
+    expect(screen.getByRole('dialog').textContent).not.toContain('Already received');
+  });
+
+  it('deletes once confirmed', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('po-delete'));
+    fireEvent.click(screen.getByTestId('po-delete-confirm'));
+    expect(deletePoSpy).toHaveBeenCalledWith('po-1', expect.anything());
+  });
+
+  it('leaves the order alone when the confirmation is dismissed', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('po-delete'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(deletePoSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('carries a readable label rather than a bare bin', () => {
+    renderScreen();
+    expect(screen.getByTestId('po-delete').textContent).toContain('Delete order');
+  });
+
+  it('reserves the destructive styling for the delete, not the reversible Cancel order', () => {
+    renderScreen();
+    // `variant="destructive"` is the solid `bg-destructive` fill; cancelling is undone by
+    // "Reopen as draft", so wearing it made the two adjacent buttons read as equally final.
+    // Split on whitespace rather than substring-matching: `hover:text-destructive` contains
+    // `text-destructive`, so a substring check would pass even with the base token gone.
+    const classesOf = (testId: string) => screen.getByTestId(testId).className.split(/\s+/);
+    expect(classesOf('po-cancel')).not.toContain('bg-destructive');
+    expect(classesOf('po-delete')).toContain('text-destructive');
+  });
+});
+
+describe('PurchaseOrdersScreen — removing a line asks first (issue #588)', () => {
+  it('does not remove on the click that opens the confirmation', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('po-remove-line'));
+    expect(removeLineSpy).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog').textContent).toContain('Resistor 10k');
+  });
+
+  it('removes once confirmed', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('po-remove-line'));
+    fireEvent.click(screen.getByTestId('po-remove-line-confirm'));
+    expect(removeLineSpy).toHaveBeenCalledWith({ poId: 'po-1', lineId: 'line-1' }, expect.anything());
+  });
+
+  it('leaves the line alone when the confirmation is dismissed', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('po-remove-line'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(removeLineSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('names the line in the remove button, so several rows are told apart', () => {
+    renderScreen();
+    expect(screen.getByRole('button', { name: 'Remove Resistor 10k from this order' })).toBeInTheDocument();
   });
 });

@@ -25,6 +25,7 @@ import {
   SuccessIcon,
 } from '@/components/icons';
 import { plural } from '@/lib/plural';
+import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -65,12 +66,17 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
    */
   const [choosingArchiveDestination, setChoosingArchiveDestination] = useState(false);
   const fmt = useFormatters();
+  const t = useT();
 
   const pruneCutoffMs = useMemo(() => pruneCutoff(now, pruneMonths), [now, pruneMonths]);
   const downgradeCutoffMs = useMemo(() => pruneCutoff(now, downgradeMonths), [now, downgradeMonths]);
 
   const estimate = useStorageStore((s) => s.estimate);
   const ratio = useStorageStore((s) => s.ratio);
+  // A write that actually ran out of space outranks the figures above it (issue #504) — and when
+  // the estimate still shows headroom, saying so is the difference between an explanation and a
+  // contradiction.
+  const observedFull = useStorageStore((s) => s.exhaustion !== null);
 
   const breakdown = useStorageBreakdown();
   const pruneCount = usePruneCandidateCount(pruneCutoffMs);
@@ -173,6 +179,11 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               Your browser does not report a storage quota; the estimates below are approximate.
             </p>
           )}
+          {observedFull ? (
+            <p className="text-sm font-medium text-destructive" data-testid="triage-observed-full">
+              {t('storage.triage.observedFull')}
+            </p>
+          ) : null}
           {breakdown.isPending ? (
             <Spinner />
           ) : breakdown.data ? (

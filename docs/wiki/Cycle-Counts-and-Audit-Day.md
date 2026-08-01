@@ -25,11 +25,31 @@ Counts handle every stock style:
 > Cycle count a few high-value or fast-moving locations regularly rather than the whole place
 > rarely — you catch drift sooner and it's never a big job.
 
+## Your counts are kept if you stop partway
+
+Counting happens away from the desk, and you *will* be interrupted. Whatever you've typed into a
+count is **saved as you go**, so closing the dialog — deliberately, by tapping outside it, or
+because your phone put the tab to sleep — doesn't cost you the shelf. Reopen that location and the
+numbers come back, with a note saying how many were restored and when you entered them.
+
+Nothing is written to your inventory until you **authorise** the count, so a saved count is still
+just a working sheet. If you'd rather recount from scratch, **Start over** on that note clears it.
+
+> **⚠️ Heads-up**
+> A restored count is only as good as the shelf still is — check it before authorising if some
+> time has passed. Gubbins only ever hands back the numbers **you** typed; it never fills in what
+> it expects to find, so the count stays honest.
+
+Once a location is authorised or skipped, its saved counts are cleared — and abandoning a
+stock-take discards them for every location in the walk.
+
 ## Audit day
 
 For a full stock-take, the guided **audit day** walks you through your locations one by one,
-tracking progress as you go so you can pause and resume without losing your place. It's built on
-the same per-location counting engine, so a single location count and a full audit feel the same.
+tracking progress as you go so you can pause and resume without losing your place. **Pause &
+close** keeps both: where you'd got to in the walk, *and* the counts you'd entered at the location
+you were on. It's built on the same per-location counting engine, so a single location count and a
+full audit feel the same.
 
 > **ℹ️ Note**
 > Gubbins remembers when each location was **last counted**, so you can see what's overdue for a

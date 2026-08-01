@@ -10,10 +10,11 @@
  * The list is read **whole** and paged client-side (issue #149) — the summary above it totals
  * every wish, so a capped read would have understated that estimate as well as hiding entries.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   LiveRegion,
+  Modal,
   Money,
   Pagination,
   Spinner,
@@ -62,6 +63,12 @@ export function WishlistTab() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<WishlistEntry | null>(null);
+  // Removing a wish is a hard delete of something typed by hand — name, note, link, target
+  // price — with no undo, and the deletion reaches every synced device, so it is confirmed
+  // rather than happening on the click that opened it (issue #588).
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // Initial focus lands on the safe answer, so a reflex Enter keeps the wish.
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null);
   const t = useT();
 
   const entries = useMemo(() => listQuery.data?.rows ?? [], [listQuery.data]);
@@ -91,6 +98,9 @@ export function WishlistTab() {
   };
 
   const isSaving = createEntry.isPending || updateEntry.isPending;
+  // Resolved from the live list each render, so a wish removed elsewhere closes the dialog
+  // rather than leaving it confirming against a row that has gone.
+  const deleting = entries.find((e) => e.id === confirmDeleteId) ?? null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -164,7 +174,7 @@ export function WishlistTab() {
                   entry={entry}
                   formatters={f}
                   onEdit={() => openEdit(entry)}
-                  onDelete={() => deleteEntry.mutate(entry.id)}
+                  onDelete={() => setConfirmDeleteId(entry.id)}
                   isDeleting={deleteEntry.isPending}
                 />
               ))}
@@ -209,6 +219,38 @@ export function WishlistTab() {
       />
 
       <ImportPurchaseListDialog open={importOpen} onClose={() => setImportOpen(false)} />
+
+      <Modal
+        open={deleting !== null}
+        onClose={() => setConfirmDeleteId(null)}
+        title={t('purchasing.wishlist.remove.title')}
+        description={
+          deleting ? t('purchasing.wishlist.remove.body', { vars: { name: deleting.name } }) : undefined
+        }
+        initialFocusRef={cancelDeleteRef}
+      >
+        <div className="flex justify-end gap-2">
+          <Button
+            ref={cancelDeleteRef}
+            variant="ghost"
+            onClick={() => setConfirmDeleteId(null)}
+            disabled={deleteEntry.isPending}
+          >
+            {t('purchasing.wishlist.remove.cancel')}
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() =>
+              deleting && deleteEntry.mutate(deleting.id, { onSuccess: () => setConfirmDeleteId(null) })
+            }
+            disabled={deleteEntry.isPending}
+            data-testid="wishlist-delete-confirm"
+          >
+            {deleteEntry.isPending ? <Spinner /> : <DeleteIcon />}
+            {t('purchasing.wishlist.remove.confirm')}
+          </Button>
+        </div>
+      </Modal>
 
       <LiveRegion visuallyHidden data-testid="wishlist-mutation-live">
         {createEntry.isSuccess ? <p>Added to your wishlist.</p> : null}

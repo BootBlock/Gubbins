@@ -18,7 +18,12 @@ import { BarcodeScanDialog } from '@/features/scanner/components/BarcodeScanDial
 import { useT } from '@/features/i18n';
 import { BarcodeField } from './BarcodeField';
 import { dimensionToInput, resolveDimension } from '../measure-input';
-import { parseOptionalNumber, resolveMeasureDraft, type MeasureIssue } from './measure-draft';
+import {
+  measureIssueText,
+  parseOptionalNumber,
+  resolveMeasureDraft,
+  type MeasureIssue,
+} from './measure-draft';
 import { useCategories } from '../categories';
 import { gaugeCostHint } from '../gauge-field-copy';
 import { ITEM_NAME_EDIT_HINT } from '../item-field-copy';
@@ -242,13 +247,9 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   useReportUnsavedChanges(dirty);
   // A bad number blocks the save and shows why, rather than quietly clearing the stored
   // value — the failure branch of a "valid ? convert : null" guard reads as "clear this
-  // field", which is not what typing `-5` over a stored weight means (issue #345).
-  const measureIssue = (issue: MeasureIssue | null): string | undefined =>
-    issue === null
-      ? undefined
-      : issue === 'negative'
-        ? t('inventory.details.negative')
-        : t('inventory.details.notANumber');
+  // field", which is not what typing `-5` over a stored weight means (issue #345). The copy
+  // comes from the shared seam, so the asset fields one tab over word it identically (#675).
+  const measureIssue = (issue: MeasureIssue | null): string | undefined => measureIssueText(issue, t);
   const valid =
     draft.name.length > 0 &&
     unitCostEntry.issue === null &&
