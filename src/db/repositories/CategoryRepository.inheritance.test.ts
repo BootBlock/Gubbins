@@ -672,11 +672,12 @@ describe('CategoryRepository — custom-field value attribution (#621, W1g)', ()
   });
 
   /**
-   * A location's *Offer to items here* tick is saved through this same upsert, re-sending the
-   * value untouched — so the guard has to hold on this table too, or ticking a box re-homes the
-   * path for every item inheriting it.
+   * The location-table counterpart of the import case, and the shape the real caller actually
+   * sends: a location's *Offer to items here* tick is saved through this same upsert, re-sending
+   * the value untouched and claiming nothing. Without the guard, ticking a box would wipe the
+   * attribution off a path every item beneath it inherits.
    */
-  it('does not re-stamp a location value when only its inheritable flag changes', async () => {
+  it('does not erase a location value’s origin when only its inheritable flag changes', async () => {
     const { field, workshop } = await scenario();
     await categories.setLocationFieldValue(workshop.id, {
       defId: field.defId,
@@ -684,15 +685,37 @@ describe('CategoryRepository — custom-field value attribution (#621, W1g)', ()
       isInheritable: false,
       originDeviceId: OTHER_DEVICE,
     });
+    // Exactly what `LocationFieldsEditor`'s checkbox sends: same value, no origin.
     await categories.setLocationFieldValue(workshop.id, {
       defId: field.defId,
       value: PATH,
       isInheritable: true,
-      originDeviceId: THIS_DEVICE,
     });
 
     const [stored] = await categories.listLocationFieldValues(workshop.id);
     expect(stored?.isInheritable).toBe(true);
+    expect(stored?.originDeviceId).toBe(OTHER_DEVICE);
+  });
+
+  /**
+   * The symmetric half of the guard. No caller reaches this today — the only writer that names
+   * a device (the item editor) sends only changed fields — so this pins a guarantee rather than
+   * covering a live path: naming a device must not let you claim a value you did not change.
+   */
+  it('does not let a named device claim a location value it did not change', async () => {
+    const { field, workshop } = await scenario();
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      originDeviceId: OTHER_DEVICE,
+    });
+    await categories.setLocationFieldValue(workshop.id, {
+      defId: field.defId,
+      value: PATH,
+      originDeviceId: THIS_DEVICE,
+    });
+
+    const [stored] = await categories.listLocationFieldValues(workshop.id);
     expect(stored?.originDeviceId).toBe(OTHER_DEVICE);
   });
 

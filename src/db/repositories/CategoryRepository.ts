@@ -127,20 +127,22 @@ const FIELD_PROMINENCE_RANK = `CASE WHEN fd.prominence = '${KEY_FIELD_PROMINENCE
  * The `ON CONFLICT … DO UPDATE` assignment that attributes a custom-field value to the device
  * writing it (W1g) — applied **only when the value itself changed**.
  *
- * The guard is the load-bearing half, not a refinement, because two callers re-send a value the
- * user did not touch — one on each table, and they would fail in opposite directions:
+ * The guard is load-bearing, not a refinement, because two callers re-send a value the user did
+ * not touch — one on each table — and **both claim nothing while doing it**:
  *
- * - A location's *Offer to items here* tick is stored by this same upsert with `value`
- *   unaltered and this device named. Assigning unconditionally would re-home the path to
- *   whoever ticked a box — claiming a share only the desktop can reach is now reachable from
- *   the phone, the exact false statement W1g exists to prevent.
- * - A CSV import re-states **every** field value on a matched row, unchanged ones included, and
- *   deliberately claims nothing — its `CatalogCategoryRepository` port takes no origin at all.
- *   Assigning unconditionally would push NULL over a good attribution, silently downgrading a
- *   marked foreign path to an unmarked one.
+ * - A location's *Offer to items here* tick is stored by this same upsert, re-sending `value`
+ *   unaltered to change only the flag, and passing no origin.
+ * - A CSV import re-states **every** field value on a matched row, unchanged ones included; its
+ *   `CatalogCategoryRepository` port takes no origin at all.
  *
- * (The item editor is *not* one of them: it sends only the fields whose value actually
- * changed. The guard covers it for free, but it is not what motivates it.)
+ * So the failure an unconditional assignment would cause today is the same on both tables:
+ * NULL pushed over a good attribution, silently downgrading a marked foreign path to an
+ * unmarked one — losing the very statement W1g exists to make.
+ *
+ * The guard is symmetric, so it equally stops the opposite error: a caller that *does* name a
+ * device cannot claim a value it did not change. No current caller can hit that — the item
+ * editor names this device but sends only the fields whose value actually changed — so that
+ * half is a standing guarantee rather than a fix for a live bug.
  *
  * A row whose value is unchanged keeps whatever origin it already had.
  *

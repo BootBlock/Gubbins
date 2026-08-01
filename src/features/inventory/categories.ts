@@ -17,6 +17,7 @@ import {
 import {
   getCategoryRepository,
   getItemRepository,
+  type CardFieldStoredValue,
   type CategoryWithFieldCount,
   type CreateCategoryFieldInput,
   type CreateCategoryInput,
@@ -116,7 +117,7 @@ export function useItemFieldValues(itemIds: readonly string[], enabled = true) {
       enabled,
       // Only the partly-filled tail bucket ever re-keys; hold its last values in place while
       // it reloads so those cards don't flicker.
-      placeholderData: (prev: Map<string, Map<string, string>> | undefined) => prev,
+      placeholderData: (prev: Map<string, Map<string, CardFieldStoredValue>> | undefined) => prev,
     })),
     combine: (results) => ({ data: mergeBucketMaps(results.map((r) => r.data)) }),
   });

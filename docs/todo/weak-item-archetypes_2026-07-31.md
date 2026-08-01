@@ -976,21 +976,22 @@ actionable" charge is not about them. That still stands: nothing here adds a way
 value in an editor. This adds an explanation to the surface that already edits it.
 
 **The re-stamp guard is the load-bearing part, and it is a guard rather than a plain
-assignment.** Two callers re-send a value the user did not touch — one on each table, failing in
-opposite directions if the origin were simply assigned:
+assignment.** Two callers re-send a value the user did not touch — one on each table — and the
+thing to notice is that **both of them claim nothing while doing it**:
 
-- A location's *Offer to items here* tick is stored by the same upsert with `value` unaltered
-  and this device named. Assigning would re-home the path to whoever ticked a box, asserting
-  that a share only the desktop can reach is now reachable from the phone.
-- A CSV import re-states **every** field value on a row it matched, unchanged ones included, and
-  deliberately claims nothing. Assigning would push NULL over a good attribution, downgrading a
-  marked foreign path to an unmarked one.
+- A location's *Offer to items here* tick is stored by the same upsert, re-sending `value`
+  unaltered to change only the flag, and passing no origin.
+- A CSV import re-states **every** field value on a row it matched, unchanged ones included,
+  through a port that takes no origin at all.
 
-The item **editor** is not one of them, which is worth stating because it is the case one would
-assume: it sends only the fields whose value actually changed, so the guard covers it for free
-rather than being motivated by it. The assignment is conditional on the value having changed,
-and uses SQLite's null-safe `IS`, so clearing to blank and setting again is judged as the change
-it is rather than collapsing to unknown.
+So the failure an unconditional assignment would cause today is the *same* on both tables: NULL
+pushed over a good attribution, quietly downgrading a marked foreign path to an unmarked one.
+The guard is symmetric, so it also stops the opposite error — a caller that *does* name a device
+claiming a value it did not change — but no current caller can reach that, because the one
+writer that names a device (the item editor) sends only the fields whose value actually changed.
+That half is a standing guarantee, not a fix for a live bug, and it is worth saying which is
+which. The assignment uses SQLite's null-safe `IS`, so clearing to blank and setting again is
+judged as the change it is rather than collapsing to unknown.
 
 **Only an *author* attributes; every other writer stays silent.** The stamp is passed per call
 rather than read inside the repository or the mutation hook, because the callers genuinely
@@ -1025,13 +1026,15 @@ is **not** marked, and the wiki says so.
    `PRAGMA table_info` and the snapshot reads `SELECT *`, so the column syncs, backs up and
    restores untouched; `tombstone.ts` keys on tables, so its drift test is silent. The bridge is
    the part §4.4 flagged as possibly different, and it is — but the answer is still *no change*,
-   for a reason worth recording: the bridge reads item field values through
-   `resolveItemFields`, whose SQL **enumerates** `ifv.value / ifv.mode / ifv.id`, and location
-   values through a mapper that enumerates its output. The column reaches neither DTO unless
-   explicitly added. And it should not be: a device id is only meaningful *compared against the
-   reading device*, and the bridge is not a device — it has no Gubbins device identity to
-   compare with, so publishing the id would be publishing an opaque token no consumer can
-   interpret. (`item_attachments`, the existing device-stamped pointer, is likewise not exposed
+   and it is worth being exact about what stops the column at the wire, because it is **not** the
+   repository read. The bridge reads item field values through `resolveItemFields` and location
+   values through `listLocationFieldValues`, and this change widened **both** — the editors need
+   the origin, and the bridge takes the same seams. What holds the line is one layer further out:
+   `toItemFieldValues` and `toLocationFieldValues` (`bridge/src/api/dto.ts`) build their DTOs as
+   explicit object literals, so a new property on the app's type is silently dropped rather than
+   published. And it should be: a device id is only meaningful *compared against the reading
+   device*, and the bridge is not a device — it has no Gubbins device identity to compare with,
+   so publishing the id would be publishing an opaque token no consumer can interpret. (`item_attachments`, the existing device-stamped pointer, is likewise not exposed
    by the bridge at all.) The standing gap is still the **five** definition attributes
    `W1a`–`W1e` added, unchanged by this.
 3. **`resolveAttachmentLink` is now partly reusable, which is precisely what §4.4 point 2 said
@@ -1047,11 +1050,16 @@ is **not** marked, and the wiki says so.
    economy.** `getItemFieldValues` returned `itemId → fieldId → string`; the card now needs a
    second fact per value. Threading a second `fieldId → origin` map beside it would have left
    nothing preventing the two describing different rows — precisely the failure a single entry
-   rules out. The blast radius turned out to be small: the map is built once and spread onto
-   every surface by `cardFieldProps`, so the shape change cost three prop-type lines and the
-   resolver, and reached the card, the dense row, the table cell and the location panel without
-   any of them being touched. The only renderer edit in the change is the `pointer` arm itself,
-   which is the point of the exercise rather than a cost of the map.
+   rules out. The blast radius turned out to be small: the map is built once and spread onto the
+   item surfaces by `cardFieldProps`, so the shape change cost three prop-type lines plus the
+   resolver, and reached the card, the dense row and the table cell without any of *those* being
+   otherwise touched. The location detail panel is **not** on that path — it reads
+   `listLocationFieldValues` and calls `resolveLocationDetailFields`, so it took the origin by a
+   separate route (one argument, and the `getDeviceId()` read to supply it) and had to be edited.
+   That asymmetry is the pre-existing shape of the two subjects, not something this change
+   introduced: `W1f` reached all four surfaces through one `customFieldValue` seam precisely
+   because that seam is where they *do* converge, and it is still the only edit the renderers
+   themselves needed here.
 5. **An incomplete hand-built test fixture produced the exact inverse of the intended
    behaviour, and only running the tests caught it.** `LocationDetailCard.test.tsx` builds its
    `LocationFieldValue` objects by hand and had never listed the newer definition columns. With

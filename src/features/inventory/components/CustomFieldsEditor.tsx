@@ -144,7 +144,7 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
                 the datasheet list offers one for a row it cannot otherwise edit. */}
             {isForeignFilePointer(field.fieldType, field.value, field.originDeviceId, deviceId) &&
             (draft[field.id] ?? '') === initialOf(field) ? (
-              <span className="mt-1 flex items-start gap-1.5 text-xs text-muted-foreground">
+              <span className="mt-field-gap-compact flex items-start gap-1.5 text-xs text-muted-foreground">
                 <span aria-hidden className="mt-0.5 shrink-0 text-warning [&_svg]:size-3.5">
                   <UnlinkIcon />
                 </span>

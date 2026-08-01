@@ -633,9 +633,10 @@ export interface SetLocationFieldValueInput {
   /**
    * The device authoring this value (W1g) — omitted, or null, to make no attribution claim.
    *
-   * Only ever applied when the value **changes**: this write is also how the *Offer to items
-   * here* tick is saved, which re-sends the value unaltered, and re-homing a path to whichever
-   * device happened to tick a box would be exactly the wrong claim.
+   * Only ever applied when the value **changes**. That matters here because this write is also
+   * how the *Offer to items here* tick is saved: it re-sends the value unaltered and passes no
+   * origin, so applying it unconditionally would wipe the attribution off a path merely because
+   * someone changed the flag.
    */
   readonly originDeviceId?: string | null;
 }
