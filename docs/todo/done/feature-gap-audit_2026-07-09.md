@@ -39,7 +39,7 @@ a task ships and its review passes, tick its box here **and** in the memory note
 
 ---
 
-## Actionable gaps (open) — ranked by value × fit
+## Actionable gaps — ranked by value × fit (all since shipped)
 
 - [x] **G1 — Insurance / estate schedule export (print + PDF).** ✅ **Shipped 2026-07-10.**
   *High value; strong local-first
@@ -110,7 +110,7 @@ a task ships and its review passes, tick its box here **and** in the memory note
   TCG / comic apps) and Encircle/NestEgg centre on *current market value*, not purchase price —
   we keep it **manual** (live-price scraping needs a keyed cloud API; see non-goals).
 
-## Shipped (tick + date as they land)
+## Shipped
 
 - **G4 — UI internationalization (multi-language)** — shipped 2026-07-10. **The last open item; this
   audit is complete.** Was: only number/date/currency formatting was locale-aware (`lib/format.ts`),
