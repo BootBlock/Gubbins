@@ -542,11 +542,12 @@ function InventoryWorkspace() {
   const selectedLocationLabel = selectedLocation?.name ?? t('inventory.locations.allItems');
 
   // Configurable item-card fields (backlog E1): the shared order/catalog/category resolver,
-  // plus — only when a custom field is actually shown — the stored custom-field values for the
-  // resident window (so the virtualised cards render them without a per-card fetch).
+  // plus — only for the custom fields actually shown — their stored values for the resident
+  // window (so the virtualised cards render them without a per-card fetch). Passing the field
+  // ids keeps that read to what the cards draw rather than every value the items hold (#560).
   const cardFieldsConfig = useCardFieldsConfig();
   const residentItemIds = useMemo(() => flatItems.map((i) => i.id), [flatItems]);
-  const cardFieldValues = useItemFieldValues(residentItemIds, cardFieldsConfig.hasCustomFields);
+  const cardFieldValues = useItemFieldValues(residentItemIds, cardFieldsConfig.visibleCustomFieldIds);
   const cardFieldTags = useItemsTags(residentItemIds, cardFieldsConfig.hasTagsField);
   const cardFields: CardFieldsListContext = {
     ...cardFieldsConfig,
