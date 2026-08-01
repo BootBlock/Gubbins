@@ -87,8 +87,10 @@ export function useCardFieldsConfig(): CardFieldsConfigBundle {
     return map;
   }, [categories.data]);
 
-  // Memoised because it is part of the per-window value query's key: a fresh array each render
-  // would re-key that read on every render rather than only when the chosen fields change.
+  // Memoised so the array is reference-stable for the `useMemo` that sorts it in
+  // `useItemFieldValues`, which would otherwise re-sort on every render. Not for the query key's
+  // sake — React Query hashes a key structurally (`JSON.stringify`), so an equal-but-new array
+  // identifies the same query either way; it is the *sorting* that keeps a reorder from re-keying.
   const visibleCustomFieldIds = useMemo(
     () => order.map((id) => parseCustomCardFieldId(id)).filter((id): id is string => id !== null),
     [order],

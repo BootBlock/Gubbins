@@ -62,12 +62,14 @@ describe('on-card custom-field values are read for the shown fields only (#560)'
     expect(repo.getItemFieldValues).toHaveBeenCalledWith(ITEMS, ['field-cover', 'field-title']);
   });
 
-  it('stays disabled — and never reaches the repository — when no custom field is shown', async () => {
+  it('marks the read disabled when no custom field is shown, so the window is never fetched', () => {
     const queries = capturedQueries(ITEMS, []);
 
+    // `enabled` is the whole mechanism — React Query owns "don't run the queryFn" — so this is
+    // the only fact this seam decides. Asserting the stubbed repository went untouched would
+    // prove nothing here: the mocked `useQueries` never runs a descriptor's `queryFn` either way.
     expect(queries).toHaveLength(1);
     expect(queries[0]!.enabled).toBe(false);
-    expect(repo.getItemFieldValues).not.toHaveBeenCalled();
   });
 
   it('keys on the field *set*, so reordering the card fields does not re-key the window', () => {
