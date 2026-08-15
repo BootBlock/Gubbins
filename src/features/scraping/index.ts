@@ -56,7 +56,7 @@ export {
   type RefreshSummary,
 } from './price-refresh';
 export { SUPPORTED_SUPPLIER_LABELS } from './parsers/registry';
-export { isAllowedSupplierUrl } from './parsers/suppliers';
+export { classifySupplierUrl, isAllowedSupplierUrl, type UrlRefusal } from './parsers/suppliers';
 export { ScrapeBridgeProvider, useScrapeBridge } from './ScrapeBridgeContext';
 export { ScrapeSupplierPanel } from './components/ScrapeSupplierPanel';
 export { ProductLookupPanel } from './components/ProductLookupPanel';

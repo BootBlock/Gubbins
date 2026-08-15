@@ -13,8 +13,9 @@ const URL_HINT = [
   '',
   'With the companion browser extension installed, a **re-scrape** reads live price, order ' +
     "code and other details straight from this page, matching the supplier by the link's host. " +
-    `Dedicated scrapers exist for: **${SUPPORTED_SUPPLIER_LABELS.join('**, **')}**. Any other ` +
-    'product page is still read on a best-effort basis from its structured metadata.',
+    `Scrapers exist for: **${SUPPORTED_SUPPLIER_LABELS.join('**, **')}**. A link to any other ` +
+    'site is refused before it is fetched — the URL is still stored and still opens normally, ' +
+    'it just cannot be scraped.',
 ].join('\n');
 
 /** Help for the Currency picker (the chosen currency drives the displayed symbol). */

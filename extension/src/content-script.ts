@@ -30,7 +30,7 @@ import { detectChallengePage } from '../../src/features/scraping/scrape-errors';
 import { OPEN_FOOD_FACTS_HOST } from '../../src/features/scraping/product-lookup';
 import type { ScrapeErrorType } from '../../src/features/scraping/protocol';
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const trustedOrigins = [window.location.origin];
 
 type FetchReply = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };

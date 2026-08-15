@@ -134,6 +134,16 @@ describe('parseExtensionMessage — payload validation (§9.4.2 no NaN/garbage)'
     }
   });
 
+  it('carries UNSUPPORTED_SITE separately from BLOCKED (our refusal vs the supplier’s, #667)', () => {
+    expect(SCRAPE_ERROR_TYPES).toContain('UNSUPPORTED_SITE');
+    const msg = makeMessage(
+      'SCRAPE_ERROR',
+      { domain: 'example.com', error_type: 'UNSUPPORTED_SITE', reason: 'Host is not on the allow-list.' },
+      'req-9',
+    );
+    expect(parseExtensionMessage(msg, ctx)?.type).toBe('SCRAPE_ERROR');
+  });
+
   it('accepts EXTENSION_READY with no payload', () => {
     const msg = { source: EXTENSION_SOURCE, type: 'EXTENSION_READY' };
     const parsed = parseExtensionMessage(msg, ctx);
@@ -210,10 +220,14 @@ describe('DATA_FETCH_* — category data lookups (issue #616)', () => {
     expect(parseExtensionMessage(missing, ctx)).toBeNull();
   });
 
-  it('reuses the §9.4.2 error taxonomy, so a refused host reads as BLOCKED', () => {
+  it('reuses the §9.4.2 error taxonomy, so a refused host reads as UNSUPPORTED_SITE', () => {
     const msg = makeMessage(
       'DATA_FETCH_ERROR',
-      { domain: 'evil.test', error_type: 'BLOCKED', reason: 'URL is not an allowed data-lookup host.' },
+      {
+        domain: 'evil.test',
+        error_type: 'UNSUPPORTED_SITE',
+        reason: 'URL is not an allowed data-lookup host.',
+      },
       'df-6',
     );
     expect(parseExtensionMessage(msg, ctx)?.type).toBe('DATA_FETCH_ERROR');

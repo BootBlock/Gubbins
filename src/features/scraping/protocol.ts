@@ -92,6 +92,12 @@ export type ScrapeResultPayload = z.infer<typeof scrapeResultPayloadSchema>;
  *   DataDome): the page loaded successfully but its body is a challenge, not the product.
  *   Detected from the fetched body by the pure {@link detectChallengePage} (Phase 36), so
  *   it is reported precisely rather than mis-marshalled as a `DOM_DRIFT` parse failure.
+ * - `UNSUPPORTED_SITE` — **our own** allow-list refused the target, so nothing was ever
+ *   requested (issue #667). Previously folded into `BLOCKED`, which told the user the
+ *   supplier had refused them and to retry after opening the page in a tab — untrue, and
+ *   unachievable: no number of tabs makes an unregistered site fetchable. It is the one
+ *   failure with no remote cause at all, so it earns its own member rather than borrowing
+ *   the wording of a real HTTP 403.
  *
  * Adding a member is a §9 wire change: the extension must be rebuilt (`build:extension`).
  */
@@ -103,6 +109,7 @@ export const SCRAPE_ERROR_TYPES = [
   'NOT_FOUND',
   'SERVER_ERROR',
   'CHALLENGE',
+  'UNSUPPORTED_SITE',
 ] as const;
 export type ScrapeErrorType = (typeof SCRAPE_ERROR_TYPES)[number];
 
@@ -257,7 +264,7 @@ export const extensionMessageSchema = z.discriminatedUnion('type', [
     source: sourceLiteral,
     type: z.literal('DATA_FETCH_ERROR'),
     requestId: requestIdSchema,
-    // Reuses the §9.4.2 error taxonomy — BLOCKED covers "not an allowed data-lookup host".
+    // Reuses the §9.4.2 error taxonomy — UNSUPPORTED_SITE covers "not an allowed data-lookup host".
     payload: scrapeErrorPayloadSchema,
   }),
 ]);

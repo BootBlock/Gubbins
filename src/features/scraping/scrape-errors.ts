@@ -99,6 +99,10 @@ const MESSAGE_BY_TYPE: Record<ScrapeErrorType, (domain: string) => string> = {
   SERVER_ERROR: (d) => `${d}: the supplier is having problems — try again later, or enter manually.`,
   CHALLENGE: (d) =>
     `${d}: the supplier showed an anti-bot challenge. Open the page in a browser tab to clear it, then retry — or enter manually.`,
+  // Our own allow-list refused this, so nothing was fetched and nothing remote can change
+  // that — the wording must not prescribe a retry the way BLOCKED's rightly does (#667).
+  UNSUPPORTED_SITE: (d) =>
+    `${d}: not a supported supplier link, so it was never fetched. Use an https product link from a supported distributor, or enter manually.`,
 };
 
 /**

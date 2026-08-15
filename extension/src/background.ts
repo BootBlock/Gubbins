@@ -7,7 +7,8 @@
  * for the content script to parse with the shared Strategy parsers. Transport-level
  * failures are mapped to the §9.4.2 error taxonomy via the shared, unit-tested pure
  * {@link classifyHttpStatus} (`RATE_LIMITED`/`BLOCKED`/`NOT_FOUND`/`SERVER_ERROR`); a
- * transport-level failure with no response stays `NETWORK_TIMEOUT`.
+ * transport-level failure with no response stays `NETWORK_TIMEOUT`, and a target this
+ * worker's own allow-list refuses before any request is `UNSUPPORTED_SITE`.
  *
  * Note: MV3 service workers have no DOM, so parsing happens in the content script
  * (which does) — keeping this worker tiny and dependency-free.
@@ -20,9 +21,10 @@ import type {
 } from '../../src/features/scraping/protocol';
 import { classifyHttpStatus } from '../../src/features/scraping/scrape-errors';
 import {
+  classifySupplierUrl,
   isAllowedDataLookupUrl,
   isAllowedLookupUrl,
-  isAllowedSupplierUrl,
+  URL_REFUSAL_REASONS,
 } from '../../src/features/scraping/parsers/suppliers';
 import { buildProductLookupUrl, parseOpenFoodFactsProduct } from '../../src/features/scraping/product-lookup';
 import { isAmazonHost } from '../../src/features/inventory/asin';
@@ -109,9 +111,12 @@ async function fetchPage(url: string): Promise<FetchResponse> {
   // The privileged worker's own allowlist gate (§9 hardening): only ever fetch an https
   // URL on a registered supplier domain, so a page driving the bridge can't turn the
   // extension into a fetch proxy for an arbitrary origin. This is defence-in-depth above
-  // the manifest's host_permissions; a rejected target is reported as a refusal (BLOCKED).
-  if (!isAllowedSupplierUrl(url)) {
-    return { ok: false, errorType: 'BLOCKED', reason: 'URL is not an allowed supplier domain.' };
+  // the manifest's host_permissions. The refusal is ours, not the supplier's — it is
+  // reported as UNSUPPORTED_SITE rather than BLOCKED, which would claim a remote block and
+  // advise a retry that can never succeed (issue #667).
+  const refusal = classifySupplierUrl(url);
+  if (refusal !== null) {
+    return { ok: false, errorType: 'UNSUPPORTED_SITE', reason: URL_REFUSAL_REASONS[refusal] };
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -150,7 +155,7 @@ async function fetchProduct(gtin: string): Promise<LookupResponse> {
   const url = buildProductLookupUrl(normalised);
   // Defence-in-depth over host_permissions: only ever fetch the allow-listed lookup host.
   if (!isAllowedLookupUrl(url)) {
-    return { ok: false, errorType: 'BLOCKED', reason: 'Lookup host is not allowed.' };
+    return { ok: false, errorType: 'UNSUPPORTED_SITE', reason: 'Lookup host is not allowed.' };
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -180,14 +185,14 @@ async function fetchProduct(gtin: string): Promise<LookupResponse> {
  * only performs the request the page cannot always make itself. Gated by the extension's own
  * data-lookup allow-list before the call, the same defence-in-depth `fetchPage` applies above the
  * manifest's `host_permissions`: a page driving the bridge cannot turn this into a fetch proxy for
- * an arbitrary origin, and an off-list target is reported as a refusal (`BLOCKED`).
+ * an arbitrary origin, and an off-list target is reported as our own refusal (`UNSUPPORTED_SITE`).
  *
  * `credentials: 'omit'` matters here as much as for a scrape: an open database must never see the
  * user's cookies for its own site.
  */
 async function fetchDataUrl(url: string): Promise<DataFetchResponse> {
   if (!isAllowedDataLookupUrl(url)) {
-    return { ok: false, errorType: 'BLOCKED', reason: 'URL is not an allowed data-lookup host.' };
+    return { ok: false, errorType: 'UNSUPPORTED_SITE', reason: 'URL is not an allowed data-lookup host.' };
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);

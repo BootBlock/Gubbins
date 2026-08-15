@@ -9,12 +9,17 @@ price — so you don't retype what's already on screen.
 ## What it can pull
 
 Open a product page for a part and scrape it. Gubbins has purpose-built parsers for major
-electronics suppliers and retailers, plus a generic fallback for other sites:
+electronics suppliers and retailers:
 
 - **DigiKey, Mouser, Farnell, LCSC, RS, Adafruit, SparkFun** — dedicated parsers, from a pasted
   product URL.
 - **Amazon** — read from the listing tab you already have open, rather than from a pasted link.
-- **Any other site** — a generic metadata fallback that grabs what it can.
+
+> **ℹ️ Note**
+> Those are the *only* sites a pasted link is fetched from. Paste a link to anywhere else and
+> Gubbins says so straight away, listing the distributors that do work — it never reaches out to a
+> site it has no parser for. You can still save the link on the supplier part and open it normally;
+> it just won't be scraped.
 
 It can also do a **barcode → product lookup** and a **one-click price refresh** to update what a
 part currently costs.
@@ -54,8 +59,9 @@ Scraped data is applied carefully:
 > then use the **price refresh** later to keep costs current without re-entering anything.
 
 > **ℹ️ Note**
-> If a page can't be read — a login wall, a CAPTCHA, or an unsupported layout — Gubbins tells you
-> with a clear reason rather than failing silently. A groceries barcode with no match is a simple
+> If a page can't be read — a login wall, a CAPTCHA, an unsupported layout, or a site Gubbins has
+> no parser for — Gubbins tells you which of those it was, rather than failing silently or sending
+> you off to retry something that can't succeed. A groceries barcode with no match is a simple
 > "not found", not an error.
 
 ## Related pages

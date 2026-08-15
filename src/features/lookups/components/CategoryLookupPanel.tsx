@@ -111,9 +111,12 @@ function fromExtensionError(errorType: ScrapeErrorType): LookupFailure {
     case 'DOM_DRIFT':
     case 'CHALLENGE':
       return { code: 'UNREADABLE' };
+    // UNSUPPORTED_SITE is the extension's own allow-list refusing the URL our provider
+    // descriptor built (#667) — ours to fix rather than the database's, but still a refusal.
     case 'RATE_LIMITED':
     case 'BLOCKED':
     case 'SERVER_ERROR':
+    case 'UNSUPPORTED_SITE':
       return { code: 'REFUSED' };
     default:
       assertExhaustive(errorType);

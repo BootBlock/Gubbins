@@ -2679,6 +2679,25 @@ try {
       },
     );
 
+    await step('an unsupported link is refused inline, without a round-trip (#667)', async () => {
+      const detail = page.getByRole('dialog');
+      const panel = detail.getByTestId('scrape-supplier-panel');
+      const before = await scrapeRequestCount();
+      await panel.locator('input[type="url"]').fill('https://example.com/product/widget-1');
+      await detail.getByRole('button', { name: 'Scrape' }).click();
+      // The app's own copy of the extension's allow-list refuses this, so nothing is sent —
+      // and the message names the distributors that work rather than blaming the supplier.
+      const alert = panel.getByRole('alert').first();
+      await alert.waitFor({ state: 'visible', timeout: 5000 });
+      const text = await alert.innerText();
+      if (!text.includes('example.com')) throw new Error(`refusal did not name the host: ${text}`);
+      if (!/DigiKey/.test(text)) throw new Error(`refusal did not list the supported suppliers: ${text}`);
+      if (/blocked/i.test(text)) throw new Error(`refusal still blames the supplier: ${text}`);
+      if ((await scrapeRequestCount()) !== before) {
+        throw new Error('an unsupported URL was still sent across the bridge');
+      }
+    });
+
     await step('re-scraping honours the §4 no-overwrite review for a populated field', async () => {
       const detail = page.getByRole('dialog');
       // The two prior steps each raise a degradation toast; wait for them to auto-dismiss so

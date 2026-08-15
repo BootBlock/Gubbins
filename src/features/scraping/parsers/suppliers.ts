@@ -47,29 +47,79 @@ const ALLOWED_SUPPLIER_DOMAINS: readonly string[] = EXTENSION_HOST_PERMISSIONS.m
 );
 
 /**
+ * Why a URL failed a host-allowlist gate — the *reason*, not just a no (issue #667).
+ *
+ * The gate itself only needs a boolean, but whoever put the URL there needs to know which of
+ * the four refusals applied: "that site has no scraper" and "that link isn't https" call for
+ * completely different fixes, and collapsing them leaves a user with a refusal they cannot
+ * act on. Kept beside the gate (rather than derived by a caller re-parsing the URL) so the
+ * reason can never disagree with the decision.
+ */
+export type UrlRefusal =
+  /** Not a parseable absolute URL at all (a bare order code, a typo, a relative path). */
+  | 'MALFORMED'
+  /** Parseable, but not `https:` — `http:`, `file:`, `data:`, … are never fetched. */
+  | 'NOT_HTTPS'
+  /** Carries `user:pass@` userinfo, which can disguise the real host. */
+  | 'CREDENTIALS'
+  /** A well-formed https URL whose host is simply not on the list. */
+  | 'OFF_LIST';
+
+/**
+ * Short diagnostic per refusal, for the marshalled `reason` field of a §9.4.2 error.
+ *
+ * Deliberately *not* the user-facing copy — that belongs to the UI (which can name the
+ * supported suppliers and translate); this is the developer-facing detail that rides the wire
+ * beside the error type, in the same register as `Supplier blocked the request (HTTP 403).`
+ */
+export const URL_REFUSAL_REASONS: Record<UrlRefusal, string> = {
+  MALFORMED: 'Not a valid absolute URL.',
+  NOT_HTTPS: 'Only https URLs are fetched.',
+  CREDENTIALS: 'URL carries embedded credentials.',
+  OFF_LIST: 'Host is not on the allow-list.',
+};
+
+/**
  * Shared host-allowlist gate (spec §9 hardening): an absolute **https** URL, no userinfo,
  * whose host is — or is a subdomain of — one of `domains`. This is the privileged background
  * worker's own check, applied *before* it makes a network request, so a page that drives the
  * bridge can never coerce it into fetching an arbitrary origin (defence-in-depth above the
  * manifest's `host_permissions`). `http:`, `file:`, `data:`, credentials in the URL, and any
  * off-list host are all rejected.
+ *
+ * Returns the {@link UrlRefusal} that applied, or `null` when the URL may be fetched.
  */
-function isAllowedUrlForDomains(rawUrl: string, domains: readonly string[]): boolean {
+function classifyUrlForDomains(rawUrl: string, domains: readonly string[]): UrlRefusal | null {
   let url: URL;
   try {
     url = new URL(rawUrl);
   } catch {
-    return false;
+    return 'MALFORMED';
   }
-  if (url.protocol !== 'https:') return false;
+  if (url.protocol !== 'https:') return 'NOT_HTTPS';
   // A userinfo component (user:pass@host) is never legitimate here and can disguise the host.
-  if (url.username.length > 0 || url.password.length > 0) return false;
-  return isHostWithinDomains(url.hostname, domains);
+  if (url.username.length > 0 || url.password.length > 0) return 'CREDENTIALS';
+  return isHostWithinDomains(url.hostname, domains) ? null : 'OFF_LIST';
+}
+
+function isAllowedUrlForDomains(rawUrl: string, domains: readonly string[]): boolean {
+  return classifyUrlForDomains(rawUrl, domains) === null;
+}
+
+/**
+ * Why a scrape target cannot be fetched, or `null` when it can (§9).
+ *
+ * The app-side counterpart to {@link isAllowedSupplierUrl}: the same decision, but carrying the
+ * reason so a URL box can explain itself *before* the round-trip instead of relaying a refusal
+ * the app could have made itself (issue #667).
+ */
+export function classifySupplierUrl(rawUrl: string): UrlRefusal | null {
+  return classifyUrlForDomains(rawUrl, ALLOWED_SUPPLIER_DOMAINS);
 }
 
 /** Whether a scrape target is a registered supplier domain the extension may fetch (§9). */
 export function isAllowedSupplierUrl(rawUrl: string): boolean {
-  return isAllowedUrlForDomains(rawUrl, ALLOWED_SUPPLIER_DOMAINS);
+  return classifySupplierUrl(rawUrl) === null;
 }
 
 /**
