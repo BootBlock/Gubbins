@@ -91,9 +91,14 @@ describe('zipInVaultWorker (issue #695)', () => {
   });
 
   it('rejects immediately when the request cannot be handed over at all', async () => {
-    FakeZipWorker.nextPostThrows = new DOMException('could not be cloned', 'DataCloneError');
+    const cause = new DOMException('could not be cloned', 'DataCloneError');
+    FakeZipWorker.nextPostThrows = cause;
     // No timers advanced: a request that never reached the worker must not wait out the budget.
-    await expect(zipInVaultWorker(files, assets)).rejects.toThrow('could not be cloned');
+    const zipping = zipInVaultWorker(files, assets);
+    // Wrapped, not passed through: a `DataCloneError` *is* an `Error` whose text reads as authored
+    // to `describeError`, so the raw one would reach the user as "… could not be cloned".
+    await expect(zipping).rejects.toThrow(VAULT_ZIP_FAILED_MESSAGE);
+    await expect(zipping).rejects.toHaveProperty('cause', cause);
     expect(spawned().terminated).toBe(1);
   });
 
@@ -124,17 +129,23 @@ describe('zipInVaultWorker (issue #695)', () => {
     vi.useFakeTimers();
     const zipping = zipInVaultWorker(files, assets);
     const worker = spawned();
+    // Captured while it is still attached: detaching the handler is the first line of defence, so
+    // holding a reference is what lets the *second* one — the settle-once guard — be tested at all.
+    // Without the capture this test would only re-prove the detach and would pass with the guard
+    // deleted.
+    const deliver = worker.onmessage;
+    if (!deliver) throw new Error('the seam never attached a message handler');
     // Asserted before the clock moves: the rejection lands inside `advanceTimersByTimeAsync`, so
     // attaching the handler afterwards would leave it momentarily unhandled.
     const timedOut = expect(zipping).rejects.toThrow(VAULT_ZIP_TIMEOUT_MESSAGE);
 
     await vi.advanceTimersByTimeAsync(VAULT_ZIP_TIMEOUT_MS);
     await timedOut;
-
-    // The caller has already been told it failed, so late bytes must not re-settle the promise
-    // (and the detached handler means the worker cannot reach it at all).
     expect(worker.onmessage).toBeNull();
-    worker.reply(new Uint8Array([1]));
+
+    // The caller has already been told it failed, so a late answer must change nothing: it cannot
+    // re-settle the promise, and — the observable half — it must not tear the worker down twice.
+    deliver({ data: { zip: new Uint8Array([1]) } } as MessageEvent);
     await expect(zipping).rejects.toThrow(VAULT_ZIP_TIMEOUT_MESSAGE);
     expect(worker.terminated).toBe(1);
   });

@@ -133,8 +133,8 @@ images usually helps most), keeping a [[backup|Backup-and-Restore]] first.
 **An export, backup or archive is taking a very long time.**
 Packaging a big inventory into a `.zip` — especially one with a lot of full-resolution photos —
 genuinely takes a while, and Gubbins will wait for it. If the packaging stops responding
-altogether, Gubbins now gives up rather than leaving you watching a spinner, and tells you no file
-was created. Nothing on your device is changed either way, so it is always safe to try again;
+altogether, Gubbins gives up rather than leaving you watching a spinner, and tells you no file was
+created. Your inventory is never changed by packaging a file, so it is always safe to try again;
 [[exporting|Export-and-Import]] a smaller scope, or a [[backup|Backup-and-Restore]] without the
 full-resolution images, gets you a file sooner.
 

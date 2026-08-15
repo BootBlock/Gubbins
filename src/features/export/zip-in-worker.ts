@@ -21,9 +21,10 @@
  * own worker and terminates it, so there is no long-lived instance to leave in a zombie state.
  *
  * Abandoning a timed-out zip is safe in a way abandoning a database write is not: the worker only
- * computes bytes and has no side effect to land late — nothing has been written, downloaded or
- * overwritten. So a breach terminates the worker outright, reclaiming whatever it was holding,
- * rather than leaving it to finish work no one is waiting for.
+ * computes bytes, so the work it might still finish has nowhere to land — the caller is what
+ * downloads or saves the result, and it has already given up. So a breach terminates the worker
+ * outright, reclaiming whatever it was holding, rather than leaving it to finish work no one is
+ * waiting for.
  */
 import type { VaultZipRequest, VaultZipResponse } from './export-vault.worker';
 
@@ -39,22 +40,35 @@ import type { VaultZipRequest, VaultZipResponse } from './export-vault.worker';
  */
 export const VAULT_ZIP_TIMEOUT_MS = 300_000;
 
-/** Copy for a zip the worker never answered; authored, so `describeError` shows it as written. */
+/**
+ * Copy for a zip the worker never answered; authored, so `describeError` shows it as written.
+ *
+ * One sentence has to serve an export, a backup and the weekly archive, so the remedy names what
+ * each of them can actually leave out — "export fewer items" would be advice the Backup dialog
+ * offers no control for. It promises only that the **inventory** is unchanged, which is true on
+ * every path: the destructive Replace restore reserves its destination file before the zip runs
+ * (see `BackupDialog`), so claiming nothing at all was written would overstate it.
+ */
 export const VAULT_ZIP_TIMEOUT_MESSAGE =
-  'Packaging the .zip took too long and was stopped, so no file was created. Nothing on this ' +
-  'device was changed — try again, and if it keeps failing, export fewer items at a time.';
+  'Packaging the .zip took too long and was stopped, so no file was created. Your inventory is ' +
+  'unchanged, so it is safe to try again — putting less in the file (a smaller scope, or leaving ' +
+  'the full-resolution images out) makes it quicker.';
 
-/** Copy for a zip whose worker failed outright; authored, so `describeError` shows it as written. */
+/**
+ * Copy for a zip the worker could not produce at all — it failed outright, or would not take the
+ * request. Authored, so `describeError` shows it as written rather than the browser's own jargon.
+ */
 export const VAULT_ZIP_FAILED_MESSAGE =
-  'The background task that packages the .zip stopped working, so no file was created. Nothing ' +
-  'on this device was changed — reloading the page and trying again usually clears it.';
+  'The background task that packages the .zip could not finish it, so no file was created. Your ' +
+  'inventory is unchanged — reloading the page and trying again usually clears it.';
 
 /**
  * Zip a text + binary entry map in the fflate vault worker, off the main thread.
  *
- * Resolves with the zip bytes; rejects — always with an `Error` carrying an authored sentence — if
- * the worker fails, cannot be given the request, or does not answer within
- * {@link VAULT_ZIP_TIMEOUT_MS}. The worker is terminated whichever way the call settles.
+ * Resolves with the zip bytes; rejects — always with an `Error` carrying an authored sentence, and
+ * the underlying failure as its `cause` — if the worker fails, cannot be given the request, or does
+ * not answer within {@link VAULT_ZIP_TIMEOUT_MS}. The worker is terminated whichever way the call
+ * settles.
  */
 export function zipInVaultWorker(
   files: Record<string, string>,
@@ -105,8 +119,11 @@ export function zipInVaultWorker(
       worker.postMessage(request);
     } catch (error) {
       // A payload that cannot be structured-cloned never reaches the worker, so nothing will ever
-      // answer it. Reject now rather than waiting out the whole budget for a request never sent.
-      finish(() => reject(error));
+      // answer it. Reject now rather than waiting out the whole budget for a request never sent —
+      // and wrapped like the `error` event, because a `DataCloneError` *is* an `Error` whose text
+      // reads as authored to `describeError`, so passing it through would put "… could not be
+      // cloned" in front of the user as the reason their backup failed.
+      finish(() => reject(new Error(VAULT_ZIP_FAILED_MESSAGE, { cause: error })));
     }
   });
 }
