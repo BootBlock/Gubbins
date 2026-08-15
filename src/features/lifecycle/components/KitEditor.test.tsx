@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { ToastProvider } from '@/components/foundry';
+import { writeSuspendedError } from '@/features/storage/write-gate';
 import type { Item, KitComponent } from '@/db/repositories';
 
 /**
@@ -248,6 +249,43 @@ describe('KitEditor — assemble / disassemble (v2)', () => {
     expect(h.assemble).toHaveBeenCalledWith(
       { kitId: 'kit-1', count: 2, destinationLocationId: 'loc-b', cascade: undefined },
       expect.anything(),
+    );
+  });
+
+  it('humanises a build failure in the toast rather than showing its internal text (#681)', async () => {
+    // The storage Hard Stop: highly actionable, but only once the error-copy seam has turned
+    // "Storage is full (Hard Stop)" into a sentence saying what to do about it.
+    h.components = [component({ quantity: 1, stock: 10 })];
+    h.assemble.mockImplementation((_input, opts) => opts?.onError?.(writeSuspendedError()));
+    renderEditor(item({ quantity: 0 }));
+
+    fireEvent.click(screen.getByTestId('assemble-kit'));
+    await waitFor(() =>
+      expect(screen.getByTestId('toast')).toHaveTextContent(
+        'Saving is paused because storage is nearly full.',
+      ),
+    );
+    expect(screen.getByTestId('toast')).not.toHaveTextContent('Hard Stop');
+  });
+
+  it('keeps an authored failure sentence, and falls back to the call site copy for raw text', async () => {
+    h.components = [component({ quantity: 1, stock: 10 })];
+    h.disassemble.mockImplementation((_input, opts) =>
+      opts?.onError?.(new Error('That kit is checked out.')),
+    );
+    const { unmount } = renderEditor(item({ quantity: 5 }));
+    fireEvent.click(screen.getByTestId('disassemble-kit'));
+    await waitFor(() => expect(screen.getByTestId('toast')).toHaveTextContent('That kit is checked out.'));
+    unmount();
+
+    // Unclassifiable raw SQLite text must not reach the user; the handler's own copy does.
+    h.disassemble.mockImplementation((_input, opts) =>
+      opts?.onError?.(new Error('no such column: kits.wibble')),
+    );
+    renderEditor(item({ quantity: 5 }));
+    fireEvent.click(screen.getByTestId('disassemble-kit'));
+    await waitFor(() =>
+      expect(screen.getByTestId('toast')).toHaveTextContent('Could not disassemble the kit.'),
     );
   });
 });

@@ -30,6 +30,7 @@ import {
   Surface,
 } from '@/components/foundry';
 import { AddIcon, DeleteIcon, EditIcon, WebhookIcon } from '@/components/icons';
+import { useErrorMessage } from '@/features/errors';
 import { useT, type MessageKey } from '@/features/i18n';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { BridgeReloadNotice } from '@/features/sync/BridgeReloadNotice';
@@ -58,6 +59,7 @@ const TEST_OUTCOME_KEYS = {
 
 export function WebhooksScreen() {
   const t = useT();
+  const describeError = useErrorMessage();
   const webhooksQuery = useWebhooks();
   const createWebhook = useCreateWebhook();
   const updateWebhook = useUpdateWebhook();
@@ -93,8 +95,10 @@ export function WebhooksScreen() {
 
   const submitForm = (values: WebhookFormSubmit): void => {
     setFormError(null);
+    // Through the error-copy seam: a save can fail on the storage Hard Stop or a `SQLITE_FULL`,
+    // whose own text is jargon and, being raw, would never reach `t()` in the user's language.
     const onError = (error: unknown): void =>
-      setFormError(error instanceof Error ? error.message : t('webhooks.form.error.generic'));
+      setFormError(describeError(error, t('webhooks.form.error.generic')));
 
     if (editing !== null) {
       updateWebhook.mutate(
