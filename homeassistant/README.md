@@ -182,9 +182,14 @@ uses (see step 8), so one template works for both the voice path and a script/da
 path. A bridge that predates location ids still answers — those fields just come back
 empty.
 
-**Sensor** — the integration adds `sensor.gubbins_bridge_<host>_<port>_inventory_items`
-(item count), with `ok` and `snapshot_generated_at` attributes. Use it on a dashboard, or
-to alert when the bridge stops responding.
+**Sensor** — the integration adds `sensor.gubbins_bridge_inventory_items` (item count), with `ok`
+and `snapshot_generated_at` attributes. Use it on a dashboard, or to alert when the bridge stops
+responding.
+
+> An entry added before the device name dropped the bridge's address keeps the ids it was given
+> (`sensor.gubbins_bridge_<host>_<port>_inventory_items`) — Home Assistant never re-mints an entity
+> id, which is what keeps existing automations working. Check *Settings → Devices & services →
+> Gubbins Inventory* for the ids your own install has.
 
 **Attention binary sensors** — one per inventory status, alongside the item-count sensor on the
 same device: *Low stock*, *Out of stock*, *On order*, *Expiring soon*, *Warranty expiring*,
@@ -196,7 +201,7 @@ matches, and carries the exact figure as a `count` attribute — so a single ent
 # Notify once more than five things are low.
 triggers:
   - trigger: numeric_state
-    entity_id: binary_sensor.gubbins_bridge_<host>_<port>_low_stock
+    entity_id: binary_sensor.gubbins_bridge_low_stock
     attribute: count
     above: 5
 ```

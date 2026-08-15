@@ -80,10 +80,10 @@ looks like a brand-new one. The id is included in the health check's reply, and 
 advertisement the bridge makes if you've turned [[discovery|Home-Assistant-Integration]] on.
 
 > **💡 Tip**
-> Running it in [[Docker|Self-Hosting-with-Docker]]? Keep that file on a mounted volume, or set the
-> id yourself, so a **recreated** container is still the same bridge rather than a new one. The
-> bridge's `README` has the two settings. Nothing breaks if you don't — you'd just have a duplicate
-> to tidy up in Home Assistant.
+> Running it in [[Docker|Self-Hosting-with-Docker]]? The ready-made Compose setup already keeps that
+> file on a volume, so a **recreated** container is still the same bridge. If you run the image by
+> hand instead, add a volume for it (or set the id yourself) — the bridge's `README` covers both.
+> Nothing breaks if you don't; you'd just have a duplicate to tidy up in Home Assistant.
 
 ## When something goes wrong while it's running
 

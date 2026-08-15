@@ -213,12 +213,14 @@ def _async_reconcile_unique_id(
 
     Entries created before the bridge had an identity are keyed on its ``host:port``, and so cannot
     survive the address changing: the entry retries a dead address while the same bridge is offered
-    as a new discovery. Every successful health poll is a chance to fix that, and no user action is
-    needed — the id is a property of the bridge, not something to be configured.
+    as a new discovery. The first setup that reaches an updated bridge fixes that, with no user
+    action needed — the id is a property of the bridge, not something to be configured.
 
     It runs on every setup rather than once as a migration, because the id can legitimately change
     at the *bridge's* end too: one recreated in a fresh container without a mounted id file mints
-    itself a new one. Adopting it keeps the entry, its entities and its history intact.
+    itself a new one. Adopting it keeps the entry, its entities and its history intact. A *later*
+    poll is deliberately not a second chance — an entry whose bridge was unreachable at setup is
+    retried by Home Assistant from the start, which comes back through here.
 
     Two entries claiming one id is the only case left alone: Home Assistant's registry treats a
     unique id as exclusive, so the duplicate is reported for the user to resolve rather than one

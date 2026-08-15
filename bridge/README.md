@@ -285,9 +285,13 @@ discovering consumer has no token yet and so cannot ask `/health` anything.
 > advertised unauthenticated over mDNS by design, and reveals nothing about the inventory. A bridge
 > with no identity to report answers `bridgeId: null`, and a consumer falls back to its address.
 
-**In a container**, remember that the working directory usually goes with the container: mount
-`GUBBINS_BRIDGE_ID_FILE` somewhere persistent, or set `GUBBINS_BRIDGE_ID`, so a recreated container
-is still the same bridge.
+The two **shipped deployment recipes already point it somewhere writable and persistent**, because
+neither could otherwise save it: [`gubbins-bridge.service`](gubbins-bridge.service) uses
+`StateDirectory=` (`/var/lib/gubbins-bridge/bridge-id`) since `ProtectSystem=strict` makes the
+checkout read-only, and the [`Dockerfile`](Dockerfile) uses `/state/bridge-id` since the image's
+source is root-owned and the bridge runs unprivileged. **Mount a volume at `/state`** (as
+`docker-compose.yml` does) so a *recreated* container keeps its identity — without one it mints a
+fresh id and looks like a new bridge.
 
 ### Snapshot freshness and health
 
@@ -2110,7 +2114,7 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_MDNS` | no | `off` | Advertise over mDNS so Home Assistant can auto-discover the bridge. `on` to enable. Carries **no secret**; only meaningful when LAN-exposed (auto-skipped on the loopback default). See [mDNS / zeroconf discovery](#mdns--zeroconf-discovery). |
 | `GUBBINS_BRIDGE_MDNS_NAME` | no | `Gubbins Bridge` | Service instance name shown in a discovery browser. |
 | `GUBBINS_BRIDGE_ID` | no | *(self-minted)* | Pin this bridge's [stable identity](#the-bridges-stable-identity) — how a consumer recognises the same bridge again after its address changes. Normally left unset: the bridge mints one on first start and remembers it. **Not a secret** (it authorises nothing, and is advertised over mDNS by design). Set it to carry the identity across a move to different hardware. |
-| `GUBBINS_BRIDGE_ID_FILE` | no | `bridge-id` | Where that self-minted id is remembered, relative to the working directory. Point it at a mounted path when the bridge runs in a container that is **recreated** rather than restarted. |
+| `GUBBINS_BRIDGE_ID_FILE` | no | `bridge-id` | Where that self-minted id is remembered, relative to the working directory. The shipped systemd unit and Docker image already set it to a writable path (`/var/lib/gubbins-bridge/bridge-id` and `/state/bridge-id`); mount a volume at `/state` so a **recreated** container keeps its identity. |
 | `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (quantity/gauge adjust, check out & in, move stock between locations) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this (or `GUBBINS_BRIDGE_ALLOW_PUSH`) is `on`.** HTTP writes additionally need the caller to hold `bridge:write` + `stock:write` (or `checkouts:write` for the two loan endpoints); the MCP tools are gated by process launch alone (stdio carries no credential). |
 | `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**; a **separate** opt-in from writes but a **strictly wider privilege** — a push merges caller-supplied content into the **whole** dataset, not a bounded stock delta, so treat it as at least as sensitive as writes. JSON source only. Same rate limit; the caller needs `bridge:write` + `sync:write`. |
 | `GUBBINS_BRIDGE_MAX_PUSH_BYTES` | no | `67108864` | Hard cap (bytes) on a pushed snapshot; default 64 MiB. An over-large push is rejected with `413`. Lower it on a constrained host. |

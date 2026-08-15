@@ -21,7 +21,13 @@
 #     -p 127.0.0.1:8787:8787 \
 #     -e GUBBINS_SNAPSHOT_PATH=/data/gubbins-sync.json \
 #     -v /path/to/synced/folder/gubbins-sync.json:/data/gubbins-sync.json:ro \
+#     -v gubbins-bridge-state:/state \
 #     gubbins-bridge
+#
+# The `/state` volume keeps the bridge's stable identity (README.md -> "The bridge's stable
+# identity") across a **recreated** container, so consumers such as Home Assistant go on
+# recognising it as the same bridge. Leave the volume off and the identity lives only as long as
+# the container does: a fresh `docker run` then looks like a different bridge.
 #
 FROM node:24-slim
 
@@ -36,6 +42,13 @@ COPY src/ ./src/
 # API and mDNS (bridge/src/version.ts — it has no version of its own). Without this the
 # image would start and then be unable to say which build it is.
 COPY package.json ./package.json
+
+# Somewhere the unprivileged user can actually write. The copied source above is root-owned, so
+# without this the bridge could not save the identity it is recognised by and would fall back to
+# deriving one from the container's hostname — which changes every time the container is recreated,
+# making the same bridge look like a new one. Mount a volume here to survive a recreate.
+RUN mkdir -p /state && chown node:node /state
+ENV GUBBINS_BRIDGE_ID_FILE=/state/bridge-id
 
 # Run as the image's built-in unprivileged user, never root.
 USER node

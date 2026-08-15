@@ -10,7 +10,8 @@ The bridge now reports an identity of its own, and reports it in the two places 
 read it:
 
 * ``GET /health`` carries ``bridgeId`` — read by the manual flow (which has a token by the time it
-  probes) and by :func:`homeassistant.setup` for an entry that predates this; and
+  probes), and by ``async_setup_entry`` in :mod:`custom_components.gubbins` to re-key an entry that
+  predates this; and
 * the mDNS advertisement carries an ``id`` TXT entry — read by the discovery flow, which has no
   token yet and so cannot ask ``/health`` anything.
 
