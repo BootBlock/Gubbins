@@ -40,7 +40,7 @@ import type { SqlRow } from '@/db/rpc/driver';
 import { resolveBookingConflicts, type BookingWindow } from '@/features/bookings/booking-overlap';
 import { applyOffset } from './clock';
 import { buildConflict, detectsConflicts, nonLwwColumns } from './conflict-detect';
-import { reconcileGauge, reconcileStockQuantity, replayGaugeValue } from './delta-crdt';
+import { reconcileGauge, reconcileStockQuantity, replayGaugeValue, replayStockQuantity } from './delta-crdt';
 import { FK_REFS } from './fk-refs';
 import { resolveLww } from './lww';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
@@ -1556,13 +1556,16 @@ function reconcileGauges(
  *  1. **Contested** — a placement with deltas on only one side is left at its LWW value (the merge
  *     upsert already carried the newer side's quantity); only a placement both devices moved can
  *     have diverged. This also means the pass never sets a quantity from an empty sum.
- *  2. **Ledger complete on both sides** — the delta sum only reconstructs the quantity when every
+ *  2. **Ledger complete on both sides** — the replay only reconstructs the quantity when every
  *     movement since the placement began is present. A snapshot whose ledger was dropped (a
  *     history-excluded backup) or never captured (a pre-#188 export) is *baseline-less*
- *     (`Σ deltas ≠ quantity`); replaying it would lose the missing base (converging to a wrong,
+ *     (its replay ≠ quantity); replaying it would lose the missing base (converging to a wrong,
  *     possibly floored-to-zero, value — worse than LWW). So a side is trusted only when its own S0
- *     capture invariant holds, `Σ deltas == stock_batches.quantity`; otherwise the placement falls
- *     back to LWW, which is never worse than the pre-#188 behaviour.
+ *     capture invariant holds, `replay(deltas) == stock_batches.quantity`; otherwise the placement
+ *     falls back to LWW, which is never worse than the pre-#188 behaviour. A cycle count *heals* a
+ *     baseline-less placement rather than being blocked by it (issue #633): its assertion states
+ *     the quantity outright, so the replay from that point reconstructs the row without needing
+ *     the movements that went missing before it.
  *  3. **Remote brings something new** — skip when every remote delta is already held locally: the
  *     placements have not diverged, so re-`UPDATE`ing to the same value would only bump
  *     `updated_at` and re-push the row every sync (a fresh source of the
@@ -1583,12 +1586,10 @@ function reconcileStock(
     // (1) Only a placement both devices moved can have diverged; a one-sided one keeps its LWW value.
     if (!remoteEntry) continue;
     if (!finalItemIds.has(localEntry.key.itemId)) continue;
-    // (2) Both ledgers must be complete — `Σ deltas == quantity` — or the sum would lose an
-    // uncaptured baseline. A baseline-less side falls back to LWW rather than to a wrong figure.
-    const localSum = sumDeltas(localEntry.deltas);
-    const remoteSum = sumDeltas(remoteEntry.deltas);
-    if (localSum !== localQuantities.get(placementId)) continue;
-    if (remoteSum !== remoteQuantities.get(placementId)) continue;
+    // (2) Both ledgers must be complete — `replay(deltas) == quantity` — or the replay would lose
+    // an uncaptured baseline. A baseline-less side falls back to LWW rather than to a wrong figure.
+    if (replayStockQuantity(localEntry.deltas) !== localQuantities.get(placementId)) continue;
+    if (replayStockQuantity(remoteEntry.deltas) !== remoteQuantities.get(placementId)) continue;
     // (3) Skip when the remote carries no movement this device lacks (no divergence → no churn).
     const localIds = new Set(localEntry.deltas.map((d) => d.id));
     if (remoteEntry.deltas.every((d) => localIds.has(d.id))) continue;
@@ -1601,13 +1602,6 @@ function reconcileStock(
     });
   }
   return resolutions;
-}
-
-/** Sum a placement's signed deltas (its expected on-hand under the S0 capture invariant). */
-function sumDeltas(deltas: readonly StockQuantityDelta[]): number {
-  let sum = 0;
-  for (const d of deltas) sum += d.quantityDelta;
-  return sum;
 }
 
 /** Map each `stock_batches` row to its placement id → quantity, for the ledger-completeness check. */
@@ -1633,7 +1627,11 @@ interface PlacementKey {
 /**
  * Group raw `stock_deltas` rows by their placement, keyed by a stable string id so the same
  * placement matches across two independently-built snapshots. Each entry projects its rows to the
- * `{ id, quantityDelta }` the pure {@link reconcileStockQuantity} replays.
+ * {@link StockQuantityDelta} the pure {@link reconcileStockQuantity} replays.
+ *
+ * `asserted_quantity` is read as `null` unless it holds a finite number, so a snapshot from a peer
+ * that predates issue #633 (the column absent, hence `undefined`) reads as the ordinary movement
+ * it was recorded as, rather than as an assertion of `NaN`.
  */
 function byPlacement(
   deltas: readonly SqlRow[],
@@ -1652,7 +1650,13 @@ function byPlacement(
       entry = { key, deltas: [] };
       map.set(placementId, entry);
     }
-    entry.deltas.push({ id: String(d.id), quantityDelta: num(d.quantity_delta) });
+    const asserted = num(d.asserted_quantity);
+    entry.deltas.push({
+      id: String(d.id),
+      quantityDelta: num(d.quantity_delta),
+      createdAt: num(d.created_at),
+      assertedQuantity: Number.isFinite(asserted) ? asserted : null,
+    });
   }
   return map;
 }

@@ -114,6 +114,32 @@ export function consumeBatchStatements(
 }
 
 /**
+ * Bracket a batch of statements so the `stock_batches` capture triggers record their deltas as
+ * **absolute assertions** rather than relative movements (issue #633).
+ *
+ * A cycle count states what is physically there — "8 in this drawer" — but reaches the ledger as
+ * the correction it happens to imply (`−2`). Summing the id-union of those corrections is right for
+ * two genuine movements and wrong for one count performed twice: counting the same drawer on two
+ * devices before they sync applies both `−2`s, converging on a figure neither counter ever saw.
+ * Inside this bracket each captured delta also records the quantity the write left behind, which
+ * the reconcile replay takes as its base instead of adding it to what came before — so a second
+ * identical count is the no-op an absolute count is by definition.
+ *
+ * The mirror image of `withCaptureDisabled` in `features/sync/snapshot.ts`, and flipped the
+ * same way: inside the caller's own transaction, so a rollback restores the switch with it. Only
+ * wraps a non-empty batch, and must wrap **only** the count's own `stock_batches` writes — any
+ * ordinary movement caught inside would be mis-recorded as something physically observed.
+ */
+export function withAssertedCount(statements: readonly SqlStatement[]): SqlStatement[] {
+  if (statements.length === 0) return [...statements];
+  return [
+    { sql: 'UPDATE stock_delta_capture SET asserting = 1 WHERE id = 1;' },
+    ...statements,
+    { sql: 'UPDATE stock_delta_capture SET asserting = 0 WHERE id = 1;' },
+  ];
+}
+
+/**
  * The default user-facing sentence for a lost stock race — see {@link runStockDraw}.
  */
 export const STOCK_DRAW_RACE_MESSAGE =

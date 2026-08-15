@@ -773,13 +773,13 @@
       "type": "table",
       "name": "stock_delta_capture",
       "tbl_name": "stock_delta_capture",
-      "sql": "CREATE TABLE stock_delta_capture (\n          id      INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),\n          enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))\n        ) STRICT"
+      "sql": "CREATE TABLE stock_delta_capture (\n          id        INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),\n          enabled   INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n          asserting INTEGER NOT NULL DEFAULT 0 CHECK (asserting IN (0, 1))\n        ) STRICT"
     },
     {
       "type": "table",
       "name": "stock_deltas",
       "tbl_name": "stock_deltas",
-      "sql": "CREATE TABLE stock_deltas (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          location_id    TEXT    NOT NULL,\n          batch_key      TEXT    NOT NULL,\n          quantity_delta INTEGER NOT NULL,\n          created_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
+      "sql": "CREATE TABLE stock_deltas (\n          id                TEXT    PRIMARY KEY NOT NULL,\n          item_id           TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          location_id       TEXT    NOT NULL,\n          batch_key         TEXT    NOT NULL,\n          quantity_delta    INTEGER NOT NULL,\n          created_at        INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          asserted_quantity INTEGER\n        ) STRICT"
     },
     {
       "type": "table",
@@ -1127,13 +1127,13 @@
       "type": "trigger",
       "name": "trg_stock_batches_capture_ins",
       "tbl_name": "stock_batches",
-      "sql": "CREATE TRIGGER trg_stock_batches_capture_ins\n        AFTER INSERT ON stock_batches\n        FOR EACH ROW\n        WHEN NEW.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta)\n          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity);\n        END"
+      "sql": "CREATE TRIGGER trg_stock_batches_capture_ins\n        AFTER INSERT ON stock_batches\n        FOR EACH ROW\n        WHEN NEW.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)\n          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity,\n                  CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1\n                       THEN NEW.quantity END);\n        END"
     },
     {
       "type": "trigger",
       "name": "trg_stock_batches_capture_upd",
       "tbl_name": "stock_batches",
-      "sql": "CREATE TRIGGER trg_stock_batches_capture_upd\n        AFTER UPDATE OF quantity ON stock_batches\n        FOR EACH ROW\n        WHEN NEW.quantity <> OLD.quantity AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta)\n          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key,\n                  NEW.quantity - OLD.quantity);\n        END"
+      "sql": "CREATE TRIGGER trg_stock_batches_capture_upd\n        AFTER UPDATE OF quantity ON stock_batches\n        FOR EACH ROW\n        WHEN NEW.quantity <> OLD.quantity AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)\n          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key,\n                  NEW.quantity - OLD.quantity,\n                  CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1\n                       THEN NEW.quantity END);\n        END"
     },
     {
       "type": "trigger",
@@ -1163,7 +1163,7 @@
       "type": "trigger",
       "name": "trg_stock_deltas_immutable",
       "tbl_name": "stock_deltas",
-      "sql": "CREATE TRIGGER trg_stock_deltas_immutable\n        BEFORE UPDATE OF id, item_id, location_id, batch_key, quantity_delta, created_at\n        ON stock_deltas\n        FOR EACH ROW\n        BEGIN\n          SELECT RAISE(ABORT, 'stock_deltas is an immutable, append-only ledger.');\n        END"
+      "sql": "CREATE TRIGGER trg_stock_deltas_immutable\n        BEFORE UPDATE OF id, item_id, location_id, batch_key, quantity_delta, created_at,\n                         asserted_quantity\n        ON stock_deltas\n        FOR EACH ROW\n        BEGIN\n          SELECT RAISE(ABORT, 'stock_deltas is an immutable, append-only ledger.');\n        END"
     },
     {
       "type": "trigger",
@@ -5883,6 +5883,14 @@
           "notnull": 1,
           "dflt_value": "1",
           "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "asserting",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
         }
       ],
       "foreignKeys": [],
@@ -5936,6 +5944,14 @@
           "type": "INTEGER",
           "notnull": 1,
           "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "asserted_quantity",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
           "pk": 0
         }
       ],

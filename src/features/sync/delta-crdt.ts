@@ -56,14 +56,58 @@ export function reconcileGauge(
 }
 
 /**
+ * Replay one placement's `stock_deltas` in order to the quantity they describe — **unclamped**,
+ * and assuming the list is already de-duplicated (issue #188, issue #633).
+ *
+ * Ordinary movements are relative, so they accumulate over a base of **0** (a batch has no
+ * structural capacity — its whole life is deltas). A row carrying an `assertedQuantity` is not a
+ * movement but a *physical count*: it states what was on the shelf, which supersedes every
+ * movement recorded before it. So the replay restarts from the **newest** assertion and applies
+ * only what came after. Counting the same shelf on two devices therefore lands on the count, not
+ * on the count minus a second copy of its own correction.
+ *
+ * Ordering is `(createdAt, count-before-movement, id)` — computed from replicated values alone, so
+ * both devices reach it identically and the result is commutative. The middle term only decides
+ * rows stamped the *same millisecond*, where there is genuinely no evidence of which came first: a
+ * count is then treated as the earlier event, so a movement sharing its instant is still applied on
+ * top. That is the safe reading of a tie — the alternative discards a real movement, which is the
+ * failure §7.3's whole delta design exists to prevent.
+ *
+ * Unclamped because the caller decides what a negative total means: converging a placement floors
+ * it at 0 (see {@link reconcileStockQuantity}), while checking whether a device's own ledger
+ * reconstructs its own stored quantity must compare the honest figure — a ledger that sums to −5
+ * beside a row reading 0 is an incomplete ledger, not a floored one.
+ *
+ * @internal Exported for unit tests and the reconcile completeness guard.
+ */
+export function replayStockQuantity(deltas: readonly StockQuantityDelta[]): number {
+  const rank = (d: StockQuantityDelta): number => (d.assertedQuantity === null ? 1 : 0);
+  const ordered = [...deltas].sort(
+    (a, b) => a.createdAt - b.createdAt || rank(a) - rank(b) || a.id.localeCompare(b.id),
+  );
+  let from = 0;
+  let total = 0;
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const asserted = ordered[i]!.assertedQuantity;
+    if (asserted !== null) {
+      from = i + 1;
+      total = asserted;
+      break;
+    }
+  }
+  for (let i = from; i < ordered.length; i++) total += ordered[i]!.quantityDelta;
+  return total;
+}
+
+/**
  * The discrete-stock analogue of {@link reconcileGauge} (issue #188). A `(item, location, batch)`
- * placement's converged quantity is the id-unioned sum of every signed `stock_deltas` movement,
- * over a base of **0** (a batch has no structural capacity — its whole life is deltas), clamped at
- * a floor of 0. De-duplication by the delta's own id means the same physical movement seen on two
- * devices counts once; the union is commutative, so both devices reach the same quantity.
+ * placement's converged quantity is the id-union of both sides' `stock_deltas` replayed by
+ * {@link replayStockQuantity}, clamped at a floor of 0. De-duplication by the delta's own id means
+ * the same physical movement seen on two devices counts once; the union is commutative, so both
+ * devices reach the same quantity.
  *
  * The floor is the only clamp (there is no ceiling): concurrent over-consumption that drives the
- * sum negative converges to 0 on every replay rather than leaving a latent negative. Recomputing
+ * total negative converges to 0 on every replay rather than leaving a latent negative. Recomputing
  * from the deltas each sync makes this self-correcting, exactly as the gauge re-clamps its value.
  */
 export function reconcileStockQuantity(
@@ -74,7 +118,6 @@ export function reconcileStockQuantity(
   for (const delta of [...localDeltas, ...remoteDeltas]) {
     if (!byId.has(delta.id)) byId.set(delta.id, delta);
   }
-  let sum = 0;
-  for (const delta of byId.values()) sum += delta.quantityDelta;
-  return sum < 0 ? 0 : sum;
+  const total = replayStockQuantity([...byId.values()]);
+  return total < 0 ? 0 : total;
 }

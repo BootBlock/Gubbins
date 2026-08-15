@@ -59,7 +59,7 @@ describe('ItemRepository — per-location cycle count (Phase 26)', () => {
 
     // Counted only 3 at B (a shortfall of 1 against the placement's expected 4).
     const [updated] = await items.reconcile([
-      { itemId: item.id, counted: 3, note: 'Cycle count of B', locationId: b.id },
+      { itemId: item.id, counted: 3, locationName: 'B', locationId: b.id },
     ]);
     expect(updated.quantity).toBe(9); // 6 @ A + 3 @ B
 
@@ -78,7 +78,7 @@ describe('ItemRepository — per-location cycle count (Phase 26)', () => {
     const b = await locations.create({ name: 'B' });
     const item = await items.create({ name: 'Cap', quantity: 5, locationId: a.id });
 
-    await items.reconcile([{ itemId: item.id, counted: 2, note: 'Found 2 at B', locationId: b.id }]);
+    await items.reconcile([{ itemId: item.id, counted: 2, locationName: 'B', locationId: b.id }]);
     expect((await items.getById(item.id))?.quantity).toBe(7); // 5 @ A + a new 2 @ B
     const byLoc = new Map((await items.listStock(item.id)).map((p) => [p.locationId, p.quantity]));
     expect(byLoc.get(b.id)).toBe(2);
@@ -88,7 +88,7 @@ describe('ItemRepository — per-location cycle count (Phase 26)', () => {
     const a = await locations.create({ name: 'A' });
     const item = await items.create({ name: 'Nut', quantity: 8, locationId: a.id });
     const result = await items.reconcile([
-      { itemId: item.id, counted: 8, note: 'matches', locationId: a.id },
+      { itemId: item.id, counted: 8, locationName: 'A', locationId: a.id },
     ]);
     expect(result).toHaveLength(0);
   });

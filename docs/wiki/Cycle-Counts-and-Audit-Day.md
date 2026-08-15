@@ -43,6 +43,17 @@ just a working sheet. If you'd rather recount from scratch, **Start over** on th
 Once a location is authorised or skipped, its saved counts are cleared — and abandoning a
 stock-take discards them for every location in the walk.
 
+## Counting the same shelf on two devices
+
+Two people can count the same place at once — a phone each on audit day, or a count in the garage
+followed by a check at the desk — without the two counts fighting each other. A count is a
+statement about what's *there*, not a change to what's there, so counting a shelf twice is not
+"minus two, twice": once the devices [[sync|Cloud-Sync]] they settle on what was counted, and if
+the two counters disagreed, the **later** count is the one that stands.
+
+Anything genuinely used or received *after* a count is still applied on top of it, so a count sets
+a fresh starting point rather than freezing the shelf.
+
 ## Audit day
 
 For a full stock-take, the guided **audit day** walks you through your locations one by one,

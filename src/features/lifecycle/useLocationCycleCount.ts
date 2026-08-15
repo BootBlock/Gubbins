@@ -19,13 +19,7 @@ import {
   type SerialisedReconciliation,
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
-import {
-  variances,
-  reconciliationNote,
-  missingInstances,
-  serialisedAuditNote,
-  type CycleCountLine,
-} from './cycle-count';
+import { variances, missingInstances, serialisedAuditNote, type CycleCountLine } from './cycle-count';
 import { useCycleCount } from './CycleCountContext';
 import { useAuthoriseCount } from './hooks';
 
@@ -156,23 +150,20 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
   const authorise = async (): Promise<AuthoriseResult> => {
     // One adjustment per *drifted batch line* (Phase 28): the variance is absorbed at that
     // lot's `stock_batches` row at this placement, so a drawer's lots reconcile
-    // independently. Built from the session lines (which carry the lot identity), keeping
-    // the note arithmetic in the pure `reconciliationNote`.
+    // independently. Built from the session lines (which carry the lot identity). Only the
+    // counted figure and the placement travel — the ledger note's variance is composed
+    // against the quantity read as the count is applied, not the one the sheet loaded with,
+    // so a drawer that moved while the sheet was open cannot log two different variances
+    // (issue #633).
     const quantityAdjustments: ReconciliationAdjustment[] = lines
       .filter((l) => counts[l.key]?.trim().length && Number(counts[l.key]) !== l.expected)
-      .map((l) => {
-        const counted = Number(counts[l.key]);
-        return {
-          itemId: l.itemId,
-          counted,
-          note: reconciliationNote(
-            { itemId: l.itemId, name: l.name, expected: l.expected, counted, variance: counted - l.expected },
-            location.name,
-          ),
-          locationId: location.id,
-          batch: l.batch,
-        };
-      });
+      .map((l) => ({
+        itemId: l.itemId,
+        counted: Number(counts[l.key]),
+        locationName: location.name,
+        locationId: location.id,
+        batch: l.batch,
+      }));
     const serialisedAdjustments: SerialisedReconciliation[] = missing.map((m) => ({
       itemId: m.itemId,
       note: serialisedAuditNote(m, location.name),

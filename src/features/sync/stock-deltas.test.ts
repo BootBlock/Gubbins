@@ -5,6 +5,7 @@ import { migrations } from '@/db/migrations';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
 import { LocationRepository } from '@/db/repositories/LocationRepository';
 import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE, SYNC_TABLES } from '@/db/repositories/tombstone';
+import { UNTRACKED_BATCH } from '@/db/repositories/stock-batches';
 import {
   applyPlan,
   buildLocalSnapshot,
@@ -13,7 +14,7 @@ import {
   withCaptureDisabled,
 } from './snapshot';
 import { reconcile } from './reconcile';
-import { reconcileStockQuantity } from './delta-crdt';
+import { reconcileStockQuantity, replayStockQuantity } from './delta-crdt';
 import type { StockQuantityDelta } from './types';
 
 /**
@@ -176,7 +177,21 @@ describe('stock_deltas — capture invariant (issue #188, S0)', () => {
 });
 
 describe('reconcileStockQuantity — pure replay (issue #188, S1)', () => {
-  const d = (id: string, quantityDelta: number): StockQuantityDelta => ({ id, quantityDelta });
+  /** An ordinary relative movement. `createdAt` orders the replay; `id` breaks a tie. */
+  const d = (id: string, quantityDelta: number, createdAt = 0): StockQuantityDelta => ({
+    id,
+    quantityDelta,
+    createdAt,
+    assertedQuantity: null,
+  });
+  /**
+   * A cycle count's delta (issue #633): the same true `quantityDelta` the trigger records, plus
+   * the quantity physically observed, which is what the replay restarts from.
+   */
+  const counted = (id: string, quantityDelta: number, observed: number, createdAt: number) => ({
+    ...d(id, quantityDelta, createdAt),
+    assertedQuantity: observed,
+  });
 
   it('sums the id-union of both sides over a base of zero', () => {
     // Shared seed (+10), then each device drew the placement down independently.
@@ -203,6 +218,83 @@ describe('reconcileStockQuantity — pure replay (issue #188, S1)', () => {
     const local = [d('seed', 10), d('a', -8)];
     const remote = [d('seed', 10), d('b', -8)];
     expect(reconcileStockQuantity(local, remote)).toBe(0);
+  });
+
+  // --- Absolute counts (issue #633) --------------------------------------------------------
+  //
+  // A cycle count states what is on the shelf, so counting the same shelf twice must be the
+  // no-op it is in the real world — not two corrections applied one after the other.
+
+  it('takes the counted figure as the base rather than adding its correction (issue #633)', () => {
+    // The drawer holds 10 per the shared seed; physically there are 8. Both devices count 8,
+    // each recording its own −2 with its own random id. Summing them lands on 6.
+    const local = [d('seed', 10), counted('a', -2, 8, 100)];
+    const remote = [d('seed', 10), counted('b', -2, 8, 200)];
+    expect(reconcileStockQuantity(local, remote)).toBe(8);
+  });
+
+  it('applies movements recorded after the newest count on top of it', () => {
+    // Counted 8, then three units genuinely left the drawer — the count is a base, not a full stop.
+    const local = [d('seed', 10), counted('a', -2, 8, 100), d('c', -3, 300)];
+    const remote = [d('seed', 10), counted('b', -2, 8, 200)];
+    expect(reconcileStockQuantity(local, remote)).toBe(5);
+  });
+
+  it('lets the newest count win when two devices count the same shelf differently', () => {
+    // One counter found 8, the other 9 — a real disagreement, resolved by the later observation
+    // rather than by adding both corrections (which would give 7, a figure neither of them saw).
+    const local = [d('seed', 10), counted('a', -2, 8, 100)];
+    const remote = [d('seed', 10), counted('b', -1, 9, 200)];
+    expect(reconcileStockQuantity(local, remote)).toBe(9);
+    expect(reconcileStockQuantity(remote, local)).toBe(9);
+  });
+
+  it('orders two counts stamped the same instant by id, so both devices agree', () => {
+    const local = [d('seed', 10), counted('aaa', -2, 8, 100)];
+    const remote = [d('seed', 10), counted('bbb', -3, 7, 100)];
+    // 'bbb' sorts last, so its observation is the newest — and it is on both devices.
+    expect(reconcileStockQuantity(local, remote)).toBe(7);
+    expect(reconcileStockQuantity(remote, local)).toBe(7);
+  });
+
+  it('still applies a movement stamped the same instant as a count', () => {
+    // Nothing says which of the two happened first, and discarding a real movement is the worse
+    // reading of that — so the count is taken as the earlier event and the −3 lands on top of it.
+    const local = [d('seed', 10), counted('a', -2, 8, 100)];
+    const remote = [d('seed', 10), d('b', -3, 100)];
+    expect(reconcileStockQuantity(local, remote)).toBe(5);
+    expect(reconcileStockQuantity(remote, local)).toBe(5);
+  });
+
+  it('still floors a count that later movements draw past zero', () => {
+    const local = [counted('a', 3, 3, 100), d('b', -5, 200)];
+    expect(reconcileStockQuantity(local, [])).toBe(0);
+  });
+});
+
+describe('replayStockQuantity — one side, unclamped (issue #633)', () => {
+  const row = (
+    id: string,
+    quantityDelta: number,
+    createdAt: number,
+    assertedQuantity: number | null = null,
+  ): StockQuantityDelta => ({ id, quantityDelta, createdAt, assertedQuantity });
+
+  it('reconstructs a single device’s quantity, whose ledger is a linear history', () => {
+    // +10, counted 8 (−2), −3 → the row reads 5, and so does the replay.
+    expect(replayStockQuantity([row('a', 10, 100), row('b', -2, 200, 8), row('c', -3, 300)])).toBe(5);
+  });
+
+  it('reports the honest negative rather than flooring, so an incomplete ledger stays visible', () => {
+    // The completeness guard compares this against the stored quantity; flooring here would let a
+    // ledger that sums to −5 pass beside a row reading 0.
+    expect(replayStockQuantity([row('a', -5, 100)])).toBe(-5);
+  });
+
+  it('re-establishes a baseline a wiped ledger lost', () => {
+    // A history-excluded restore leaves stock with no deltas to explain it. A physical count says
+    // what is there outright, so the replay reconstructs the row from that point on.
+    expect(replayStockQuantity([row('a', -2, 200, 8), row('b', -1, 300)])).toBe(7);
   });
 });
 
@@ -310,6 +402,177 @@ describe('discrete-stock convergence — the #188 scenario end-to-end (S1)', () 
     } finally {
       await a.close();
       await b.close();
+    }
+  });
+});
+
+describe('absolute cycle counts — the #633 scenario end-to-end', () => {
+  const dictOf = (driver: MemoryDriver) =>
+    buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE]);
+
+  /** Two devices that started from the same state: a drawer holding `quantity` of one item. */
+  async function twoDevicesHolding(quantity: number) {
+    const a = createMemoryDriver();
+    const b = createMemoryDriver();
+    await runMigrations(a, migrations);
+    const itemsA = new ItemRepository(a);
+    const drawer = await new LocationRepository(a).create({ name: 'Drawer A2' });
+    const item = await itemsA.create({ name: 'Bracket', quantity, locationId: drawer.id });
+    await runMigrations(b, migrations);
+    await b.transaction(
+      withCaptureDisabled(buildCloneStatements(await buildLocalSnapshot(a), await dictOf(b))),
+    );
+    return { a, b, itemsA, itemsB: new ItemRepository(b), item, drawer };
+  }
+
+  /** The adjustment the count sheet builds for a drifted untracked lot at a placement. */
+  const countOf = (item: { id: string }, drawer: { id: string; name: string }, physical: number) => [
+    {
+      itemId: item.id,
+      counted: physical,
+      locationName: drawer.name,
+      locationId: drawer.id,
+      batch: UNTRACKED_BATCH,
+    },
+  ];
+
+  /**
+   * Wait for the wall clock to tick, so the next ledger row is stamped strictly later than the
+   * last. Two writes inside one millisecond are a genuine tie the replay resolves by rule (see the
+   * pure tests); these cases are about what happens when the order *is* known.
+   */
+  async function clockTick(): Promise<void> {
+    const from = Date.now();
+    while (Date.now() <= from) await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+
+  /** Merge each device's view of the other, exactly as the real sync does from both ends. */
+  async function syncBothWays(a: MemoryDriver, b: MemoryDriver) {
+    const snapA = await buildLocalSnapshot(a);
+    const snapB = await buildLocalSnapshot(b);
+    const dictA = await dictOf(a);
+    const dictB = await dictOf(b);
+    await applyPlan(a, reconcile(snapA, snapB, { offset: 0, dictionary: dictA }), dictA);
+    await applyPlan(b, reconcile(snapB, snapA, { offset: 0, dictionary: dictB }), dictB);
+  }
+
+  it('converges on the counted figure when the same drawer is counted on two devices', async () => {
+    // An audit day with a phone each: the database says 10, both counters find 8, neither device
+    // syncs in between. Each records its own −2 with its own id, so summing the union gives 6 —
+    // a figure neither counter ever saw, agreed on by both devices and stamped as freshly counted.
+    const { a, b, itemsA, itemsB, item, drawer } = await twoDevicesHolding(10);
+    try {
+      await itemsA.reconcile(countOf(item, drawer, 8));
+      await itemsB.reconcile(countOf(item, drawer, 8));
+      expect((await itemsA.getById(item.id))!.quantity).toBe(8);
+      expect((await itemsB.getById(item.id))!.quantity).toBe(8);
+
+      await syncBothWays(a, b);
+
+      expect((await itemsA.getById(item.id))!.quantity).toBe(8);
+      expect((await itemsB.getById(item.id))!.quantity).toBe(8);
+
+      // Both counts survive in the ledger as observations — nothing was discarded to get there.
+      for (const driver of [a, b]) {
+        const observations = await driver.queryOne<{ n: number }>(
+          'SELECT COUNT(*) AS n FROM stock_deltas WHERE item_id = ? AND asserted_quantity IS NOT NULL;',
+          [item.id],
+        );
+        expect(Number(observations?.n)).toBe(2);
+      }
+
+      // And it settles: with both sides holding the same deltas there is nothing left to resolve,
+      // so no redundant `UPDATE … SET quantity = 8` re-pushes the row every sync.
+      const plan = reconcile(await buildLocalSnapshot(a), await buildLocalSnapshot(b), {
+        offset: 0,
+        dictionary: await dictOf(a),
+      });
+      expect(plan.stockResolutions).toEqual([]);
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+
+  it('keeps a movement made after the count, on either device', async () => {
+    // The count is a new baseline, not a full stop: A counts 8, then B (which never counted)
+    // genuinely takes 3 out. The drawer must settle at 5, not back at the counted 8.
+    const { a, b, itemsA, itemsB, item, drawer } = await twoDevicesHolding(10);
+    try {
+      await itemsA.reconcile(countOf(item, drawer, 8));
+      await clockTick();
+      await itemsB.adjustQuantity(item.id, -3);
+
+      await syncBothWays(a, b);
+
+      expect((await itemsA.getById(item.id))!.quantity).toBe(5);
+      expect((await itemsB.getById(item.id))!.quantity).toBe(5);
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+
+  it('supersedes a movement the count had already seen on the shelf', async () => {
+    // B takes 3 out (10 → 7) while A is offline; A then walks the drawer and counts 8. A's sheet
+    // still says 10, so it records −2 — but what A physically saw already reflects whatever had
+    // left the drawer by then. The later observation is the better evidence, so both devices land
+    // on 8 rather than on 10 − 3 − 2.
+    const { a, b, itemsA, itemsB, item, drawer } = await twoDevicesHolding(10);
+    try {
+      await itemsB.adjustQuantity(item.id, -3);
+      await clockTick();
+      await itemsA.reconcile(countOf(item, drawer, 8));
+
+      await syncBothWays(a, b);
+
+      expect((await itemsA.getById(item.id))!.quantity).toBe(8);
+      expect((await itemsB.getById(item.id))!.quantity).toBe(8);
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+
+  it('leaves an ordinary movement relative — two decrements still both count', async () => {
+    // The regression guard for #188: only a count asserts. Two genuine draws must still sum, so
+    // the assertion path cannot have quietly turned every write into a last-one-wins overwrite.
+    const { a, b, itemsA, itemsB, item } = await twoDevicesHolding(10);
+    try {
+      await itemsA.adjustQuantity(item.id, -3);
+      await itemsB.adjustQuantity(item.id, -4);
+      await syncBothWays(a, b);
+      expect((await itemsA.getById(item.id))!.quantity).toBe(3);
+      expect((await itemsB.getById(item.id))!.quantity).toBe(3);
+
+      const asserted = await a.queryOne<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM stock_deltas WHERE asserted_quantity IS NOT NULL;',
+      );
+      expect(Number(asserted?.n), 'no ordinary movement is recorded as an observation').toBe(0);
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+
+  it('records the counted quantity, not the correction, and only for the count’s own writes', async () => {
+    // The switch must close behind the count: the adjustment that follows it is a movement again.
+    const { a, itemsA, item, drawer } = await twoDevicesHolding(10);
+    try {
+      await itemsA.reconcile(countOf(item, drawer, 8));
+      await clockTick(); // so `ORDER BY created_at` below is the order they were written in
+      await itemsA.adjustQuantity(item.id, -1);
+      const rows = await a.query<{ quantity_delta: number; asserted_quantity: number | null }>(
+        'SELECT quantity_delta, asserted_quantity FROM stock_deltas WHERE item_id = ? ORDER BY created_at, id;',
+        [item.id],
+      );
+      expect(rows.map((r) => [Number(r.quantity_delta), r.asserted_quantity ?? null])).toEqual([
+        [10, null], // the create seed
+        [-2, 8], // the count: the true applied change, plus what was physically there
+        [-1, null], // an ordinary draw afterwards
+      ]);
+    } finally {
+      await a.close();
     }
   });
 });

@@ -6,18 +6,24 @@
 import type { BatchIdentity } from '@/features/inventory/batches';
 
 /**
- * One authorised Reconciliation Adjustment (§4.4). The upstream cycle-count session
- * computes the variance and the ledger note from the blind count; the repository
- * trusts these and atomically sets the new on-hand quantity, recording a
- * `RECONCILED` history entry — mirroring how `applyScrape` consumes an upstream
- * merge decision.
+ * One authorised Reconciliation Adjustment (§4.4). The upstream cycle-count session decides
+ * *what was counted where*; the repository trusts that and atomically sets the new on-hand
+ * quantity, recording a `RECONCILED` history entry — mirroring how `applyScrape` consumes an
+ * upstream merge decision.
+ *
+ * Unlike {@link SerialisedReconciliation}, the ledger note is composed **in** the repository
+ * rather than passed in (issue #633). Its wording quotes the figure the count was measured
+ * against — "counted 8, expected 10 (adjustment -2)" — and only the repository reads that figure
+ * at the moment the adjustment is applied. Composed upstream from the sheet's load-time read, the
+ * note could state one variance beside a history entry recording another, which is exactly the
+ * disagreement an audit trail must not have.
  */
 export interface ReconciliationAdjustment {
   readonly itemId: string;
   /** The physically counted quantity that becomes the new on-hand amount. */
   readonly counted: number;
-  /** The §4.4 ledger note (built upstream from the location + variance). */
-  readonly note: string;
+  /** The location the count was taken in, named in the §4.4 ledger note. */
+  readonly locationName: string;
   /**
    * The specific placement counted (Phase 26): when set, the variance is absorbed at
    * *this* location's `item_stock` row and `counted` becomes that placement's new

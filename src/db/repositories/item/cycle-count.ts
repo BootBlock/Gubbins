@@ -1,13 +1,21 @@
 /**
  * Cycle-counting & reconciliation concern (spec §4.4, Phases 9/26/28). Applies batches
- * of authorised adjustments atomically: the variance arithmetic is decided upstream in
- * the pure cycle-count module, and this concern trusts that decision (like `applyScrape`),
- * absorbing each variance at the right grain (whole-item / per-location / per-batch).
+ * of authorised adjustments atomically: the upstream cycle-count session decides what was
+ * counted where and this concern trusts that (like `applyScrape`), measuring each count
+ * against the live ledger and absorbing the variance at the right grain (whole-item /
+ * per-location / per-batch).
  */
 import { DbError } from '../../errors';
 import type { SqlStatement } from '../../rpc/driver';
 import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
-import { placementDeltaStatements, runStockDraw, setBatchStatement, stockBatchRowId } from '../stock-batches';
+import { reconciliationNote } from '@/features/lifecycle/cycle-count';
+import {
+  placementDeltaStatements,
+  runStockDraw,
+  setBatchStatement,
+  stockBatchRowId,
+  withAssertedCount,
+} from '../stock-batches';
 import { markCountedStatement } from '../location-count';
 import { stockRowId } from '../stock';
 import type { Item, ReconciliationAdjustment, SerialisedReconciliation } from '../types';
@@ -35,10 +43,14 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
      * Apply a batch of authorised Reconciliation Adjustments (spec §4.4) atomically.
      * Each adjustment sets a DISCRETE item's on-hand quantity to the physically
      * counted value and records a `RECONCILED` ledger entry whose `quantity_delta` is
-     * the variance (counted − previous) and whose note was composed upstream from the
-     * blind count. The variance arithmetic itself lives in the pure cycle-count
-     * module; this method trusts the decision, like `applyScrape`. Write-gated.
-     * A zero-variance adjustment is skipped (no-op, not logged).
+     * the variance (counted − previous) and whose note states that same variance in
+     * words, both read here so they cannot disagree (see {@link reconciledEntry}). What
+     * was counted where is the upstream session's decision; this method trusts it, like
+     * `applyScrape`. Write-gated. A zero-variance adjustment is skipped (no-op, not logged).
+     *
+     * Each write is captured as an **absolute assertion** rather than a relative movement
+     * (issue #633) — see {@link withAssertedCount} for why a count that reaches the
+     * convergence ledger as the correction it implies is applied twice across two devices.
      *
      * Per-location (Phase 26): when an adjustment carries a `locationId`, the variance is
      * computed against — and absorbed at — *that* placement's `item_stock` row, and
@@ -91,12 +103,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
           const delta = adj.counted - before;
           if (delta === 0) continue;
           statements.push(setBatchStatement(adj.itemId, adj.locationId, adj.batch, adj.counted));
-          statements.push(
-            historyStatement(adj.itemId, 'RECONCILED', this.actorId(), {
-              quantityDelta: delta,
-              note: adj.note,
-            }),
-          );
+          statements.push(this.reconciledEntry(adj, existing.name, before, delta));
           touched.push(adj.itemId);
           continue;
         }
@@ -117,12 +124,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
           statements.push(
             ...(await placementDeltaStatements(this.driver, adj.itemId, adj.locationId, delta)),
           );
-          statements.push(
-            historyStatement(adj.itemId, 'RECONCILED', this.actorId(), {
-              quantityDelta: delta,
-              note: adj.note,
-            }),
-          );
+          statements.push(this.reconciledEntry(adj, existing.name, before, delta));
           touched.push(adj.itemId);
           continue;
         }
@@ -134,16 +136,40 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
         statements.push(
           ...(await placementDeltaStatements(this.driver, adj.itemId, existing.locationId, delta)),
         );
-        statements.push(
-          historyStatement(adj.itemId, 'RECONCILED', this.actorId(), {
-            quantityDelta: delta,
-            note: adj.note,
-          }),
-        );
+        statements.push(this.reconciledEntry(adj, existing.name, existing.quantity, delta));
         touched.push(adj.itemId);
       }
 
-      return { statements, touched };
+      // Every `stock_batches` write above is an *absolute* count, so the deltas they capture are
+      // marked as assertions rather than movements (issue #633). Nothing else belongs inside the
+      // bracket: the history entries touch a different table, and `authoriseCount`'s serialised
+      // audit and "counted" stamp are appended after this plan, outside it.
+      return { statements: withAssertedCount(statements), touched };
+    }
+
+    /**
+     * The `RECONCILED` ledger entry for one applied adjustment, composed from the **live** figures
+     * this plan just read (issue #633).
+     *
+     * The note and the entry's `quantity_delta` are two statements of the same variance, and the
+     * Activity Log shows them side by side — the note as the detail line, the delta as the badge.
+     * Composing the note upstream from the count sheet's load-time quantity let them disagree
+     * whenever stock moved while the sheet was open: "expected 10 (adjustment -2)" beside a badge
+     * reading −5. Both now derive from `before`, so the row can only ever agree with itself.
+     */
+    private reconciledEntry(
+      adj: ReconciliationAdjustment,
+      name: string,
+      before: number,
+      delta: number,
+    ): SqlStatement {
+      return historyStatement(adj.itemId, 'RECONCILED', this.actorId(), {
+        quantityDelta: delta,
+        note: reconciliationNote(
+          { itemId: adj.itemId, name, expected: before, counted: adj.counted, variance: delta },
+          adj.locationName,
+        ),
+      });
     }
 
     /**

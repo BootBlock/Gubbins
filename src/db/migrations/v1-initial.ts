@@ -1532,14 +1532,25 @@ const baselineStatements: SqlStatement[] = [
     // location removed) while its deltas remain — an FK here would either abort a delete or,
     // RESTRICT-style, block one. `item_id` keeps its cascade so an item's deltas retire with it,
     // exactly like `item_history`.
+    //
+    // `asserted_quantity` is what makes a **physical count** converge correctly (issue #633).
+    // Almost every row here is a *relative* movement — "three left this drawer" — and summing the
+    // id-union of those is exactly right. A cycle count is not one: it is an *absolute assertion*
+    // ("there are 8 of these here"), and recording it as the relative correction it happened to
+    // imply means counting the same drawer on two devices before they sync applies **both**
+    // corrections, converging on `physical − variance` — a figure neither counter ever saw. So a
+    // count's rows carry the quantity that was physically observed, and the replay treats the
+    // newest assertion as its base rather than adding it to what came before. NULL on an ordinary
+    // movement, which is every row the capture triggers write outside a count.
     sql: `
         CREATE TABLE stock_deltas (
-          id             TEXT    PRIMARY KEY NOT NULL,
-          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-          location_id    TEXT    NOT NULL,
-          batch_key      TEXT    NOT NULL,
-          quantity_delta INTEGER NOT NULL,
-          created_at     INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          id                TEXT    PRIMARY KEY NOT NULL,
+          item_id           TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          location_id       TEXT    NOT NULL,
+          batch_key         TEXT    NOT NULL,
+          quantity_delta    INTEGER NOT NULL,
+          created_at        INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          asserted_quantity INTEGER
         ) STRICT;
       `,
   },
@@ -1553,7 +1564,8 @@ const baselineStatements: SqlStatement[] = [
     // still permitted, as SQLite applies FK actions without firing triggers.
     sql: `
         CREATE TRIGGER trg_stock_deltas_immutable
-        BEFORE UPDATE OF id, item_id, location_id, batch_key, quantity_delta, created_at
+        BEFORE UPDATE OF id, item_id, location_id, batch_key, quantity_delta, created_at,
+                         asserted_quantity
         ON stock_deltas
         FOR EACH ROW
         BEGIN
@@ -1569,42 +1581,59 @@ const baselineStatements: SqlStatement[] = [
     // device-local session state: never synced, backed up, cloned, restored or tombstoned, and —
     // like `location_item_counts` — carries no foreign key so a restore's table ordering can never
     // abort on it.
+    //
+    // `asserting` is the same idea for the other axis (issue #633): while it is on, the delta each
+    // trigger writes also records the resulting quantity as an *asserted* one, because the write it
+    // is capturing came from a physical count rather than a movement. Only the cycle-count
+    // reconciliation turns it on, and only around its own `stock_batches` writes.
     sql: `
         CREATE TABLE stock_delta_capture (
-          id      INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
-          enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))
+          id        INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+          enabled   INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+          asserting INTEGER NOT NULL DEFAULT 0 CHECK (asserting IN (0, 1))
         ) STRICT;
       `,
   },
-  { sql: `INSERT INTO stock_delta_capture (id, enabled) VALUES (1, 1);` },
+  { sql: `INSERT INTO stock_delta_capture (id, enabled, asserting) VALUES (1, 1, 0);` },
   {
     // Capture a delta for every batch placement that gains stock. `NEW.quantity - 0` on insert;
     // the recompute triggers write `item_stock`/`items`, not `stock_batches`, so this never
     // recurses (recursive_triggers is off). A zero-quantity seed row records nothing.
+    //
+    // `asserted_quantity` is `NEW.quantity` only while the `asserting` switch is on (issue #633) —
+    // the resulting quantity *is* the physically counted figure, since a count sets the row
+    // absolutely. NULL otherwise, marking the row an ordinary relative movement.
     sql: `
         CREATE TRIGGER trg_stock_batches_capture_ins
         AFTER INSERT ON stock_batches
         FOR EACH ROW
         WHEN NEW.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
-          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta)
-          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity);
+          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
+          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity,
+                  CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
+                       THEN NEW.quantity END);
         END;
       `,
   },
   {
     // Capture the actually-applied, CHECK-clamped change on every quantity move. `NEW - OLD` is
     // reality (the `CHECK (quantity >= 0)` has already vetoed any write that would go negative), so
-    // `stock_batches.quantity == Σ(stock_deltas)` holds by construction for every write path.
+    // `stock_batches.quantity == Σ(stock_deltas)` holds by construction for every write path — and
+    // still does with assertions in the ledger, because an asserting row records the *same* true
+    // `NEW - OLD` alongside the figure asserted. Only the cross-device replay reads them
+    // differently (issue #633); a single device's sum is untouched.
     sql: `
         CREATE TRIGGER trg_stock_batches_capture_upd
         AFTER UPDATE OF quantity ON stock_batches
         FOR EACH ROW
         WHEN NEW.quantity <> OLD.quantity AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
-          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta)
+          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
           VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key,
-                  NEW.quantity - OLD.quantity);
+                  NEW.quantity - OLD.quantity,
+                  CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
+                       THEN NEW.quantity END);
         END;
       `,
   },
