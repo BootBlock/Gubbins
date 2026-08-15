@@ -12,7 +12,7 @@ import { readAllImages } from '@/features/images/opfs-images';
 import { downloadBlob, fileTimestamp } from '@/lib/download';
 import { saveBeforeDestroying, type SafeSave, type SaveFileKind } from '@/lib/save-file';
 import { APP_VERSION } from '@/lib/app-version';
-import type { VaultZipRequest, VaultZipResponse } from '@/features/export/export-vault.worker';
+import { zipInVaultWorker } from '@/features/export/zip-in-worker';
 import { BASELINE_REVISION, BASELINE_REVISION_KEY } from '@/db/migrations';
 import {
   assembleBackup,
@@ -146,7 +146,7 @@ export async function createBackup(
     createdAt: Date.now(),
   });
 
-  const zip = await zipInWorker(files, assets);
+  const zip = await zipInVaultWorker(files, assets);
   const blob = new Blob([zip as BlobPart], { type: 'application/zip' });
   const filename = options.save?.saver.filename ?? backupFilename(options.filenamePrefix);
   let secured = false;
@@ -199,24 +199,5 @@ export function createRescueBackup(): Promise<BackupResult> {
   return createBackup(DEFAULT_BACKUP_SELECTION, {
     filenamePrefix: 'gubbins-rescue-backup',
     rescue: true,
-  });
-}
-
-/** Zip a text + binary entry map in the shared fflate worker (off the main thread). */
-function zipInWorker(files: Record<string, string>, assets: Record<string, Uint8Array>): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('@/features/export/export-vault.worker.ts', import.meta.url), {
-      type: 'module',
-    });
-    worker.onmessage = (event: MessageEvent<VaultZipResponse>) => {
-      resolve(event.data.zip);
-      worker.terminate();
-    };
-    worker.onerror = (err) => {
-      reject(err);
-      worker.terminate();
-    };
-    const request: VaultZipRequest = { files, assets };
-    worker.postMessage(request);
   });
 }

@@ -130,6 +130,14 @@ app|Installing-Gubbins]] and grant **persistent storage**.
 Use [[storage triage|Storage-Triage]] to see what's using space and reclaim it (downgrading old
 images usually helps most), keeping a [[backup|Backup-and-Restore]] first.
 
+**An export, backup or archive is taking a very long time.**
+Packaging a big inventory into a `.zip` — especially one with a lot of full-resolution photos —
+genuinely takes a while, and Gubbins will wait for it. If the packaging stops responding
+altogether, Gubbins now gives up rather than leaving you watching a spinner, and tells you no file
+was created. Nothing on your device is changed either way, so it is always safe to try again;
+[[exporting|Export-and-Import]] a smaller scope, or a [[backup|Backup-and-Restore]] without the
+full-resolution images, gets you a file sooner.
+
 **A change I made undid itself.**
 Gubbins shows edits instantly and saves them in the background, so if a save is rejected the
 change is rolled back and you'll see it revert — an item reappearing after a delete, a star
