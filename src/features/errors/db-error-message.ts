@@ -164,9 +164,19 @@ export function describeDbError(error: unknown): DbErrorDescription | undefined 
 
 /**
  * True when `error`'s own message is fit to show a user: an `Error` whose text was written for a
- * human rather than emitted by SQLite. The call sites' old idiom *preferred* `error.message`
- * unconditionally; this is the same preference, correctly gated.
+ * human rather than emitted by SQLite or the JavaScript engine. The call sites' old idiom
+ * *preferred* `error.message` unconditionally; this is the same preference, correctly gated.
+ *
+ * A `TypeError` is never ours (nothing in the app throws one), so its message is always machine
+ * text — either `fetch`'s browser-specific transport wording, which `describeNetworkError`
+ * humanises, or an engine diagnostic like `x is not a function`, which nobody should be shown.
+ * Rejecting the whole type is what keeps a browser phrasing the network classifier does not
+ * recognise from leaking; it degrades to the call site's fallback instead (issue #634). Other
+ * engine types are *not* rejected, because the app does author copy under them —
+ * `booking-overlap.ts` throws a `RangeError` carrying a real sentence.
  */
 export function hasAuthoredMessage(error: unknown): error is Error {
-  return error instanceof Error && !isRawSqliteMessage(error.message);
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'TypeError') return false;
+  return !isRawSqliteMessage(error.message);
 }

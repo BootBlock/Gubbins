@@ -15,7 +15,7 @@ import { BASELINE_REVISION } from '@/db/migrations';
 import { readAllImages } from '@/features/images/opfs-images';
 import { APP_VERSION } from '@/lib/app-version';
 import { downloadBlob, fileTimestamp } from '@/lib/download';
-import type { VaultZipRequest, VaultZipResponse } from '@/features/export/export-vault.worker';
+import { zipInVaultWorker } from '@/features/export/zip-in-worker';
 
 /**
  * Weekly cadence (§2.7 "weekly prompt").
@@ -91,25 +91,6 @@ export function isArchiveDue(
   return now - lastArchivedAt >= intervalMs;
 }
 
-/** Zip a path→bytes map in the existing fflate vault worker (reused for the archive). */
-function zipInWorker(assets: Record<string, Uint8Array>, files: Record<string, string>): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('@/features/export/export-vault.worker.ts', import.meta.url), {
-      type: 'module',
-    });
-    worker.onmessage = (event: MessageEvent<VaultZipResponse>) => {
-      resolve(event.data.zip);
-      worker.terminate();
-    };
-    worker.onerror = (err) => {
-      reject(err);
-      worker.terminate();
-    };
-    const request: VaultZipRequest = { files, assets };
-    worker.postMessage(request);
-  });
-}
-
 /**
  * Describe an archive being written. Pure, so the manifest's shape is unit-tested without a
  * database, a worker or a clock.
@@ -165,7 +146,7 @@ export async function buildFullArchive(): Promise<Uint8Array> {
     ].join('\n'),
   };
 
-  return zipInWorker(assets, files);
+  return zipInVaultWorker(files, assets);
 }
 
 /**

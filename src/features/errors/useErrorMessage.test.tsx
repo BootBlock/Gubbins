@@ -1,7 +1,10 @@
 import { renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DbError } from '@/db/errors';
 import { useErrorMessage } from './useErrorMessage';
+
+const network = vi.hoisted(() => ({ online: true }));
+vi.mock('@/lib/env/network', () => ({ isOnline: () => network.online }));
 
 /**
  * The precedence rule, end to end through the real catalog: humanised sentence → the error's own
@@ -9,6 +12,10 @@ import { useErrorMessage } from './useErrorMessage';
  * rung is asserted rather than just the happy path.
  */
 describe('useErrorMessage', () => {
+  beforeEach(() => {
+    network.online = true;
+  });
+
   const resolve = (error: unknown, fallback = 'Could not save this change.'): string => {
     const { result } = renderHook(() => useErrorMessage());
     return result.current(error, fallback);
@@ -57,5 +64,25 @@ describe('useErrorMessage', () => {
   it('falls back to the call site copy for a non-Error throw', () => {
     expect(resolve('boom')).toBe('Could not save this change.');
     expect(resolve(undefined)).toBe('Could not save this change.');
+  });
+
+  it("names being offline rather than showing the browser's own fetch wording", () => {
+    // Issue #634: this is what the Sync screen's alert used to read as `Failed to fetch`.
+    network.online = false;
+    expect(resolve(new TypeError('Failed to fetch'), 'Sync failed.')).toBe(
+      'This device is offline, so nothing could be sent or received. Your data on this device is unaffected — try again once you have a connection.',
+    );
+  });
+
+  it('blames the remote when the device believes it is online', () => {
+    expect(resolve(new TypeError('NetworkError when attempting to fetch resource.'), 'Sync failed.')).toBe(
+      'Gubbins could not reach the service. Your connection may have dropped, or the service may be temporarily unavailable. Your data on this device is unaffected — try again in a moment.',
+    );
+  });
+
+  it('falls back to the call site copy for a TypeError it cannot recognise as a transport failure', () => {
+    // An unrecognised browser phrasing, or a genuine bug: either way the raw text must not reach
+    // the user, and "check your connection" would be a guess.
+    expect(resolve(new TypeError('x.map is not a function'), 'Sync failed.')).toBe('Sync failed.');
   });
 });
