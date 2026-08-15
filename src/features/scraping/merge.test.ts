@@ -79,6 +79,14 @@ describe('buildScrapeMergePlan — Universal Alias Mapping (§4)', () => {
     expect(plan.aliasAdditions).toEqual([]);
   });
 
+  // "Case-insensitive" is `lib/name-fold`'s fold, not `toLowerCase()` — the one the alias table's
+  // identity lives under (issue #679). `'GRÖSSE'.toLowerCase()` is `grösse`, which never meets the
+  // stored `größe`, so a plan that lowercased would propose an addition the writer must refuse.
+  it('folds an already-mapped alias the way the alias table does', () => {
+    const plan = buildScrapeMergePlan({ ...emptyItem, aliases: ['Größe'] }, { ...payload, mpn: 'GRÖSSE' });
+    expect(plan.aliasAdditions).toEqual([]);
+  });
+
   it('exposes the scraped currency for display', () => {
     expect(buildScrapeMergePlan(emptyItem, payload).currency).toBe('GBP');
   });

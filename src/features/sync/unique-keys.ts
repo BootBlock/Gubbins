@@ -101,7 +101,26 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
   // `item_history` (it travels on `snapshot.itemHistory`). This is exactly the `tags`
   // situation described above, and is handled the same way — `reconcile` pulls this table's
   // re-key map out and applies it to the ledger itself via `resolveActor`.
-  { table: 'users', columns: ['username'], nocase: ['username'], references: [] },
+  //
+  // `location_history.actor_user_id` is the *other* half of that ledger and **is** listed: it is
+  // a synced table present in `local.tables`, so unlike `item_history` it can be repointed as a
+  // row, and its `ON DELETE SET DEFAULT` would otherwise re-attribute this device's location
+  // history to System — the same loss, on the same reasoning (issue #679).
+  //
+  // `api_tokens.user_id` is deliberately **absent**, though it could be listed. Its
+  // `ON DELETE CASCADE` revokes the loser's Bridge / Home Assistant tokens, and that is the
+  // right outcome: attribution says *who did this* and belongs with the surviving account, but a
+  // token is a credential, and a credential must not silently change which principal it
+  // authenticates as. The fold is wider than a case fold — it merges Turkish `ı` with `i` — so
+  // the two rows are not certainly the same person, and the winner may be enabled where the
+  // loser was suspended. Revoking is recoverable and visible (the integration starts failing to
+  // authenticate); transferring is neither.
+  {
+    table: 'users',
+    columns: ['username'],
+    nocase: ['username'],
+    references: [{ table: 'location_history', column: 'actor_user_id' }],
+  },
   {
     table: 'contacts',
     columns: ['name'],
@@ -125,6 +144,19 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
   { table: 'item_aliases', columns: ['alias'], nocase: ['alias'], references: [] },
 ];
 
+/**
+ * Every natural-key column this module folds through `lib/name-fold`, as `table.column`.
+ *
+ * The fold here is wider than the `COLLATE NOCASE` index it resolves against, so it is only
+ * safe while **every write path for these columns folds the same way** — otherwise the app
+ * stores two rows the merge believes are one, and the merge it then plans trips the constraint
+ * it exists to route around (issue #679). Exported so a drift test can hold the two in step: a
+ * new NOCASE spec added above fails that test until its write path is converted too.
+ */
+export const FOLDED_UNIQUE_COLUMNS: readonly string[] = UNIQUE_KEY_SPECS.flatMap((spec) =>
+  spec.nocase.map((column) => `${spec.table}.${column}`),
+);
+
 /** A row competing for one natural key: either a surviving local row or a pending upsert. */
 interface Candidate {
   readonly id: string;
@@ -140,11 +172,16 @@ function num(value: unknown): number {
 /**
  * The natural key of `row` under `spec`, NOCASE columns folded and `|`-joined.
  *
- * Folding goes through the same `lib/name-fold` seam the write paths use (issue #343), so
+ * Folding goes through the same `lib/name-fold` seam the write paths use (issues #343, #679), so
  * a merge reaches the same verdict about "is this the same name?" that the app reached when
- * it refused to create the duplicate locally. Folding more loosely here than the writer does
- * would be the safer direction anyway — it retires a redundant id — but agreeing exactly is
- * what keeps the two from disputing a row forever.
+ * it refused to create the duplicate locally. Agreeing exactly is what keeps the two from
+ * disputing a row forever.
+ *
+ * It does **not** agree with the `UNIQUE (… COLLATE NOCASE)` index, and cannot: that folds ASCII
+ * A–Z, and no driver this app runs on has the ICU extension to widen it. So this is deliberately
+ * the *wider* of the two — a pair the index accepted is resolved here as the one name it always
+ * was, rather than left to trip the constraint mid-merge. That only holds while every write path
+ * folds this way too; `FOLDED_UNIQUE_COLUMNS` and its drift test are what keep it true.
  */
 function keyOf(spec: UniqueKeySpec, row: SqlRow): string {
   return spec.columns
@@ -165,6 +202,39 @@ function winnerOf(a: Candidate, b: Candidate): { winner: Candidate; loser: Candi
     return a.updatedAt > b.updatedAt ? { winner: a, loser: b } : { winner: b, loser: a };
   }
   return a.id < b.id ? { winner: a, loser: b } : { winner: b, loser: a };
+}
+
+/**
+ * Settle a contest between two rows holding one natural key: record the verdict, retire the
+ * loser's id onto the winner's, and return the winner as the new holder of the key.
+ *
+ * A losing *upsert* must not be applied at all (it is dropped from the plan); a losing *local*
+ * row is deleted ahead of the winner's INSERT so the key is free by the time it runs. Re-key
+ * chains are collapsed as they form — a third row can beat the current holder, and anything
+ * already pointed at that holder must follow through to the new winner rather than at a
+ * now-retired id. Both `id` columns of a UNIQUE index are unique per side, so three-way
+ * contention needs a re-keyed row to join an existing pair; collapsing anyway keeps that a
+ * local detail rather than a correctness dependency of the spec order.
+ */
+function retire(
+  spec: UniqueKeySpec,
+  held: Candidate,
+  challenger: Candidate,
+  rekey: Map<string, string>,
+  droppedUpserts: Set<number>,
+  collisions: CollisionResolution[],
+): Candidate {
+  const { winner, loser } = winnerOf(held, challenger);
+  if (loser.upsertIndex !== undefined) droppedUpserts.add(loser.upsertIndex);
+  for (const [from, to] of rekey) if (to === loser.id) rekey.set(from, winner.id);
+  rekey.set(loser.id, winner.id);
+  collisions.push({
+    table: spec.table,
+    loserId: loser.id,
+    winnerId: winner.id,
+    deletedAt: Math.max(winner.updatedAt, loser.updatedAt),
+  });
+  return winner;
 }
 
 /**
@@ -226,18 +296,65 @@ function resolveTable(
    * is the third-device shape of issue #187: a peer already retired the loser, so its tombstone
    * arrives *alongside* the winner and no collision is detected here. Recording it as a
    * `hoistOnly` resolution is what pulls the loser's DELETE ahead of the winner's INSERT.
+   *
+   * A **list** per key, not one row: the fold here is wider than the index's, so a legacy
+   * database can hold several doomed rows under one folded key (`Café`, `CAFÉ`) of which only
+   * some block the incoming winner. Keeping one arbitrarily could hoist a row that was not in
+   * the way and leave behind the one that was (issue #679).
    */
-  const doomedByKey = new Map<string, string>();
+  const doomedByKey = new Map<string, string[]>();
+
+  /**
+   * Pull every doomed row's DELETE ahead of `winnerId`'s INSERT, and stop tracking the key.
+   *
+   * Called wherever an *upsert* ends up holding a key — including when it took the key by
+   * winning a contest. Under an exact fold that second path was unreachable, because a doomed
+   * row and a surviving row could not share a key the index had already refused to duplicate.
+   * This fold is wider than the index's, so they can (issue #679), and a winner INSERTing over
+   * a doomed row still holding its key aborts the merge exactly as issue #187 described.
+   */
+  const hoistDoomed = (key: string, winnerId: string): void => {
+    const doomed = doomedByKey.get(key);
+    if (doomed === undefined) return;
+    doomedByKey.delete(key);
+    for (const loserId of doomed) {
+      collisions.push({
+        table: spec.table,
+        loserId,
+        winnerId,
+        deletedAt: deletedAtById.get(loserId)!,
+        hoistOnly: true,
+      });
+    }
+  };
 
   // Surviving local rows stake their claim on the natural key first.
   for (const row of local.tables[spec.table] ?? []) {
     const id = String(row.id);
     if (upsertedIds.has(id)) continue;
+    const key = keyOf(spec, row);
     if (deletedIds.has(id)) {
-      doomedByKey.set(keyOf(spec, row), id);
+      const doomed = doomedByKey.get(key);
+      if (doomed) doomed.push(id);
+      else doomedByKey.set(key, [id]);
       continue;
     }
-    byKey.set(keyOf(spec, row), { id, updatedAt: applyOffset(num(row.updated_at), offset) });
+    const candidate: Candidate = { id, updatedAt: applyOffset(num(row.updated_at), offset) };
+    const held = byKey.get(key);
+    if (held === undefined) {
+      byKey.set(key, candidate);
+      continue;
+    }
+    // Two *local* rows on one folded key (issue #679). The index cannot have refused them —
+    // it folds ASCII A–Z, so `Café Ltd` and `CAFÉ LTD` are distinct to it and both are legal —
+    // but this resolution folds the whole of Unicode, exactly as the write paths now do. Left
+    // to overwrite each other in `byKey` they would silently drop one from the resolution
+    // entirely, and an inbound row taking the key would then INSERT against the survivor the
+    // merge never retired, aborting it on the very constraint this exists to route around.
+    // Contesting them is also the only path by which such a pair, already stored, is ever
+    // cleaned up: the loser is re-keyed onto the winner, so its loans and values follow rather
+    // than cascading away.
+    byKey.set(key, retire(spec, held, candidate, rekey, droppedUpserts, collisions));
   }
 
   for (let i = 0; i < localUpserts.length; i += 1) {
@@ -252,43 +369,19 @@ function resolveTable(
     const held = byKey.get(key);
 
     if (held === undefined || held.id === candidate.id) {
-      // Free the key from any doomed row still sitting on it (see `doomedByKey`). Not a
-      // contest — the row is already tombstoned — so it takes no `rekey` entry and nothing is
-      // repointed at the newcomer; the record exists purely to order the DELETE first. The row
-      // cannot be this candidate itself: an id this merge upserts never enters `doomedByKey`.
-      const doomed = doomedByKey.get(key);
-      if (doomed !== undefined) {
-        doomedByKey.delete(key);
-        collisions.push({
-          table: spec.table,
-          loserId: doomed,
-          winnerId: candidate.id,
-          deletedAt: deletedAtById.get(doomed)!,
-          hoistOnly: true,
-        });
-      }
+      // Free the key from every doomed row still sitting on it (see `doomedByKey`). Not a
+      // contest — the rows are already tombstoned — so they take no `rekey` entry and nothing is
+      // repointed at the newcomer; the records exist purely to order those DELETEs first. None
+      // can be this candidate itself: an id this merge upserts never enters `doomedByKey`.
+      hoistDoomed(key, candidate.id);
       byKey.set(key, candidate);
       continue;
     }
 
-    const { winner, loser } = winnerOf(held, candidate);
-    // The losing upsert must not be applied; a losing *local* row must be deleted ahead of
-    // the winner's INSERT so the natural key is free by the time it runs.
-    if (loser.upsertIndex !== undefined) droppedUpserts.add(loser.upsertIndex);
-    // Collapse chains: a third row can beat the current holder, and anything already pointed
-    // at that holder must follow through to the new winner rather than at a now-retired id.
-    // Both `id` columns of a UNIQUE index are unique per side, so three-way contention needs
-    // a re-keyed row to join an existing pair — reachable only in the child tables, which
-    // nothing references. Collapsing anyway keeps that a local detail rather than a
-    // correctness dependency of the spec order.
-    for (const [from, to] of rekey) if (to === loser.id) rekey.set(from, winner.id);
-    rekey.set(loser.id, winner.id);
-    collisions.push({
-      table: spec.table,
-      loserId: loser.id,
-      winnerId: winner.id,
-      deletedAt: Math.max(winner.updatedAt, loser.updatedAt),
-    });
+    const winner = retire(spec, held, candidate, rekey, droppedUpserts, collisions);
+    // A winning *upsert* still has an INSERT to run, so it needs the key freed too; a winning
+    // local row is already sitting on it and inserts nothing.
+    if (winner.upsertIndex !== undefined) hoistDoomed(key, winner.id);
     byKey.set(key, winner);
   }
 

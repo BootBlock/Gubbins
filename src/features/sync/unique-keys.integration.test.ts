@@ -137,6 +137,201 @@ describe('§7.5 natural-key collisions apply cleanly (issue #187)', () => {
     ]);
   });
 
+  /**
+   * Issue #679. This resolution folds the whole of Unicode; `UNIQUE (name COLLATE NOCASE)` folds
+   * ASCII A–Z. So a device can legitimately be holding `Café Ltd` *and* `CAFÉ LTD` — two rows
+   * this pass reads as one key. Left to overwrite each other in the resolution, one of them
+   * silently drops out, the peer's row contests only the survivor, and the winner's INSERT then
+   * lands on the row that was never retired: the merge aborts on the very constraint it exists to
+   * route around, and never advances the watermark.
+   */
+  describe('a device already holding two spellings of one name', () => {
+    /** `contactId` borrows `itemId`; the loan is what must follow a retired contact to the winner. */
+    async function seedBorrowedItem(
+      driver: MemoryDriver,
+      opts: {
+        itemId: string;
+        contactId: string;
+        contactName: string;
+        checkoutId: string;
+        at: number;
+      },
+    ): Promise<void> {
+      await driver.execute(`INSERT INTO items (id, name, location_id, updated_at) VALUES (?, ?, ?, ?);`, [
+        opts.itemId,
+        opts.itemId,
+        UNASSIGNED_LOCATION_ID,
+        opts.at,
+      ]);
+      await driver.execute(`INSERT INTO contacts (id, name, updated_at) VALUES (?, ?, ?);`, [
+        opts.contactId,
+        opts.contactName,
+        opts.at,
+      ]);
+      await driver.execute(
+        `INSERT INTO checkouts (id, item_id, contact_id, checked_out_at, updated_at)
+         VALUES (?, ?, ?, ?, ?);`,
+        [opts.checkoutId, opts.itemId, opts.contactId, opts.at, opts.at],
+      );
+    }
+
+    it('merges them with the peer’s row without tripping UNIQUE(name)', async () => {
+      // Both spellings are legal to the index, so a database written before the write paths
+      // folded can hold either pair — reached here by typing an accented borrower's name in a
+      // different case on two check-outs.
+      await seedBorrowedItem(deviceA, {
+        itemId: 'i1',
+        contactId: 'cA',
+        contactName: 'Café Ltd',
+        checkoutId: 'k1',
+        at: 10,
+      });
+      await seedBorrowedItem(deviceA, {
+        itemId: 'i2',
+        contactId: 'cB',
+        contactName: 'CAFÉ LTD',
+        checkoutId: 'k2',
+        at: 20,
+      });
+      await seedBorrowedItem(deviceB, {
+        itemId: 'i3',
+        contactId: 'cC',
+        contactName: 'café ltd',
+        checkoutId: 'k3',
+        at: 30,
+      });
+
+      const local = await buildLocalSnapshot(deviceA);
+      const remote = await buildLocalSnapshot(deviceB);
+      const dictionary = await buildSchemaDictionary(deviceA, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+
+      const plan = reconcile(local, remote, { offset: 0, dictionary });
+      await expect(applyPlan(deviceA, plan, dictionary)).resolves.toBeUndefined();
+
+      // One contact survives — the peer's, as the newest row — and both retired ids merged into
+      // it rather than being dropped, so nobody's loan history went with them.
+      const contacts = await deviceA.query<{ id: string }>('SELECT id FROM contacts;');
+      expect(contacts).toEqual([{ id: 'cC' }]);
+
+      const loans = await deviceA.query<{ id: string; contact_id: string }>(
+        'SELECT id, contact_id FROM checkouts ORDER BY id;',
+      );
+      expect(loans).toEqual([
+        { id: 'k1', contact_id: 'cC' },
+        { id: 'k2', contact_id: 'cC' },
+        { id: 'k3', contact_id: 'cC' },
+      ]);
+    });
+
+    it('resolves the pair even when the peer contests neither of them', async () => {
+      await seedBorrowedItem(deviceA, {
+        itemId: 'i1',
+        contactId: 'cA',
+        contactName: 'Café Ltd',
+        checkoutId: 'k1',
+        at: 10,
+      });
+      await seedBorrowedItem(deviceA, {
+        itemId: 'i2',
+        contactId: 'cB',
+        contactName: 'CAFÉ LTD',
+        checkoutId: 'k2',
+        at: 20,
+      });
+      // The peer knows nothing about that name — this merge's only job on `contacts` is the
+      // clean-up, which is the one path by which an existing pair is ever collapsed.
+      await seedBorrowedItem(deviceB, {
+        itemId: 'i3',
+        contactId: 'cC',
+        contactName: 'Someone Else',
+        checkoutId: 'k3',
+        at: 30,
+      });
+
+      const local = await buildLocalSnapshot(deviceA);
+      const remote = await buildLocalSnapshot(deviceB);
+      const dictionary = await buildSchemaDictionary(deviceA, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+
+      await applyPlan(deviceA, reconcile(local, remote, { offset: 0, dictionary }), dictionary);
+
+      const contacts = await deviceA.query<{ id: string }>('SELECT id FROM contacts ORDER BY id;');
+      expect(contacts).toEqual([{ id: 'cB' }, { id: 'cC' }]); // `cB` is the newer of the pair
+      const loans = await deviceA.query<{ id: string; contact_id: string }>(
+        'SELECT id, contact_id FROM checkouts ORDER BY id;',
+      );
+      expect(loans).toEqual([
+        { id: 'k1', contact_id: 'cB' },
+        { id: 'k2', contact_id: 'cB' },
+        { id: 'k3', contact_id: 'cC' },
+      ]);
+    });
+  });
+
+  /**
+   * Retiring a `users` row deletes it, and the two things pointing at it are treated differently
+   * on purpose: its **attribution** follows the winner (the surviving account is who did that
+   * work), while its **credentials** are revoked (a token must not silently start authenticating
+   * as a different principal — see the `users` entry in `UNIQUE_KEY_SPECS`). Both are reachable
+   * with no peer involved at all once two local rows on one folded key are contested, which is
+   * what makes them worth an end-to-end guard rather than a reading of the spec list.
+   */
+  it("repoints a retired user's history and revokes its tokens", async () => {
+    for (const [id, username, at] of [
+      ['uA', 'josé', 10],
+      ['uB', 'JOSÉ', 20],
+    ] as const) {
+      await deviceA.execute(
+        `INSERT INTO users (id, username, display_name, kind, updated_at) VALUES (?, ?, ?, 'normal', ?);`,
+        [id, username, username, at],
+      );
+      await deviceA.execute(
+        `INSERT INTO api_tokens (id, user_id, name, token_hash, token_prefix, updated_at)
+         VALUES (?, ?, 'Home Assistant', ?, 'gbn_', ?);`,
+        [`tok-${id}`, id, `hash-${id}`, at],
+      );
+      await deviceA.execute(
+        `INSERT INTO location_history (id, location_id, location_name, action, actor_user_id, updated_at)
+         VALUES (?, ?, 'Unassigned', 'RENAMED', ?, ?);`,
+        [`lh-${id}`, UNASSIGNED_LOCATION_ID, id, at],
+      );
+    }
+    // The peer contests nothing here; the pair is entirely this device's.
+    await deviceB.execute(`INSERT INTO items (id, name, location_id, updated_at) VALUES (?, ?, ?, ?);`, [
+      'iB',
+      'Item B',
+      UNASSIGNED_LOCATION_ID,
+      30,
+    ]);
+
+    const local = await buildLocalSnapshot(deviceA);
+    const remote = await buildLocalSnapshot(deviceB);
+    const dictionary = await buildSchemaDictionary(deviceA, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+
+    await applyPlan(deviceA, reconcile(local, remote, { offset: 0, dictionary }), dictionary);
+
+    const survivors = await deviceA.query<{ id: string }>(
+      "SELECT id FROM users WHERE kind = 'normal' ORDER BY id;",
+    );
+    expect(survivors).toEqual([{ id: 'uB' }]);
+
+    // Attribution follows: without the repoint, `ON DELETE SET DEFAULT` would have re-attributed
+    // this device's own record of who renamed that location to System.
+    const history = await deviceA.query<{ id: string; actor_user_id: string }>(
+      'SELECT id, actor_user_id FROM location_history ORDER BY id;',
+    );
+    expect(history).toEqual([
+      { id: 'lh-uA', actor_user_id: 'uB' },
+      { id: 'lh-uB', actor_user_id: 'uB' },
+    ]);
+
+    // The credential does not: the loser's token is revoked by the cascade rather than handed to
+    // whoever now holds the username.
+    const tokens = await deviceA.query<{ id: string; user_id: string }>(
+      'SELECT id, user_id FROM api_tokens ORDER BY id;',
+    );
+    expect(tokens).toEqual([{ id: 'tok-uB', user_id: 'uB' }]);
+  });
+
   it('converges: applying the mirrored merge on the peer reaches the same state', async () => {
     await seedTaggedItem(deviceA, {
       itemId: 'iA',

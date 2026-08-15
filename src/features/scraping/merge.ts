@@ -19,6 +19,7 @@
  * Pure and framework-free so it is exhaustively unit-tested (§8.2); the repository
  * layer turns {@link applyScrapeMerge}'s output into the atomic write.
  */
+import { foldName } from '@/lib/name-fold';
 import type { ScrapeResultPayload } from './protocol';
 
 /** The item fields a scrape can populate. */
@@ -135,10 +136,14 @@ export function buildScrapeMergePlan(
   ];
 
   // §4 Universal Alias Mapping: map the supplier MPN to this local item. Skip blanks
-  // and anything already aliased (case-insensitive).
-  const haveAlias = new Set(existing.aliases.map((a) => a.trim().toLowerCase()));
+  // and anything already aliased (case-insensitive). Case-insensitive means `lib/name-fold`'s
+  // fold — the one the alias table's identity lives under: `toLowerCase()` leaves `ß` alone, so
+  // it would propose adding `GRÖSSE` beside an existing `Größe`, which the writer then has to
+  // refuse (issue #679). Deciding it the same way here keeps the plan honest about what will
+  // actually be written.
+  const haveAlias = new Set(existing.aliases.map(foldName));
   const aliasAdditions: string[] = [];
-  if (scrapedMpn && !haveAlias.has(scrapedMpn.toLowerCase())) aliasAdditions.push(scrapedMpn);
+  if (scrapedMpn && !haveAlias.has(foldName(scrapedMpn))) aliasAdditions.push(scrapedMpn);
 
   return {
     proposals,

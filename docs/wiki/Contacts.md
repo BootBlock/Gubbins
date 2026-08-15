@@ -31,6 +31,9 @@ With it off, the list shows as many as it can read at once and tells you how man
 > **💡 Tip**
 > You don't have to create contacts up front. When you [[check an item out|Loans-Check-Out-and-In]]
 > to someone new, Gubbins can create the contact on the spot — so the list builds itself as you go.
+> Names are matched **ignoring case, in any language**, so typing `café ltd` reaches the `Café Ltd`
+> you already have rather than filing a second record beside it — and the same name in different
+> capitalisation is refused if you add it from the Contacts screen.
 
 > **ℹ️ Note**
 > Contacts are ordinary data on your device. Keep only what you need, and remember the repository

@@ -1,0 +1,234 @@
+/**
+ * Every natural key the sync merge folds must have a write path that folds the same way
+ * (issue #679).
+ *
+ * `features/sync/unique-keys.ts` decides "are these two rows the same name?" through
+ * `lib/name-fold`, which folds the whole of Unicode. The `UNIQUE (… COLLATE NOCASE)` indexes
+ * those keys live under fold ASCII A–Z and nothing else. Where a write path agrees with the
+ * *index* rather than the *fold*, the app stores two rows the merge believes are one, and the
+ * merge it then plans trips the very constraint it exists to route around — aborting the whole
+ * atomic merge, which never advances the watermark, so sync stays stuck on that plan forever.
+ *
+ * This file holds the two definitions in step, in two layers:
+ *
+ * 1. A **drift check**: the folded columns declared by `UNIQUE_KEY_SPECS` must be exactly the
+ *    ones exercised below. Adding a NOCASE spec to the resolver without converting its writer
+ *    fails here rather than in a user's stuck sync.
+ * 2. A **behavioural check** per column, against the real baseline schema: filing two spellings
+ *    that fold to one key must leave one row, whether the second is folded onto the first or
+ *    refused outright.
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
+import { runMigrations } from '@/db/migrations/engine';
+import { migrations } from '@/db/migrations';
+import { DbError } from '@/db/errors';
+import { foldName } from '@/lib/name-fold';
+import { FOLDED_UNIQUE_COLUMNS } from '@/features/sync/unique-keys';
+import { CategoryRepository } from './CategoryRepository';
+import { ContactRepository } from './ContactRepository';
+import { ItemRepository } from './ItemRepository';
+import { RoleRepository } from './RoleRepository';
+import { TagRepository } from './TagRepository';
+import { UserRepository } from './UserRepository';
+
+/** The repositories and rows a write-path exercise needs to reach its table. */
+interface Fixture {
+  readonly driver: MemoryDriver;
+  readonly categories: CategoryRepository;
+  readonly contacts: ContactRepository;
+  readonly items: ItemRepository;
+  readonly roles: RoleRepository;
+  readonly tags: TagRepository;
+  readonly users: UserRepository;
+  /** Two items, so a per-item key can be exercised on one and a table-wide key across both. */
+  readonly itemIds: readonly [string, string];
+}
+
+/**
+ * File `name` through one of a column's write paths, on the `nth` (0 or 1) attempt.
+ *
+ * `nth` exists because the two attempts must genuinely compete. A table-wide key
+ * (`item_aliases.alias`) filed twice against the *same* item would replace itself and pass
+ * whatever the fold did; a per-item key (`capabilities.key`) filed against two different items
+ * would never compete at all.
+ */
+type FileName = (fixture: Fixture, name: string, nth: 0 | 1) => Promise<unknown>;
+
+/**
+ * The writers that **mint** a row under each column — more than one where more than one exists,
+ * because a column with two writers can have one converted and the other left behind. That is
+ * exactly the shape `item_aliases.alias` has, where `setAliases` is the public setter but
+ * `applyScrape` is the path the app actually calls.
+ *
+ * The rename guards (`update`, where an existing row moves onto a name another row holds) are
+ * covered separately below — they take a different shape, and the drift assertion can only hold
+ * the *column* set in step, not the writer set.
+ */
+const WRITE_PATHS: Record<string, Record<string, FileName>> = {
+  'field_defs.name': {
+    'CategoryRepository.addField': (f, name, nth) =>
+      f.categories.addField(`cat-${nth}`, { name, fieldType: 'TEXT' }),
+  },
+  'tags.name': {
+    'TagRepository.setForItem': (f, name, nth) => f.tags.setForItem(f.itemIds[nth], [name]),
+  },
+  'roles.name': { 'RoleRepository.create': (f, name) => f.roles.create({ name }) },
+  'users.username': { 'UserRepository.create': (f, name) => f.users.create({ username: name }) },
+  'contacts.name': {
+    'ContactRepository.resolveOrCreate': (f, name) => f.contacts.resolveOrCreate(name),
+    'ContactRepository.create': (f, name) => f.contacts.create({ name }),
+  },
+  'capabilities.key': {
+    'ItemRepository.setCapability': (f, key) => f.items.setCapability(f.itemIds[0], { key, value: '1' }),
+  },
+  'item_aliases.alias': {
+    'ItemRepository.setAliases': (f, alias, nth) => f.items.setAliases(f.itemIds[nth], [alias]),
+    'ItemRepository.applyScrape': (f, alias, nth) =>
+      f.items.applyScrape(f.itemIds[nth], { fields: {}, aliasAdditions: [alias] }),
+  },
+};
+
+/**
+ * Pairs that the index cannot tell apart from two distinct names, but a user cannot tell apart
+ * at all. `ß` needs the upper-case leg of the fold (`'Größe'.toLowerCase()` leaves it alone), so
+ * it exercises more of `foldName` than an accent does.
+ */
+const SPELLINGS: readonly [string, string] = ['Größe', 'GRÖSSE'];
+
+describe('folded natural keys (issue #679)', () => {
+  let fixture: Fixture;
+
+  beforeEach(async () => {
+    const driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    await driver.execute('PRAGMA foreign_keys = ON;');
+
+    const categories = new CategoryRepository(driver);
+    const items = new ItemRepository(driver);
+    // Two categories, so the dictionary is reached twice over — reuse by name is the whole
+    // point of `field_defs`, and adding one field twice to one category is refused by
+    // `UNIQUE (category_id, def_id)` for an unrelated reason.
+    for (const nth of [0, 1]) {
+      await driver.execute('INSERT INTO categories (id, name) VALUES (?, ?);', [
+        `cat-${nth}`,
+        `Category ${nth}`,
+      ]);
+    }
+    const first = await items.create({ name: 'First' });
+    const second = await items.create({ name: 'Second' });
+
+    fixture = {
+      driver,
+      categories,
+      contacts: new ContactRepository(driver),
+      items,
+      roles: new RoleRepository(driver),
+      tags: new TagRepository(driver),
+      users: new UserRepository(driver),
+      itemIds: [first.id, second.id],
+    };
+  });
+
+  afterEach(async () => {
+    await fixture.driver.close();
+  });
+
+  it('exercises exactly the columns the merge folds', () => {
+    expect(Object.keys(WRITE_PATHS).sort()).toEqual([...FOLDED_UNIQUE_COLUMNS].sort());
+  });
+
+  for (const [qualified, paths] of Object.entries(WRITE_PATHS)) {
+    const [table, column] = qualified.split('.') as [string, string];
+
+    for (const [pathName, file] of Object.entries(paths)) {
+      it(`${pathName} files two spellings of ${qualified} as one row`, async () => {
+        const [first, second] = SPELLINGS;
+        await file(fixture, first, 0);
+
+        // Either outcome is a fix: the second spelling folds onto the first, or the write path
+        // refuses it the way the index refuses a spelling it *can* fold. The refusal is pinned to
+        // this column's own constraint, so an unrelated failure cannot pass for one and leave the
+        // row count green by accident.
+        try {
+          await file(fixture, second, 1);
+        } catch (error) {
+          expect(error).toBeInstanceOf(DbError);
+          expect((error as DbError).message).toBe(`UNIQUE constraint failed: ${qualified}`);
+        }
+
+        const rows = await fixture.driver.query<{ value: string }>(
+          `SELECT ${column} AS value FROM ${table};`,
+        );
+        const key = foldName(first);
+        expect(rows.filter((row) => foldName(row.value ?? '') === key)).toHaveLength(1);
+      });
+    }
+  }
+
+  /**
+   * The other half of each dictionary's uniqueness: moving an *existing* row onto a name another
+   * row holds, which the index cannot refuse either once the two spellings differ by more than
+   * ASCII case. Every repository with a rename is here — the drift assertion above can only hold
+   * the column set in step, not the writer set, so this list is kept by hand.
+   *
+   * Each carries the refusal it must produce, because the five do not speak with one voice: three
+   * raise the constraint SQLite would have, the field dictionary and the tag dictionary each have
+   * their own authored sentence. Pinning it is what stops an unrelated rejection — a missing row,
+   * a built-in guard, a blank name — passing for the one under test.
+   */
+  const RENAMES: Record<
+    string,
+    {
+      readonly attempt: (f: Fixture, names: readonly [string, string]) => Promise<unknown>;
+      readonly refusal: string | RegExp;
+    }
+  > = {
+    'ContactRepository.update': {
+      attempt: async (f, [held, moving]) => {
+        await f.contacts.create({ name: held });
+        const other = await f.contacts.create({ name: 'Someone Else' });
+        return f.contacts.update(other.id, { name: moving });
+      },
+      refusal: 'UNIQUE constraint failed: contacts.name',
+    },
+    'RoleRepository.update': {
+      attempt: async (f, [held, moving]) => {
+        await f.roles.create({ name: held });
+        const other = await f.roles.create({ name: 'Someone Else' });
+        return f.roles.update(other.id, { name: moving });
+      },
+      refusal: 'UNIQUE constraint failed: roles.name',
+    },
+    'UserRepository.update': {
+      attempt: async (f, [held, moving]) => {
+        await f.users.create({ username: held });
+        const other = await f.users.create({ username: 'someone-else' });
+        return f.users.update(other.id, { username: moving });
+      },
+      refusal: 'UNIQUE constraint failed: users.username',
+    },
+    'TagRepository.rename': {
+      attempt: async (f, [held, moving]) => {
+        await f.tags.create(held);
+        const other = await f.tags.create('Someone Else');
+        return f.tags.rename(other.id, moving);
+      },
+      refusal: /A tag named .* already exists/,
+    },
+    'CategoryRepository.updateField': {
+      attempt: async (f, [held, moving]) => {
+        await f.categories.addField('cat-0', { name: held, fieldType: 'TEXT' });
+        const other = await f.categories.addField('cat-0', { name: 'Someone Else', fieldType: 'TEXT' });
+        return f.categories.updateField(other.id, { name: moving });
+      },
+      refusal: /A field named .* already exists/,
+    },
+  };
+
+  for (const [pathName, { attempt, refusal }] of Object.entries(RENAMES)) {
+    it(`${pathName} refuses a rename onto a name that folds to one already held`, async () => {
+      await expect(attempt(fixture, SPELLINGS)).rejects.toThrow(refusal);
+    });
+  }
+});

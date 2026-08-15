@@ -489,6 +489,10 @@ smartest searches:
 - **Best-match ranking** — when several items match, the ones whose capability is a *better* fit
   rank first, so the closest match rises to the top.
 
+An item holds **one value per capability name**, and names are matched **ignoring case, in any
+language** — exactly as custom-field names are. Setting `Größe` and then `GRÖSSE` on the same item
+replaces the first value rather than leaving two entries that look alike.
+
 > **💡 Tip**
 > Capabilities are ideal for *"find me something that can do X"* searches — the part with enough
 > current rating, the tool with the right reach. Give the capability a value and let ranking

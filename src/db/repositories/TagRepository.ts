@@ -17,6 +17,7 @@ import type { SqlStatement } from '../rpc/driver';
 import { BaseRepository } from './base';
 import { escapeLike } from './like';
 import { rowToTag } from './mappers';
+import { foldedNameFilter, matchesFoldedName } from './name-lookup';
 import {
   clearItemTagTombstoneStatement,
   clearLocationTagTombstoneStatement,
@@ -408,31 +409,20 @@ export class TagRepository extends BaseRepository {
    * `lib/name-fold` — the same fold the field dictionary (issue #343) and the sync merge's
    * natural-key resolution already reach for, so all three agree on what one name means.
    *
-   * The `WHERE` is a deliberate **superset** of the answer, in two parts. A stored name SQLite
-   * *can* fold is pure ASCII, and — names being stored trimmed — its `LOWER()` is then exactly
-   * its folded key, so binding the folded needles finds it. A stored name SQLite *cannot* fold
-   * holds a character outside printable ASCII, which the `GLOB` picks out wholesale; that is the
-   * only place the two folds can disagree. Reading the dictionary whole (as the much smaller
-   * field dictionary does) would also work, but this keeps a dictionary of plain-ASCII tags to
-   * the rows actually asked about, and costs no more than the scan the old query already did:
-   * `LOWER(name)` matches no index.
-   *
-   * Ordered so the answer is stable — a database written before this fold existed can already
-   * hold both spellings, and callers take the first match.
+   * The narrowing that makes the `WHERE` a deliberate **superset** of the answer is
+   * `name-lookup`'s, shared with every other folded natural key (issue #679) — see that module
+   * for why it takes the shape it does, and what it costs. Ordered so the answer is stable: a
+   * database written before this fold existed can already hold both spellings, and callers take
+   * the first match.
    */
   private async matchTagsByName(names: readonly string[]): Promise<Tag[]> {
     if (names.length === 0) return [];
-    const wanted = new Set(names.map(foldName));
-    const needles = [...wanted];
-    const placeholders = needles.map(() => '?').join(', ');
+    const filter = foldedNameFilter('name', names);
     const rows = await this.driver.query<TagRow>(
-      `SELECT * FROM tags
-        WHERE LOWER(name) IN (${placeholders})
-           OR name GLOB '*[^ -~]*'
-        ORDER BY name, id;`,
-      needles,
+      `SELECT * FROM tags WHERE ${filter.sql} ORDER BY name, id;`,
+      filter.params,
     );
-    return rows.map(rowToTag).filter((tag) => wanted.has(foldName(tag.name)));
+    return rows.map(rowToTag).filter((tag) => matchesFoldedName(filter, tag.name));
   }
 }
 
