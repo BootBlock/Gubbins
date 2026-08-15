@@ -68,12 +68,21 @@ export function reconcileGauge(
  *
  * Ordering is `(createdAt, count-before-movement, id)` — computed from replicated values alone, so
  * both devices reach it identically and the result is commutative. The middle term only decides
- * rows stamped the *same millisecond*, which can now only happen **across** devices: a count nudges
- * its own stamp past its placement's newest row (see the capture triggers), so one device's history
- * is always strictly ordered. Across devices a tie carries no evidence of which came first, so the
- * count is treated as the earlier event and a movement sharing its instant is still applied on top.
- * That is the safe reading — the alternative discards a real movement, which is the failure §7.3's
+ * rows stamped the *same millisecond*, where there is no evidence of which came first: the count is
+ * treated as the earlier event, so a movement sharing its instant is still applied on top. That is
+ * the safe reading of a tie — the alternative discards a real movement, which is the failure §7.3's
  * whole delta design exists to prevent.
+ *
+ * The cost of that choice is a tie the rule gets *wrong*: a movement committed in the same
+ * millisecond **before** a count is replayed as though it came after, so that device's own ledger
+ * reconstructs a quantity its row does not hold, and the completeness guard in `reconcileStock`
+ * leaves the placement on Last-Write-Wins until the next count of it re-bases the ledger. It needs
+ * two stock transactions inside one millisecond on one device, which the UI cannot really produce
+ * (each is a separate user action), and it heals itself. Nudging a count's stamp past its
+ * placement's newest row would close it, and was tried: the newest row may be one a peer with a
+ * fast clock synced in, so the nudge lands the count minutes ahead and swallows every local
+ * movement until the wall clock catches up — an unbounded ratchet of the kind `updatedAtTrigger`
+ * has to cap (issue #393), trading a sub-millisecond window for an open-ended one.
  *
  * `createdAt` is each device's own wall clock, deliberately **not** shifted by the sync `offset`
  * that LWW comparisons use: applying it would give the two devices different orderings of the same

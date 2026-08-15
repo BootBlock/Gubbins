@@ -1605,30 +1605,19 @@ const baselineStatements: SqlStatement[] = [
     // resulting quantity *is* the figure physically observed. NULL otherwise, marking the row an
     // ordinary relative movement.
     //
-    // An asserting row also takes a `created_at` of `max(now, 1 + the placement's newest row)`
-    // rather than plain `now`. The replay supersedes everything ordered before an assertion, so
-    // ordering is load-bearing where a plain sum did not care — and the millisecond stamp is too
-    // coarse to separate a movement from a count committed in the same instant on this device.
-    // Left tied, the ledger would replay to a quantity the row does not hold, and the reconcile
-    // completeness guard would reject this side for that placement on every sync from then on,
-    // silently dropping it out of the convergence engine. Nudging the assertion past what it
-    // supersedes keeps a device's own history strictly ordered. Only assertions do this; an
-    // ordinary movement keeps the plain clock, because summing does not care about ties.
+    // `created_at` is left to the plain clock, deliberately. The replay supersedes everything
+    // ordered before an assertion, so ordering is load-bearing here where a plain sum did not care,
+    // and the millisecond stamp cannot separate a movement from a count committed in the same
+    // instant — see `replayStockQuantity` for what that costs and why nudging an assertion's stamp
+    // past the placement's newest row is a worse cure than the disease.
     sql: `
         CREATE TRIGGER trg_stock_batches_capture_ins
         AFTER INSERT ON stock_batches
         FOR EACH ROW
         WHEN NEW.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
-          INSERT INTO stock_deltas
-            (id, item_id, location_id, batch_key, quantity_delta, created_at, asserted_quantity)
+          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
           VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity,
-                  CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
-                       THEN MAX(${SQL_NOW_MS},
-                                1 + (SELECT COALESCE(MAX(created_at), 0) FROM stock_deltas
-                                     WHERE item_id = NEW.item_id AND location_id = NEW.location_id
-                                       AND batch_key = NEW.batch_key))
-                       ELSE ${SQL_NOW_MS} END,
                   CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
                        THEN NEW.quantity END);
         END;
@@ -1642,24 +1631,15 @@ const baselineStatements: SqlStatement[] = [
     // being the reconstruction rule once a **merge** brings in another device's assertion, since an
     // assertion replaces the sum before it rather than adding to it — from then on the replay, not
     // the sum, is what reconstructs the row (issue #633; see `replayStockQuantity`).
-    //
-    // The `created_at` expression is the assertion-ordering nudge explained on the INSERT trigger.
     sql: `
         CREATE TRIGGER trg_stock_batches_capture_upd
         AFTER UPDATE OF quantity ON stock_batches
         FOR EACH ROW
         WHEN NEW.quantity <> OLD.quantity AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
-          INSERT INTO stock_deltas
-            (id, item_id, location_id, batch_key, quantity_delta, created_at, asserted_quantity)
+          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
           VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key,
                   NEW.quantity - OLD.quantity,
-                  CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
-                       THEN MAX(${SQL_NOW_MS},
-                                1 + (SELECT COALESCE(MAX(created_at), 0) FROM stock_deltas
-                                     WHERE item_id = NEW.item_id AND location_id = NEW.location_id
-                                       AND batch_key = NEW.batch_key))
-                       ELSE ${SQL_NOW_MS} END,
                   CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
                        THEN NEW.quantity END);
         END;

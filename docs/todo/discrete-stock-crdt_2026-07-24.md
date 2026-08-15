@@ -244,8 +244,11 @@ kicked off with "implement S2".
     adding to it (`replayStockQuantity`). So fold-on-prune cannot be a plain `base += Σ pruned
     deltas`: an era containing an assertion folds to *that assertion plus the deltas after it*, and
     `base_epoch` must not be allowed to swallow an assertion newer than the deltas it summarises.
-    Replaying the pruned era through `replayStockQuantity` and taking its result as the new
-    `base_quantity` gets both cases right for free.
+    Replaying the pruned era gets both cases right, but only if the existing base goes into the
+    replay — `replayStockQuantity` starts from **0** when nothing in the list asserts, so feeding it
+    the era alone would discard `base_quantity` on every prune after the first. Prepend a synthetic
+    assertion carrying the current `base_quantity`, stamped at the current `base_epoch`, and the new
+    base is whatever the replay returns.
 - **S3 — Wiki + conflict-review copy. ✅ Shipped (with S1).** Updated the sync/backup wiki page to
   describe that concurrent stock movements now *merge* rather than one side winning. (S0–S2 are
   internal; only the observable convergence behaviour touches the wiki — the wiki rule triggers on
