@@ -85,8 +85,9 @@ export function KitEditor({ item }: { item: Item }) {
       toast.show({ tone: 'success' as const, message: `${verb} ${buildN} ${plural(buildN, 'kit')}.` });
       setBuildQty('1');
     },
-    onError: (e: unknown) =>
-      toast.show({ tone: 'danger' as const, message: e instanceof Error ? e.message : fallback }),
+    // Through the error-copy seam, exactly as the add-component handler below: a build most often
+    // fails on stock or storage, and "Storage is full (Hard Stop)" says nothing a user can act on.
+    onError: (e: unknown) => toast.show({ tone: 'danger' as const, message: describeError(e, fallback) }),
   });
 
   const add = () => {
