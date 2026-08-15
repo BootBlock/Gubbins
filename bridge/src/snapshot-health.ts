@@ -65,6 +65,14 @@ export interface SnapshotHealthReport {
 export interface HealthBody {
   /** False once the snapshot is stale — a *data* verdict, not liveness. */
   readonly ok: boolean;
+  /**
+   * **Which** bridge answered — a stable identifier that does not change when the bridge's address
+   * does (issue #672), or `null` from a bridge that has none to report.
+   *
+   * It exists so a consumer can recognise this bridge again after a DHCP lease change instead of
+   * treating it as a new one; see `bridge-id.ts`. Not a secret, and it authorises nothing.
+   */
+  readonly bridgeId: string | null;
   readonly itemCount: number;
   readonly snapshotGeneratedAt: string | null;
   readonly snapshotStale: boolean;
@@ -110,15 +118,21 @@ export function summarizeSnapshotHealth(
  * instead of rendering confidently-wrong stock levels. The status stays `200` — the bridge is up
  * and this is a successful health *report*; the counters beside `ok` say why it is unhappy. (A
  * bridge that has never loaded a snapshot at all is still the pre-existing `503`.)
+ *
+ * `bridgeId` is a required parameter rather than an optional one so that a new caller has to decide
+ * what to report: a `/health` that silently omitted the bridge's identity would send a consumer
+ * back to keying on its address, which is the bug it was added to fix (issue #672).
  */
 export function healthBody(
   snapshotGeneratedAt: string | null,
   itemCount: number,
   health: SnapshotHealthReport | undefined,
+  bridgeId: string | undefined,
 ): HealthBody {
   const report = health ?? summarizeSnapshotHealth(HEALTHY_RELOAD);
   return {
     ok: !report.snapshotStale,
+    bridgeId: bridgeId ?? null,
     itemCount,
     snapshotGeneratedAt,
     snapshotStale: report.snapshotStale,

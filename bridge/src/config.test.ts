@@ -30,6 +30,8 @@ describe('loadConfig (HA-3)', () => {
       allowedOrigins: { wildcard: false, origins: new Set([HOSTED_APP_ORIGIN]) },
       mdns: false,
       mdnsInstanceName: undefined,
+      bridgeId: undefined,
+      bridgeIdFile: undefined,
       allowWrites: false,
       allowPush: false,
       maxPushBytes: DEFAULT_MAX_PUSH_BYTES,
@@ -233,6 +235,27 @@ describe('loadConfig (HA-3)', () => {
 
   it('rejects a non-boolean mDNS flag', () => {
     expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_MDNS: 'maybe' })).toThrow(/GUBBINS_BRIDGE_MDNS/);
+  });
+
+  // Issue #672: the bridge normally mints and remembers its own identity, so both of these stay
+  // unset. An operator pins one when it has to survive a move to different hardware.
+  it('accepts a pinned bridge id and id-file path', () => {
+    const config = loadConfig({
+      ...VALID,
+      GUBBINS_BRIDGE_ID: '  workshop-nas-8787 ',
+      GUBBINS_BRIDGE_ID_FILE: '/var/lib/gubbins/bridge-id',
+    });
+    expect(config.bridgeId).toBe('workshop-nas-8787');
+    expect(config.bridgeIdFile).toBe('/var/lib/gubbins/bridge-id');
+  });
+
+  // A pinned id that cannot be used must fail startup: silently substituting a different one would
+  // present the bridge to its consumers as a *different* bridge, which is the confusion it prevents.
+  it('refuses a pinned bridge id that could not travel in an advertisement', () => {
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_ID: 'two words' })).toThrow(/GUBBINS_BRIDGE_ID/);
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_ID: 'x'.repeat(65) })).toThrow(/GUBBINS_BRIDGE_ID/);
+    // Blank is "not pinned", not an error.
+    expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_ID: '   ' }).bridgeId).toBeUndefined();
   });
 
   it('honours an explicit host and port', () => {

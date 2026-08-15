@@ -73,6 +73,32 @@ describe('GET /health', () => {
     });
   });
 
+  // Issue #672: `/health` is the one place a consumer that reached the bridge by address can learn
+  // *which* bridge it reached, so it reports the identity on both the legacy and versioned paths —
+  // and reports `null` rather than omitting the field when there is none.
+  it('reports the bridge identity, or null when the server was given none', async () => {
+    expect((await (await get('/health')).json()).bridgeId).toBeNull();
+    expect((await (await get('/api/v1/health')).json()).bridgeId).toBeNull();
+
+    const identified = createBridgeServer({
+      getState: () => ({ driver: hydrated.driver, snapshotGeneratedAt: null }),
+      bridgeId: 'workshop-nas-8787',
+    });
+    await new Promise<void>((resolve) => identified.listen(0, '127.0.0.1', resolve));
+    const { port } = identified.address() as AddressInfo;
+    try {
+      // Both surfaces agree — a consumer must not have to know which path reports the identity.
+      for (const path of ['/health', '/api/v1/health']) {
+        const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+          headers: { authorization: `Bearer ${TOKEN}` },
+        });
+        expect((await res.json()).bridgeId).toBe('workshop-nas-8787');
+      }
+    } finally {
+      await new Promise<void>((resolve) => identified.close(() => resolve()));
+    }
+  });
+
   // Issue #394: with no reload-health accessor wired the staleness header is simply absent — its
   // presence is itself the signal that the bridge reports staleness at all.
   it('omits the staleness header when no reload-health accessor is wired', async () => {

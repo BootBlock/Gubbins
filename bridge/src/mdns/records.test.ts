@@ -39,6 +39,16 @@ describe('buildTxtEntries', () => {
       expect(entry.toLowerCase()).not.toMatch(/token|secret|bearer|password|auth/);
     }
   });
+
+  // Issue #672: the discovering side has no token yet, so the bridge's stable identity has to reach
+  // it in the advertisement — otherwise a bridge whose address changed looks like a second bridge.
+  it('advertises the stable bridge id when there is one', () => {
+    expect(buildTxtEntries({ bridgeId: 'workshop-nas-8787' })).toContain('id=workshop-nas-8787');
+  });
+
+  it('omits the id entirely rather than advertising a placeholder', () => {
+    expect(buildTxtEntries({ serverVersion: '0.0.1' }).some((entry) => entry.startsWith('id='))).toBe(false);
+  });
 });
 
 describe('encodeAnnouncement', () => {

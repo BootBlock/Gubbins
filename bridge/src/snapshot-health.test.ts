@@ -122,8 +122,19 @@ describe('stalenessCaveat', () => {
 
 describe('healthBody', () => {
   it('reports ok when the snapshot is fresh', () => {
-    const body = healthBody('2026-07-19T10:00:00.000Z', 42, summarizeSnapshotHealth(HEALTHY_RELOAD));
-    expect(body).toMatchObject({ ok: true, itemCount: 42, snapshotStale: false, reloadFailures: 0 });
+    const body = healthBody(
+      '2026-07-19T10:00:00.000Z',
+      42,
+      summarizeSnapshotHealth(HEALTHY_RELOAD),
+      'workshop-nas-8787',
+    );
+    expect(body).toMatchObject({
+      ok: true,
+      bridgeId: 'workshop-nas-8787',
+      itemCount: 42,
+      snapshotStale: false,
+      reloadFailures: 0,
+    });
   });
 
   it('drops ok — and explains why — once the snapshot is stale', () => {
@@ -138,6 +149,7 @@ describe('healthBody', () => {
           lastSuccessAt: '2026-07-19T10:00:00.000Z',
         }),
       ),
+      'workshop-nas-8787',
     );
     expect(body).toMatchObject({
       ok: false,
@@ -149,9 +161,12 @@ describe('healthBody', () => {
     });
   });
 
+  // A bridge with no identity to report says so with `null` rather than omitting the key: a
+  // consumer reads the same fields whichever bridge answered (issue #672).
   it('falls back to a fresh report when no health accessor is wired', () => {
-    expect(healthBody(null, 0, undefined)).toEqual({
+    expect(healthBody(null, 0, undefined, undefined)).toEqual({
       ok: true,
+      bridgeId: null,
       itemCount: 0,
       snapshotGeneratedAt: null,
       snapshotStale: false,

@@ -30,6 +30,14 @@ User=gubbins
 Group=gubbins
 WorkingDirectory=/opt/gubbins
 ExecStart=/usr/bin/node bridge/serve.mjs
+# Where the bridge remembers the stable identity consumers recognise it by (bridge/README.md ->
+# "The bridge's stable identity"). StateDirectory= creates /var/lib/gubbins-bridge owned by this
+# service and makes it writable through the hardening below — the checkout itself is read-only, so
+# without this the bridge could never save the identity and would fall back to deriving one from
+# the machine name on every start. A GUBBINS_BRIDGE_ID_FILE of your own in the env file below still
+# wins: settings read from an EnvironmentFile= always override an Environment= set here.
+StateDirectory=gubbins-bridge
+Environment=GUBBINS_BRIDGE_ID_FILE=/var/lib/gubbins-bridge/bridge-id
 # Token + snapshot path live here (chmod 640, never committed), not in this unit file.
 EnvironmentFile=/etc/gubbins-bridge.env
 Restart=on-failure

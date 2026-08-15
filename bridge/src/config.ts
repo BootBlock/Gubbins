@@ -27,6 +27,11 @@
  *   GUBBINS_BRIDGE_MDNS           (optional) — advertise over mDNS for HA auto-discovery;
  *                                  off by default, and auto-skipped on a loopback bind.
  *   GUBBINS_BRIDGE_MDNS_NAME      (optional) — service instance name in the advertisement.
+ *   GUBBINS_BRIDGE_ID             (optional) — pin this bridge's stable identity (reported by
+ *                                  /health, advertised over mDNS). Normally left unset: the bridge
+ *                                  mints one on first start and remembers it. Not a secret.
+ *   GUBBINS_BRIDGE_ID_FILE        (optional) — where that minted id is remembered; defaults to
+ *                                  `bridge-id` in the working directory.
  *   GUBBINS_BRIDGE_ALLOW_WRITES   (optional) — opt into the limited write endpoints (adjust a
  *                                  quantity or gauge, check an item out and back in, move stock
  *                                  between locations). OFF by default; the bridge is read-only
@@ -86,6 +91,7 @@ import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC, type RateLimiterOpt
 import { parseAllowedOrigins, type AllowedOrigins } from './cors.ts';
 import { DEFAULT_LOOKUP_DEBOUNCE_MS, MAX_LOOKUP_DEBOUNCE_MS } from './events/lookup.ts';
 import { DEFAULT_STALE_AFTER_FAILURES } from './snapshot-health.ts';
+import { MAX_BRIDGE_ID_LENGTH, parseBridgeId } from './bridge-id.ts';
 
 /** Default bind address: loopback only, so the bridge is **not** LAN-reachable unless
  * the operator deliberately opts in via {@link LAN_HOST}. */
@@ -133,6 +139,21 @@ export interface BridgeConfig {
   readonly mdns: boolean;
   /** Optional service instance name for the advertisement (`GUBBINS_BRIDGE_MDNS_NAME`). */
   readonly mdnsInstanceName: string | undefined;
+  /**
+   * An operator-pinned stable identity for this bridge (`GUBBINS_BRIDGE_ID`), or `undefined` to let
+   * the bridge mint and remember one itself (the ordinary case — see `bridge-id.ts`).
+   *
+   * **Not a secret.** It says *which* bridge a consumer is talking to and authorises nothing; it is
+   * reported by `/health` and advertised in the mDNS TXT record so that a consumer can follow this
+   * bridge across an address change instead of mistaking it for a new one (issue #672).
+   */
+  readonly bridgeId: string | undefined;
+  /**
+   * Where the self-minted identity is remembered (`GUBBINS_BRIDGE_ID_FILE`); `undefined` falls back
+   * to {@link DEFAULT_BRIDGE_ID_FILE} in the working directory. Point it at a mounted path when the
+   * bridge runs in a container that is recreated rather than restarted.
+   */
+  readonly bridgeIdFile: string | undefined;
   /**
    * Whether the operator opted into the limited write endpoints (`GUBBINS_BRIDGE_ALLOW_WRITES=on`).
    * **Off by default** — the bridge is read-only unless this **or {@link allowPush}** is set. When
@@ -309,6 +330,8 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   const allowedOrigins = parseAllowedOrigins(env.GUBBINS_BRIDGE_ALLOWED_ORIGINS);
   const mdns = parseBool(env.GUBBINS_BRIDGE_MDNS, false, 'GUBBINS_BRIDGE_MDNS');
   const mdnsInstanceName = (env.GUBBINS_BRIDGE_MDNS_NAME ?? '').trim() || undefined;
+  const bridgeId = loadBridgeIdOverride(env);
+  const bridgeIdFile = (env.GUBBINS_BRIDGE_ID_FILE ?? '').trim() || undefined;
   const allowWrites = parseBool(env.GUBBINS_BRIDGE_ALLOW_WRITES, false, 'GUBBINS_BRIDGE_ALLOW_WRITES');
   const allowPush = parseBool(env.GUBBINS_BRIDGE_ALLOW_PUSH, false, 'GUBBINS_BRIDGE_ALLOW_PUSH');
   const webhooks = parseBool(env.GUBBINS_BRIDGE_WEBHOOKS, false, 'GUBBINS_BRIDGE_WEBHOOKS');
@@ -398,6 +421,8 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
     allowedOrigins,
     mdns,
     mdnsInstanceName,
+    bridgeId,
+    bridgeIdFile,
     allowWrites,
     allowPush,
     maxPushBytes,
@@ -465,6 +490,28 @@ export function loadStaleAfterFailures(env: Env = process.env): number {
       { allowZero: true },
     ),
   );
+}
+
+/**
+ * Resolve the optional `GUBBINS_BRIDGE_ID` override, throwing on a value that could not be used.
+ *
+ * A rejected value fails startup rather than being silently ignored: an operator who pinned an
+ * identity did so because a consumer depends on it, and quietly falling back to a different one
+ * would present the bridge as a *different* bridge — the exact confusion the id exists to prevent.
+ * Echoing the value back is safe; it is an identifier, not a credential.
+ */
+function loadBridgeIdOverride(env: Env): string | undefined {
+  const raw = (env.GUBBINS_BRIDGE_ID ?? '').trim();
+  if (raw.length === 0) return undefined;
+
+  const parsed = parseBridgeId(raw);
+  if (parsed === undefined) {
+    throw new Error(
+      `GUBBINS_BRIDGE_ID must be 1–${MAX_BRIDGE_ID_LENGTH} characters of A–Z, a–z, 0–9, ` +
+        `dot, dash, underscore or colon; got "${raw}".`,
+    );
+  }
+  return parsed;
 }
 
 /** Whether `host` exposes the bridge beyond loopback (a deliberate, documented choice). */

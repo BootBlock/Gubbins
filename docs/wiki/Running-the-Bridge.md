@@ -68,6 +68,23 @@ every other surface too, so whichever way you read the bridge you find out:
 - **The [[AI assistant tools|AI-Assistant-Query-MCP]]** add a short "this data may be out of date"
   note to their answers, so an assistant caveats a count rather than stating it as current.
 
+## How the bridge identifies itself
+
+The first time it starts, the bridge gives itself a **stable id** and remembers it in a small
+`bridge-id` file next to where it runs. It's not a credential — it grants nothing and hides nothing —
+it's just a name for *this* bridge, so anything that connects can recognise it again later.
+
+That's what lets [[Home Assistant|Home-Assistant-Integration]] follow the bridge when your router
+hands its machine a different address: without an identity of its own, a bridge on a new address
+looks like a brand-new one. The id is included in the health check's reply, and in the
+advertisement the bridge makes if you've turned [[discovery|Home-Assistant-Integration]] on.
+
+> **💡 Tip**
+> Running it in [[Docker|Self-Hosting-with-Docker]]? The ready-made Compose setup already keeps that
+> file on a volume, so a **recreated** container is still the same bridge. If you run the image by
+> hand instead, add a volume for it (or set the id yourself) — the bridge's `README` covers both.
+> Nothing breaks if you don't; you'd just have a duplicate to tidy up in Home Assistant.
+
 ## When something goes wrong while it's running
 
 The bridge is built to **stay up**. An occasional problem — a hiccup reaching your MQTT broker, a

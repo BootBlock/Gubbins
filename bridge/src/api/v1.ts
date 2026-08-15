@@ -156,6 +156,11 @@ export interface ApiV1Context {
    * snapshot.
    */
   readonly getSnapshotHealth?: () => SnapshotHealthReport;
+  /**
+   * This bridge's stable identity, threaded through from the server so `GET /api/v1/health` reports
+   * exactly what `/health` does (issue #672). Omit and both report `bridgeId: null`.
+   */
+  readonly bridgeId?: string;
   /** Present only when writes are opted in; its absence makes every POST a `404`. */
   readonly write?: WriteCapability;
   /**
@@ -290,7 +295,9 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
 
   switch (segments[0]) {
     case 'health':
-      if (segments.length === 1) return void (await handleHealth(res, state, ctx.getSnapshotHealth?.()));
+      if (segments.length === 1) {
+        return void (await handleHealth(res, state, ctx.getSnapshotHealth?.(), ctx.bridgeId));
+      }
       break;
     case 'status':
       if (segments.length === 1) return void (await handleStatus(res, state));
@@ -877,9 +884,10 @@ async function handleHealth(
   res: ServerResponse,
   state: BridgeServerState,
   health: SnapshotHealthReport | undefined,
+  bridgeId: string | undefined,
 ): Promise<void> {
   const itemCount = await new ItemRepository(state.driver).countByAst(emptyAst('AND'));
-  sendJson(res, 200, healthBody(state.snapshotGeneratedAt, itemCount, health));
+  sendJson(res, 200, healthBody(state.snapshotGeneratedAt, itemCount, health, bridgeId));
 }
 
 /**

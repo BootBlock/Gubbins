@@ -178,6 +178,12 @@ export interface BridgeServerOptions {
    */
   readonly getSnapshotHealth?: () => SnapshotHealthReport;
   /**
+   * This bridge's stable identity, reported by `/health` (issue #672). Omit and `/health` reports
+   * `bridgeId: null` — the shape stays the same, so a consumer always reads the same fields. It is
+   * an identifier, not a credential: see `bridge-id.ts`.
+   */
+  readonly bridgeId?: string;
+  /**
    * Optional per-client abuse guard. When present, each request is charged a token before
    * routing; an exhausted client gets `429 Too Many Requests` + `Retry-After`. Omit to
    * disable (e.g. when relying solely on the LAN/firewall).
@@ -496,6 +502,7 @@ export async function handleRequest(
         actorUserId: identity.userId,
         getState: options.getState,
         getSnapshotHealth: options.getSnapshotHealth,
+        bridgeId: options.bridgeId,
         write: options.write,
         push: options.push,
         streamable: options.events !== undefined,
@@ -537,6 +544,7 @@ export async function handleRequest(
         method: 'GET',
         getState: options.getState,
         getSnapshotHealth: options.getSnapshotHealth,
+        bridgeId: options.bridgeId,
         write: options.write,
         push: options.push,
         streamable: options.events !== undefined,
@@ -656,7 +664,11 @@ async function handleHealth(res: ServerResponse, options: BridgeServerOptions): 
   }
   // Count through the app's own search path (emptyAst → parseASTtoSQL), never bespoke SQL.
   const itemCount = await new ItemRepository(state.driver).countByAst(emptyAst('AND'));
-  sendJson(res, 200, healthBody(state.snapshotGeneratedAt, itemCount, options.getSnapshotHealth?.()));
+  sendJson(
+    res,
+    200,
+    healthBody(state.snapshotGeneratedAt, itemCount, options.getSnapshotHealth?.(), options.bridgeId),
+  );
 }
 
 /** `GET /search?q=&limit=` — compact item DTOs (limit clamped by the query core). */

@@ -51,6 +51,14 @@ export interface TxtParams {
   readonly basePath?: string;
   /** The bridge package version, for diagnostics. */
   readonly serverVersion?: string;
+  /**
+   * This bridge's stable identity (issue #672) — the same value `GET /health` reports. It is what
+   * lets a discovering consumer tell "the bridge I already know, at a new address" from "a second
+   * bridge", **before** it holds a token to ask `/health` with. Omitted when the bridge has none.
+   *
+   * Non-secret, like everything else here: it identifies the bridge and authorises nothing.
+   */
+  readonly bridgeId?: string;
 }
 
 /** Everything needed to build the advertisement records (pure data — no secrets). */
@@ -86,6 +94,9 @@ export function buildTxtEntries(txt: TxtParams = {}): string[] {
     `api=${txt.apiVersion ?? 'v1'}`,
     `path=${txt.basePath ?? '/api/v1'}`,
     `version=${txt.serverVersion ?? '0.0.0'}`,
+    // Appended rather than defaulted: a consumer must be able to tell "this bridge has no stable
+    // identity" from "its identity is some placeholder", so the key is simply absent instead.
+    ...(txt.bridgeId === undefined ? [] : [`id=${txt.bridgeId}`]),
   ];
 }
 
