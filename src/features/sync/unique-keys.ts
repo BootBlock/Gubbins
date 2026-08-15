@@ -101,7 +101,18 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
   // `item_history` (it travels on `snapshot.itemHistory`). This is exactly the `tags`
   // situation described above, and is handled the same way — `reconcile` pulls this table's
   // re-key map out and applies it to the ledger itself via `resolveActor`.
-  { table: 'users', columns: ['username'], nocase: ['username'], references: [] },
+  //
+  // `api_tokens.user_id` *can* be listed, and must be: it is a synced table present in
+  // `local.tables`, and its FK is `ON DELETE CASCADE`, so retiring a username without repointing
+  // would silently revoke the loser's Bridge and Home Assistant credentials — the bare delete
+  // this module's opening note says would be wrong. Reachable with no peer involvement at all
+  // now that two local rows on one folded key are contested (issue #679).
+  {
+    table: 'users',
+    columns: ['username'],
+    nocase: ['username'],
+    references: [{ table: 'api_tokens', column: 'user_id' }],
+  },
   {
     table: 'contacts',
     columns: ['name'],

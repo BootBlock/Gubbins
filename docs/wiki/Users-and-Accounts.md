@@ -44,7 +44,7 @@ Every copy of Gubbins starts with two accounts you can't delete:
 
 | Field | What it's for |
 | --- | --- |
-| **Username** | The handle they sign in with. Unique on this device, ignoring case in any language — `josé` and `JOSÉ` are one account, and signing in either way reaches it |
+| **Username** | The handle they sign in with. Unique on this device, ignoring case in any language — `josé` and `JOSÉ` are one account, not two |
 | **Display name** | What's shown around the app and against everything they change |
 | **Email** | Optional |
 | **Description** | Optional. A short note on what the account is for, shown on its row |

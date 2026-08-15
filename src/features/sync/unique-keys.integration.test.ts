@@ -267,6 +267,56 @@ describe('§7.5 natural-key collisions apply cleanly (issue #187)', () => {
     });
   });
 
+  /**
+   * `users` retires a loser by *deleting* it, and `api_tokens.user_id` cascades — so without a
+   * repoint, collapsing two spellings of one handle silently revokes that account's Bridge and
+   * Home Assistant credentials. Reachable with no peer involved at all once two local rows on one
+   * folded key are contested, which is what makes it worth an end-to-end guard rather than a
+   * reading of `UNIQUE_KEY_SPECS`.
+   */
+  it("keeps a retired user's API tokens, repointed at the winner", async () => {
+    for (const [id, username, at] of [
+      ['uA', 'josé', 10],
+      ['uB', 'JOSÉ', 20],
+    ] as const) {
+      await deviceA.execute(
+        `INSERT INTO users (id, username, display_name, kind, updated_at) VALUES (?, ?, ?, 'normal', ?);`,
+        [id, username, username, at],
+      );
+      await deviceA.execute(
+        `INSERT INTO api_tokens (id, user_id, name, token_hash, token_prefix, updated_at)
+         VALUES (?, ?, 'Home Assistant', ?, 'gbn_', ?);`,
+        [`tok-${id}`, id, `hash-${id}`, at],
+      );
+    }
+    // The peer contests nothing here; the pair is entirely this device's.
+    await deviceB.execute(`INSERT INTO items (id, name, location_id, updated_at) VALUES (?, ?, ?, ?);`, [
+      'iB',
+      'Item B',
+      UNASSIGNED_LOCATION_ID,
+      30,
+    ]);
+
+    const local = await buildLocalSnapshot(deviceA);
+    const remote = await buildLocalSnapshot(deviceB);
+    const dictionary = await buildSchemaDictionary(deviceA, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+
+    await applyPlan(deviceA, reconcile(local, remote, { offset: 0, dictionary }), dictionary);
+
+    const survivors = await deviceA.query<{ id: string }>(
+      "SELECT id FROM users WHERE kind = 'normal' ORDER BY id;",
+    );
+    expect(survivors).toEqual([{ id: 'uB' }]);
+
+    const tokens = await deviceA.query<{ id: string; user_id: string }>(
+      'SELECT id, user_id FROM api_tokens ORDER BY id;',
+    );
+    expect(tokens).toEqual([
+      { id: 'tok-uA', user_id: 'uB' },
+      { id: 'tok-uB', user_id: 'uB' },
+    ]);
+  });
+
   it('converges: applying the mirrored merge on the peer reaches the same state', async () => {
     await seedTaggedItem(deviceA, {
       itemId: 'iA',

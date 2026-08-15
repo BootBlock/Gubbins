@@ -63,18 +63,7 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
         cleaned.push(alias);
       }
 
-      // Every row in the table that folds onto a requested alias — this item's (which are
-      // retained) and any other item's (which make the request impossible to honour).
-      const filter = foldedNameFilter('alias', cleaned);
-      const claimed = (
-        await this.driver.query<ItemAliasRow>(
-          `SELECT * FROM item_aliases WHERE ${filter.sql} ORDER BY alias, id;`,
-          filter.params,
-        )
-      ).filter((row) => matchesFoldedName(filter, row.alias));
-      if (claimed.some((row) => row.item_id !== itemId)) {
-        throw duplicateNameError('item_aliases.alias');
-      }
+      await this.claimAliases(itemId, cleaned);
 
       const existing = await this.listAliases(itemId);
       const existingByKey = new Map(existing.map((a) => [foldName(a.alias), a]));
@@ -148,9 +137,24 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
           params: [...params, id],
         });
       }
+      // §4 Universal Alias Mapping. The pure merge engine has already dropped additions this
+      // item holds, but it decides that under `toLowerCase()` — not the fold the table's
+      // identity actually lives under — so the question is settled again here, against the
+      // whole table (issue #679). Without this, a scrape is the live path by which `Größe` and
+      // `GRÖSSE` end up filed as two aliases the sync merge reads as one.
+      const requested: string[] = [];
+      const seen = new Set<string>();
       for (const raw of write.aliasAdditions) {
         const alias = raw.trim();
         if (alias.length === 0) continue;
+        const key = foldName(alias);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        requested.push(alias);
+      }
+      const held = new Set((await this.claimAliases(id, requested)).map((row) => foldName(row.alias)));
+      for (const alias of requested) {
+        if (held.has(foldName(alias))) continue;
         statements.push({
           sql: 'INSERT INTO item_aliases (id, item_id, alias) VALUES (?, ?, ?);',
           params: [crypto.randomUUID(), id, alias],
@@ -197,6 +201,33 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
         )
       ).find((row) => matchesFoldedName(filter, row.alias));
       return byAlias ? this.getById(byAlias.item_id) : undefined;
+    }
+
+    /**
+     * The rows anywhere in `item_aliases` that fold onto one of `aliases` — refusing outright
+     * when one of them belongs to a **different** item.
+     *
+     * The one seam both alias writers ask "is this alias already spoken for?" through, and it is
+     * table-wide because the alias itself is the natural key: `UNIQUE (alias COLLATE NOCASE)`
+     * spans every item. That index refuses a second spelling it can fold and accepts one it
+     * cannot, so the folded half of the refusal is raised here, in the same words SQLite uses —
+     * which is also what the caller used to get, as a raw constraint abort, for the ASCII case.
+     *
+     * The returned rows all belong to `itemId`, so a caller can read them as "the ones already
+     * held" without checking again.
+     */
+    private async claimAliases(itemId: string, aliases: readonly string[]): Promise<ItemAliasRow[]> {
+      const filter = foldedNameFilter('alias', aliases);
+      const claimed = (
+        await this.driver.query<ItemAliasRow>(
+          `SELECT * FROM item_aliases WHERE ${filter.sql} ORDER BY alias, id;`,
+          filter.params,
+        )
+      ).filter((row) => matchesFoldedName(filter, row.alias));
+      if (claimed.some((row) => row.item_id !== itemId)) {
+        throw duplicateNameError('item_aliases.alias');
+      }
+      return claimed;
     }
   };
 }

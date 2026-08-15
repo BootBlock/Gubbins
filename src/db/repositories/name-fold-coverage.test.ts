@@ -46,7 +46,7 @@ interface Fixture {
 }
 
 /**
- * File `name` through the write path that owns a column, on the `nth` (0 or 1) attempt.
+ * File `name` through one of a column's write paths, on the `nth` (0 or 1) attempt.
  *
  * `nth` exists because the two attempts must genuinely compete. A table-wide key
  * (`item_aliases.alias`) filed twice against the *same* item would replace itself and pass
@@ -55,14 +55,33 @@ interface Fixture {
  */
 type FileName = (fixture: Fixture, name: string, nth: 0 | 1) => Promise<unknown>;
 
-const WRITE_PATHS: Record<string, FileName> = {
-  'field_defs.name': (f, name, nth) => f.categories.addField(`cat-${nth}`, { name, fieldType: 'TEXT' }),
-  'tags.name': (f, name, nth) => f.tags.setForItem(f.itemIds[nth], [name]),
-  'roles.name': (f, name) => f.roles.create({ name }),
-  'users.username': (f, name) => f.users.create({ username: name }),
-  'contacts.name': (f, name) => f.contacts.resolveOrCreate(name),
-  'capabilities.key': (f, key) => f.items.setCapability(f.itemIds[0], { key, value: '1' }),
-  'item_aliases.alias': (f, alias, nth) => f.items.setAliases(f.itemIds[nth], [alias]),
+/**
+ * Every write path per column, not one per column. A column with two writers can have one
+ * converted and the other left behind — which is exactly the shape `item_aliases.alias` has,
+ * where `setAliases` is the public setter but `applyScrape` is the path the app actually calls.
+ */
+const WRITE_PATHS: Record<string, Record<string, FileName>> = {
+  'field_defs.name': {
+    'CategoryRepository.addField': (f, name, nth) =>
+      f.categories.addField(`cat-${nth}`, { name, fieldType: 'TEXT' }),
+  },
+  'tags.name': {
+    'TagRepository.setForItem': (f, name, nth) => f.tags.setForItem(f.itemIds[nth], [name]),
+  },
+  'roles.name': { 'RoleRepository.create': (f, name) => f.roles.create({ name }) },
+  'users.username': { 'UserRepository.create': (f, name) => f.users.create({ username: name }) },
+  'contacts.name': {
+    'ContactRepository.resolveOrCreate': (f, name) => f.contacts.resolveOrCreate(name),
+    'ContactRepository.create': (f, name) => f.contacts.create({ name }),
+  },
+  'capabilities.key': {
+    'ItemRepository.setCapability': (f, key) => f.items.setCapability(f.itemIds[0], { key, value: '1' }),
+  },
+  'item_aliases.alias': {
+    'ItemRepository.setAliases': (f, alias, nth) => f.items.setAliases(f.itemIds[nth], [alias]),
+    'ItemRepository.applyScrape': (f, alias, nth) =>
+      f.items.applyScrape(f.itemIds[nth], { fields: {}, aliasAdditions: [alias] }),
+  },
 };
 
 /**
@@ -114,27 +133,31 @@ describe('folded natural keys (issue #679)', () => {
     expect(Object.keys(WRITE_PATHS).sort()).toEqual([...FOLDED_UNIQUE_COLUMNS].sort());
   });
 
-  for (const [qualified, file] of Object.entries(WRITE_PATHS)) {
+  for (const [qualified, paths] of Object.entries(WRITE_PATHS)) {
     const [table, column] = qualified.split('.') as [string, string];
 
-    it(`${qualified} files two spellings of one name as one row`, async () => {
-      const [first, second] = SPELLINGS;
-      await file(fixture, first, 0);
+    for (const [pathName, file] of Object.entries(paths)) {
+      it(`${pathName} files two spellings of ${qualified} as one row`, async () => {
+        const [first, second] = SPELLINGS;
+        await file(fixture, first, 0);
 
-      // Either outcome is a fix: the second spelling folds onto the first, or the write path
-      // refuses it the way the index refuses a spelling it *can* fold. What must not happen is
-      // a second row landing quietly.
-      try {
-        await file(fixture, second, 1);
-      } catch (error) {
-        expect(error).toBeInstanceOf(DbError);
-      }
+        // Either outcome is a fix: the second spelling folds onto the first, or the write path
+        // refuses it the way the index refuses a spelling it *can* fold. The refusal is pinned to
+        // this column's own constraint, so an unrelated failure cannot pass for one and leave the
+        // row count green by accident.
+        try {
+          await file(fixture, second, 1);
+        } catch (error) {
+          expect(error).toBeInstanceOf(DbError);
+          expect((error as DbError).message).toBe(`UNIQUE constraint failed: ${qualified}`);
+        }
 
-      const rows = await fixture.driver.query<Record<string, string>>(
-        `SELECT ${column} AS value FROM ${table};`,
-      );
-      const key = foldName(first);
-      expect(rows.filter((row) => foldName(row.value ?? '') === key)).toHaveLength(1);
-    });
+        const rows = await fixture.driver.query<{ value: string }>(
+          `SELECT ${column} AS value FROM ${table};`,
+        );
+        const key = foldName(first);
+        expect(rows.filter((row) => foldName(row.value ?? '') === key)).toHaveLength(1);
+      });
+    }
   }
 });
