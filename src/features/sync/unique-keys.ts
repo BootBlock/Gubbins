@@ -102,16 +102,24 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
   // situation described above, and is handled the same way — `reconcile` pulls this table's
   // re-key map out and applies it to the ledger itself via `resolveActor`.
   //
-  // `api_tokens.user_id` *can* be listed, and must be: it is a synced table present in
-  // `local.tables`, and its FK is `ON DELETE CASCADE`, so retiring a username without repointing
-  // would silently revoke the loser's Bridge and Home Assistant credentials — the bare delete
-  // this module's opening note says would be wrong. Reachable with no peer involvement at all
-  // now that two local rows on one folded key are contested (issue #679).
+  // `location_history.actor_user_id` is the *other* half of that ledger and **is** listed: it is
+  // a synced table present in `local.tables`, so unlike `item_history` it can be repointed as a
+  // row, and its `ON DELETE SET DEFAULT` would otherwise re-attribute this device's location
+  // history to System — the same loss, on the same reasoning (issue #679).
+  //
+  // `api_tokens.user_id` is deliberately **absent**, though it could be listed. Its
+  // `ON DELETE CASCADE` revokes the loser's Bridge / Home Assistant tokens, and that is the
+  // right outcome: attribution says *who did this* and belongs with the surviving account, but a
+  // token is a credential, and a credential must not silently change which principal it
+  // authenticates as. The fold is wider than a case fold — it merges Turkish `ı` with `i` — so
+  // the two rows are not certainly the same person, and the winner may be enabled where the
+  // loser was suspended. Revoking is recoverable and visible (the integration starts failing to
+  // authenticate); transferring is neither.
   {
     table: 'users',
     columns: ['username'],
     nocase: ['username'],
-    references: [{ table: 'api_tokens', column: 'user_id' }],
+    references: [{ table: 'location_history', column: 'actor_user_id' }],
   },
   {
     table: 'contacts',

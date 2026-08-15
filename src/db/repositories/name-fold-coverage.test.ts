@@ -56,9 +56,14 @@ interface Fixture {
 type FileName = (fixture: Fixture, name: string, nth: 0 | 1) => Promise<unknown>;
 
 /**
- * Every write path per column, not one per column. A column with two writers can have one
- * converted and the other left behind — which is exactly the shape `item_aliases.alias` has,
- * where `setAliases` is the public setter but `applyScrape` is the path the app actually calls.
+ * The writers that **mint** a row under each column — more than one where more than one exists,
+ * because a column with two writers can have one converted and the other left behind. That is
+ * exactly the shape `item_aliases.alias` has, where `setAliases` is the public setter but
+ * `applyScrape` is the path the app actually calls.
+ *
+ * The rename guards (`update`, where an existing row moves onto a name another row holds) are
+ * covered separately below — they take a different shape, and the drift assertion can only hold
+ * the *column* set in step, not the writer set.
  */
 const WRITE_PATHS: Record<string, Record<string, FileName>> = {
   'field_defs.name': {
@@ -159,5 +164,32 @@ describe('folded natural keys (issue #679)', () => {
         expect(rows.filter((row) => foldName(row.value ?? '') === key)).toHaveLength(1);
       });
     }
+  }
+
+  // Renaming an existing row onto a name another row holds is the other half of each dictionary's
+  // uniqueness, and the index cannot refuse it either once the two spellings differ by more than
+  // ASCII case. One representative per repository that has a rename.
+  const RENAMES: Record<string, (f: Fixture, names: readonly [string, string]) => Promise<unknown>> = {
+    'ContactRepository.update': async (f, [held, moving]) => {
+      await f.contacts.create({ name: held });
+      const other = await f.contacts.create({ name: 'Someone Else' });
+      return f.contacts.update(other.id, { name: moving });
+    },
+    'RoleRepository.update': async (f, [held, moving]) => {
+      await f.roles.create({ name: held });
+      const other = await f.roles.create({ name: 'Someone Else' });
+      return f.roles.update(other.id, { name: moving });
+    },
+    'UserRepository.update': async (f, [held, moving]) => {
+      await f.users.create({ username: held });
+      const other = await f.users.create({ username: 'someone-else' });
+      return f.users.update(other.id, { username: moving });
+    },
+  };
+
+  for (const [pathName, rename] of Object.entries(RENAMES)) {
+    it(`${pathName} refuses a rename onto a name that folds to one already held`, async () => {
+      await expect(rename(fixture, SPELLINGS)).rejects.toBeInstanceOf(DbError);
+    });
   }
 });

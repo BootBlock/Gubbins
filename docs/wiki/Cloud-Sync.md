@@ -62,16 +62,12 @@ both. The same applies to a value entered twice for one field, or a specificatio
 item on two devices — the more recent entry is kept, by the same last-write-wins rule as above.
 
 > **ℹ️ Note**
-> Matching ignores capitalisation, so *Bolts* and *bolts* are treated as one name — exactly as they
-> are when you type a duplicate on a single device.
-
-> **ℹ️ Note**
-> Matching ignores capitalisation **in any language**, and that now holds on one device as well as
-> across two. If an older version of Gubbins let you file both `Café Ltd` and `CAFÉ LTD` as
-> separate contacts, syncing merges them into one — the more recent record is kept, and everything
-> pointing at the other (loans, bookings, recorded values) follows it across. So a duplicate you
-> already have may quietly become a single record after a sync. See
-> [[Data hygiene|Data-Hygiene]].
+> Matching ignores capitalisation **in any language**, so *Bolts* and *bolts* are treated as one
+> name, and so are `Café Ltd` and `CAFÉ LTD` — exactly as they are when you type a duplicate on a
+> single device. If an older version of Gubbins let both spellings through as separate records,
+> syncing tidies them into one: the more recent record is kept, and everything pointing at the
+> other (loans, bookings, recorded values) follows it across. So a pair you already have may become
+> a single record after a sync.
 
 ### When one item is lent out on two devices
 

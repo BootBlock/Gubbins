@@ -268,13 +268,14 @@ describe('§7.5 natural-key collisions apply cleanly (issue #187)', () => {
   });
 
   /**
-   * `users` retires a loser by *deleting* it, and `api_tokens.user_id` cascades — so without a
-   * repoint, collapsing two spellings of one handle silently revokes that account's Bridge and
-   * Home Assistant credentials. Reachable with no peer involved at all once two local rows on one
-   * folded key are contested, which is what makes it worth an end-to-end guard rather than a
-   * reading of `UNIQUE_KEY_SPECS`.
+   * Retiring a `users` row deletes it, and the two things pointing at it are treated differently
+   * on purpose: its **attribution** follows the winner (the surviving account is who did that
+   * work), while its **credentials** are revoked (a token must not silently start authenticating
+   * as a different principal — see the `users` entry in `UNIQUE_KEY_SPECS`). Both are reachable
+   * with no peer involved at all once two local rows on one folded key are contested, which is
+   * what makes them worth an end-to-end guard rather than a reading of the spec list.
    */
-  it("keeps a retired user's API tokens, repointed at the winner", async () => {
+  it("repoints a retired user's history and revokes its tokens", async () => {
     for (const [id, username, at] of [
       ['uA', 'josé', 10],
       ['uB', 'JOSÉ', 20],
@@ -287,6 +288,11 @@ describe('§7.5 natural-key collisions apply cleanly (issue #187)', () => {
         `INSERT INTO api_tokens (id, user_id, name, token_hash, token_prefix, updated_at)
          VALUES (?, ?, 'Home Assistant', ?, 'gbn_', ?);`,
         [`tok-${id}`, id, `hash-${id}`, at],
+      );
+      await deviceA.execute(
+        `INSERT INTO location_history (id, location_id, location_name, action, actor_user_id, updated_at)
+         VALUES (?, ?, 'Unassigned', 'RENAMED', ?, ?);`,
+        [`lh-${id}`, UNASSIGNED_LOCATION_ID, id, at],
       );
     }
     // The peer contests nothing here; the pair is entirely this device's.
@@ -308,13 +314,22 @@ describe('§7.5 natural-key collisions apply cleanly (issue #187)', () => {
     );
     expect(survivors).toEqual([{ id: 'uB' }]);
 
+    // Attribution follows: without the repoint, `ON DELETE SET DEFAULT` would have re-attributed
+    // this device's own record of who renamed that location to System.
+    const history = await deviceA.query<{ id: string; actor_user_id: string }>(
+      'SELECT id, actor_user_id FROM location_history ORDER BY id;',
+    );
+    expect(history).toEqual([
+      { id: 'lh-uA', actor_user_id: 'uB' },
+      { id: 'lh-uB', actor_user_id: 'uB' },
+    ]);
+
+    // The credential does not: the loser's token is revoked by the cascade rather than handed to
+    // whoever now holds the username.
     const tokens = await deviceA.query<{ id: string; user_id: string }>(
       'SELECT id, user_id FROM api_tokens ORDER BY id;',
     );
-    expect(tokens).toEqual([
-      { id: 'tok-uA', user_id: 'uB' },
-      { id: 'tok-uB', user_id: 'uB' },
-    ]);
+    expect(tokens).toEqual([{ id: 'tok-uB', user_id: 'uB' }]);
   });
 
   it('converges: applying the mirrored merge on the peer reaches the same state', async () => {

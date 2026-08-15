@@ -137,10 +137,10 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
           params: [...params, id],
         });
       }
-      // §4 Universal Alias Mapping. The pure merge engine has already dropped additions this
-      // item holds, but it decides that under `toLowerCase()` — not the fold the table's
-      // identity actually lives under — so the question is settled again here, against the
-      // whole table (issue #679). Without this, a scrape is the live path by which `Größe` and
+      // §4 Universal Alias Mapping. The pure merge engine drops additions this item already
+      // holds, but it can only see the item — the alias's natural key spans the whole table, and
+      // the plan it built may be minutes old — so the question is settled again here, against
+      // every row (issue #679). Without it, a scrape is the live path by which `Größe` and
       // `GRÖSSE` end up filed as two aliases the sync merge reads as one.
       const requested: string[] = [];
       const seen = new Set<string>();

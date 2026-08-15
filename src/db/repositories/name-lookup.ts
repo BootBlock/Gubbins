@@ -19,11 +19,14 @@
  * comparison but is two different ones, and the mismatch is exactly where the duplicates get in.
  * So {@link foldedNameFilter} builds a deliberate *superset* of the answer, in two parts:
  *
- * - A stored name SQLite *can* fold is pure ASCII, and — names being stored trimmed — its
- *   `LOWER()` is then exactly its folded key, so the folded needles find it through the index-
- *   shaped half of the predicate.
+ * - A stored name SQLite *can* fold is pure printable ASCII, and `LOWER(TRIM(…))` is then exactly
+ *   its folded key — no printable ASCII character folds differently under `foldName` — so the
+ *   folded needles find it. The `TRIM` is not decoration: every write path trims, but that is an
+ *   assumption about six repositories rather than a guarantee, and a stray `'Bob '` would
+ *   otherwise be invisible to both arms (a space is *inside* the `GLOB`'s accepted range).
  * - A stored name SQLite *cannot* fold holds a character outside printable ASCII, which the
- *   `GLOB` picks out wholesale. That is the only place the two folds can disagree.
+ *   `GLOB` picks out wholesale — including every whitespace character `String.trim` strips but
+ *   SQLite's `TRIM` does not. That is the only place the two folds can disagree.
  *
  * The caller then filters the narrowed rows through {@link matchesFoldedName}. Reading the table
  * whole would also work and is what the (much smaller) field dictionary does; this keeps a
@@ -68,7 +71,7 @@ export function foldedNameFilter(column: string, names: readonly string[]): Fold
   }
   const placeholders = needles.map(() => '?').join(', ');
   return {
-    sql: `(LOWER(${column}) IN (${placeholders}) OR ${column} GLOB '*[^ -~]*')`,
+    sql: `(LOWER(TRIM(${column})) IN (${placeholders}) OR ${column} GLOB '*[^ -~]*')`,
     params: needles,
     wanted,
   };
@@ -84,12 +87,17 @@ export function matchesFoldedName(filter: FoldedNameFilter, value: string): bool
  * phrases it for the same index.
  *
  * A write path that folds catches duplicates the `COLLATE NOCASE` index misses, so it has to
- * raise the refusal itself. Reusing SQLite's own wording is what keeps the user's experience
- * one thing: `features/errors/db-error-message` humanises `UNIQUE constraint failed:
- * contacts.name` into "That contact name is already in use", and it should say that whether the
- * duplicate was `Café Ltd`/`Cafe Ltd` (caught by the index) or `Café Ltd`/`CAFÉ LTD` (caught
- * here). Authoring a second sentence would give one failure two voices, and put copy outside
- * the catalogs besides.
+ * raise the refusal itself — and reusing SQLite's own wording is what makes that refusal
+ * legible: `features/errors/db-error-message` reads the `table.column` out of exactly this text
+ * to say "That contact name is already in use" rather than a generic sentence. Authoring a
+ * second wording would put copy outside the catalogs for no gain.
+ *
+ * This does **not** guarantee the two refusals read identically. The humanisation is gated on
+ * `DbError.code`, and `code` comes from a numeric `resultCode` that only `sqlite-wasm` supplies
+ * — a genuine constraint violation raised by `node:sqlite` (the bridge and the test driver)
+ * arrives as `SQLITE_ERROR` and degrades to the call site's fallback copy. The error built here
+ * carries the code the layer needs, so the *folded* refusal is the one that reliably reads well.
+ * Closing that gap belongs in `db/errors`, not here.
  *
  * @param qualifiedColumn the `table.column` the index is on, as SQLite names it.
  */
