@@ -64,7 +64,10 @@ export function ColorSwatchPicker({
               onKeyDown={(e) => onKeyDown(e, index)}
               className={cn(
                 'size-7 rounded-full outline-none transition-transform',
-                'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                // The colour swatch cannot take the option-card chrome — its fill *is* its
+                // content — but it is the round counterpart of the kind swatch beside it, so
+                // it takes the same focus ring the Foundry gives that one.
+                'focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 checked && 'ring-2 ring-foreground/70 ring-offset-2 ring-offset-background scale-110',
                 choice === null
                   ? 'border-2 border-dashed border-muted-foreground/60 bg-card'

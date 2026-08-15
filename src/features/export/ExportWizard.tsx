@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Checkbox, LiveRegion, Modal, Select, Surface } from '@/components/foundry';
+import {
+  Button,
+  Checkbox,
+  LiveRegion,
+  Modal,
+  optionCardClassName,
+  Select,
+  Surface,
+} from '@/components/foundry';
 import { ExportIcon, ImportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
+import { cn } from '@/lib/utils';
 import { getItemRepository, getLocationRepository, getProjectRepository } from '@/db/repositories';
 import { buildItemLocationOptions } from '@/features/inventory/parent-options';
 import { useFormatters } from '@/lib/useFormatters';
@@ -244,9 +253,10 @@ export function ExportWizard({
                 key={f.value}
                 onClick={() => setFormat(f.value)}
                 aria-pressed={selected}
-                className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors [&_svg]:size-5 ${
-                  selected ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary/50'
-                }`}
+                className={cn(
+                  'flex items-center gap-3 [&_svg]:size-5',
+                  optionCardClassName(selected, 'compact'),
+                )}
               >
                 <Icon className={selected ? 'text-primary' : 'text-muted-foreground'} />
                 <span className="flex-1">

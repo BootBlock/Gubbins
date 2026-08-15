@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { optionCardClassName } from '@/components/foundry';
 import { CheckIcon } from '@/components/icons';
 import { GUIDE_STEPS, indexOfStep, type GuideStepId } from './guide';
 
@@ -31,13 +32,12 @@ export function StepRail({
                 onClick={() => onSelect(step.id)}
                 aria-current={isCurrent ? 'step' : undefined}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs outline-none transition-colors ease-emphasized',
-                  'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                  isCurrent
-                    ? 'border-primary bg-primary/10 text-foreground'
-                    : isDone
-                      ? 'border-border bg-card/40 text-muted-foreground hover:bg-secondary/60'
-                      : 'border-border/70 bg-transparent text-muted-foreground hover:bg-secondary/50',
+                  'flex items-center gap-2 text-xs',
+                  optionCardClassName(isCurrent, 'chip'),
+                  isCurrent ? 'text-foreground' : 'text-muted-foreground',
+                  // A step not yet reached recedes further than a done one: the shared
+                  // unselected surface marks "visited", so an upcoming chip stays bare.
+                  !isCurrent && !isDone && 'border-border/70 bg-transparent',
                 )}
               >
                 <span

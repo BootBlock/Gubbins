@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { Tooltip, useRovingRadioGroup } from '@/components/foundry';
+import { optionCardClassName, Tooltip, useRovingRadioGroup } from '@/components/foundry';
 import { FolderIcon } from '@/components/icons';
 import { LOCATION_KINDS, locationKindLabel, type LocationKind } from '../location-kind';
 import { LocationKindIcon } from './LocationKindIcon';
@@ -59,11 +59,9 @@ export function LocationKindPicker({
               onClick={() => selectAt(index)}
               onKeyDown={(e) => onKeyDown(e, index)}
               className={cn(
-                'grid size-8 place-items-center rounded-lg border outline-none transition-transform [&_svg]:size-4',
-                'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                checked
-                  ? 'border-primary bg-primary/15 text-primary scale-110'
-                  : 'border-border text-muted-foreground hover:bg-secondary/60',
+                'grid size-8 place-items-center [&_svg]:size-4',
+                optionCardClassName(checked, 'swatch'),
+                checked ? 'text-primary scale-110' : 'text-muted-foreground',
               )}
             >
               {choice === null ? <FolderIcon aria-hidden /> : <LocationKindIcon kind={choice} />}
