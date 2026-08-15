@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Button, Input, Modal, useRovingRadioGroup } from '@/components/foundry';
+import { Button, Input, Modal, optionCardClassName, useRovingRadioGroup } from '@/components/foundry';
 import { cn } from '@/lib/utils';
 import type { Item } from '@/db/repositories';
 import {
@@ -264,12 +264,7 @@ function ModeButton({
       type="button"
       data-testid={testid}
       onClick={onClick}
-      className={cn(
-        'rounded-xl border p-3 text-left transition-all',
-        active
-          ? 'border-primary bg-primary/10 ring-2 ring-primary/30'
-          : 'border-border bg-secondary/30 hover:bg-secondary/50',
-      )}
+      className={optionCardClassName(active, 'compact')}
     >
       <span className="block text-sm font-semibold">{title}</span>
       <span className="block text-xs text-muted-foreground">{subtitle}</span>

@@ -10,9 +10,10 @@ export { Button, buttonVariants, type ButtonProps } from './button';
 export { CloseButton, type CloseButtonProps } from './close-button';
 export { Banner, bannerVariants, type BannerProps } from './banner';
 export { Surface, type SurfaceProps } from './surface';
-// The shared visual language for a selectable option-card tile — base chrome plus the
-// selected/unselected token pair. Call sites bring their own layout, interaction and ARIA.
-export { optionCardClassName } from './option-card';
+// The shared visual language for a selectable option-card tile — base chrome, focus ring and
+// the selected/unselected token pair, at one of four densities. Call sites bring their own
+// layout, interaction and ARIA.
+export { optionCardClassName, type OptionCardSize } from './option-card';
 export { ReorderList, type ReorderListProps, type ReorderListItem } from './reorder-list';
 export { Spinner, type SpinnerProps } from './spinner';
 export { Input, Checkbox, type InputProps } from './input';

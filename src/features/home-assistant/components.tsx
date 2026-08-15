@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { Surface } from '@/components/foundry';
+import { optionCardClassName, Surface } from '@/components/foundry';
 import { CheckIcon, CopyIcon, ErrorIcon, type LucideIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 
@@ -108,13 +108,7 @@ export function ChoiceCards<T extends string>({
               tabIndex={tabIndex}
               onClick={() => selectAt(index)}
               onKeyDown={(e) => onKeyDown(e, index)}
-              className={cn(
-                'flex h-full items-start gap-3 rounded-xl border p-3 text-left outline-none transition-colors ease-emphasized',
-                'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                checked
-                  ? 'border-primary bg-primary/10'
-                  : 'border-border bg-card/30 hover:border-border hover:bg-secondary/50',
-              )}
+              className={cn('flex h-full items-start gap-3', optionCardClassName(checked, 'compact'))}
             >
               {option.Icon ? (
                 <span
