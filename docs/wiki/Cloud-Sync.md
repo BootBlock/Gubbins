@@ -55,11 +55,16 @@ A [[cycle count|Cycle-Counts-and-Audit-Day]] is the one stock change that is *no
 it isn't a movement: it says what is physically on the shelf. If a drawer reads 10, and two people
 each count it and both find 8, adding up the two "−2" corrections would land on **6** — a figure
 neither of them saw. Instead syncing settles on what was counted, **8**. Where the two counters
-disagreed, the **later** count stands, on the reasoning that it is the more recent look at the
+disagreed, the **later** correction stands, on the reasoning that it is the more recent look at the
 shelf.
 
 Movements made *after* a count are still added on top of it as usual, so a count is a fresh starting
 point rather than the last word.
+
+> **ℹ️ Note**
+> This applies to a count that had something to correct. A count that finds the figure already
+> right changes nothing and records nothing, so it leaves no mark for syncing to prefer over an
+> older count from another device.
 
 ### When two devices create the same thing
 

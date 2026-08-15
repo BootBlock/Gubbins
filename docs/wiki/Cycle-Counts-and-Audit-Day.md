@@ -49,10 +49,11 @@ Two people can count the same place at once — a phone each on audit day, or a 
 followed by a check at the desk — without the two counts fighting each other. A count is a
 statement about what's *there*, not a change to what's there, so counting a shelf twice is not
 "minus two, twice": once the devices [[sync|Cloud-Sync]] they settle on what was counted, and if
-the two counters disagreed, the **later** count is the one that stands.
+the two counters disagreed, the **later** correction is the one that stands.
 
 Anything genuinely used or received *after* a count is still applied on top of it, so a count sets
-a fresh starting point rather than freezing the shelf.
+a fresh starting point rather than freezing the shelf. This works per line: a count of a
+[[lot|Batches-and-Lots]] settles that lot.
 
 ## Audit day
 

@@ -437,13 +437,19 @@ describe('absolute cycle counts — the #633 scenario end-to-end', () => {
   ];
 
   /**
-   * Wait for the wall clock to tick, so the next ledger row is stamped strictly later than the
-   * last. Two writes inside one millisecond are a genuine tie the replay resolves by rule (see the
-   * pure tests); these cases are about what happens when the order *is* known.
+   * Wait long enough that the next ledger row is stamped strictly later than the last. Two writes
+   * inside one millisecond are a genuine tie the replay resolves by rule (see the pure tests);
+   * these cases are about what happens when the order *is* known.
+   *
+   * Two whole milliseconds, not one: `created_at` is `ROUND(unixepoch('now','subsec') * 1000)`
+   * while `Date.now()` truncates, so waiting for `Date.now()` merely to change can leave under a
+   * microsecond of real time before the next write, and rounding can then land both writes on the
+   * same stamp. Waiting for it to advance by two guarantees more than a millisecond of real time
+   * has passed, and `ROUND` is monotonic, so the stamps must differ.
    */
   async function clockTick(): Promise<void> {
     const from = Date.now();
-    while (Date.now() <= from) await new Promise((resolve) => setTimeout(resolve, 1));
+    while (Date.now() < from + 2) await new Promise((resolve) => setTimeout(resolve, 1));
   }
 
   /** Merge each device's view of the other, exactly as the real sync does from both ends. */
@@ -557,7 +563,7 @@ describe('absolute cycle counts — the #633 scenario end-to-end', () => {
 
   it('records the counted quantity, not the correction, and only for the count’s own writes', async () => {
     // The switch must close behind the count: the adjustment that follows it is a movement again.
-    const { a, itemsA, item, drawer } = await twoDevicesHolding(10);
+    const { a, b, itemsA, item, drawer } = await twoDevicesHolding(10);
     try {
       await itemsA.reconcile(countOf(item, drawer, 8));
       await clockTick(); // so `ORDER BY created_at` below is the order they were written in
@@ -573,6 +579,102 @@ describe('absolute cycle counts — the #633 scenario end-to-end', () => {
       ]);
     } finally {
       await a.close();
+      await b.close();
     }
   });
+
+  it('does not assert a whole-placement count, whose per-lot figures nobody observed', async () => {
+    // A count that names no lot states a total, which `placementDeltaStatements` spreads across
+    // lots FEFO. Those per-lot figures are an allocation, not an observation, and asserting them
+    // would let two devices' different allocations converge on a total neither counter reported.
+    const { a, b, itemsA, item, drawer } = await twoDevicesHolding(10);
+    try {
+      await itemsA.reconcile([
+        { itemId: item.id, counted: 8, locationName: drawer.name, locationId: drawer.id },
+      ]);
+      expect((await itemsA.getById(item.id))!.quantity).toBe(8);
+      const asserted = await a.queryOne<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM stock_deltas WHERE item_id = ? AND asserted_quantity IS NOT NULL;',
+        [item.id],
+      );
+      expect(Number(asserted?.n)).toBe(0);
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+
+  /** One placement's ledger, projected as the replay consumes it. */
+  async function ledgerOf(driver: MemoryDriver, itemId: string): Promise<StockQuantityDelta[]> {
+    const rows = await driver.query<{
+      id: string;
+      quantity_delta: number;
+      created_at: number;
+      asserted_quantity: number | null;
+    }>('SELECT id, quantity_delta, created_at, asserted_quantity FROM stock_deltas WHERE item_id = ?;', [
+      itemId,
+    ]);
+    return rows.map((r) => ({
+      id: String(r.id),
+      quantityDelta: Number(r.quantity_delta),
+      createdAt: Number(r.created_at),
+      assertedQuantity: r.asserted_quantity == null ? null : Number(r.asserted_quantity),
+    }));
+  }
+
+  it('stamps a count past the newest row at its placement, however that row was stamped', async () => {
+    // The deterministic half of the two same-instant cases below: a row is planted a minute in the
+    // future — the shape a peer with a fast clock syncs in — and the count that follows must still
+    // sort after it. Without the nudge the count takes the plain clock, lands before a row it is
+    // meant to supersede, and the placement's ledger stops reconstructing its own row.
+    const { a, b, itemsA, item, drawer } = await twoDevicesHolding(10);
+    try {
+      const ahead = Date.now() + 60_000;
+      await a.execute(
+        `INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, created_at)
+         VALUES ('planted', ?, ?, '', 0, ?);`,
+        [item.id, drawer.id, ahead],
+      );
+      await itemsA.reconcile(countOf(item, drawer, 8));
+
+      const assertion = await a.queryOne<{ created_at: number }>(
+        'SELECT created_at FROM stock_deltas WHERE item_id = ? AND asserted_quantity IS NOT NULL;',
+        [item.id],
+      );
+      expect(Number(assertion?.created_at)).toBeGreaterThan(ahead);
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+
+  // A device's own ledger must always replay back to its own stored quantity — that is the
+  // completeness guard `reconcileStock` uses to decide a side is trustworthy. A count and a
+  // movement committing in the same millisecond would tie, and the tie rule (count first) would
+  // then reconstruct the wrong figure for one of the two orderings — which fails the guard for
+  // that placement on *every* future sync, quietly dropping it out of the convergence engine.
+  // Both orderings are run without a clock tick, so they land in the same instant.
+  for (const [name, order] of [
+    ['a movement then a count', ['move', 'count']],
+    ['a count then a movement', ['count', 'move']],
+  ] as const) {
+    it(`reconstructs the row when ${name} land in the same instant`, async () => {
+      const { a, b, itemsA, item, drawer } = await twoDevicesHolding(10);
+      try {
+        await clockTick(); // separate the create seed, so only the pair below can tie
+        for (const step of order) {
+          if (step === 'move') await itemsA.adjustQuantity(item.id, -1);
+          else await itemsA.reconcile(countOf(item, drawer, 8));
+        }
+        const stored = await a.queryOne<{ quantity: number }>(
+          'SELECT quantity FROM stock_batches WHERE item_id = ?;',
+          [item.id],
+        );
+        expect(replayStockQuantity(await ledgerOf(a, item.id))).toBe(Number(stored?.quantity));
+      } finally {
+        await a.close();
+        await b.close();
+      }
+    });
+  }
 });

@@ -68,10 +68,19 @@ export function reconcileGauge(
  *
  * Ordering is `(createdAt, count-before-movement, id)` — computed from replicated values alone, so
  * both devices reach it identically and the result is commutative. The middle term only decides
- * rows stamped the *same millisecond*, where there is genuinely no evidence of which came first: a
- * count is then treated as the earlier event, so a movement sharing its instant is still applied on
- * top. That is the safe reading of a tie — the alternative discards a real movement, which is the
- * failure §7.3's whole delta design exists to prevent.
+ * rows stamped the *same millisecond*, which can now only happen **across** devices: a count nudges
+ * its own stamp past its placement's newest row (see the capture triggers), so one device's history
+ * is always strictly ordered. Across devices a tie carries no evidence of which came first, so the
+ * count is treated as the earlier event and a movement sharing its instant is still applied on top.
+ * That is the safe reading — the alternative discards a real movement, which is the failure §7.3's
+ * whole delta design exists to prevent.
+ *
+ * `createdAt` is each device's own wall clock, deliberately **not** shifted by the sync `offset`
+ * that LWW comparisons use: applying it would give the two devices different orderings of the same
+ * rows, and a CRDT that is not commutative converges on nothing. So a badly skewed clock can order
+ * a count against a movement wrongly, exactly as it can pick the wrong LWW winner. The stakes are
+ * higher here — a mis-ordered movement is absorbed rather than overwritten — but there is no
+ * device-independent ordering available to use instead.
  *
  * Unclamped because the caller decides what a negative total means: converging a placement floors
  * it at 0 (see {@link reconcileStockQuantity}), while checking whether a device's own ledger
@@ -82,9 +91,11 @@ export function reconcileGauge(
  */
 export function replayStockQuantity(deltas: readonly StockQuantityDelta[]): number {
   const rank = (d: StockQuantityDelta): number => (d.assertedQuantity === null ? 1 : 0);
-  const ordered = [...deltas].sort(
-    (a, b) => a.createdAt - b.createdAt || rank(a) - rank(b) || a.id.localeCompare(b.id),
-  );
+  // Ids compare by code unit, not `localeCompare` — this order decides which movements survive,
+  // so it must not vary with the device's locale.
+  const byId = (a: StockQuantityDelta, b: StockQuantityDelta): number =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  const ordered = [...deltas].sort((a, b) => a.createdAt - b.createdAt || rank(a) - rank(b) || byId(a, b));
   let from = 0;
   let total = 0;
   for (let i = ordered.length - 1; i >= 0; i--) {

@@ -1600,17 +1600,35 @@ const baselineStatements: SqlStatement[] = [
     // the recompute triggers write `item_stock`/`items`, not `stock_batches`, so this never
     // recurses (recursive_triggers is off). A zero-quantity seed row records nothing.
     //
-    // `asserted_quantity` is `NEW.quantity` only while the `asserting` switch is on (issue #633) —
-    // the resulting quantity *is* the physically counted figure, since a count sets the row
-    // absolutely. NULL otherwise, marking the row an ordinary relative movement.
+    // `asserted_quantity` is `NEW.quantity` only while the `asserting` switch is on (issue #633).
+    // Only a count naming its own lot asserts, and such a count sets that row absolutely, so the
+    // resulting quantity *is* the figure physically observed. NULL otherwise, marking the row an
+    // ordinary relative movement.
+    //
+    // An asserting row also takes a `created_at` of `max(now, 1 + the placement's newest row)`
+    // rather than plain `now`. The replay supersedes everything ordered before an assertion, so
+    // ordering is load-bearing where a plain sum did not care — and the millisecond stamp is too
+    // coarse to separate a movement from a count committed in the same instant on this device.
+    // Left tied, the ledger would replay to a quantity the row does not hold, and the reconcile
+    // completeness guard would reject this side for that placement on every sync from then on,
+    // silently dropping it out of the convergence engine. Nudging the assertion past what it
+    // supersedes keeps a device's own history strictly ordered. Only assertions do this; an
+    // ordinary movement keeps the plain clock, because summing does not care about ties.
     sql: `
         CREATE TRIGGER trg_stock_batches_capture_ins
         AFTER INSERT ON stock_batches
         FOR EACH ROW
         WHEN NEW.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
-          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
+          INSERT INTO stock_deltas
+            (id, item_id, location_id, batch_key, quantity_delta, created_at, asserted_quantity)
           VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity,
+                  CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
+                       THEN MAX(${SQL_NOW_MS},
+                                1 + (SELECT COALESCE(MAX(created_at), 0) FROM stock_deltas
+                                     WHERE item_id = NEW.item_id AND location_id = NEW.location_id
+                                       AND batch_key = NEW.batch_key))
+                       ELSE ${SQL_NOW_MS} END,
                   CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
                        THEN NEW.quantity END);
         END;
@@ -1619,19 +1637,29 @@ const baselineStatements: SqlStatement[] = [
   {
     // Capture the actually-applied, CHECK-clamped change on every quantity move. `NEW - OLD` is
     // reality (the `CHECK (quantity >= 0)` has already vetoed any write that would go negative), so
-    // `stock_batches.quantity == Σ(stock_deltas)` holds by construction for every write path — and
-    // still does with assertions in the ledger, because an asserting row records the *same* true
-    // `NEW - OLD` alongside the figure asserted. Only the cross-device replay reads them
-    // differently (issue #633); a single device's sum is untouched.
+    // every row records a true change whether or not it also asserts a quantity. A ledger written
+    // only by this device therefore still sums to its own `stock_batches.quantity`. That stops
+    // being the reconstruction rule once a **merge** brings in another device's assertion, since an
+    // assertion replaces the sum before it rather than adding to it — from then on the replay, not
+    // the sum, is what reconstructs the row (issue #633; see `replayStockQuantity`).
+    //
+    // The `created_at` expression is the assertion-ordering nudge explained on the INSERT trigger.
     sql: `
         CREATE TRIGGER trg_stock_batches_capture_upd
         AFTER UPDATE OF quantity ON stock_batches
         FOR EACH ROW
         WHEN NEW.quantity <> OLD.quantity AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
-          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
+          INSERT INTO stock_deltas
+            (id, item_id, location_id, batch_key, quantity_delta, created_at, asserted_quantity)
           VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key,
                   NEW.quantity - OLD.quantity,
+                  CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
+                       THEN MAX(${SQL_NOW_MS},
+                                1 + (SELECT COALESCE(MAX(created_at), 0) FROM stock_deltas
+                                     WHERE item_id = NEW.item_id AND location_id = NEW.location_id
+                                       AND batch_key = NEW.batch_key))
+                       ELSE ${SQL_NOW_MS} END,
                   CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
                        THEN NEW.quantity END);
         END;
