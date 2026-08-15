@@ -239,6 +239,16 @@ kicked off with "implement S2".
 - **S2 — Durable base checkpoint (Fork C1).** `base_quantity`/`base_epoch`, fold-on-prune, and the
   replay change to `base + Σ(deltas after base_epoch)`. Removes the long-lived-batch pruning
   fragility. Schedulable independently once S1 is stable.
+  - **Compose this with the count assertions added for #633.** A `stock_deltas` row may now carry an
+    `asserted_quantity` — a physically counted figure that *replaces* the running total rather than
+    adding to it (`replayStockQuantity`). So fold-on-prune cannot be a plain `base += Σ pruned
+    deltas`: an era containing an assertion folds to *that assertion plus the deltas after it*, and
+    `base_epoch` must not be allowed to swallow an assertion newer than the deltas it summarises.
+    Replaying the pruned era gets both cases right, but only if the existing base goes into the
+    replay — `replayStockQuantity` starts from **0** when nothing in the list asserts, so feeding it
+    the era alone would discard `base_quantity` on every prune after the first. Prepend a synthetic
+    assertion carrying the current `base_quantity`, stamped at the current `base_epoch`, and the new
+    base is whatever the replay returns.
 - **S3 — Wiki + conflict-review copy. ✅ Shipped (with S1).** Updated the sync/backup wiki page to
   describe that concurrent stock movements now *merge* rather than one side winning. (S0–S2 are
   internal; only the observable convergence behaviour touches the wiki — the wiki rule triggers on

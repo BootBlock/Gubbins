@@ -139,12 +139,8 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
     const widget = await items.create({ name: 'Widget', quantity: 10 });
     const gadget = await items.create({ name: 'Gadget', quantity: 5 });
     const updated = await items.reconcile([
-      {
-        itemId: widget.id,
-        counted: 8,
-        note: 'Cycle count of Drawer A2: counted 8, expected 10 (adjustment -2).',
-      },
-      { itemId: gadget.id, counted: 5, note: 'unchanged' }, // zero variance → skipped
+      { itemId: widget.id, counted: 8, locationName: 'Drawer A2' },
+      { itemId: gadget.id, counted: 5, locationName: 'Drawer A2' }, // zero variance → skipped
     ]);
     expect(updated).toHaveLength(1);
     expect(updated[0].quantity).toBe(8);
@@ -152,6 +148,9 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
     const history = await items.getHistory(widget.id);
     const recon = history.rows.find((h) => h.action === 'RECONCILED');
     expect(recon?.quantityDelta).toBe(-2);
+    // The note quotes the same on-hand the delta was measured against (issue #633), so the
+    // Activity Log's detail line and its −2 badge can never tell two different stories.
+    expect(recon?.note).toBe('Cycle count of Drawer A2: counted 8, expected 10 (adjustment -2).');
   });
 
   it('refuses to reconcile a non-discrete item or a negative count', async () => {
@@ -160,13 +159,13 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
       trackingMode: 'CONSUMABLE_GAUGE',
       gauge: { unitOfMeasure: 'g', grossCapacity: 1000 },
     });
-    await expect(items.reconcile([{ itemId: gauge.id, counted: 5, note: 'x' }])).rejects.toBeInstanceOf(
-      DbError,
-    );
+    await expect(
+      items.reconcile([{ itemId: gauge.id, counted: 5, locationName: 'Bench' }]),
+    ).rejects.toBeInstanceOf(DbError);
     const widget = await items.create({ name: 'Widget', quantity: 3 });
-    await expect(items.reconcile([{ itemId: widget.id, counted: -1, note: 'x' }])).rejects.toBeInstanceOf(
-      DbError,
-    );
+    await expect(
+      items.reconcile([{ itemId: widget.id, counted: -1, locationName: 'Bench' }]),
+    ).rejects.toBeInstanceOf(DbError);
   });
 
   it('serialised audit: soft-deletes a missing instance and logs RECONCILED -1', async () => {
@@ -216,7 +215,7 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
 
       const result = await items.authoriseCount({
         locationId: drawer.id,
-        quantityAdjustments: [{ itemId: widget.id, counted: 8, note: 'counted 8, expected 10' }],
+        quantityAdjustments: [{ itemId: widget.id, counted: 8, locationName: 'Bench' }],
         serialisedAdjustments: [{ itemId: meter.id, note: 'not found' }],
       });
 
@@ -250,7 +249,7 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
       await expect(
         items.authoriseCount({
           locationId: drawer.id,
-          quantityAdjustments: [{ itemId: widget.id, counted: 8, note: 'counted 8' }],
+          quantityAdjustments: [{ itemId: widget.id, counted: 8, locationName: 'Bench' }],
           serialisedAdjustments: [{ itemId: gauge.id, note: 'not found' }],
         }),
       ).rejects.toBeInstanceOf(DbError);
@@ -267,7 +266,7 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
 
       const result = await items.authoriseCount({
         locationId: unassignedId,
-        quantityAdjustments: [{ itemId: widget.id, counted: 3, note: 'counted 3, expected 4' }],
+        quantityAdjustments: [{ itemId: widget.id, counted: 3, locationName: 'Bench' }],
         serialisedAdjustments: [],
       });
 

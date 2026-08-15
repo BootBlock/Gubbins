@@ -145,7 +145,7 @@ describe('ItemRepository — batch-aware stock (Phase 28)', () => {
 
     // Blind count finds only 7 of LOT9.
     await items.reconcile([
-      { itemId: item.id, counted: 7, note: 'Audit LOT9', locationId: drawer.id, batch },
+      { itemId: item.id, counted: 7, locationName: 'Drawer', locationId: drawer.id, batch },
     ]);
 
     const batches = await items.listItemBatches(item.id);

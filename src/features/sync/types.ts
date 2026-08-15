@@ -116,6 +116,16 @@ export interface GaugeResolution {
 export interface StockQuantityDelta {
   readonly id: string;
   readonly quantityDelta: number;
+  /** Epoch-ms the movement was recorded — the replay's running order (`id` breaks a tie). */
+  readonly createdAt: number;
+  /**
+   * The quantity **physically observed** at the placement, when this row came from a cycle count
+   * rather than a movement (issue #633); `null` for every ordinary delta. An absolute count
+   * supersedes the ledger before it, so the replay restarts from this figure instead of adding
+   * `quantityDelta` to what came before — which is what makes counting the same shelf on two
+   * devices idempotent instead of applying both corrections.
+   */
+  readonly assertedQuantity: number | null;
 }
 
 /**
