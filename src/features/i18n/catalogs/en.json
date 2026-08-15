@@ -1439,6 +1439,8 @@
   "db.field.roleName": "role name",
   "db.field.username": "username",
   "db.field.alias": "alias",
+  "network.error.offline": "This device is offline, so nothing could be sent or received. Your data on this device is unaffected — try again once you have a connection.",
+  "network.error.unreachable": "Gubbins could not reach the service. Your connection may have dropped, or the service may be temporarily unavailable. Your data on this device is unaffected — try again in a moment.",
   "nav.webhooks": "Webhooks",
   "webhooks.title": "Webhooks",
   "webhooks.add": "Add webhook",

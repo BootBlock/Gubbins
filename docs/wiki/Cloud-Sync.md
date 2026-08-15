@@ -111,6 +111,27 @@ restore your version instead of losing it.
 > automatically so this device's storage stays healthy. Review anything you want to keep or restore
 > soon after it appears rather than leaving it indefinitely.
 
+## When Gubbins can't reach your Drive
+
+Syncing to **Google Drive** needs a working connection. If you sync without one — on a train, in a
+workshop with no signal, or while Drive is briefly unreachable — Gubbins says so in plain words
+rather than showing a technical message, and distinguishes the two cases: that **this device is
+offline**, or that it's online but **couldn't reach the service**.
+
+If the attempt never got through, nothing was read and nothing was published, so your inventory is
+exactly as you left it. Carry on working and sync again when you're back on a connection. (A
+connection that drops *part-way* through is a different case, covered in
+[[when your changes can't be published|#when-your-changes-cant-be-published]] below.)
+
+> **ℹ️ Note**
+> The **local folder** option doesn't go over the network at all — Gubbins writes the shared copy
+> straight into the folder, and whichever cloud tool syncs that folder catches up in its own time.
+> So a folder sync works offline; it's the folder's own service that needs the connection.
+
+> **ℹ️ Note**
+> Everything *except* syncing keeps working offline — adding items, counting stock, checking things
+> out. See [[How your data is stored|How-Your-Data-Is-Stored]].
+
 ## When the shared copy can't be read
 
 Your devices meet through a single **shared copy** of your inventory — a file in the folder or
