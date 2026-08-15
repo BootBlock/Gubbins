@@ -20,6 +20,7 @@ import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { BUILTIN_USER_IDS } from './constants';
 import { rowToUser } from './mappers';
+import { duplicateNameError, foldedNameFilter, matchesFoldedName } from './name-lookup';
 import { tombstoneStatement } from './tombstone';
 import type { CreateUserInput, Page, PageParams, UpdateUserInput, User, UserRow } from './types';
 
@@ -39,14 +40,24 @@ export class UserRepository extends BaseRepository {
     return row ? rowToUser(row) : undefined;
   }
 
-  /** Look a user up by sign-in handle (case-insensitive), or `undefined`. */
+  /**
+   * Look a user up by sign-in handle (case-insensitive), or `undefined`.
+   *
+   * Matched in JS rather than by the collation (issue #679). `idx_users_username` folds ASCII
+   * A–Z only, so `WHERE username = ? COLLATE NOCASE` would let `josé` and `JOSÉ` be registered
+   * as two accounts — and then sign in as whichever one the query happened to reach. See
+   * `name-lookup`; the read is ordered so a database that already holds both resolves the same
+   * way every time rather than by whichever row SQLite returned first.
+   */
   async findByUsername(username: string): Promise<User | undefined> {
     const trimmed = username.trim();
     if (trimmed.length === 0) return undefined;
-    const row = await this.driver.queryOne<UserRow>(
-      'SELECT * FROM users WHERE username = ? COLLATE NOCASE;',
-      [trimmed],
+    const filter = foldedNameFilter('username', [trimmed]);
+    const rows = await this.driver.query<UserRow>(
+      `SELECT * FROM users WHERE ${filter.sql} ORDER BY username, id;`,
+      filter.params,
     );
+    const row = rows.find((r) => matchesFoldedName(filter, r.username));
     return row ? rowToUser(row) : undefined;
   }
 
@@ -81,6 +92,8 @@ export class UserRepository extends BaseRepository {
     if (username.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A user must have a username.');
     }
+    // The index only refuses a handle it can fold (issue #679); this is the other half.
+    if (await this.findByUsername(username)) throw duplicateNameError('users.username');
     const displayName = input.displayName?.trim() || username;
     const id = crypto.randomUUID();
     await this.driver.execute(
@@ -111,6 +124,8 @@ export class UserRepository extends BaseRepository {
       if (username.length === 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'A user must have a username.');
       }
+      const holder = await this.findByUsername(username);
+      if (holder && holder.id !== id) throw duplicateNameError('users.username');
       sets.push('username = ?');
       params.push(username);
     }

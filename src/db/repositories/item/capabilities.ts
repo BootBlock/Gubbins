@@ -3,6 +3,7 @@
  * is classified into a numeric magnitude (backing >/< comparisons) or a text value
  * (backing EQUALS/categorical matches); one value per (item, key).
  */
+import { foldName } from '@/lib/name-fold';
 import { DbError } from '../../errors';
 import { DEFAULT_CAPABILITY_WEIGHT } from '../constants';
 import { rowToCapability } from '../mappers';
@@ -55,12 +56,13 @@ export function withCapabilities<TBase extends Constructor<ItemCoreRepository>>(
       const valueText = isNumeric ? null : raw.length > 0 ? raw : null;
 
       const id = crypto.randomUUID();
+      const superseded = await this.capabilityIdsForKey(itemId, key);
       await this.driver.transaction([
         // Replace any existing value for this key (case-insensitive) — one per (item,key).
-        {
-          sql: 'DELETE FROM capabilities WHERE item_id = ? AND key = ? COLLATE NOCASE;',
-          params: [itemId, key],
-        },
+        ...superseded.map((oldId) => ({
+          sql: 'DELETE FROM capabilities WHERE id = ?;',
+          params: [oldId],
+        })),
         {
           sql: `INSERT INTO capabilities (id, item_id, key, value_num, value_text, weight)
                 VALUES (?, ?, ?, ?, ?, ?);`,
@@ -113,10 +115,33 @@ export function withCapabilities<TBase extends Constructor<ItemCoreRepository>>(
     /** Remove a capability by key (case-insensitive). Deletions bypass the Hard Stop. */
     async removeCapability(itemId: string, key: string): Promise<void> {
       this.assertPermission('items:write');
-      await this.driver.execute('DELETE FROM capabilities WHERE item_id = ? AND key = ? COLLATE NOCASE;', [
-        itemId,
-        key.trim(),
-      ]);
+      const ids = await this.capabilityIdsForKey(itemId, key);
+      if (ids.length === 0) return;
+      await this.driver.transaction(
+        ids.map((id) => ({ sql: 'DELETE FROM capabilities WHERE id = ?;', params: [id] })),
+      );
+    }
+
+    /**
+     * The ids of `itemId`'s capabilities whose key is `key` — the one seam both the replace and
+     * the remove decide "same key?" through.
+     *
+     * **Decided in JS (issue #679).** `WHERE key = ? COLLATE NOCASE` folds ASCII A–Z only, so
+     * re-setting `Größe` as `GRÖSSE` left the old row in place and the item ended up carrying two
+     * values for one capability — which `UNIQUE (item_id, key COLLATE NOCASE)` permits but the
+     * sync merge's natural-key resolver treats as a collision, retiring one of them mid-merge.
+     * An item's capability set is small, so this reads it rather than narrowing as the
+     * dictionary lookups in `name-lookup` do; ordered so the answer is stable on a database that
+     * already holds both spellings.
+     */
+    private async capabilityIdsForKey(itemId: string, key: string): Promise<string[]> {
+      const needle = foldName(key);
+      if (needle.length === 0) return [];
+      const rows = await this.driver.query<{ id: string; key: string }>(
+        'SELECT id, key FROM capabilities WHERE item_id = ? ORDER BY key, id;',
+        [itemId],
+      );
+      return rows.filter((r) => foldName(r.key) === needle).map((r) => r.id);
     }
   };
 }

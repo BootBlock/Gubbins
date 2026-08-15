@@ -24,6 +24,7 @@ import { normaliseGrants } from '@/features/users/permissions';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { rowToRole } from './mappers';
+import { duplicateNameError, foldedNameFilter, matchesFoldedName } from './name-lookup';
 import { tombstoneStatement } from './tombstone';
 import type { CreateRoleInput, Page, PageParams, Role, RoleRow, UpdateRoleInput } from './types';
 
@@ -33,13 +34,22 @@ export class RoleRepository extends BaseRepository {
     return row ? rowToRole(row) : undefined;
   }
 
-  /** Look a role up by name (case-insensitive), or `undefined`. */
+  /**
+   * Look a role up by name (case-insensitive), or `undefined`.
+   *
+   * Matched in JS rather than by the collation (issue #679) — `idx_roles_name` folds ASCII A–Z
+   * only, so `WHERE name = ? COLLATE NOCASE` would answer "free" for a name that differs from a
+   * stored one by an accent's case alone. See `name-lookup`.
+   */
   async findByName(name: string): Promise<Role | undefined> {
     const trimmed = name.trim();
     if (trimmed.length === 0) return undefined;
-    const row = await this.driver.queryOne<RoleRow>('SELECT * FROM roles WHERE name = ? COLLATE NOCASE;', [
-      trimmed,
-    ]);
+    const filter = foldedNameFilter('name', [trimmed]);
+    const rows = await this.driver.query<RoleRow>(
+      `SELECT * FROM roles WHERE ${filter.sql} ORDER BY name, id;`,
+      filter.params,
+    );
+    const row = rows.find((r) => matchesFoldedName(filter, r.name));
     return row ? rowToRole(row) : undefined;
   }
 
@@ -63,6 +73,8 @@ export class RoleRepository extends BaseRepository {
     if (name.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A role must have a name.');
     }
+    // The index only refuses a duplicate it can fold (issue #679); this is the other half.
+    if (await this.findByName(name)) throw duplicateNameError('roles.name');
     const id = crypto.randomUUID();
     await this.driver.execute(
       `INSERT INTO roles (id, name, description, permissions, is_builtin)
@@ -83,6 +95,8 @@ export class RoleRepository extends BaseRepository {
       if (name.length === 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'A role must have a name.');
       }
+      const holder = await this.findByName(name);
+      if (holder && holder.id !== id) throw duplicateNameError('roles.name');
       sets.push('name = ?');
       params.push(name);
     }

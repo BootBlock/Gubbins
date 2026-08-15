@@ -4,7 +4,9 @@
  * (retained aliases keep their id; removals record a tombstone in the same
  * transaction) rather than wiped and reinserted.
  */
+import { foldName } from '@/lib/name-fold';
 import type { SqlStatement, SqlValue } from '../../rpc/driver';
+import { duplicateNameError, foldedNameFilter, matchesFoldedName } from '../name-lookup';
 import { tombstoneStatement } from '../tombstone';
 import { rowToItemAlias } from '../mappers';
 import type { Item, ItemAlias, ItemAliasRow, ScrapeApplyInput } from '../types';
@@ -35,6 +37,15 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
      * aliases keep their stable id (so LWW timestamps stay meaningful) and each removed
      * alias records a tombstone in the *same* transaction, so the deletion propagates on
      * the next sync instead of being resurrected from a peer (§7.2).
+     *
+     * **"Case-insensitively" means `lib/name-fold`'s fold, and the search is table-wide**
+     * (issue #679). `toLowerCase()` leaves `ß` and `İ` alone and `idx_item_aliases_alias` folds
+     * ASCII A–Z, so both of the old comparisons let `Größe` and `GRÖSSE` be filed as two
+     * aliases — legal to the index, but one alias to the sync merge's natural-key resolver,
+     * which then plans a merge the index rejects. The table-wide read is what makes the
+     * cross-item half of that reachable too: the index cannot refuse `CAFÉ` on a second item
+     * when a first already holds `Café`, so the refusal is raised here instead, in the same
+     * words SQLite uses for the spellings it *can* fold.
      */
     async setAliases(itemId: string, aliases: readonly string[]): Promise<ItemAlias[]> {
       this.assertPermission('items:write');
@@ -46,27 +57,40 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
       for (const raw of aliases) {
         const alias = raw.trim();
         if (alias.length === 0) continue;
-        const key = alias.toLowerCase();
+        const key = foldName(alias);
         if (seen.has(key)) continue;
         seen.add(key);
         cleaned.push(alias);
       }
 
+      // Every row in the table that folds onto a requested alias — this item's (which are
+      // retained) and any other item's (which make the request impossible to honour).
+      const filter = foldedNameFilter('alias', cleaned);
+      const claimed = (
+        await this.driver.query<ItemAliasRow>(
+          `SELECT * FROM item_aliases WHERE ${filter.sql} ORDER BY alias, id;`,
+          filter.params,
+        )
+      ).filter((row) => matchesFoldedName(filter, row.alias));
+      if (claimed.some((row) => row.item_id !== itemId)) {
+        throw duplicateNameError('item_aliases.alias');
+      }
+
       const existing = await this.listAliases(itemId);
-      const existingByKey = new Map(existing.map((a) => [a.alias.toLowerCase(), a]));
-      const desiredKeys = new Set(cleaned.map((a) => a.toLowerCase()));
+      const existingByKey = new Map(existing.map((a) => [foldName(a.alias), a]));
+      const desiredKeys = new Set(cleaned.map(foldName));
 
       const statements: SqlStatement[] = [];
       // Removals: existing aliases no longer wanted → DELETE + tombstone (atomically).
       for (const alias of existing) {
-        if (!desiredKeys.has(alias.alias.toLowerCase())) {
+        if (!desiredKeys.has(foldName(alias.alias))) {
           statements.push({ sql: 'DELETE FROM item_aliases WHERE id = ?;', params: [alias.id] });
           statements.push(tombstoneStatement('item_aliases', alias.id));
         }
       }
       // Additions: genuinely-new aliases → INSERT a fresh id (retained ones untouched).
       for (const alias of cleaned) {
-        if (!existingByKey.has(alias.toLowerCase())) {
+        if (!existingByKey.has(foldName(alias))) {
           statements.push({
             sql: 'INSERT INTO item_aliases (id, item_id, alias) VALUES (?, ?, ?);',
             params: [crypto.randomUUID(), itemId, alias],
@@ -149,6 +173,11 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
      * Resolve a BOM match key to a local item: first by exact (case-insensitive) MPN,
      * then by an alias mapping (§4). Returns undefined when nothing matches, so the
      * importer can leave the BOM line unmatched.
+     *
+     * The alias half matches through `lib/name-fold`, so an import finds the row `setAliases`
+     * would have refused to duplicate — the two halves of one identity question agreeing
+     * (issue #679). `mpn` keeps the collation: it carries no uniqueness constraint for a fold
+     * to disagree with, and it is a manufacturer's part number rather than a typed name.
      */
     async findByMatchKey(key: string): Promise<Item | undefined> {
       const trimmed = key.trim();
@@ -160,10 +189,13 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
       );
       if (byMpn) return this.getById(byMpn.id);
 
-      const byAlias = await this.driver.queryOne<{ item_id: string }>(
-        'SELECT item_id FROM item_aliases WHERE alias = ? COLLATE NOCASE LIMIT 1;',
-        [trimmed],
-      );
+      const filter = foldedNameFilter('alias', [trimmed]);
+      const byAlias = (
+        await this.driver.query<{ item_id: string; alias: string }>(
+          `SELECT item_id, alias FROM item_aliases WHERE ${filter.sql} ORDER BY alias, id;`,
+          filter.params,
+        )
+      ).find((row) => matchesFoldedName(filter, row.alias));
       return byAlias ? this.getById(byAlias.item_id) : undefined;
     }
   };

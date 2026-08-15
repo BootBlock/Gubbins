@@ -21,7 +21,9 @@ people are assigned to them.
 | **Stocker** | Add and edit items, move stock and run counts — but no deleting and no activity history |
 | **Viewer** | Look at everything except the activity history and user accounts; change nothing |
 
-Add your own with **Add role** whenever none of these quite fits.
+Add your own with **Add role** whenever none of these quite fits. Role names are matched **ignoring
+case, in any language**, so `Workshop Lead` and `WORKSHOP LEAD` are one role rather than two that
+look alike.
 
 > **ℹ️ Note**
 > These four are shown in your [[interface language|Language-and-Region]]. Rename one — or rewrite

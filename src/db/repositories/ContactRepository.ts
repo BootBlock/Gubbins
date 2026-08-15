@@ -12,6 +12,7 @@ import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { planCheckInAllForTarget } from './checkout-plan';
 import { rowToContact } from './mappers';
+import { duplicateNameError, foldedNameFilter, matchesFoldedName } from './name-lookup';
 import { tombstoneStatement } from './tombstone';
 import type {
   Contact,
@@ -69,14 +70,23 @@ export class ContactRepository extends BaseRepository {
     return Number(row?.n ?? 0);
   }
 
-  /** Look a contact up by name (case-insensitive), or `undefined`. */
+  /**
+   * Look a contact up by name (case-insensitive), or `undefined`.
+   *
+   * **Matched in JS, not by the collation (issue #679).** `WHERE name = ? COLLATE NOCASE` folds
+   * ASCII A–Z only, so `CAFÉ LTD` would not find `Café Ltd` and {@link resolveOrCreate} would
+   * mint a second contact for one person — a duplicate the index accepts and the sync merge's
+   * natural-key resolver does not. See `name-lookup` for how the query narrows and why.
+   */
   async findByName(name: string): Promise<Contact | undefined> {
     const trimmed = name.trim();
     if (trimmed.length === 0) return undefined;
-    const row = await this.driver.queryOne<ContactRow>(
-      'SELECT * FROM contacts WHERE name = ? COLLATE NOCASE;',
-      [trimmed],
+    const filter = foldedNameFilter('name', [trimmed]);
+    const rows = await this.driver.query<ContactRow>(
+      `SELECT * FROM contacts WHERE ${filter.sql} ORDER BY name, id;`,
+      filter.params,
     );
+    const row = rows.find((r) => matchesFoldedName(filter, r.name));
     return row ? rowToContact(row) : undefined;
   }
 
@@ -87,6 +97,9 @@ export class ContactRepository extends BaseRepository {
     if (name.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A contact must have a name.');
     }
+    // The index only refuses a duplicate it can fold (issue #679), so the folded half of the
+    // refusal is raised here — otherwise the Contacts screen mints `CAFÉ LTD` beside `Café Ltd`.
+    if (await this.findByName(name)) throw duplicateNameError('contacts.name');
     const id = crypto.randomUUID();
     await this.driver.execute(
       `INSERT INTO contacts (id, name, note, phone_mobile, phone_home, email, address)
@@ -134,6 +147,8 @@ export class ContactRepository extends BaseRepository {
       if (name.length === 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'A contact must have a name.');
       }
+      const holder = await this.findByName(name);
+      if (holder && holder.id !== id) throw duplicateNameError('contacts.name');
       sets.push('name = ?');
       params.push(name);
     }
