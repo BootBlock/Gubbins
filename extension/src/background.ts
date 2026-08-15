@@ -7,8 +7,10 @@
  * for the content script to parse with the shared Strategy parsers. Transport-level
  * failures are mapped to the §9.4.2 error taxonomy via the shared, unit-tested pure
  * {@link classifyHttpStatus} (`RATE_LIMITED`/`BLOCKED`/`NOT_FOUND`/`SERVER_ERROR`); a
- * transport-level failure with no response stays `NETWORK_TIMEOUT`, and a target this
- * worker's own allow-list refuses before any request is `UNSUPPORTED_SITE`.
+ * transport-level failure with no response stays `NETWORK_TIMEOUT`. A *supplier* URL this
+ * worker's own allow-list refuses before any request is `UNSUPPORTED_SITE`, since it is a
+ * link the user chose; the lookup and data-lookup gates build their own URLs from an
+ * allow-listed host, so a refusal there is a fault rather than a choice and stays `BLOCKED`.
  *
  * Note: MV3 service workers have no DOM, so parsing happens in the content script
  * (which does) — keeping this worker tiny and dependency-free.
