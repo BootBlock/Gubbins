@@ -184,4 +184,19 @@ describe('hasAuthoredMessage', () => {
     expect(hasAuthoredMessage(new Error(''))).toBe(false);
     expect(hasAuthoredMessage('a string, not an Error')).toBe(false);
   });
+
+  it('rejects every TypeError, recognised transport failure or not (issue #634)', () => {
+    // Nothing in the app throws a `TypeError`, so its message is always machine text. Rejecting
+    // the whole type is what stops a browser fetch phrasing the network classifier does not know
+    // about — Chrome, Firefox and Safari all word it differently — reaching the user verbatim.
+    expect(hasAuthoredMessage(new TypeError('Failed to fetch'))).toBe(false);
+    expect(hasAuthoredMessage(new TypeError('Load failed'))).toBe(false);
+    expect(hasAuthoredMessage(new TypeError('x.map is not a function'))).toBe(false);
+  });
+
+  it('keeps an authored sentence thrown under another engine error type', () => {
+    // `booking-overlap.ts` throws a `RangeError` carrying real copy, so the rejection above is
+    // deliberately narrowed to `TypeError` rather than every built-in error type.
+    expect(hasAuthoredMessage(new RangeError('A booking needs valid start and end dates.'))).toBe(true);
+  });
 });
