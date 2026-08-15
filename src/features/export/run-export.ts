@@ -69,7 +69,7 @@ import {
 } from './export-data';
 import type { TabularExportFormat } from './tabular-export';
 import type { ExportFormat, ExportScope, ReportExportKind } from './useExportStore';
-import type { VaultZipRequest, VaultZipResponse } from './export-vault.worker';
+import { zipInVaultWorker } from './zip-in-worker';
 
 const PAGE = 100;
 
@@ -500,7 +500,7 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   const { files, assets } = build;
 
   const assetBytes = await resolveAssets(assets);
-  const zip = await zipInWorker(files, assetBytes);
+  const zip = await zipInVaultWorker(files, assetBytes);
   const name = `gubbins-vault${suffix}-${stamp()}.zip`;
   download(new Blob([zip as BlobPart], { type: 'application/zip' }), name);
   return name;
@@ -524,23 +524,4 @@ async function resolveAssets(assets: readonly VaultAsset[]): Promise<Record<stri
     if (blob) out[asset.path] = new Uint8Array(await blob.arrayBuffer());
   }
   return out;
-}
-
-/** Zip the vault files + assets in the fflate Web Worker (§4.5). */
-function zipInWorker(files: Record<string, string>, assets: Record<string, Uint8Array>): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./export-vault.worker.ts', import.meta.url), {
-      type: 'module',
-    });
-    worker.onmessage = (event: MessageEvent<VaultZipResponse>) => {
-      resolve(event.data.zip);
-      worker.terminate();
-    };
-    worker.onerror = (err) => {
-      reject(err);
-      worker.terminate();
-    };
-    const request: VaultZipRequest = { files, assets };
-    worker.postMessage(request);
-  });
 }
