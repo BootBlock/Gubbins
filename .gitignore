@@ -63,6 +63,12 @@ bridge/webhooks.*.json
 # Belt-and-braces: a root-level webhooks.json (if the bridge is ever run from the repo root).
 /webhooks.json
 
+# The bridge's remembered identity (issue #672) — machine-local runtime state, written on first
+# start so consumers can recognise the bridge after its address changes. No secret, but it belongs
+# to one installation, so committing it would hand every clone the same identity.
+bridge/bridge-id
+/bridge-id
+
 # Data artefacts — a real database, dump, backup, or exported snapshot carries live inventory
 # data and must never enter this public repo (see the no-secrets rule in CLAUDE.md). These are
 # exactly the files a developer drops in the repo root while testing the backup/restore and

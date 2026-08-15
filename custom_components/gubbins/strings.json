@@ -41,6 +41,7 @@
     },
     "abort": {
       "already_configured": "This Gubbins bridge is already configured.",
+      "bridge_moved": "This Gubbins bridge is already set up — its existing entry now points at the address it answered on, so its entities, their history and any automations using them carry on unchanged.",
       "reauth_successful": "Reconnected to the Gubbins bridge with the new token.",
       "reconfigure_successful": "The Gubbins bridge details were updated."
     }

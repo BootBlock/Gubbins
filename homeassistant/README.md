@@ -36,7 +36,7 @@ data path.
 | Piece | Purpose |
 | --- | --- |
 | **Conversation intent** `GubbinsWhereIs` | The voice experience — "where are my {item}", "find my {item}", "how many {item} do I have". Speaks the bridge's ready-made sentence back. |
-| **Config flow** (UI setup) | Enter host, port and token in the UI. The token is stored by Home Assistant, never in YAML or this repo. A rotated token prompts you to reconnect, and *Reconfigure* moves the entry to a new host/port — neither needs the entry re-added. |
+| **Config flow** (UI setup) | Enter host, port and token in the UI. The token is stored by Home Assistant, never in YAML or this repo. A rotated token prompts you to reconnect, a bridge that changes IP is [followed automatically](#if-the-token-is-rotated-or-the-bridge-moves), and *Reconfigure* moves the entry to a new host/port — none of them needs the entry re-added. |
 | **`gubbins.search` service** | A read-only search you can call from scripts/automations; returns the matched items as response data. |
 | **`gubbins.adjust_quantity` service** | **Opt-in** signed change to a counted item's stock (negative = some went out). Moves a number only — for lending to a named borrower see the loan services below. Only works when the bridge runs with `GUBBINS_BRIDGE_ALLOW_WRITES=on`; the change syncs back to the app conflict-free. |
 | **`gubbins.adjust_gauge` service** | **Opt-in** use / refill of a *measured* consumable — grams of filament, millilitres of resin — by a (possibly fractional) signed amount. Same `GUBBINS_BRIDGE_ALLOW_WRITES=on` opt-in, same conflict-free sync back. |
@@ -113,13 +113,25 @@ Neither case needs the entry deleted and re-added.
   Assistant raises a **"Reconfigure/reauthenticate"** notification for the Gubbins entry.
   Mint a fresh API token in Gubbins (Users → an account → API tokens), paste it in, and the
   entry reconnects with its entities and history intact.
-- **Bridge moved to a different host or port.** Open *Settings → Devices & services →
-  Gubbins Inventory → ⋮ → **Reconfigure***, and change the host, port and token together.
+- **Bridge picked up a new IP address.** With mDNS advertising on, nothing to do: the entry is keyed
+  on the bridge's own [stable id](../bridge/README.md#the-bridges-stable-identity), not on its
+  address, so the next advertisement updates the existing entry in place — the entities, their
+  history and every automation using them carry on. Home Assistant says *"its existing entry now
+  points at the address it answered on"* rather than offering the bridge as a second integration.
+- **Bridge moved to a different host or port** (or mDNS is off). Open *Settings → Devices & services
+  → Gubbins Inventory → ⋮ → **Reconfigure***, and change the host, port and token together.
   The new details are verified against `GET /health` before they are saved, and the entry
   reloads itself afterwards.
 
   You have to re-enter the token on this step: Home Assistant never displays a stored
   credential back to you, so there is nothing to pre-fill it with.
+
+  Typing the new address into **Add integration** instead works too — it recognises the bridge and
+  corrects the entry you already have rather than adding a duplicate.
+
+> **Upgrading from an older bridge.** An entry added before the bridge reported an identity is still
+> keyed on `host:port`; it is re-keyed automatically the first time it connects to an updated bridge.
+> Until both sides are updated, an address change still needs *Reconfigure*.
 
 ### 3. Wire the voice sentences into Assist
 
@@ -625,7 +637,8 @@ To exercise the mDNS / zeroconf path end-to-end (HA isn't unit-testable here):
 2. *(Optional)* confirm the advertisement from another machine on the LAN — e.g.
    `avahi-browse -r _gubbins._tcp` (Linux) or `dns-sd -B _gubbins._tcp` (macOS). You should
    see the `Gubbins Bridge` instance with a TXT record of `path=/api/v1`, `api=v1`,
-   `version=…` — and **no token**.
+   `version=…`, `id=…` (the bridge's
+   [stable id](../bridge/README.md#the-bridges-stable-identity)) — and **no token**.
 
 3. In Home Assistant, open **Settings → Devices & services**. Within a minute a **Gubbins
    Inventory** discovered card should appear. Click **Configure**; the host/port are
@@ -670,6 +683,7 @@ there; the voice sentences and this guide stay under `homeassistant/`.
     manifest.json                            # integration metadata (HACS-compatible)
     const.py                                 # domain + config keys
     api.py                                   # thin HTTP client (reads + the opt-in writes)
+    bridge_id.py                             # how a bridge is identified: its stable id, never its address
     __init__.py                              # setup: client, coordinators, intent, gubbins.search + the write services
     coordinator.py                           # /health and /api/v1/status polling coordinators (health drives reauth when the token is rejected)
     config_flow.py                           # UI config flow: manual host/port/token, zeroconf discovery, reauth + reconfigure (all verify /health)

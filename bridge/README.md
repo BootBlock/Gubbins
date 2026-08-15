@@ -223,7 +223,7 @@ byte-for-byte identical success bodies, so existing consumers keep working uncha
 
 | Endpoint (alias of) | Returns |
 | --- | --- |
-| `GET /health` (`/api/v1/health`) | `{ ok, itemCount, snapshotGeneratedAt, … }` — liveness + a cheap snapshot summary + [snapshot freshness](#snapshot-freshness-and-health). |
+| `GET /health` (`/api/v1/health`) | `{ ok, bridgeId, itemCount, snapshotGeneratedAt, … }` — liveness, [which bridge answered](#the-bridges-stable-identity), a cheap snapshot summary and [snapshot freshness](#snapshot-freshness-and-health). |
 | `GET /search?q=<query>&limit=<n>` (`/api/v1/search`) | `{ query, matches: ItemMatch[] }` — compact item DTOs (`id`, `name`, `quantity`, `locationName`, `mpn`, `manufacturer`). `limit` is clamped to `[1, 25]`. |
 | `GET /where?q=<query>` (`/api/v1/where`) | `{ query, matches: WhereIsMatch[], spoken }` — per-location breakdown plus one spoken British-English sentence for a voice assistant. |
 
@@ -258,6 +258,36 @@ The one exception is the [SSE event stream](#sse-event-stream): a `HEAD` of `/ap
 reports the media type the stream serves and returns immediately rather than opening a stream. It
 carries no `Content-Length` (the content is unbounded), and never the `429` a `GET` gives when the
 concurrent-stream cap is reached — a probe takes no slot, so it reports the endpoint, not the queue.
+
+### The bridge's stable identity
+
+`GET /health` also reports **`bridgeId`** — a short identifier for *this bridge*, which does **not**
+change when its address does. A consumer that keys on `host:port` cannot tell "the bridge I already
+know, on a new DHCP lease" from "a second bridge", and gets that wrong in the worst way: it keeps
+retrying the dead address while offering the live one as something new. The id is what lets it
+follow the bridge instead.
+
+Where it comes from, in order:
+
+1. **`GUBBINS_BRIDGE_ID`**, if you set one. Pin it when the identity has to survive a move to
+   different hardware.
+2. The **`bridge-id` file** in the bridge's working directory (`GUBBINS_BRIDGE_ID_FILE` to relocate
+   it) — written on first start and read on every start after that. This is the ordinary case and
+   needs no configuration.
+3. If that file cannot be written (a read-only filesystem), a value **derived from the machine's
+   name and port**, with a warning saying so. It is stable across restarts — which is the property
+   that matters — but it moves with the machine, so pin `GUBBINS_BRIDGE_ID` if that matters to you.
+
+The same value is advertised as the `id=` [TXT entry](#mdns--zeroconf-discovery), because a
+discovering consumer has no token yet and so cannot ask `/health` anything.
+
+> **It is not a credential.** The id says *which* bridge you are talking to; it grants nothing, is
+> advertised unauthenticated over mDNS by design, and reveals nothing about the inventory. A bridge
+> with no identity to report answers `bridgeId: null`, and a consumer falls back to its address.
+
+**In a container**, remember that the working directory usually goes with the container: mount
+`GUBBINS_BRIDGE_ID_FILE` somewhere persistent, or set `GUBBINS_BRIDGE_ID`, so a recreated container
+is still the same bridge.
 
 ### Snapshot freshness and health
 
@@ -2079,6 +2109,8 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_ALLOWED_ORIGINS` | no | *(hosted app)* | Comma-separated list of **browser origins** allowed to read a bridge response cross-origin (CORS). Defaults to the hosted app origin `https://bootblock.github.io`; **loopback origins (a dev server) are always allowed on top**. Add your own PWA origin here if you self-host the app on another domain and use "push to bridge" from the browser. Set to `*` to restore the old permissive wildcard. Only browsers are affected — a non-browser client (Home Assistant, `curl`, a scrape) sends no `Origin` and is unaffected. See [Cross-origin (CORS) policy](#cross-origin-cors-policy). |
 | `GUBBINS_BRIDGE_MDNS` | no | `off` | Advertise over mDNS so Home Assistant can auto-discover the bridge. `on` to enable. Carries **no secret**; only meaningful when LAN-exposed (auto-skipped on the loopback default). See [mDNS / zeroconf discovery](#mdns--zeroconf-discovery). |
 | `GUBBINS_BRIDGE_MDNS_NAME` | no | `Gubbins Bridge` | Service instance name shown in a discovery browser. |
+| `GUBBINS_BRIDGE_ID` | no | *(self-minted)* | Pin this bridge's [stable identity](#the-bridges-stable-identity) — how a consumer recognises the same bridge again after its address changes. Normally left unset: the bridge mints one on first start and remembers it. **Not a secret** (it authorises nothing, and is advertised over mDNS by design). Set it to carry the identity across a move to different hardware. |
+| `GUBBINS_BRIDGE_ID_FILE` | no | `bridge-id` | Where that self-minted id is remembered, relative to the working directory. Point it at a mounted path when the bridge runs in a container that is **recreated** rather than restarted. |
 | `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (quantity/gauge adjust, check out & in, move stock between locations) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this (or `GUBBINS_BRIDGE_ALLOW_PUSH`) is `on`.** HTTP writes additionally need the caller to hold `bridge:write` + `stock:write` (or `checkouts:write` for the two loan endpoints); the MCP tools are gated by process launch alone (stdio carries no credential). |
 | `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**; a **separate** opt-in from writes but a **strictly wider privilege** — a push merges caller-supplied content into the **whole** dataset, not a bounded stock delta, so treat it as at least as sensitive as writes. JSON source only. Same rate limit; the caller needs `bridge:write` + `sync:write`. |
 | `GUBBINS_BRIDGE_MAX_PUSH_BYTES` | no | `67108864` | Hard cap (bytes) on a pushed snapshot; default 64 MiB. An over-large push is rejected with `413`. Lower it on a constrained host. |
@@ -2131,14 +2163,14 @@ What is advertised (service type **`_gubbins._tcp.local`**):
 | --- | --- |
 | Instance name | `Gubbins Bridge` (override with `GUBBINS_BRIDGE_MDNS_NAME`). |
 | Port | the bridge's HTTP port. |
-| TXT | `server=gubbins-bridge`, `api=v1`, `path=/api/v1`, `version=<Gubbins version>`. |
+| TXT | `server=gubbins-bridge`, `api=v1`, `path=/api/v1`, `version=<Gubbins version>`, `id=<`[stable identity](#the-bridges-stable-identity)`>`. |
 
 The `version=` value is the **Gubbins release the checkout is on** (e.g. `0.3.0`) — the bridge
 has no version of its own to advertise. See [Updating the bridge](#updating-the-bridge).
 
-> **No secret is ever advertised.** The TXT record carries only the API path/version for
-> identification — **never** a credential. Home Assistant still prompts for the API token in
-> its UI; discovery only pre-fills the host and port. See
+> **No secret is ever advertised.** The TXT record carries only the API path/version and the
+> bridge's [stable identity](#the-bridges-stable-identity) — **never** a credential. Home Assistant
+> still prompts for the API token in its UI; discovery only pre-fills the host and port. See
 > [`../homeassistant/README.md`](../homeassistant/README.md) for the HA side.
 
 Advertising is **best-effort**: if the mDNS UDP port can't be bound (another responder such

@@ -108,14 +108,26 @@ its own entry in Home Assistant, and neither is set in stone.
   refusing it and raises a **reconnect** prompt against the Gubbins entry. Mint a new token in the
   app and paste it in — your entities, their history and any automations pointing at them carry on
   unchanged.
-- **If the bridge moves to a different address or port**, use **Reconfigure** on the entry
-  (*Settings → Devices & services → Gubbins Inventory → ⋮*) to point it at the new one. The details
-  are checked against the bridge before they're saved.
+- **If the bridge's address changes** — the usual cause being your router handing its machine a
+  different one — Home Assistant follows it on its own, as long as the bridge is advertising itself
+  (see **Discovery** above). Home Assistant recognises the bridge by an identity of its
+  own rather than by where it answers, so the entry you already have is simply pointed at the new
+  address. Nothing is duplicated, and nothing needs setting up again.
+- **If the bridge moves to a different machine or port** — or it isn't advertising itself — use
+  **Reconfigure** on the entry (*Settings → Devices & services → Gubbins Inventory → ⋮*) to point it
+  at the new one. The details are checked against the bridge before they're saved. Adding it again
+  from **Add integration** works just as well: Home Assistant spots that it's the bridge you already
+  have and corrects that entry instead of creating a second one.
 
 > **ℹ️ Note**
 > Reconfiguring asks for the token again as well as the address. Home Assistant never shows a
 > stored credential back to you, so there's nothing for it to pre-fill — have a token to hand
 > before you start.
+
+> **⚠️ Heads-up**
+> Following a moved bridge needs both halves up to date — the bridge and the custom integration.
+> Update both, and the first time the entry reconnects it starts recognising the bridge by identity;
+> until then an address change still means a trip to **Reconfigure**.
 
 > **⚠️ Heads-up**
 > The custom integration needs **Home Assistant 2025.2 or newer**. Everything else on this page —

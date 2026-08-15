@@ -1232,6 +1232,7 @@ export const openapiDocument: JsonValue = {
         responses: {
           200: response('Health summary.', '#/components/schemas/Health', {
             ok: true,
+            bridgeId: 'a2f1c0d4-5b6e-4f70-8a91-2c3d4e5f6071',
             itemCount: 4,
             snapshotGeneratedAt: '2025-06-27T06:13:20.000Z',
             snapshotStale: false,
@@ -2236,6 +2237,7 @@ export const openapiDocument: JsonValue = {
         type: 'object',
         required: [
           'ok',
+          'bridgeId',
           'itemCount',
           'snapshotGeneratedAt',
           'snapshotStale',
@@ -2250,6 +2252,17 @@ export const openapiDocument: JsonValue = {
             description:
               'False once the snapshot is stale — the bridge is still answering, but from data it ' +
               'knows is out of date. Treat a false value as "do not trust these numbers".',
+          },
+          bridgeId: {
+            type: 'string',
+            nullable: true,
+            description:
+              'Which bridge answered — a stable identifier that does NOT change when the ' +
+              "bridge's host, address or port does, so a consumer can recognise the same bridge " +
+              'again after a DHCP lease change instead of treating it as a new one. Null from a ' +
+              'bridge with none to report. It is an identifier, not a credential: it authorises ' +
+              'nothing and is also advertised in the mDNS TXT record.',
+            example: 'a2f1c0d4-5b6e-4f70-8a91-2c3d4e5f6071',
           },
           itemCount: { type: 'integer' },
           snapshotGeneratedAt: { type: 'string', nullable: true, format: 'date-time' },

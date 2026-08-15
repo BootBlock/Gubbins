@@ -26,6 +26,7 @@ close it, and no way to lend anything out in the first place.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime
 from typing import Any
@@ -50,6 +51,7 @@ from .api import (
     GubbinsRejectedError,
     GubbinsWritesDisabledError,
 )
+from .bridge_id import bridge_id_from_health
 from .const import (
     CONF_HOST,
     CONF_PORT,
@@ -65,6 +67,8 @@ from .const import (
 from .coordinator import GubbinsHealthCoordinator, GubbinsRuntimeData, GubbinsStatusCoordinator
 from .events import collect_location_ids, normalise_matches
 from .intent import async_register_intent, async_unregister_intent
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
@@ -155,6 +159,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = GubbinsHealthCoordinator(hass, entry, client)
     await coordinator.async_config_entry_first_refresh()
 
+    # The bridge has just told us who it is, so this is the moment to make sure the entry is keyed
+    # on that rather than on where it answered.
+    _async_reconcile_unique_id(hass, entry, coordinator.data)
+
     # The attention counts are deliberately refreshed *without* the config-entry variant: a
     # bridge older than the status endpoint must leave those entities unavailable, not stop
     # the entry (and with it the voice lookups, the services and the health sensor) loading.
@@ -196,6 +204,50 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.services.async_remove(DOMAIN, SERVICE_TRANSFER_STOCK)
             async_unregister_intent(hass)
     return unloaded
+
+
+def _async_reconcile_unique_id(
+    hass: HomeAssistant, entry: ConfigEntry, health: dict[str, Any] | None
+) -> None:
+    """Re-key an entry onto the bridge's own id once the bridge has reported one.
+
+    Entries created before the bridge had an identity are keyed on its ``host:port``, and so cannot
+    survive the address changing: the entry retries a dead address while the same bridge is offered
+    as a new discovery. Every successful health poll is a chance to fix that, and no user action is
+    needed — the id is a property of the bridge, not something to be configured.
+
+    It runs on every setup rather than once as a migration, because the id can legitimately change
+    at the *bridge's* end too: one recreated in a fresh container without a mounted id file mints
+    itself a new one. Adopting it keeps the entry, its entities and its history intact.
+
+    Two entries claiming one id is the only case left alone: Home Assistant's registry treats a
+    unique id as exclusive, so the duplicate is reported for the user to resolve rather than one
+    entry silently taking the other's identity.
+    """
+    bridge_id = bridge_id_from_health(health)
+    if bridge_id is None or entry.unique_id == bridge_id:
+        return
+
+    duplicate = next(
+        (
+            other
+            for other in hass.config_entries.async_entries(DOMAIN)
+            if other.entry_id != entry.entry_id and other.unique_id == bridge_id
+        ),
+        None,
+    )
+    if duplicate is not None:
+        _LOGGER.warning(
+            "The Gubbins bridge at %s:%s is set up twice — the entries %r and %r both point at it, "
+            "so its entities are duplicated. Remove whichever of the two you no longer use",
+            entry.data[CONF_HOST],
+            entry.data[CONF_PORT],
+            entry.title,
+            duplicate.title,
+        )
+        return
+
+    hass.config_entries.async_update_entry(entry, unique_id=bridge_id)
 
 
 def _iso_day(value: date | None) -> str | None:

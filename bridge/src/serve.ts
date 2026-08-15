@@ -15,8 +15,15 @@
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { isLanExposed, loadConfig, type BridgeConfig, type Env } from './config.ts';
+import {
+  DEFAULT_BRIDGE_ID_FILE,
+  parseBridgeId,
+  resolveBridgeId,
+  type ResolvedBridgeId,
+} from './bridge-id.ts';
 import { createBridgeServer } from './server.ts';
 import { createRateLimiter } from './rate-limit.ts';
 import { createWriteExecutor } from './write.ts';
@@ -77,6 +84,9 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   // so installing these after binding would leave the whole startup window unguarded (#305).
   const { tracker, onExit } = sharedResilience();
   const config = loadConfig(env);
+  // Resolved before anything is served or advertised: `/health` and the mDNS TXT record must report
+  // the same identity, and it is what lets a consumer follow this bridge across an address change.
+  const bridgeId = resolveBridgeIdentity(config);
 
   // EI-1 events / webhooks / SSE (opt-in). The stream + webhooks share one event pipeline: the
   // SSE hub and the webhook deliverer are just sinks. When neither is enabled, nothing is wired
@@ -251,6 +261,8 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     // tally and drops `ok` once it crosses the configured threshold — a consumer can then degrade
     // instead of trusting stale stock levels (issue #312).
     getSnapshotHealth: () => summarizeSnapshotHealth(watcher.getReloadHealth(), config.staleAfterFailures),
+    // Who this bridge is, as opposed to where it answers (issue #672) — see `resolveBridgeIdentity`.
+    bridgeId: bridgeId.id,
     rateLimiter,
     allowedOrigins: config.allowedOrigins,
     write,
@@ -411,7 +423,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     console.log('MQTT publishing: disabled. Set GUBBINS_BRIDGE_MQTT=on to publish to a broker.');
   }
 
-  const mdns = await maybeStartMdns(config);
+  const mdns = await maybeStartMdns(config, bridgeId.id);
 
   const shutdown = (): void => {
     void mdns?.stop();
@@ -518,6 +530,7 @@ function createMqttPublisherFromConfig(config: BridgeConfig, endpoint: MqttEndpo
  */
 async function maybeStartMdns(
   config: Awaited<ReturnType<typeof loadConfig>>,
+  bridgeId: string,
 ): Promise<MdnsAdvertiser | undefined> {
   const plan = resolveMdnsPlan({ enabled: config.mdns, host: config.host });
   if (!plan.advertise) {
@@ -538,11 +551,63 @@ async function maybeStartMdns(
     hostLabel: sanitizeHostLabel(os.hostname()),
     port: config.port,
     address,
-    txt: { serverVersion: BRIDGE_VERSION },
+    // The id rides along so a discovering consumer can recognise this bridge before it holds a
+    // token to call `/health` with — the whole point of issue #672.
+    txt: { serverVersion: BRIDGE_VERSION, bridgeId },
   });
   await advertiser.start();
   return advertiser;
 }
+
+/**
+ * Resolve this bridge's stable identity and say, once, where it came from.
+ *
+ * The impure half of `bridge-id.ts` lives here with the rest of the composition root's `node:`
+ * wiring: a one-line text file, `crypto.randomUUID()` and the host's name. Every filesystem failure
+ * is swallowed into "there is no persisted id" / "it was not written" — the identity is a
+ * convenience for consumers and must never stop the bridge serving — and `resolveBridgeId` then
+ * degrades to a *stable* derived value rather than a random one it could not remember.
+ *
+ * The file's mode is `0o600` for tidiness rather than secrecy: the id is not a credential, and it
+ * is advertised over mDNS regardless.
+ */
+function resolveBridgeIdentity(config: BridgeConfig): ResolvedBridgeId {
+  const filePath = config.bridgeIdFile ?? DEFAULT_BRIDGE_ID_FILE;
+  const resolved = resolveBridgeId(config.bridgeId, config.port, {
+    readPersisted: () => {
+      try {
+        return parseBridgeId(readFileSync(filePath, 'utf8'));
+      } catch {
+        return undefined; // absent, unreadable, a directory — all "no persisted id".
+      }
+    },
+    persist: (id) => {
+      try {
+        writeFileSync(filePath, `${id}\n`, { encoding: 'utf8', mode: 0o600 });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    mint: () => randomUUID(),
+    hostname: () => os.hostname(),
+    warn: (message) => console.warn(message),
+  });
+
+  console.log(
+    `Bridge identity: ${resolved.id} (${BRIDGE_ID_SOURCE_LABELS[resolved.source]}). Consumers use ` +
+      'this to recognise the bridge after its address changes.',
+  );
+  return resolved;
+}
+
+/** How each resolution route is described in the startup log. */
+const BRIDGE_ID_SOURCE_LABELS: Readonly<Record<ResolvedBridgeId['source'], string>> = {
+  configured: 'set by GUBBINS_BRIDGE_ID',
+  persisted: 'remembered from a previous start',
+  minted: 'newly minted and saved',
+  derived: 'derived from this machine — see the warning above',
+};
 
 /** The operator-supplied half of the webhook configuration: file/env targets plus named secrets. */
 interface WebhookFileConfig {
