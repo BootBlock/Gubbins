@@ -79,7 +79,10 @@ are attributed to a name you chose.
 Two different refusals mean two different things:
 
 - **Not recognised** — the token is missing, mistyped, or has been revoked. Check what the tool is
-  sending; mint a new one if it was revoked.
+  sending; mint a new one if it was revoked. A token is also revoked when its **account** goes,
+  including when [[syncing|Cloud-Sync]] merges two accounts whose usernames differ only by
+  capitalisation — the surviving account does not inherit the other's credentials, deliberately, so
+  mint the token again against it.
 - **Not permitted** — the token is fine, but its owner's role doesn't cover what was asked for.
   Nothing is wrong with the credential; adjust the role (or use a different account) if the access
   is genuinely wanted.

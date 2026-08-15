@@ -166,30 +166,69 @@ describe('folded natural keys (issue #679)', () => {
     }
   }
 
-  // Renaming an existing row onto a name another row holds is the other half of each dictionary's
-  // uniqueness, and the index cannot refuse it either once the two spellings differ by more than
-  // ASCII case. One representative per repository that has a rename.
-  const RENAMES: Record<string, (f: Fixture, names: readonly [string, string]) => Promise<unknown>> = {
-    'ContactRepository.update': async (f, [held, moving]) => {
-      await f.contacts.create({ name: held });
-      const other = await f.contacts.create({ name: 'Someone Else' });
-      return f.contacts.update(other.id, { name: moving });
+  /**
+   * The other half of each dictionary's uniqueness: moving an *existing* row onto a name another
+   * row holds, which the index cannot refuse either once the two spellings differ by more than
+   * ASCII case. Every repository with a rename is here — the drift assertion above can only hold
+   * the column set in step, not the writer set, so this list is kept by hand.
+   *
+   * Each carries the refusal it must produce, because the five do not speak with one voice: three
+   * raise the constraint SQLite would have, the field dictionary and the tag dictionary each have
+   * their own authored sentence. Pinning it is what stops an unrelated rejection — a missing row,
+   * a built-in guard, a blank name — passing for the one under test.
+   */
+  const RENAMES: Record<
+    string,
+    {
+      readonly attempt: (f: Fixture, names: readonly [string, string]) => Promise<unknown>;
+      readonly refusal: string | RegExp;
+    }
+  > = {
+    'ContactRepository.update': {
+      attempt: async (f, [held, moving]) => {
+        await f.contacts.create({ name: held });
+        const other = await f.contacts.create({ name: 'Someone Else' });
+        return f.contacts.update(other.id, { name: moving });
+      },
+      refusal: 'UNIQUE constraint failed: contacts.name',
     },
-    'RoleRepository.update': async (f, [held, moving]) => {
-      await f.roles.create({ name: held });
-      const other = await f.roles.create({ name: 'Someone Else' });
-      return f.roles.update(other.id, { name: moving });
+    'RoleRepository.update': {
+      attempt: async (f, [held, moving]) => {
+        await f.roles.create({ name: held });
+        const other = await f.roles.create({ name: 'Someone Else' });
+        return f.roles.update(other.id, { name: moving });
+      },
+      refusal: 'UNIQUE constraint failed: roles.name',
     },
-    'UserRepository.update': async (f, [held, moving]) => {
-      await f.users.create({ username: held });
-      const other = await f.users.create({ username: 'someone-else' });
-      return f.users.update(other.id, { username: moving });
+    'UserRepository.update': {
+      attempt: async (f, [held, moving]) => {
+        await f.users.create({ username: held });
+        const other = await f.users.create({ username: 'someone-else' });
+        return f.users.update(other.id, { username: moving });
+      },
+      refusal: 'UNIQUE constraint failed: users.username',
+    },
+    'TagRepository.rename': {
+      attempt: async (f, [held, moving]) => {
+        await f.tags.create(held);
+        const other = await f.tags.create('Someone Else');
+        return f.tags.rename(other.id, moving);
+      },
+      refusal: /A tag named .* already exists/,
+    },
+    'CategoryRepository.updateField': {
+      attempt: async (f, [held, moving]) => {
+        await f.categories.addField('cat-0', { name: held, fieldType: 'TEXT' });
+        const other = await f.categories.addField('cat-0', { name: 'Someone Else', fieldType: 'TEXT' });
+        return f.categories.updateField(other.id, { name: moving });
+      },
+      refusal: /A field named .* already exists/,
     },
   };
 
-  for (const [pathName, rename] of Object.entries(RENAMES)) {
+  for (const [pathName, { attempt, refusal }] of Object.entries(RENAMES)) {
     it(`${pathName} refuses a rename onto a name that folds to one already held`, async () => {
-      await expect(rename(fixture, SPELLINGS)).rejects.toBeInstanceOf(DbError);
+      await expect(attempt(fixture, SPELLINGS)).rejects.toThrow(refusal);
     });
   }
 });

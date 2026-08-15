@@ -93,11 +93,12 @@ export function matchesFoldedName(filter: FoldedNameFilter, value: string): bool
  * second wording would put copy outside the catalogs for no gain.
  *
  * This does **not** guarantee the two refusals read identically. The humanisation is gated on
- * `DbError.code`, and `code` comes from a numeric `resultCode` that only `sqlite-wasm` supplies
- * — a genuine constraint violation raised by `node:sqlite` (the bridge and the test driver)
- * arrives as `SQLITE_ERROR` and degrades to the call site's fallback copy. The error built here
- * carries the code the layer needs, so the *folded* refusal is the one that reliably reads well.
- * Closing that gap belongs in `db/errors`, not here.
+ * `DbError.code`, and `code` comes from a numeric `resultCode` that only `sqlite-wasm` supplies —
+ * so a genuine constraint violation raised by `node:sqlite` (the bridge and the test driver)
+ * arrives as `SQLITE_ERROR`, or `TRANSACTION_FAILED` when it came from a transaction, and
+ * degrades to the call site's fallback copy. `stock-batches` documents the same split. The error
+ * built here carries the code the layer needs, so the *folded* refusal is the one that reliably
+ * reads well. Closing that gap belongs in `db/errors`, not here.
  *
  * @param qualifiedColumn the `table.column` the index is on, as SQLite names it.
  */

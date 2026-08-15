@@ -63,11 +63,13 @@ item on two devices — the more recent entry is kept, by the same last-write-wi
 
 > **ℹ️ Note**
 > Matching ignores capitalisation **in any language**, so *Bolts* and *bolts* are treated as one
-> name, and so are `Café Ltd` and `CAFÉ LTD` — exactly as they are when you type a duplicate on a
+> name, and so are *Café Ltd* and *CAFÉ LTD* — exactly as they are when you type a duplicate on a
 > single device. If an older version of Gubbins let both spellings through as separate records,
 > syncing tidies them into one: the more recent record is kept, and everything pointing at the
 > other (loans, bookings, recorded values) follows it across. So a pair you already have may become
-> a single record after a sync.
+> a single record after a sync. The one thing that does *not* carry over is a
+> [[bridge token|Bridge-API-Tokens]] belonging to a merged **user account** — a token is a
+> credential, so it is revoked rather than handed to the surviving account. Issue a new one.
 
 ### When one item is lent out on two devices
 
