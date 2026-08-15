@@ -1548,7 +1548,9 @@ function reconcileGauges(
 /**
  * Issue #188 Delta-CRDT: replay the merged `stock_deltas` for every `(item, location, batch)`
  * placement **contested on both sides** whose ledger is complete on both, converging
- * `stock_batches.quantity` to `clamp₀(Σ id-unioned deltas)`.
+ * `stock_batches.quantity` to `clamp₀(replay of the id-unioned deltas)` — movements accumulate,
+ * and a cycle count's assertion restarts the total rather than adding to it (issue #633; see
+ * {@link replayStockQuantity}).
  *
  * Deliberately conservative, mirroring {@link reconcileGauges}, with three guards that each make it
  * *safe* to override the Last-Write-Wins quantity:
