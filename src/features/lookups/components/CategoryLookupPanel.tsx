@@ -111,9 +111,13 @@ function fromExtensionError(errorType: ScrapeErrorType): LookupFailure {
     case 'DOM_DRIFT':
     case 'CHALLENGE':
       return { code: 'UNREADABLE' };
+    // UNSUPPORTED_SITE belongs to the pasted-supplier-link path (#667) and is not reachable from
+    // a data lookup, but the taxonomy is shared, so it is bucketed here rather than left to fall
+    // through to the generic default.
     case 'RATE_LIMITED':
     case 'BLOCKED':
     case 'SERVER_ERROR':
+    case 'UNSUPPORTED_SITE':
       return { code: 'REFUSED' };
     default:
       assertExhaustive(errorType);

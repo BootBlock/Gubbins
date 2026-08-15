@@ -122,6 +122,17 @@ describe('describeScrapeError (§9.4.3)', () => {
     expect(message).toMatch(/tab/i);
   });
 
+  it('does not prescribe a retry for UNSUPPORTED_SITE — nothing remote can change it (#667)', () => {
+    const message = describeScrapeError(at('UNSUPPORTED_SITE', 'example.com'));
+    // It must not claim the supplier refused us, nor send the user off to open a tab and
+    // retry: our own allow-list refused the target before any request was made.
+    expect(message).not.toMatch(/blocked/i);
+    expect(message).not.toMatch(/\btab\b/i);
+    expect(message).toMatch(/never fetched/i);
+    // And it must point at the thing that *would* work.
+    expect(message).toMatch(/supported distributor/i);
+  });
+
   it('falls back to the raw reason for an unrecognised (forward-compat) type', () => {
     const future = {
       domain: 'mouser.com',

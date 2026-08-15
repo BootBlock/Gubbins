@@ -50,10 +50,11 @@ export const SUPPLIER_PARSERS: readonly SupplierParser[] = [
  * Human labels of the host-specific supplier parsers whose pages can be **background-fetched
  * from a pasted URL**, in registry priority order — the single source of truth for UI that
  * lists which suppliers have a dedicated URL scraper (e.g. the supplier dialog's URL help).
- * Two parsers are excluded: the generic structured-metadata fallback (a best-effort strategy
- * for any other product page, not a named supplier) and {@link amazonParser} (active-tab
- * only — a pasted Amazon URL is refused by the fetch allow-list, so advertising it here
- * would be misleading). Derived from {@link SUPPLIER_PARSERS}, so it can never drift.
+ * Two parsers are excluded, both because a pasted URL never reaches them: the generic
+ * structured-metadata fallback (every host the fetch allow-list admits is claimed by one of the
+ * named parsers above it, so the fallback only ever serves a page handed to it directly) and
+ * {@link amazonParser} (active-tab only — a pasted Amazon URL is refused by the fetch
+ * allow-list). Derived from {@link SUPPLIER_PARSERS}, so it can never drift.
  */
 const URL_SCRAPE_EXCLUDED_IDS: ReadonlySet<string> = new Set([genericMetaParser.id, amazonParser.id]);
 export const SUPPORTED_SUPPLIER_LABELS: readonly string[] = SUPPLIER_PARSERS.filter(

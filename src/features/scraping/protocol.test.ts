@@ -134,6 +134,16 @@ describe('parseExtensionMessage — payload validation (§9.4.2 no NaN/garbage)'
     }
   });
 
+  it('carries UNSUPPORTED_SITE separately from BLOCKED (our refusal vs the supplier’s, #667)', () => {
+    expect(SCRAPE_ERROR_TYPES).toContain('UNSUPPORTED_SITE');
+    const msg = makeMessage(
+      'SCRAPE_ERROR',
+      { domain: 'example.com', error_type: 'UNSUPPORTED_SITE', reason: 'Host is not on the allow-list.' },
+      'req-9',
+    );
+    expect(parseExtensionMessage(msg, ctx)?.type).toBe('SCRAPE_ERROR');
+  });
+
   it('accepts EXTENSION_READY with no payload', () => {
     const msg = { source: EXTENSION_SOURCE, type: 'EXTENSION_READY' };
     const parsed = parseExtensionMessage(msg, ctx);

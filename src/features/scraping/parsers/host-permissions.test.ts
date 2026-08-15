@@ -12,6 +12,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ALL_EXTENSION_HOST_PERMISSIONS,
   EXTENSION_HOST_PERMISSIONS,
+  URL_REFUSAL_REASONS,
+  classifySupplierUrl,
   isAllowedDataLookupUrl,
   isAllowedLookupUrl,
   isAllowedSupplierUrl,
@@ -91,6 +93,51 @@ describe('isAllowedSupplierUrl (§9 background-fetch gate)', () => {
   it('rejects a userinfo-disguised host and unparseable input', () => {
     expect(isAllowedSupplierUrl('https://www.digikey.com@evil.test/x')).toBe(false);
     expect(isAllowedSupplierUrl('not a url')).toBe(false);
+  });
+});
+
+describe('classifySupplierUrl (why a target was refused — issue #667)', () => {
+  it('returns null for a fetchable supplier URL', () => {
+    expect(classifySupplierUrl('https://www.digikey.co.uk/p/ne555p')).toBeNull();
+  });
+
+  it('separates the four refusals rather than collapsing them to one "no"', () => {
+    // The whole point: an off-list site and a mistyped scheme want different fixes, so the
+    // panel can say which applied instead of blaming the supplier for both.
+    expect(classifySupplierUrl('https://example.com/p/1')).toBe('OFF_LIST');
+    expect(classifySupplierUrl('http://www.digikey.co.uk/p/1')).toBe('NOT_HTTPS');
+    expect(classifySupplierUrl('https://user:pw@www.digikey.co.uk/p/1')).toBe('CREDENTIALS');
+    expect(classifySupplierUrl('NE555P')).toBe('MALFORMED');
+  });
+
+  it('reports an off-list host ahead of the link’s shape, so the advice can be followed', () => {
+    // `http://example.com/p/1` is refused twice over. Answering "use https" would send the user
+    // to fix the scheme and be refused again for the host — the very loop this issue is about.
+    expect(classifySupplierUrl('http://example.com/p/1')).toBe('OFF_LIST');
+    expect(classifySupplierUrl('https://user:pw@example.com/p/1')).toBe('OFF_LIST');
+    // A userinfo-disguised host is judged on its *real* host, so it reads as off-list too.
+    expect(classifySupplierUrl('https://www.digikey.com@evil.test/x')).toBe('OFF_LIST');
+  });
+
+  it('agrees with the boolean gate on every input', () => {
+    const cases = [
+      'https://www.digikey.co.uk/p/1',
+      'https://uk.farnell.com/x',
+      'https://example.com/p/1',
+      'http://www.digikey.co.uk/p/1',
+      'https://www.digikey.com@evil.test/x',
+      'file:///etc/passwd',
+      'not a url',
+    ];
+    for (const url of cases) {
+      expect(isAllowedSupplierUrl(url), url).toBe(classifySupplierUrl(url) === null);
+    }
+  });
+
+  it('carries a diagnostic reason for each refusal', () => {
+    const reasons = Object.values(URL_REFUSAL_REASONS);
+    expect(new Set(reasons).size).toBe(reasons.length);
+    for (const reason of reasons) expect(reason.length).toBeGreaterThan(0);
   });
 });
 
