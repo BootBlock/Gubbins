@@ -264,7 +264,7 @@ export const extensionMessageSchema = z.discriminatedUnion('type', [
     source: sourceLiteral,
     type: z.literal('DATA_FETCH_ERROR'),
     requestId: requestIdSchema,
-    // Reuses the §9.4.2 error taxonomy — UNSUPPORTED_SITE covers "not an allowed data-lookup host".
+    // Reuses the §9.4.2 error taxonomy — BLOCKED covers "not an allowed data-lookup host".
     payload: scrapeErrorPayloadSchema,
   }),
 ]);

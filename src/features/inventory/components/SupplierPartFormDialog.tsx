@@ -2,21 +2,8 @@ import { useRef, useState, type FormEvent } from 'react';
 import { Button, CurrencyAutocompleteField, FormField, Input, Modal, Textarea } from '@/components/foundry';
 import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/repositories';
 import { SUPPORTED_SUPPLIER_LABELS } from '@/features/scraping';
+import { useT } from '@/features/i18n';
 import { SupplierPicker, supplierRefFrom, type SupplierPickerValue } from '@/features/suppliers';
-
-/**
- * URL-field help: which suppliers the companion extension can scrape, listed from the
- * live parser registry so this can never fall out of step with what actually works.
- */
-const URL_HINT = [
-  "The supplier's product page — paste the full `https://…` link.",
-  '',
-  'With the companion browser extension installed, a **re-scrape** reads live price, order ' +
-    "code and other details straight from this page, matching the supplier by the link's host. " +
-    `Scrapers exist for: **${SUPPORTED_SUPPLIER_LABELS.join('**, **')}**. A link to any other ` +
-    'site is refused before it is fetched — the URL is still stored and still opens normally, ' +
-    'it just cannot be scraped.',
-].join('\n');
 
 /** Help for the Currency picker (the chosen currency drives the displayed symbol). */
 const CURRENCY_HINT =
@@ -115,6 +102,10 @@ export function SupplierPartFormDialog({
   const [breaksText, setBreaksText] = useState(part ? breaksToText(part.priceBreaks) : '');
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const t = useT();
+  // Which suppliers the companion extension can actually scrape, listed from the live parser
+  // registry so this help can never fall out of step with what works.
+  const urlHint = t('supplierPart.url.hint', { vars: { suppliers: SUPPORTED_SUPPLIER_LABELS.join(', ') } });
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -193,7 +184,7 @@ export function SupplierPartFormDialog({
               data-testid="supplier-part-order-code"
             />
           </FormField>
-          <FormField label="URL" hint={URL_HINT} hintSize="md">
+          <FormField label="URL" hint={urlHint} hintSize="md">
             <Input
               value={url}
               onChange={(e) => setUrl(e.target.value)}

@@ -76,6 +76,16 @@ describe('ScrapeSupplierPanel — unsupported links are answered here (issue #66
     expect(screen.getByRole('alert')).toHaveTextContent(/only https/i);
   });
 
+  it('does not offer the https fix for a link that is unsupported anyway', () => {
+    // `http://example.com/…` fails both checks. "Try the https:// version" would send the user
+    // round the same loop the issue is about, so the unsupported site is the answer given.
+    scrape('http://example.com/product/1');
+    expect(bridge.requestScrape).not.toHaveBeenCalled();
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(/no scraper/i);
+    expect(alert).not.toHaveTextContent(/only https/i);
+  });
+
   it('explains a link that is not a web address at all', () => {
     scrape('NE555P');
     expect(bridge.requestScrape).not.toHaveBeenCalled();

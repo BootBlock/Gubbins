@@ -220,14 +220,10 @@ describe('DATA_FETCH_* — category data lookups (issue #616)', () => {
     expect(parseExtensionMessage(missing, ctx)).toBeNull();
   });
 
-  it('reuses the §9.4.2 error taxonomy, so a refused host reads as UNSUPPORTED_SITE', () => {
+  it('reuses the §9.4.2 error taxonomy, so a refused host reads as BLOCKED', () => {
     const msg = makeMessage(
       'DATA_FETCH_ERROR',
-      {
-        domain: 'evil.test',
-        error_type: 'UNSUPPORTED_SITE',
-        reason: 'URL is not an allowed data-lookup host.',
-      },
+      { domain: 'evil.test', error_type: 'BLOCKED', reason: 'URL is not an allowed data-lookup host.' },
       'df-6',
     );
     expect(parseExtensionMessage(msg, ctx)?.type).toBe('DATA_FETCH_ERROR');

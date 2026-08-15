@@ -155,7 +155,7 @@ async function fetchProduct(gtin: string): Promise<LookupResponse> {
   const url = buildProductLookupUrl(normalised);
   // Defence-in-depth over host_permissions: only ever fetch the allow-listed lookup host.
   if (!isAllowedLookupUrl(url)) {
-    return { ok: false, errorType: 'UNSUPPORTED_SITE', reason: 'Lookup host is not allowed.' };
+    return { ok: false, errorType: 'BLOCKED', reason: 'Lookup host is not allowed.' };
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -185,14 +185,14 @@ async function fetchProduct(gtin: string): Promise<LookupResponse> {
  * only performs the request the page cannot always make itself. Gated by the extension's own
  * data-lookup allow-list before the call, the same defence-in-depth `fetchPage` applies above the
  * manifest's `host_permissions`: a page driving the bridge cannot turn this into a fetch proxy for
- * an arbitrary origin, and an off-list target is reported as our own refusal (`UNSUPPORTED_SITE`).
+ * an arbitrary origin, and an off-list target is reported as a refusal (`BLOCKED`).
  *
  * `credentials: 'omit'` matters here as much as for a scrape: an open database must never see the
  * user's cookies for its own site.
  */
 async function fetchDataUrl(url: string): Promise<DataFetchResponse> {
   if (!isAllowedDataLookupUrl(url)) {
-    return { ok: false, errorType: 'UNSUPPORTED_SITE', reason: 'URL is not an allowed data-lookup host.' };
+    return { ok: false, errorType: 'BLOCKED', reason: 'URL is not an allowed data-lookup host.' };
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);

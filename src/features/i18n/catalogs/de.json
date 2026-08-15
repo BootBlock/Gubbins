@@ -910,6 +910,7 @@
   "backup.settingsGroup.device.label": "Dieses Gerät",
   "backup.settingsGroup.device.hint": "Bridge-Adresse, Kiosk-Modus, verbundene Waage und ausgeblendete Hinweise. Meist gerätespezifisch und daher standardmäßig deaktiviert.",
   "backup.settings.noneRestore": "Es sind keine Einstellungen ausgewählt, daher wird nichts auf dieses Gerät angewendet.",
+  "supplierPart.url.hint": "Die Produktseite des Lieferanten — füge den vollständigen `https://…`-Link ein.\n\nMit installierter Begleit-Erweiterung liest ein **erneutes Auslesen** aktuellen Preis, Bestellnummer und weitere Angaben direkt von dieser Seite; der Lieferant wird dabei anhand des Hosts im Link erkannt. Parser gibt es für: **{suppliers}**. Ein Link auf eine andere Seite wird abgelehnt, bevor er abgerufen wird — die URL wird weiterhin gespeichert und lässt sich ganz normal öffnen, sie kann nur nicht ausgelesen werden.",
   "scraping.panel.title": "Lieferantenseite auslesen",
   "scraping.panel.urlLabel": "Produkt-URL",
   "scraping.panel.urlPlaceholder": "https://www.digikey.co.uk/…",

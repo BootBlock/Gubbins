@@ -910,6 +910,7 @@
   "backup.settingsGroup.device.label": "This device",
   "backup.settingsGroup.device.hint": "Bridge address, kiosk mode, connected scale and dismissed prompts. Usually specific to one device, so it is off by default.",
   "backup.settings.noneRestore": "No settings are selected, so none will be applied to this device.",
+  "supplierPart.url.hint": "The supplier's product page — paste the full `https://…` link.\n\nWith the companion browser extension installed, a **re-scrape** reads live price, order code and other details straight from this page, matching the supplier by the link's host. Scrapers exist for: **{suppliers}**. A link to any other site is refused before it is fetched — the URL is still stored and still opens normally, it just cannot be scraped.",
   "scraping.panel.title": "Scrape supplier",
   "scraping.panel.urlLabel": "Product URL",
   "scraping.panel.urlPlaceholder": "https://www.digikey.co.uk/…",

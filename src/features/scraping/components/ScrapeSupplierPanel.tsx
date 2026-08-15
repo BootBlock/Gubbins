@@ -22,6 +22,7 @@ import { useScrapeBridge } from '../ScrapeBridgeContext';
 import { describeScrapeError } from '../scrape-errors';
 import { SUPPORTED_SUPPLIER_LABELS } from '../parsers/registry';
 import { classifySupplierUrl, type UrlRefusal } from '../parsers/suppliers';
+import { hostOf } from '../parsers/types';
 import type { ScrapeResultPayload } from '../protocol';
 
 /** The inline copy for each way the allow-list can refuse a pasted link (issue #667). */
@@ -31,15 +32,6 @@ const REFUSAL_KEYS: Record<UrlRefusal, MessageKey> = {
   CREDENTIALS: 'scraping.panel.refusal.credentials',
   OFF_LIST: 'scraping.panel.refusal.offList',
 };
-
-/** The refused link's host, for the off-list message — blank when it has no parseable one. */
-function hostOrBlank(rawUrl: string): string {
-  try {
-    return new URL(rawUrl).hostname;
-  } catch {
-    return '';
-  }
-}
 
 export function ScrapeSupplierPanel({
   onResult,
@@ -127,9 +119,7 @@ export function ScrapeSupplierPanel({
             hint={t('scraping.panel.urlHint', { vars: { suppliers } })}
             hintSize="lg"
             error={
-              refusal
-                ? t(REFUSAL_KEYS[refusal], { vars: { suppliers, domain: hostOrBlank(trimmed) } })
-                : undefined
+              refusal ? t(REFUSAL_KEYS[refusal], { vars: { suppliers, domain: hostOf(trimmed) } }) : undefined
             }
           >
             <Input

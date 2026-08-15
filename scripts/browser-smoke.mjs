@@ -2682,6 +2682,13 @@ try {
     await step('an unsupported link is refused inline, without a round-trip (#667)', async () => {
       const detail = page.getByRole('dialog');
       const panel = detail.getByTestId('scrape-supplier-panel');
+      // The two prior steps each raise a degradation toast; wait for them to auto-dismiss so the
+      // fixed-position toast overlay cannot intercept the "Scrape" button click below.
+      await page
+        .getByTestId('toast')
+        .first()
+        .waitFor({ state: 'detached', timeout: 8000 })
+        .catch(() => {});
       const before = await scrapeRequestCount();
       await panel.locator('input[type="url"]').fill('https://example.com/product/widget-1');
       await detail.getByRole('button', { name: 'Scrape' }).click();
@@ -2700,8 +2707,8 @@ try {
 
     await step('re-scraping honours the §4 no-overwrite review for a populated field', async () => {
       const detail = page.getByRole('dialog');
-      // The two prior steps each raise a degradation toast; wait for them to auto-dismiss so
-      // the fixed-position toast overlay cannot intercept the "Scrape" button click below.
+      // The BLOCKED/CHALLENGE steps above each raise a degradation toast; wait for them to
+      // auto-dismiss so the fixed-position toast overlay cannot intercept the click below.
       await page
         .getByTestId('toast')
         .first()

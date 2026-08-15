@@ -87,7 +87,12 @@ export const URL_REFUSAL_REASONS: Record<UrlRefusal, string> = {
  * manifest's `host_permissions`). `http:`, `file:`, `data:`, credentials in the URL, and any
  * off-list host are all rejected.
  *
- * Returns the {@link UrlRefusal} that applied, or `null` when the URL may be fetched.
+ * Returns the {@link UrlRefusal} that applied, or `null` when the URL may be fetched. The
+ * accept/reject answer is the same whatever order the checks run in; the order below is chosen
+ * so the *reason* is the one worth acting on. `OFF_LIST` is decided first (after parsing, which
+ * it depends on) because it outranks every other refusal: telling someone their link to an
+ * unlisted site needs to be `https` invites them to fix the scheme and be refused all over
+ * again. Only once the host is one we could fetch does the shape of the link become the answer.
  */
 function classifyUrlForDomains(rawUrl: string, domains: readonly string[]): UrlRefusal | null {
   let url: URL;
@@ -96,10 +101,12 @@ function classifyUrlForDomains(rawUrl: string, domains: readonly string[]): UrlR
   } catch {
     return 'MALFORMED';
   }
+  // `hostname` is the *real* host whatever userinfo precedes it, so this is safe to ask first.
+  if (!isHostWithinDomains(url.hostname, domains)) return 'OFF_LIST';
   if (url.protocol !== 'https:') return 'NOT_HTTPS';
   // A userinfo component (user:pass@host) is never legitimate here and can disguise the host.
   if (url.username.length > 0 || url.password.length > 0) return 'CREDENTIALS';
-  return isHostWithinDomains(url.hostname, domains) ? null : 'OFF_LIST';
+  return null;
 }
 
 function isAllowedUrlForDomains(rawUrl: string, domains: readonly string[]): boolean {

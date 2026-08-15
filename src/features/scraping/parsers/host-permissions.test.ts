@@ -110,6 +110,15 @@ describe('classifySupplierUrl (why a target was refused — issue #667)', () => 
     expect(classifySupplierUrl('NE555P')).toBe('MALFORMED');
   });
 
+  it('reports an off-list host ahead of the link’s shape, so the advice can be followed', () => {
+    // `http://example.com/p/1` is refused twice over. Answering "use https" would send the user
+    // to fix the scheme and be refused again for the host — the very loop this issue is about.
+    expect(classifySupplierUrl('http://example.com/p/1')).toBe('OFF_LIST');
+    expect(classifySupplierUrl('https://user:pw@example.com/p/1')).toBe('OFF_LIST');
+    // A userinfo-disguised host is judged on its *real* host, so it reads as off-list too.
+    expect(classifySupplierUrl('https://www.digikey.com@evil.test/x')).toBe('OFF_LIST');
+  });
+
   it('agrees with the boolean gate on every input', () => {
     const cases = [
       'https://www.digikey.co.uk/p/1',
