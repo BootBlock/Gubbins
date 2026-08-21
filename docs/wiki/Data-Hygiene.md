@@ -30,6 +30,12 @@ gaps close.
 > gaps, and this is the fastest way to find and fix them (often with a [[bulk edit|Bulk-Edit-and-Clone]]).
 
 > **ℹ️ Note**
+> The **never counted** check only appears while the **Cycle counts** capability is on
+> ([[Modular UI|Modular-UI]]). With stock-taking hidden there is no count to run, so the check
+> would flag every item for something you couldn't clear — it drops out of the list and out of the
+> "needs attention" tally with it.
+
+> **ℹ️ Note**
 > Nothing here is "wrong" — an item without a price is perfectly valid. The report simply shows
 > where filling a gap would make your reports and schedules more complete.
 
@@ -38,3 +44,4 @@ gaps close.
 - **[[Reports overview|Reports-Overview]]** — the full suite.
 - **[[Bulk edit & clone|Bulk-Edit-and-Clone]]** — fixing many records at once.
 - **[[Export & import|Export-and-Import]]** — where gaps often come from.
+- **[[Cycle counts & audit day|Cycle-Counts-and-Audit-Day]]** — clearing the never-counted check.

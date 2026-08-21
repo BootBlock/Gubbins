@@ -4,8 +4,9 @@ However careful you are, recorded stock drifts from reality — things get used,
 miscounted. **Cycle counting** is the routine of checking on-hand quantities against what's
 actually on the shelf and reconciling the difference, so your numbers stay honest.
 
-**Where to find it:** the **Cycle count** action in the Inventory **More** menu; the guided
-**audit day** walks multiple locations in turn.
+**Where to find it:** the **Cycle count** action in the Inventory **More** menu, once the **Cycle
+counts** capability is enabled ([[Modular UI|Modular-UI]]); the guided **audit day** sits beside it
+and walks multiple locations in turn.
 
 ## Counting a location
 
@@ -68,8 +69,20 @@ full audit feel the same.
 > check and prioritise it. The built-in **Unassigned** location is the one exception — you can
 > count the loose stock sitting there, but it doesn't carry a last-counted date of its own.
 
+## Hiding stock-taking
+
+If you never count, switch the **Cycle counts** capability off under [[Modular UI|Modular-UI]].
+Both entry points leave the Inventory **More** menu, the **Last counted** figure disappears from
+the location summary, and the **Never counted** check drops out of the
+[[data-hygiene checklist|Data-Hygiene]] — there would be no way to clear it.
+
+Nothing is deleted. Counts you have already authorised stay in the [[activity
+log|Activity-Log]], the stock they set stays as it is, and every last-counted date comes back if
+you switch the capability on again.
+
 ## Related pages
 
 - **[[Locations & stock|Locations-and-Stock]]** — the per-location ledger being reconciled.
 - **[[Batches & lots|Batches-and-Lots]]** — per-batch counting.
 - **[[Activity log|Activity-Log]]** — where reconciliations are recorded.
+- **[[Modular UI|Modular-UI]]** — hiding stock-taking on a device that never counts.

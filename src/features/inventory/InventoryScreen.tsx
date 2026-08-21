@@ -180,6 +180,10 @@ function InventoryWorkspace() {
   // The printable parts catalogue lives under the Reports module; with it off, the selection-bar
   // "Print catalogue" shortcut disappears (the catalogue screen itself is route-guarded too).
   const reportsEnabled = useFeature('reports');
+  // Stock-taking is the `cycle-counts` capability (Modular UI): with it off, both entry points
+  // in this menu — the single-location Cycle count and the guided audit day — disappear, along
+  // with the "Last counted" stat on the location card. Counts already authorised are untouched.
+  const cycleCountsEnabled = useFeature('cycle-counts');
   const navigate = useNavigate();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   // Compact viewport (issue #147): below the tablet floor the fixed 256px location pane would
@@ -905,21 +909,25 @@ function InventoryWorkspace() {
               <MenuAction icon={<TagIcon />} onSelect={() => void navigate({ to: '/tags' })}>
                 Tags
               </MenuAction>
-              <MenuAction
-                icon={<CycleCountIcon />}
-                onSelect={() => setCycleCountOpen(true)}
-                disabled={!selectedLocationId}
-                data-testid="open-cycle-count"
-              >
-                {selectedLocationId ? 'Cycle count' : 'Cycle count — select a location'}
-              </MenuAction>
-              <MenuAction
-                icon={<CycleCountIcon />}
-                onSelect={() => setAuditDayOpen(true)}
-                data-testid="open-audit-day"
-              >
-                Stock-take (audit day)…
-              </MenuAction>
+              {cycleCountsEnabled ? (
+                <>
+                  <MenuAction
+                    icon={<CycleCountIcon />}
+                    onSelect={() => setCycleCountOpen(true)}
+                    disabled={!selectedLocationId}
+                    data-testid="open-cycle-count"
+                  >
+                    {selectedLocationId ? 'Cycle count' : 'Cycle count — select a location'}
+                  </MenuAction>
+                  <MenuAction
+                    icon={<CycleCountIcon />}
+                    onSelect={() => setAuditDayOpen(true)}
+                    data-testid="open-audit-day"
+                  >
+                    Stock-take (audit day)…
+                  </MenuAction>
+                </>
+              ) : null}
               <MenuSeparator />
               <MenuAction icon={<ExportIcon />} onSelect={() => setExportOpen(true)}>
                 Export
@@ -1416,14 +1424,16 @@ function InventoryWorkspace() {
         />
       ) : null}
       <CategoryManagerDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
-      {cycleCountOpen && selectedLocationId ? (
+      {cycleCountsEnabled && cycleCountOpen && selectedLocationId ? (
         <CycleCountDialog
           open
           onClose={() => setCycleCountOpen(false)}
           location={{ id: selectedLocationId, name: locationName(selectedLocationId) }}
         />
       ) : null}
-      <AuditDayDialog open={auditDayOpen} onClose={() => setAuditDayOpen(false)} />
+      {cycleCountsEnabled ? (
+        <AuditDayDialog open={auditDayOpen} onClose={() => setAuditDayOpen(false)} />
+      ) : null}
       <ScannerOverlay
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}

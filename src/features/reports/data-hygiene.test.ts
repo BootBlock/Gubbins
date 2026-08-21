@@ -111,6 +111,30 @@ describe('buildHygieneReport', () => {
     expect(dup.passDescription).toBe('No two items share an MPN.');
   });
 
+  it('omits a check listed in omitKinds, and its items stop counting as flagged', () => {
+    // The Reports screen leaves "Never counted" out when the Cycle-counts module is off (#649):
+    // nothing on that device could clear the flag. The omission has to reach `flaggedItems` too,
+    // or the "N of M items need attention" headline outruns the rows the user can see.
+    const items = [
+      ok({ id: 'count', everCounted: false }),
+      ok({ id: 'both', everCounted: false, hasPhoto: false }),
+    ];
+    const r = buildHygieneReport(items, { now: NOW, staleDays: 180, omitKinds: ['never-counted'] });
+
+    expect(r.sections.map((s) => s.kind)).toEqual(HYGIENE_KIND_ORDER.filter((k) => k !== 'never-counted'));
+    // 'both' still fails the photo check; 'count' has nothing left to fail.
+    expect(sectionFor(r, 'missing-photo').samples.map((s) => s.id)).toEqual(['both']);
+    expect(r.flaggedItems).toBe(1);
+    expect(r.totalItems).toBe(2);
+  });
+
+  it('omits the duplicate-MPN check too (every kind is omittable, not just the simple ones)', () => {
+    const items = [ok({ id: 'a', name: 'A', mpn: 'NE555P' }), ok({ id: 'b', name: 'B', mpn: 'ne555p' })];
+    const r = buildHygieneReport(items, { now: NOW, staleDays: 180, omitKinds: ['duplicate-mpn'] });
+    expect(r.sections.some((s) => s.kind === 'duplicate-mpn')).toBe(false);
+    expect(r.flaggedItems).toBe(0);
+  });
+
   it('handles an empty inventory', () => {
     const r = buildHygieneReport([], { now: NOW, staleDays: 180 });
     expect(r.totalItems).toBe(0);

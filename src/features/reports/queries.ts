@@ -9,6 +9,7 @@ import { getReportRepository } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { reportKeys } from './keys';
 import type { CatalogueScope, CataloguePartsOptions } from './parts-catalogue';
+import type { HygieneIssueKind } from './data-hygiene';
 import { scheduleSlices, type ScheduleGroupSummary, type ScheduleLine } from './insurance-schedule';
 import { MAX_PAGE_SIZE } from '@/db/repositories/constants';
 
@@ -53,6 +54,8 @@ export const VALUATION_TREND_POINTS = 12;
 // Phase 77 — data-hygiene / quality report -------------------------------------
 /** Records with no activity for at least this many days count as "stale" (≈ six months). */
 export const DATA_HYGIENE_STALE_DAYS = 180;
+/** Shared empty omission list, so the common "run every check" call keys stably. */
+const NO_OMITTED_HYGIENE_KINDS: readonly HygieneIssueKind[] = [];
 
 // Phase 79 — procurement / spend analytics -------------------------------------
 /** Number of time buckets in the spend-over-time strip (≈ one bar per couple of days at 90d). */
@@ -217,11 +220,23 @@ export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW)
   });
 }
 
-export function useDataHygiene(staleDays: number = DATA_HYGIENE_STALE_DAYS) {
+/**
+ * The data-hygiene / quality checklist.
+ *
+ * `options.omitKinds` drops whole checks the device has no use for — the Reports screen leaves
+ * out "Never counted" when the Cycle-counts module is off, since nothing on that device can
+ * clear the flag. Pass a module-level constant (or a memoised array): the value is part of the
+ * query key.
+ */
+export function useDataHygiene(
+  staleDays: number = DATA_HYGIENE_STALE_DAYS,
+  options?: { omitKinds?: readonly HygieneIssueKind[] },
+) {
   const currency = useValuationCurrency();
+  const omitKinds = options?.omitKinds ?? NO_OMITTED_HYGIENE_KINDS;
   return useQuery({
-    queryKey: reportKeys.dataHygiene(staleDays, currency),
-    queryFn: () => getReportRepository().dataHygiene(staleDays),
+    queryKey: reportKeys.dataHygiene(staleDays, currency, omitKinds),
+    queryFn: () => getReportRepository().dataHygiene(staleDays, undefined, omitKinds),
   });
 }
 

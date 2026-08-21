@@ -33,6 +33,7 @@ import {
 import {
   buildHygieneReport,
   type HygieneItemFlags,
+  type HygieneIssueKind,
   type HygieneReport,
 } from '@/features/reports/data-hygiene';
 import {
@@ -1676,8 +1677,16 @@ export class ReportRepository extends BaseRepository {
    * `supplier_parts`); the cost fallback reuses {@link preferredSupplierCostSql} and the
    * variant-parent exclusion reuses {@link notAVariantParent}. No schema change. `now` defaults to
    * the wall clock; `staleDays` sets the "no activity for this long" cutoff.
+   *
+   * `omitKinds` drops whole checks from the report — used by the Reports screen to leave out a
+   * check whose feature the Modules screen has switched off. It defaults to none, so a full data
+   * export always carries every check.
    */
-  async dataHygiene(staleDays: number, now: number = nowMs()): Promise<HygieneReport> {
+  async dataHygiene(
+    staleDays: number,
+    now: number = nowMs(),
+    omitKinds: readonly HygieneIssueKind[] = [],
+  ): Promise<HygieneReport> {
     const base = this.baseCurrency();
     const rows = await this.driver.query<{
       id: string;
@@ -1725,7 +1734,7 @@ export class ReportRepository extends BaseRepository {
       lastActivityAt: Number(r.last_activity_at),
     }));
 
-    return buildHygieneReport(flags, { now, staleDays });
+    return buildHygieneReport(flags, { now, staleDays, omitKinds });
   }
 
   // Phase 79 — procurement / spend analytics -------------------------------------
