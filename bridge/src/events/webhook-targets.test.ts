@@ -224,6 +224,16 @@ describe('loadDatabaseWebhookTargets', () => {
     expect(blocked[0]!.reason).toContain('missing');
   });
 
+  it('leaves a disabled subscription out of the blocked list — it is off, not broken', async () => {
+    // The operator still gets the warning; the app does not get an hourly "Blocked" row about a
+    // webhook the user switched off on purpose.
+    const { warnings, blocked } = await load([
+      { id: 'w1', name: 'Workshop notifier', enabled: 0, secret_ref: 'missing' },
+    ]);
+    expect(warnings).toHaveLength(1);
+    expect(blocked).toEqual([]);
+  });
+
   it('reports nothing as blocked when every subscription resolves', async () => {
     const { blocked } = await load([{ id: 'w1', name: 'A', secret_ref: 'discord' }], {
       discord: 'resolved-placeholder',

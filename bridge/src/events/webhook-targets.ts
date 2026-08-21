@@ -96,9 +96,11 @@ export interface WebhookTargetResolution {
   /** Secret-free, one-line diagnostics (a missing `secret_ref`, a dropped header). */
   readonly warnings: readonly string[];
   /**
-   * The subscriptions that were dropped rather than delivered, structured enough to write a
-   * delivery-log row for (issue #643). A warning on the bridge's stdout is the only trace an
-   * operator running under Docker or on a NAS may never see.
+   * The **enabled** subscriptions that were dropped rather than delivered, structured enough to
+   * write a delivery-log row for (issue #643). A warning on the bridge's stdout is the only trace
+   * an operator running under Docker or on a NAS may never see. A disabled subscription is left
+   * out: it still earns its warning, but it is switched off rather than silently broken, and the
+   * app should not report a problem the user made on purpose.
    */
   readonly blocked: readonly WebhookBlockedSubscription[];
 }
@@ -261,7 +263,10 @@ export async function loadDatabaseWebhookTargets(
       if (targets.length >= MAX_DB_TARGETS) break;
       const mapped = subscriptionToDeliveryTarget(subscription, secrets);
       warnings.push(...mapped.warnings);
-      if (mapped.blocked !== null) blocked.push(mapped.blocked);
+      // A subscription the user has switched off is not a webhook that has silently stopped, so it
+      // gets the operator's warning but no delivery-log row — telling someone their disabled
+      // webhook is "Blocked", once an hour, would report a problem they made on purpose.
+      if (mapped.blocked !== null && subscription.enabled) blocked.push(mapped.blocked);
       if (mapped.target !== null) targets.push(mapped.target);
     }
 

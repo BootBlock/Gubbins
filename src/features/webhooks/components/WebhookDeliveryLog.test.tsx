@@ -29,7 +29,7 @@ const DELIVERY: WebhookDelivery = {
 };
 
 function renderLog(deliveries: readonly WebhookDelivery[]) {
-  render(<WebhookDeliveryLog state={{ status: 'ready', deliveries }} onRefresh={() => {}} />);
+  return render(<WebhookDeliveryLog state={{ status: 'ready', deliveries }} onRefresh={() => {}} />);
 }
 
 describe('WebhookDeliveryLog', () => {
@@ -39,7 +39,7 @@ describe('WebhookDeliveryLog', () => {
   });
 
   it('shows a blocked subscription with its reason and no invented event type', () => {
-    renderLog([
+    const { container } = renderLog([
       {
         ...DELIVERY,
         eventId: '',
@@ -52,6 +52,9 @@ describe('WebhookDeliveryLog', () => {
     ]);
     expect(screen.getByText(/Blocked/i)).toBeTruthy();
     expect(screen.getByText(/references a bridge-side secret/)).toBeTruthy();
-    expect(screen.queryByText('item.low_stock')).toBeNull();
+    // The slot the event type occupies for an ordinary delivery is left out entirely, rather than
+    // rendered empty: there was no event, so the row must not keep a place for one.
+    const empty = [...container.querySelectorAll('span')].filter((el) => el.textContent === '');
+    expect(empty).toEqual([]);
   });
 });
