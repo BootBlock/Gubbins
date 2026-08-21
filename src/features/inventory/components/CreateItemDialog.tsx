@@ -19,6 +19,7 @@ import {
   type RailTab,
 } from '@/components/foundry';
 import { DueDateIcon, EditIcon, ScanIcon, SupplierIcon } from '@/components/icons';
+import { normaliseCurrencyCode } from '@/lib/money';
 import { useFormatters } from '@/lib/useFormatters';
 import { toGrams } from '@/lib/weight';
 import { hasOcr } from '@/lib/env/feature-detection';
@@ -446,6 +447,9 @@ export function CreateItemDialog({
   // on top of this form and hands back reviewed values that fill only the still-blank fields.
   const [ocrOpen, setOcrOpen] = useState(false);
   const ocrEnabled = usePreferencesStore((s) => s.ocrEnabled);
+  // What a bare unit cost on this form means, so a scraped price quoted in another currency is
+  // withheld rather than filled in as if it were base-currency money (issue #666).
+  const baseCurrency = usePreferencesStore((s) => s.baseCurrency);
   const showOcr = ocrEnabled && hasOcr();
   // Camera barcode capture for the Barcode field (issue #8): {@link BarcodeField} owns the
   // "Scan" button and its `scanner`-capability gating; this only holds the dialog it opens,
@@ -585,6 +589,7 @@ export function CreateItemDialog({
         aliases: [],
       },
       payload,
+      baseCurrency,
     );
     const write = applyScrapeMerge(plan); // FILL fields only — no opt-in overwrites here
     const filled: string[] = [];
@@ -605,6 +610,10 @@ export function CreateItemDialog({
       filled.push('unit cost');
     }
     setPendingAliases(write.aliasAdditions);
+    // A price the merge withheld because it is quoted in another currency: say so, rather than
+    // leaving the cost field mysteriously empty after an otherwise successful scrape (issue #666).
+    const foreignPrice = plan.proposals.find((p) => p.field === 'unitCost' && p.status === 'FOREIGN');
+    const quotedCurrency = normaliseCurrencyCode(plan.currency) ?? '';
     const host = (() => {
       try {
         return new URL(payload.distributor_url).hostname;
@@ -612,10 +621,14 @@ export function CreateItemDialog({
         return 'supplier';
       }
     })();
-    notifyScrape(
+    const summary =
       filled.length > 0
         ? `Filled ${filled.join(', ')} from ${host}.`
-        : `No empty fields to fill from ${host}.`,
+        : `No empty fields to fill from ${host}.`;
+    notifyScrape(
+      foreignPrice
+        ? `${summary} The ${quotedCurrency} price was not applied — your unit costs are in ${plan.baseCurrency}.`
+        : summary,
     );
   };
 
