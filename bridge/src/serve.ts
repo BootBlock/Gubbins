@@ -49,6 +49,7 @@ import {
   type WebhookSecrets,
 } from './events/webhook-targets.ts';
 import { createWebhookDeliveryLog, type WebhookDeliveryLog } from './events/webhook-log.ts';
+import { createBlockedSubscriptionReporter } from './events/webhook-blocked.ts';
 import { createWebhookTestFirer } from './events/webhook-test.ts';
 import type { WebhookTestCapability } from './server.ts';
 import { attachServerResilience, installProcessResilience, type ProcessResilience } from './resilience.ts';
@@ -107,17 +108,26 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     // Warnings are per-subscription and re-derived every generation, so they are de-duplicated —
     // otherwise one missing `secret_ref` would print on every hydration for as long as the bridge runs.
     const reported = new Set<string>();
+    // A dropped subscription never reaches the deliverer, so the delivery log the app polls would
+    // otherwise say "nothing delivered yet" for a webhook that has stopped entirely (issue #643).
+    // The reporter writes the `blocked` row the app's own copy promises, throttled so one
+    // misconfiguration cannot bury the rest of the log.
+    const blockedReporter = createBlockedSubscriptionReporter({ deliveryLog: webhookDeliveryLog });
     sinks.push(
       createWebhookDeliverer({
         targets: webhookConfig.targets,
         resolveTargets: async (driver) => {
           if (driver === undefined) return [];
-          const { targets, warnings } = await loadDatabaseWebhookTargets(driver, webhookConfig.secrets);
+          const { targets, warnings, blocked } = await loadDatabaseWebhookTargets(
+            driver,
+            webhookConfig.secrets,
+          );
           for (const warning of warnings) {
             if (reported.has(warning)) continue;
             reported.add(warning);
             console.warn(warning);
           }
+          blockedReporter.report(blocked);
           return targets;
         },
         ssrfPolicy: { allowPrivate: config.webhooksAllowPrivate },

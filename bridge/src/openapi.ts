@@ -2652,7 +2652,14 @@ export const openapiDocument: JsonValue = {
           url: { type: 'string', example: 'https://hooks.example.test/inventory' },
           method: { type: 'string', enum: ['POST', 'GET', 'PUT', 'PATCH'] },
           eventId: { type: 'string', example: 'hist-0007' },
-          eventType: { type: 'string', enum: [...KNOWN_EVENT_TYPES] },
+          eventType: {
+            type: 'string',
+            enum: ['', ...KNOWN_EVENT_TYPES],
+            description:
+              'Empty when the row records a refusal decided before any event was considered — a ' +
+              'subscription whose named signing secret the bridge cannot resolve is dropped at ' +
+              'target-resolution time, so no event ever reached the matcher.',
+          },
           outcome: {
             type: 'string',
             enum: ['delivered', 'failed', 'blocked', 'skipped'],

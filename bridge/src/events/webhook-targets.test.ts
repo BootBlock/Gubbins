@@ -208,6 +208,39 @@ describe('loadDatabaseWebhookTargets', () => {
     expect(warnings[0]).toContain('Workshop notifier');
   });
 
+  it('reports the dropped subscription in a shape a delivery-log row can use (issue #643)', async () => {
+    // Without this the refusal reaches the operator's stdout and nowhere else, and the app's log
+    // reads "Nothing delivered yet" for a webhook that has stopped entirely.
+    const { blocked } = await load([
+      { id: 'w1', name: 'Workshop notifier', method: 'PUT', secret_ref: 'missing' },
+    ]);
+    expect(blocked).toHaveLength(1);
+    expect(blocked[0]).toMatchObject({
+      id: 'w1',
+      name: 'Workshop notifier',
+      url: 'https://hooks.example.test/inventory',
+      method: 'PUT',
+    });
+    expect(blocked[0]!.reason).toContain('missing');
+  });
+
+  it('leaves a disabled subscription out of the blocked list — it is off, not broken', async () => {
+    // The operator still gets the warning; the app does not get an hourly "Blocked" row about a
+    // webhook the user switched off on purpose.
+    const { warnings, blocked } = await load([
+      { id: 'w1', name: 'Workshop notifier', enabled: 0, secret_ref: 'missing' },
+    ]);
+    expect(warnings).toHaveLength(1);
+    expect(blocked).toEqual([]);
+  });
+
+  it('reports nothing as blocked when every subscription resolves', async () => {
+    const { blocked } = await load([{ id: 'w1', name: 'A', secret_ref: 'discord' }], {
+      discord: 'resolved-placeholder',
+    });
+    expect(blocked).toEqual([]);
+  });
+
   it('keeps a subscription that signs with neither — an unsigned webhook is legal', async () => {
     const { targets, warnings } = await load([{ id: 'w1', name: 'A' }]);
     expect(warnings).toEqual([]);

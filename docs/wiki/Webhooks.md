@@ -132,7 +132,11 @@ attempt marked:
 - **Delivered** — the receiver accepted it.
 - **Failed** — the receiver was reached but didn't accept it, or couldn't be reached.
 - **Blocked** — refused before anything was sent: either the address is on a private network the
-  bridge hasn't been allowed to reach, or a named signing secret couldn't be found.
+  bridge hasn't been allowed to reach, or a named signing secret couldn't be found. A webhook whose
+  secret the bridge can't find gets a row the next time anything happens that the bridge sends
+  events for, so one that has quietly stopped doesn't just look idle and you don't have to send a
+  test event to find out. That row names no event type, because no event got as far as being
+  considered, and it repeats at most once an hour while the problem lasts.
 - **Skipped** — not attempted, because recent deliveries to that endpoint had been failing.
 
 > **ℹ️ Note — the log updates only while you're looking at it**

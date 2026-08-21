@@ -5745,6 +5745,7 @@ components:
         eventType:
           type: "string"
           enum:
+          - ""
           - "events.truncated"
           - "item.changed"
           - "item.checked_in"
@@ -5771,6 +5772,7 @@ components:
           - "location.restored"
           - "lookup.resolved"
           - "stock.adjusted"
+          description: "Empty when the row records a refusal decided before any event was considered — a subscription whose named signing secret the bridge cannot resolve is dropped at target-resolution time, so no event ever reached the matcher."
         outcome:
           type: "string"
           enum:
