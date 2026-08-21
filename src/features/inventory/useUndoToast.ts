@@ -4,7 +4,8 @@
  * A bulk edit, a remove or a move confirms itself with a toast; this hook attaches the "Undo"
  * action to that toast and replays the {@link UndoPlan} behind it. Keeping the wiring here means
  * every reversible write gets the same affordance and the same follow-up confirmation, rather
- * than three call sites each inventing their own.
+ * than three call sites each inventing their own. What the reversal *reports* belongs to the
+ * mutation, not to this hook — see `undo-outcome.ts` for why.
  *
  * The toast *is* the announcement: its viewport is `aria-live`, so a screen-reader user hears the
  * outcome and can reach the Undo button. Call sites must therefore not also push the same
@@ -46,24 +47,9 @@ export function useUndoToast(): (message: string, plan: UndoPlan, tone?: ToastTo
         tone,
         message,
         duration: UNDO_TOAST_DURATION_MS,
-        action: {
-          label: t('inventory.undo.action'),
-          onClick: () =>
-            undo.mutate(plan, {
-              // A rejected reversal reports itself from the mutation's own `onError`, so only
-              // the success path needs saying here.
-              onSuccess: (result) =>
-                toast?.show({
-                  tone: result.failed > 0 ? 'warning' : 'success',
-                  message:
-                    result.failed > 0
-                      ? t('inventory.undo.partial', {
-                          vars: { restored: result.succeeded, failed: result.failed },
-                        })
-                      : t('inventory.undo.done', { vars: { count: result.succeeded } }),
-                }),
-            }),
-        },
+        // The reversal reports its own outcome, success or failure, from the mutation's
+        // options — this component is usually gone by the time it lands (see `undo-outcome.ts`).
+        action: { label: t('inventory.undo.action'), onClick: () => undo.mutate(plan) },
       });
     },
     [toast, t, undo],

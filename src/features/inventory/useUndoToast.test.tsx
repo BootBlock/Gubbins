@@ -94,21 +94,15 @@ describe('useUndoToast', () => {
     expect(screen.getByTestId('toast').className).toContain('warning');
   });
 
-  it('reports how many items went back once the reversal lands', () => {
-    mutate.mockImplementation((_plan, opts) => opts?.onSuccess?.({ succeeded: 3, failed: 0 }));
+  it('leaves the reversal to report its own outcome, so an unmounted caller still hears it', () => {
+    // The confirmation moved onto the mutation's options (`undo-outcome.ts`): by the time an Undo
+    // is pressed the dialog or card that offered it has usually gone, and React Query drops
+    // per-call callbacks for an unmounted observer. Passing none is the point.
     renderHarness(PLAN);
     fireEvent.click(screen.getByText('fire'));
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
 
-    expect(screen.getByText('3 items put back.')).toBeInTheDocument();
-  });
-
-  it('says so when only part of the reversal landed', () => {
-    mutate.mockImplementation((_plan, opts) => opts?.onSuccess?.({ succeeded: 2, failed: 1 }));
-    renderHarness(PLAN);
-    fireEvent.click(screen.getByText('fire'));
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
-
-    expect(screen.getByText('Put 2 back; 1 could not be undone.')).toBeInTheDocument();
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0][1]).toBeUndefined();
   });
 });

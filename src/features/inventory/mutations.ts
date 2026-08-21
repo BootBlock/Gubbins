@@ -53,6 +53,7 @@ import { inventoryKeys } from './queries';
 import { resolveItemTagNames, type BulkEditSpec } from './bulk-edit';
 import { clonedFieldValues, clonedSupplierPartInput, planItemClone } from './clone';
 import { planBulkEditUndo, snapshotForUndo, type ItemUndoSnapshot, type UndoPlan } from './undo';
+import { useReportUndoOutcome } from './undo-outcome';
 import { invalidateItems, invalidateItemStock } from './invalidate';
 
 type ItemListData = InfiniteData<Page<Item>, number>;
@@ -673,6 +674,7 @@ export interface UndoResult {
  */
 export function useUndoItemChanges() {
   const client = useQueryClient();
+  const reportOutcome = useReportUndoOutcome();
   const reportFailure = useReportWriteFailure('inventory.writeError.heading.undo', 'common.writeFailed');
   return useMutation({
     mutationFn: async (plan: UndoPlan): Promise<UndoResult> => {
@@ -711,6 +713,11 @@ export function useUndoItemChanges() {
       if (failed > 0 && succeeded === 0) throw lastError;
       return { succeeded, failed };
     },
+    // Both outcomes are reported from the mutation's *own* options, never from a
+    // `mutate(plan, { onSuccess })` callback: the component that offered the Undo is usually
+    // unmounted by the time the reversal lands, and React Query skips per-call callbacks for an
+    // unmounted observer (see `undo-outcome.ts`).
+    onSuccess: reportOutcome,
     onError: reportFailure,
     onSettled: () => {
       invalidateItems(client);

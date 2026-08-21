@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor, act, cleanup } from '@testing-library/react';
+import { render, renderHook, screen, waitFor, act, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { ToastProvider } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 
@@ -166,6 +166,36 @@ describe('useUndoItemChanges — replaying a plan', () => {
     });
 
     expect(outcome).toEqual({ succeeded: 1, failed: 1 });
+  });
+
+  it('confirms the outcome from its own options, so an unmounted caller still reports it', async () => {
+    // React Query drops `mutate(plan, { onSuccess })` callbacks when the observing component has
+    // unmounted — and the dialog or card that offered the Undo usually has by then (the Move
+    // dialog closes on success; the card leaves the list with the item). Reporting from the
+    // mutation's own options is what keeps the confirmation reachable (issue #131). The provider
+    // deliberately stays mounted here: it is the app root, only the caller goes away.
+    function Caller() {
+      const undo = useUndoItemChanges();
+      useEffect(() => {
+        undo.mutate({ steps: [{ id: 'a', locationId: 'loc-old' }] });
+        // Fire exactly once on mount; `undo` is deliberately not a dependency.
+      }, []);
+      return null;
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    function Tree({ mounted }: { mounted: boolean }) {
+      return (
+        <QueryClientProvider client={client}>
+          <ToastProvider>{mounted ? <Caller /> : null}</ToastProvider>
+        </QueryClientProvider>
+      );
+    }
+    const view = render(<Tree mounted />);
+    view.rerender(<Tree mounted={false} />);
+
+    await waitFor(() => expect(screen.getByText('1 item put back.')).toBeInTheDocument());
   });
 
   it('rejects with the real cause when nothing could be put back', async () => {
