@@ -20,8 +20,12 @@ describe('PageContainer — the canonical page frame (spec §2.4.2)', () => {
     // The fixed frame — identical on every screen so the header never shifts.
     expect(frame?.className).toContain('mx-auto');
     expect(frame?.className).toContain('max-w-6xl');
-    expect(frame?.className).toContain('px-4');
-    expect(frame?.className).toContain('pt-6');
+    // Both offsets carry the device's safe-area inset, so the frame starts clear of a notch
+    // or a rounded corner rather than under it (issue #655). Matched as whole class names:
+    // `px-safe-gutter-x` is a prefix of the large-format `px-safe-gutter-x-lg`, so a substring
+    // check would still pass with the base gutter deleted — i.e. on the phones this is for.
+    expect(frame?.className.split(' ')).toContain('px-safe-gutter-x');
+    expect(frame?.className.split(' ')).toContain('pt-safe-page-top');
   });
 
   it('grows with content by default (min-h-dvh, gapped sections)', () => {
@@ -46,7 +50,7 @@ describe('PageContainer — the canonical page frame (spec §2.4.2)', () => {
     expect(frame?.className).not.toContain('min-h-dvh');
     expect(frame?.className).not.toContain('gap-6');
     // Same top offset as the default — the header Y never moves between screens.
-    expect(frame?.className).toContain('pt-6');
+    expect(frame?.className.split(' ')).toContain('pt-safe-page-top');
   });
 
   it('drops the centred width cap when Full width is on (issue #14)', () => {
@@ -61,7 +65,7 @@ describe('PageContainer — the canonical page frame (spec §2.4.2)', () => {
     // horizontal padding stays so content never touches the viewport edge.
     expect(frame?.className).toContain('max-w-none');
     expect(frame?.className).not.toContain('max-w-6xl');
-    expect(frame?.className).toContain('px-4');
+    expect(frame?.className.split(' ')).toContain('px-safe-gutter-x');
   });
 
   it('merges extra classes onto the frame', () => {

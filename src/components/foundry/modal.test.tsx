@@ -145,13 +145,14 @@ describe('Modal — accessible focus management', () => {
         </div>
       </Modal>,
     );
-    // The panel (Surface) is a flex column with a viewport-relative max height, so an
-    // over-tall dialog can never overflow the screen and strand its footer.
+    // The panel (Surface) is a flex column with a viewport-relative max height (less the
+    // frame's gutter and the device's own safe-area insets), so an over-tall dialog can
+    // never overflow the screen and strand its footer.
     const panel = screen.getByRole('heading', { name: 'Edit location' }).closest('div')
       ?.parentElement?.parentElement;
     expect(panel?.className).toContain('flex');
     expect(panel?.className).toContain('flex-col');
-    expect(panel?.className).toContain('max-h-[calc(100dvh-2rem)]');
+    expect(panel?.className).toContain('max-h-safe-dialog');
 
     // The header (title + Close) is a non-shrinking sibling of the scroll region — it stays
     // pinned while the body scrolls, rather than being wrapped by the scroller.

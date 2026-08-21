@@ -219,7 +219,7 @@ export function Modal({
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="fixed inset-0 z-50 grid place-items-center p-4 outline-none"
+        className="fixed inset-0 z-50 grid place-items-center pt-safe-gutter-top pr-safe-gutter-right pb-safe-gutter-bottom pl-safe-gutter-left outline-none"
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -231,12 +231,13 @@ export function Modal({
         />
         <Surface
           className={cn(
-            // Cap the panel to the viewport (minus the outer p-4 = 1rem top+bottom) and lay it
-            // out as a flex column so the header stays pinned while the body scrolls — a tall
-            // dialog (e.g. Edit location) no longer overflows the screen and strands its footer.
+            // Cap the panel to the viewport (minus the frame's 1rem gutter top+bottom, and minus
+            // whatever the device reserves at those edges — the `safe-dialog` token) and lay it out
+            // as a flex column so the header stays pinned while the body scrolls — a tall dialog
+            // (e.g. Edit location) no longer overflows the screen and strands its footer.
             // `dvh` tracks mobile browser chrome; caller `max-w-*` / `max-h-*` overrides still win
             // via tailwind-merge (see `cn`).
-            'relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col p-6',
+            'relative z-10 flex max-h-safe-dialog w-full max-w-lg flex-col p-6',
             !reducedMotion && 'animate-zoom-in',
             className,
           )}

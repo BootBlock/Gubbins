@@ -395,7 +395,7 @@ function ScannerOverlayInner({
           rather than merely off to the side. So it wraps instead: Close and Help stay
           pinned to the first line, the title absorbs the pressure by truncating, and the
           mode toggle drops onto a second line below `sm`. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4 pt-safe-gutter-top pr-safe-gutter-right pl-safe-gutter-left">
         <ScanIcon className="size-5 shrink-0" />
         <span className="min-w-0 flex-1 truncate font-semibold">Scanner</span>
         {/* The wrapper takes the whole second line so the toggle drops below the title; the
@@ -484,7 +484,7 @@ function ScannerOverlayInner({
             start-time error (e.g. permission denied) once; tapped-tag results are announced
             through the separate scan-announce region above. */}
         {nfcReady ? (
-          <div className="absolute inset-x-0 top-3 z-10 flex justify-center px-4">
+          <div className="absolute inset-x-0 top-3 z-10 flex justify-center px-safe-gutter-x">
             <span
               role="status"
               data-testid="scanner-nfc-indicator"
@@ -504,7 +504,7 @@ function ScannerOverlayInner({
 
         {/* Discrete result card — act on one scanned item without leaving the scanner. */}
         {scanned ? (
-          <div className="absolute inset-x-0 bottom-0 p-4">
+          <div className="absolute inset-x-0 bottom-0 p-4 pr-safe-gutter-right pl-safe-gutter-left">
             <Surface className="space-y-3 p-4 text-foreground" data-testid="scanner-discrete-result">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Scanned</p>
               <p className="text-lg font-semibold">{scanned.name}</p>
@@ -565,7 +565,7 @@ function ScannerOverlayInner({
         {/* Unknown-barcode card: a valid GTIN no item carries yet (recommendation point 1).
             Offer to create an item pre-filled with it (when the parent wired the handoff). */}
         {gtinResult ? (
-          <div className="absolute inset-x-0 bottom-0 p-4">
+          <div className="absolute inset-x-0 bottom-0 p-4 pr-safe-gutter-right pl-safe-gutter-left">
             <Surface className="space-y-3 p-4 text-foreground" data-testid="scanner-gtin-result">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">New barcode</p>
               <p className="font-mono text-lg font-semibold tracking-wide">{gtinResult}</p>
@@ -607,7 +607,7 @@ function ScannerOverlayInner({
 
         {/* Continuous queue review */}
         {state.status === 'PROCESSING_QUEUE' && !discreteResult && !gtinResult ? (
-          <div className="absolute inset-x-0 bottom-0 p-4">
+          <div className="absolute inset-x-0 bottom-0 p-4 pr-safe-gutter-right pl-safe-gutter-left">
             <Surface className="space-y-3 p-4 text-foreground">
               <p className="text-sm font-semibold">
                 {queue.count} {plural(queue.count, 'item')} in the queue
@@ -682,7 +682,7 @@ function ScannerOverlayInner({
       </div>
 
       {/* Manual entry — graceful fallback (§6.6) and always-available aid */}
-      <div className="space-y-2 p-4">
+      <div className="space-y-2 p-4 pb-safe-gutter-bottom pr-safe-gutter-right pl-safe-gutter-left">
         {/* The scanner's screen-reader channel, and the one region both its in-place messages
             live in: which engine resolved (or that it died mid-scan, issue #678) and the
             manual-entry feedback ("No matching item found." etc.) — a blind user types a code

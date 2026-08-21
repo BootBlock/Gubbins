@@ -49,9 +49,15 @@ function RootLayout() {
       {/* Decorative animated weather layer, behind all content (opt-in; renders nothing when off). */}
       <BackgroundEffects />
       <SkipLink />
+      {/* The banner stack, not the page frame, is what meets the physical top edge whenever a
+          banner is showing — and these are the warnings that most need reading — so it carries the
+          safe-area inset itself (issue #655). The frame below keeps its own top inset for the far
+          commoner empty case, which does mean an inset-sized gap under a visible banner on a
+          notched device; a gap is the harmless half of the trade, and making the frame's offset
+          depend on whether a banner is up would couple the two for a rare, cosmetic gain. */}
       <div
         className={cn(
-          'print-hide mx-auto w-full px-4 pt-4 empty:hidden',
+          'print-hide mx-auto w-full px-safe-gutter-x pt-safe-gutter-top empty:hidden',
           fullWidth ? 'max-w-none' : 'max-w-6xl',
         )}
       >

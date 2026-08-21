@@ -26,6 +26,11 @@ export interface PageContainerProps {
  * header with it — jumped around as you navigated. The `max-w-6xl` width matches the root
  * chrome's storage-banner container, so the page aligns with the app shell too.
  *
+ * Both offsets come from the `safe-*` spacing tokens, so on a device that reserves screen
+ * edges — a notch, a punch-hole, rounded corners, the gesture home bar — the frame begins
+ * clear of them rather than under them (issue #655). The horizontal pair is deliberately
+ * symmetric, so the centred column stays centred when only one side carries a cutout.
+ *
  * On a **large-format** touch device (tablet / unfolded foldable) the `max-w-6xl` cap is
  * relaxed to a wider ceiling (and the side gutter widened), so the frame reclaims the room
  * it would otherwise leave as empty margin — see the `large-format:` variant in
@@ -41,9 +46,9 @@ export function PageContainer({ children, fullHeight, className }: PageContainer
   return (
     <div
       className={cn(
-        'mx-auto flex w-full flex-col px-4 pt-6 large-format:px-8',
+        'mx-auto flex w-full flex-col px-safe-gutter-x pt-safe-page-top large-format:px-safe-gutter-x-lg',
         fullWidth ? 'max-w-none' : 'max-w-6xl large-format:max-w-[90rem]',
-        fullHeight ? 'h-dvh pb-6' : 'min-h-dvh gap-6 pb-16',
+        fullHeight ? 'h-dvh pb-safe-page-bottom' : 'min-h-dvh gap-6 pb-16',
         className,
       )}
     >

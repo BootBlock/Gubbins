@@ -26,7 +26,7 @@ export function ClockOverrideBadge() {
       role="status"
       aria-live="polite"
       data-testid="clock-override-badge"
-      className="print-hide pointer-events-none fixed bottom-3 left-1/2 z-50 -translate-x-1/2 rounded-full bg-warning px-3 py-1 text-xs font-medium text-warning-foreground shadow-lg"
+      className="print-hide pointer-events-none fixed bottom-3 left-1/2 z-50 mb-safe-bottom -translate-x-1/2 rounded-full bg-warning px-3 py-1 text-xs font-medium text-warning-foreground shadow-lg"
     >
       {t('lab.date.badge')} — {dateOverride}
     </div>

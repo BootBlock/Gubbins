@@ -34,7 +34,7 @@ export function OfflineIndicator({ api }: { api?: OnlineStatusApi }) {
       {online ? null : (
         <div
           data-testid="offline-indicator"
-          className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-full border border-warning/40 bg-warning/15 px-3 py-1.5 text-xs font-medium text-warning shadow-lg backdrop-blur [&_svg]:size-4"
+          className="fixed bottom-safe-gutter-bottom left-safe-gutter-left z-50 flex items-center gap-2 rounded-full border border-warning/40 bg-warning/15 px-3 py-1.5 text-xs font-medium text-warning shadow-lg backdrop-blur [&_svg]:size-4"
         >
           <OfflineIcon aria-hidden="true" />
           <span>Offline — changes saved locally</span>
