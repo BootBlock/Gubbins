@@ -83,6 +83,11 @@ USER root
 COPY --from=build /app/dist /tmp/dist
 COPY docker/nginx.conf.in /etc/nginx/conf.d/gubbins.conf.in
 
+# The shared header set, included by the server level and each location above. It lives
+# outside conf.d deliberately: nginx auto-includes conf.d/*.conf into the http context,
+# which would apply these once globally and defeat the point of the per-location include.
+COPY docker/security-headers.conf /etc/nginx/gubbins-security-headers.conf
+
 # Place the bundle at the base path it was built for, and stamp that same path into the
 # nginx config, so the two can never disagree. The normalisation mirrors resolveBasePath()
 # in src/base-path.ts: strip surrounding slashes, then re-add exactly one of each.
@@ -96,7 +101,8 @@ RUN set -eu; \
     sed -e "s#__BASE__#$base#g" -e "s#__ROOT_REDIRECT__#$redirect#g" \
         /etc/nginx/conf.d/gubbins.conf.in > /etc/nginx/conf.d/default.conf; \
     rm /etc/nginx/conf.d/gubbins.conf.in; \
-    chown -R 101:101 /usr/share/nginx/html /etc/nginx/conf.d
+    chown -R 101:101 /usr/share/nginx/html /etc/nginx/conf.d; \
+    chown 101:101 /etc/nginx/gubbins-security-headers.conf
 
 USER 101
 
