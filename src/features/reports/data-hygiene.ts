@@ -71,7 +71,7 @@ export interface HygieneSection {
   readonly samples: readonly HygieneSample[];
 }
 
-/** The full data-hygiene report: every check (0-count included) + headline totals. */
+/** The report: every check that ran (0-count included) + headline totals. */
 export interface HygieneReport {
   readonly sections: readonly HygieneSection[];
   /** Total active, non-parent items considered. */
@@ -194,9 +194,10 @@ function section(
 // ---------------------------------------------------------------------------
 
 /**
- * Shape raw per-item flags into the data-hygiene report. Every check is always present (a 0-count
- * section reads as a green tick in the UI). Offenders are name-sorted and the sample list is
- * capped at `sampleLimit` (default {@link DEFAULT_SAMPLE_LIMIT}); the `count` stays exact.
+ * Shape raw per-item flags into the data-hygiene report. Every check runs unless `omitKinds`
+ * leaves it out, and a check that runs is always present (a 0-count section reads as a green tick
+ * in the UI). Offenders are name-sorted and the sample list is capped at `sampleLimit` (default
+ * {@link DEFAULT_SAMPLE_LIMIT}); the `count` stays exact.
  *
  * `duplicate-mpn` groups items by their normalised MPN and flags every member of any group of two
  * or more — the most likely "same part entered twice" signal.
