@@ -38,6 +38,7 @@ import { pickAdvertisedAddress, resolveMdnsPlan, sanitizeHostLabel } from './mdn
 import { discoverHomeAssistant } from './mdns/discover.ts';
 import { resolveHaDiscoveryPlan } from './mdns/discovery.ts';
 import { createHaClient, HaError, type HaClient } from './homeassistant/client.ts';
+import { createScaleStreamHub } from './homeassistant/scale-stream.ts';
 import { createEventPipeline, type EventSink } from './events/pipeline.ts';
 import { createLookupObserver } from './events/lookup.ts';
 import type { LookupObserver } from './query.ts';
@@ -263,7 +264,11 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
           client: createHaClient({ baseUrl: haBaseUrl, token: config.homeAssistantToken }),
         }
       : undefined;
-  const scale = ha ? { client: ha.client } : undefined;
+  // The live-reading stream (issue #125) travels with the same opt-in and the same client, so
+  // "count by weight" can watch a scale settle instead of pulling one reading at a time. It polls
+  // Home Assistant only while a client is connected, once per watched entity.
+  const scaleStreamHub = ha ? createScaleStreamHub({ readScale: ha.client.readScale }) : undefined;
+  const scale = ha ? { client: ha.client, stream: scaleStreamHub } : undefined;
 
   const server = createBridgeServer({
     getState: () => watcher.getState(),
@@ -439,6 +444,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     void mdns?.stop();
     mqtt?.stop();
     sseHub?.close();
+    scaleStreamHub?.close();
     void watcher.stop();
     server.close();
   };

@@ -2166,6 +2166,56 @@ export const openapiDocument: JsonValue = {
         },
       },
     },
+    '/api/v1/scale/stream': {
+      get: {
+        tags: ['scale'],
+        summary: 'Watch a scale entity live, as a Server-Sent Events stream',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Holds the connection open ' +
+          'and writes one "data: <frame>" line per sample, roughly four a second, so a client can ' +
+          'watch a reading settle instead of pulling one value at a time. A frame is either ' +
+          '{"ok":true,"reading":{…}} — the same shape /api/v1/scale/state returns — or ' +
+          '{"ok":false,"issue":"…"}. Deliberately unlike /api/v1/events: there is no "id:" line, ' +
+          'no Last-Event-ID resumption and no replay buffer, because replaying a stale weight to a ' +
+          'reconnecting client is worse than sending nothing. The same entity gating applies as to ' +
+          '/api/v1/scale/state, so a non-scale (or unknown) entity answers 404 before any stream ' +
+          'opens. issue "gone" means the entity has stopped being a readable scale, and the stream ' +
+          'ends after that frame. Same bearer token + rate limit as every endpoint; strictly ' +
+          'read-only, and it can never write to Home Assistant. A 429 is returned when the ' +
+          'concurrent-stream cap is reached.',
+        parameters: [
+          {
+            name: 'entity_id',
+            in: 'query',
+            required: true,
+            description: 'The Home Assistant entity id of the scale, e.g. sensor.workshop_scale.',
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'The live reading stream.',
+            content: {
+              'text/event-stream': {
+                schema: { type: 'string' },
+                example:
+                  ': connected\n\n' +
+                  'data: {"ok":true,"reading":{"entityId":"sensor.workshop_scale","grams":1250,' +
+                  '"value":1.25,"unit":"kg","lastUpdated":"2025-06-27T06:13:20.000Z"}}\n\n' +
+                  'data: {"ok":false,"issue":"unavailable"}\n\n',
+              },
+            },
+          },
+          404: response(
+            'The Home Assistant read is disabled, or the entity is not a scale (or does not ' +
+              'exist). A non-scale entity is deliberately indistinguishable from a missing one.',
+            '#/components/schemas/Error',
+            { error: { code: 'not_found', message: 'No such entity.' } },
+          ),
+          ...(errorResponses(400, 401, 429, 502) as Record<string, JsonValue>),
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {

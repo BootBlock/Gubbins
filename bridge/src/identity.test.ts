@@ -102,6 +102,7 @@ describe('requiredPermissions', () => {
       '/api/v1/activity.rss',
       '/api/v1/events',
       '/api/v1/scale/entities',
+      '/api/v1/scale/stream',
       '/api/v1/webhooks/deliveries',
       '/api/v1/something-added-later',
     ];

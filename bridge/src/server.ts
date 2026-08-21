@@ -50,6 +50,7 @@ import { ODATA_VERSION } from './api/odata-service.ts';
 import { isPermitted, resolveIdentity } from './identity.ts';
 import { corsAllowOrigin, WILDCARD_ORIGINS, type AllowedOrigins } from './cors.ts';
 import { EVENT_STREAM_CONTENT_TYPE } from './events/sse.ts';
+import { SCALE_STREAM_CONTENT_TYPE } from './homeassistant/scale-stream.ts';
 import { projectMetrics } from './feeds/metrics.ts';
 import { formatMetrics } from './feeds/metrics-format.ts';
 import type { WriteOperation, WriteResult } from './write.ts';
@@ -101,6 +102,13 @@ export interface PushCapability {
 export const API_V1_EVENTS_PATH = `${API_V1_BASE}/events`;
 
 /**
+ * The live scale-reading stream path (`GET /api/v1/scale/stream`); opt-in, present only when Home
+ * Assistant reads are enabled. A *separate* stream from `/api/v1/events` on purpose — see the note
+ * at the top of `homeassistant/scale-stream.ts`.
+ */
+export const API_V1_SCALE_STREAM_PATH = `${API_V1_BASE}/scale/stream`;
+
+/**
  * The opt-in **event stream** capability (`GUBBINS_BRIDGE_EVENTS=on`, or implied by
  * `GUBBINS_BRIDGE_WEBHOOKS=on`). Its presence is the runtime gate: when absent, `GET
  * /api/v1/events` is a `404` (the feature is invisible). `handleConnection` upgrades the
@@ -122,6 +130,21 @@ export interface ScaleCapability {
    * composition-root concern, and nothing reachable over HTTP should be able to trigger it.
    */
   readonly client: Pick<HaClient, 'listScaleEntities' | 'readScale'>;
+  /**
+   * The live-reading stream behind `GET /api/v1/scale/stream` (issue #125). Like the event stream
+   * it needs the raw request (socket + close events), so it is handled in `server.ts` rather than
+   * through the res-only v1 router — see `homeassistant/scale-stream.ts`.
+   *
+   * Optional purely as a wiring seam: the composition root always supplies one when Home
+   * Assistant reads are on, and a capability without it leaves the path falling through to the
+   * router's `404`, exactly as an unknown sub-path under `/scale` does.
+   */
+  readonly stream?: ScaleStreamCapability;
+}
+
+/** The scale stream's half of {@link ScaleCapability} — an async handler, unlike the event hub's. */
+export interface ScaleStreamCapability {
+  readonly handleConnection: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void>;
 }
 
 /**
@@ -532,6 +555,23 @@ export async function handleRequest(
         return;
       }
       options.events.handleConnection(req, res, url);
+      return;
+    }
+
+    // The live scale stream is the same shape of long-lived response and, like the event stream,
+    // needs the raw request — so it is handled here too rather than through the res-only router.
+    // When Home Assistant reads are not enabled this falls through and the router answers 404.
+    if (options.scale?.stream && url.pathname === API_V1_SCALE_STREAM_PATH) {
+      // A HEAD is answered directly for the same reason the event stream's is: opening a stream
+      // would take a client slot and hold the response open, so the probe reports the media type
+      // the endpoint serves and nothing else. No `entity_id` is required or read here — a probe
+      // asks whether the endpoint exists, not whether one particular sensor can be watched.
+      if (isHead) {
+        res.writeHead(200, { 'content-type': SCALE_STREAM_CONTENT_TYPE, 'cache-control': 'no-store' });
+        res.end();
+        return;
+      }
+      await options.scale.stream.handleConnection(req, res, url);
       return;
     }
 

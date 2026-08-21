@@ -22,6 +22,7 @@ import { createBridgeServer, type BridgeServerState, type ScaleCapability } from
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import { mintTestToken } from '../fixtures/test-identity.ts';
 import { HaError } from '../homeassistant/client.ts';
+import { createScaleStreamHub, type ScaleStreamHub } from '../homeassistant/scale-stream.ts';
 import type { ScaleEntityDto, ScaleReadingOutcome } from '../homeassistant/scale.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-snapshot.json', import.meta.url);
@@ -44,7 +45,12 @@ afterAll(async () => {
   await hydrated.driver.close();
 });
 
+/** Every stream hub a case built, closed in teardown so no poll loop outlives it. */
+let hubs: ScaleStreamHub[] = [];
+
 afterEach(async () => {
+  for (const hub of hubs) hub.close();
+  hubs = [];
   if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
   server = undefined;
 });
@@ -67,19 +73,24 @@ function fakeScale(overrides: {
   entities?: ScaleEntityDto[];
   reading?: ScaleReadingOutcome;
   throws?: unknown;
-}): ScaleCapability {
-  return {
-    client: {
-      listScaleEntities: async () => {
-        if (overrides.throws) throw overrides.throws;
-        return overrides.entities ?? [];
-      },
-      readScale: async () => {
-        if (overrides.throws) throw overrides.throws;
-        return overrides.reading ?? { ok: false, issue: 'unavailable' };
-      },
+}): ScaleCapability & { readonly stream: ScaleStreamHub } {
+  const client = {
+    listScaleEntities: async () => {
+      if (overrides.throws) throw overrides.throws;
+      return overrides.entities ?? [];
+    },
+    readScale: async () => {
+      if (overrides.throws) throw overrides.throws;
+      return overrides.reading ?? ({ ok: false, issue: 'unavailable' } as ScaleReadingOutcome);
     },
   };
+  // The real hub, over the fake client: the point of these cases is the *server* wiring — the
+  // capability gate, the auth guard and the long-lived response — and the hub's own behaviour is
+  // covered in `homeassistant/scale-stream.test.ts`. Registered for teardown so no poll loop
+  // outlives its case.
+  const stream = createScaleStreamHub({ readScale: client.readScale, heartbeatMs: 0, pollMs: 5 });
+  hubs.push(stream);
+  return { client, stream };
 }
 
 const READING: ScaleReadingOutcome = {
@@ -94,10 +105,13 @@ const READING: ScaleReadingOutcome = {
 };
 
 describe('when Home Assistant reads are not opted in', () => {
-  it('answers 404 for both scale paths, so the feature is invisible', async () => {
+  it('answers 404 for every scale path, so the feature is invisible', async () => {
     const get = await start();
     expect((await get('/api/v1/scale/entities')).status).toBe(404);
     expect((await get('/api/v1/scale/state?entity_id=sensor.bench_scale')).status).toBe(404);
+    const stream = await get('/api/v1/scale/stream?entity_id=sensor.bench_scale');
+    expect(stream.status).toBe(404);
+    await stream.json();
   });
 
   it('does not advertise the capability in the discovery index', async () => {
@@ -223,5 +237,51 @@ describe('GET /api/v1/scale/state', () => {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
     expect(res.status).toBe(503);
+  });
+});
+
+describe('GET /api/v1/scale/stream', () => {
+  it('requires the caller’s token, exactly like every other read', async () => {
+    server = createBridgeServer({ getState: () => state, scale: fakeScale({ reading: READING }) });
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${port}/api/v1/scale/stream?entity_id=sensor.bench_scale`);
+    expect(res.status).toBe(401);
+    await res.json();
+  });
+
+  it('streams a live reading to an authorised caller', async () => {
+    await start(fakeScale({ reading: READING }));
+    const controller = new AbortController();
+    const { port } = server!.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${port}/api/v1/scale/stream?entity_id=sensor.bench_scale`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: controller.signal,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/event-stream; charset=utf-8');
+    const chunk = new TextDecoder().decode((await res.body!.getReader().read()).value);
+    expect(chunk).toContain('"grams":1250');
+    controller.abort();
+  });
+
+  // A HEAD must not take a client slot or hold a response open, so it reports the media type only.
+  it('answers a HEAD probe without opening a stream', async () => {
+    const capability = fakeScale({ reading: READING });
+    await start(capability);
+    const { port } = server!.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${port}/api/v1/scale/stream`, {
+      method: 'HEAD',
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/event-stream; charset=utf-8');
+    expect(capability.stream.clientCount()).toBe(0);
+  });
+
+  it('advertises the path in the discovery index once the capability is on', async () => {
+    const get = await start(fakeScale({ reading: READING }));
+    const body = await (await get('/api/v1')).json();
+    expect(body.endpoints).toContain('/api/v1/scale/stream');
   });
 });

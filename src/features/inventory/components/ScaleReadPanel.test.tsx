@@ -313,3 +313,140 @@ describe('ScaleReadPanel (issue #122)', () => {
     });
   });
 });
+
+/**
+ * Watching the scale live (issue #125).
+ *
+ * Driven through the same real dialog, with a **controllable** stream: the test pushes frames one
+ * at a time, so the settle window's behaviour is observed rather than raced. What matters here is
+ * that a moving reading is never presented as a count, and never applied on its own.
+ */
+describe('ScaleReadPanel — watching (issue #125)', () => {
+  /** Hand back a `fetch` that serves the entity list, plus a stream the test writes into. */
+  function stubStream() {
+    const encoder = new TextEncoder();
+    let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let aborted = false;
+    const impl = vi.fn(async (url: string, init?: { signal?: AbortSignal }) => {
+      if (!url.includes('/scale/stream')) {
+        return { status: 200, json: async () => ENTITIES } as unknown as Response;
+      }
+      init?.signal?.addEventListener('abort', () => {
+        aborted = true;
+      });
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          controller = c;
+        },
+      });
+      return { status: 200, json: async () => undefined, body } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', impl);
+    return {
+      /** Push one reading, in grams, as the bridge would frame it. */
+      async sample(grams: number) {
+        const reading = { entityId: 'sensor.bench', grams, value: grams, unit: 'g' };
+        controller?.enqueue(encoder.encode(`data: ${JSON.stringify({ ok: true, reading })}\n\n`));
+        await waitFor(() => expect(grossField()).toHaveValue(String(grams)));
+      },
+      /** Push a failure frame. */
+      fail(issue: string) {
+        controller?.enqueue(encoder.encode(`data: ${JSON.stringify({ ok: false, issue })}\n\n`));
+      },
+      wasAborted: () => aborted,
+    };
+  }
+
+  /** Start a watch on a chosen scale and wait for the panel to be live. */
+  async function startWatching() {
+    usePreferencesStore.setState({ scaleEntityId: 'sensor.bench' });
+    const stream = stubStream();
+    render(<WeighCountDialog item={screws} open onClose={() => {}} />);
+    fireEvent.click(await screen.findByTestId('scale-watch'));
+    return stream;
+  }
+
+  it('fills the gross field from each sample and shows the count as provisional', async () => {
+    const stream = await startWatching();
+    await stream.sample(43);
+
+    // The reading has landed, but one sample proves nothing about whether the pan has stopped.
+    expect(await screen.findByTestId('weigh-count-result')).toHaveTextContent('Settling…');
+    expect(screen.getByTestId('weigh-count-apply')).toBeDisabled();
+    expect(screen.getByTestId('scale-watch-status')).toHaveTextContent(/waiting for the reading to settle/i);
+  });
+
+  it('shows the count once consecutive samples agree', async () => {
+    const stream = await startWatching();
+    await stream.sample(43);
+    await stream.sample(43);
+    await stream.sample(43);
+
+    // 43 g of 0.5 g screws is 86, against 80 recorded.
+    await waitFor(() => expect(screen.getByTestId('weigh-count-result')).toHaveTextContent('86 units'));
+    expect(screen.getByTestId('weigh-count-apply')).toBeEnabled();
+    expect(screen.getByTestId('scale-watch-status')).toHaveTextContent(/has settled/i);
+  });
+
+  // Tipping a second handful in is a new weight, not a nudge to the old one.
+  it('re-opens the settle when the weight jumps, and withholds the count again', async () => {
+    const stream = await startWatching();
+    await stream.sample(43);
+    await stream.sample(43);
+    await stream.sample(43);
+    await waitFor(() => expect(screen.getByTestId('weigh-count-result')).toHaveTextContent('86 units'));
+
+    await stream.sample(60);
+    await waitFor(() => expect(screen.getByTestId('weigh-count-result')).toHaveTextContent('Settling…'));
+    expect(screen.getByTestId('weigh-count-apply')).toBeDisabled();
+  });
+
+  // A live reading is never applied automatically — the user still confirms, exactly as for a
+  // typed figure, and this is the check that no watch can write stock on its own.
+  it('never applies a reading on its own', async () => {
+    const stream = await startWatching();
+    await stream.sample(43);
+    await stream.sample(43);
+    await stream.sample(43);
+    await waitFor(() => expect(screen.getByTestId('weigh-count-apply')).toBeEnabled());
+    expect(spies.adjust).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('weigh-count-apply'));
+    expect(spies.adjust).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the stream when the watch is switched off', async () => {
+    const stream = await startWatching();
+    await stream.sample(43);
+
+    fireEvent.click(screen.getByTestId('scale-watch'));
+    await waitFor(() => expect(stream.wasAborted()).toBe(true));
+    expect(screen.getByTestId('scale-watch-status')).toBeEmptyDOMElement();
+  });
+
+  // Nothing keeps reading the user's scale once nobody is looking at it.
+  it('closes the stream when the dialog closes', async () => {
+    const stream = await startWatching();
+    await stream.sample(43);
+
+    cleanup();
+    await waitFor(() => expect(stream.wasAborted()).toBe(true));
+  });
+
+  it('reports a failure frame without ending the watch', async () => {
+    const stream = await startWatching();
+    await stream.sample(43);
+    stream.fail('unavailable');
+
+    expect(await screen.findByTestId('scale-error')).toHaveTextContent(/scale is unavailable/i);
+    expect(screen.getByTestId('scale-watch')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // The one-shot buttons write the same field four times a second slower, so a pull landing
+  // mid-watch would be overwritten before it was read.
+  it('disables the one-shot reads while watching', async () => {
+    await startWatching();
+    await waitFor(() => expect(screen.getByTestId('scale-read')).toBeDisabled());
+    expect(screen.getByTestId('scale-read-tare')).toBeDisabled();
+  });
+});
