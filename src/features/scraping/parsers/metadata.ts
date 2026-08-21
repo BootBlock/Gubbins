@@ -291,8 +291,14 @@ export function makeSupplierParser(config: SupplierParserConfig): SupplierParser
       const description =
         (selectors?.description ? optionalText(doc, selectors.description) : null) ?? meta.description ?? '';
 
-      const priceText = (selectors?.price ? optionalText(doc, selectors.price) : null) ?? meta.priceText;
-      const scraped_pricing = priceText ? parsePrice(priceText, meta.currency ?? 'GBP') : null;
+      // A host selector reads the *rendered* price, which carries the site's locale
+      // conventions (`1.299,00 €`); the metadata fallback is a machine-written field. The two
+      // read `1.234` differently, so which source supplied the text has to be carried through.
+      const selectorPrice = selectors?.price ? optionalText(doc, selectors.price) : null;
+      const priceText = selectorPrice ?? meta.priceText;
+      const scraped_pricing = priceText
+        ? parsePrice(priceText, meta.currency ?? 'GBP', { machineFormat: selectorPrice === null })
+        : null;
       // An explicit currency code from metadata beats symbol inference.
       if (scraped_pricing && meta.currency) scraped_pricing.currency = meta.currency;
 

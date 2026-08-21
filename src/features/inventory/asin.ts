@@ -43,34 +43,52 @@ export const DEFAULT_AMAZON_MARKETPLACE = 'co.uk';
 
 /**
  * The marketplace TLDs Amazon operates under (single-label TLDs and the two-part ccTLD
- * suffixes). A curated set — rather than a loose `amazon.*` pattern — is what tells the
- * genuine registrable domain `amazon.co.uk` from a look-alike like `amazon.evil.com`,
- * where `amazon` is merely a subdomain of someone else's domain. Extend as needed.
+ * suffixes), each mapped to the currency that marketplace prices in. A curated set — rather
+ * than a loose `amazon.*` pattern — is what tells the genuine registrable domain
+ * `amazon.co.uk` from a look-alike like `amazon.evil.com`, where `amazon` is merely a
+ * subdomain of someone else's domain. Extend as needed.
+ *
+ * The currency is carried here rather than beside the scraper because a listing's buy-box
+ * price is always rendered in its own marketplace's currency: the live tab's host identifies
+ * the currency outright, where the symbol beside the number cannot (`$` is shared by USD, CAD
+ * and AUD; `kr` by SEK, NOK and DKK). Keeping the two in one table is also what stops a newly
+ * added marketplace from silently inheriting some other locale's currency.
  */
-const AMAZON_TLDS: ReadonlySet<string> = new Set([
-  'com',
-  'co.uk',
-  'de',
-  'fr',
-  'it',
-  'es',
-  'nl',
-  'se',
-  'pl',
-  'com.be',
-  'com.tr',
-  'ca',
-  'com.mx',
-  'com.br',
-  'com.au',
-  'co.jp',
-  'in',
-  'sg',
-  'ae',
-  'sa',
-  'eg',
-  'cn',
-]);
+const AMAZON_MARKETPLACES: Readonly<Record<string, string>> = {
+  com: 'USD',
+  'co.uk': 'GBP',
+  de: 'EUR',
+  fr: 'EUR',
+  it: 'EUR',
+  es: 'EUR',
+  nl: 'EUR',
+  se: 'SEK',
+  pl: 'PLN',
+  'com.be': 'EUR',
+  'com.tr': 'TRY',
+  ca: 'CAD',
+  'com.mx': 'MXN',
+  'com.br': 'BRL',
+  'com.au': 'AUD',
+  'co.jp': 'JPY',
+  in: 'INR',
+  sg: 'SGD',
+  ae: 'AED',
+  sa: 'SAR',
+  eg: 'EGP',
+  cn: 'CNY',
+};
+
+const AMAZON_TLDS: ReadonlySet<string> = new Set(Object.keys(AMAZON_MARKETPLACES));
+
+/**
+ * The ISO 4217 currency an Amazon marketplace prices in, or `null` for a TLD that is not a
+ * known marketplace — the caller then falls back to whatever it would otherwise have used,
+ * rather than recording a currency this table cannot vouch for.
+ */
+export function currencyForMarketplace(marketplace: string): string | null {
+  return AMAZON_MARKETPLACES[marketplace.trim().toLowerCase()] ?? null;
+}
 
 /**
  * The `/<segment>/<ASIN>` path shapes Amazon uses for a product: `/dp/`, `/gp/product/`,

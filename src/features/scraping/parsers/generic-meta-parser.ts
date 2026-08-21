@@ -27,8 +27,11 @@ export const genericMetaParser: SupplierParser = {
     const meta = readStructuredMetadata(doc);
     if (!meta.mpn) throw new DomDriftError('Missing MPN — no recognised product metadata.');
 
-    // Price is optional structurally, but if a price element is present it MUST parse.
-    const scraped_pricing = meta.priceText ? parsePrice(meta.priceText, meta.currency ?? 'GBP') : null;
+    // Price is optional structurally, but if a price element is present it MUST parse. Every
+    // source here is a machine-written field (JSON-LD / meta tag), never rendered page text.
+    const scraped_pricing = meta.priceText
+      ? parsePrice(meta.priceText, meta.currency ?? 'GBP', { machineFormat: true })
+      : null;
     // When the metadata names an explicit currency code, trust it over symbol inference.
     if (scraped_pricing && meta.currency) scraped_pricing.currency = meta.currency;
 

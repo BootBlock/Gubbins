@@ -10,6 +10,7 @@
  * Pure (operates on a standard `Document`) so it is unit-tested under happy-dom and
  * bundled unchanged into the extension's background worker.
  */
+import { parseMoneyNumber } from '../../inventory/ocr/receipt-ocr';
 import { type ScrapeErrorPayload, type ScrapeResultPayload } from '../protocol';
 
 /** Raised when the DOM no longer matches a parser's expectations (§9.4.2). */
@@ -68,35 +69,133 @@ export function requireAttr(doc: ParentNode, selector: string, attr: string, lab
   return value;
 }
 
-const CURRENCY_BY_SYMBOL: Record<string, string> = { '£': 'GBP', $: 'USD', '€': 'EUR', '¥': 'JPY' };
+/**
+ * Currency marks that appear beside a rendered price, longest-first so a prefixed dollar
+ * (`CDN$`, `A$`, `R$`) is recognised before the bare `$` it contains.
+ *
+ * A mark with no single reading is left out rather than guessed at: `kr` is shared by SEK,
+ * NOK, DKK and ISK, and picking one of the four is exactly the confident wrong answer this
+ * table is trying to avoid. A caller that knows the locale (the Amazon marketplace, a page's
+ * `priceCurrency`) passes the code in and settles it properly. The two long-standing
+ * exceptions are the bare `$`, read as USD, and `¥`, read as JPY though CNY shares it —
+ * both keep the reading the scraper has always given them.
+ */
+const CURRENCY_BY_SYMBOL: readonly (readonly [string, string])[] = [
+  ['CDN$', 'CAD'],
+  ['US$', 'USD'],
+  ['CA$', 'CAD'],
+  ['AU$', 'AUD'],
+  ['NZ$', 'NZD'],
+  ['HK$', 'HKD'],
+  ['MX$', 'MXN'],
+  ['C$', 'CAD'],
+  ['A$', 'AUD'],
+  ['S$', 'SGD'],
+  ['R$', 'BRL'],
+  ['£', 'GBP'],
+  ['€', 'EUR'],
+  ['¥', 'JPY'],
+  ['₹', 'INR'],
+  ['₽', 'RUB'],
+  ['₩', 'KRW'],
+  ['₪', 'ILS'],
+  ['₺', 'TRY'],
+  ['฿', 'THB'],
+  ['₫', 'VND'],
+  ['zł', 'PLN'],
+  ['Kč', 'CZK'],
+  ['$', 'USD'],
+];
 
 /**
- * Parse a price string (`"£0.42"`, `"0.42 GBP"`, `"$1,234.56"`) into a strict
+ * ISO 4217 codes recognised when a page writes the currency out (`12.99 EUR`). A known-code
+ * list rather than a bare three-letter scan, so an ordinary word in the price line (`VAT`,
+ * `EAC`) cannot be adopted as a currency.
+ */
+const CURRENCY_CODES = (
+  'GBP USD EUR JPY CHF CNY INR CAD AUD NZD SGD HKD SEK NOK DKK ISK PLN CZK HUF RON ' +
+  'BGN TRY RUB UAH BRL MXN ARS CLP ZAR AED SAR EGP ILS KRW TWD THB MYR IDR PHP VND'
+).split(' ');
+const CURRENCY_CODE_RE = new RegExp(String.raw`\b(${CURRENCY_CODES.join('|')})\b`);
+
+/**
+ * A space, non-breaking space or apostrophe used as a **thousands** separator (`1 234,56`,
+ * `1'299.00`) — recognised only where it sits between a digit and a following three-digit
+ * group, so ordinary spacing between two separate numbers still ends the price token.
+ */
+const GROUPING_GAP_RE = /(\d)[\s\u00a0\u202f'\u2019](?=\d{3}(?:\D|$))/g;
+
+/** The first run of digits and separators in a price string. */
+const PRICE_TOKEN_RE = /\d[\d.,]*/;
+
+/** A bare machine-written amount: digits, optionally one dot and a fraction. */
+const MACHINE_AMOUNT_RE = /^\d+(?:\.\d+)?$/;
+
+/** Options for {@link parsePrice}. */
+export interface ParsePriceOptions {
+  /**
+   * The text came from a **machine-written** field (a JSON-LD `price`, a `product:price:amount`
+   * meta tag) rather than the rendered page. schema.org writes such a value dot-decimal and
+   * ungrouped, so `"1.234"` is one and a bit — not the 1234 the same string means in a German
+   * price *label*. Only that otherwise-ambiguous shape is affected: a grouped or comma-decimal
+   * value (which European sites do emit into meta tags in defiance of the schema) still goes
+   * through the convention-resolving reader below.
+   */
+  readonly machineFormat?: boolean;
+}
+
+/**
+ * Read the numeric magnitude out of a price string, resolving both decimal conventions.
+ *
+ * Delegates to {@link parseMoneyNumber} — the same reader the receipt OCR and the CSV
+ * importer use — so a scraped `1.299,00 €` and an imported `1.299,00` agree. Returns null
+ * when no plausible amount is present.
+ */
+function priceMagnitude(raw: string, machineFormat: boolean): number | null {
+  const token = raw
+    .replace(GROUPING_GAP_RE, '$1')
+    .match(PRICE_TOKEN_RE)?.[0]
+    // A trailing separator is sentence punctuation, not part of the number.
+    .replace(/[.,]+$/, '');
+  if (!token) return null;
+  if (machineFormat && MACHINE_AMOUNT_RE.test(token)) return Number(token);
+  return parseMoneyNumber(token);
+}
+
+/**
+ * Parse a price string (`"£0.42"`, `"0.42 GBP"`, `"$1,234.56"`, `"1.299,00 €"`) into a strict
  * `{ currency, value }`. Throws §9.4.2 when no finite number can be extracted —
  * never returns `NaN`. `defaultCurrency` covers a bare number with no symbol/code.
  */
-export function parsePrice(text: string, defaultCurrency = 'GBP'): { currency: string; value: number } {
+export function parsePrice(
+  text: string,
+  defaultCurrency = 'GBP',
+  options: ParsePriceOptions = {},
+): { currency: string; value: number } {
   const raw = text.trim();
   if (raw.length === 0) throw new DomDriftError('Empty price string.');
 
+  // A written-out ISO code is the page stating the currency outright, so it outranks the
+  // symbol: `US$ 29.99 CAD` is Canadian, whatever the dollar sign on its own would suggest.
   let currency: string | null = null;
-  for (const [symbol, code] of Object.entries(CURRENCY_BY_SYMBOL)) {
-    if (raw.includes(symbol)) {
-      currency = code;
-      break;
+  const code = raw.toUpperCase().match(CURRENCY_CODE_RE);
+  if (code) currency = code[1]!;
+  if (!currency) {
+    for (const [symbol, symbolCode] of CURRENCY_BY_SYMBOL) {
+      if (raw.includes(symbol)) {
+        currency = symbolCode;
+        break;
+      }
     }
   }
-  if (!currency) {
-    const code = raw.match(/\b([A-Z]{3})\b/);
-    if (code) currency = code[1]!;
-  }
 
-  // Strip thousands separators, keep the first decimal group. Preserve a leading
-  // minus so a negative price is rejected rather than silently flipped positive.
-  const negative = /-\s*[\d.]/.test(raw);
-  const numeric = raw.replace(/[^\d.,]/g, '').replace(/,(?=\d{3}\b)/g, '');
-  const magnitude = Number.parseFloat(numeric.replace(/,/g, '.'));
-  if (!Number.isFinite(magnitude)) throw new DomDriftError(`Unparseable price "${text}".`);
+  // Preserve a leading minus so a negative price is rejected rather than silently flipped
+  // positive; the reader itself only ever sees the unsigned token.
+  const negative = /-\s*[\d.,]*\d/.test(raw);
+  const magnitude = priceMagnitude(raw, options.machineFormat ?? false);
+  if (magnitude === null || !Number.isFinite(magnitude)) {
+    throw new DomDriftError(`Unparseable price "${text}".`);
+  }
   if (negative || magnitude < 0) throw new DomDriftError(`Negative price "${text}".`);
   const value = magnitude;
 
