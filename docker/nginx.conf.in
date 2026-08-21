@@ -24,24 +24,18 @@ server {
     # terminating on 443. A relative Location is correct at every hop.
     absolute_redirect off;
 
-    # Cross-origin isolation (spec §2.2.6) — without both of these the SQLite OPFS VFS
-    # cannot get SharedArrayBuffer and the database fails to open. `always` so they are
-    # sent on error responses too, not just 2xx/3xx.
-    add_header Cross-Origin-Opener-Policy   same-origin  always;
-    add_header Cross-Origin-Embedder-Policy require-corp always;
-
-    # Same-origin subresources satisfy COEP without this, but stating it explicitly stops
-    # any asset here from being embedded by another origin.
-    add_header Cross-Origin-Resource-Policy same-origin always;
-
-    # Gubbins sends no data anywhere, but these cost nothing and harden the deployment.
-    # The Content-Security-Policy is deliberately NOT set here: the service worker sets the
+    # The isolation and hardening headers, defined once in docker/security-headers.conf.
+    # nginx's `add_header` inheritance is all-or-nothing — a location that declares any
+    # `add_header` of its own inherits NONE of the enclosing level's — so every location
+    # that sets its own Cache-Control repeats this same include. (The `__ROOT_REDIRECT__`
+    # location below declares nothing, so it inherits from here.) Declaring a header only
+    # at this level is the bug this shape exists to prevent.
+    #
+    # The Content-Security-Policy is deliberately NOT set: the service worker sets the
     # authoritative policy as a response header and index.html carries a build-time <meta>
     # for the first navigation (see src/csp.ts). A third, hand-maintained copy in nginx
     # would be one more thing to drift.
-    add_header X-Content-Type-Options nosniff        always;
-    add_header Referrer-Policy        no-referrer     always;
-    add_header X-Frame-Options        DENY            always;
+    include /etc/nginx/gubbins-security-headers.conf;
 
     gzip on;
     gzip_vary on;
@@ -56,7 +50,10 @@ server {
     # whatever the app is served under, and exempt from the SPA fallback below.
     location = /healthz {
         access_log off;
-        add_header Content-Type text/plain always;
+        include /etc/nginx/gubbins-security-headers.conf;
+        # `return` types its body from default_type. An add_header Content-Type here would
+        # APPEND a second one rather than replace it.
+        default_type text/plain;
         return 200 "ok\n";
     }
 
@@ -67,10 +64,8 @@ server {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
 
         # add_header does not inherit into a location that declares its own, so the
-        # isolation headers must be repeated here or every asset drops them.
-        add_header Cross-Origin-Opener-Policy   same-origin  always;
-        add_header Cross-Origin-Embedder-Policy require-corp always;
-        add_header Cross-Origin-Resource-Policy same-origin  always;
+        # server-level set must be repeated here or every asset drops all of it.
+        include /etc/nginx/gubbins-security-headers.conf;
     }
 
     # Never cache the entry points: the service worker and the app shell are how an
@@ -78,9 +73,7 @@ server {
     location ~* ^__BASE__(index\.html|sw\.js|registerSW\.js|manifest\.webmanifest|version\.json|coi-bootstrap\.js)$ {
         add_header Cache-Control "no-cache, must-revalidate" always;
 
-        add_header Cross-Origin-Opener-Policy   same-origin  always;
-        add_header Cross-Origin-Embedder-Policy require-corp always;
-        add_header Cross-Origin-Resource-Policy same-origin  always;
+        include /etc/nginx/gubbins-security-headers.conf;
     }
 
     # Replaced at build time with a redirect to the base path, and left empty when the app
@@ -100,8 +93,6 @@ server {
 
         add_header Cache-Control "no-cache, must-revalidate" always;
 
-        add_header Cross-Origin-Opener-Policy   same-origin  always;
-        add_header Cross-Origin-Embedder-Policy require-corp always;
-        add_header Cross-Origin-Resource-Policy same-origin  always;
+        include /etc/nginx/gubbins-security-headers.conf;
     }
 }

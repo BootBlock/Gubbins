@@ -106,6 +106,40 @@ jobs:
           # would leave caching behaviour ambiguous.
           test "$(grep -ic '^cache-control:' <<<"$headers")" = "1"
 
+      - name: Assert the hardening headers survive add_header inheritance
+        run: |
+          set -euo pipefail
+          # nginx inherits `add_header` into a location only when that location declares
+          # none of its own — and the locations serving the app all set their own
+          # Cache-Control. A header declared at server level alone is therefore sent on
+          # almost no response, while reading from the config as though it were set on
+          # every one. Assert the whole set on one response of each shape instead.
+          asset="$(curl -fsS http://127.0.0.1:18080${{ matrix.prefix }}/ \
+            | grep -o '${{ matrix.prefix }}/assets/[A-Za-z0-9._-]*\.js' | head -n1)"
+          test -n "$asset"
+          # The last URL is the bare `/`: under the sub-path layout that is the generated
+          # redirect location, which declares no add_header and so must INHERIT the set.
+          for url in \
+            "http://127.0.0.1:18080${{ matrix.prefix }}/" \
+            "http://127.0.0.1:18080$asset" \
+            "http://127.0.0.1:18080${{ matrix.prefix }}/items" \
+            "http://127.0.0.1:18080${{ matrix.prefix }}/sw.js" \
+            "http://127.0.0.1:18080/healthz" \
+            "http://127.0.0.1:18080/"; do
+            echo "--- $url"
+            headers="$(curl -fsS -D - -o /dev/null "$url")"
+            echo "$headers"
+            grep -iq '^x-frame-options: *DENY' <<<"$headers"
+            grep -iq '^x-content-type-options: *nosniff' <<<"$headers"
+            grep -iq '^referrer-policy: *no-referrer[[:space:]]*$' <<<"$headers"
+            grep -iq '^cross-origin-opener-policy: *same-origin' <<<"$headers"
+            grep -iq '^cross-origin-embedder-policy: *require-corp' <<<"$headers"
+            grep -iq '^cross-origin-resource-policy: *same-origin' <<<"$headers"
+            # One of each: a duplicated include or a stray add_header would send two.
+            test "$(grep -ic '^x-frame-options:' <<<"$headers")" = "1"
+            test "$(grep -ic '^content-type:' <<<"$headers")" = "1"
+          done
+
       - name: Assert JavaScript is actually served gzipped
         run: |
           set -euo pipefail
