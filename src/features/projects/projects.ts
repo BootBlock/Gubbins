@@ -4,7 +4,9 @@
  * Reads go through TanStack Query; writes use targeted invalidation (project edits
  * are low-frequency and reshape derived counts/costing/shopping-list aggregates, so
  * invalidation is simpler and safer than optimistic patching here — the same
- * deliberate split the category/tag hooks use). A project's BOM, costing and
+ * deliberate split the category/tag hooks use). The one exception is {@link useSetPicked}:
+ * ticking off the picking worksheet is a rapid, sequential interaction, so it patches
+ * optimistically the way the inventory hooks do. A project's BOM, costing and
  * shopping list are bounded per-project sets, fetched whole rather than virtualised;
  * the strict-pagination mandate (§2.1) targets the 100k+ item list.
  *
@@ -14,6 +16,7 @@
  * feeds the export, where a short read is a wrong file rather than a shorter screen (issue #149).
  * The project *list* itself is a browse list and pages server-side instead.
  */
+import { useRef } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   getItemRepository,
@@ -443,19 +446,14 @@ export function useRemoveBomLine(projectId: string) {
 // --- picking (issue #121 location-aware gather-and-tick) -----------------------
 
 /**
- * Mutation key for the in-flight pick toggles of **one** project — what the rapid-tick
- * de-bounce in {@link useSetPicked} counts. Scoped per project so a burst on one worksheet
- * cannot hold back another's reconciliation.
- */
-const setPickedKey = (projectId: string) => ['projects', 'set-picked', projectId] as const;
-
-/**
  * Set one line's `picked` flag in both cached slices that carry it — the picking worksheet and
  * the BOM lines — leaving every other line, and every other field, untouched.
  *
- * Writing the flag rather than restoring a snapshot is what makes the rollback safe mid-burst: a
- * rejected tick puts back only its own line, so the ticks either side of it keep their patches
- * (the same reasoning as the inverse patches in the inventory hooks, issue #300).
+ * Writing one line's flag rather than restoring a snapshot is what keeps a rollback mid-burst
+ * from undoing the ticks either side of it (the reasoning behind the inverse patches in the
+ * inventory hooks, issue #300). Two ticks racing on the *same* line can still leave the cache
+ * showing the rejected one's inverse rather than the latest tap; the reconciliation that follows
+ * the burst is what settles that.
  */
 function patchPicked(client: QueryClient, projectId: string, lineId: string, picked: boolean): void {
   client.setQueryData<readonly PickLine[]>(projectKeys.pickList(projectId), (rows) =>
@@ -484,12 +482,16 @@ export function useSetPicked(projectId: string) {
     'projects.writeError.heading.picked',
     'projects.writeError.pickedReverted',
   );
-  const mutationKey = setPickedKey(projectId);
+  // Ticks of the current burst that have not settled yet. Counted here rather than read back
+  // from `client.isMutating`, whose count is only updated when a mutation dispatches its
+  // terminal state: two ticks resolving in the same microtask both run `onSettled` while the
+  // other is still counted as pending, so both would skip and the burst would never reconcile.
+  const inFlight = useRef(0);
   return useMutation({
-    mutationKey,
     mutationFn: ({ lineId, picked }: { lineId: string; picked: boolean }) =>
       getProjectRepository().setPicked(lineId, picked),
     onMutate: async ({ lineId, picked }) => {
+      inFlight.current += 1;
       // Cancel the reads this is about to write over, or one already in flight resolves after
       // the patch and snaps the box back to its pre-tick state.
       await Promise.all([
@@ -508,8 +510,9 @@ export function useSetPicked(projectId: string) {
     onSettled: () => {
       // Only the last tick of a walk-the-list burst refetches. Each tick is its own write, so an
       // earlier one's refetch could otherwise resolve before a later one had landed and snap the
-      // worksheet back mid-burst. Any count above one means later ticks are still in flight.
-      if (client.isMutating({ mutationKey }) > 1) return;
+      // worksheet back mid-burst.
+      inFlight.current = Math.max(0, inFlight.current - 1);
+      if (inFlight.current > 0) return;
       void client.invalidateQueries({ queryKey: projectKeys.pickList(projectId) });
       void client.invalidateQueries({ queryKey: projectKeys.lines(projectId) });
     },

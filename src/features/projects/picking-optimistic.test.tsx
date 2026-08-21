@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { ToastProvider } from '@/components/foundry';
 import type { AllPages } from '@/lib/read-all-pages';
 import type { PickLine, ProjectBomLine } from '@/db/repositories';
+import { DbError } from '@/db/errors';
 
 const repo = { setPicked: vi.fn() };
 vi.mock('@/db/repositories', async (importOriginal) => ({
@@ -101,8 +102,13 @@ describe('useSetPicked (issue #670 optimistic picking tick)', () => {
 
   it('leaves a second tick’s patch in place when the first is rejected', async () => {
     const client = seededClient();
+    // The first tick is held open so the optimistic patch is *observed* before the write is
+    // rejected — asserting the revert against the seeded value alone would pass without one.
+    let rejectFirst: ((error: unknown) => void) | undefined;
     repo.setPicked.mockImplementation((lineId: string) =>
-      lineId === 'l1' ? Promise.reject(new Error('nope')) : new Promise<void>(() => {}),
+      lineId === 'l1'
+        ? new Promise<void>((_resolve, reject) => (rejectFirst = reject))
+        : new Promise<void>(() => {}),
     );
     const { result } = renderSetPicked(client);
 
@@ -110,11 +116,37 @@ describe('useSetPicked (issue #670 optimistic picking tick)', () => {
       result.current.mutate({ lineId: 'l1', picked: true });
       result.current.mutate({ lineId: 'l2', picked: true });
     });
+    await waitFor(() => expect(pickedIn(client, 'l1')).toEqual({ worksheet: true, bom: true }));
+
+    // A rejection carrying no human-authored message is what reaches the fallback copy.
+    await act(async () => {
+      rejectFirst?.({ reason: 'rejected' });
+    });
 
     // The rejected tick reverts itself and says so; the one beside it keeps its patch.
     await waitFor(() => expect(pickedIn(client, 'l1')).toEqual({ worksheet: false, bom: false }));
     expect(pickedIn(client, 'l2')).toEqual({ worksheet: true, bom: true });
     expect(await screen.findByText('Couldn’t update the pick')).toBeInTheDocument();
+    expect(screen.getByText('The tick has been undone.')).toBeInTheDocument();
+  });
+
+  it('keeps the tick when the write times out, because the outcome is unknown', async () => {
+    // A timeout does not establish that the write failed (issue #554), so reverting would show a
+    // tick the very next read contradicts. The patch stays and the reconciliation settles it.
+    const client = seededClient();
+    let rejectWrite: ((error: unknown) => void) | undefined;
+    repo.setPicked.mockImplementation(() => new Promise<void>((_resolve, reject) => (rejectWrite = reject)));
+    const { result } = renderSetPicked(client);
+
+    act(() => result.current.mutate({ lineId: 'l1', picked: true }));
+    await waitFor(() => expect(pickedIn(client, 'l1')).toEqual({ worksheet: true, bom: true }));
+
+    await act(async () => {
+      rejectWrite?.(new DbError('WORKER_TIMEOUT', 'The database did not respond in time.'));
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(pickedIn(client, 'l1')).toEqual({ worksheet: true, bom: true });
   });
 
   it('reconciles once, after the last tick of a burst has settled', async () => {
@@ -142,6 +174,27 @@ describe('useSetPicked (issue #670 optimistic picking tick)', () => {
     await act(async () => {
       releaseFirst?.();
     });
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: projectKeys.pickList(PROJECT) }),
+      ),
+    );
+  });
+
+  it('still reconciles when both ticks of a burst settle together', async () => {
+    // Two writes resolving in the same microtask each see the other as pending, so a count read
+    // back from the query client would have both of them skip and the burst reconcile never.
+    const client = seededClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    repo.setPicked.mockResolvedValue(undefined);
+    const { result } = renderSetPicked(client);
+
+    await act(async () => {
+      result.current.mutate({ lineId: 'l1', picked: true });
+      result.current.mutate({ lineId: 'l2', picked: true });
+    });
+
+    await waitFor(() => expect(repo.setPicked).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(invalidate).toHaveBeenCalledWith(
         expect.objectContaining({ queryKey: projectKeys.pickList(PROJECT) }),
