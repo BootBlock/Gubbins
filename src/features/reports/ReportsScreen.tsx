@@ -42,6 +42,7 @@ import { SalesBreakdown } from './components/SalesBreakdown';
 import {
   ABC_WINDOW_DAYS,
   ANALYTICS_WINDOWS,
+  DATA_HYGIENE_STALE_DAYS,
   normaliseAnalyticsWindow,
   REPORT_WINDOW_DAYS,
   useAbcAnalysis,
@@ -59,6 +60,10 @@ import {
   useValuationTrend,
 } from './queries';
 import { ForeignCurrencyNotice } from './components/ForeignCurrencyNotice';
+import type { HygieneIssueKind } from './data-hygiene';
+
+/** Module-level so the omission list is referentially stable across renders (it is in a query key). */
+const WITHOUT_NEVER_COUNTED: readonly HygieneIssueKind[] = ['never-counted'];
 
 /**
  * The §3 Reports & valuation screen (inventory-depth Phase 61): headline value cards, a
@@ -118,7 +123,16 @@ export function ReportsScreen() {
   const trend = useValuationTrend(analyticsWindow);
 
   // Phase 77 data-hygiene / quality report.
-  const hygiene = useDataHygiene();
+  //
+  // Modular UI: with the Cycle-counts module off there is no stock-take to run, so the "Never
+  // counted" check would flag every item for something the user cannot clear. The check is
+  // omitted at source rather than filtered out of the built report, so the "N of M items need
+  // attention" headline keeps agreeing with the rows below it.
+  const cycleCountsOn = useEnabledFeatures().has('cycle-counts');
+  const hygiene = useDataHygiene(
+    DATA_HYGIENE_STALE_DAYS,
+    cycleCountsOn ? undefined : { omitKinds: WITHOUT_NEVER_COUNTED },
+  );
 
   // Phase 79 procurement / spend analytics — its own selectable trailing window.
   //

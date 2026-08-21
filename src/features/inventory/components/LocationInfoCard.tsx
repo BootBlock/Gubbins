@@ -4,6 +4,7 @@ import { Button, Tooltip } from '@/components/foundry';
 import { CycleCountIcon, HideIcon, HistoryIcon, MoveIcon, PackageIcon } from '@/components/icons';
 import type { LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
+import { useFeature } from '@/features/modules/useFeature';
 import { locationPath } from '../location-tree';
 import { useLocationFullness } from '../use-location-fullness';
 import { locationColorTextClass } from '../location-color';
@@ -37,6 +38,9 @@ export function LocationInfoCard({
   onHide: () => void;
 }) {
   const fmt = useFormatters();
+  // "Last counted" only means something while stock-taking is on offer: with the `cycle-counts`
+  // module off the stamp can never move, so the stat sheds with the entry points that set it.
+  const cycleCountsEnabled = useFeature('cycle-counts');
   const path = useMemo(() => locationPath(location.id, locations), [location.id, locations]);
   const childCount = useMemo(
     () => locations.filter((l) => l.parentId === location.id).length,
@@ -98,14 +102,16 @@ export function LocationInfoCard({
           />
         </div>
 
-        <div className="hidden xl:block">
-          <Stat
-            icon={<CycleCountIcon aria-hidden />}
-            label="Last counted"
-            value={location.lastCountedAt != null ? fmt.relativeTime(location.lastCountedAt) : 'Never'}
-            title={location.lastCountedAt != null ? fmt.dateTime(location.lastCountedAt) : undefined}
-          />
-        </div>
+        {cycleCountsEnabled ? (
+          <div className="hidden xl:block" data-testid="location-info-last-counted">
+            <Stat
+              icon={<CycleCountIcon aria-hidden />}
+              label="Last counted"
+              value={location.lastCountedAt != null ? fmt.relativeTime(location.lastCountedAt) : 'Never'}
+              title={location.lastCountedAt != null ? fmt.dateTime(location.lastCountedAt) : undefined}
+            />
+          </div>
+        ) : null}
 
         {childCount > 0 ? (
           <div className="hidden xl:block">

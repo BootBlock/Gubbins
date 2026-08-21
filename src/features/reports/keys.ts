@@ -38,8 +38,22 @@ export const reportKeys = {
   stockAging: (currency: string) => [...reportKeys.all, 'stock-aging', currency] as const,
   valuationTrend: (windowDays: number, points: number, currency: string) =>
     [...reportKeys.all, 'valuation-trend', windowDays, points, currency] as const,
-  dataHygiene: (staleDays: number, currency: string) =>
-    [...reportKeys.all, 'data-hygiene', staleDays, currency] as const,
+  /**
+   * `omittedKinds` is part of the key because it changes the report's rows *and* its
+   * "N of M need attention" headline — a device with the Cycle-counts module off reads a
+   * genuinely different report from one with it on, so the two must not share a cache entry.
+   * It stays a required parameter, so a caller cannot forget it, but the body tolerates a
+   * missing value: `report-invalidation.test.ts` calls every member with no arguments to prove
+   * it is built from the shared prefix, and a bare spread would throw there.
+   */
+  dataHygiene: (staleDays: number, currency: string, omittedKinds: readonly string[]) =>
+    [
+      ...reportKeys.all,
+      'data-hygiene',
+      staleDays,
+      currency,
+      [...(omittedKinds ?? [])].sort().join(','),
+    ] as const,
   spend: (windowDays: number, buckets: number) => [...reportKeys.all, 'spend', windowDays, buckets] as const,
   sales: (windowDays: number, buckets: number) => [...reportKeys.all, 'sales', windowDays, buckets] as const,
 

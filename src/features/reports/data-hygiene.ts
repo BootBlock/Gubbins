@@ -71,7 +71,7 @@ export interface HygieneSection {
   readonly samples: readonly HygieneSample[];
 }
 
-/** The full data-hygiene report: every check (0-count included) + headline totals. */
+/** The report: every check that ran (0-count included) + headline totals. */
 export interface HygieneReport {
   readonly sections: readonly HygieneSection[];
   /** Total active, non-parent items considered. */
@@ -87,6 +87,16 @@ export interface HygieneOptions {
   readonly staleDays: number;
   /** Cap on how many sample items each section carries (the count is always exact). */
   readonly sampleLimit?: number;
+  /**
+   * Checks to leave out entirely — no section, and no contribution to `flaggedItems`.
+   *
+   * A check whose subject the user has switched off in the Modules screen (Modular UI) would
+   * otherwise flag every item for a problem they have no way to fix: with the `cycle-counts`
+   * module off there is no stock-take to run, so "Never counted" is noise, not a to-do. Omitting
+   * it here rather than filtering the built report keeps the "N of M items need attention"
+   * headline agreeing with the rows beneath it.
+   */
+  readonly omitKinds?: readonly HygieneIssueKind[];
 }
 
 const DEFAULT_SAMPLE_LIMIT = 100;
@@ -184,9 +194,10 @@ function section(
 // ---------------------------------------------------------------------------
 
 /**
- * Shape raw per-item flags into the data-hygiene report. Every check is always present (a 0-count
- * section reads as a green tick in the UI). Offenders are name-sorted and the sample list is
- * capped at `sampleLimit` (default {@link DEFAULT_SAMPLE_LIMIT}); the `count` stays exact.
+ * Shape raw per-item flags into the data-hygiene report. Every check runs unless `omitKinds`
+ * leaves it out, and a check that runs is always present (a 0-count section reads as a green tick
+ * in the UI). Offenders are name-sorted and the sample list is capped at `sampleLimit` (default
+ * {@link DEFAULT_SAMPLE_LIMIT}); the `count` stays exact.
  *
  * `duplicate-mpn` groups items by their normalised MPN and flags every member of any group of two
  * or more — the most likely "same part entered twice" signal.
@@ -196,6 +207,7 @@ export function buildHygieneReport(
   options: HygieneOptions,
 ): HygieneReport {
   const sampleLimit = options.sampleLimit ?? DEFAULT_SAMPLE_LIMIT;
+  const omitted: ReadonlySet<HygieneIssueKind> = new Set(options.omitKinds ?? []);
   // Calendar-day staleness cutoff (issue #325): N calendar days back from now, not a fixed span,
   // so it holds steady across a DST change.
   const staleBefore = addCalendarDays(options.now, -Math.max(0, options.staleDays));
@@ -220,6 +232,7 @@ export function buildHygieneReport(
 
   const sections: HygieneSection[] = [];
   for (const { kind, fails } of simple) {
+    if (omitted.has(kind)) continue;
     const offenders: HygieneSample[] = [];
     for (const item of sorted) {
       if (!fails(item)) continue;
@@ -234,34 +247,38 @@ export function buildHygieneReport(
   }
 
   // --- Duplicate MPN -------------------------------------------------------
-  const groups = new Map<string, HygieneItemFlags[]>();
-  for (const item of sorted) {
-    const key = mpnKey(item.mpn);
-    if (key === null) continue;
-    const group = groups.get(key);
-    if (group) group.push(item);
-    else groups.set(key, [item]);
-  }
-  const dupOffenders: HygieneSample[] = [];
-  for (const group of groups.values()) {
-    if (group.length < 2) continue;
-    for (const item of group) {
-      flag(item);
-      dupOffenders.push(
-        toSample(
-          item,
-          `MPN ${item.mpn!.trim()} · shared with ${group.length - 1} ${plural(group.length - 1, 'other')}`,
-        ),
-      );
+  if (!omitted.has('duplicate-mpn')) {
+    const groups = new Map<string, HygieneItemFlags[]>();
+    for (const item of sorted) {
+      const key = mpnKey(item.mpn);
+      if (key === null) continue;
+      const group = groups.get(key);
+      if (group) group.push(item);
+      else groups.set(key, [item]);
     }
+    const dupOffenders: HygieneSample[] = [];
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      for (const item of group) {
+        flag(item);
+        dupOffenders.push(
+          toSample(
+            item,
+            `MPN ${item.mpn!.trim()} · shared with ${group.length - 1} ${plural(group.length - 1, 'other')}`,
+          ),
+        );
+      }
+    }
+    // dupOffenders is grouped (each group's members adjacent); keep that grouping rather than
+    // re-sorting by name, so duplicates of the same part read together.
+    sections.push(section('duplicate-mpn', dupOffenders, sampleLimit));
   }
-  // dupOffenders is grouped (each group's members adjacent); keep that grouping rather than
-  // re-sorting by name, so duplicates of the same part read together.
-  sections.push(section('duplicate-mpn', dupOffenders, sampleLimit));
 
-  // Emit in the canonical order.
+  // Emit in the canonical order, skipping any check `omitKinds` left out.
   const byKind = new Map(sections.map((s) => [s.kind, s]));
-  const ordered = HYGIENE_KIND_ORDER.map((kind) => byKind.get(kind)!).filter(Boolean);
+  const ordered = HYGIENE_KIND_ORDER.map((kind) => byKind.get(kind)).filter(
+    (s): s is HygieneSection => s !== undefined,
+  );
 
   return {
     sections: ordered,

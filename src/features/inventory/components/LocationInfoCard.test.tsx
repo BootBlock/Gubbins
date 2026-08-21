@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { LocationWithCount } from '@/db/repositories';
+import { useModulesStore } from '@/state/stores/useModulesStore';
 import { LocationInfoCard } from './LocationInfoCard';
 
 /**
@@ -43,7 +44,10 @@ function makeLocation(overrides: Partial<LocationWithCount> = {}): LocationWithC
   };
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useModulesStore.setState({ intent: {} });
+});
 
 describe('LocationInfoCard', () => {
   it('shows the name, item count against capacity and the fullness percent', () => {
@@ -75,6 +79,20 @@ describe('LocationInfoCard', () => {
 
     expect(screen.queryByTestId('location-info-fullness')).not.toBeInTheDocument();
     expect(screen.getByTestId('location-info-card')).toHaveTextContent('7');
+  });
+
+  it('drops the "Last counted" stat when the Cycle-counts module is off', () => {
+    // The stamp only ever moves when a stock-take authorises a count (issue #649), so with the
+    // module off the stat could only ever read "Never" — or freeze at whatever it last said.
+    const location = makeLocation({ lastCountedAt: 1_700_000_000_000 });
+    const { rerender } = render(
+      <LocationInfoCard location={location} locations={[parent, location]} onHide={() => {}} />,
+    );
+    expect(screen.getByTestId('location-info-last-counted')).toBeInTheDocument();
+
+    useModulesStore.setState({ intent: { 'cycle-counts': false } });
+    rerender(<LocationInfoCard location={location} locations={[parent, location]} onHide={() => {}} />);
+    expect(screen.queryByTestId('location-info-last-counted')).not.toBeInTheDocument();
   });
 
   it('calls onHide when the dismiss control is used', () => {
