@@ -9,11 +9,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildAlerts,
+  alertKindFromId,
   applyDismissals,
   pruneDismissals,
   groupByKind,
   maintenanceDueAtMs,
   STALE_DISMISSAL_DAYS,
+  type AlertKind,
   type AlertDismissal,
   type AlertDismissals,
   type AlertSources,
@@ -130,10 +132,37 @@ describe('buildAlerts — expiry lane', () => {
     expect(alert.title).toContain('Expired');
   });
 
-  it('sets a deterministic id prefixed with "expiry:"', () => {
-    const exp: ExpirySource[] = [{ id: 'perishable-1', name: 'Cheese', expiryDate: NOW - 1 }];
+  it('sets a deterministic id carrying the item, the day and the status band', () => {
+    const exp: ExpirySource[] = [{ id: 'perishable-1', name: 'Cheese', expiryDate: ms('2025-06-30') }];
     const [alert] = buildAlerts(sources({ expiring: exp }), NOW);
-    expect(alert.id).toBe('expiry:perishable-1');
+    expect(alert.id).toBe('expiry:perishable-1:2025-06-30:expired');
+  });
+
+  it('gives the expired alert a different id from the expiring-soon one (issue #644)', () => {
+    // One item, one expiry date, read either side of the day it passes.
+    const exp: ExpirySource[] = [{ id: 'perishable-1', name: 'Cheese', expiryDate: ms('2025-07-02') }];
+    const [soon] = buildAlerts(sources({ expiring: exp }), NOW);
+    const [expired] = buildAlerts(sources({ expiring: exp }), ms('2025-07-04'));
+
+    expect(soon.severity).toBe('warning');
+    expect(expired.severity).toBe('critical');
+    expect(soon.id).not.toBe(expired.id);
+
+    // The escalation therefore survives a dismissal of the warning.
+    const hidden = applyDismissals([expired], dismissals([soon.id, null]), ms('2025-07-04'));
+    expect(hidden).toHaveLength(1);
+  });
+
+  it('gives a re-dated item a new id, so an earlier dismissal no longer hides it', () => {
+    const first = buildAlerts(
+      sources({ expiring: [{ id: 'p1', name: 'Yoghurt', expiryDate: ms('2025-07-03') }] }),
+      NOW,
+    )[0];
+    const rebatched = buildAlerts(
+      sources({ expiring: [{ id: 'p1', name: 'Yoghurt', expiryDate: ms('2025-07-10') }] }),
+      NOW,
+    )[0];
+    expect(first.id).not.toBe(rebatched.id);
   });
 });
 
@@ -156,7 +185,26 @@ describe('buildAlerts — maintenance-due lane', () => {
     expect(alert.kind).toBe('maintenance-due');
     expect(alert.severity).toBe('critical');
     expect(alert.title).toContain('Generator');
-    expect(alert.id).toBe('maintenance-due:sched-1');
+    expect(alert.id).toBe('maintenance-due:sched-1:2025-06-30:overdue');
+  });
+
+  it('gives a completed-then-re-due TIME schedule a new id (issue #644)', () => {
+    const base = { id: 'sched-1', name: 'Oil change', itemId: 'item-x', itemName: 'Generator' };
+    const before = buildAlerts(sources({ maintenanceDue: [{ ...base, dueAtMs: ms('2025-06-30') }] }), NOW)[0];
+    // Logged the work; the schedule's next due date lands inside the old dismissal's grace period.
+    const after = buildAlerts(
+      sources({ maintenanceDue: [{ ...base, dueAtMs: ms('2025-07-14') }] }),
+      ms('2025-07-15'),
+    )[0];
+    expect(before.id).not.toBe(after.id);
+  });
+
+  it('marks a USAGE schedule undated in the id, having no due date to carry', () => {
+    const due: MaintenanceDueSource[] = [
+      { id: 's9', name: 'Service', itemId: 'i9', itemName: 'Lathe', dueAtMs: null },
+    ];
+    const [alert] = buildAlerts(sources({ maintenanceDue: due }), NOW);
+    expect(alert.id).toBe('maintenance-due:s9:undated:due');
   });
 
   it('sets dueAt from the schedule dueAtMs', () => {
@@ -225,7 +273,17 @@ describe('buildAlerts — warranty lane', () => {
     const date = '2025-06-15';
     const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: date }];
     const [alert] = buildAlerts(sources({ warrantyItems: items }), NOW);
-    expect(alert.id).toBe(`warranty-due:asset-1:${date}`);
+    expect(alert.id).toBe(`warranty-due:asset-1:${date}:expired`);
+  });
+
+  it('gives the expired warranty a different id from the expiring-soon one (issue #644)', () => {
+    const date = new Date(NOW + 10 * 86_400_000).toISOString().slice(0, 10);
+    const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: date }];
+    const [soon] = buildAlerts(sources({ warrantyItems: items }), NOW);
+    const [expired] = buildAlerts(sources({ warrantyItems: items }), NOW + 40 * 86_400_000);
+    expect(soon.severity).toBe('warning');
+    expect(expired.severity).toBe('critical');
+    expect(soon.id).not.toBe(expired.id);
   });
 
   it('produces no alerts when warrantyItems is an empty array', () => {
@@ -286,8 +344,8 @@ describe('buildAlerts — dueAt ordering', () => {
     };
     const alerts = buildAlerts(sources({ maintenanceDue: [due1, due2] }), NOW);
     // Both are overdue (critical); s2 is earlier so should appear first.
-    expect(alerts[0].id).toBe('maintenance-due:s2');
-    expect(alerts[1].id).toBe('maintenance-due:s1');
+    expect(alerts[0].id).toBe('maintenance-due:s2:2025-06-20:overdue');
+    expect(alerts[1].id).toBe('maintenance-due:s1:2025-06-25:overdue');
   });
 
   it('places alerts with null dueAt after those with a date (same severity)', () => {
@@ -422,6 +480,84 @@ describe('pruneDismissals', () => {
     pruneDismissals(before, new Set(), NOW);
     expect(before.size).toBe(1);
   });
+
+  it('drops a record whose lane was read whole without it, without waiting out the grace period', () => {
+    // Restocked yesterday: the low-stock feed is complete and no longer names the item, so the
+    // dismissal has nothing left to silence and must not hide the next shortage (issue #644).
+    const before = dismissals(['low-stock:restocked', null, NOW - DAY]);
+    const after = pruneDismissals(before, new Set(), NOW, new Set<AlertKind>(['low-stock']));
+    expect(after?.size).toBe(0);
+  });
+
+  it('keeps a record whose lane was not read whole, even when its alert is absent', () => {
+    // The lane is off, still loading, or its feed stopped at the page ceiling — absence proves
+    // nothing, so only the staleness rule may drop the record.
+    const before = dismissals(['low-stock:maybe-gone', null, NOW - DAY]);
+    expect(pruneDismissals(before, new Set(), NOW, new Set<AlertKind>(['expiry']))).toBeNull();
+  });
+
+  it('judges each lane separately', () => {
+    const before = dismissals(
+      ['low-stock:gone', null, NOW - DAY],
+      ['expiry:e1:2025-07-05:expiring-soon', null, NOW - DAY],
+    );
+    const after = pruneDismissals(before, new Set(), NOW, new Set<AlertKind>(['low-stock']));
+    expect([...(after?.keys() ?? [])]).toEqual(['expiry:e1:2025-07-05:expiring-soon']);
+  });
+
+  it('keeps a record from a complete lane while its alert is still firing', () => {
+    const before = dismissals(['low-stock:a', null, STALE_AT]);
+    const live = new Set(['low-stock:a']);
+    expect(pruneDismissals(before, live, NOW, new Set<AlertKind>(['low-stock']))).toBeNull();
+  });
+
+  it('never treats an id from an unknown lane as resolved', () => {
+    // A record written by a build that knew a lane this one does not: unjudgeable, so it falls
+    // through to the staleness rule rather than being dropped on the spot.
+    const before = dismissals(['some-future-lane:x', null, NOW - DAY]);
+    const complete = new Set<AlertKind>([
+      'low-stock',
+      'expiry',
+      'maintenance-due',
+      'warranty-due',
+      'field-due',
+    ]);
+    expect(pruneDismissals(before, new Set(), NOW, complete)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// alertKindFromId
+// ---------------------------------------------------------------------------
+
+describe('alertKindFromId', () => {
+  it('recovers the lane from every id the builders mint', () => {
+    const all = buildAlerts(
+      sources({
+        lowStock: [{ id: 'i1', name: 'Screw' }],
+        expiring: [{ id: 'i2', name: 'Milk', expiryDate: NOW - DAY }],
+        maintenanceDue: [{ id: 's1', name: 'Oil', itemId: 'i3', itemName: 'Mower', dueAtMs: NOW - DAY }],
+        warrantyItems: [
+          {
+            id: 'i4',
+            name: 'Drill',
+            acquiredAt: '2024-01-01',
+            purchasePrice: null,
+            depreciationMonths: null,
+            warrantyExpiresAt: new Date(NOW - DAY).toISOString().slice(0, 10),
+          },
+        ],
+      }),
+      NOW,
+    );
+    expect(all).toHaveLength(4);
+    for (const alert of all) expect(alertKindFromId(alert.id)).toBe(alert.kind);
+  });
+
+  it('returns null for an id belonging to no known lane', () => {
+    expect(alertKindFromId('reminders:summary')).toBeNull();
+    expect(alertKindFromId('low-stock')).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -543,6 +679,14 @@ describe('buildAlerts — custom-field due-date lane (W1a)', () => {
     const [moved] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(2) })] }), NOW);
     expect(first.id).not.toBe(moved.id);
     expect(first.id.startsWith('field-due:i1:d1:')).toBe(true);
+  });
+
+  it('gives the overdue alert a different id from the due-soon one (issue #644)', () => {
+    const [soon] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(1) })] }), NOW);
+    const [overdue] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(1) })] }), NOW + 3 * DAY);
+    expect(soon.severity).toBe('warning');
+    expect(overdue.severity).toBe('critical');
+    expect(soon.id).not.toBe(overdue.id);
   });
 
   it('keys on the definition too, so two dated fields on one item both alert', () => {

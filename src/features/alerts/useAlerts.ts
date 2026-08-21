@@ -24,6 +24,7 @@ import {
   pruneDismissals,
   maintenanceDueAtMs,
   type Alert,
+  type AlertKind,
   type AlertSources,
 } from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
@@ -167,6 +168,31 @@ export function useAlerts(): {
       : [],
   };
 
+  /**
+   * Which lanes were read **whole** this pass — fetched (not gated off), settled, and with no
+   * further page behind them. `pruneDismissals` uses it to tell a condition that has resolved
+   * from a feed that simply is not showing it (issue #644): the four paged lanes below read a
+   * single page, so a big enough inventory can push a still-live alert past the ceiling, and a
+   * lane whose module is off returns nothing at all. Only a lane that answered in full licenses
+   * reading "absent" as "gone".
+   *
+   * `hasMore` is checked strictly, so a feed that has not answered yet — `data` undefined —
+   * counts as incomplete rather than as an empty world. It is required rather than optional in
+   * the parameter type, so a feed whose envelope has no such field is a compile error here rather
+   * than a lane that silently never grades complete.
+   */
+  const complete = (query: { data?: { hasMore: boolean } }, laneOn = true): boolean =>
+    laneOn && query.data?.hasMore === false;
+
+  const completeKinds = new Set<AlertKind>();
+  if (complete(lowStockQuery)) completeKinds.add('low-stock');
+  if (complete(expiringQuery, perishablesOn)) completeKinds.add('expiry');
+  if (complete(maintenanceDueQuery, maintenanceOn)) completeKinds.add('maintenance-due');
+  if (complete(warrantyQuery, warrantyOn)) completeKinds.add('warranty-due');
+  // The field-due lane walks every page rather than reading one, so its completeness is the
+  // absence of the `readAllPages` ceiling, not a `hasMore` flag.
+  if (customFieldsOn && fieldDueQuery.data?.truncated === false) completeKinds.add('field-due');
+
   // --- Dismissals ---
 
   const dismissals = useDismissedAlertsStore((s) => s.dismissals);
@@ -183,13 +209,17 @@ export function useAlerts(): {
   // never re-trigger this effect in a loop.
   const settled = !isLoading && !isError;
   const liveIdKey = allAlerts.map((a) => a.id).join('\n');
+  // The complete-lane set is threaded through as a string for the same reason as the ids: the
+  // effect must re-run when its *contents* change, not on every render that rebuilds an equal Set.
+  const completeKindKey = [...completeKinds].sort().join(',');
   useEffect(() => {
     if (!settled) return;
     const store = useDismissedAlertsStore.getState();
     const liveIds = new Set(liveIdKey === '' ? [] : liveIdKey.split('\n'));
-    const pruned = pruneDismissals(store.dismissals, liveIds, nowMs());
+    const kinds = new Set(completeKindKey === '' ? [] : (completeKindKey.split(',') as AlertKind[]));
+    const pruned = pruneDismissals(store.dismissals, liveIds, nowMs(), kinds);
     if (pruned) store.replace(pruned);
-  }, [settled, liveIdKey]);
+  }, [settled, liveIdKey, completeKindKey]);
 
   // Only meaningful while the lane is on and has actually loaded; a disabled or still-loading
   // lane is not "truncated", it simply has nothing to say yet.

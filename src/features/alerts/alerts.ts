@@ -62,9 +62,17 @@ export interface AlertTarget {
 /**
  * A single proactive alert surfaced in the alert centre.
  *
- * The `id` is deterministic from the source entity so that the same underlying
- * condition always produces the same id — only when the condition is resolved or the
- * expiry date changes will the id change and the alert reappear after dismissal.
+ * The `id` is a pure function of the source entity and `now` — no render counter, nothing that
+ * varies between two passes over the same data — because it is at once the dismissal key, the OS
+ * notification tag and the React key. It identifies **this occurrence** of the condition rather
+ * than the entity behind it: alongside the entity ids it carries the deadline the alert is about
+ * and the urgency band it is in. Re-dating the deadline, or an alert escalating from a warning to
+ * a critical one, therefore mints a **new** id, and a dismissal of the earlier occurrence no
+ * longer applies (issue #644).
+ *
+ * Two lanes have no deadline to name an occurrence with — low stock, and a USAGE maintenance
+ * schedule, whose id reads `undated` in that segment. For those, a dismissal is retired instead
+ * by {@link pruneDismissals} once the condition is seen to have resolved.
  */
 export interface Alert {
   readonly id: string;
@@ -96,6 +104,25 @@ export const ALERT_KIND_LABEL: Record<AlertKind, string> = {
   'warranty-due': 'Warranty',
   'field-due': 'Custom field date',
 };
+
+/**
+ * Every {@link AlertKind}, in lane order. Derived from {@link ALERT_KIND_LABEL} so a new lane
+ * cannot be added to one and forgotten in the other.
+ */
+const ALERT_KINDS = Object.keys(ALERT_KIND_LABEL) as readonly AlertKind[];
+
+/**
+ * Recover the lane from an alert id, or `null` if it belongs to none.
+ *
+ * Every id begins `${kind}:`, so this is a prefix match rather than a parse — the rest of an id
+ * is lane-specific and deliberately opaque. {@link pruneDismissals} needs it because a stored
+ * dismissal is only an id: to judge whether its alert is genuinely gone it must know which
+ * lane's feed to have seen. An id written by an older or newer build that named a lane this one
+ * does not know grades `null` and is treated as unjudgeable, never as resolved.
+ */
+export function alertKindFromId(id: string): AlertKind | null {
+  return ALERT_KINDS.find((kind) => id.startsWith(`${kind}:`)) ?? null;
+}
 
 /** Human-readable urgency names, one per {@link AlertSeverity} (shared with the export). */
 export const ALERT_SEVERITY_LABEL: Record<AlertSeverity, string> = {
@@ -198,21 +225,27 @@ function buildLowStockAlerts(sources: readonly LowStockSource[]): Alert[] {
 function buildExpiryAlerts(sources: readonly ExpirySource[], now: number): Alert[] {
   const alerts: Alert[] = [];
   for (const item of sources) {
-    const status = expiryStatus(item.expiryDate, now);
-    if (status === 'NONE' || status === 'FRESH') continue;
+    // An item with no date grades NONE and is skipped either way; settling it here also settles
+    // the type, so the day below needs no "what if there is no date" fallback.
+    if (item.expiryDate == null) continue;
 
-    const severity: AlertSeverity = status === 'EXPIRED' ? 'critical' : 'warning';
-    const dueAt = item.expiryDate != null ? new Date(item.expiryDate).toISOString() : null;
-    const detail =
-      status === 'EXPIRED'
-        ? `Expiry date has passed${dueAt ? ` (${dueAt.slice(0, 10)})` : ''}.`
-        : `Expires soon${dueAt ? ` on ${dueAt.slice(0, 10)}` : ''}.`;
+    const status = expiryStatus(item.expiryDate, now);
+    if (status === 'FRESH') continue;
+
+    const expired = status === 'EXPIRED';
+    const severity: AlertSeverity = expired ? 'critical' : 'warning';
+    const dueAt = new Date(item.expiryDate).toISOString();
+    const day = dueAt.slice(0, 10);
+    const detail = expired ? `Expiry date has passed (${day}).` : `Expires soon on ${day}.`;
 
     alerts.push({
-      id: `expiry:${item.id}`,
+      // The stored day and the status band both belong to the identity: "expiring soon" and the
+      // "expired" it becomes are two occurrences, not one, so dismissing the nudge cannot silence
+      // the critical alert it turns into — nor its reminder notification (issue #644).
+      id: `expiry:${item.id}:${day}:${expired ? 'expired' : 'expiring-soon'}`,
       kind: 'expiry',
       severity,
-      title: `${status === 'EXPIRED' ? 'Expired' : 'Expiring soon'} — ${item.name}`,
+      title: `${expired ? 'Expired' : 'Expiring soon'} — ${item.name}`,
       detail,
       dueAt,
       target: { route: '/inventory', itemId: item.id, itemName: item.name },
@@ -226,7 +259,11 @@ function buildMaintenanceDueAlerts(sources: readonly MaintenanceDueSource[], now
     const dueAt = schedule.dueAtMs != null ? new Date(schedule.dueAtMs).toISOString() : null;
     const overdue = schedule.dueAtMs != null && schedule.dueAtMs < now;
     return {
-      id: `maintenance-due:${schedule.id}`,
+      // A TIME schedule's due day identifies the occurrence: logging the work moves the date on,
+      // so the next time it falls due it is a new alert rather than one an old dismissal still
+      // hides. A USAGE schedule has no due date and reads `undated` — {@link pruneDismissals}
+      // retires its dismissal on resolution instead.
+      id: `maintenance-due:${schedule.id}:${dueAt?.slice(0, 10) ?? 'undated'}:${overdue ? 'overdue' : 'due'}`,
       kind: 'maintenance-due',
       severity: overdue ? 'critical' : 'warning',
       title: `Maintenance due — ${schedule.itemName}`,
@@ -256,7 +293,10 @@ function buildWarrantyAlerts(sources: readonly WarrantySource[], now: number): A
         : `Warranty expires soon${dueAt ? ` on ${dueAt.slice(0, 10)}` : ''} (within ${WARRANTY_EXPIRING_SOON_DAYS} days).`;
 
     alerts.push({
-      id: `warranty-due:${item.id}:${item.warrantyExpiresAt}`,
+      // The status band joins the stored date for the same reason the expiry lane carries it:
+      // "expiring soon" escalating to "expired" is a second occurrence, and a dismissal of the
+      // first must not silence it (issue #644).
+      id: `warranty-due:${item.id}:${item.warrantyExpiresAt}:${status}`,
       kind: 'warranty-due',
       severity,
       title: `${status === 'expired' ? 'Warranty expired' : 'Warranty expiring soon'} — ${item.name}`,
@@ -278,9 +318,10 @@ function buildWarrantyAlerts(sources: readonly WarrantySource[], now: number): A
  * trusted from the query — the feed can be a cached page read minutes ago, and a date that has
  * since moved out of its window should stop alerting without waiting for a refetch.
  *
- * The id carries the stored date, like the warranty lane, so pushing a deadline back gives the
- * alert a new identity and lifts an earlier dismissal — a dismissed "Renewal date" must not
- * stay silent once the renewal is a year later, or (worse) once it is brought forward.
+ * The id carries the stored date and the status band, like the warranty lane, so pushing a
+ * deadline back gives the alert a new identity and lifts an earlier dismissal — a dismissed
+ * "Renewal date" must not stay silent once the renewal is a year later, or (worse) once it is
+ * brought forward, and dismissing "due soon" must not silence the overdue alert it becomes.
  */
 function buildFieldDueAlerts(sources: readonly FieldDueSource[], now: number): Alert[] {
   const alerts: Alert[] = [];
@@ -292,7 +333,7 @@ function buildFieldDueAlerts(sources: readonly FieldDueSource[], now: number): A
     const dueAt = new Date(source.dueAt).toISOString();
     const day = dueAt.slice(0, 10);
     alerts.push({
-      id: `field-due:${source.itemId}:${source.defId}:${day}`,
+      id: `field-due:${source.itemId}:${source.defId}:${day}:${overdue ? 'overdue' : 'due-soon'}`,
       kind: 'field-due',
       severity: overdue ? 'critical' : 'warning',
       title: `${source.fieldName} ${overdue ? 'passed' : 'due soon'} — ${source.itemName}`,
@@ -401,18 +442,32 @@ export function applyDismissals(alerts: readonly Alert[], dismissals: AlertDismi
 
 /**
  * Reconcile the dismissal records against the live alert feed, dropping the ones that can no
- * longer do anything (issue #134). Two records are dead weight:
+ * longer do anything (issue #134). Three records are dead weight:
  *
  *  - a **snooze that has elapsed** — its alert is already showing again, so there is nothing
  *    left to remember;
- *  - a record whose alert **has not fired for {@link STALE_DISMISSAL_DAYS}** — the item was
- *    most likely deleted, or the condition resolved for good.
+ *  - a record whose condition has **demonstrably resolved** — its alert is absent from a lane
+ *    whose feed was read whole this pass, so the absence is a fact rather than a gap;
+ *  - a record whose alert **has not fired for {@link STALE_DISMISSAL_DAYS}** — the fallback for
+ *    every absence that is *not* demonstrable.
  *
  * Without this the set only ever grew: an id dismissed once stayed in `localStorage` forever,
  * even after its item was deleted. This is the same reconcile-against-the-feed shape
  * `planReminders` uses to bound `useNotifiedRemindersStore`.
  *
+ * The middle rule is what lets a **recurring** condition alert again (issue #644). A dismissal
+ * silences one occurrence, and the lanes that can say which occurrence do so in the id — but
+ * low stock has no deadline to put there, and neither has a USAGE maintenance schedule. Restock
+ * a dismissed item and run it down again inside the grace period and the alert used to come back
+ * already hidden. Retiring the record the moment its condition is seen to have gone fixes that
+ * without weakening the grace period, which still covers every absence that proves nothing: a
+ * lane switched off in the Modules manager, a feed still loading, and a capped feed whose rows
+ * ran past the page ceiling.
+ *
  * @param liveIds - Ids of every alert currently produced by the feed (before dismissal filtering).
+ * @param completeKinds - Lanes whose feed was fetched, settled **and** read to the end this pass.
+ *   A lane left out is simply not judged — absence from it means nothing. Omit the argument
+ *   entirely and only the staleness rule applies, which is what every caller got before.
  * @returns The pruned map, or `null` when nothing needed dropping — so a caller can skip the
  *          store write, and an effect driving this can never loop on its own update.
  */
@@ -420,12 +475,21 @@ export function pruneDismissals(
   dismissals: AlertDismissals,
   liveIds: ReadonlySet<string>,
   now: number,
+  completeKinds: ReadonlySet<AlertKind> = new Set(),
 ): AlertDismissals | null {
   const staleBefore = addCalendarDays(now, -STALE_DISMISSAL_DAYS);
   const kept = new Map<string, AlertDismissal>();
   for (const [id, dismissal] of dismissals) {
     if (!isHiding(dismissal, now)) continue;
-    if (!liveIds.has(id) && dismissal.at <= staleBefore) continue;
+    if (liveIds.has(id)) {
+      kept.set(id, dismissal);
+      continue;
+    }
+    // Absent. Drop it if the lane it belongs to was read whole (so the condition really has
+    // resolved), or if it has been absent long enough for the grace period to have run out.
+    const kind = alertKindFromId(id);
+    if (kind !== null && completeKinds.has(kind)) continue;
+    if (dismissal.at <= staleBefore) continue;
     kept.set(id, dismissal);
   }
   // Records are only ever dropped, never added or altered, so the size settles the question.
