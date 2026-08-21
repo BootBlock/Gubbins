@@ -179,6 +179,10 @@ describe('useSetPicked (issue #670 optimistic picking tick)', () => {
         expect.objectContaining({ queryKey: projectKeys.pickList(PROJECT) }),
       ),
     );
+    // Both patched slices are refreshed, not just the worksheet.
+    expect(invalidate).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: projectKeys.lines(PROJECT) }),
+    );
   });
 
   it('still reconciles when both ticks of a burst settle together', async () => {

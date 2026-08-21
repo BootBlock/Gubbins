@@ -482,10 +482,11 @@ export function useSetPicked(projectId: string) {
     'projects.writeError.heading.picked',
     'projects.writeError.pickedReverted',
   );
-  // Ticks of the current burst that have not settled yet. Counted here rather than read back
-  // from `client.isMutating`, whose count is only updated when a mutation dispatches its
-  // terminal state: two ticks resolving in the same microtask both run `onSettled` while the
-  // other is still counted as pending, so both would skip and the burst would never reconcile.
+  // Ticks of the current burst that have not settled yet. Deliberately counted here rather than
+  // read back from `client.isMutating` the way the inventory adjust hooks count their taps: that
+  // count only drops when a mutation dispatches its terminal state, which happens *after*
+  // `onSettled`, so two ticks resolving in the same microtask each still see the other as
+  // pending — both skip, and the burst never reconciles at all.
   const inFlight = useRef(0);
   return useMutation({
     mutationFn: ({ lineId, picked }: { lineId: string; picked: boolean }) =>
