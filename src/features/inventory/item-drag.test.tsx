@@ -101,7 +101,7 @@ describe('item-drag — unified pointer drag-to-move', () => {
     expect(onDrop).toHaveBeenCalledWith({ id: 'item-1', locationId: 'loc-workshop' });
   });
 
-  it('passes the dropped item id and name to onDropItem (so the mover can name it in feedback)', () => {
+  it('passes the dropped item id, name and origin to onDropItem (feedback + undo, issue #131)', () => {
     const onDropItem = vi.fn();
     function NamedTarget() {
       const active = useLocationRowDrop(LOCATION_ID, { onDropItem });
@@ -125,7 +125,43 @@ describe('item-drag — unified pointer drag-to-move', () => {
     firePointer(window, 'pointermove', { x: 40, y: 40 });
     firePointer(window, 'pointerup', { x: 40, y: 40 });
 
-    expect(onDropItem).toHaveBeenCalledWith('item-1', 'NE555 timer');
+    // The origin is `undefined` here because this source carries no location; the mover then
+    // offers no "move it back" undo. See the sibling case below for a located source.
+    expect(onDropItem).toHaveBeenCalledWith('item-1', 'NE555 timer', undefined);
+  });
+
+  it('hands the origin location to onDropItem, so a drop can be moved back (issue #131)', () => {
+    const onDropItem = vi.fn();
+    function LocatedSource() {
+      const drag = useItemDragSource({ ...ITEM, locationId: 'loc-bench' });
+      return (
+        <div {...drag} data-testid="source">
+          {ITEM.name}
+        </div>
+      );
+    }
+    function NamedTarget() {
+      const active = useLocationRowDrop(LOCATION_ID, { onDropItem });
+      return (
+        <div data-tree-id={LOCATION_ID} data-testid="target" data-active={active ? 'true' : 'false'}>
+          Workshop
+        </div>
+      );
+    }
+    render(
+      <ItemDragProvider>
+        <LocatedSource />
+        <NamedTarget />
+      </ItemDragProvider>,
+    );
+    const source = screen.getByTestId('source');
+    pointHitTestAt(screen.getByTestId('target'));
+
+    firePointer(source, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+
+    expect(onDropItem).toHaveBeenCalledWith('item-1', 'NE555 timer', 'loc-bench');
   });
 
   it('highlights the row under the pointer and mounts a floating preview mid-drag', () => {

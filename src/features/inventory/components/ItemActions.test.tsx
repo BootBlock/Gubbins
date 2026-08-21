@@ -14,9 +14,11 @@ vi.mock('./GaugeAdjustDialog', () => ({ GaugeAdjustDialog: () => null }));
 vi.mock('./ItemDetailDialog', () => ({ ItemDetailDialog: () => null }));
 vi.mock('./MoveItemDialog', () => ({ MoveItemDialog: () => null }));
 vi.mock('./QrCodeDialog', () => ({ QrCodeDialog: () => null }));
-const spies = vi.hoisted(() => ({ update: vi.fn() }));
+const spies = vi.hoisted(() => ({ update: vi.fn(), softDelete: vi.fn() }));
 vi.mock('../mutations', () => ({
-  useSoftDeleteItem: () => ({ mutate: vi.fn() }),
+  useSoftDeleteItem: () => ({ mutate: spies.softDelete }),
+  // The remove/restore confirmations offer an Undo (issue #131), so the row reads this hook too.
+  useUndoItemChanges: () => ({ mutate: vi.fn() }),
   useRestoreItem: () => ({ mutate: vi.fn() }),
   useUpdateItem: () => ({ mutate: spies.update, isPending: false }),
   // Read by the "Count by weight" dialog (issue #101), which mounts alongside the menu.

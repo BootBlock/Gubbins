@@ -59,10 +59,11 @@ export interface TreeItemProps {
    * Accept an inventory item dragged onto this row and move it here (spec §4 drag-to-move).
    * When set, the row becomes a drop target that highlights while an item hovers over it and
    * calls this with the dropped item's id and name (the name lets the caller name the item in
-   * its move feedback). Omit for rows that can't receive items (e.g. the synthetic "All items"
-   * row, or an archived location).
+   * its move feedback) and the location it came from (so the move can be offered back, issue
+   * #131). Omit for rows that can't receive items (e.g. the synthetic "All items" row, or an
+   * archived location).
    */
-  readonly onDropItem?: (itemId: string, itemName: string) => void;
+  readonly onDropItem?: (itemId: string, itemName: string, sourceLocationId: string | undefined) => void;
   /**
    * True ⇒ this row is a location drag *source*: it can be dragged onto another location row to
    * nest beneath it (spec §4 drag-to-nest). Off for rows that can't be re-nested (the synthetic

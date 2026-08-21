@@ -169,7 +169,9 @@ exactly where on a shelf it sits. See [[Location photos & regions|Location-Photo
 > **💡 Tip**
 > You can **drag an item card onto a location** to move its stock there — a fast way to tidy up
 > after a reorganise. On a touchscreen, **press and hold** the card briefly until it lifts, then
-> drag it onto the location; a quick swipe still scrolls the list as usual.
+> drag it onto the location; a quick swipe still scrolls the list as usual. Dropped it on the
+> wrong shelf? The message that confirms the move has an **Undo** button that sends it back
+> (see [[Undoing a change|Bulk-Edit-and-Clone#undoing-a-change]]).
 
 > **ℹ️ Note**
 > Dragging needs the tree and your items on screen together, so it isn't available on a narrow

@@ -58,6 +58,8 @@ vi.mock('../mutations', () => ({
   useArchiveLocation: () => ({ mutate: spies.archive, isPending: false }),
   useCreateLocationPath: () => ({ mutate: spies.create, isPending: false }),
   useMoveItem: () => ({ mutate: spies.move, isPending: moveState.isPending, variables: moveState.variables }),
+  // The drag-to-move confirmation offers an Undo (issue #131), so the sidebar reads this too.
+  useUndoItemChanges: () => ({ mutate: vi.fn() }),
 }));
 // The location-list export (issue #617, `N7`) re-reads the list from the repository rather than
 // serialising the tree on screen. Stub that one read — and the download side-effect — so the test

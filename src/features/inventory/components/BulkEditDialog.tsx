@@ -9,6 +9,17 @@ import { useBulkEditItems } from '../mutations';
 import { buildItemLocationOptions } from '../parent-options';
 import { LocationSelect } from './LocationSelect';
 import { isBulkEditEmpty, parseTagInput, type BulkEditSpec, type TagEditMode } from '../bulk-edit';
+import type { UndoPlan } from '../undo';
+
+/** What a finished bulk edit hands its caller so the screen can report and reverse it. */
+export interface BulkEditOutcome {
+  /** The human-readable result line, e.g. `Updated 3 items.`. */
+  readonly message: string;
+  /** How to put the edited items back (issue #131); empty when nothing can be reversed. */
+  readonly undo: UndoPlan;
+  /** `true` when some items would not apply — the confirmation is then a warning, not a success. */
+  readonly hadFailures: boolean;
+}
 
 /**
  * Bulk-edit dialog (Phase 76) — apply category / location / condition / active-state / tags
@@ -17,9 +28,10 @@ import { isBulkEditEmpty, parseTagInput, type BulkEditSpec, type TagEditMode } f
  * the existing repository methods via `useBulkEditItems`; this is pure glue + design tokens.
  *
  * Accessibility: the outcome (with the per-item succeeded/failed count) is handed back to the
- * caller via {@link onApplied} so it can be announced from the screen's always-mounted
- * `<LiveRegion>` — a region inside this dialog would unmount with the modal on close before any
- * assistive tech could read it (Phase 63 / WCAG 4.1.3).
+ * caller via {@link onApplied} so it can be announced from outside this dialog — anything
+ * inside it would unmount with the modal on close before any assistive tech could read it
+ * (Phase 63 / WCAG 4.1.3). The caller announces it through the toast that carries the Undo, so
+ * the reversal is reachable by the same users who hear the outcome.
  */
 export function BulkEditDialog({
   open,
@@ -32,8 +44,8 @@ export function BulkEditDialog({
   onClose: () => void;
   itemIds: readonly string[];
   locations: readonly LocationWithCount[];
-  /** Called with a human-readable result message once the batch resolves. */
-  onApplied?: (message: string) => void;
+  /** Called once the batch resolves, with everything the caller needs to report and reverse it. */
+  onApplied?: (outcome: BulkEditOutcome) => void;
 }) {
   const f = useFormatters();
   const categories = useCategories();
@@ -91,7 +103,7 @@ export function BulkEditDialog({
       result.failed > 0
         ? `Updated ${result.succeeded} ${plural(result.succeeded, 'item')}; ${result.failed} failed.`
         : `Updated ${result.succeeded} ${plural(result.succeeded, 'item')}.`;
-    onApplied?.(message);
+    onApplied?.({ message, undo: result.undo, hadFailures: result.failed > 0 });
     onClose();
   };
 
