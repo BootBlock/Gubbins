@@ -87,7 +87,10 @@ const AMAZON_TLDS: ReadonlySet<string> = new Set(Object.keys(AMAZON_MARKETPLACES
  * rather than recording a currency this table cannot vouch for.
  */
 export function currencyForMarketplace(marketplace: string): string | null {
-  return AMAZON_MARKETPLACES[marketplace.trim().toLowerCase()] ?? null;
+  // `Object.hasOwn`, so an input naming an inherited member (`constructor`, `toString`) is an
+  // unknown marketplace rather than a prototype value dressed up as a currency.
+  const tld = marketplace.trim().toLowerCase();
+  return Object.hasOwn(AMAZON_MARKETPLACES, tld) ? (AMAZON_MARKETPLACES[tld] ?? null) : null;
 }
 
 /**

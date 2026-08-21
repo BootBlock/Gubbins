@@ -70,15 +70,17 @@ export function requireAttr(doc: ParentNode, selector: string, attr: string, lab
 }
 
 /**
- * Currency marks that appear beside a rendered price, longest-first so a prefixed dollar
- * (`CDN$`, `A$`, `R$`) is recognised before the bare `$` it contains.
+ * Currency marks that appear beside a rendered price, scanned in order. The prefixed dollars
+ * come first so `CDN$`, `A$` and `R$` are read before the bare `$` they contain; that
+ * ordering is what the list is for, so add a new dollar prefix above `$` rather than at the
+ * end.
  *
- * A mark with no single reading is left out rather than guessed at: `kr` is shared by SEK,
- * NOK, DKK and ISK, and picking one of the four is exactly the confident wrong answer this
- * table is trying to avoid. A caller that knows the locale (the Amazon marketplace, a page's
- * `priceCurrency`) passes the code in and settles it properly. The two long-standing
- * exceptions are the bare `$`, read as USD, and `¥`, read as JPY though CNY shares it —
- * both keep the reading the scraper has always given them.
+ * Several marks are shared by more than one currency, and each is read as the one it most
+ * often means: `$` as USD, `¥` as JPY over CNY, `£` as GBP over the other pound currencies.
+ * A mark whose readings have no such favourite is left out entirely rather than guessed at —
+ * `kr` is SEK, NOK, DKK or ISK with nothing to choose between them, and a confident wrong
+ * currency is worse than none. Callers that know the locale (the Amazon marketplace, a page's
+ * `priceCurrency`) pass the code in and settle any of these properly.
  */
 const CURRENCY_BY_SYMBOL: readonly (readonly [string, string])[] = [
   ['CDN$', 'CAD'],
@@ -110,7 +112,8 @@ const CURRENCY_BY_SYMBOL: readonly (readonly [string, string])[] = [
 /**
  * ISO 4217 codes recognised when a page writes the currency out (`12.99 EUR`). A known-code
  * list rather than a bare three-letter scan, so an ordinary word in the price line (`VAT`,
- * `EAC`) cannot be adopted as a currency.
+ * `EAC`) is not adopted as a currency, and matched case-sensitively, because a code is written
+ * in capitals and a lower-case `try` or `ron` is a verb rather than a currency.
  */
 const CURRENCY_CODES = (
   'GBP USD EUR JPY CHF CNY INR CAD AUD NZD SGD HKD SEK NOK DKK ISK PLN CZK HUF RON ' +
@@ -120,8 +123,11 @@ const CURRENCY_CODE_RE = new RegExp(String.raw`\b(${CURRENCY_CODES.join('|')})\b
 
 /**
  * A space, non-breaking space or apostrophe used as a **thousands** separator (`1 234,56`,
- * `1'299.00`) — recognised only where it sits between a digit and a following three-digit
- * group, so ordinary spacing between two separate numbers still ends the price token.
+ * `1'299.00`), matched only where it sits between a digit and a following three-digit group.
+ * That shape is what a grouped number looks like, but it is not exclusive to one: a price
+ * line reading `Buy 2 500ml bottles £9.99` fits it too, and joins into 2500. The narrower
+ * reading is still the better bet, because a price element holding a leading quantity is far
+ * rarer than a European price holding a grouping space.
  */
 const GROUPING_GAP_RE = /(\d)[\s\u00a0\u202f'\u2019](?=\d{3}(?:\D|$))/g;
 
@@ -150,6 +156,13 @@ export interface ParsePriceOptions {
  * Delegates to {@link parseMoneyNumber} — the same reader the receipt OCR and the CSV
  * importer use — so a scraped `1.299,00 €` and an imported `1.299,00` agree. Returns null
  * when no plausible amount is present.
+ *
+ * Where both separators appear the right-most is the decimal point and the reading is exact.
+ * A **lone** separator before a three-digit tail is genuinely undecidable — `1.299` is 1299
+ * to a German page and one-and-a-bit to a British one — and that reader takes it as grouping,
+ * which is right for the `1.299 €` a European site renders when a price has no cents, and
+ * wrong for a distributor quoting `£1.234` to three decimals. Machine-written fields are not
+ * subject to the guess at all; see {@link ParsePriceOptions.machineFormat}.
  */
 function priceMagnitude(raw: string, machineFormat: boolean): number | null {
   const token = raw
@@ -175,18 +188,20 @@ export function parsePrice(
   const raw = text.trim();
   if (raw.length === 0) throw new DomDriftError('Empty price string.');
 
-  // A written-out ISO code is the page stating the currency outright, so it outranks the
-  // symbol: `US$ 29.99 CAD` is Canadian, whatever the dollar sign on its own would suggest.
+  // The mark beside the number wins, and a written-out code only settles a price that carries
+  // no mark at all. The other way round reads any word that spells a code — `try`, `ron` — as
+  // the currency of the price it sits beside. A page that states its currency properly says so
+  // in `priceCurrency`, and those callers overwrite the result afterwards.
   let currency: string | null = null;
-  const code = raw.toUpperCase().match(CURRENCY_CODE_RE);
-  if (code) currency = code[1]!;
-  if (!currency) {
-    for (const [symbol, symbolCode] of CURRENCY_BY_SYMBOL) {
-      if (raw.includes(symbol)) {
-        currency = symbolCode;
-        break;
-      }
+  for (const [symbol, symbolCode] of CURRENCY_BY_SYMBOL) {
+    if (raw.includes(symbol)) {
+      currency = symbolCode;
+      break;
     }
+  }
+  if (!currency) {
+    const code = raw.match(CURRENCY_CODE_RE);
+    if (code) currency = code[1]!;
   }
 
   // Preserve a leading minus so a negative price is rejected rather than silently flipped

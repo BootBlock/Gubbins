@@ -53,6 +53,8 @@ describe('parsePrice (§9.4.2 — never NaN)', () => {
     ['10.000,00 €', 'EUR', 10000],
     ['1.234,56 €', 'EUR', 1234.56],
     ['9,99 €', 'EUR', 9.99],
+    // No cents: a lone dot before three digits reads as grouping, the European convention.
+    ['1.299 €', 'EUR', 1299],
     // Space- and apostrophe-grouped (French, Swiss).
     ['1 234,56 €', 'EUR', 1234.56],
     ["1'299.00 CHF", 'CHF', 1299],
@@ -72,8 +74,13 @@ describe('parsePrice (§9.4.2 — never NaN)', () => {
     expect(parsePrice(text)).toEqual({ currency, value });
   });
 
-  it('prefers a written-out ISO code to the symbol beside it', () => {
-    expect(parsePrice('US$ 29.99 CAD')).toEqual({ currency: 'CAD', value: 29.99 });
+  it('lets the symbol beside the number outrank a word that spells a currency code', () => {
+    // `try` is a verb far more often than it is Turkish lira, so the mark on the price wins.
+    expect(parsePrice('£19.99 try before you buy')).toEqual({ currency: 'GBP', value: 19.99 });
+  });
+
+  it('falls back to a written-out code when the price carries no mark', () => {
+    expect(parsePrice('29.99 CAD')).toEqual({ currency: 'CAD', value: 29.99 });
   });
 
   it('leaves an ambiguous mark to the caller-supplied default', () => {
