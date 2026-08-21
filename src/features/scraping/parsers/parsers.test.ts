@@ -47,6 +47,66 @@ describe('parsePrice (§9.4.2 — never NaN)', () => {
     expect(() => parsePrice(text)).toThrow(DomDriftError);
   });
 
+  it.each([
+    // Comma-decimal, dot-grouped: the convention across most of continental Europe.
+    ['1.299,00 €', 'EUR', 1299],
+    ['10.000,00 €', 'EUR', 10000],
+    ['1.234,56 €', 'EUR', 1234.56],
+    ['9,99 €', 'EUR', 9.99],
+    // No cents: a lone dot before three digits reads as grouping, the European convention.
+    ['1.299 €', 'EUR', 1299],
+    // Space- and apostrophe-grouped (French, Swiss).
+    ['1 234,56 €', 'EUR', 1234.56],
+    ["1'299.00 CHF", 'CHF', 1299],
+  ])('reads the European format %s', (text, currency, value) => {
+    expect(parsePrice(text)).toEqual({ currency, value });
+  });
+
+  it.each([
+    ['₹1,299.00', 'INR', 1299],
+    ['99,00 zł', 'PLN', 99],
+    ['CDN$ 29.99', 'CAD', 29.99],
+    ['A$ 29.99', 'AUD', 29.99],
+    ['US$ 29.99', 'USD', 29.99],
+    ['R$ 1.299,90', 'BRL', 1299.9],
+    ['₺149,90', 'TRY', 149.9],
+  ])('reads the currency of %s', (text, currency, value) => {
+    expect(parsePrice(text)).toEqual({ currency, value });
+  });
+
+  it('lets the symbol beside the number outrank a word that spells a currency code', () => {
+    // `try` is a verb far more often than it is Turkish lira, so the mark on the price wins.
+    expect(parsePrice('£19.99 try before you buy')).toEqual({ currency: 'GBP', value: 19.99 });
+  });
+
+  it('falls back to a written-out code when the price carries no mark', () => {
+    expect(parsePrice('29.99 CAD')).toEqual({ currency: 'CAD', value: 29.99 });
+  });
+
+  it('leaves an ambiguous mark to the caller-supplied default', () => {
+    // `kr` is SEK, NOK, DKK or ISK — inferring one of the four would be a confident guess.
+    expect(parsePrice('199 kr', 'SEK')).toEqual({ currency: 'SEK', value: 199 });
+  });
+
+  it('does not adopt an ordinary word as a currency code', () => {
+    expect(parsePrice('12.99 EX VAT')).toEqual({ currency: 'GBP', value: 12.99 });
+  });
+
+  it('reads a machine-written amount as dot-decimal', () => {
+    // A rendered `1.234` is a German 1234; the same string in a JSON-LD `price` is 1.234.
+    expect(parsePrice('1.234', 'EUR', { machineFormat: true })).toEqual({ currency: 'EUR', value: 1.234 });
+    expect(parsePrice('1.234', 'EUR')).toEqual({ currency: 'EUR', value: 1234 });
+    // A comma-decimal value in a meta tag still resolves by convention, schema or not.
+    expect(parsePrice('1.234,56', 'EUR', { machineFormat: true })).toEqual({
+      currency: 'EUR',
+      value: 1234.56,
+    });
+  });
+
+  it('stops at the first number rather than fusing two prices', () => {
+    expect(parsePrice('£9.99 was £12.99')).toEqual({ currency: 'GBP', value: 9.99 });
+  });
+
   it('rejects a negative price', () => {
     expect(() => parsePrice('-1.00')).toThrow(DomDriftError);
   });

@@ -100,6 +100,28 @@ describe('amazonParser.parse (§9.2 payload)', () => {
     expect(payload.distributor_url).toBe('https://www.amazon.com/dp/B0TEST0004');
   });
 
+  it('reads a comma-decimal buy-box price at its real magnitude', () => {
+    const html = `<!doctype html><html><body>
+      <span id="productTitle">Beispiel-Widget</span>
+      <span class="a-price"><span class="a-offscreen">1.299,00 €</span></span>
+    </body></html>`;
+    const payload = amazonParser.parse(docOf(html), 'https://www.amazon.de/dp/B0TEST0005');
+    expect(payload.scraped_pricing).toEqual({ currency: 'EUR', value: 1299 });
+  });
+
+  it.each([
+    ['https://www.amazon.ca/dp/B0TEST0006', 'CDN$ 29.99', 'CAD', 29.99],
+    ['https://www.amazon.com.au/dp/B0TEST0007', 'A$29.99', 'AUD', 29.99],
+    // The marketplace settles a mark that no symbol table could read unambiguously.
+    ['https://www.amazon.se/dp/B0TEST0008', '299 kr', 'SEK', 299],
+  ])('takes the currency from the %s marketplace', (url, price, currency, value) => {
+    const html = `<!doctype html><html><body>
+      <span id="productTitle">Example Widget</span>
+      <span class="a-price"><span class="a-offscreen">${price}</span></span>
+    </body></html>`;
+    expect(amazonParser.parse(docOf(html), url).scraped_pricing).toEqual({ currency, value });
+  });
+
   it('drifts loudly when no ASIN can be derived from URL or DOM (§9.4.2)', () => {
     const html = `<!doctype html><html><body><span id="productTitle">No ASIN here</span></body></html>`;
     expect(() => amazonParser.parse(docOf(html), 'https://www.amazon.co.uk/gp/help')).toThrow(DomDriftError);

@@ -22,15 +22,23 @@
  * pure (it just reads a `Document`), so it is unit-tested under happy-dom against
  * **synthetic** Amazon-shaped fixtures and bundled unchanged into the extension.
  */
-import { asinToUrl, marketplaceFromHost, normaliseAsin, parseAsin, isAmazonHost } from '../../inventory/asin';
+import {
+  asinToUrl,
+  currencyForMarketplace,
+  marketplaceFromHost,
+  normaliseAsin,
+  parseAsin,
+  isAmazonHost,
+} from '../../inventory/asin';
 import { type ScrapeResultPayload } from '../protocol';
 import { metaContent } from './metadata';
 import { DomDriftError, optionalText, parsePrice, type SupplierParser } from './types';
 
 /** The buy-box price selectors, most-specific first; each `.a-offscreen` holds the full
- *  localized price string (`"£9.99"`), so {@link parsePrice} infers the currency from its
- *  symbol. Scoped to the core price blocks before the bare fallback so a strike-through
- *  list price elsewhere on the page is not picked up ahead of the actual buy-box price. */
+ *  localized price string (`"£9.99"`, `"1.299,00 €"`), read by {@link parsePrice}; the
+ *  marketplace supplies the currency. Scoped to the core price blocks before the bare
+ *  fallback so a strike-through list price elsewhere on the page is not picked up ahead of
+ *  the actual buy-box price. */
 const PRICE_SELECTORS = [
   '#corePriceDisplay_desktop_feature_div .a-price .a-offscreen',
   '#corePrice_feature_div .a-price .a-offscreen',
@@ -125,10 +133,13 @@ export const amazonParser: SupplierParser = {
     const manufacturer = brand ? cleanBrand(brand) : '';
 
     const priceText = optionalText(doc, PRICE_SELECTORS);
-    // A marketplace default (from the live host) covers a bare price with no symbol.
     const marketplace = marketplaceFromHost(new URL(url).hostname) ?? undefined;
-    const fallbackCurrency = marketplace === 'com' ? 'USD' : 'GBP';
-    const scraped_pricing = priceText ? parsePrice(priceText, fallbackCurrency) : null;
+    // The buy-box is rendered in the marketplace's own currency, so the live host settles it
+    // outright — a symbol beside the number cannot (`$` is shared by USD, CAD and AUD; `kr` by
+    // SEK, NOK and DKK). Only an unrecognised marketplace falls back to symbol inference.
+    const marketplaceCurrency = marketplace ? currencyForMarketplace(marketplace) : null;
+    const scraped_pricing = priceText ? parsePrice(priceText, marketplaceCurrency ?? 'GBP') : null;
+    if (scraped_pricing && marketplaceCurrency) scraped_pricing.currency = marketplaceCurrency;
 
     // The durable link is the canonical /dp/<ASIN> on the *live* tab's marketplace, so the
     // enriched item links back to the same locale/currency the user was viewing.
