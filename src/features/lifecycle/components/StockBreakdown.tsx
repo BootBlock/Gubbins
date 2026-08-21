@@ -35,7 +35,7 @@ import { useItemBatches, useItemStock, useTransferStock } from '../hooks';
 function CompactSelect({ label, ...props }: { label: string } & Omit<SelectProps, 'aria-labelledby'>) {
   const labelId = useId();
   return (
-    <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+    <div className="flex flex-col gap-field-gap-compact text-xs text-muted-foreground">
       <span id={labelId}>{label}</span>
       <Select aria-labelledby={labelId} {...props} />
     </div>
@@ -227,7 +227,7 @@ export function StockBreakdown({ item }: { item: Item }) {
               ]}
             />
           ) : null}
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          <label className="flex flex-col gap-field-gap-compact text-xs text-muted-foreground">
             Qty
             <Input
               type="number"
