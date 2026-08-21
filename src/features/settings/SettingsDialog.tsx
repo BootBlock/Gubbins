@@ -655,7 +655,7 @@ export default function SettingsDialog({
             hintSize="md"
             hint={
               'Sets how **opaque the app’s surfaces** — item cards, dashboard widgets and panels — are:\n\n' +
-              '- **Solid** — fully opaque (the default; the shipped look).\n' +
+              '- **Solid** — the default, and the standard look: surfaces sit just short of fully opaque.\n' +
               '- **Soft** — a subtle translucency, so a hint of the background shows through.\n' +
               '- **Sheer** — a more pronounced translucency, letting the mode and accent tint read ' +
               'clearly through the surface.\n\n' +

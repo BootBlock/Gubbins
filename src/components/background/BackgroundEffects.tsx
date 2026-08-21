@@ -28,10 +28,10 @@
  *   change (explicit mode / OLED / high-contrast, or an OS scheme flip under `system`) triggers a
  *   colour refresh without resetting the falling field.
  * - **Cards yield to it.** While the layer is actually painting, it projects `data-bg-effect` on
- *   `<html>`; the `styles/index.css` block re-mixes `--card` to 90% opacity (the `soft` surface-style
+ *   `<html>`; the `styles/index.css` block re-mixes `--card` to 70% opacity (the `soft` surface-style
  *   mix, applied automatically) so the drifting effect shows faintly through content surfaces
  *   (cards, item rows) — issue #75. The attribute tracks the real paint state (cleared whenever the
- *   layer is hidden), so cards stay solid when no effect is on screen.
+ *   layer is hidden), so cards return to their standard 80% background when no effect is on screen.
  * - **The weather touches the controls (issue #68).** A second, equally pointer-inert canvas sits
  *   *above* the content (`z-40` — over cards and page chrome, under modals/toasts/popovers): snow
  *   settles into slowly-growing mounds on control tops and rain splashes off them, driven by the

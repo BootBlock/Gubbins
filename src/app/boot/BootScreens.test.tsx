@@ -94,6 +94,10 @@ describe('UnsupportedScreen', () => {
     expect(footer).toHaveAttribute('href', 'https://github.com/BootBlock/Gubbins');
     expect(footer).toHaveAttribute('target', '_blank');
     expect(footer).toHaveAttribute('rel', 'noreferrer');
+    // Issue #704: the footer used to be pinned to the viewport bottom, which drew it over the
+    // card's border on any screen taller than the viewport. It now sits in normal flow below
+    // the card, so the two can never overlap however tall the card grows.
+    expect(footer.className).not.toMatch(/\babsolute\b/);
   });
 });
 

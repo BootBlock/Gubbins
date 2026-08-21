@@ -87,7 +87,7 @@ const ItemRowBody = memo(function ItemRow({
       className={cn(
         // No hover grab-hand: the grabbing cursor appears only while actively pressing to drag
         // (`:active`); hover shows a pointer when the row body is click-actionable, else default.
-        'flex select-none items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 transition-colors hover:bg-card/80 active:cursor-grabbing',
+        'flex select-none items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 transition-colors hover:bg-card active:cursor-grabbing',
         // Per-location accent tint (F10): a faint left-edge accent in this row's location swatch so
         // a scan down the list reads location-clustered. A painted background layer (survives the
         // hover:bg-card swap), static, and undefined for an uncoloured location.

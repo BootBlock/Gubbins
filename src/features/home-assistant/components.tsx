@@ -195,7 +195,7 @@ export function CommandBlock({
               : t('commandBlock.copy', { vars: { label } })
           }
           className={cn(
-            'absolute right-2 top-2 grid size-8 place-items-center rounded-md border border-border bg-card/80 outline-none transition-colors ease-emphasized [&_svg]:size-4',
+            'absolute right-2 top-2 grid size-8 place-items-center rounded-md border border-border bg-card outline-none transition-colors ease-emphasized [&_svg]:size-4',
             'hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring',
             state === 'copied' && 'text-glyph-success',
             state === 'failed' && 'text-glyph-danger',

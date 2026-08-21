@@ -94,7 +94,7 @@ export function SubLocationNav({
               type="button"
               onClick={() => onSelect(loc.id)}
               aria-label={label}
-              className="group flex w-full items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 text-left outline-none transition-colors hover:bg-card/80 focus-visible:ring-2 focus-visible:ring-primary/60"
+              className="group flex w-full items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 text-left outline-none transition-colors hover:bg-card focus-visible:ring-2 focus-visible:ring-primary/60"
             >
               <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary/50 text-muted-foreground [&_svg]:size-4">
                 <LocationKindIcon kind={loc.kind} />

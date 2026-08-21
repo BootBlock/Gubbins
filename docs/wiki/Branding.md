@@ -38,7 +38,7 @@ Leave it blank to show just "Gubbins".
 
 Sets how **opaque** the app's surfaces — item cards, dashboard widgets and panels — are:
 
-- **Solid** — fully opaque (the default).
+- **Solid** — the default, and the standard look: surfaces sit just short of fully opaque.
 - **Soft** — a subtle translucency, so a hint of the background shows through.
 - **Sheer** — a more pronounced translucency, letting the mode and accent tint read clearly
   through the surface.
@@ -51,9 +51,9 @@ Sets how **opaque** the app's surfaces — item cards, dashboard widgets and pan
 > **ℹ️ Note**
 > If you leave this on **Solid** but switch on a [[Appearance & theming|Appearance-and-Theming]]
 > **background effect** (snow or rain), surfaces turn softly translucent on their own while the
-> effect is running, so the drift shows faintly through — then return to solid when you turn it
-> off. Choosing **Soft** or **Sheer** already shows the background through, so those are left as
-> you set them.
+> effect is running, so the drift shows faintly through — then return to the standard look when
+> you turn it off. Choosing **Soft** or **Sheer** already shows the background through, so those
+> are left as you set them.
 
 ## Related pages
 

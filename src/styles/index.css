@@ -83,13 +83,17 @@
   --foreground: oklch(0.2 0.015 281);
 
   /*
-   * `--card-base` is the opaque surface colour; `--card` derives from it. The Branding surface-style
-   * (`data-surface`) re-mixes `--card` from `--card-base` with a little transparency, so cards can go
-   * translucent without every mode/OLED block having to restate the colour. Overlays use `--popover`
-   * (untouched), so menus/modals stay opaque whatever the surface style.
+   * `--card-base` is the opaque surface colour; `--card` derives from it at 80% (issue #704), so a
+   * card takes an 0.8 background from the token alone — the background only, never the content on
+   * top of it. A call site that adds its own alpha (`bg-card/40`, for a row that reads lighter than
+   * a card) still compounds with that, and so lands below 0.8 by design. The Branding surface-style
+   * (`data-surface`) re-mixes `--card` from
+   * `--card-base` with more transparency still, so cards can go further without every mode/OLED
+   * block having to restate the colour. Overlays use `--popover` (untouched), so menus/modals stay
+   * opaque whatever the surface style, and high contrast sets `--card` outright so it stays solid.
    */
   --card-base: oklch(1 0 0);
-  --card: var(--card-base);
+  --card: color-mix(in oklab, var(--card-base) 80%, transparent);
   --card-foreground: oklch(0.2 0.015 281);
 
   /*
@@ -316,7 +320,7 @@
 
   /* See the light block: `--card` derives from `--card-base` so the surface-style can re-mix it. */
   --card-base: oklch(0.205 0.014 281);
-  --card: var(--card-base);
+  --card: color-mix(in oklab, var(--card-base) 80%, transparent);
   --card-foreground: oklch(0.97 0.005 280);
 
   /* Raised surface — sits clearly above the `secondary` (0.27) segmented-control track so
@@ -685,7 +689,7 @@
 .dark[data-oled] {
   --background: oklch(0 0 0);
   --card-base: oklch(0.14 0 0);
-  --card: var(--card-base);
+  --card: color-mix(in oklab, var(--card-base) 80%, transparent);
   --card-foreground: oklch(0.97 0 0);
   --card-elevated: oklch(0.24 0 0);
   --popover: oklch(0.14 0 0);
@@ -741,7 +745,8 @@
  * lighter, "branded" feel. It re-mixes `--card` from the opaque `--card-base` each mode/OLED block
  * sets, via `color-mix`, so it composes with mode + OLED for free — no per-context restating.
  *
- * The `solid` default carries no attribute (baseline unchanged). Overlays use `--popover` (left
+ * The `solid` default carries no attribute; since #704 that baseline is itself 80% of `--card-base`,
+ * so `soft` (70%) and `sheer` (58%) stay a step and two steps beyond it. Overlays use `--popover` (left
  * opaque), so menus, modals, popovers and tooltips never go see-through. High contrast is an
  * accessibility mode, so the `:not([data-contrast='high'])` guard forces every surface solid there
  * regardless of the surface style — legibility always wins. Being a static colour change (no motion),
@@ -749,24 +754,24 @@
  * so it wins `--card` even when OLED is also on.
  */
 [data-surface='soft']:not([data-contrast='high']) {
-  --card: color-mix(in oklab, var(--card-base) 90%, transparent);
+  --card: color-mix(in oklab, var(--card-base) 70%, transparent);
 }
 [data-surface='sheer']:not([data-contrast='high']) {
-  --card: color-mix(in oklab, var(--card-base) 72%, transparent);
+  --card: color-mix(in oklab, var(--card-base) 58%, transparent);
 }
 
 /*
  * Auto-translucent cards under a live background effect (issue #75). While the weather layer
  * (rain/snow) is actually painting, `BackgroundEffects` sets `data-bg-effect` on <html>; we re-mix
- * `--card` to 90% — the same `soft` surface-style mix — so the drifting effect shows faintly through
+ * `--card` to 70% — the same `soft` surface-style mix — so the drifting effect shows faintly through
  * content surfaces (cards, item rows, dashboard tiles — everything deriving from `--card`) without
  * any manual setting. Only when the user hasn't already picked a translucent surface style
- * (`:not([data-surface])` — `soft` is already 90%, `sheer` more so, so those win and show through
+ * (`:not([data-surface])` — `soft` is already 70%, `sheer` more so, so those win and show through
  * anyway) and never in high contrast (legibility wins, matching the surface-style guard). A static
  * colour change with no motion, so it needs no reduced-motion gate.
  */
 :root[data-bg-effect]:not([data-surface]):not([data-contrast='high']) {
-  --card: color-mix(in oklab, var(--card-base) 90%, transparent);
+  --card: color-mix(in oklab, var(--card-base) 70%, transparent);
 }
 
 /*
