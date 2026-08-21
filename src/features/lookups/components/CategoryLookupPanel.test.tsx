@@ -78,8 +78,18 @@ const fetchMock = vi.fn(async (input: string | URL | Request) => {
   return new Response(entry.body, { status: entry.status ?? 200 });
 });
 
+/** The host a request actually went to — an exact host match, not a substring of the whole URL. */
+const hostOf = (input: unknown) => {
+  try {
+    return new URL(String(input)).hostname;
+  } catch {
+    return '';
+  }
+};
+
 import { CategoryLookupPanel } from './CategoryLookupPanel';
 import { LookupRunner } from '../runner';
+import { WIKIDATA_SPARQL_HOST } from '../providers/wikidata-film';
 
 /**
  * A runner whose rate-limit waits resolve instantly. The real `minIntervalMs` is a full second per
@@ -283,7 +293,7 @@ describe('CategoryLookupPanel — the match picker is mandatory', () => {
     expect(screen.getByTestId('lookup-candidate-Q184843')).not.toBeChecked();
     // Confirm is unusable until the user picks, and no detail fetch has run.
     expect(screen.getByTestId('lookup-match-confirm')).toBeDisabled();
-    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes('query.wikidata.org'))).toBe(true);
+    expect(fetchMock.mock.calls.every(([url]) => hostOf(url) !== WIKIDATA_SPARQL_HOST)).toBe(true);
   });
 
   it('shows a single candidate too, rather than using it automatically', async () => {
