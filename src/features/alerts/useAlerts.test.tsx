@@ -212,6 +212,59 @@ describe('useAlerts — dismissal pruning', () => {
     expect(useDismissedAlertsStore.getState().dismissals.size).toBe(1);
   });
 
+  it('retires a record as soon as its lane is read whole without it (issue #644)', () => {
+    // A complete feed — `hasMore: false` — that no longer names the item is proof the shortage
+    // is over, so the dismissal goes now rather than in a month's time. Restock a dismissed item
+    // and run it down again next week and the alert must come back.
+    h.useLowStockItems.mockReturnValue({
+      data: { rows: [{ id: 'low-1', name: 'Low widget' }], hasMore: false },
+      isLoading: false,
+      isError: false,
+    });
+    useDismissedAlertsStore.setState({
+      dismissals: new Map([['low-stock:restocked', { until: null, at: Date.now() - DAY_MS }]]),
+    });
+
+    renderHook(() => useAlerts());
+
+    expect(useDismissedAlertsStore.getState().dismissals.size).toBe(0);
+  });
+
+  it('keeps that record when the lane stopped at its page ceiling', () => {
+    // `hasMore: true` — the item may simply be past the ceiling, so absence proves nothing and
+    // only the staleness rule may drop it.
+    h.useLowStockItems.mockReturnValue({
+      data: { rows: [{ id: 'low-1', name: 'Low widget' }], hasMore: true },
+      isLoading: false,
+      isError: false,
+    });
+    useDismissedAlertsStore.setState({
+      dismissals: new Map([['low-stock:maybe-gone', { until: null, at: Date.now() - DAY_MS }]]),
+    });
+
+    renderHook(() => useAlerts());
+
+    expect(useDismissedAlertsStore.getState().dismissals.size).toBe(1);
+  });
+
+  it('does not judge a lane whose module is off, however complete its cached feed reads', () => {
+    // Perishables off: the hook feeds the seam an empty lane, which must not read as "every
+    // expiry alert resolved" and wipe those dismissals.
+    useModulesStore.getState().setFeatureIntent('perishables', false);
+    h.useExpiringItems.mockReturnValue({
+      data: { rows: [], hasMore: false },
+      isLoading: false,
+      isError: false,
+    });
+    useDismissedAlertsStore.setState({
+      dismissals: new Map([['expiry:exp-1:2026-01-01:expired', { until: null, at: Date.now() - DAY_MS }]]),
+    });
+
+    renderHook(() => useAlerts());
+
+    expect(useDismissedAlertsStore.getState().dismissals.size).toBe(1);
+  });
+
   it('hides a snoozed alert from the feed but not from the total', () => {
     useDismissedAlertsStore.setState({
       dismissals: new Map([['low-stock:low-1', { until: Date.now() + DAY_MS, at: Date.now() }]]),

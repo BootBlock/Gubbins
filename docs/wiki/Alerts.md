@@ -40,11 +40,22 @@ controls in its top-right corner:
   it come back by itself. Use this when you've already acted but the situation hasn't caught up
   yet — the replacement stock is on order, the service is booked — and you'd like a nudge later if
   it still isn't sorted.
-- **Dismiss** (the ✕) hides the alert until you bring it back. Nothing re-raises it while the same
-  condition persists, so it's the right choice for something you've decided to live with.
+- **Dismiss** (the ✕) hides the alert until you bring it back. Nothing re-raises it while the
+  situation stays as it was, so it's the right choice for something you've decided to live with.
 
 **Show all** appears in the header whenever anything is hidden, tells you how many, and brings back
 everything — snoozed and dismissed alike.
+
+Hiding an alert hides *that* alert, not the item behind it. Gubbins raises a fresh one — and lets it
+through however you cleared the last — whenever the situation moves on:
+
+- **It gets worse.** Dismiss "Expiring soon" for the yoghurt and you'll still be told when it
+  actually **expires**; the same goes for a warranty running out, a service becoming overdue, and
+  a custom date passing.
+- **The date changes.** Correct a best-before, re-date a batch, push a renewal back or bring it
+  forward, and the alert comes back against the new date.
+- **It happens again.** Restock a low item and run it down again, or log a service and let the next
+  one fall due, and that's a new alert rather than a silenced one.
 
 > **💡 Tip**
 > A snooze also quietens the matching **[[notification|Reminder-Notifications]]** for as long as it
@@ -53,8 +64,8 @@ everything — snoozed and dismissed alike.
 > **ℹ️ Note**
 > What you've hidden is remembered **on that device only** — it isn't [[synced|Cloud-Sync]], so
 > dismissing an alert on your laptop leaves it showing on your tablet. Gubbins keeps these notes
-> tidy on your behalf: once an alert has stopped appearing for a month — its item deleted, say —
-> the record that you'd hidden it is quietly discarded.
+> tidy on your behalf: the record is discarded as soon as the situation it covered is over, and in
+> any case once the alert has stopped appearing for a month — its item deleted, say.
 
 ## Getting alerts as notifications
 
