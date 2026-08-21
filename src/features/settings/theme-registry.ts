@@ -295,9 +295,9 @@ export function normaliseBackgroundEffect(value: unknown): BackgroundEffect {
  * surface solid regardless (the CSS `:not([data-contrast='high'])` guard), so this never fights the
  * accessibility mode.
  *
- * - `solid` — fully opaque surfaces (the default; the shipped look is unchanged).
- * - `soft` — a subtle translucency (~90%): a hint of the background shows through.
- * - `sheer` — a more pronounced translucency (~72%): the mode/accent tint reads clearly through cards.
+ * - `solid` — the default: cards keep the app's standard 80% surface background (issue #704).
+ * - `soft` — a subtle translucency (~70%): a hint of the background shows through.
+ * - `sheer` — a more pronounced translucency (~58%): the mode/accent tint reads clearly through cards.
  *
  * The apply seam (`theme.ts`) projects the choice as `data-surface="<id>"` on `<html>` (the `solid`
  * default carries no attribute); the `[data-surface]` blocks in `styles/index.css` re-mix the card
@@ -319,7 +319,7 @@ export type SurfaceStyle = (typeof SURFACE_STYLES)[number]['id'];
  */
 export const SURFACE_STYLE_IDS = SURFACE_STYLES.map((s) => s.id) as SurfaceStyle[];
 
-/** The default surface style — `solid`, so the shipped baseline is fully opaque. */
+/** The default surface style — `solid`, the app's standard 80% surface background. */
 export const DEFAULT_SURFACE_STYLE: SurfaceStyle = 'solid';
 
 /** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link SurfaceStyle} (default solid). */

@@ -43,10 +43,13 @@ function BootShell({
   return (
     <div
       data-testid={testId}
-      className="relative grid min-h-dvh place-items-center overflow-hidden bg-background p-6"
+      className="relative flex min-h-dvh flex-col items-center justify-center gap-5 bg-background p-6"
     >
-      {/* Ambient gradient glow for depth. */}
-      <div className="pointer-events-none absolute top-[-30%] left-1/2 size-[55rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+      {/* Ambient gradient glow for depth. Clipped by its own wrapper rather than by the screen,
+          so a card taller than the viewport scrolls into view instead of being cut off. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute top-[-30%] left-1/2 size-[55rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+      </div>
       <Surface className="relative w-full max-w-md p-8">
         <div className="flex flex-col items-center text-center">
           {/* Decorative: every icon here only restates the heading below it. */}
@@ -65,7 +68,7 @@ function BootShell({
         href={REPO_URL}
         target="_blank"
         rel="noreferrer"
-        className="absolute bottom-5 rounded-sm text-xs text-muted-foreground/60 underline-offset-4 outline-none transition-colors hover:text-muted-foreground hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="relative rounded-sm text-xs text-muted-foreground/60 underline-offset-4 outline-none transition-colors hover:text-muted-foreground hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         Gubbins · local-first inventory
       </a>

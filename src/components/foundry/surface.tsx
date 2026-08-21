@@ -23,7 +23,10 @@ export const Surface = forwardRef<HTMLDivElement, SurfaceProps>(
     <div
       ref={ref}
       className={cn(
-        'rounded-2xl border border-border bg-card/80 shadow-2xl shadow-black/40 backdrop-blur-xl',
+        // The token carries the panel's translucency (`--card` is a mix of the opaque `--card-base`),
+        // so this takes `bg-card` whole: an alpha modifier here would compound with it, and the
+        // Branding surface style could no longer set the panel's translucency on its own.
+        'rounded-2xl border border-border bg-card shadow-2xl shadow-black/40 backdrop-blur-xl',
         interactive &&
           'transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10',
         className,
