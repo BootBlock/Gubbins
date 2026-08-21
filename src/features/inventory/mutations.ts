@@ -665,6 +665,11 @@ export interface UndoResult {
  * Log keeps both the change and its reversal. Invalidation-based for the same reason: a plan can
  * span many fields across many items, which one optimistic patch cannot cleanly express. A
  * per-item failure is counted, not fatal, so one bad row can't abort the rest of the reversal.
+ *
+ * What a location step restores is the item's *home* location, because that is all `move` deals
+ * in: the forward move already consolidated any split placements into the target, and moving back
+ * consolidates them into the origin. Stock that was spread across drawers before the move does not
+ * come apart again — use `transferStock` to re-split it.
  */
 export function useUndoItemChanges() {
   const client = useQueryClient();

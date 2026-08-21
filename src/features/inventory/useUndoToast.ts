@@ -3,8 +3,8 @@
  *
  * A bulk edit, a remove or a move confirms itself with a toast; this hook attaches the "Undo"
  * action to that toast and replays the {@link UndoPlan} behind it. Keeping the wiring here means
- * every reversible write gets the same affordance, the same dwell time and the same follow-up
- * confirmation, rather than three call sites each inventing their own.
+ * every reversible write gets the same affordance and the same follow-up confirmation, rather
+ * than three call sites each inventing their own.
  *
  * The toast *is* the announcement: its viewport is `aria-live`, so a screen-reader user hears the
  * outcome and can reach the Undo button. Call sites must therefore not also push the same

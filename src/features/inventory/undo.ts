@@ -157,8 +157,3 @@ export function planRemoveUndo(itemId: string): UndoPlan {
 export function isUndoPlanEmpty(plan: UndoPlan): boolean {
   return plan.steps.length === 0;
 }
-
-/** How many items the plan restores — the count an undo confirmation reports back. */
-export function undoPlanItemCount(plan: UndoPlan): number {
-  return plan.steps.length;
-}

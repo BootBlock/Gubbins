@@ -8,7 +8,6 @@ import {
   planMoveUndo,
   planRemoveUndo,
   snapshotForUndo,
-  undoPlanItemCount,
   type ItemUndoSnapshot,
 } from './undo';
 
@@ -85,7 +84,6 @@ describe('planBulkEditUndo — restores only what the edit changed', () => {
       { id: 'a', locationId: 'loc-bench' },
       { id: 'c', locationId: 'loc-shelf' },
     ]);
-    expect(undoPlanItemCount(plan)).toBe(2);
   });
 });
 
