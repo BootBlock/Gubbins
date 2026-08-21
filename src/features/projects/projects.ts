@@ -4,7 +4,9 @@
  * Reads go through TanStack Query; writes use targeted invalidation (project edits
  * are low-frequency and reshape derived counts/costing/shopping-list aggregates, so
  * invalidation is simpler and safer than optimistic patching here — the same
- * deliberate split the category/tag hooks use). A project's BOM, costing and
+ * deliberate split the category/tag hooks use). The one exception is {@link useSetPicked}:
+ * ticking off the picking worksheet is a rapid, sequential interaction, so it patches
+ * optimistically the way the inventory hooks do. A project's BOM, costing and
  * shopping list are bounded per-project sets, fetched whole rather than virtualised;
  * the strict-pagination mandate (§2.1) targets the 100k+ item list.
  *
@@ -14,7 +16,8 @@
  * feeds the export, where a short read is a wrong file rather than a shorter screen (issue #149).
  * The project *list* itself is a browse list and pages server-side instead.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   getItemRepository,
   getProjectRepository,
@@ -26,6 +29,8 @@ import {
   type CreateProjectInput,
   type FinaliseAssemblyInput,
   type ProcurementStatus,
+  type PickLine,
+  type ProjectBomLine,
   type ProjectFilter,
   type ProjectListParams,
   type ReservationStatus,
@@ -35,9 +40,9 @@ import {
   type UpdateProjectInput,
 } from '@/db/repositories';
 import { checkoutKeys } from '@/features/contacts/keys';
-import { useReportWriteFailure } from '@/features/errors';
+import { isUnknownWriteOutcome, useReportWriteFailure } from '@/features/errors';
 import { inventoryKeys } from '@/features/inventory/queries';
-import { readAllPages } from '@/lib/read-all-pages';
+import { readAllPages, type AllPages } from '@/lib/read-all-pages';
 import type { ParsedBomLine } from './bom-import';
 import { invalidateItems } from '@/features/inventory/invalidate';
 
@@ -441,20 +446,74 @@ export function useRemoveBomLine(projectId: string) {
 // --- picking (issue #121 location-aware gather-and-tick) -----------------------
 
 /**
+ * Set one line's `picked` flag in both cached slices that carry it — the picking worksheet and
+ * the BOM lines — leaving every other line, and every other field, untouched.
+ *
+ * Writing one line's flag rather than restoring a snapshot is what keeps a rollback mid-burst
+ * from undoing the ticks either side of it (the reasoning behind the inverse patches in the
+ * inventory hooks, issue #300). Two ticks racing on the *same* line can still leave the cache
+ * showing the rejected one's inverse rather than the latest tap; the reconciliation that follows
+ * the burst is what settles that.
+ */
+function patchPicked(client: QueryClient, projectId: string, lineId: string, picked: boolean): void {
+  client.setQueryData<readonly PickLine[]>(projectKeys.pickList(projectId), (rows) =>
+    rows?.map((row) => (row.line.id === lineId ? { ...row, line: { ...row.line, picked } } : row)),
+  );
+  client.setQueryData<AllPages<ProjectBomLine>>(projectKeys.lines(projectId), (data) =>
+    data ? { ...data, rows: data.rows.map((l) => (l.id === lineId ? { ...l, picked } : l)) } : data,
+  );
+}
+
+/**
  * Tick a BOM line as physically gathered (or clear it) during the picking pass. Picking
  * only flips the line's `picked` flag — it moves no stock and reshapes no cost, budget or
  * shopping figure — so it refreshes just the worksheet and the BOM lines (which carry the
  * flag), not the whole project detail or any inventory view.
+ *
+ * The one **optimistic** write in this module (issue #670), and for the same reason
+ * `useAdjustQuantity` is: the worksheet is walked, not edited — gather a part, tick it, move on
+ * — so a tick that waits on the OPFS write queue before it appears is a tick the user has
+ * already moved past. `onMutate` flips the flag in both cached slices, `onError` flips it back
+ * (unless the outcome is unknown — see below), and only the last write of a burst reconciles.
  */
 export function useSetPicked(projectId: string) {
   const client = useQueryClient();
-  const reportFailure = useReportWriteFailure('projects.writeError.heading.picked', 'common.writeFailed');
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.picked',
+    'projects.writeError.pickedReverted',
+  );
+  // Ticks of the current burst that have not settled yet. Deliberately counted here rather than
+  // read back from `client.isMutating` the way the inventory adjust hooks count their taps: that
+  // count only drops when a mutation dispatches its terminal state, which happens *after*
+  // `onSettled`, so two ticks resolving in the same microtask each still see the other as
+  // pending — both skip, and the burst never reconciles at all.
+  const inFlight = useRef(0);
   return useMutation({
     mutationFn: ({ lineId, picked }: { lineId: string; picked: boolean }) =>
       getProjectRepository().setPicked(lineId, picked),
-    // Surface a rejected pick toggle rather than letting it fail silently (#389).
-    onError: reportFailure,
+    onMutate: async ({ lineId, picked }) => {
+      inFlight.current += 1;
+      // Cancel the reads this is about to write over, or one already in flight resolves after
+      // the patch and snaps the box back to its pre-tick state.
+      await Promise.all([
+        client.cancelQueries({ queryKey: projectKeys.pickList(projectId), exact: true }),
+        client.cancelQueries({ queryKey: projectKeys.lines(projectId), exact: true }),
+      ]);
+      patchPicked(client, projectId, lineId, picked);
+    },
+    onError: (error, { lineId, picked }) => {
+      // A rollback asserts the write did not happen, which a timeout does not establish — the
+      // worker may still commit it (issue #554). There the patch stays and `onSettled` settles it.
+      if (!isUnknownWriteOutcome(error)) patchPicked(client, projectId, lineId, !picked);
+      // Surface a rejected pick toggle rather than letting it fail silently (#389).
+      reportFailure(error);
+    },
     onSettled: () => {
+      // Only the last tick of a walk-the-list burst refetches. Each tick is its own write, so an
+      // earlier one's refetch could otherwise resolve before a later one had landed and snap the
+      // worksheet back mid-burst.
+      inFlight.current = Math.max(0, inFlight.current - 1);
+      if (inFlight.current > 0) return;
       void client.invalidateQueries({ queryKey: projectKeys.pickList(projectId) });
       void client.invalidateQueries({ queryKey: projectKeys.lines(projectId) });
     },

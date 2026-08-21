@@ -8,9 +8,10 @@ import { PickingSection } from './PickingSection';
 // is mutated per-test to drive the different worksheet states; `mutate` is the toggle spy.
 const mutate = vi.fn();
 const pickData = vi.hoisted(() => ({ rows: [] as PickLine[], isLoading: false }));
+const setPickedState = vi.hoisted(() => ({ isPending: false }));
 vi.mock('../projects', () => ({
   usePickList: () => ({ data: pickData.rows, isLoading: pickData.isLoading }),
-  useSetPicked: () => ({ mutate, isPending: false }),
+  useSetPicked: () => ({ mutate, isPending: setPickedState.isPending }),
 }));
 
 function makeLine(overrides: Partial<ProjectBomLine> = {}): ProjectBomLine {
@@ -47,6 +48,7 @@ beforeEach(() => {
   mutate.mockClear();
   pickData.isLoading = false;
   pickData.rows = [];
+  setPickedState.isPending = false;
 });
 
 describe('PickingSection (issue #121 location-aware picking)', () => {
@@ -75,6 +77,23 @@ describe('PickingSection (issue #121 location-aware picking)', () => {
 
     await user.click(screen.getByTestId('pick-l1'));
     expect(mutate).toHaveBeenCalledWith({ lineId: 'l1', picked: true });
+  });
+
+  it('keeps every checkbox tappable while a tick is saving (issue #670)', async () => {
+    // `useSetPicked` is optimistic, so nothing is disabled mid-write. Both taps of a
+    // walk-the-list pair must reach the mutation, not be swallowed by a shared pending flag.
+    pickData.rows = [
+      { line: makeLine({ id: 'l1', description: 'Bolt', picked: false }), placements: [] },
+      { line: makeLine({ id: 'l2', description: 'Nut', picked: false }), placements: [] },
+    ];
+    setPickedState.isPending = true;
+    const { user } = renderSection();
+
+    expect(screen.getByTestId('pick-l1')).toBeEnabled();
+    await user.click(screen.getByTestId('pick-l1'));
+    await user.click(screen.getByTestId('pick-l2'));
+    expect(mutate).toHaveBeenNthCalledWith(1, { lineId: 'l1', picked: true });
+    expect(mutate).toHaveBeenNthCalledWith(2, { lineId: 'l2', picked: true });
   });
 
   it('surfaces the finalise step once every line is gathered', async () => {
