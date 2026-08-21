@@ -389,37 +389,50 @@ function ScannerOverlayInner({
             : null}
       </LiveRegion>
 
-      {/* Header */}
-      <div className="flex items-center gap-3 p-4">
-        <ScanIcon className="size-5" />
-        <span className="font-semibold">Scanner</span>
-        <div className="ml-auto flex items-center rounded-lg bg-white/10 p-0.5">
-          <Tooltip
-            content="Scan **one** code, then act on it immediately (check out or look up)."
-            triggerTabIndex={-1}
-          >
-            <ModeButton
-              mode="DISCRETE"
-              current={state.mode}
-              onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}
+      {/* Header
+          The row holds more than a 320px-wide viewport can fit on one line (WCAG 1.4.10
+          Reflow), and the overlay is `fixed`, so anything that overflows is unreachable
+          rather than merely off to the side. So it wraps instead: Close and Help stay
+          pinned to the first line, the title absorbs the pressure by truncating, and the
+          mode toggle drops onto a second line below `sm`. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
+        <ScanIcon className="size-5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate font-semibold">Scanner</span>
+        {/* The wrapper takes the whole second line so the toggle drops below the title; the
+            pill inside stays sized to its two buttons rather than stretching across it. */}
+        <div
+          className="order-last flex basis-full sm:order-none sm:basis-auto"
+          data-testid="scanner-mode-toggle"
+        >
+          <div className="flex items-center rounded-lg bg-white/10 p-0.5">
+            <Tooltip
+              content="Scan **one** code, then act on it immediately (check out or look up)."
+              triggerTabIndex={-1}
             >
-              <DiscreteIcon /> Discrete
-            </ModeButton>
-          </Tooltip>
-          <Tooltip
-            content="Scan **many** codes into a queue, then apply one action (move or check out) to them all at once."
-            triggerTabIndex={-1}
-          >
-            <ModeButton
-              mode="CONTINUOUS"
-              current={state.mode}
-              onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}
+              <ModeButton
+                mode="DISCRETE"
+                current={state.mode}
+                onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}
+              >
+                <DiscreteIcon /> Discrete
+              </ModeButton>
+            </Tooltip>
+            <Tooltip
+              content="Scan **many** codes into a queue, then apply one action (move or check out) to them all at once."
+              triggerTabIndex={-1}
             >
-              <SerialisedIcon /> Continuous
-            </ModeButton>
-          </Tooltip>
+              <ModeButton
+                mode="CONTINUOUS"
+                current={state.mode}
+                onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}
+              >
+                <SerialisedIcon /> Continuous
+              </ModeButton>
+            </Tooltip>
+          </div>
         </div>
-        <Tooltip content="What can I scan?" triggerTabIndex={-1}>
+        {/* `shrink-0` sits on the Tooltip: its wrapper span is the flex item, not the Button. */}
+        <Tooltip content="What can I scan?" triggerTabIndex={-1} className="shrink-0">
           <Button
             variant="ghost"
             size="icon"
@@ -436,7 +449,7 @@ function ScannerOverlayInner({
           size="icon"
           onClick={close}
           aria-label="Close scanner"
-          className="text-white hover:bg-white/10"
+          className="shrink-0 text-white hover:bg-white/10"
         >
           <CloseIcon />
         </Button>
