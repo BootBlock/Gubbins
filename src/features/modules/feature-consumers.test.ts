@@ -27,6 +27,9 @@ const MODULES_DIR = join(SRC, 'features', 'modules') + sep;
 
 const corpus = sourceFiles(SRC)
   .filter((path) => !path.startsWith(MODULES_DIR))
+  // Generated files carry no gate, and `routeTree.gen.ts` is rewritten by the router plugin
+  // while the suite runs — reading one mid-write would silently shrink the corpus.
+  .filter((path) => !path.endsWith('.gen.ts'))
   .map((path) => readFileSync(path, 'utf8'))
   .join('\n');
 
