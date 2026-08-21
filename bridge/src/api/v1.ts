@@ -481,15 +481,15 @@ async function handleWebhookTest(res: ServerResponse, ctx: ApiV1Context): Promis
   // Built from the subscription's own types, so the event is the same one either branch reports on.
   const event = buildWebhookTestEvent(subscription.eventTypes);
 
-  const { target, warnings } = subscriptionToDeliveryTarget(subscription, capability.secrets);
+  const { target, blocked } = subscriptionToDeliveryTarget(subscription, capability.secrets);
   if (target === null) {
     // Today this is only an unresolvable `secret_ref`, which drops the subscription rather than
     // delivering it unsigned. That happens before the deliverer is ever reached, so the row it
-    // would have written is recorded here instead — otherwise this refusal would be the one
-    // outcome missing from the delivery log the app shows, and `seq` would be null for a delivery
-    // that was genuinely blocked rather than simply unmatched. The warning names the missing ref;
-    // never its value, and the URL is redacted by the deliverer's own rule.
-    const detail = warnings[0] ?? 'The subscription cannot be delivered as configured.';
+    // would have written is recorded here instead — otherwise `seq` would be null for a delivery
+    // that was genuinely blocked rather than simply unmatched. This row names the synthetic test
+    // event; the ordinary delivery path records its own eventless row (`webhook-blocked.ts`). The
+    // reason names the missing ref, never its value, and the URL is redacted by the deliverer's rule.
+    const detail = blocked?.reason ?? 'The subscription cannot be delivered as configured.';
     const row = ctx.webhookDeliveries?.record({
       targetId: subscription.id,
       targetName: subscription.name,

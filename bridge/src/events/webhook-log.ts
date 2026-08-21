@@ -56,7 +56,9 @@ export interface WebhookDeliveryRecord {
   /** Origin + path only — never the query string, which a `GET` delivery fills with payload data. */
   readonly url: string;
   readonly method: string;
+  /** Empty for a row that records a refusal decided before any event was considered. */
   readonly eventId: string;
+  /** Empty for a row that records a refusal decided before any event was considered. */
   readonly eventType: string;
   readonly outcome: WebhookDeliveryOutcome;
   /** How many HTTP attempts were made (0 when blocked or skipped). */

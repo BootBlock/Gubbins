@@ -95,6 +95,25 @@ export interface WebhookTargetResolution {
   readonly targets: readonly WebhookDeliveryTarget[];
   /** Secret-free, one-line diagnostics (a missing `secret_ref`, a dropped header). */
   readonly warnings: readonly string[];
+  /**
+   * The subscriptions that were dropped rather than delivered, structured enough to write a
+   * delivery-log row for (issue #643). A warning on the bridge's stdout is the only trace an
+   * operator running under Docker or on a NAS may never see.
+   */
+  readonly blocked: readonly WebhookBlockedSubscription[];
+}
+
+/**
+ * One subscription the bridge refused to deliver **as configured**, carrying everything a
+ * delivery-log row needs. Named by subscription, never by secret value: `reason` is the same
+ * secret-free sentence the operator gets on the console.
+ */
+export interface WebhookBlockedSubscription {
+  readonly id: string;
+  readonly name: string;
+  readonly url: string;
+  readonly method: WebhookMethod;
+  readonly reason: string;
 }
 
 /**
@@ -133,6 +152,8 @@ export function configTargetToDeliveryTarget(target: WebhookTarget, index: numbe
 export interface WebhookSubscriptionMapping {
   readonly target: WebhookDeliveryTarget | null;
   readonly warnings: readonly string[];
+  /** Set exactly when `target` is `null` — why it was dropped, in a shape a log row can use. */
+  readonly blocked: WebhookBlockedSubscription | null;
 }
 
 /**
@@ -158,12 +179,22 @@ export function subscriptionToDeliveryTarget(
     const resolved = secrets[subscription.secretRef];
     if (resolved === undefined || resolved.length === 0) {
       // Dropped, never downgraded to unsigned — see the module note.
-      warnings.push(
+      const reason =
         `Webhook "${subscription.name}" references a bridge-side secret named ` +
-          `"${subscription.secretRef}" that is not configured; it will not be delivered until ` +
-          'you add it to the webhooks secrets config.',
-      );
-      return { target: null, warnings };
+        `"${subscription.secretRef}" that is not configured; it will not be delivered until ` +
+        'you add it to the webhooks secrets config.';
+      warnings.push(reason);
+      return {
+        target: null,
+        warnings,
+        blocked: {
+          id: subscription.id,
+          name: subscription.name,
+          url: subscription.url,
+          method: subscription.method,
+          reason,
+        },
+      };
     }
     secret = resolved;
   }
@@ -191,6 +222,7 @@ export function subscriptionToDeliveryTarget(
       headers,
     },
     warnings,
+    blocked: null,
   };
 }
 
@@ -220,6 +252,7 @@ export async function loadDatabaseWebhookTargets(
   const repository = new WebhookRepository(driver);
   const targets: WebhookDeliveryTarget[] = [];
   const warnings: string[] = [];
+  const blocked: WebhookBlockedSubscription[] = [];
 
   let offset = 0;
   for (;;) {
@@ -228,6 +261,7 @@ export async function loadDatabaseWebhookTargets(
       if (targets.length >= MAX_DB_TARGETS) break;
       const mapped = subscriptionToDeliveryTarget(subscription, secrets);
       warnings.push(...mapped.warnings);
+      if (mapped.blocked !== null) blocked.push(mapped.blocked);
       if (mapped.target !== null) targets.push(mapped.target);
     }
 
@@ -242,7 +276,7 @@ export async function loadDatabaseWebhookTargets(
     offset += DB_TARGET_PAGE_SIZE;
   }
 
-  return { targets, warnings };
+  return { targets, warnings, blocked };
 }
 
 /**

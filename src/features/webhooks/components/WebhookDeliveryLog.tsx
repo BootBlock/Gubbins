@@ -105,7 +105,11 @@ function DeliveryRow({ delivery }: { readonly delivery: WebhookDelivery }) {
           {t(OUTCOME_KEYS[delivery.outcome])}
         </span>
         <span className="text-sm font-medium text-foreground">{delivery.targetName}</span>
-        <span className="text-xs text-muted-foreground">{delivery.eventType}</span>
+        {/* Empty for a refusal the bridge decided before any event was considered — it names no
+            event type rather than asserting one that never happened, so the span is dropped. */}
+        {delivery.eventType !== '' ? (
+          <span className="text-xs text-muted-foreground">{delivery.eventType}</span>
+        ) : null}
         <span className="ms-auto text-xs text-muted-foreground">{dateTime(delivery.at)}</span>
       </div>
 
