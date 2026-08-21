@@ -136,6 +136,8 @@ export function createScaleStreamHub(options: ScaleStreamOptions): ScaleStreamHu
   const watches = new Map<string, Watch>();
   let clients = 0;
   let heartbeat: NodeJS.Timeout | null = null;
+  /** Set by {@link ScaleStreamHub.close}; no stream opens after it, however far along it was. */
+  let shuttingDown = false;
 
   function startHeartbeat(): void {
     if (heartbeat !== null || heartbeatMs === 0) return;
@@ -300,6 +302,13 @@ export function createScaleStreamHub(options: ScaleStreamOptions): ScaleStreamHu
         // Nobody is waiting for this any more; opening a stream would poll for a dead socket.
         return void release();
       }
+      if (shuttingDown) {
+        // `close()` ran while this read was in flight. It cannot see a connection that owns no
+        // watch entry yet, so registering here would recreate a watch it has just torn down and
+        // leave a poll loop running past shutdown.
+        release();
+        return void endStream(res);
+      }
       if (first.error !== undefined) {
         const { error } = first;
         release();
@@ -357,14 +366,23 @@ export function createScaleStreamHub(options: ScaleStreamOptions): ScaleStreamHu
     clientCount: () => clients,
 
     close(): void {
+      shuttingDown = true;
       stopHeartbeat();
       for (const watch of watches.values()) {
         stopWatch(watch);
-        for (const res of watch.clients) endStream(res);
-        watch.clients.clear();
+        for (const res of [...watch.clients]) {
+          // Removed from the set *before* ending the stream, so the `close` listener's `drop`
+          // finds nothing to delete and cannot decrement the same client twice.
+          watch.clients.delete(res);
+          clients -= 1;
+          endStream(res);
+        }
       }
       watches.clear();
-      clients = 0;
+      // `clients` is deliberately counted down rather than zeroed: a connection still inside its
+      // gate read holds a reservation this loop cannot see (it owns no entry in any watch), and
+      // its own `release` is what gives that back. Zeroing here would take that reservation with
+      // it and leave the counter negative once the handler resumed.
     },
   };
 }

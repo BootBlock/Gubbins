@@ -359,6 +359,37 @@ describe('scale stream', () => {
     expect(live.clientCount()).toBe(1);
   });
 
+  // `close()` cannot see a connection that is still inside its gate read — it owns no entry in
+  // any watch yet — so shutdown must not zero the counter that connection has already reserved,
+  // and the connection must not go on to recreate a watch that has just been torn down.
+  it('stays consistent when a connection is mid-gate-read at shutdown', async () => {
+    let reads = 0;
+    let release: (() => void) | undefined;
+    const live = createScaleStreamHub({
+      heartbeatMs: 0,
+      pollMs: 5,
+      readScale: async () => {
+        reads += 1;
+        if (reads === 1) await new Promise<void>((resolve) => (release = resolve));
+        return READING;
+      },
+    });
+    hub = live;
+
+    const { req, res } = deadOnArrival();
+    const handled = live.handleConnection(req, res, new URL('http://x/?entity_id=sensor.bench'));
+    await until(() => reads === 1);
+    live.close();
+    release?.();
+    await handled;
+
+    expect(live.clientCount()).toBe(0);
+    expect(res.writtenStatus).toBeNull();
+    const settled = reads;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(reads).toBe(settled);
+  });
+
   it('closes every stream on shutdown', async () => {
     const open = await start(async () => READING);
     const { res } = await open('?entity_id=sensor.bench_scale');
