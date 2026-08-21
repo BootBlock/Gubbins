@@ -230,7 +230,7 @@ describe('ScannerOverlay — header layout on a phone (issue #657)', () => {
     expect(header()).toHaveClass('flex-wrap');
     // The toggle is the item that drops to a second line below `sm`, so the two icon buttons
     // keep the first line to themselves.
-    expect(screen.getByRole('button', { name: /Discrete/ }).closest('div')).toHaveClass(
+    expect(screen.getByTestId('scanner-mode-toggle')).toHaveClass(
       'order-last',
       'basis-full',
       'sm:order-none',
