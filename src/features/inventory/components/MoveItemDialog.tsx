@@ -2,7 +2,10 @@ import { useId, useMemo, useState } from 'react';
 import { Button, Modal } from '@/components/foundry';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
+import { useT } from '@/features/i18n';
 import { useMoveItem } from '../mutations';
+import { planMoveUndo } from '../undo';
+import { useUndoToast } from '../useUndoToast';
 import { buildItemLocationOptions } from '../parent-options';
 import { isLocationFull } from '../location-fullness';
 import { LocationSelect } from './LocationSelect';
@@ -21,6 +24,8 @@ export function MoveItemDialog({
 }) {
   const move = useMoveItem();
   const fmt = useFormatters();
+  const t = useT();
+  const undoToast = useUndoToast();
   const labelId = useId();
   const [locationId, setLocationId] = useState(item.locationId);
 
@@ -43,7 +48,24 @@ export function MoveItemDialog({
       onClose();
       return;
     }
-    move.mutate({ id: item.id, locationId }, { onSuccess: onClose });
+    const from = item.locationId;
+    // The select is built from `locations`, so the chosen id is always one of them; the fallback
+    // is only there to keep the confirmation typed as a string.
+    const targetName = locations.find((l) => l.id === locationId)?.name ?? '';
+    move.mutate(
+      { id: item.id, locationId },
+      {
+        // The dialog closes on success, so the confirmation — and the way back to the old
+        // location (issue #131) — lives in a toast rather than in the dialog it just dismissed.
+        onSuccess: () => {
+          onClose();
+          undoToast(
+            t('inventory.move.toast', { vars: { item: item.name, location: targetName } }),
+            planMoveUndo(item.id, from),
+          );
+        },
+      },
+    );
   };
 
   return (

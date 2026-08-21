@@ -18,7 +18,6 @@ import {
   Spinner,
   Tooltip,
   useSearchEscapeToClear,
-  useToast,
 } from '@/components/foundry';
 import { AddIcon, DeleteIcon, PackageIcon, SearchIcon, TagIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
@@ -52,6 +51,8 @@ import { useLocationTagIndex } from '../tags';
 import { ALL_ITEMS_ID, useLocationSidebar } from '../useLocationSidebar';
 import { useLocationExpansionStore } from '../useLocationExpansionStore';
 import { useArchiveLocation, useMoveItem, useUpdateLocation } from '../mutations';
+import { planMoveUndo } from '../undo';
+import { useUndoToast } from '../useUndoToast';
 import { LocationTreeItem } from './LocationTreeItem';
 import { LocationKindIcon } from './LocationKindIcon';
 import { CreateLocationDialog } from './CreateLocationDialog';
@@ -109,6 +110,8 @@ export function LocationSidebar({
 }) {
   const archive = useArchiveLocation();
   const moveItem = useMoveItem();
+  const undoToast = useUndoToast();
+  const t = useT();
   const updateLocation = useUpdateLocation();
   // `useUpdateLocation` has no hook-level reporter (the Edit dialog surfaces its own errors), so
   // the drag-to-nest re-parent fired here reports its own failure (#389).
@@ -116,7 +119,6 @@ export function LocationSidebar({
     'inventory.writeError.heading.locationUpdate',
     'common.writeFailed',
   );
-  const toast = useToast();
   // Announce a drag-and-drop move (WCAG 4.1.3) — the pointer-only drop has no other feedback
   // for assistive tech, and the moved item/location may leave the current view.
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
@@ -336,12 +338,25 @@ export function LocationSidebar({
   // confirming the result. The toast viewport is itself `aria-live`, so it announces the result
   // for assistive tech — the live region only carries the "Moving…" start, never a second
   // "moved" message that would double-announce.
-  const moveItemToLocation = (itemId: string, itemName: string, targetId: string, targetName: string) => {
+  const moveItemToLocation = (
+    itemId: string,
+    itemName: string,
+    fromLocationId: string | undefined,
+    targetId: string,
+    targetName: string,
+  ) => {
     setMoveAnnouncement(`Moving ${itemName} to ${targetName}…`);
     moveItem.mutate(
       { id: itemId, locationId: targetId },
       {
-        onSuccess: () => toast.show({ tone: 'success', message: `Moved ${itemName} to ${targetName}.` }),
+        // A drop is easy to make by accident, so the confirmation offers to put the item back
+        // where it came from (issue #131). The origin rides in on the drag payload; without one
+        // there is nowhere to return it to, and the plan is empty so no Undo is offered.
+        onSuccess: () =>
+          undoToast(
+            t('inventory.move.toast', { vars: { item: itemName, location: targetName } }),
+            planMoveUndo(itemId, fromLocationId),
+          ),
         // No `onError` here: `useMoveItem` now reports a failed move itself (issue #307), and
         // its toast carries the reason the write was rejected — more actionable than repeating
         // the names back. A second handler here would only double-toast the one failure.
@@ -352,8 +367,6 @@ export function LocationSidebar({
   // The location currently receiving a dragged item (its move in flight), or null — the row it
   // points at shows a spinner so the drop isn't silent until the counts refresh.
   const movingItemToId = moveItem.isPending ? (moveItem.variables?.locationId ?? null) : null;
-
-  const t = useT();
 
   // Global packing-factor preference, bound once here so each tree row's volumetric fullness is
   // resolved without every (virtualised) row re-reading the store. Feeds `volumeFullnessFor` below.
@@ -753,7 +766,8 @@ export function LocationSidebar({
         onDropItem={
           node.archivedAt != null
             ? undefined
-            : (itemId, itemName) => moveItemToLocation(itemId, itemName, node.id, node.name)
+            : (itemId, itemName, fromLocationId) =>
+                moveItemToLocation(itemId, itemName, fromLocationId, node.id, node.name)
         }
         receivingItem={movingItemToId === node.id}
         // Drag-to-nest (spec §4): a non-system, non-archived location can be dragged onto

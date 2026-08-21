@@ -111,6 +111,7 @@ import { ImportDataDialog } from './components/ImportDataDialog';
 import { ItemDetailDialog } from './components/ItemDetailDialog';
 import { BulkEditDialog } from './components/BulkEditDialog';
 import { useCloneItem } from './mutations';
+import { useUndoToast } from './useUndoToast';
 import { useCatalogueLaunch } from '@/features/reports/useCatalogueLaunch';
 import type { ItemSelection } from './components/inventory-ui';
 import type { LabelItem } from './labels/label-sheet';
@@ -246,6 +247,8 @@ function InventoryWorkspace() {
   // Bulk edit (Phase 76) operates on the same multi-selection; duplicate clones one item.
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [actionAnnouncement, setActionAnnouncement] = useState('');
+  // Confirms a reversible write and offers to put it back (issue #131).
+  const undoToast = useUndoToast();
   const cloneItem = useCloneItem();
 
   const { ast, conditionCount, dispatch: builderDispatch } = useSearchBuilder();
@@ -1473,13 +1476,17 @@ function InventoryWorkspace() {
         onClose={() => setBulkEditOpen(false)}
         itemIds={selectedItemIds}
         locations={flatLocations}
-        onApplied={(message) => {
+        onApplied={({ message, undo, hadFailures }) => {
           setSelected(new Map());
-          setActionAnnouncement(message);
+          // Announced by the toast (its viewport is aria-live), not the live region below — a
+          // bulk edit is reversible, and the Undo has to be reachable from the same surface
+          // that reports the outcome. Pushing the sentence into both would announce it twice.
+          undoToast(message, undo, hadFailures ? 'warning' : 'success');
         }}
       />
 
-      {/* Announce bulk-edit / duplicate outcomes (WCAG 4.1.3). */}
+      {/* Announce duplicate + saved-search outcomes (WCAG 4.1.3). Bulk edit announces
+          through its own toast instead, so the Undo it carries is reachable from there. */}
       <LiveRegion visuallyHidden data-testid="inventory-action-live-region">
         {actionAnnouncement ? <p>{actionAnnouncement}</p> : null}
       </LiveRegion>

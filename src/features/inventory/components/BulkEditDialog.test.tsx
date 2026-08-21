@@ -22,6 +22,10 @@ vi.mock('@/lib/useFormatters', () => ({
 }));
 
 import { BulkEditDialog } from './BulkEditDialog';
+import type { UndoPlan } from '../undo';
+
+/** A stand-in reversal, handed straight back to `onApplied` so the screen can offer an Undo. */
+const UNDO_PLAN: UndoPlan = { steps: [{ id: 'a', isActive: false }] };
 
 const onClose = vi.fn();
 const onApplied = vi.fn();
@@ -42,7 +46,7 @@ function renderDialog(props: Partial<React.ComponentProps<typeof BulkEditDialog>
 const applyButton = () => screen.getByTestId('bulk-edit-apply');
 
 beforeEach(() => {
-  mutateAsync.mockReset().mockResolvedValue({ succeeded: 3, failed: 0 });
+  mutateAsync.mockReset().mockResolvedValue({ succeeded: 3, failed: 0, undo: UNDO_PLAN });
   onClose.mockReset();
   onApplied.mockReset();
 });
@@ -82,7 +86,11 @@ describe('BulkEditDialog — spec assembled from the enable checkboxes', () => {
         spec: { active: { value: true } },
       }),
     );
-    expect(onApplied).toHaveBeenCalledWith('Updated 3 items.');
+    expect(onApplied).toHaveBeenCalledWith({
+      message: 'Updated 3 items.',
+      undo: UNDO_PLAN,
+      hadFailures: false,
+    });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -132,11 +140,17 @@ describe('BulkEditDialog — spec assembled from the enable checkboxes', () => {
 
 describe('BulkEditDialog — outcome message', () => {
   it('reports the failed count when some items could not be updated', async () => {
-    mutateAsync.mockResolvedValue({ succeeded: 2, failed: 1 });
+    mutateAsync.mockResolvedValue({ succeeded: 2, failed: 1, undo: UNDO_PLAN });
     renderDialog();
     fireEvent.click(screen.getByTestId('bulk-field-active'));
     fireEvent.click(applyButton());
 
-    await waitFor(() => expect(onApplied).toHaveBeenCalledWith('Updated 2 items; 1 failed.'));
+    await waitFor(() =>
+      expect(onApplied).toHaveBeenCalledWith({
+        message: 'Updated 2 items; 1 failed.',
+        undo: UNDO_PLAN,
+        hadFailures: true,
+      }),
+    );
   });
 });

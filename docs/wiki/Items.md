@@ -105,6 +105,10 @@ Finished with an item but don't want to lose its history? **Archive** it instead
 Archived items drop out of the everyday lists but can be restored at any time, with all of
 their data intact.
 
+Archiving takes one click and asks nothing first, so the message that confirms it offers an
+**Undo** — press that and the item is back in your active inventory straight away. See
+[[Undoing a change|Bulk-Edit-and-Clone#undoing-a-change]].
+
 ## Related pages
 
 - **[[Tracking modes|Tracking-Modes]]** — choosing how an item is counted.

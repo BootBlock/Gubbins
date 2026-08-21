@@ -39,6 +39,28 @@ and clone it rather than starting from scratch each time.
 > the selection count before you apply — and remember most changes are visible in each item's
 > [[activity log|Activity-Log]] if you need to see what happened.
 
+## Undoing a change
+
+Applied something you didn't mean to? The message that confirms a bulk edit carries an **Undo**
+button. Press it and every item goes back to the values it held before — each one to *its own*
+previous category, location, condition, state or tags, not to some shared default. Items that
+were already on the new value are left alone.
+
+Undo is offered for a few other easily-mistyped actions too:
+
+- **Removing an item** — the confirmation offers to put it straight back.
+- **Moving an item**, whether you dragged it onto a
+  [[location|Locations-and-Stock]] or used **Move item** — Undo returns it to where it came from.
+
+> **ℹ️ Note**
+> An undo is a normal change, not a rewind: both the original edit and its reversal appear in each
+> item's [[activity log|Activity-Log]], so the record of what happened stays complete.
+
+> **⚠️ Heads-up**
+> The Undo button only lives as long as the message does, and it reverses **that one action**.
+> Once it has gone, put things back with another edit — or, for a larger mistake, from a
+> [[backup|Backup-and-Restore]].
+
 ## Related pages
 
 - **[[Export & import|Export-and-Import]]** — bringing many items in at once.

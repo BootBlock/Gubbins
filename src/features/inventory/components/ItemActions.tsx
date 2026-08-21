@@ -24,6 +24,8 @@ import { AddItemToProjectDialog } from '@/features/projects/components/AddItemTo
 import { SellDialog } from '@/features/sales/components/SellDialog';
 import { WriteOffDialog } from '@/features/sales/components/WriteOffDialog';
 import { useRestoreItem, useSoftDeleteItem, useUpdateItem } from '../mutations';
+import { planRemoveUndo } from '../undo';
+import { useUndoToast } from '../useUndoToast';
 import { GaugeAdjustDialog } from './GaugeAdjustDialog';
 import { ItemDetailDialog } from './ItemDetailDialog';
 import { MoveItemDialog } from './MoveItemDialog';
@@ -85,6 +87,9 @@ export const ItemActions = forwardRef<
   const [dialog, setDialog] = useState<ItemDialogKind | null>(null);
   useImperativeHandle(ref, () => ({ open: setDialog }), []);
   const softDelete = useSoftDeleteItem();
+  // Removing is one click with no confirmation step, so the confirmation itself carries the way
+  // back (issue #131) — a soft-delete is reversible, and `restore` is exactly its inverse.
+  const undoToast = useUndoToast();
   const restore = useRestoreItem();
   const update = useUpdateItem();
   // Checking out loans an item to a contact, so the entry point belongs to the Contacts
@@ -232,7 +237,18 @@ export const ItemActions = forwardRef<
               size="icon"
               className={size}
               aria-label="Remove from inventory"
-              onClick={() => softDelete.mutate({ id: item.id })}
+              onClick={() =>
+                softDelete.mutate(
+                  { id: item.id },
+                  {
+                    onSuccess: () =>
+                      undoToast(
+                        t('inventory.remove.toast', { vars: { item: item.name } }),
+                        planRemoveUndo(item.id),
+                      ),
+                  },
+                )
+              }
             >
               <DeleteIcon className="text-glyph-danger" />
             </Button>

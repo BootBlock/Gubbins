@@ -237,8 +237,12 @@ export function useDropTarget(id: string, target: DropTarget | null): boolean {
 export function useLocationRowDrop(
   id: string,
   handlers: {
-    /** Called with the dropped item's id and name (the name lets the caller name it in feedback). */
-    onDropItem?: (itemId: string, itemName: string) => void;
+    /**
+     * Called with the dropped item's id and name (the name lets the caller name it in feedback),
+     * plus the location it was dragged *out of* — which is what lets the caller offer to move it
+     * back again (issue #131). The origin is absent when the drag source had no location.
+     */
+    onDropItem?: (itemId: string, itemName: string, sourceLocationId: string | undefined) => void;
     onDropLocation?: (locationId: string) => void;
     acceptsLocation?: (draggedLocationId: string) => boolean;
   },
@@ -252,7 +256,7 @@ export function useLocationRowDrop(
           ? onDropItem != null && payload.sourceLocationId !== id
           : onDropLocation != null && payload.id !== id && (acceptsLocation?.(payload.id) ?? true),
       onDrop: (payload) => {
-        if (payload.kind === 'item') onDropItem?.(payload.id, payload.name);
+        if (payload.kind === 'item') onDropItem?.(payload.id, payload.name, payload.sourceLocationId);
         else onDropLocation?.(payload.id);
       },
     };

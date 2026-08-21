@@ -52,6 +52,7 @@ import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
 import { resolveItemTagNames, type BulkEditSpec } from './bulk-edit';
 import { clonedFieldValues, clonedSupplierPartInput, planItemClone } from './clone';
+import { planBulkEditUndo, snapshotForUndo, type ItemUndoSnapshot, type UndoPlan } from './undo';
 import { invalidateItems, invalidateItemStock } from './invalidate';
 
 type ItemListData = InfiniteData<Page<Item>, number>;
@@ -571,6 +572,12 @@ export function useRestoreItem() {
 export interface BulkEditResult {
   readonly succeeded: number;
   readonly failed: number;
+  /**
+   * How to put the edited items back (issue #131). Covers only the items that applied cleanly,
+   * and within those only the fields the edit actually changed — so a partial batch offers an
+   * undo for exactly the part that landed.
+   */
+  readonly undo: UndoPlan;
 }
 
 /**
@@ -593,10 +600,22 @@ export function useBulkEditItems() {
     }): Promise<BulkEditResult> => {
       const items = getItemRepository();
       const tags = getTagRepository();
+      // Read every item's pre-edit state up front, in one query, so the undo plan can be built
+      // from what the fields held *before* the batch touched them (issue #131). A miss here is
+      // not fatal: the item is still edited, it just contributes no undo step.
+      const before = await items.getManyById(ids);
+      const applied: ItemUndoSnapshot[] = [];
       let succeeded = 0;
       let failed = 0;
       for (const id of ids) {
         try {
+          const snapshot = before.get(id);
+          // Only read the tag set when the edit changes tags — one query per item otherwise.
+          const currentTagNames =
+            spec.tags && spec.tags.names.length > 0
+              ? (await tags.getForItem(id)).map((t) => t.name)
+              : undefined;
+
           // Category + condition fold into one update; an absent field stays untouched.
           const patch: UpdateItemInput = {
             ...(spec.category ? { categoryId: spec.category.value } : {}),
@@ -611,21 +630,83 @@ export function useBulkEditItems() {
             else await items.softDelete(id);
           }
 
-          if (spec.tags && spec.tags.names.length > 0) {
-            const current = await tags.getForItem(id);
-            const next = resolveItemTagNames(
-              current.map((t) => t.name),
-              spec.tags,
-            );
+          if (spec.tags && spec.tags.names.length > 0 && currentTagNames) {
+            const next = resolveItemTagNames(currentTagNames, spec.tags);
             await tags.setForItem(id, next);
           }
           succeeded += 1;
+          if (snapshot) applied.push(snapshotForUndo(snapshot, currentTagNames));
         } catch {
           failed += 1;
         }
       }
+      return { succeeded, failed, undo: planBulkEditUndo(spec, applied) };
+    },
+    onSettled: () => {
+      invalidateItems(client);
+      void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+    },
+  });
+}
+
+/** Outcome of replaying an {@link UndoPlan}: how many items were put back vs. errored. */
+export interface UndoResult {
+  readonly succeeded: number;
+  readonly failed: number;
+}
+
+/**
+ * Put items back the way an earlier write found them (issue #131) — the reversal behind the
+ * "Undo" action on a bulk-edit, remove or move toast.
+ *
+ * Deliberately the mirror of {@link useBulkEditItems}: each step's fields route through the same
+ * repository methods (`update` / `move` / `restore` / `softDelete` / `TagRepository.setForItem`),
+ * so an undo is an ordinary, fully-logged write rather than a rewrite of history — the Activity
+ * Log keeps both the change and its reversal. Invalidation-based for the same reason: a plan can
+ * span many fields across many items, which one optimistic patch cannot cleanly express. A
+ * per-item failure is counted, not fatal, so one bad row can't abort the rest of the reversal.
+ */
+export function useUndoItemChanges() {
+  const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.undo', 'common.writeFailed');
+  return useMutation({
+    mutationFn: async (plan: UndoPlan): Promise<UndoResult> => {
+      const items = getItemRepository();
+      const tags = getTagRepository();
+      let succeeded = 0;
+      let failed = 0;
+      // Kept so a wholly-failed reversal can be rejected with the *real* cause (a constraint
+      // violation, the hard stop) rather than invented copy — the toast reporter humanises it.
+      let lastError: unknown;
+      for (const step of plan.steps) {
+        try {
+          const patch: UpdateItemInput = {
+            ...(step.categoryId !== undefined ? { categoryId: step.categoryId } : {}),
+            ...(step.condition !== undefined ? { condition: step.condition } : {}),
+          };
+          if (Object.keys(patch).length > 0) await items.update(step.id, patch);
+
+          if (step.locationId !== undefined) await items.move(step.id, step.locationId);
+
+          if (step.isActive !== undefined) {
+            if (step.isActive) await items.restore(step.id);
+            else await items.softDelete(step.id);
+          }
+
+          if (step.tagNames !== undefined) await tags.setForItem(step.id, step.tagNames);
+          succeeded += 1;
+        } catch (e) {
+          failed += 1;
+          lastError = e;
+        }
+      }
+      // Every step failing means the reversal did not happen at all — reject so the failure is
+      // reported, rather than letting a silent no-op read as "undone". A partial failure is
+      // carried in the result instead, so the caller can say how much went back.
+      if (failed > 0 && succeeded === 0) throw lastError;
       return { succeeded, failed };
     },
+    onError: reportFailure,
     onSettled: () => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
