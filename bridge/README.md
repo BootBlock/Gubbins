@@ -254,10 +254,13 @@ subscription, and feed readers probe the [syndication feeds](#feeds--metrics) th
 may also carry the validators from a previous response and get a `304` back; see
 [Conditional requests](#conditional-requests-etag--304).
 
-The one exception is the [SSE event stream](#sse-event-stream): a `HEAD` of `/api/v1/events`
-reports the media type the stream serves and returns immediately rather than opening a stream. It
-carries no `Content-Length` (the content is unbounded), and never the `429` a `GET` gives when the
-concurrent-stream cap is reached — a probe takes no slot, so it reports the endpoint, not the queue.
+The exceptions are the two streaming endpoints — the [SSE event stream](#sse-event-stream) and
+[`/api/v1/scale/stream`](#watching-a-scale-live). A `HEAD` of either reports the media type the
+stream serves and returns immediately rather than opening a stream. It carries no `Content-Length`
+(the content is unbounded), and never the `429` a `GET` gives when the concurrent-stream cap is
+reached — a probe takes no slot, so it reports the endpoint, not the queue. A `HEAD` of the scale
+stream needs no `entity_id` either: a probe asks whether the endpoint exists, not whether one
+particular sensor can be watched.
 
 ### The bridge's stable identity
 
@@ -1979,15 +1982,51 @@ answered on the first attempt.
 | --- | --- |
 | `GET /api/v1/scale/entities` | `{ entities: [{ entityId, name, unit }] }` — every entity reporting a convertible mass unit, for the app's scale picker. |
 | `GET /api/v1/scale/state?entity_id=…` | `{ entityId, grams, value, unit, lastUpdated }` — the current reading, reconciled to canonical **grams**. |
+| `GET /api/v1/scale/stream?entity_id=…` | A `text/event-stream` of those same readings, as they change — see below. |
 
-Both use the same tokens and rate limit as every other endpoint, and both require `bridge:read`
+All three use the same tokens and rate limit as every other endpoint, and all require `bridge:read`
 (they read Home Assistant, not your inventory, so no subject permission applies).
 
-> **⚠️ These two no longer answer before a snapshot has loaded.** They used to — reading Home
+> **⚠️ These no longer answer before a snapshot has loaded.** They used to — reading Home
 > Assistant rather than your inventory, they needed no data of their own. But identifying the
 > caller does: the tokens live in the snapshot, so until it loads there is nobody to
 > authenticate and these paths answer `503` like everything else. See
 > [Identities & permissions](#identities--permissions).
+
+### Watching a scale live
+
+`stream` holds the connection open and writes one `data:` line per sample, roughly four a second,
+so the app can watch a reading settle as parts go on the pan instead of pulling one value at a
+time. Each frame is either
+
+```
+data: {"ok":true,"reading":{"entityId":"sensor.workshop_scale","grams":1250,"value":1.25,"unit":"kg","lastUpdated":"…"}}
+data: {"ok":false,"issue":"unavailable"}
+```
+
+`reading` is the exact shape `state` returns. An `issue` of `gone` means the entity has stopped
+being a readable scale, and the stream ends after that frame.
+
+Two things are deliberately **unlike** `/api/v1/events`:
+
+- **No replay and no `Last-Event-ID`.** Frames carry no `id:` line, so a reconnecting client
+  resumes from the next live sample. Replaying a stale weight is worse than sending nothing — a
+  scale's value is only meaningful now.
+- **It is not on the event bus.** The bus fans out to webhooks and MQTT as well as SSE, and a
+  weight sensor at sensor frequency belongs on neither. This is a separate endpoint that borrows
+  the transport, not a new event type.
+
+The same entity gating applies as to `state`, and it is applied **before** any stream opens: a
+non-scale (or unknown) entity gets the same `404`, so watching is no more of a read oracle over
+your home than reading is. Home Assistant is polled once per *entity* — several clients watching
+the same scale share one poll loop — and polling stops the moment the last of them disconnects, so
+nothing keeps reading your scale when nobody is looking at it. A `429` is returned when the
+concurrent-stream cap (10) is reached.
+
+> **ℹ️ Polling is the phase-1 upstream.** Reading one entity is `GET /api/states/<entity_id>`,
+> which is cheap — unlike the picker's list-states read. Home Assistant's WebSocket
+> `subscribe_trigger` would be lower-latency and idle-free, and is the intended replacement; it
+> changes nothing above this endpoint.
 
 ### Only scales can be read, and unknown units are refused
 
@@ -2070,7 +2109,7 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 | `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). Targets are the webhooks configured **in the app** (read from the snapshot the bridge already hydrates) merged with the operator's file/env list. Adds the read-only `GET /api/v1/webhooks/deliveries` log and `POST /api/v1/webhooks/test` (fires a synthetic event at one subscription through the real delivery path). | outbound (push) | No — an event never mutates inventory. | `bridge:read` + `settings:read` for the delivery log; `bridge:write` + `settings:write` to fire a test. Signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `GUBBINS_BRIDGE_WEBHOOKS_SECRETS` / `.env` only. An app-configured webhook may name a secret held here (`secret_ref`) so its value never enters the database; an **unresolvable** ref drops that subscription rather than delivering it unsigned. Delivery to loopback/private/metadata addresses is **refused** unless `GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on`. |
 | `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). Location state includes that location's [custom-field values as attributes](#location-attributes-your-custom-fields) — **all of them, automatically, with no separate flag**, so enabling `MQTT` is what consents to publishing them. | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
 | `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`), including the location attributes above. | outbound (push) | No. | None new (uses the MQTT connection above). |
-| `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state}`, so "count by weight" can read a scale entity. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | `bridge:read`. Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
+| `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state,stream}`, so "count by weight" can read a scale entity, or watch one live. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | `bridge:read`. Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
 | `MDNS` | [mDNS / zeroconf advertising](#mdns--zeroconf-discovery) so HA can auto-discover the bridge (auto-skipped on the loopback default). | LAN advertisement | No — announcement only. | **None** — no credential is **ever** advertised. |
 
 Notes that apply across the table:

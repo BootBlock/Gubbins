@@ -50,6 +50,29 @@ tray, then tip the parts in and press **Read the scale** — neither figure has 
 This is entirely optional, and typing the reading in yourself always works — nothing here is a
 prerequisite for counting by weight.
 
+### Watching the scale as you go
+
+**Watch the scale** turns the one-off reading into a live one. Press it and Gubbins keeps the
+**Weight on scale** field up to date as you tip parts in, so the count builds up in front of you
+instead of you weighing, pressing, weighing again. Press it a second time to stop.
+
+While the reading is still moving, Gubbins shows **Settling…** in place of the count and won't let
+you apply it. Once the scale has held the same weight for a moment, the count appears and **Apply
+count** becomes available.
+
+> **ℹ️ Note**
+> Watching never changes your stock on its own. Whatever the scale says, the figure only becomes a
+> quantity when you press **Apply count** — exactly as it does for a weight you typed in.
+
+> **💡 Tip**
+> Add another handful at any point. The count re-opens as *Settling…* and settles again on the new
+> total, so you can keep topping up until you've weighed everything.
+
+Watching stops when you close the dialog, so nothing keeps reading your scale in the background.
+While it's running, the one-off **Read the scale** and **Read the container** buttons are switched
+off — the live reading is already filling that field. Weigh the empty tray with **Read the
+container** first, then start watching.
+
 **What you need:**
 
 1. The optional **[[bridge|Bridge-Overview]]** running, with its URL and an

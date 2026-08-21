@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Banner, Button, FormField, Select } from '@/components/foundry';
-import { RefreshIcon, ScaleIcon, WarningIcon } from '@/components/icons';
+import { Banner, Button, FormField, LiveRegion, Select } from '@/components/foundry';
+import { HideIcon, RefreshIcon, ScaleIcon, ShowIcon, WarningIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { BridgeReloadNotice } from '@/features/sync/BridgeReloadNotice';
@@ -10,6 +10,8 @@ import {
   getCachedScaleEntities,
   setCachedScaleEntities,
 } from '../scale-entity-cache';
+import { NO_SAMPLES, pushSample, settleToleranceGrams, type SettlingState } from '../scale-settling';
+import { watchScaleReadings } from '../scale-stream';
 
 /**
  * Which weight field a reading is destined for. Both come off the *same* scale and the same
@@ -17,6 +19,16 @@ import {
  * panel offers two buttons over one selected sensor rather than two separate pickers.
  */
 export type ScaleReadTarget = 'gross' | 'tare';
+
+/**
+ * What a live watch is currently saying, reported upward so the dialog can render a moving count
+ * as provisional rather than as a figure.
+ *
+ * - `off` — nothing is being watched; the dialog behaves exactly as it always has.
+ * - `settling` — samples are arriving but do not yet agree; the count must not read as settled.
+ * - `settled` — the scale has stopped moving, so the count is as good as a typed one.
+ */
+export type ScaleWatchStatus = 'off' | 'settling' | 'settled';
 
 /**
  * "Read the scale" — the Home Assistant half of counting by weight (issue #122).
@@ -32,11 +44,28 @@ export type ScaleReadTarget = 'gross' | 'tare';
  * collapse to nothing rather than showing a dead control the user can't fix from here. A
  * *transient* failure (the bridge is down, the scale is unavailable) is different — that is
  * surfaced, because the user asked for a reading and deserves to know why they didn't get one.
+ *
+ * **Watching (issue #125) is a third way to fill the same field, not a different feature.** The
+ * *Watch the scale* toggle subscribes to the bridge's live-reading stream and keeps writing the
+ * newest sample into the gross field, so a count updates in place as parts go on the pan. It
+ * reports upward whether that reading has *settled* ({@link ScaleWatchStatus}) so the dialog can
+ * show a moving count as provisional — and it never applies anything: the user still confirms,
+ * exactly as they do for a typed figure. The subscription lives and dies with the dialog, because
+ * this whole panel unmounts when the modal closes.
  */
 export function ScaleReadPanel({
   onReading,
+  unitWeightGrams,
+  onWatchStatus,
 }: {
   onReading: (grams: number, label: string, target: ScaleReadTarget) => void;
+  /**
+   * The item's per-unit mass, in grams — what the settle tolerance is derived from. It is the
+   * same figure the count is divided by, so "the scale has stopped moving" and "the count is
+   * exact" are measured against one another rather than against two separate constants.
+   */
+  unitWeightGrams: number;
+  onWatchStatus: (status: ScaleWatchStatus) => void;
 }) {
   const t = useT();
   const bridgeUrl = usePreferencesStore((s) => s.bridgeUrl);
@@ -51,6 +80,10 @@ export function ScaleReadPanel({
   /** Bumped by the refresh control to re-run the listing effect after the cache is dropped. */
   const [listAttempt, setListAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  /** Whether the user has asked for a live watch. Cleared by the toggle, or by a stream ending. */
+  const [watching, setWatching] = useState(false);
+  /** The settle window over the samples of the current watch — see `scale-settling`. */
+  const [settling, setSettling] = useState<SettlingState>(NO_SAMPLES);
   /** Monotonic id of the newest read, so a superseded response can be discarded. */
   const latestAttempt = useRef(0);
   /**
@@ -162,6 +195,92 @@ export function ScaleReadPanel({
     [bridgeUrl, bridgeToken, scaleEntityId, onReading, t],
   );
 
+  // A previously-chosen scale that Home Assistant no longer reports (renamed or removed) must not
+  // silently read from the wrong sensor, so treat it as unchosen and make the user pick again.
+  // Derived above the early return below because the watch effect depends on it, and a hook
+  // cannot sit after a conditional return.
+  const known = entities?.some((entity) => entity.entityId === scaleEntityId) ?? false;
+  const selected = known ? scaleEntityId : '';
+
+  // The live watch (issue #125). Opening the subscription *is* the effect, and aborting it is the
+  // cleanup — so it stops the moment the toggle goes off, the chosen scale changes, or the modal
+  // closes (which unmounts this panel). Nothing keeps reading the user's scale unattended.
+  useEffect(() => {
+    // A restart begins from nothing. A window left over from the previous watch would otherwise
+    // report the *old* reading as settled before a single new sample had arrived — and a settled
+    // status is what re-enables Apply, so the user could commit a weight no longer on the pan.
+    setSettling(NO_SAMPLES);
+    if (!watching) return;
+    // The chosen scale has gone — renamed or removed in Home Assistant, so a refreshed list no
+    // longer offers it. There is nothing to watch, and the toggle that would stop the watch is
+    // disabled without a selection, so stop it here rather than stranding the dialog with a count
+    // that is permanently provisional.
+    if (selected === '') return void setWatching(false);
+    const controller = new AbortController();
+    const tolerance = settleToleranceGrams(unitWeightGrams);
+    // The window is kept in a local, not in state: each sample folds into the *previous* window,
+    // and reading that back out of state would race the four-a-second cadence.
+    let settleWindow = NO_SAMPLES;
+    let closed = false;
+
+    void watchScaleReadings({
+      connection: {
+        baseUrl: bridgeUrl,
+        token: bridgeToken,
+        fetchImpl: (url, init) => fetch(url, init),
+      },
+      entityId: selected,
+      signal: controller.signal,
+      onSample: (sample) => {
+        if (closed) return;
+        if (!sample.ok) {
+          // A sample that carries no reading invalidates the window — whatever was on the pan,
+          // we can no longer say it is still there. The stream stays open: a scale that dropped
+          // out may well come back while the dialog is still in front of the user.
+          settleWindow = NO_SAMPLES;
+          setSettling(NO_SAMPLES);
+          setError(t(`inventory.weighCount.scaleFailure.${sample.failure}`));
+          return;
+        }
+        setError(null);
+        settleWindow = pushSample(settleWindow, sample.grams, tolerance);
+        setSettling(settleWindow);
+        // The same call a button press makes, so a watched reading and a pulled one flow through
+        // one path — and, like a pulled one, it fills the field and stops there.
+        onReading(sample.grams, `${sample.value} ${sample.unit}`, 'gross');
+      },
+      onEnd: ({ failure }) => {
+        if (closed) return;
+        if (failure !== null) setError(t(`inventory.weighCount.scaleFailure.${failure}`));
+        setWatching(false);
+        setSettling(NO_SAMPLES);
+      },
+    });
+
+    return () => {
+      // Set before aborting: the abort resolves `onEnd`, and a teardown must not write state back
+      // into a component that is already on its way out.
+      closed = true;
+      controller.abort();
+    };
+  }, [watching, selected, bridgeUrl, bridgeToken, unitWeightGrams, onReading, t]);
+
+  /**
+   * Start or stop a watch. The window is cleared in the *same* update as the flag, not left to the
+   * effect below: an effect runs after paint, so resetting there would show one frame of the
+   * previous watch's settled verdict — with Apply enabled — over a scale that has since been
+   * emptied.
+   */
+  const toggleWatch = useCallback(() => {
+    setSettling(NO_SAMPLES);
+    setWatching((on) => !on);
+  }, []);
+
+  const status: ScaleWatchStatus = !watching ? 'off' : settling.settled ? 'settled' : 'settling';
+  useEffect(() => {
+    onWatchStatus(status);
+  }, [status, onWatchStatus]);
+
   // Nothing usable here — stay out of the way entirely (see the component note). The one
   // exception is issue #385: a bridge address this session did not start with cannot be
   // contacted at all, so the listing above *cannot* have succeeded, and staying silent would
@@ -170,11 +289,6 @@ export function ScaleReadPanel({
   if (!configured || entities === null || entities.length === 0) {
     return configured ? <BridgeReloadNotice className="mb-4" /> : null;
   }
-
-  // A previously-chosen scale that Home Assistant no longer reports (renamed or removed) must not
-  // silently read from the wrong sensor, so treat it as unchosen and make the user pick again.
-  const known = entities.some((entity) => entity.entityId === scaleEntityId);
-  const selected = known ? scaleEntityId : '';
 
   return (
     <div className="mb-4 rounded-xl border border-border bg-secondary/30 p-4">
@@ -214,7 +328,7 @@ export function ScaleReadPanel({
           <Button
             variant="secondary"
             onClick={() => void read('gross')}
-            disabled={selected === '' || reading !== null}
+            disabled={selected === '' || reading !== null || watching}
             data-testid="scale-read"
           >
             {reading === 'gross' ? (
@@ -226,10 +340,23 @@ export function ScaleReadPanel({
               ? t('inventory.weighCount.scaleReading')
               : t('inventory.weighCount.scaleRead')}
           </Button>
+          {/* Watching writes the same field the button above does, four times a second, so the two
+              are mutually exclusive: a pull landing mid-watch would be overwritten before it was
+              read. The toggle carries its own state in its label rather than in colour alone. */}
+          <Button
+            variant={watching ? 'secondary' : 'ghost'}
+            onClick={toggleWatch}
+            disabled={selected === ''}
+            aria-pressed={watching}
+            data-testid="scale-watch"
+          >
+            {watching ? <HideIcon aria-hidden /> : <ShowIcon aria-hidden />}
+            {watching ? t('inventory.weighCount.scaleWatchStop') : t('inventory.weighCount.scaleWatch')}
+          </Button>
           <Button
             variant="ghost"
             onClick={() => void read('tare')}
-            disabled={selected === '' || reading !== null}
+            disabled={selected === '' || reading !== null || watching}
             data-testid="scale-read-tare"
           >
             {reading === 'tare' ? (
@@ -243,6 +370,21 @@ export function ScaleReadPanel({
           </Button>
         </div>
       </div>
+
+      {/* The watch's own state, in words. Always-mounted (see `LiveRegion`) so the transition
+          from settling to settled is announced rather than silently swapping a number — a
+          screen-reader user gets the same "hold on, it's still moving" the visible count shows.
+          `polite`, because nothing here is an error and the user is watching a scale, not a
+          message. */}
+      <LiveRegion className="mt-3 text-sm text-muted-foreground" data-testid="scale-watch-status">
+        {status === 'off' ? null : (
+          <p>
+            {status === 'settled'
+              ? t('inventory.weighCount.scaleWatchSettled')
+              : t('inventory.weighCount.scaleWatchSettling')}
+          </p>
+        )}
+      </LiveRegion>
 
       {/* `role="alert"`, not the Banner default `status`: this reports the failure of an action
           the user just took, so it must interrupt rather than queue politely — otherwise a

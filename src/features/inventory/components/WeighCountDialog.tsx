@@ -4,11 +4,12 @@ import { ScaleIcon, WarningIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
+import { cn } from '@/lib/utils';
 import { toGrams } from '@/lib/weight';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveWeighCount, weighCountNote } from '../weigh-count';
 import { useAdjustQuantity } from '../mutations';
-import { ScaleReadPanel, type ScaleReadTarget } from './ScaleReadPanel';
+import { ScaleReadPanel, type ScaleReadTarget, type ScaleWatchStatus } from './ScaleReadPanel';
 import { tareFieldValue } from '../tare-presets';
 import { TarePresetPickerButton } from './TarePresetPickerButton';
 
@@ -48,6 +49,13 @@ export function WeighCountDialog({
   const [tare, setTare] = useState('');
   const [scaleSource, setScaleSource] = useState<string | null>(null);
   const [tareSource, setTareSource] = useState<string | null>(null);
+  /**
+   * What a live scale watch is saying (issue #125). While it reads `settling` the gross field is
+   * being rewritten several times a second, so the count below is shown as provisional rather
+   * than as a figure — and cannot be applied. `off` is the state for every other path through
+   * this dialog, including a hand-typed weight, so nothing changes for anyone not watching.
+   */
+  const [watchStatus, setWatchStatus] = useState<ScaleWatchStatus>('off');
   const grossRef = useRef<HTMLInputElement>(null);
   const tareRef = useRef<HTMLInputElement>(null);
 
@@ -107,8 +115,18 @@ export function WeighCountDialog({
   };
 
   const { result, issue, delta } = resolve(gross, tare);
+  /**
+   * Whether the figure on screen is still moving. Only a live watch can produce this — a typed or
+   * pulled weight is settled the moment it lands — so every existing path through the dialog is
+   * unaffected.
+   */
+  const provisional = watchStatus === 'settling';
 
   const submit = (grossText = gross, tareText = tare) => {
+    // A live reading is never applied automatically, and a *moving* one is not applied at all —
+    // this is the Enter-key twin of the disabled Apply button, so neither route can write stock
+    // from a scale that has not stopped.
+    if (provisional) return;
     const live = resolve(grossText, tareText);
     if (!live.result || live.issue || live.delta === 0) return;
     adjust.mutate(
@@ -167,7 +185,11 @@ export function WeighCountDialog({
             })}
           </p>
 
-          <ScaleReadPanel onReading={applyScaleReading} />
+          <ScaleReadPanel
+            onReading={applyScaleReading}
+            unitWeightGrams={hasUnitWeight ? unitWeight : 0}
+            onWatchStatus={setWatchStatus}
+          />
 
           <div className="grid gap-4 sm:grid-cols-2">
             {/* `min`/`step` are deliberately omitted: a `type="number"` Input renders the
@@ -255,20 +277,32 @@ export function WeighCountDialog({
             </div>
           </div>
 
+          {/* A count derived from a scale that is still moving is not a count. While the watch is
+              settling the figure is replaced by a word, the comparison against recorded stock is
+              withheld, and `aria-busy` says the same thing to a screen reader — a number that
+              silently rewrote itself four times a second would read as the app changing its mind.
+              The block keeps its shape so the count doesn't jump into place once it settles. */}
           {result ? (
-            <div className="mt-4 rounded-xl border border-border bg-secondary/30 p-4">
+            <div className="mt-4 rounded-xl border border-border bg-secondary/30 p-4" aria-busy={provisional}>
               <p className="text-sm text-muted-foreground">
                 {t('inventory.weighCount.netWeight', { vars: { weight: fmt.weight(result.netGrams) } })}
               </p>
-              <p className="mt-1 text-2xl font-semibold" data-testid="weigh-count-result">
-                {t('inventory.weighCount.count', { vars: { count: result.count } })}
+              <p
+                className={cn('mt-1 text-2xl font-semibold', provisional && 'text-muted-foreground')}
+                data-testid="weigh-count-result"
+              >
+                {provisional
+                  ? t('inventory.weighCount.settling')
+                  : t('inventory.weighCount.count', { vars: { count: result.count } })}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {delta === 0
-                  ? t('inventory.weighCount.noChange')
-                  : t('inventory.weighCount.delta', {
-                      vars: { delta: `${delta > 0 ? '+' : ''}${delta}`, quantity: item.quantity },
-                    })}
+                {provisional
+                  ? t('inventory.weighCount.settlingHelp')
+                  : delta === 0
+                    ? t('inventory.weighCount.noChange')
+                    : t('inventory.weighCount.delta', {
+                        vars: { delta: `${delta > 0 ? '+' : ''}${delta}`, quantity: item.quantity },
+                      })}
               </p>
             </div>
           ) : null}
@@ -277,7 +311,7 @@ export function WeighCountDialog({
               allowed to pass without comment. `close` explains the drift, `uncertain` warns
               that the count is a guess — but neither blocks the user, who may well know the
               scale is imprecise and want the number anyway. */}
-          {result && result.confidence !== 'exact' ? (
+          {result && !provisional && result.confidence !== 'exact' ? (
             <Banner
               tone={result.confidence === 'uncertain' ? 'warning' : 'info'}
               className="mt-3"
@@ -302,7 +336,7 @@ export function WeighCountDialog({
             // Wrapped, not passed by reference: `submit` takes optional text overrides, and a
             // bare handler would hand it the click event as the gross reading.
             onClick={() => submit()}
-            disabled={!result || issue !== null || delta === 0 || adjust.isPending}
+            disabled={!result || issue !== null || delta === 0 || provisional || adjust.isPending}
           >
             <ScaleIcon aria-hidden />
             {t('inventory.weighCount.apply')}

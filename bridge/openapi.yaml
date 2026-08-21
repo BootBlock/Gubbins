@@ -4638,6 +4638,106 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/scale/stream:
+    get:
+      tags:
+      - "scale"
+      summary: "Watch a scale entity live, as a Server-Sent Events stream"
+      description: "Opt-in (GUBBINS_BRIDGE_HA=on); returns 404 when disabled. Holds the connection open and writes one \"data: <frame>\" line per sample, roughly four a second, so a client can watch a reading settle instead of pulling one value at a time. A frame is either {\"ok\":true,\"reading\":{…}} — the same shape /api/v1/scale/state returns — or {\"ok\":false,\"issue\":\"…\"}. Deliberately unlike /api/v1/events: there is no \"id:\" line, no Last-Event-ID resumption and no replay buffer, because replaying a stale weight to a reconnecting client is worse than sending nothing. The same entity gating applies as to /api/v1/scale/state, so a non-scale (or unknown) entity answers 404 before any stream opens. issue \"gone\" means the entity has stopped being a readable scale, and the stream ends after that frame. Same bearer token + rate limit as every endpoint; strictly read-only, and it can never write to Home Assistant. A 429 is returned when the concurrent-stream cap is reached."
+      parameters:
+      -
+        name: "entity_id"
+        in: "query"
+        required: true
+        description: "The Home Assistant entity id of the scale, e.g. sensor.workshop_scale."
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "The live reading stream."
+          content:
+            text/event-stream:
+              schema:
+                type: "string"
+              example: ": connected\n\ndata: {\"ok\":true,\"reading\":{\"entityId\":\"sensor.workshop_scale\",\"grams\":1250,\"value\":1.25,\"unit\":\"kg\",\"lastUpdated\":\"2025-06-27T06:13:20.000Z\"}}\n\ndata: {\"ok\":false,\"issue\":\"unavailable\"}\n\n"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing, unknown or revoked API token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: "The token is valid, but its owner's role does not permit this route."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "The Home Assistant read is disabled, or the entity is not a scale (or does not exist). A non-scale entity is deliberately indistinguishable from a missing one."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: "not_found"
+                  message: "No such entity."
+        "405":
+          description: "The request method is not allowed. The bridge answers GET and HEAD everywhere, and POST only on the opt-in write, snapshot-ingest and webhook-test paths. Declared on every operation because the method guard runs ahead of routing, so it answers any request to this path — not only the method documented here. That is also why `Allow` is answered bridge-wide there rather than per path: on a bridge with a POST opt-in enabled it names POST even for a path that only reads. A POST the versioned router itself refuses is the one case answered with that resource’s own methods."
+          headers:
+            Allow:
+              schema:
+                type: "string"
+              description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "An unexpected failure the bridge could not attribute to the request. The message is fixed and detail-free — no stack trace, file path, SQL or query text ever reaches a caller (the detail is logged locally only)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: "Home Assistant could not be reached, refused the bridge’s access token, or answered unusably: home_assistant_unreachable, home_assistant_unauthorised or home_assistant_error."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "No snapshot has been loaded yet, so the bridge does not yet know who any caller is and lets nobody in. Reachable at every path — including the reads that need no snapshot data of their own — because the check precedes routing. Retry once the snapshot lands."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:

@@ -60,8 +60,9 @@ current reading straight into the app rather than you typing it in.
 This is **off by default** and enabled on the bridge, by pointing it at your Home Assistant
 instance and giving it a **long-lived access token** (created in Home Assistant under **Profile →
 Security**). Once it's on, the *Count by weight* dialog gains a scale picker, a **Read the scale**
-button and a **Read the container** button for weighing the empty tray. The in-app setup guide
-covers the settings on its **Run the bridge** step.
+button, a **Read the container** button for weighing the empty tray, and a **Watch the scale**
+toggle that keeps the reading up to date as parts go on the pan. The in-app setup guide covers the
+settings on its **Run the bridge** step.
 
 > **💡 Tip**
 > When the bridge starts with this turned on, it checks the connection to Home Assistant there and

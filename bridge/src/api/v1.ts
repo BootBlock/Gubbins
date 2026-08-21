@@ -562,6 +562,11 @@ async function handleScale(
     return void sendError(res, 404, 'not_found', 'Not found', { v1: true });
   }
 
+  // `/scale/stream` is deliberately not handled below: it is a long-lived `text/event-stream`
+  // response that needs the raw request, so `server.ts` answers it before routing ever happens
+  // (exactly as it does `/api/v1/events`). Reaching here with that sub-path means no stream is
+  // wired, and the fallthrough `404` at the end is then the right answer.
+
   try {
     if (segments[1] === 'entities') {
       return void sendJson(res, 200, { entities: await scale.client.listScaleEntities() });
@@ -875,7 +880,9 @@ function apiIndex(writable: boolean, pushable: boolean, streamable: boolean, sca
       ...(writable ? WRITE_ACTIONS.map((action) => `POST ${API_V1_BASE}/items/{id}/${action}`) : []),
       ...(pushable ? [`POST ${API_V1_BASE}/snapshot`] : []),
       ...(streamable ? [`${API_V1_BASE}/events`] : []),
-      ...(scalable ? [`${API_V1_BASE}/scale/entities`, `${API_V1_BASE}/scale/state`] : []),
+      ...(scalable
+        ? [`${API_V1_BASE}/scale/entities`, `${API_V1_BASE}/scale/state`, `${API_V1_BASE}/scale/stream`]
+        : []),
     ],
   };
 }
