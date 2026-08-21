@@ -2697,7 +2697,11 @@ try {
       const alert = panel.getByRole('alert').first();
       await alert.waitFor({ state: 'visible', timeout: 5000 });
       const text = await alert.innerText();
-      if (!text.includes('example.com')) throw new Error(`refusal did not name the host: ${text}`);
+      // Match the host as a whole word: a message naming "notexample.com" must not pass.
+      const namesHost = text
+        .split(/[^A-Za-z0-9.-]+/)
+        .some((word) => word.replace(/[.]+$/, '') === 'example.com');
+      if (!namesHost) throw new Error(`refusal did not name the host: ${text}`);
       if (!/DigiKey/.test(text)) throw new Error(`refusal did not list the supported suppliers: ${text}`);
       if (/blocked/i.test(text)) throw new Error(`refusal still blames the supplier: ${text}`);
       if ((await scrapeRequestCount()) !== before) {
