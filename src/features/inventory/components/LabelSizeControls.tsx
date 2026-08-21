@@ -75,7 +75,7 @@ export function LabelSizeControls({
   };
 
   return (
-    <div className="flex flex-col gap-1 text-xs font-medium text-muted-foreground sm:col-span-2">
+    <div className="flex flex-col gap-field-gap-compact text-xs font-medium text-muted-foreground sm:col-span-2">
       <span className="flex items-center gap-1">
         <span id={labelId}>Label size</span>
         <InfoHint content={LABEL_SIZE_HINT} />
@@ -142,7 +142,7 @@ function DimField({
   };
 
   return (
-    <label htmlFor={id} className="flex flex-1 flex-col gap-1">
+    <label htmlFor={id} className="flex flex-1 flex-col gap-field-gap-compact">
       <span>{label}</span>
       <Input
         id={id}

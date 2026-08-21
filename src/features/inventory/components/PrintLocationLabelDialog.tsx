@@ -56,7 +56,7 @@ function CompactSelect({
 }: { label: string; hint?: string } & Omit<SelectProps, 'aria-labelledby'>) {
   const labelId = useId();
   return (
-    <div className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+    <div className="flex flex-col gap-field-gap-compact text-xs font-medium text-muted-foreground">
       <span className="flex items-center gap-1">
         <span id={labelId}>{label}</span>
         {hint ? <InfoHint content={hint} /> : null}

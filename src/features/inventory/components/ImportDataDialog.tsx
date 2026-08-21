@@ -498,7 +498,7 @@ function ImportWorkbench({
   return (
     <div className="space-y-4">
       {/* Migration source — reshape another tool's export before the shared pipeline */}
-      <div className="space-y-1">
+      <div className="space-y-field-gap-compact">
         <span
           id={`${sourceId}-label`}
           className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
@@ -586,7 +586,7 @@ function ImportWorkbench({
 
       {/* Batch location + tracking defaults (applied to rows that don't specify their own) */}
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
+        <div className="space-y-field-gap-compact">
           <span
             id={`${locationId}-label`}
             className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
@@ -606,7 +606,7 @@ function ImportWorkbench({
             ]}
           />
         </div>
-        <div className="space-y-1">
+        <div className="space-y-field-gap-compact">
           <span
             id={`${trackingId}-label`}
             className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
