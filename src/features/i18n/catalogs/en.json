@@ -1341,6 +1341,7 @@
   "projects.writeError.heading.bomLineAdd": "Couldn’t add the BOM line",
   "projects.writeError.heading.bomLineRemove": "Couldn’t remove the BOM line",
   "projects.writeError.heading.picked": "Couldn’t update the pick",
+  "projects.writeError.pickedReverted": "The tick has been undone.",
   "projects.writeError.heading.reservation": "Couldn’t update the reservation",
   "projects.writeError.heading.procurement": "Couldn’t update the procurement status",
   "projects.writeError.heading.receiveLine": "Couldn’t receive the line",

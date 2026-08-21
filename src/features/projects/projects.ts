@@ -14,7 +14,7 @@
  * feeds the export, where a short read is a wrong file rather than a shorter screen (issue #149).
  * The project *list* itself is a browse list and pages server-side instead.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   getItemRepository,
   getProjectRepository,
@@ -26,6 +26,8 @@ import {
   type CreateProjectInput,
   type FinaliseAssemblyInput,
   type ProcurementStatus,
+  type PickLine,
+  type ProjectBomLine,
   type ProjectFilter,
   type ProjectListParams,
   type ReservationStatus,
@@ -35,9 +37,9 @@ import {
   type UpdateProjectInput,
 } from '@/db/repositories';
 import { checkoutKeys } from '@/features/contacts/keys';
-import { useReportWriteFailure } from '@/features/errors';
+import { isUnknownWriteOutcome, useReportWriteFailure } from '@/features/errors';
 import { inventoryKeys } from '@/features/inventory/queries';
-import { readAllPages } from '@/lib/read-all-pages';
+import { readAllPages, type AllPages } from '@/lib/read-all-pages';
 import type { ParsedBomLine } from './bom-import';
 import { invalidateItems } from '@/features/inventory/invalidate';
 
@@ -441,20 +443,73 @@ export function useRemoveBomLine(projectId: string) {
 // --- picking (issue #121 location-aware gather-and-tick) -----------------------
 
 /**
+ * Mutation key for the in-flight pick toggles of **one** project — what the rapid-tick
+ * de-bounce in {@link useSetPicked} counts. Scoped per project so a burst on one worksheet
+ * cannot hold back another's reconciliation.
+ */
+const setPickedKey = (projectId: string) => ['projects', 'set-picked', projectId] as const;
+
+/**
+ * Set one line's `picked` flag in both cached slices that carry it — the picking worksheet and
+ * the BOM lines — leaving every other line, and every other field, untouched.
+ *
+ * Writing the flag rather than restoring a snapshot is what makes the rollback safe mid-burst: a
+ * rejected tick puts back only its own line, so the ticks either side of it keep their patches
+ * (the same reasoning as the inverse patches in the inventory hooks, issue #300).
+ */
+function patchPicked(client: QueryClient, projectId: string, lineId: string, picked: boolean): void {
+  client.setQueryData<readonly PickLine[]>(projectKeys.pickList(projectId), (rows) =>
+    rows?.map((row) => (row.line.id === lineId ? { ...row, line: { ...row.line, picked } } : row)),
+  );
+  client.setQueryData<AllPages<ProjectBomLine>>(projectKeys.lines(projectId), (data) =>
+    data ? { ...data, rows: data.rows.map((l) => (l.id === lineId ? { ...l, picked } : l)) } : data,
+  );
+}
+
+/**
  * Tick a BOM line as physically gathered (or clear it) during the picking pass. Picking
  * only flips the line's `picked` flag — it moves no stock and reshapes no cost, budget or
  * shopping figure — so it refreshes just the worksheet and the BOM lines (which carry the
  * flag), not the whole project detail or any inventory view.
+ *
+ * The one **optimistic** write in this module (issue #670), and for the same reason
+ * `useAdjustQuantity` is: the worksheet is walked, not edited — gather a part, tick it, move on
+ * — so a tick that waits on the OPFS write queue before it appears is a tick the user has
+ * already moved past. `onMutate` flips the flag in both cached slices, `onError` flips it back
+ * (unless the outcome is unknown — see below), and only the last write of a burst reconciles.
  */
 export function useSetPicked(projectId: string) {
   const client = useQueryClient();
-  const reportFailure = useReportWriteFailure('projects.writeError.heading.picked', 'common.writeFailed');
+  const reportFailure = useReportWriteFailure(
+    'projects.writeError.heading.picked',
+    'projects.writeError.pickedReverted',
+  );
+  const mutationKey = setPickedKey(projectId);
   return useMutation({
+    mutationKey,
     mutationFn: ({ lineId, picked }: { lineId: string; picked: boolean }) =>
       getProjectRepository().setPicked(lineId, picked),
-    // Surface a rejected pick toggle rather than letting it fail silently (#389).
-    onError: reportFailure,
+    onMutate: async ({ lineId, picked }) => {
+      // Cancel the reads this is about to write over, or one already in flight resolves after
+      // the patch and snaps the box back to its pre-tick state.
+      await Promise.all([
+        client.cancelQueries({ queryKey: projectKeys.pickList(projectId), exact: true }),
+        client.cancelQueries({ queryKey: projectKeys.lines(projectId), exact: true }),
+      ]);
+      patchPicked(client, projectId, lineId, picked);
+    },
+    onError: (error, { lineId, picked }) => {
+      // A rollback asserts the write did not happen, which a timeout does not establish — the
+      // worker may still commit it (issue #554). There the patch stays and `onSettled` settles it.
+      if (!isUnknownWriteOutcome(error)) patchPicked(client, projectId, lineId, !picked);
+      // Surface a rejected pick toggle rather than letting it fail silently (#389).
+      reportFailure(error);
+    },
     onSettled: () => {
+      // Only the last tick of a walk-the-list burst refetches. Each tick is its own write, so an
+      // earlier one's refetch could otherwise resolve before a later one had landed and snap the
+      // worksheet back mid-burst. Any count above one means later ticks are still in flight.
+      if (client.isMutating({ mutationKey }) > 1) return;
       void client.invalidateQueries({ queryKey: projectKeys.pickList(projectId) });
       void client.invalidateQueries({ queryKey: projectKeys.lines(projectId) });
     },

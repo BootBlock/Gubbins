@@ -16,6 +16,12 @@ function lineLabel(line: PickLine['line']): string {
  * section surfaces the natural "all picked → finalise" step. Progress and the location
  * phrasing come from the pure `picking` seam; the whole thing is a gathering pass ahead of
  * the existing one-shot assembly.
+ *
+ * No checkbox is ever disabled while a tick is saving (issue #670). The sheet is walked at
+ * whatever speed the parts are gathered at, and a shared pending flag turned every row inert
+ * for the length of one OPFS round trip — so a tap landing in that window was dropped by the
+ * `disabled` attribute, silently. `useSetPicked` is optimistic and idempotent instead: the box
+ * flips on tap and a repeated toggle is harmless, so there is nothing to guard against.
  */
 export function PickingSection({
   projectId,
@@ -101,7 +107,6 @@ export function PickingSection({
                           checked={line.picked}
                           aria-label={`Mark "${label}" as picked`}
                           data-testid={`pick-${line.id}`}
-                          disabled={setPicked.isPending}
                           onChange={(e) => setPicked.mutate({ lineId: line.id, picked: e.target.checked })}
                         />
                       </td>

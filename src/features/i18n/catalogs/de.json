@@ -1341,6 +1341,7 @@
   "projects.writeError.heading.bomLineAdd": "Stücklistenposition konnte nicht hinzugefügt werden",
   "projects.writeError.heading.bomLineRemove": "Stücklistenposition konnte nicht entfernt werden",
   "projects.writeError.heading.picked": "Kommissionierung konnte nicht aktualisiert werden",
+  "projects.writeError.pickedReverted": "Das Häkchen wurde rückgängig gemacht.",
   "projects.writeError.heading.reservation": "Reservierung konnte nicht aktualisiert werden",
   "projects.writeError.heading.procurement": "Beschaffungsstatus konnte nicht aktualisiert werden",
   "projects.writeError.heading.receiveLine": "Position konnte nicht eingebucht werden",
