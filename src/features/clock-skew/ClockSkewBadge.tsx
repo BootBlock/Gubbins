@@ -45,7 +45,7 @@ export function ClockSkewBadge() {
       aria-live="polite"
       data-testid="clock-skew-badge"
       className={cn(
-        'print-hide pointer-events-none fixed left-1/2 z-50 -translate-x-1/2 rounded-full bg-warning px-3 py-1 text-xs font-medium text-warning-foreground shadow-lg',
+        'print-hide pointer-events-none fixed left-1/2 z-50 mb-safe-bottom -translate-x-1/2 rounded-full bg-warning px-3 py-1 text-xs font-medium text-warning-foreground shadow-lg',
         dateOverride ? 'bottom-11' : 'bottom-3',
       )}
     >

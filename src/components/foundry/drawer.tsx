@@ -73,7 +73,9 @@ export function Drawer({ open, onClose, title, children, className }: DrawerProp
         className={cn(
           // Flush to the left edge and the full height of the fixed parent, so only the inner
           // corners are rounded. `85vw` is what keeps a strip of backdrop tappable at any width.
-          'absolute inset-y-0 left-0 z-10 flex w-[min(20rem,85vw)] flex-col gap-3 rounded-l-none p-4',
+          // The panel itself stays flush to the physical edge while its *content* clears the
+          // device's own insets, so the surface never letterboxes beside a cutout (issue #655).
+          'absolute inset-y-0 left-0 z-10 flex w-[min(20rem,85vw)] flex-col gap-3 rounded-l-none p-4 pt-safe-gutter-top pb-safe-gutter-bottom pl-safe-gutter-left',
           !reducedMotion && 'animate-drawer-in',
           className,
         )}

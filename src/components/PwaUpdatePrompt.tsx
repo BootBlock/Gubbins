@@ -118,7 +118,7 @@ export function PwaUpdatePrompt({ api }: { api?: PwaUpdateApi }) {
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-4 z-50 mx-auto w-full max-w-md px-4">
+    <div className="fixed inset-x-0 bottom-4 z-50 mx-auto mb-safe-bottom w-full max-w-md px-safe-gutter-x">
       <Banner
         tone={willResetData ? 'warning' : 'info'}
         role="alert"

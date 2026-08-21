@@ -1054,6 +1054,63 @@
    * proportionally smaller gap from the same family — use `mb-field-gap-compact`. */
   --spacing-field-gap-compact: 0.5rem; /* 8px */
 
+  /*
+   * Safe-area insets (issue #655).
+   *
+   * `index.html` opts the app into `viewport-fit=cover`, so the layout viewport is the
+   * *physical* display: the status bar, a notch or punch-hole, the rounded corners and the
+   * gesture home bar are all drawn over the page rather than beside it. The platform reports
+   * how much room each edge needs through `env(safe-area-inset-*)`, and every one of those is
+   * `0px` on a device (or a browser) that reserves nothing — so these tokens are inert
+   * everywhere except the hardware that actually needs them.
+   *
+   * They live here, as spacing tokens, for the same reason a colour does: one definition, used
+   * through ordinary utilities (`pt-safe-gutter-top`, `mb-safe-bottom`, `px-safe-gutter-x`),
+   * rather than an `env()` literal repeated at each fixed or full-bleed call site.
+   *
+   * Three families, by what the element needs:
+   *  - `safe-*` — the raw inset, for an element that already has its own padding and only
+   *    needs *moving* clear of the edge (a fixed badge or toast stack: add `mb-safe-bottom`
+   *    beside its existing `bottom-*`, and the two compose).
+   *  - `safe-gutter-*` — the standard 16px edge gutter, pushed clear of the inset, for a
+   *    surface that must stay flush to the edge while its content sits inside the safe area
+   *    (the drawer panel, the dialog frame, the scanner's own rows).
+   *  - `safe-page-*` / `safe-gutter-x` — the page frame's own offsets. The horizontal pair is
+   *    deliberately symmetric (`max()` of the two sides) so the centred column stays centred
+   *    when only one side carries a cutout.
+   *
+   * Note that an unknown Tailwind utility emits no CSS and no error, so a new `*-safe-*`
+   * utility is worth confirming in the built CSS rather than trusting by eye.
+   */
+  /* `--spacing-safe-top` has no consumer today — every top-edge site wants the gutter form
+   * below — but the family is kept whole, as the palette keeps `--card-elevated-foreground`:
+   * the four edges are one idea, and a missing edge reads as an oversight at the next call site. */
+  --spacing-safe-top: env(safe-area-inset-top, 0px);
+  --spacing-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --spacing-safe-left: env(safe-area-inset-left, 0px);
+  --spacing-safe-right: env(safe-area-inset-right, 0px);
+
+  --spacing-safe-gutter-top: calc(1rem + env(safe-area-inset-top, 0px));
+  --spacing-safe-gutter-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  --spacing-safe-gutter-left: calc(1rem + env(safe-area-inset-left, 0px));
+  --spacing-safe-gutter-right: calc(1rem + env(safe-area-inset-right, 0px));
+
+  --spacing-safe-gutter-x: calc(1rem + max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)));
+  /* The wider `large-format:` (tablet / unfolded foldable) gutter, same rule. */
+  --spacing-safe-gutter-x-lg: calc(
+    2rem + max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px))
+  );
+
+  /* The canonical page frame's 24px top offset and full-height bottom offset. */
+  --spacing-safe-page-top: calc(1.5rem + env(safe-area-inset-top, 0px));
+  --spacing-safe-page-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+
+  /* Tallest a centred dialog panel may grow: the viewport, less the frame's 16px gutter at the
+   * top and bottom, less whatever the device reserves at each of those edges. */
+  --spacing-safe-dialog: calc(
+    100dvh - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+  );
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

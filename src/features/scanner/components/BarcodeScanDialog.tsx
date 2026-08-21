@@ -230,7 +230,7 @@ function BarcodeScanDialogInner({
       data-testid="barcode-scan-dialog"
     >
       {/* Header */}
-      <div className="flex items-center gap-3 p-4">
+      <div className="flex items-center gap-3 p-4 pt-safe-gutter-top pr-safe-gutter-right pl-safe-gutter-left">
         <ScanIcon className="size-5" aria-hidden />
         <span className="font-semibold">Scan barcode</span>
         <Button
@@ -271,7 +271,7 @@ function BarcodeScanDialogInner({
             to the Barcode field. The URL is shown in full so the destination is vetted before
             opening (a scanned link is untrusted). */}
         {linkPrompt ? (
-          <div className="absolute inset-x-0 bottom-0 p-4">
+          <div className="absolute inset-x-0 bottom-0 p-4 pr-safe-gutter-right pl-safe-gutter-left">
             <Surface className="space-y-3 p-4 text-foreground" data-testid="barcode-scan-link-prompt">
               <p className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
                 <LinkIcon className="size-4" aria-hidden />
@@ -297,7 +297,7 @@ function BarcodeScanDialogInner({
       </div>
 
       {/* Manual entry — graceful fallback (§6.6) and always-available aid. */}
-      <div className="space-y-2 p-4">
+      <div className="space-y-2 p-4 pb-safe-gutter-bottom pr-safe-gutter-right pl-safe-gutter-left">
         {/* The screen-reader channel, and the one region both in-place messages live in: which
             engine resolved (or that it died mid-scan, issue #678) and the manual-entry feedback —
             a blind user types a code and would otherwise get nothing back. Both arrive *after*
