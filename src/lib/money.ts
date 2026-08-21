@@ -266,3 +266,47 @@ export function fromStoredMoney(stored: number | null | undefined): number | nul
   if (stored == null || !Number.isFinite(stored)) return null;
   return stored / MONEY_STORAGE_SCALE;
 }
+
+/**
+ * Normalise a stored ISO currency code to compare it: trimmed and upper-cased, with blank and
+ * `null` alike collapsing to `null`. `null` is the "base currency" convention `purchase_orders.
+ * currency`, `supplier_parts.currency` and a bare `items.unit_cost` all document, and a
+ * whitespace-only code names no currency either — a distinction the SQL side makes the same way
+ * (issue #285).
+ */
+export function normaliseCurrencyCode(code: string | null | undefined): string | null {
+  const trimmed = (code ?? '').trim().toUpperCase();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+/**
+ * Whether two amounts are denominated differently (issue #285).
+ *
+ * Gubbins stores most costs as a bare number whose currency is implied by its context — a
+ * purchase-order line means the *order's* currency, an item's `unit_cost` means the *base*
+ * currency. Copying a foreign figure across such a boundary records a wrong amount by the
+ * exchange rate, and Gubbins holds no rates to convert with. Both sides resolve their
+ * blank-means-base convention against `baseCurrency` first, so a EUR quote against a target with
+ * no code of its own is correctly a mismatch (that target is in the base currency), and a blank
+ * against a blank is not.
+ *
+ * With an unknown base (`null`), only two *explicit* and differing codes can be judged a
+ * mismatch: an unknown base cannot tell whether a blank means the same currency as a stated one,
+ * and guessing would raise a false alarm everywhere. This mirrors the repository's
+ * fail-open-on-unknown-base rule.
+ *
+ * @param quotedCurrency The currency the incoming amount is actually quoted in.
+ * @param targetCurrency The currency the amount would be recorded under; `null` for a field that
+ * carries no currency of its own and therefore means the base currency.
+ */
+export function isCurrencyMismatch(
+  quotedCurrency: string | null | undefined,
+  targetCurrency: string | null | undefined,
+  baseCurrency: string | null | undefined,
+): boolean {
+  const base = normaliseCurrencyCode(baseCurrency);
+  const quoted = normaliseCurrencyCode(quotedCurrency) ?? base;
+  const target = normaliseCurrencyCode(targetCurrency) ?? base;
+  if (quoted === null || target === null) return false;
+  return quoted !== target;
+}

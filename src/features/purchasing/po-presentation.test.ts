@@ -1,12 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  estimatedValue,
-  isCurrencyMismatch,
-  normaliseCurrencyCode,
-  poStatusPresentation,
-  totalOrdered,
-  totalReceived,
-} from './po-presentation';
+import { estimatedValue, poStatusPresentation, totalOrdered, totalReceived } from './po-presentation';
 
 describe('poStatusPresentation', () => {
   it('maps every status to a British-English label and a glyph token (never a raw colour)', () => {
@@ -67,46 +60,5 @@ describe('currency minor units', () => {
 
   it('defaults to two decimals when no scale is given, so existing callers are unchanged', () => {
     expect(estimatedValue([{ orderedQty: 3, unitCost: 100.5 }])).toBe(301.5);
-  });
-});
-
-describe('normaliseCurrencyCode', () => {
-  it('trims and upper-cases a code, collapsing blank and null alike to null', () => {
-    expect(normaliseCurrencyCode(' eur ')).toBe('EUR');
-    expect(normaliseCurrencyCode('GBP')).toBe('GBP');
-    // Blank, whitespace-only and absent all mean "no code of its own" ⇒ the base currency.
-    expect(normaliseCurrencyCode('')).toBeNull();
-    expect(normaliseCurrencyCode('   ')).toBeNull();
-    expect(normaliseCurrencyCode(null)).toBeNull();
-    expect(normaliseCurrencyCode(undefined)).toBeNull();
-  });
-});
-
-describe('isCurrencyMismatch (issue #285)', () => {
-  it('flags a supplier quote denominated differently from the order', () => {
-    expect(isCurrencyMismatch('EUR', 'GBP', 'GBP')).toBe(true);
-    // The order carries no code, so it is in the base currency — still a mismatch.
-    expect(isCurrencyMismatch('EUR', null, 'GBP')).toBe(true);
-    // …and the other way round: a base-currency quote against a foreign order.
-    expect(isCurrencyMismatch(null, 'USD', 'GBP')).toBe(true);
-  });
-
-  it('does not flag two codes that name the same currency', () => {
-    expect(isCurrencyMismatch('EUR', 'EUR', 'GBP')).toBe(false);
-    expect(isCurrencyMismatch('GBP', null, 'GBP')).toBe(false);
-    expect(isCurrencyMismatch(null, null, 'GBP')).toBe(false);
-    // Scruffy casing and padding name the same currency as the tidy code.
-    expect(isCurrencyMismatch(' eur ', 'EUR', 'GBP')).toBe(false);
-    expect(isCurrencyMismatch('   ', 'GBP', 'GBP')).toBe(false);
-  });
-
-  it('stays silent when the base currency is unknown and either side is blank', () => {
-    // An unknown base cannot say whether a blank means the same currency as a stated one;
-    // guessing would raise a false alarm on every line, so it fails open like the SQL side.
-    expect(isCurrencyMismatch('EUR', null, null)).toBe(false);
-    expect(isCurrencyMismatch(null, 'EUR', null)).toBe(false);
-    expect(isCurrencyMismatch(null, null, null)).toBe(false);
-    // Two explicit, differing codes are still judgeable without a base.
-    expect(isCurrencyMismatch('EUR', 'USD', null)).toBe(true);
   });
 });

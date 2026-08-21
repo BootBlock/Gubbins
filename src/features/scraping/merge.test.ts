@@ -150,3 +150,49 @@ describe('applyScrapeMerge — the no-overwrite safeguard', () => {
     expect(write.aliasAdditions).toEqual([]);
   });
 });
+
+describe('buildScrapeMergePlan — a foreign-currency price (issue #666)', () => {
+  const usdPayload: ScrapeResultPayload = { ...payload, scraped_pricing: { currency: 'USD', value: 4.15 } };
+
+  it('withholds a price quoted outside the base currency instead of filling it', () => {
+    const plan = buildScrapeMergePlan(emptyItem, usdPayload, 'GBP');
+    expect(statusOf(plan, 'unitCost')).toBe('FOREIGN');
+    // The value and both codes are still carried, so the dialog can show what it withheld.
+    expect(plan.proposals.find((p) => p.field === 'unitCost')?.scraped).toBe(4.15);
+    expect(plan.currency).toBe('USD');
+    expect(plan.baseCurrency).toBe('GBP');
+    // Nothing reaches the item's currency-less unit-cost column — not even on an opt-in.
+    expect(applyScrapeMerge(plan).fields.unitCost).toBeUndefined();
+    expect(applyScrapeMerge(plan, new Set(['unitCost'] as const)).fields.unitCost).toBeUndefined();
+    // Every other field still fills as normal — the withholding is unit-cost-only.
+    expect(applyScrapeMerge(plan).fields.mpn).toBe('NE555P');
+  });
+
+  it('withholds a foreign price that would otherwise overwrite the user’s own cost', () => {
+    const plan = buildScrapeMergePlan({ ...emptyItem, unitCost: 0.99 }, usdPayload, 'GBP');
+    expect(statusOf(plan, 'unitCost')).toBe('FOREIGN');
+  });
+
+  it('fills a price quoted in the base currency, however the code is written', () => {
+    expect(statusOf(buildScrapeMergePlan(emptyItem, payload, 'GBP'), 'unitCost')).toBe('FILL');
+    expect(statusOf(buildScrapeMergePlan(emptyItem, payload, ' gbp '), 'unitCost')).toBe('FILL');
+    // A price with no code of its own already means the base currency.
+    const noCode = { ...payload, scraped_pricing: { currency: '', value: 0.42 } };
+    expect(statusOf(buildScrapeMergePlan(emptyItem, noCode, 'GBP'), 'unitCost')).toBe('FILL');
+  });
+
+  it('withholds nothing when the base currency is unknown (fails open)', () => {
+    expect(statusOf(buildScrapeMergePlan(emptyItem, usdPayload, null), 'unitCost')).toBe('FILL');
+    expect(statusOf(buildScrapeMergePlan(emptyItem, usdPayload), 'unitCost')).toBe('FILL');
+  });
+
+  it('leaves a status that offers no write alone', () => {
+    // The numbers coincide, so nothing was ever going to be written; flagging it would warn
+    // about a change that was never proposed.
+    expect(
+      statusOf(buildScrapeMergePlan({ ...emptyItem, unitCost: 4.15 }, usdPayload, 'GBP'), 'unitCost'),
+    ).toBe('UNCHANGED');
+    const noPrice = { ...usdPayload, scraped_pricing: null };
+    expect(statusOf(buildScrapeMergePlan(emptyItem, noPrice, 'GBP'), 'unitCost')).toBe('SKIP');
+  });
+});

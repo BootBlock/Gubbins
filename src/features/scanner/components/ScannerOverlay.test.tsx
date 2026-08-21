@@ -217,6 +217,38 @@ describe('ScannerOverlay — "What can I scan?" explainer', () => {
   });
 });
 
+describe('ScannerOverlay — header layout on a phone (issue #657)', () => {
+  /** The header row: the icon, the title, the mode toggle and the two icon buttons. */
+  const header = () => screen.getByRole('button', { name: 'Close scanner' }).parentElement!;
+
+  it('wraps the header instead of pushing Close scanner past the right edge', () => {
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    // The overlay is `fixed`, so an overflowing header cannot be scrolled back into view — the
+    // row has to wrap. jsdom does no layout, so the contract is pinned on the classes that
+    // decide it rather than on measured geometry.
+    expect(header()).toHaveClass('flex-wrap');
+    // The toggle is the item that drops to a second line below `sm`, so the two icon buttons
+    // keep the first line to themselves.
+    expect(screen.getByTestId('scanner-mode-toggle')).toHaveClass(
+      'order-last',
+      'basis-full',
+      'sm:order-none',
+      'sm:basis-auto',
+    );
+    // …and the title is what gives, rather than either button being squeezed off the row.
+    expect(screen.getByText('Scanner')).toHaveClass('min-w-0', 'flex-1', 'truncate');
+  });
+
+  it('keeps both header buttons at full size when the row is under pressure', () => {
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Close scanner' })).toHaveClass('shrink-0');
+    // Help sits inside a Tooltip, whose wrapper span is the actual flex item.
+    expect(screen.getByRole('button', { name: 'What can I scan?' }).parentElement).toHaveClass('shrink-0');
+  });
+});
+
 /**
  * The printed short code (issue #338) — the fallback identifier a label carries for when its QR
  * or barcode is too damaged to scan. Typing it must reach the item, or the printed line is
