@@ -206,7 +206,16 @@ export function ScaleReadPanel({
   // cleanup — so it stops the moment the toggle goes off, the chosen scale changes, or the modal
   // closes (which unmounts this panel). Nothing keeps reading the user's scale unattended.
   useEffect(() => {
-    if (!watching || selected === '') return;
+    // A restart begins from nothing. A window left over from the previous watch would otherwise
+    // report the *old* reading as settled before a single new sample had arrived — and a settled
+    // status is what re-enables Apply, so the user could commit a weight no longer on the pan.
+    setSettling(NO_SAMPLES);
+    if (!watching) return;
+    // The chosen scale has gone — renamed or removed in Home Assistant, so a refreshed list no
+    // longer offers it. There is nothing to watch, and the toggle that would stop the watch is
+    // disabled without a selection, so stop it here rather than stranding the dialog with a count
+    // that is permanently provisional.
+    if (selected === '') return void setWatching(false);
     const controller = new AbortController();
     const tolerance = settleToleranceGrams(unitWeightGrams);
     // The window is kept in a local, not in state: each sample folds into the *previous* window,
@@ -255,6 +264,17 @@ export function ScaleReadPanel({
       controller.abort();
     };
   }, [watching, selected, bridgeUrl, bridgeToken, unitWeightGrams, onReading, t]);
+
+  /**
+   * Start or stop a watch. The window is cleared in the *same* update as the flag, not left to the
+   * effect below: an effect runs after paint, so resetting there would show one frame of the
+   * previous watch's settled verdict — with Apply enabled — over a scale that has since been
+   * emptied.
+   */
+  const toggleWatch = useCallback(() => {
+    setSettling(NO_SAMPLES);
+    setWatching((on) => !on);
+  }, []);
 
   const status: ScaleWatchStatus = !watching ? 'off' : settling.settled ? 'settled' : 'settling';
   useEffect(() => {
@@ -325,7 +345,7 @@ export function ScaleReadPanel({
               read. The toggle carries its own state in its label rather than in colour alone. */}
           <Button
             variant={watching ? 'secondary' : 'ghost'}
-            onClick={() => setWatching((on) => !on)}
+            onClick={toggleWatch}
             disabled={selected === ''}
             aria-pressed={watching}
             data-testid="scale-watch"

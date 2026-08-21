@@ -175,9 +175,16 @@ export function createScaleStreamHub(options: ScaleStreamOptions): ScaleStreamHu
         return { frame: { ok: false, issue: 'home-assistant-error' }, terminal: false, error: err };
       }
       // Something the client contract does not describe. Ending the stream is the honest answer:
-      // we do not know what is wrong, so we must not imply the next sample will be better. The
-      // error itself is swallowed rather than forwarded — it can name the Home Assistant URL.
-      return { frame: { ok: false, issue: 'home-assistant-error' }, terminal: true };
+      // we do not know what is wrong, so we must not imply the next sample will be better. It is
+      // reported as an `HaError` rather than a bare frame so the connect-time gate answers it as
+      // HTTP too — without that, an unexpected first read would open a stream and then poll on
+      // regardless, which is exactly what this branch exists to refuse. The original error is
+      // swallowed rather than forwarded: it can name the Home Assistant URL.
+      return {
+        frame: { ok: false, issue: 'home-assistant-error' },
+        terminal: true,
+        error: new HaError(502, 'home_assistant_error', 'Home Assistant returned an error.'),
+      };
     }
 
     if (outcome.ok) return { frame: { ok: true, reading: outcome.reading }, terminal: false };
@@ -257,18 +264,59 @@ export function createScaleStreamHub(options: ScaleStreamOptions): ScaleStreamHu
         });
       }
 
+      // **The slot is reserved here, before the gate read below, not after it.** The check above
+      // and the registration below are separated by an `await`, so counting only at registration
+      // would let every connection that arrived during one Home Assistant round-trip pass a cap
+      // that none of them had yet consumed — several tabs reconnecting after a bridge restart is
+      // enough. `release` gives the reservation back on every path that does not open a stream.
+      clients += 1;
+      let reserved = true;
+      const release = (): void => {
+        if (!reserved) return;
+        reserved = false;
+        clients -= 1;
+        if (clients === 0) stopHeartbeat();
+      };
+
+      // **Watch for the client leaving from here, likewise before the await.** A `close` listener
+      // attached to a response whose socket has *already* gone never fires, and writes to it
+      // silently no-op — so a client that disconnects during the gate read would otherwise be
+      // registered, counted and polled for, with nothing left to ever remove it. (The event hub
+      // has no such window: it is entirely synchronous. This `await` is what opens one.)
+      let lost = res.destroyed;
+      const noteLost = (): void => {
+        lost = true;
+      };
+      res.on('close', noteLost);
+      res.on('error', noteLost);
+
       // Gate on one real read *before* any headers go out, so the stream's contract matches the
       // one-shot endpoint's exactly: a non-scale (or missing) entity is a plain `404` revealing
       // nothing about it (issue #179), and a transport failure is the same `502` with the same
       // error code. Only once a genuine, readable scale is confirmed is the stream opened — a
       // scale that is merely switched off is *not* a transport failure, so it opens and reports.
       const first = await sample(entityId);
+      if (lost || res.destroyed) {
+        // Nobody is waiting for this any more; opening a stream would poll for a dead socket.
+        return void release();
+      }
       if (first.error !== undefined) {
         const { error } = first;
+        release();
         return void sendError(res, error.status, error.code, error.message, { v1: true });
       }
       if (first.frame.ok === false && first.frame.issue === 'gone') {
+        release();
         return void sendError(res, 404, 'not_found', 'No such entity.', { v1: true });
+      }
+      // Every terminal sample carries either an `HaError` or `gone`, both answered above, so this
+      // cannot be reached — but a stream opened on a sample that has already said "there will be
+      // no better one" would poll for ever, so the invariant is enforced rather than assumed.
+      if (first.terminal) {
+        release();
+        return void sendError(res, 502, 'home_assistant_error', 'Home Assistant returned an error.', {
+          v1: true,
+        });
       }
 
       res.writeHead(200, {
@@ -289,7 +337,9 @@ export function createScaleStreamHub(options: ScaleStreamOptions): ScaleStreamHu
       }
       const joined = watch;
       joined.clients.add(res);
-      clients += 1;
+      // The reservation is now the watch's to give back, not this handler's — `drop` does the
+      // decrementing from here on, so `release` must not also do it.
+      reserved = false;
       startHeartbeat();
       const leave = (): void => drop(entityId, joined, res);
       res.on('close', leave);

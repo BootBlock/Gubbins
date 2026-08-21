@@ -433,6 +433,39 @@ describe('ScaleReadPanel — watching (issue #125)', () => {
     await waitFor(() => expect(stream.wasAborted()).toBe(true));
   });
 
+  // Stopping and restarting a watch must start from nothing. Carrying the old window over would
+  // report the *previous* reading as settled before a single new sample had arrived — and a
+  // settled status is what re-enables Apply, so the user could commit a weight no longer on the pan.
+  it('does not carry a settled verdict into the next watch', async () => {
+    const stream = await startWatching();
+    await stream.sample(43);
+    await stream.sample(43);
+    await stream.sample(43);
+    await waitFor(() => expect(screen.getByTestId('weigh-count-apply')).toBeEnabled());
+
+    fireEvent.click(screen.getByTestId('scale-watch'));
+    fireEvent.click(screen.getByTestId('scale-watch'));
+
+    expect(screen.getByTestId('scale-watch-status')).toHaveTextContent(/waiting for the reading to settle/i);
+    expect(screen.getByTestId('weigh-count-result')).toHaveTextContent('Settling…');
+    expect(screen.getByTestId('weigh-count-apply')).toBeDisabled();
+  });
+
+  // The chosen scale can disappear mid-watch (renamed in Home Assistant, then the list refreshed).
+  // The toggle is disabled without a selection, so the watch has to stop itself or the dialog is
+  // stranded with a count that is provisional for ever.
+  it('stops watching when the chosen scale is no longer offered', async () => {
+    const stream = await startWatching();
+    await stream.sample(43);
+    await waitFor(() => expect(screen.getByTestId('scale-watch')).toHaveAttribute('aria-pressed', 'true'));
+
+    // The user's stored scale is no longer in the list, so the panel treats it as unchosen.
+    usePreferencesStore.setState({ scaleEntityId: 'sensor.gone' });
+
+    await waitFor(() => expect(screen.getByTestId('scale-watch')).toHaveAttribute('aria-pressed', 'false'));
+    expect(screen.getByTestId('scale-watch-status')).toBeEmptyDOMElement();
+  });
+
   it('reports a failure frame without ending the watch', async () => {
     const stream = await startWatching();
     await stream.sample(43);

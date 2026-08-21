@@ -254,10 +254,13 @@ subscription, and feed readers probe the [syndication feeds](#feeds--metrics) th
 may also carry the validators from a previous response and get a `304` back; see
 [Conditional requests](#conditional-requests-etag--304).
 
-The one exception is the [SSE event stream](#sse-event-stream): a `HEAD` of `/api/v1/events`
-reports the media type the stream serves and returns immediately rather than opening a stream. It
-carries no `Content-Length` (the content is unbounded), and never the `429` a `GET` gives when the
-concurrent-stream cap is reached — a probe takes no slot, so it reports the endpoint, not the queue.
+The exceptions are the two streaming endpoints — the [SSE event stream](#sse-event-stream) and
+[`/api/v1/scale/stream`](#watching-a-scale-live). A `HEAD` of either reports the media type the
+stream serves and returns immediately rather than opening a stream. It carries no `Content-Length`
+(the content is unbounded), and never the `429` a `GET` gives when the concurrent-stream cap is
+reached — a probe takes no slot, so it reports the endpoint, not the queue. A `HEAD` of the scale
+stream needs no `entity_id` either: a probe asks whether the endpoint exists, not whether one
+particular sensor can be watched.
 
 ### The bridge's stable identity
 
@@ -2106,7 +2109,7 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 | `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). Targets are the webhooks configured **in the app** (read from the snapshot the bridge already hydrates) merged with the operator's file/env list. Adds the read-only `GET /api/v1/webhooks/deliveries` log and `POST /api/v1/webhooks/test` (fires a synthetic event at one subscription through the real delivery path). | outbound (push) | No — an event never mutates inventory. | `bridge:read` + `settings:read` for the delivery log; `bridge:write` + `settings:write` to fire a test. Signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `GUBBINS_BRIDGE_WEBHOOKS_SECRETS` / `.env` only. An app-configured webhook may name a secret held here (`secret_ref`) so its value never enters the database; an **unresolvable** ref drops that subscription rather than delivering it unsigned. Delivery to loopback/private/metadata addresses is **refused** unless `GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on`. |
 | `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). Location state includes that location's [custom-field values as attributes](#location-attributes-your-custom-fields) — **all of them, automatically, with no separate flag**, so enabling `MQTT` is what consents to publishing them. | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
 | `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`), including the location attributes above. | outbound (push) | No. | None new (uses the MQTT connection above). |
-| `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state}`, so "count by weight" can read a scale entity. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | `bridge:read`. Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
+| `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state,stream}`, so "count by weight" can read a scale entity, or watch one live. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | `bridge:read`. Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
 | `MDNS` | [mDNS / zeroconf advertising](#mdns--zeroconf-discovery) so HA can auto-discover the bridge (auto-skipped on the loopback default). | LAN advertisement | No — announcement only. | **None** — no credential is **ever** advertised. |
 
 Notes that apply across the table:

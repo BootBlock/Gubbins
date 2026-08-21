@@ -5,7 +5,7 @@
  * teardown on disconnect and the poll loop's lifetime are all exercised as they actually run;
  * only Home Assistant itself is faked, via the injected `readScale`.
  */
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HaError } from './client.ts';
 import type { ScaleReadingOutcome } from './scale.ts';
@@ -84,9 +84,34 @@ async function readFrames(res: Response, count: number): Promise<ScaleStreamFram
   } finally {
     reader.releaseLock();
   }
-  // One read can deliver several frames, so trim to exactly what the caller asked for — otherwise
-  // a test's expectations would depend on how the kernel happened to chunk the socket.
-  return frames.slice(0, count);
+  // Returned in full, *not* trimmed to `count`: trimming would make a `toHaveLength(count)`
+  // assertion true by construction, hiding a hub that duplicated or over-delivered frames. One
+  // read can carry several frames, so a case asserts on content and on at-least-`count`.
+  return frames;
+}
+
+/**
+ * A minimal `ServerResponse`/`IncomingMessage` pair whose socket can be declared gone at an exact
+ * moment. Only the members `handleConnection` and `sendError` actually touch are implemented.
+ */
+function deadOnArrival() {
+  const res = {
+    destroyed: false,
+    writtenStatus: null as number | null,
+    writeHead(status: number) {
+      res.writtenStatus = status;
+      return res;
+    },
+    write: () => true,
+    end: () => res,
+    setHeader: () => res,
+    on: () => res,
+  };
+  const req = { socket: { setTimeout: () => undefined } };
+  return {
+    res: res as unknown as ServerResponse & { destroyed: boolean; writtenStatus: number | null },
+    req: req as unknown as IncomingMessage,
+  };
 }
 
 /** Wait for a predicate to hold, so a test never races the hub's own teardown. */
@@ -111,7 +136,7 @@ describe('scale stream', () => {
     expect(res.headers.get('content-type')).toBe(SCALE_STREAM_CONTENT_TYPE);
 
     const frames = await readFrames(res, 3);
-    expect(frames).toHaveLength(3);
+    expect(frames.length).toBeGreaterThanOrEqual(3);
     for (const frame of frames) {
       expect(frame).toEqual({ ok: true, reading: READING.reading });
     }
@@ -126,7 +151,7 @@ describe('scale stream', () => {
     });
     const { res } = await open('?entity_id=sensor.bench_scale');
     const frames = await readFrames(res, 3);
-    expect(frames.map((f) => (f.ok ? f.reading.grams : null))).toEqual([200, 300, 400]);
+    expect(frames.slice(0, 3).map((f) => (f.ok ? f.reading.grams : null))).toEqual([200, 300, 400]);
   });
 
   // A scale that is switched off is a genuine scale that cannot be read *right now* — the stream
@@ -135,7 +160,7 @@ describe('scale stream', () => {
     const open = await start(async () => ({ ok: false, issue: 'unavailable' }));
     const { res } = await open('?entity_id=sensor.bench_scale');
     expect(res.status).toBe(200);
-    expect(await readFrames(res, 2)).toEqual([
+    expect((await readFrames(res, 2)).slice(0, 2)).toEqual([
       { ok: false, issue: 'unavailable' },
       { ok: false, issue: 'unavailable' },
     ]);
@@ -157,6 +182,18 @@ describe('scale stream', () => {
     const { res } = await open('?entity_id=sensor.nope');
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe('not_found');
+  });
+
+  // An error the client contract does not describe says nothing about whether the next sample
+  // would be better, so the stream must not open and start polling on regardless.
+  it('refuses to open on an unexpected upstream failure, rather than polling on', async () => {
+    const open = await start(async () => {
+      throw new TypeError('something the client contract does not describe');
+    });
+    const { res } = await open('?entity_id=sensor.bench_scale');
+    expect(res.status).toBe(502);
+    expect((await res.json()).error.code).toBe('home_assistant_error');
+    expect(hub!.clientCount()).toBe(0);
   });
 
   it('answers a rejected token as the same 502 the one-shot read gives', async () => {
@@ -230,13 +267,15 @@ describe('scale stream', () => {
     const second = await open('?entity_id=sensor.bench_scale');
     // The joiner is served the gate read as its own first frame, so it never waits a poll
     // interval — and it joins the existing watch rather than starting a second one.
-    expect(await readFrames(second.res, 1)).toEqual([{ ok: true, reading: READING.reading }]);
+    expect((await readFrames(second.res, 1))[0]).toEqual({ ok: true, reading: READING.reading });
     await until(() => hub!.clientCount() === 2);
 
     first.abort();
     await until(() => hub!.clientCount() === 1);
-    // Still live: the surviving client keeps receiving samples.
-    expect(await readFrames(second.res, 2)).toHaveLength(2);
+    // Still live: the surviving client keeps receiving readings, not just an open socket.
+    for (const frame of await readFrames(second.res, 2)) {
+      expect(frame).toEqual({ ok: true, reading: READING.reading });
+    }
   });
 
   it('refuses a client beyond the concurrency cap', async () => {
@@ -247,6 +286,77 @@ describe('scale stream', () => {
     expect(res.status).toBe(429);
     expect(res.headers.get('retry-after')).toBe('30');
     await res.json();
+  });
+
+  // A response whose socket has already gone never fires `close`, so a client that leaves during
+  // the connect-time gate read has to be noticed by the handler itself — otherwise it is counted
+  // and polled for with nothing left to ever remove it.
+  //
+  // Driven through a hand-rolled response rather than a real socket on purpose: the window this
+  // guards is a race, and a test that has to win a race against the kernel to reproduce it is a
+  // test that quietly stops reproducing it. `destroyed` is set while the gate read is in flight,
+  // which is exactly the state the handler must survive.
+  it('leaks neither a slot nor a poll loop when the client has gone by the gate read', async () => {
+    let reads = 0;
+    let release: (() => void) | undefined;
+    const live = createScaleStreamHub({
+      heartbeatMs: 0,
+      pollMs: 5,
+      readScale: async () => {
+        reads += 1;
+        if (reads === 1) await new Promise<void>((resolve) => (release = resolve));
+        return READING;
+      },
+    });
+    hub = live;
+
+    const { req, res } = deadOnArrival();
+    const handled = live.handleConnection(req, res, new URL('http://x/?entity_id=sensor.bench_scale'));
+    await until(() => reads === 1);
+    // The client goes away while the gate read is still outstanding, so no `close` will ever fire.
+    res.destroyed = true;
+    release?.();
+    await handled;
+
+    expect(live.clientCount()).toBe(0);
+    const settled = reads;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(reads).toBe(settled);
+    expect(res.writtenStatus).toBeNull();
+  });
+
+  // The cap is checked before an `await` and the client registered after it, so the slot has to be
+  // reserved up front — otherwise every connection arriving inside one Home Assistant round-trip
+  // passes a cap none of them has yet consumed. Hand-rolled responses again, so the overlap is
+  // exact rather than hoped for.
+  it('holds the concurrency cap against connections that overlap the gate read', async () => {
+    let reads = 0;
+    let release: (() => void) | undefined;
+    const live = createScaleStreamHub({
+      heartbeatMs: 0,
+      pollMs: 5,
+      maxClients: 1,
+      readScale: async () => {
+        reads += 1;
+        if (reads === 1) await new Promise<void>((resolve) => (release = resolve));
+        return READING;
+      },
+    });
+    hub = live;
+
+    const a = deadOnArrival();
+    const b = deadOnArrival();
+    const first = live.handleConnection(a.req, a.res, new URL('http://x/?entity_id=sensor.bench'));
+    await until(() => reads === 1);
+    // The second connection arrives while the first is still inside its gate read.
+    const second = live.handleConnection(b.req, b.res, new URL('http://x/?entity_id=sensor.other'));
+    await second;
+    expect(b.res.writtenStatus).toBe(429);
+
+    release?.();
+    await first;
+    expect(a.res.writtenStatus).toBe(200);
+    expect(live.clientCount()).toBe(1);
   });
 
   it('closes every stream on shutdown', async () => {
