@@ -10,6 +10,8 @@
  *  - `CONFLICT`  — the current value is user-populated and differs, so the change is
  *                  withheld unless the user explicitly opts into overwriting it;
  *  - `UNCHANGED` — the values already match (nothing to do);
+ *  - `FOREIGN`   — the scrape offers a unit cost quoted in another currency, which the item's
+ *                  currency-less `unit_cost` column cannot record honestly (issue #666);
  *  - `SKIP`      — the scrape offers nothing for this field.
  *
  * It also derives the Universal Alias Mapping additions (§4): the supplier MPN is
@@ -19,6 +21,7 @@
  * Pure and framework-free so it is exhaustively unit-tested (§8.2); the repository
  * layer turns {@link applyScrapeMerge}'s output into the atomic write.
  */
+import { isCurrencyMismatch, normaliseCurrencyCode } from '@/lib/money';
 import { foldName } from '@/lib/name-fold';
 import type { ScrapeResultPayload } from './protocol';
 
@@ -26,7 +29,7 @@ import type { ScrapeResultPayload } from './protocol';
 export type ScrapeField = 'mpn' | 'manufacturer' | 'description' | 'unitCost';
 
 /** Disposition of one field in a proposed merge. */
-export type FieldStatus = 'FILL' | 'CONFLICT' | 'UNCHANGED' | 'SKIP';
+export type FieldStatus = 'FILL' | 'CONFLICT' | 'UNCHANGED' | 'FOREIGN' | 'SKIP';
 
 /** The current (pre-scrape) item fields the merge diffs against. */
 export interface ExistingItemFields {
@@ -53,6 +56,12 @@ export interface ScrapeMergePlan {
   readonly aliasAdditions: readonly string[];
   /** The scraped price currency, for display alongside the unit-cost proposal. */
   readonly currency: string | null;
+  /**
+   * The base currency the plan was judged against, normalised — `null` when it is unknown, in
+   * which case no unit cost is withheld. Carried so the caller can name both codes when it
+   * explains a withheld `FOREIGN` price.
+   */
+  readonly baseCurrency: string | null;
 }
 
 /** The concrete writes a merge yields once overwrite opt-ins are resolved. */
@@ -95,10 +104,16 @@ function classifyNumber(current: number | null, scraped: number | null): FieldSt
  * Build the reviewable merge plan for a scrape against an item's current fields.
  * Computes per-field dispositions and the alias additions, without deciding any
  * overwrite — that is the user's explicit choice, resolved by {@link applyScrapeMerge}.
+ *
+ * @param baseCurrency The user's base currency, which is what a bare `items.unit_cost` means.
+ * A scraped price in any other currency is classified `FOREIGN` and withheld (issue #666);
+ * an unknown (`null`) base withholds nothing, matching the fail-open rule the rest of the app
+ * applies when it cannot tell one currency from another.
  */
 export function buildScrapeMergePlan(
   existing: ExistingItemFields,
   payload: ScrapeResultPayload,
+  baseCurrency: string | null | undefined = null,
 ): ScrapeMergePlan {
   const scrapedMpn = cleanString(payload.mpn);
   const scrapedMfr = cleanString(payload.manufacturer);
@@ -107,6 +122,19 @@ export function buildScrapeMergePlan(
     ? // A finite, non-negative number is already guaranteed by the protocol schema.
       payload.scraped_pricing.value
     : null;
+  const scrapedCurrency = payload.scraped_pricing?.currency ?? null;
+  // `items.unit_cost` is a bare number with no currency column of its own, so it can only ever
+  // mean the base currency. A price quoted in another currency therefore cannot be recorded
+  // there without silently restating it as base-currency money, and Gubbins holds no exchange
+  // rates to convert with — so the proposal is withheld and explained rather than applied
+  // (issue #666). A caller that also files the payload as a supplier part keeps the price there,
+  // under its own currency column; a caller that does not must tell the user it was withheld.
+  const foreignCost = isCurrencyMismatch(scrapedCurrency, null, baseCurrency);
+  const costStatus = classifyNumber(existing.unitCost, scrapedCost);
+  // Only an otherwise-actionable proposal is withheld. `UNCHANGED` and `SKIP` write nothing
+  // either way, so flagging them would raise a warning about a change that was never offered.
+  const unitCostStatus: FieldStatus =
+    foreignCost && (costStatus === 'FILL' || costStatus === 'CONFLICT') ? 'FOREIGN' : costStatus;
 
   const proposals: FieldProposal[] = [
     {
@@ -131,7 +159,7 @@ export function buildScrapeMergePlan(
       field: 'unitCost',
       current: existing.unitCost,
       scraped: scrapedCost,
-      status: classifyNumber(existing.unitCost, scrapedCost),
+      status: unitCostStatus,
     },
   ];
 
@@ -148,7 +176,8 @@ export function buildScrapeMergePlan(
   return {
     proposals,
     aliasAdditions,
-    currency: payload.scraped_pricing?.currency ?? null,
+    currency: scrapedCurrency,
+    baseCurrency: normaliseCurrencyCode(baseCurrency),
   };
 }
 
@@ -158,7 +187,8 @@ export function buildScrapeMergePlan(
  *  - `FILL` fields are always written (no user data is at risk);
  *  - `CONFLICT` fields are written **only** when the user has explicitly opted into
  *    overwriting that specific field (its name is in `overwriteFields`);
- *  - `UNCHANGED` / `SKIP` fields are never written.
+ *  - `UNCHANGED`, `FOREIGN` and `SKIP` fields are never written — a `FOREIGN` unit cost has no
+ *    opt-in, because there is no rate to restate it in the base currency with.
  *
  * A field present in `overwriteFields` that is not actually a `CONFLICT` is ignored,
  * so an opt-in can never *introduce* an unintended change.

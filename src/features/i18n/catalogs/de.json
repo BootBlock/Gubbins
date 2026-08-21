@@ -924,6 +924,8 @@
   "scraping.panel.refusal.malformed": "Das ist keine Webadresse. Füge den vollständigen Link zur Produktseite ein, beginnend mit https://.",
   "scraping.panel.refusal.notHttps": "Es werden nur https-Links abgerufen. Versuche die https://-Variante dieses Links.",
   "scraping.panel.refusal.credentials": "Entferne Benutzername und Passwort aus diesem Link und versuche es erneut.",
+  "scraping.review.foreignPrice.heading": "Dieser Preis ist in einer anderen Währung angegeben",
+  "scraping.review.foreignPrice.body": "Der Händler nennt {price}, deine Stückkosten werden jedoch in {base} geführt, und Gubbins rechnet Währungen niemals um. Die Stückkosten des Artikels bleiben unverändert — der Preis in {quoted} wird weiterhin beim Lieferantenteil erfasst, das eine eigene Währung führt.",
   "supplier.unknown": "Unbekannter Lieferant",
   "supplier.picker.label": "Lieferant",
   "supplier.picker.placeholder": "z. B. DigiKey",

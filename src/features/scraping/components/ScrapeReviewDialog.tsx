@@ -8,10 +8,14 @@
  * {@link applyScrapeMerge} and hands the concrete write to `onApply`.
  */
 import { useMemo, useState } from 'react';
-import { Button, Checkbox, Modal, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Banner, Button, Checkbox, Modal, Money, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { InfoIcon, WarningIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
+import { normaliseCurrencyCode } from '@/lib/money';
+import { useFormatters } from '@/lib/useFormatters';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { applyScrapeMerge, buildScrapeMergePlan, type ScrapeField, type ScrapeWrite } from '../merge';
-import type { ExistingItemFields } from '../merge';
+import type { ExistingItemFields, FieldProposal, ScrapeMergePlan } from '../merge';
 import type { ScrapeResultPayload } from '../protocol';
 
 const FIELD_LABELS: Record<ScrapeField, string> = {
@@ -24,6 +28,31 @@ const FIELD_LABELS: Record<ScrapeField, string> = {
 function display(value: string | number | null): string {
   if (value === null) return '—';
   return String(value);
+}
+
+/**
+ * Render one proposed value. A unit cost is money, so it goes through the Foundry `Money`
+ * primitive under the currency it was actually quoted in — a bare `4.15` beside a GBP base
+ * currency reads as £4.15 when the supplier quoted $4.15, which is the ambiguity issue #666
+ * is about. Every other field is plain text.
+ */
+function ProposedValue({ proposal, currency }: { proposal: FieldProposal; currency: string | null }) {
+  if (proposal.field === 'unitCost' && typeof proposal.scraped === 'number') {
+    return <Money value={proposal.scraped} currency={currency ?? undefined} />;
+  }
+  return <>{display(proposal.scraped)}</>;
+}
+
+/**
+ * Render the user's current value for a conflicting field. An item's own unit cost carries no
+ * currency of its own, so it is always the base currency — shown as such, so the two sides of
+ * a "Yours → Supplier" comparison are never two differently-denominated bare numbers.
+ */
+function CurrentValue({ proposal }: { proposal: FieldProposal }) {
+  if (proposal.field === 'unitCost' && typeof proposal.current === 'number') {
+    return <Money value={proposal.current} />;
+  }
+  return <>{display(proposal.current)}</>;
 }
 
 export function ScrapeReviewDialog({
@@ -41,12 +70,27 @@ export function ScrapeReviewDialog({
   onClose: () => void;
   isApplying?: boolean;
 }) {
-  const plan = useMemo(() => buildScrapeMergePlan(existing, payload), [existing, payload]);
+  const t = useT();
+  const f = useFormatters();
+  const baseCurrency = usePreferencesStore((s) => s.baseCurrency);
+  const plan: ScrapeMergePlan = useMemo(
+    () => buildScrapeMergePlan(existing, payload, baseCurrency),
+    [existing, payload, baseCurrency],
+  );
   const [overwrites, setOverwrites] = useState<ReadonlySet<ScrapeField>>(new Set());
 
   const fills = plan.proposals.filter((p) => p.status === 'FILL');
   const conflicts = plan.proposals.filter((p) => p.status === 'CONFLICT');
-  const nothingToDo = fills.length === 0 && conflicts.length === 0 && plan.aliasAdditions.length === 0;
+  // A price quoted in another currency (issue #666): shown, explained, and never applied to the
+  // item's currency-less unit cost. It still reaches `supplier_parts`, which does record a code.
+  const foreign = plan.proposals.find((p) => p.status === 'FOREIGN');
+  // `FOREIGN` is only ever reached with a numeric price and an explicit code that differs from a
+  // known base, so all three parts of the warning are present whenever the banner renders.
+  const foreignPrice = typeof foreign?.scraped === 'number' ? foreign.scraped : null;
+  // A withheld foreign price is still worth applying: the item's unit cost is left alone, but the
+  // caller records the quote against the supplier part, which does carry its own currency column.
+  const nothingToDo =
+    fills.length === 0 && conflicts.length === 0 && plan.aliasAdditions.length === 0 && foreign === undefined;
 
   const toggle = (field: ScrapeField) =>
     setOverwrites((current) => {
@@ -84,7 +128,9 @@ export function ScrapeReviewDialog({
               {fills.map((p) => (
                 <li key={p.field} className="flex justify-between gap-3">
                   <span className="text-muted-foreground">{FIELD_LABELS[p.field]}</span>
-                  <span className="font-medium">{display(p.scraped)}</span>
+                  <span className="font-medium">
+                    <ProposedValue proposal={p} currency={plan.currency} />
+                  </span>
                 </li>
               ))}
             </ul>
@@ -118,8 +164,14 @@ export function ScrapeReviewDialog({
                     <span className="min-w-0 flex-1">
                       <span className="font-medium">{FIELD_LABELS[p.field]}</span>
                       <span className="mt-0.5 block text-xs text-muted-foreground">
-                        Yours: <span className="text-foreground">{display(p.current)}</span> → Supplier:{' '}
-                        <span className="text-foreground">{display(p.scraped)}</span>
+                        Yours:{' '}
+                        <span className="text-foreground">
+                          <CurrentValue proposal={p} />
+                        </span>{' '}
+                        → Supplier:{' '}
+                        <span className="text-foreground">
+                          <ProposedValue proposal={p} currency={plan.currency} />
+                        </span>
                       </span>
                     </span>
                   </label>
@@ -127,6 +179,23 @@ export function ScrapeReviewDialog({
               ))}
             </ul>
           </section>
+        ) : null}
+
+        {foreignPrice !== null ? (
+          <Banner
+            tone="warning"
+            icon={<WarningIcon aria-hidden />}
+            heading={t('scraping.review.foreignPrice.heading')}
+            data-testid="scrape-review-foreign-price"
+          >
+            {t('scraping.review.foreignPrice.body', {
+              vars: {
+                price: f.currency(foreignPrice, plan.currency ?? undefined),
+                quoted: normaliseCurrencyCode(plan.currency) ?? '',
+                base: plan.baseCurrency ?? '',
+              },
+            })}
+          </Banner>
         ) : null}
 
         {plan.aliasAdditions.length > 0 ? (

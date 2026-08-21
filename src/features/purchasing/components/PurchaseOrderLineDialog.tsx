@@ -6,7 +6,7 @@ import { useT } from '@/features/i18n';
 import { effectiveUnitCostForQty } from '@/features/inventory/supplier-cost';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
-import { isCurrencyMismatch, normaliseCurrencyCode } from '../po-presentation';
+import { isCurrencyMismatch, normaliseCurrencyCode } from '@/lib/money';
 
 /**
  * A pickable item for a PO line, carrying the pricing needed to cost the line by quantity

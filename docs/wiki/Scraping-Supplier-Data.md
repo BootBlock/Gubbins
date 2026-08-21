@@ -52,7 +52,19 @@ Scraped data is applied carefully:
 
 - It **fills empty fields** and doesn't overwrite something you've already edited — so your own
   corrections are safe.
-- You review what came in before it's kept.
+- You review what came in before it's kept — including the **price, shown in the currency the
+  supplier quoted it in**, so you can see at a glance whether it matches your own.
+
+> **⚠️ Heads-up**
+> Several distributors quote in US dollars whatever your own currency is. An item's **unit cost**
+> has no currency of its own — it is always your
+> **[[base currency|Language-and-Region]]** — so when a scraped price is quoted in a *different*
+> currency, Gubbins leaves the item's unit cost alone and says why, rather than filing a dollar
+> figure as if it were pounds. Gubbins never converts between currencies, because it holds no
+> exchange rates. Scraping from an existing item's **Supplier data** still records the price on the
+> **[[supplier part|Supplier-Parts-and-Price-History]]**, which keeps its own currency, so the
+> figure is not lost there. Scraping while you *add* an item only fills the form, so note the price
+> down if you want it, and enter a unit cost in your own currency.
 
 > **💡 Tip**
 > Scrape when you *first add* a part — you get its MPN, manufacturer and description in one step —
