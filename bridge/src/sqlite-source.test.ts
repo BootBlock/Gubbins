@@ -6,7 +6,8 @@
  * anyway, and it would only ever be synthetic): we hydrate the JSON into a *file-backed*
  * `node:sqlite` DB, which is byte-for-byte the format the app's raw export produces. We then
  * prove the raw-`.sqlite` front-end answers identically to the JSON path, that the source
- * detector and the write-gating behave, and that a newer-than-known schema is refused.
+ * detector and the write-gating behave, and that a newer-than-known schema — or one built from
+ * another revision of the squashed baseline (issue #507) — is refused.
  */
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -15,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
 import { emptyAst } from '@/db/search/ast';
-import { migrations, runMigrations, TARGET_SCHEMA_VERSION } from '@/db/migrations';
+import { BASELINE_REVISION_KEY, migrations, runMigrations, TARGET_SCHEMA_VERSION } from '@/db/migrations';
 import { parseBackupJson } from '@/features/sync/backup';
 import { restoreSnapshot } from '@/features/sync/snapshot';
 import { parseTextQuery } from '@/features/search/parse-text-query';
@@ -160,6 +161,32 @@ describe('hydrateFromSqliteFile', () => {
     await raw.execute(`PRAGMA user_version = ${TARGET_SCHEMA_VERSION + 5};`);
     await raw.close();
     await expect(hydrateFromSqliteFile(newerPath)).rejects.toThrow(/newer/i);
+  });
+
+  // Issue #507. Every pre-release baseline revision is folded into v1, so `user_version` reads
+  // as 1 for all of them and the guard above passes an export the bridge cannot actually read.
+  // The baseline stamp is the only signal that separates them.
+  it('refuses an export built from a different baseline revision', async () => {
+    const stalePath = path.join(dir, 'stale.sqlite');
+    await buildSyntheticSqlite(stalePath);
+    const raw = createNodeDriver(stalePath);
+    await raw.execute('UPDATE app_meta SET value = ? WHERE key = ?;', [
+      'baseline-from-another-build',
+      BASELINE_REVISION_KEY,
+    ]);
+    await raw.close();
+
+    await expect(hydrateFromSqliteFile(stalePath)).rejects.toThrow(/different version of Gubbins/i);
+  });
+
+  it('refuses an export made before the baseline stamp existed', async () => {
+    const unstampedPath = path.join(dir, 'unstamped.sqlite');
+    await buildSyntheticSqlite(unstampedPath);
+    const raw = createNodeDriver(unstampedPath);
+    await raw.execute('DELETE FROM app_meta WHERE key = ?;', [BASELINE_REVISION_KEY]);
+    await raw.close();
+
+    await expect(hydrateFromSqliteFile(unstampedPath)).rejects.toThrow(/different version of Gubbins/i);
   });
 });
 
