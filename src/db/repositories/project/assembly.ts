@@ -26,7 +26,7 @@ import {
 import { UNASSIGNED_LOCATION_ID, type TrackingMode } from '../constants';
 import { historyStatement } from '../item/history';
 import { consolidateStockStatements, setStockStatement } from '../stock';
-import { itemConsumeStatements, itemMoveStatements, runStockDraw } from '../stock-batches';
+import { itemConsumeStatements, itemMoveStatements, runStockDraw, withOperationKey } from '../stock-batches';
 import type { FinaliseAssemblyInput } from '../types';
 import type { Constructor } from './mixin';
 import type { ProjectCoreRepository } from './core';
@@ -170,7 +170,12 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
 
       // The whole finalise draws stock down, so a race that loses the last units surfaces as the
       // shared plain sentence rather than a raw `CHECK constraint failed` (issue #302).
-      await runStockDraw(this.driver, statements);
+      //
+      // Every stock write in it belongs to the one terminal operation, so the lot is bracketed by
+      // the finalise's own derived operation key (issue #696): two devices finalising the same
+      // project offline then record the *same* stock movements rather than two copies of one draw,
+      // which the merge would otherwise replay as two — taking each BOM line's quantity twice.
+      await runStockDraw(this.driver, withOperationKey(await assemblyId('stock', projectId), statements));
       return result;
     }
 

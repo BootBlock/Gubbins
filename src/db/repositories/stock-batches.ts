@@ -139,6 +139,47 @@ export function withAssertedCount(statements: readonly SqlStatement[]): SqlState
   ];
 }
 
+/** The canonical UUID shape an operation key must take — see {@link withOperationKey}. */
+const OPERATION_KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Bracket a batch of statements so the `stock_batches` capture triggers give their deltas ids
+ * **derived from `key`** rather than random ones (issue #696).
+ *
+ * A one-shot terminal operation — finalising a project's assembly — can be run once on each of two
+ * devices while they are offline. Issue #195 already derives every row such a finalise mints from
+ * the project id, so the merge collapses the two runs to one container, one assembled item and one
+ * ledger entry per part. The stock it moved had no equivalent: each device's copy of the same draw
+ * carried its own random delta id, so the id-union replay in `reconcileStockQuantity` read the two
+ * copies as two movements and took the quantity twice, silently and unrecoverably.
+ *
+ * Inside this bracket both devices derive the same ids for the same draw, so the union sees one
+ * movement — the convergence #195 gives the operation's rows, extended to the stock it moves.
+ *
+ * `key` must be a **canonical lower-case UUID derived from the operation's own stable identity**
+ * (`assemblyId('stock', projectId)`, say) — never `crypto.randomUUID()`, which would defeat the
+ * whole point, and never a value that could carry `|`, `%` or `_` (the derivation's own separator
+ * and the `LIKE` wildcards its ordinal counts by). The shape is checked here and by a CHECK on the
+ * column, because a key that slipped through would mint ids that collide or miscount rather than
+ * failing loudly.
+ *
+ * Bracketed like {@link withAssertedCount} and `withCaptureDisabled`: inside the caller's own
+ * transaction, so a rollback restores the switch with it. Wrap **only** the one operation's own
+ * writes — any unrelated movement caught inside would take an id derived from an operation it was
+ * no part of.
+ */
+export function withOperationKey(key: string, statements: readonly SqlStatement[]): SqlStatement[] {
+  if (!OPERATION_KEY_PATTERN.test(key)) {
+    throw new DbError('SQLITE_ERROR', `Operation key must be a canonical lower-case UUID: ${key}`);
+  }
+  if (statements.length === 0) return [...statements];
+  return [
+    { sql: 'UPDATE stock_delta_capture SET operation_key = ? WHERE id = 1;', params: [key] },
+    ...statements,
+    { sql: 'UPDATE stock_delta_capture SET operation_key = NULL WHERE id = 1;' },
+  ];
+}
+
 /**
  * The default user-facing sentence for a lost stock race — see {@link runStockDraw}.
  */

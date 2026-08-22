@@ -66,6 +66,14 @@ point rather than the last word.
 > right changes no quantity, so it leaves nothing for syncing to prefer over an older count from
 > another device. (It still records *that* you counted, so the location's last-counted date moves.)
 
+### When two devices finish the same project
+
+Finishing a [[project|Projects-and-BOM]] is a one-off: it turns the build into a container, an
+assembled item or nothing at all, and takes each part's quantity off the shelf. Two devices offline
+can each finish the same project, and syncing treats that as the one event it was — you get **one**
+container (or one assembled item), one entry per part in the item's history, and each part's
+quantity taken **once**. A project the BOM asked 4 screws for leaves 496 of a box of 500, not 492.
+
 ### When two devices create the same thing
 
 Some things are identified by their **name** rather than by which device made them — tags,

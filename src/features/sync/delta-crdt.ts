@@ -11,6 +11,32 @@
 import type { GaugeHistoryDelta, StockQuantityDelta } from './types';
 
 /**
+ * Union two delta lists by id, keeping **one** row per id chosen by `prefer` (pure).
+ *
+ * Which copy is kept used to be "whichever was seen first", i.e. the local one — fine while every
+ * id was minted randomly, because then a shared id could only ever be the *same* row, synced. A
+ * one-shot operation that derives its delta ids (issue #696) breaks that: two devices independently
+ * write the same id, each stamped by its own clock. Keeping the local copy would then give the two
+ * devices different `createdAt`s for one row, and a CRDT whose inputs differ per device converges on
+ * nothing — the stock replay in particular drops every movement ordered before an assertion, so the
+ * two would disagree on which side of a cycle count the operation fell.
+ *
+ * So the pick is made from the rows' own content instead, which both devices read identically.
+ */
+function unionById<T extends { readonly id: string }>(
+  local: readonly T[],
+  remote: readonly T[],
+  prefer: (held: T, candidate: T) => T,
+): T[] {
+  const byId = new Map<string, T>();
+  for (const delta of [...local, ...remote]) {
+    const held = byId.get(delta.id);
+    byId.set(delta.id, held === undefined ? delta : prefer(held, delta));
+  }
+  return [...byId.values()];
+}
+
+/**
  * Merge two delta lists, de-duplicating by id and ordering chronologically.
  *
  * @internal Exported for unit tests only.
@@ -19,11 +45,16 @@ export function mergeDeltas(
   local: readonly GaugeHistoryDelta[],
   remote: readonly GaugeHistoryDelta[],
 ): GaugeHistoryDelta[] {
-  const byId = new Map<string, GaugeHistoryDelta>();
-  for (const delta of [...local, ...remote]) {
-    if (!byId.has(delta.id)) byId.set(delta.id, delta);
-  }
-  return [...byId.values()].sort((a, b) =>
+  // The earliest copy of a shared id wins, then the smallest delta — see {@link unionById}. A
+  // gauge's replay is a plain sum, so this only fixes the *order* the two devices see; the stock
+  // replay below is where a differing pick would change the answer.
+  const merged = unionById(local, remote, (held, candidate) => {
+    if (held.createdAt !== candidate.createdAt) {
+      return held.createdAt < candidate.createdAt ? held : candidate;
+    }
+    return held.netValueDelta <= candidate.netValueDelta ? held : candidate;
+  });
+  return merged.sort((a, b) =>
     a.createdAt === b.createdAt ? a.id.localeCompare(b.id) : a.createdAt - b.createdAt,
   );
 }
@@ -130,14 +161,28 @@ export function replayStockQuantity(deltas: readonly StockQuantityDelta[]): numb
  * total negative converges to 0 on every replay rather than leaving a latent negative. Recomputing
  * from the deltas each sync makes this self-correcting, exactly as the gauge re-clamps its value.
  */
+/** Order a row's `assertedQuantity` totally, with a movement's `null` below every figure. */
+function assertionRank(delta: StockQuantityDelta): number {
+  return delta.assertedQuantity ?? Number.NEGATIVE_INFINITY;
+}
+
 export function reconcileStockQuantity(
   localDeltas: readonly StockQuantityDelta[],
   remoteDeltas: readonly StockQuantityDelta[],
 ): number {
-  const byId = new Map<string, StockQuantityDelta>();
-  for (const delta of [...localDeltas, ...remoteDeltas]) {
-    if (!byId.has(delta.id)) byId.set(delta.id, delta);
-  }
-  const total = replayStockQuantity([...byId.values()]);
+  // The earliest copy of a shared id wins, tie-broken on the row's own figures — see
+  // {@link unionById} for why the pick cannot simply be "the local one" now that a one-shot
+  // operation derives its delta ids (issue #696).
+  const merged = unionById(localDeltas, remoteDeltas, (held, candidate) => {
+    if (held.createdAt !== candidate.createdAt) {
+      return held.createdAt < candidate.createdAt ? held : candidate;
+    }
+    if (held.quantityDelta !== candidate.quantityDelta) {
+      return held.quantityDelta < candidate.quantityDelta ? held : candidate;
+    }
+    // A movement (`null`) sorts before any assertion, so the two devices agree on which they hold.
+    return assertionRank(held) <= assertionRank(candidate) ? held : candidate;
+  });
+  const total = replayStockQuantity(merged);
   return total < 0 ? 0 : total;
 }

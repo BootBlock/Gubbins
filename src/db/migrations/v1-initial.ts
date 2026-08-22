@@ -152,6 +152,48 @@ const userKindList = USER_KINDS.map((k) => `'${k}'`).join(', ');
 const webhookMethodList = WEBHOOK_METHODS.map((m) => `'${m}'`).join(', ');
 
 /**
+ * The `id` a `stock_deltas` capture trigger mints for the row it is about to write (issue #696).
+ *
+ * Ordinarily random, because an ordinary movement is a one-off event that nothing else will ever
+ * repeat. A **one-shot terminal operation** is the exception: finalising a project can be run once
+ * on each of two devices while they are offline, and issue #195 already derives every *row* id such
+ * a finalise mints from the project id so the merge collapses the two runs to one artefact. The
+ * stock it moves had no equivalent — each device's copy of the same draw carried a different random
+ * id, so the union-by-id replay in `reconcileStockQuantity` counted both and took the quantity
+ * twice.
+ *
+ * So while `stock_delta_capture.operation_key` holds a key (set by `withOperationKey` around
+ * exactly that operation's writes), the id is derived from the key, the placement it moved and how
+ * many rows the operation has already written *at that placement*:
+ *
+ *     <operation_key>|<item_id>|<location_id>|<batch_key>|<n>
+ *
+ * Both devices start from the same synced state and run the same plan, so both derive the same ids,
+ * and the existing id-union collapses their two ledgers to one movement. Nothing downstream
+ * changes: the merge's `INSERT OR IGNORE` simply ignores the peer's copy.
+ *
+ * The `<n>` ordinal is what keeps the id unique when one operation writes a placement twice — the
+ * CONTAINER outcome does, when two lots sharing a batch key land in the container from different
+ * shelves. It is scoped to the placement rather than to the operation as a whole so that a device
+ * whose lots happen to be split differently misaligns only *that* placement, instead of shifting
+ * every id the operation writes after it. Counting by an `id` prefix rather than by a column of its
+ * own keeps the change inside the local-only capture table: `stock_deltas` is synced and backed up,
+ * and needs no new column to carry this. The `LIKE` pattern is a bare key plus `|%` and the key is
+ * always a UUID (see `withOperationKey`), so it holds no wildcard of its own; `batch_key`, which
+ * can hold anything a user typed, is matched by equality and never reaches the pattern.
+ */
+const stockDeltaIdExpression = (() => {
+  const key = `(SELECT operation_key FROM stock_delta_capture WHERE id = 1)`;
+  const ordinal = `(SELECT COUNT(*) FROM stock_deltas d
+                     WHERE d.item_id = NEW.item_id AND d.location_id = NEW.location_id
+                       AND d.batch_key = NEW.batch_key AND d.id LIKE ${key} || '|%')`;
+  return `CASE WHEN ${key} IS NULL THEN lower(hex(randomblob(16)))
+               ELSE ${key} || '|' || NEW.item_id || '|' || NEW.location_id || '|' ||
+                    NEW.batch_key || '|' || ${ordinal}
+          END`;
+})();
+
+/**
  * The baseline's DDL, separated from the migration object so its fingerprint can be computed
  * from it (the stamp statement that carries the fingerprint obviously cannot hash itself).
  */
@@ -1586,15 +1628,27 @@ const baselineStatements: SqlStatement[] = [
     // trigger writes also records the resulting quantity as an *asserted* one, because the write it
     // is capturing came from a physical count rather than a movement. Only the cycle-count
     // reconciliation turns it on, and only around its own `stock_batches` writes.
+    //
+    // `operation_key` is the third (issue #696): while it holds a key, each captured delta takes a
+    // *derived* id instead of a random one, so the same one-shot operation performed offline on two
+    // devices writes the same ledger rows rather than two copies of one movement. See
+    // {@link stockDeltaIdExpression} for the derivation and `withOperationKey` for what may set it.
+    // The CHECK pins the shape the derivation relies on — a key that held `|` could collide with
+    // another operation's id across the segment boundary, and one holding a `%` or `_` would turn
+    // the ordinal's `LIKE` prefix into a wildcard that counts other operations' rows.
     sql: `
         CREATE TABLE stock_delta_capture (
-          id        INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
-          enabled   INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
-          asserting INTEGER NOT NULL DEFAULT 0 CHECK (asserting IN (0, 1))
+          id            INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+          enabled       INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+          asserting     INTEGER NOT NULL DEFAULT 0 CHECK (asserting IN (0, 1)),
+          operation_key TEXT CHECK (operation_key IS NULL OR operation_key NOT GLOB '*[|%_]*')
         ) STRICT;
       `,
   },
-  { sql: `INSERT INTO stock_delta_capture (id, enabled, asserting) VALUES (1, 1, 0);` },
+  {
+    sql: `INSERT INTO stock_delta_capture (id, enabled, asserting, operation_key)
+          VALUES (1, 1, 0, NULL);`,
+  },
   {
     // Capture a delta for every batch placement that gains stock. `NEW.quantity - 0` on insert;
     // the recompute triggers write `item_stock`/`items`, not `stock_batches`, so this never
@@ -1617,7 +1671,7 @@ const baselineStatements: SqlStatement[] = [
         WHEN NEW.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
           INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
-          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity,
+          VALUES (${stockDeltaIdExpression}, NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity,
                   CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
                        THEN NEW.quantity END);
         END;
@@ -1638,7 +1692,7 @@ const baselineStatements: SqlStatement[] = [
         WHEN NEW.quantity <> OLD.quantity AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
           INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
-          VALUES (lower(hex(randomblob(16))), NEW.item_id, NEW.location_id, NEW.batch_key,
+          VALUES (${stockDeltaIdExpression}, NEW.item_id, NEW.location_id, NEW.batch_key,
                   NEW.quantity - OLD.quantity,
                   CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
                        THEN NEW.quantity END);
