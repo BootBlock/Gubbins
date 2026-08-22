@@ -15,6 +15,7 @@ import { readImportFile, type ImportFileRead } from '@/features/import/file-sour
 import { useCreateProjectFromBom, useImportBom } from '../projects';
 import { parseBom, BomImportError, type BomParseResult } from '../bom-import';
 import { useErrorMessage } from '@/features/errors';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 
 /** The file types the BOM importer accepts (mirrors the recognised tabular formats). */
 const BOM_FILE_ACCEPT =
@@ -259,6 +260,9 @@ export function ImportBomDialog({
 
         <Textarea
           sizeKey="import.bom"
+          // This box takes a whole pasted BOM rather than prose, so it needs the payload tier — the
+          // default note tier would report an ordinary entry as too long.
+          maxLength={TEXT_LIMITS.payload}
           value={text}
           onChange={(e) => {
             setFileRead(null);

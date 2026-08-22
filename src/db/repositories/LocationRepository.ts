@@ -9,6 +9,8 @@
  * immutable Activity Log.
  */
 import { DbError } from '../errors';
+import { TEXT_LIMITS } from '@/lib/text-limits';
+import { assertTextLimit } from './text-limits';
 import type { SqlStatement } from '../rpc/driver';
 import { historyStatement } from './item/history';
 import { BaseRepository } from './base';
@@ -215,6 +217,7 @@ export class LocationRepository extends BaseRepository {
     if (name.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A location must have a name.');
     }
+    assertTextLimit(name, TEXT_LIMITS.line, 'A location name');
     const parentId = input.parentId ?? null;
     if (parentId !== null) {
       await this.requireExists(parentId);
@@ -237,9 +240,9 @@ export class LocationRepository extends BaseRepository {
         id,
         name,
         parentId,
-        normaliseText(input.description),
-        normaliseText(input.color),
-        normaliseText(input.icon),
+        normaliseText(input.description, TEXT_LIMITS.note, 'A location description'),
+        normaliseText(input.color, TEXT_LIMITS.code, 'A location colour'),
+        normaliseText(input.icon, TEXT_LIMITS.code, 'A location icon'),
         normaliseCapacity(input.capacity),
         makeDefault ? 1 : 0,
         // Defaults to 'inherit' so a new location defers to its parent — dead-stock
@@ -342,6 +345,7 @@ export class LocationRepository extends BaseRepository {
       if (name.length === 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'A location must have a name.');
       }
+      assertTextLimit(name, TEXT_LIMITS.line, 'A location name');
       sets.push('name = ?');
       params.push(name);
     }
@@ -351,15 +355,15 @@ export class LocationRepository extends BaseRepository {
     }
     if (input.description !== undefined) {
       sets.push('description = ?');
-      params.push(normaliseText(input.description));
+      params.push(normaliseText(input.description, TEXT_LIMITS.note, 'A location description'));
     }
     if (input.color !== undefined) {
       sets.push('color = ?');
-      params.push(normaliseText(input.color));
+      params.push(normaliseText(input.color, TEXT_LIMITS.code, 'A location colour'));
     }
     if (input.icon !== undefined) {
       sets.push('icon = ?');
-      params.push(normaliseText(input.icon));
+      params.push(normaliseText(input.icon, TEXT_LIMITS.code, 'A location icon'));
     }
     if (input.capacity !== undefined) {
       sets.push('capacity = ?');
@@ -872,11 +876,16 @@ function toWithCount(row: LocationCountRow): LocationWithCount {
   };
 }
 
-/** Trim a free-text/key field, collapsing blank/whitespace-only input to NULL. */
-function normaliseText(value: string | null | undefined): string | null {
+/**
+ * Trim a free-text/key field, collapsing blank/whitespace-only input to NULL, and refuse one
+ * longer than its column will take (issue #346). `subject` names the field in the refusal.
+ */
+function normaliseText(value: string | null | undefined, limit: number, subject: string): string | null {
   if (value == null) return null;
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  if (trimmed.length === 0) return null;
+  assertTextLimit(trimmed, limit, subject);
+  return trimmed;
 }
 
 /**

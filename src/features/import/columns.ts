@@ -12,6 +12,7 @@
  * module unit-tests instantly under Node.
  */
 import { parseMoneyNumber } from '@/features/inventory/ocr/receipt-ocr';
+import { exceedsTextLimit, truncateByCodePoints } from '@/lib/text-limits';
 
 /**
  * Normalise a header cell to a comparison key: lower-cased, with everything that is not a
@@ -115,7 +116,7 @@ export function parseAmountCell(raw: string): number | null {
  * quantity the file **stated** but that cannot be honoured as written (issue #350) — never a
  * blank cell, which genuinely means "not supplied" and takes the importer's default.
  */
-export type ImportRowProblemReason = 'zero' | 'negative' | 'fractional' | 'unreadable';
+export type ImportRowProblemReason = 'zero' | 'negative' | 'fractional' | 'unreadable' | 'too-long';
 
 /**
  * A source row that was read but not imported, and why.
@@ -134,6 +135,41 @@ export interface ImportRowProblem {
   readonly reason: ImportRowProblemReason;
   /** The offending cell exactly as the file wrote it. */
   readonly value: string;
+}
+
+/**
+ * How much of an offending cell the problem list quotes back.
+ *
+ * A cell only becomes a problem for being too long once it is past a five-hundred-character
+ * ceiling, so quoting it whole would put the runaway itself into the notice that exists to
+ * explain it. Forty characters is enough to recognise which cell in the file it was.
+ */
+const PROBLEM_EXCERPT_LENGTH = 40;
+
+/** An excerpt of a cell, short enough to sit in a one-line problem message. */
+export function problemExcerpt(text: string): string {
+  const cut = truncateByCodePoints(text, PROBLEM_EXCERPT_LENGTH);
+  return cut === text ? text : `${cut}…`;
+}
+
+/**
+ * The reason a text cell cannot be imported, or `null` when it can (issue #346).
+ *
+ * The columns a row's text lands in are length-bounded — by the control that normally fills
+ * them, by the repository, and finally by the column's own CHECK. An importer writes past all
+ * three, so without this an over-long cell reached the database and failed there, part-way
+ * through a file whose earlier rows had already been written. Reported here instead, the row is
+ * named and left out and the rest of the file still imports, exactly as an unusable quantity is
+ * (issue #350).
+ *
+ * A blank or absent cell is never a problem — there is no length to be wrong about.
+ */
+export function textCellProblem(
+  raw: string | null,
+  limit: number,
+): { readonly reason: ImportRowProblemReason; readonly value: string } | null {
+  if (raw === null || !exceedsTextLimit(raw, limit)) return null;
+  return { reason: 'too-long', value: problemExcerpt(raw) };
 }
 
 /** How an importer wants a quantity cell read. */

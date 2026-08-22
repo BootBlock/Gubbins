@@ -21,6 +21,8 @@
  * transaction (§7.2).
  */
 import { normaliseGrants } from '@/features/users/permissions';
+import { TEXT_LIMITS } from '@/lib/text-limits';
+import { assertTextLimit } from './text-limits';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { rowToRole } from './mappers';
@@ -73,6 +75,7 @@ export class RoleRepository extends BaseRepository {
     if (name.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A role must have a name.');
     }
+    assertTextLimit(name, TEXT_LIMITS.line, 'A role name');
     // The index only refuses a duplicate it can fold (issue #679); this is the other half.
     if (await this.findByName(name)) throw duplicateNameError('roles.name');
     const id = crypto.randomUUID();
@@ -95,6 +98,7 @@ export class RoleRepository extends BaseRepository {
       if (name.length === 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'A role must have a name.');
       }
+      assertTextLimit(name, TEXT_LIMITS.line, 'A role name');
       const holder = await this.findByName(name);
       if (holder && holder.id !== id) throw duplicateNameError('roles.name');
       sets.push('name = ?');

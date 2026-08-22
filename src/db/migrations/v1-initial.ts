@@ -36,6 +36,7 @@ import {
 } from '../repositories/constants';
 import { BUILTIN_ROLES } from '@/features/users/builtin-roles';
 import { normaliseGrants } from '@/features/users/permissions';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import type { SqlStatement } from '../rpc/driver';
 import { BASELINE_REVISION_KEY, SQL_NOW_MS, baselineFingerprint, type Migration } from './migration';
 
@@ -158,6 +159,44 @@ const priceHistorySourceList = PRICE_HISTORY_SOURCES.map((s) => `'${s}'`).join('
 const fieldValueModeList = FIELD_VALUE_MODES.map((m) => `'${m}'`).join(', ');
 
 /**
+ * A ceiling on how long one text column's value may be (issue #346), in the code points
+ * SQLite's `length()` counts — the same unit the {@link TEXT_LIMITS} tiers are written in, so a
+ * control that reports a name as too long and the column that would have stored it agree about
+ * an emoji or an astral-plane CJK character.
+ *
+ * Every user-editable text column carries one. Nothing did before: `items.name` was a plain
+ * `TEXT NOT NULL` among eighty-nine CHECKs that constrained everything except a length, so a
+ * fifty-thousand-character name from one runaway import cell was stored, indexed by FTS, and
+ * carried into every list row, printed label and CSV export. The tiers sit far above real data,
+ * which is what makes this a backstop rather than a limit anyone types into: the app refuses an
+ * over-long value first (see `text-limits.ts` and the Foundry controls), and this is what holds
+ * when a write arrives from somewhere that did not — an import, a peer's sync payload, a
+ * restored snapshot.
+ *
+ * `IS NULL OR` on every one, so a nullable column stays nullable and a NOT NULL one is
+ * unaffected by the disjunct that can never be true for it.
+ *
+ * Columns the user cannot type into are deliberately left alone — ids, foreign keys, password
+ * and token hashes, enum-valued columns that already carry their own membership CHECK, and the
+ * OPFS paths the app mints for itself. A limit on those would constrain nobody and only add a
+ * way for the app's own writes to fail.
+ */
+function lengthCheck(column: string, limit: number): string {
+  return `CHECK (${column} IS NULL OR length(${column}) <= ${limit})`;
+}
+
+/**
+ * The same ceilings as a block of table-level constraints, for the columns a `CREATE TABLE`
+ * declares. The columns the baseline adds by `ALTER TABLE` take {@link lengthCheck} inline
+ * instead, since SQLite can only attach a constraint to a column as it is added.
+ */
+function lengthChecks(limits: Readonly<Record<string, number>>): string {
+  return Object.entries(limits)
+    .map(([column, limit]) => lengthCheck(column, limit))
+    .join(',\n          ');
+}
+
+/**
  * The `id` a `stock_deltas` capture trigger mints for the row it is about to write (issue #696).
  *
  * Ordinarily random, because an ordinary movement is a one-off event that nothing else will ever
@@ -212,7 +251,8 @@ const baselineStatements: SqlStatement[] = [
         CREATE TABLE app_meta (
           key        TEXT    PRIMARY KEY NOT NULL,
           value      TEXT,
-          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ value: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -247,7 +287,8 @@ const baselineStatements: SqlStatement[] = [
           is_builtin  INTEGER NOT NULL DEFAULT 0,
           created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (is_builtin IN (0, 1))
+          CHECK (is_builtin IN (0, 1)),
+          ${lengthChecks({ name: TEXT_LIMITS.line, description: TEXT_LIMITS.note, permissions: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -310,7 +351,8 @@ const baselineStatements: SqlStatement[] = [
           CHECK (
             (password_hash IS NULL AND password_salt IS NULL AND password_iterations IS NULL)
             OR (password_hash IS NOT NULL AND password_salt IS NOT NULL AND password_iterations IS NOT NULL)
-          )
+          ),
+          ${lengthChecks({ username: TEXT_LIMITS.line, display_name: TEXT_LIMITS.line, email: TEXT_LIMITS.line, description: TEXT_LIMITS.note, disabled_message: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -414,7 +456,8 @@ const baselineStatements: SqlStatement[] = [
           -- *which* token a row is. Far too short to narrow the secret meaningfully.
           token_prefix TEXT    NOT NULL,
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ name: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -511,7 +554,8 @@ const baselineStatements: SqlStatement[] = [
           CHECK (default_warranty_months IS NULL OR default_warranty_months > 0),
           CHECK (default_maintenance_basis IS NULL OR default_maintenance_basis IN (${basisList})),
           CHECK (default_maintenance_interval_days IS NULL OR default_maintenance_interval_days > 0),
-          CHECK (default_maintenance_interval_usage IS NULL OR default_maintenance_interval_usage > 0)
+          CHECK (default_maintenance_interval_usage IS NULL OR default_maintenance_interval_usage > 0),
+          ${lengthChecks({ name: TEXT_LIMITS.line, glyph: TEXT_LIMITS.code, hidden_capabilities: TEXT_LIMITS.payload, lookup_sources: TEXT_LIMITS.payload, field_prominence: TEXT_LIMITS.payload, field_tab_label: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -525,7 +569,8 @@ const baselineStatements: SqlStatement[] = [
           is_system  INTEGER NOT NULL DEFAULT 0,
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (parent_id IS NULL OR parent_id <> id),
-          CHECK (is_system IN (0, 1))
+          CHECK (is_system IN (0, 1)),
+          ${lengthChecks({ name: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -609,7 +654,8 @@ const baselineStatements: SqlStatement[] = [
           actor_user_id TEXT    NOT NULL DEFAULT '${SYSTEM_USER_ID}'
                                 REFERENCES users(id) ON DELETE SET DEFAULT,
           created_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ location_name: TEXT_LIMITS.line, note: TEXT_LIMITS.note, metadata: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -684,7 +730,8 @@ const baselineStatements: SqlStatement[] = [
           -- for the same reason: an item that counts units has no unit of measure to price.
           -- Non-negativity mirrors every other money column's CHECK (issue #349).
           CHECK (cost_per_unit_of_measure IS NULL OR cost_per_unit_of_measure >= 0),
-          CHECK (cost_per_unit_of_measure IS NULL OR tracking_mode = 'CONSUMABLE_GAUGE')
+          CHECK (cost_per_unit_of_measure IS NULL OR tracking_mode = 'CONSUMABLE_GAUGE'),
+          ${lengthChecks({ name: TEXT_LIMITS.line, description: TEXT_LIMITS.note, notes: TEXT_LIMITS.note, unit_of_measure: TEXT_LIMITS.line, operational_metadata: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -730,7 +777,8 @@ const baselineStatements: SqlStatement[] = [
           -- the substantive columns and exempts actor_user_id precisely so this re-point is allowed.
           actor_user_id   TEXT    NOT NULL DEFAULT '${SYSTEM_USER_ID}'
                                   REFERENCES users(id) ON DELETE SET DEFAULT,
-          created_at      INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          created_at      INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ note: TEXT_LIMITS.note, metadata: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -914,7 +962,8 @@ const baselineStatements: SqlStatement[] = [
             OR (field_type = 'NUMBER'
                 AND precision >= ${FIELD_PRECISION_MIN}
                 AND precision <= ${FIELD_PRECISION_MAX})
-          )
+          ),
+          ${lengthChecks({ name: TEXT_LIMITS.line, options: TEXT_LIMITS.payload, description: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -941,7 +990,8 @@ const baselineStatements: SqlStatement[] = [
           position      INTEGER NOT NULL DEFAULT 0,
           updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           UNIQUE (category_id, def_id),
-          CHECK (is_required IN (0, 1))
+          CHECK (is_required IN (0, 1)),
+          ${lengthChecks({ default_value: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -966,7 +1016,8 @@ const baselineStatements: SqlStatement[] = [
           is_inheritable INTEGER NOT NULL DEFAULT 0,
           updated_at     INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           UNIQUE (location_id, def_id),
-          CHECK (is_inheritable IN (0, 1))
+          CHECK (is_inheritable IN (0, 1)),
+          ${lengthChecks({ value: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -996,7 +1047,8 @@ const baselineStatements: SqlStatement[] = [
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           UNIQUE (item_id, def_id),
           CHECK (mode IN (${fieldValueModeList})),
-          CHECK (mode <> 'inherit' OR value IS NULL)
+          CHECK (mode <> 'inherit' OR value IS NULL),
+          ${lengthChecks({ value: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -1052,7 +1104,8 @@ const baselineStatements: SqlStatement[] = [
         CREATE TABLE tags (
           id         TEXT    PRIMARY KEY NOT NULL,
           name       TEXT    NOT NULL,
-          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ name: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -1106,7 +1159,8 @@ const baselineStatements: SqlStatement[] = [
           position   INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (kind IN (${attachmentKindList}))
+          CHECK (kind IN (${attachmentKindList})),
+          ${lengthChecks({ value: TEXT_LIMITS.url, label: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -1114,8 +1168,8 @@ const baselineStatements: SqlStatement[] = [
     sql: `CREATE INDEX idx_item_attachments_item_id ON item_attachments(item_id, position);`,
   },
   { sql: updatedAtTrigger('item_attachments') },
-  { sql: `ALTER TABLE items ADD COLUMN mpn TEXT;` },
-  { sql: `ALTER TABLE items ADD COLUMN manufacturer TEXT;` },
+  { sql: `ALTER TABLE items ADD COLUMN mpn TEXT ${lengthCheck('mpn', TEXT_LIMITS.line)};` },
+  { sql: `ALTER TABLE items ADD COLUMN manufacturer TEXT ${lengthCheck('manufacturer', TEXT_LIMITS.line)};` },
   // Money convention (issue #286): every monetary column is an INTEGER count of **micro-units** —
   // millionths of a major currency unit — not a binary REAL. A fixed 1e6 scale (six decimal
   // places, above every currency's minor unit) is exact, decouples storage from the mutable base
@@ -1129,13 +1183,15 @@ const baselineStatements: SqlStatement[] = [
   // from the MPN and stored verbatim as printed. Indexed for the scanner's exact
   // lookup-by-barcode, and (below) FTS-indexed like the MPN so a barcode typed into
   // the main search finds its item.
-  { sql: `ALTER TABLE items ADD COLUMN barcode TEXT;` },
+  { sql: `ALTER TABLE items ADD COLUMN barcode TEXT ${lengthCheck('barcode', TEXT_LIMITS.line)};` },
   { sql: `CREATE INDEX idx_items_barcode ON items(barcode COLLATE NOCASE);` },
   // Intrinsic serial number (issue #90): the maker's unique per-unit identifier printed on
   // the article (distinct from `serial_no`, which is only a SERIALISED-clone instance index).
   // Stored verbatim; indexed for exact lookup and (below) FTS-indexed like the barcode so a
   // serial typed into the main search finds its item.
-  { sql: `ALTER TABLE items ADD COLUMN serial_number TEXT;` },
+  {
+    sql: `ALTER TABLE items ADD COLUMN serial_number TEXT ${lengthCheck('serial_number', TEXT_LIMITS.line)};`,
+  },
   { sql: `CREATE INDEX idx_items_serial_number ON items(serial_number COLLATE NOCASE);` },
   {
     sql: `
@@ -1143,7 +1199,8 @@ const baselineStatements: SqlStatement[] = [
           id         TEXT    PRIMARY KEY NOT NULL,
           item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
           alias      TEXT    NOT NULL,
-          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ alias: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -1172,7 +1229,8 @@ const baselineStatements: SqlStatement[] = [
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (status IN (${projectStatusList})),
-          CHECK (costing_mode IN (${costingModeList}))
+          CHECK (costing_mode IN (${costingModeList})),
+          ${lengthChecks({ name: TEXT_LIMITS.line, description: TEXT_LIMITS.note, icon: TEXT_LIMITS.code })}
         ) STRICT;
       `,
   },
@@ -1198,7 +1256,8 @@ const baselineStatements: SqlStatement[] = [
           CHECK (required_qty >= 0),
           CHECK (reserved_qty >= 0),
           CHECK (reservation_status IN (${reservationStatusList})),
-          CHECK (procurement_status IN (${procurementStatusList}))
+          CHECK (procurement_status IN (${procurementStatusList})),
+          ${lengthChecks({ designator: TEXT_LIMITS.line, mpn: TEXT_LIMITS.line, manufacturer: TEXT_LIMITS.line, description: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -1219,7 +1278,8 @@ const baselineStatements: SqlStatement[] = [
           value_text TEXT,                        -- text/categorical value (EQUALS/HAS)
           weight     REAL    NOT NULL DEFAULT 1.0, -- relevance/salience (§4 weighted)
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (weight >= 0)
+          CHECK (weight >= 0),
+          ${lengthChecks({ key: TEXT_LIMITS.line, value_text: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -1276,7 +1336,8 @@ const baselineStatements: SqlStatement[] = [
           email        TEXT,
           address      TEXT,
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ name: TEXT_LIMITS.line, note: TEXT_LIMITS.note, phone_mobile: TEXT_LIMITS.line, phone_home: TEXT_LIMITS.line, email: TEXT_LIMITS.line, address: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -1310,7 +1371,8 @@ const baselineStatements: SqlStatement[] = [
           -- Exactly one borrower: contact XOR project XOR location.
           CHECK (
             (contact_id IS NOT NULL) + (project_id IS NOT NULL) + (location_id IS NOT NULL) = 1
-          )
+          ),
+          ${lengthChecks({ note: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -1349,8 +1411,8 @@ const baselineStatements: SqlStatement[] = [
     sql: `INSERT INTO sync_meta (id, last_sync_timestamp, clock_offset) VALUES (1, 0, 0);`,
   },
   { sql: `ALTER TABLE items ADD COLUMN expiry_date INTEGER;` },
-  { sql: `ALTER TABLE items ADD COLUMN batch_number TEXT;` },
-  { sql: `ALTER TABLE items ADD COLUMN lot_number TEXT;` },
+  { sql: `ALTER TABLE items ADD COLUMN batch_number TEXT ${lengthCheck('batch_number', TEXT_LIMITS.line)};` },
+  { sql: `ALTER TABLE items ADD COLUMN lot_number TEXT ${lengthCheck('lot_number', TEXT_LIMITS.line)};` },
   {
     sql: `CREATE INDEX idx_items_expiry ON items(expiry_date) WHERE expiry_date IS NOT NULL;`,
   },
@@ -1387,7 +1449,8 @@ const baselineStatements: SqlStatement[] = [
           -- A TIME schedule needs a positive day interval; a USAGE schedule a
           -- positive usage interval. (DOM-drift-style: never a silent NULL.)
           CHECK (basis <> 'TIME'  OR (interval_days  IS NOT NULL AND interval_days  > 0)),
-          CHECK (basis <> 'USAGE' OR (interval_usage IS NOT NULL AND interval_usage > 0))
+          CHECK (basis <> 'USAGE' OR (interval_usage IS NOT NULL AND interval_usage > 0)),
+          ${lengthChecks({ name: TEXT_LIMITS.line, usage_unit: TEXT_LIMITS.line, note: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -1499,7 +1562,8 @@ const baselineStatements: SqlStatement[] = [
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (quantity >= 0),
-          UNIQUE (item_id, location_id, batch_key)
+          UNIQUE (item_id, location_id, batch_key),
+          ${lengthChecks({ batch_number: TEXT_LIMITS.line, lot_number: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -1764,13 +1828,17 @@ const baselineStatements: SqlStatement[] = [
   { sql: `ALTER TABLE checkouts ADD COLUMN source_batch_key TEXT;` },
   // A return keeps its own note, distinct from the checkout `note`, so a return remark
   // never overwrites the loan's own note (both ends retain their text). NULL while open.
-  { sql: `ALTER TABLE checkouts ADD COLUMN return_note TEXT;` },
+  {
+    sql: `ALTER TABLE checkouts ADD COLUMN return_note TEXT ${lengthCheck('return_note', TEXT_LIMITS.note)};`,
+  },
   {
     sql: `ALTER TABLE maintenance_schedules ADD COLUMN location_id TEXT REFERENCES locations(id);`,
   },
   { sql: `ALTER TABLE item_attachments ADD COLUMN origin_device_id TEXT;` },
-  { sql: `ALTER TABLE locations ADD COLUMN description TEXT;` },
-  { sql: `ALTER TABLE locations ADD COLUMN color TEXT;` },
+  {
+    sql: `ALTER TABLE locations ADD COLUMN description TEXT ${lengthCheck('description', TEXT_LIMITS.note)};`,
+  },
+  { sql: `ALTER TABLE locations ADD COLUMN color TEXT ${lengthCheck('color', TEXT_LIMITS.code)};` },
   { sql: `ALTER TABLE projects ADD COLUMN budget INTEGER;` },
   {
     sql: `
@@ -1782,7 +1850,8 @@ const baselineStatements: SqlStatement[] = [
           position   INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (amount >= 0)
+          CHECK (amount >= 0),
+          ${lengthChecks({ name: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -1802,7 +1871,8 @@ const baselineStatements: SqlStatement[] = [
           incurred_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (amount >= 0)
+          CHECK (amount >= 0),
+          ${lengthChecks({ description: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -1842,7 +1912,8 @@ const baselineStatements: SqlStatement[] = [
           currency   TEXT,
           note       TEXT,
           created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ name: TEXT_LIMITS.line, name_key: TEXT_LIMITS.line, url: TEXT_LIMITS.url, currency: TEXT_LIMITS.code, note: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -1877,7 +1948,8 @@ const baselineStatements: SqlStatement[] = [
           CHECK (is_price_source IN (0, 1)),
           CHECK (unit_cost IS NULL OR unit_cost >= 0),
           CHECK (pack_qty IS NULL OR pack_qty > 0),
-          CHECK (min_order_qty IS NULL OR min_order_qty > 0)
+          CHECK (min_order_qty IS NULL OR min_order_qty > 0),
+          ${lengthChecks({ order_code: TEXT_LIMITS.line, currency: TEXT_LIMITS.code, price_breaks: TEXT_LIMITS.payload, url: TEXT_LIMITS.url })}
         ) STRICT;
       `,
   },
@@ -1928,7 +2000,8 @@ const baselineStatements: SqlStatement[] = [
           created_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           ordered_at    INTEGER,
           updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (status IN (${purchaseOrderStatusList}))
+          CHECK (status IN (${purchaseOrderStatusList})),
+          ${lengthChecks({ reference: TEXT_LIMITS.line, currency: TEXT_LIMITS.code })}
         ) STRICT;
       `,
   },
@@ -1947,7 +2020,8 @@ const baselineStatements: SqlStatement[] = [
           updated_at       INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (ordered_qty > 0),
           CHECK (received_qty >= 0),
-          CHECK (unit_cost IS NULL OR unit_cost >= 0)
+          CHECK (unit_cost IS NULL OR unit_cost >= 0),
+          ${lengthChecks({ description: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -2007,7 +2081,8 @@ const baselineStatements: SqlStatement[] = [
           converted_checkout_id TEXT,                        -- set ⇒ derived 'converted' (soft pointer, not FK)
           created_at            INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at            INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (end_date >= start_date)
+          CHECK (end_date >= start_date),
+          ${lengthChecks({ note: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -2030,7 +2105,8 @@ const baselineStatements: SqlStatement[] = [
           recorded_at      INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at       INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (unit_cost >= 0),
-          CHECK (source IN (${priceHistorySourceList}))
+          CHECK (source IN (${priceHistorySourceList})),
+          ${lengthChecks({ currency: TEXT_LIMITS.code })}
         ) STRICT;
       `,
   },
@@ -2040,7 +2116,7 @@ const baselineStatements: SqlStatement[] = [
   },
   { sql: updatedAtTrigger('supplier_part_price_history') },
   // --- Folded former v4: richer location metadata -------------------------------
-  { sql: `ALTER TABLE locations ADD COLUMN icon TEXT;` },
+  { sql: `ALTER TABLE locations ADD COLUMN icon TEXT ${lengthCheck('icon', TEXT_LIMITS.code)};` },
   {
     sql: `ALTER TABLE locations ADD COLUMN capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0);`,
   },
@@ -2122,7 +2198,8 @@ const baselineStatements: SqlStatement[] = [
           note        TEXT,
           created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (value >= 0)
+          CHECK (value >= 0),
+          ${lengthChecks({ note: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -2156,7 +2233,8 @@ const baselineStatements: SqlStatement[] = [
           note         TEXT,                           -- optional free-text context for the link
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (from_item_id <> to_item_id)
+          CHECK (from_item_id <> to_item_id),
+          ${lengthChecks({ kind: TEXT_LIMITS.line, note: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -2184,7 +2262,8 @@ const baselineStatements: SqlStatement[] = [
           target_price INTEGER CHECK (target_price IS NULL OR target_price >= 0), -- money: micro-units (issue #286)
           priority     TEXT    NOT NULL DEFAULT 'NONE', -- WISHLIST_PRIORITIES; no CHECK (see note)
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ name: TEXT_LIMITS.line, note: TEXT_LIMITS.note, url: TEXT_LIMITS.url, priority: TEXT_LIMITS.code })}
         ) STRICT;
       `,
   },
@@ -2211,7 +2290,8 @@ const baselineStatements: SqlStatement[] = [
           note         TEXT,
           performed_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}), -- effective date of the record (UNIX-ms)
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ kind: TEXT_LIMITS.line, name: TEXT_LIMITS.line, result: TEXT_LIMITS.line, unit: TEXT_LIMITS.line, note: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -2252,7 +2332,8 @@ const baselineStatements: SqlStatement[] = [
           tare_grams REAL    NOT NULL CHECK (tare_grams >= 0),
           note       TEXT,
           created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ name: TEXT_LIMITS.line, brand: TEXT_LIMITS.line, kind: TEXT_LIMITS.line, note: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },
@@ -2396,7 +2477,8 @@ const baselineStatements: SqlStatement[] = [
           updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (method IN (${webhookMethodList})),
           CHECK (enabled IN (0, 1)),
-          CHECK (secret IS NULL OR secret_ref IS NULL)
+          CHECK (secret IS NULL OR secret_ref IS NULL),
+          ${lengthChecks({ name: TEXT_LIMITS.line, url: TEXT_LIMITS.url, secret_ref: TEXT_LIMITS.line, event_types: TEXT_LIMITS.payload, filter: TEXT_LIMITS.payload, template: TEXT_LIMITS.payload, headers: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -2482,7 +2564,8 @@ const baselineStatements: SqlStatement[] = [
           natural_height         INTEGER NOT NULL,
           position               INTEGER NOT NULL DEFAULT 0,
           created_at             INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at             INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at             INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ caption: TEXT_LIMITS.line })}
         ) STRICT;
       `,
   },
@@ -2506,7 +2589,8 @@ const baselineStatements: SqlStatement[] = [
           color      TEXT,
           position   INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          ${lengthChecks({ name: TEXT_LIMITS.line, geometry: TEXT_LIMITS.payload, color: TEXT_LIMITS.code })}
         ) STRICT;
       `,
   },

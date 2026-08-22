@@ -548,3 +548,5 @@ replaces the first value rather than leaving two entries that look alike.
 - **[[Items]]** — categories and the rest of an item's data.
 - **[[Tags, attachments & related items|Tags-Attachments-and-Related-Items]]** — the other
   Classification-tab tools.
+- **[[How long a text field can be|Text-Field-Limits]]** — the ceiling on a text, long-text or
+  link field's value.

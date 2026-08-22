@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CategoryField, FieldType } from '@/db/repositories';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import { validateFieldValue, fieldsForCategory } from './custom-fields';
 
 /** Build a minimal CategoryField definition for tests. */
@@ -481,5 +482,41 @@ describe('fieldsForCategory', () => {
     const order = fields.map((f) => f.id);
     fieldsForCategory(fields, 'c1');
     expect(fields.map((f) => f.id)).toEqual(order);
+  });
+});
+
+describe('validateFieldValue — length limits (issue #346)', () => {
+  it('holds a TEXT value to the one-line tier', () => {
+    const d = def({ fieldType: 'TEXT', name: 'Package' });
+    expect(validateFieldValue(d, 'a'.repeat(TEXT_LIMITS.line))).toEqual({
+      ok: true,
+      value: 'a'.repeat(TEXT_LIMITS.line),
+    });
+    expect(validateFieldValue(d, 'a'.repeat(TEXT_LIMITS.line + 4))).toEqual({
+      ok: false,
+      error: 'Package can be at most 500 characters, and this one is 504.',
+    });
+  });
+
+  it('gives a LONG_TEXT value the roomier prose tier', () => {
+    const d = def({ fieldType: 'LONG_TEXT', name: 'Datasheet notes' });
+    expect(validateFieldValue(d, 'a'.repeat(TEXT_LIMITS.line + 1)).ok).toBe(true);
+    expect(validateFieldValue(d, 'a'.repeat(TEXT_LIMITS.note + 1)).ok).toBe(false);
+  });
+
+  it('gives a URL value the web-address tier, and still checks the scheme', () => {
+    const d = def({ fieldType: 'URL', name: 'Datasheet' });
+    const long = `https://example.com/${'a'.repeat(TEXT_LIMITS.url)}`;
+    expect(validateFieldValue(d, long)).toEqual({
+      ok: false,
+      error: `Datasheet can be at most 2048 characters, and this one is ${long.length}.`,
+    });
+    expect(validateFieldValue(d, 'ftp://example.com/x').ok).toBe(false);
+  });
+
+  it('counts an emoji once, so a field of 500 spanners still fits one line', () => {
+    const d = def({ fieldType: 'TEXT', name: 'Package' });
+    expect(validateFieldValue(d, '🔧'.repeat(TEXT_LIMITS.line)).ok).toBe(true);
+    expect(validateFieldValue(d, '🔧'.repeat(TEXT_LIMITS.line + 1)).ok).toBe(false);
   });
 });

@@ -7,8 +7,10 @@ import {
   useLayoutEffect,
   useRef,
 } from 'react';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import { cn } from '@/lib/utils';
 import { fieldClasses } from './field-classes';
+import { useTextLimit } from './text-limit';
 import { forgetHeight, readRememberedHeight, rememberHeight } from './textarea-size';
 
 /** How many rows an `autoGrow` box may stretch to before it starts scrolling instead. */
@@ -40,6 +42,18 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
   readonly autoGrow?: boolean;
   /** The ceiling for `autoGrow`, in rows. Defaults to {@link DEFAULT_TEXTAREA_MAX_ROWS}. */
   readonly maxRows?: number;
+  /**
+   * How many characters the box may hold, in code points (issue #346). Defaults to
+   * {@link TEXT_LIMITS.note}, which suits every box a user writes prose into.
+   *
+   * Raise it for a box that holds a **payload** rather than prose — the import screens' paste
+   * area takes a whole CSV file, and the webhook editor takes a body template — with
+   * {@link TEXT_LIMITS.payload}.
+   *
+   * Like the single-line control, the box does not enforce the limit by refusing characters:
+   * it reports itself invalid and leaves what was typed or pasted alone. See {@link Input}.
+   */
+  readonly maxLength?: number;
 }
 
 /**
@@ -58,10 +72,20 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
  *    up to `maxRows`, then scrolls. A user-chosen height outranks it.
  */
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { className, rows = 3, sizeKey, autoGrow = false, maxRows = DEFAULT_TEXTAREA_MAX_ROWS, onChange, ...props },
+  {
+    className,
+    rows = 3,
+    sizeKey,
+    autoGrow = false,
+    maxRows = DEFAULT_TEXTAREA_MAX_ROWS,
+    maxLength = TEXT_LIMITS.note,
+    onChange,
+    ...props
+  },
   forwardedRef,
 ) {
   const elementRef = useRef<HTMLTextAreaElement | null>(null);
+  const { over, noteText, attach } = useTextLimit<HTMLTextAreaElement>(maxLength);
   /**
    * The height the user chose, or `null` while the box is still at its default size. This
    * is what auto-grow stands aside for, and the `null` is what keeps an untouched box out
@@ -77,10 +101,13 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   const setElement = useCallback(
     (node: HTMLTextAreaElement | null) => {
       elementRef.current = node;
+      // The limit seam reads the length from the node itself: an uncontrolled box (React Hook
+      // Form's `register()`) has its stored value written straight in, with no render carrying it.
+      attach(node);
       if (typeof forwardedRef === 'function') forwardedRef(node);
       else if (forwardedRef) forwardedRef.current = node;
     },
-    [forwardedRef],
+    [forwardedRef, attach],
   );
 
   /**
@@ -205,21 +232,23 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
 
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
+      noteText(event.currentTarget.value);
       onChange?.(event);
-      fitToContent();
+      if (autoGrow) fitToContent();
     },
-    [onChange, fitToContent],
+    [autoGrow, noteText, onChange, fitToContent],
   );
 
   return (
     <textarea
+      {...props}
       ref={setElement}
       rows={rows}
       className={cn(fieldClasses, 'h-auto min-h-[4.5rem] resize-y py-2 leading-relaxed', className)}
-      // Only wrapped when there is something to do on each keystroke, so a box without
-      // `autoGrow` keeps exactly the handler the call site passed.
-      onChange={autoGrow ? handleChange : onChange}
-      {...props}
+      // Never downgrades an invalidity a parent {@link FormField} injected: the box is invalid
+      // if either its length or the call site's own validation says so.
+      aria-invalid={props['aria-invalid'] === true || props['aria-invalid'] === 'true' || over || undefined}
+      onChange={handleChange}
     />
   );
 });

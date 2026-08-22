@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import {
   Checkbox,
   ColourInput,
@@ -178,6 +179,9 @@ export function TypedFieldControl({
       return (
         <Input
           type="text"
+          // The same allowance as a URL, not the one-line default: this holds a link, and
+          // `validateFieldValue` judges it as one. See {@link TEXT_LIMITS}.
+          maxLength={TEXT_LIMITS.url}
           // Gubbins stores the link, not the file — a path, UNC share, or file:// URI.
           placeholder={String.raw`\\server\share\movie.mkv  ·  file://…`}
           value={value}

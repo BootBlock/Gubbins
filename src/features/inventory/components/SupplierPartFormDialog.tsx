@@ -4,6 +4,7 @@ import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/rep
 import { SUPPORTED_SUPPLIER_LABELS } from '@/features/scraping';
 import { useT } from '@/features/i18n';
 import { SupplierPicker, supplierRefFrom, type SupplierPickerValue } from '@/features/suppliers';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 
 /** Help for the Currency picker (the chosen currency drives the displayed symbol). */
 const CURRENCY_HINT =
@@ -259,6 +260,9 @@ export function SupplierPartFormDialog({
         >
           <Textarea
             sizeKey="supplier-part.price-breaks"
+            // A price-break table is serialised into this column, so it takes the payload tier — the
+            // default note tier would report an ordinary entry as too long.
+            maxLength={TEXT_LIMITS.payload}
             autoGrow
             value={breaksText}
             onChange={(e) => setBreaksText(e.target.value)}

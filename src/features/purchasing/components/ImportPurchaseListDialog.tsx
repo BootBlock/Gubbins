@@ -26,6 +26,7 @@ import {
   useImportPurchaseListIntoWishlist,
   type PurchaseListImportSummary,
 } from '../purchase-list-queries';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 
 /** The file types the purchase-list importer accepts (mirrors the recognised formats). */
 const PURCHASE_LIST_FILE_ACCEPT =
@@ -312,6 +313,9 @@ export function ImportPurchaseListDialog({
 
         <Textarea
           sizeKey="import.purchase-list"
+          // This box takes a whole pasted list rather than prose, so it needs the payload tier — the
+          // default note tier would report an ordinary entry as too long.
+          maxLength={TEXT_LIMITS.payload}
           value={text}
           onChange={(e) => {
             setFileRead(null);

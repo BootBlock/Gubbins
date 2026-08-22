@@ -50,6 +50,7 @@ import { hasOcr } from '@/lib/env/feature-detection';
 import { cn } from '@/lib/utils';
 import { useFeature } from '@/features/modules/useFeature';
 import { useT, hasInterfaceTranslation } from '@/features/i18n';
+import { exceedsTextLimit } from '@/lib/text-limits';
 import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
 import { SettingsSearchGroup, SettingsSearchResults } from './SettingsSearchResults';
@@ -1743,24 +1744,57 @@ function HueSlider({ hue, onChange }: { readonly hue: number; readonly onChange:
 }
 
 /**
+ * How long a tagline may be. A ceiling of fit rather than of storage: the tagline sits beside the
+ * app name in the chrome, and one much longer than this stops being a tagline and starts pushing
+ * the name off the row.
+ */
+const BRAND_TAGLINE_MAX_LENGTH = 48;
+
+/**
  * The **brand tagline** control (Branding). A short free-text label shown beside the fixed "Gubbins"
  * wordmark. Stored verbatim (no keystroke trimming, so a trailing space can be typed); the preview
- * and the render sites trim at the point of use. Length-capped so it can't crowd the header.
+ * and the render sites trim at the point of use.
+ *
+ * The box keeps a draft of its own, unlike the rest of this dialog's controls, because it is the
+ * one place here where what is typed and what is stored can legitimately differ: an entry past
+ * {@link BRAND_TAGLINE_MAX_LENGTH} stays in the box, exactly as typed, and simply is not written
+ * until it fits (issue #346). Storing it anyway would put a tagline in the chrome that is too long
+ * to be one; shortening it silently would throw away characters the user could see they had typed.
  */
 function BrandTaglineControl() {
+  const t = useT();
   const stored = usePreferencesStore((s) => s.brandTagline);
   const setBrandTagline = usePreferencesStore((s) => s.setBrandTagline);
+  const [draft, setDraft] = useState(stored);
+  // Re-seat when the stored value changes from somewhere else — a restored backup, a synced peer.
+  // An over-long draft holds `stored` still, so this cannot undo what is being typed.
+  useEffect(() => setDraft(stored), [stored]);
+  // The preview describes what the app is *showing*, so it follows the stored value rather than
+  // the draft: while the draft is too long to be written, the chrome still shows the old one.
   const trimmed = stored.trim();
+  // The control marks itself invalid past the limit and keeps what was typed. It sits in a
+  // settings row rather than a FormField, so there is no error slot around it — hence the message
+  // here, which is what turns a bare red outline into something actionable.
+  const tooLong = exceedsTextLimit(draft, BRAND_TAGLINE_MAX_LENGTH);
   return (
     <div className="flex w-72 max-w-full flex-col gap-1.5">
       <Input
         aria-label="Brand tagline"
         data-testid="setting-brand-tagline"
-        maxLength={48}
+        maxLength={BRAND_TAGLINE_MAX_LENGTH}
         placeholder="e.g. Acme Widgets"
-        value={stored}
-        onChange={(e) => setBrandTagline(e.target.value)}
+        value={draft}
+        onChange={(e) => {
+          const next = e.target.value;
+          setDraft(next);
+          if (!exceedsTextLimit(next, BRAND_TAGLINE_MAX_LENGTH)) setBrandTagline(next);
+        }}
       />
+      {tooLong ? (
+        <p role="alert" className="text-xs text-destructive" data-testid="brand-tagline-too-long">
+          {t('settings.brandTagline.tooLong', { vars: { limit: BRAND_TAGLINE_MAX_LENGTH } })}
+        </p>
+      ) : null}
       <p className="text-xs text-muted-foreground" data-testid="brand-tagline-preview">
         Shows as <span className="font-medium text-foreground">Gubbins{trimmed ? ` · ${trimmed}` : ''}</span>
       </p>

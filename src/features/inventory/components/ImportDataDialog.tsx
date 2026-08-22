@@ -80,6 +80,7 @@ import {
 import { inventoryKeys } from '../queries';
 import { invalidateItems } from '../invalidate';
 import { useErrorMessage } from '@/features/errors';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 
 // ---------------------------------------------------------------------------
 // Catalogue loaders — read the whole item + custom-field set once per open, so
@@ -755,6 +756,9 @@ function TextInputPanel({ text, onTextChange }: { text: string; onTextChange: (t
       </p>
       <Textarea
         sizeKey="import.items"
+        // This box takes a whole pasted file rather than prose, so it needs the payload tier — the
+        // default note tier would report an ordinary entry as too long.
+        maxLength={TEXT_LIMITS.payload}
         id={inputId}
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
