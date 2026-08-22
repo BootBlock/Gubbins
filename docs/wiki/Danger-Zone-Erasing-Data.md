@@ -44,6 +44,22 @@ Some entries **include** others: ticking *All items*, for example, already takes
 history and checkouts with them, so those entries are shown as included rather than letting you
 think they're separate jobs.
 
+## What your role lets you erase
+
+With the [[Users module|Users-and-Accounts]] switched on, each entry is held to the same
+[[permission|Roles-and-Permissions]] as deleting one of those records by hand: *All items* needs
+**Items → Delete**, *Tags* needs **Tags → Delete**, and the **App & this device** entries need
+**Settings → Change** (or **Sync → Change** / **Bridge → Change** for the sync and bridge ones).
+An entry that takes other records with it needs their permission too — *All items* also needs the
+permissions for the activity history, checkouts, maintenance schedules and supplier parts it
+removes. **Erase everything** needs the lot, and — because it deletes the whole database rather than a list
+of records — **Users and roles → Manage**, **Stock levels → Change**, **Bookings → Delete** and
+**Wishlist → Delete** besides.
+
+Entries your role doesn't allow are not listed, and if it allows none of them the **Erase data…**
+button isn't shown. With the Users module off — how Gubbins ships — everything is available, as it
+always has been.
+
 ## What you can erase
 
 ### Inventory

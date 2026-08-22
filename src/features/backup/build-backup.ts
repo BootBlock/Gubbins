@@ -7,6 +7,8 @@
  * the download. All format decisions live in `backup-format.ts`; this file only does IO.
  */
 import { getDatabaseDriver, getRescueDatabaseDriver } from '@/db/client';
+import { assertPermissions } from '@/features/users/assert-permission';
+import { currentAuthority } from '@/features/users/current-authority';
 import { buildLocalSnapshot } from '@/features/sync/snapshot';
 import { readAllImages } from '@/features/images/opfs-images';
 import { downloadBlob, fileTimestamp } from '@/lib/download';
@@ -95,6 +97,20 @@ export async function createBackup(
   options: CreateBackupOptions = {},
 ): Promise<BackupResult> {
   const rescue = options.rescue === true;
+  // Issue #519: a backup reads every table in the database and hands the lot to a file, so it is
+  // gated on `backup:read` — the key the role editor already offers for exactly this.
+  //
+  // The rescue path is exempt. It is reached from the crash and boot-failure screens, whose whole
+  // purpose is to hand back the data when nothing else in the app works, and on the boot-failure
+  // route there is no readable database to resolve an authority from at all. The exemption is
+  // wider than that one route — Safe Mode is also the top-level error boundary's fallback, so a
+  // signed-in session that hits a render error can reach it — and those screens' other actions
+  // (the raw exports, the archive restore, the hard reset) are ungated for the same reason. The
+  // permission model is a soft boundary by design (`db/repositories/base.ts`); the rescue screen
+  // is where that is most visible, and closing it would mean refusing a user their own data on
+  // the one screen that exists to give it back.
+  if (!rescue) assertPermissions(currentAuthority(), ['backup:read']);
+
   // A rescue runs on the crash screen, where a dead worker latches the driver unusable and every
   // read would be rejected without one being replaced first (issue #503). An ordinary backup runs
   // in a healthy app and must not quietly rebuild the worker under a live session.

@@ -49,6 +49,50 @@ Permissions are a grid: a **row for each area** of Gubbins and a **column for ea
 > photos, capabilities and BOM lines are all part of changing the item. **Delete** means deleting
 > the item itself.
 
+## What the destructive actions are held to
+
+Permissions are not only about the buttons on an item. The actions that can remove or overwrite
+everything at once are held to the same role:
+
+- The [[danger zone|Danger-Zone-Erasing-Data]] entries are held to the **Delete** permission for
+  the area each one erases — *All items* to **Items → Delete**, *Tags* to **Tags → Delete**, and so
+  on. Areas with no Delete action use **Change** instead, because that is the strongest permission
+  they have. The **App & this device** entries are held to **Settings → Change**, except those with
+  an area of their own: sync links and cloud sign-in need **Sync → Change**, and the bridge token
+  needs **Bridge → Change**.
+- An entry that takes other records with it needs *their* permission too. *All items* removes each
+  item's activity history, checkouts, maintenance schedules and supplier parts, so it needs
+  **Activity history → Delete**, **Loans → Change**, **Maintenance → Delete** and **Suppliers →
+  Delete** as well as **Items → Delete** — the same permissions the entries for those records ask
+  for on their own.
+- **Erase everything** — the factory reset — needs *all* of those at once, plus four the entries
+  never ask for on their own: **Users and roles → Manage**, **Stock levels → Change**, **Bookings →
+  Delete** and **Wishlist → Delete**. It deletes the whole database rather than a list of records,
+  so it reaches accounts, roles, stock levels, bookings and the wishlist as well.
+- Creating a [[backup|Backup-and-Restore]] needs **Backups → View**: a backup file contains the
+  whole database. Restoring one needs **Backups → Change**. **Replace** needs both, because it
+  saves a restore point of your current data first, and that restore point is itself a backup.
+
+Entries and buttons someone's role doesn't allow aren't shown to them at all, so nothing is offered
+that would only be refused.
+
+> **⚠️ Heads-up**
+> **Backups → Change** is a powerful permission. A restore rewrites every synced record from the
+> file, and accounts and roles are synced records — so someone who can restore can, with a
+> hand-edited backup, change what any account is allowed to do. Grant it on that understanding.
+
+> **ℹ️ Note**
+> Someone who is refused **Items → Delete** on a single item is refused *All items* in the danger
+> zone too. **Change** is not enough for either — which is why the built-in **Stocker** role, which
+> can edit items but not delete them, cannot erase the catalogue.
+
+> **⚠️ Heads-up**
+> The **rescue screen** is deliberately outside all of this. Its whole purpose is to hand your data
+> back when the app is broken, so its backup, restore and reset actions stay available to whoever
+> holds the device, whatever their role — and it appears not only when Gubbins can't start, but
+> also whenever a screen fails badly enough to fall back to it. Treat it as an escape hatch that
+> anyone using the device can reach. See [[Privacy & security|Privacy-and-Security]].
+
 ## Allowing a whole area, or everything
 
 Two shortcuts save a lot of ticking:
@@ -84,7 +128,10 @@ them through the [[bridge|Bridge-Overview]] either.
 
 > **⚠️ Heads-up**
 > Permissions decide what Gubbins *lets someone do in the app*. They are not a lock on the data
-> itself — anyone with access to this device's files can still read everything. See
+> itself — anyone with access to this device's files can still read everything, and anyone using
+> the app can switch the Users module off from the [[Modules|Modular-UI]] screen, which takes the
+> sign-in gate down with it. Roles keep honest people out of each other's way on a shared device;
+> they are not a security barrier against whoever holds it. See
 > [[Privacy & security|Privacy-and-Security]].
 
 ## If a role mentions permissions Gubbins doesn't recognise

@@ -26,9 +26,19 @@
  *
  * The builders emit ONLY data statements (no `PRAGMA`, no `BEGIN`/`COMMIT`); the executor in
  * `erase-actions.ts` prepends the deferred-FK pragma and wraps the whole batch atomically.
+ *
+ * Every target also declares the permissions it needs ({@link EraseTarget.permissions}, issue
+ * #519). The check belongs beside the definition of what a target destroys, not in the dialog:
+ * these statements go straight to the driver, so the repository guard that refuses a Viewer one
+ * item never sees them, and without a key here the most destructive screen in the app would be
+ * the one the permission model does not cover. What a target *requires* is derived rather than
+ * written down — {@link eraseTargetPermissions} folds in every target it `includes`, because a
+ * cascade destroys those rows just as surely as ticking them would, and each of those targets
+ * already says what its own rows are worth.
  */
 import type { SqlStatement } from '@/db/rpc/driver';
 import { eraseGroupKeys, type LocalEraseGroupId } from '@/lib/storage-keys';
+import type { PermissionKey } from '@/features/users/permission-registry';
 
 /** Every distinct thing a user can erase. The UI codes against these ids verbatim. */
 export type EraseTargetId =
@@ -77,6 +87,28 @@ export interface EraseTarget {
   readonly id: EraseTargetId;
   readonly section: EraseSection;
   readonly label: string;
+  /**
+   * The permissions this target needs **in its own right** (issue #519). What is actually
+   * required is this list plus the same list for every target in {@link EraseTarget.includes} —
+   * see {@link eraseTargetPermissions}, which is what the executor and the UI both ask.
+   *
+   * **Which key a target names.** The Danger Zone destroys wholesale, so a target names the
+   * *delete-strength* key of the subject it is presented as erasing — `items:delete`, not
+   * `items:write`, because the roles that stop at `write` (Stocker) are defined as the ones
+   * that cannot delete. Where a subject has no `delete` action its `write` key is the strongest
+   * thing there is, so that is what the target names: `checkouts:write` for the checkout ledger.
+   * That is a limit of the registry rather than a judgement about the data — the subject has no
+   * delete key to ask for — and it does mean a role holding `checkouts:write` can clear the whole
+   * ledger. The two targets naming more than one key delete rows belonging to a subject they are
+   * not named for: `categories` and `field-dictionary` both clear stored custom-field values
+   * outright.
+   *
+   * Local-scope targets are gated on `settings:write`, except where a more specific capability
+   * owns the value (`sync:write` for the sync links and the cloud sign-in, `bridge:write` for
+   * the bridge token). They are device-local, but they are still settings, and a role that
+   * cannot change a setting should not be able to reset one either.
+   */
+  readonly permissions: readonly PermissionKey[];
   /** User-facing guidance rendered verbatim by the UI — explains exactly what goes. */
   readonly tooltip: string;
   readonly scope: 'db' | 'local';
@@ -167,6 +199,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   // --- Inventory -------------------------------------------------------------------
   {
     id: 'items',
+    permissions: ['items:delete'],
     section: 'inventory',
     label: 'All items',
     tooltip:
@@ -218,6 +251,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'item-photos',
+    permissions: ['items:delete'],
     section: 'inventory',
     label: 'Item photos',
     tooltip:
@@ -234,6 +268,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'location-photos',
+    permissions: ['locations:delete'],
     section: 'organisation',
     label: 'Location photos',
     tooltip:
@@ -260,6 +295,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'item-history',
+    permissions: ['audit:delete'],
     section: 'inventory',
     label: 'Activity history',
     tooltip:
@@ -275,6 +311,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'checkouts',
+    permissions: ['checkouts:write'],
     section: 'inventory',
     label: 'Checkout & loan records',
     tooltip: 'Removes every checkout/loan record. Items and contacts are kept.',
@@ -289,6 +326,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'maintenance',
+    permissions: ['maintenance:delete'],
     section: 'inventory',
     label: 'Maintenance schedules',
     tooltip: 'Removes every maintenance and calibration schedule. The items they were attached to are kept.',
@@ -305,6 +343,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'supplier-parts',
+    permissions: ['suppliers:delete'],
     section: 'inventory',
     label: 'Supplier parts',
     tooltip:
@@ -325,6 +364,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'suppliers',
+    permissions: ['suppliers:delete'],
     section: 'projects',
     label: 'Suppliers',
     tooltip:
@@ -353,6 +393,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'custom-field-values',
+    permissions: ['items:delete'],
     section: 'inventory',
     label: 'Custom field values',
     tooltip:
@@ -368,6 +409,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'tags',
+    permissions: ['tags:delete'],
     section: 'inventory',
     label: 'Tags',
     tooltip: 'Deletes every tag and removes it from all items. The items themselves are kept.',
@@ -391,6 +433,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   // --- Organisation ----------------------------------------------------------------
   {
     id: 'categories',
+    permissions: ['categories:delete', 'items:delete'],
     section: 'organisation',
     label: 'Categories & schemas',
     tooltip:
@@ -424,6 +467,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'field-dictionary',
+    permissions: ['categories:delete', 'items:delete', 'locations:delete'],
     section: 'organisation',
     label: 'Custom field dictionary',
     tooltip:
@@ -449,6 +493,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'locations',
+    permissions: ['locations:delete'],
     section: 'organisation',
     label: 'Empty custom locations',
     tooltip:
@@ -500,6 +545,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'location-history',
+    permissions: ['locations:delete'],
     section: 'organisation',
     label: 'Location history',
     tooltip:
@@ -519,6 +565,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   // --- Projects & purchasing -------------------------------------------------------
   {
     id: 'projects',
+    permissions: ['projects:delete'],
     section: 'projects',
     label: 'Projects',
     tooltip:
@@ -542,6 +589,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'purchase-orders',
+    permissions: ['purchase-orders:delete'],
     section: 'projects',
     label: 'Purchase orders',
     tooltip:
@@ -564,6 +612,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   // --- Contacts --------------------------------------------------------------------
   {
     id: 'contacts',
+    permissions: ['contacts:delete'],
     section: 'contacts',
     label: 'Contacts',
     tooltip:
@@ -598,6 +647,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   //    sharing on the restored defaults publish and reach the other devices on their next sync.
   {
     id: 'preferences',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'App preferences',
     tooltip:
@@ -607,6 +657,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'dashboard-layout',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'Dashboard layout',
     tooltip:
@@ -616,6 +667,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'saved-searches',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'Saved searches',
     tooltip:
@@ -625,6 +677,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'dismissed-alerts',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'Dismissed alerts',
     tooltip:
@@ -634,6 +687,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'cloud-signin',
+    permissions: ['sync:write'],
     section: 'local',
     label: 'Cloud sign-in',
     tooltip:
@@ -643,6 +697,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'bridge-token',
+    permissions: ['bridge:write'],
     section: 'local',
     label: 'Bridge access token',
     tooltip:
@@ -654,6 +709,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'sync-links',
+    permissions: ['sync:write'],
     section: 'local',
     label: 'Sync links & pending deletions',
     tooltip:
@@ -674,7 +730,12 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     ],
   },
   {
+    // Kept at `settings:write` even though resetting it switches the Users module back off and so
+    // lifts the sign-in gate. Anyone may do that from the Modules screen directly — it is one of
+    // the escape hatches the permission model documents rather than a hole in it — and unlike the
+    // factory reset, this target destroys no records on its way there.
     id: 'enabled-features',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'Enabled features',
     tooltip:
@@ -684,6 +745,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'local-ui',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'Drafts & reminders',
     tooltip:
@@ -697,3 +759,62 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
 export function eraseTargetById(id: EraseTargetId): EraseTarget | undefined {
   return ERASE_TARGETS.find((target) => target.id === id);
 }
+
+/**
+ * Everything `id` actually destroys, as permission keys: its own {@link EraseTarget.permissions}
+ * plus those of every target it {@link EraseTarget.includes}, transitively (issue #519).
+ *
+ * Selecting "All items" cascades the activity history, checkouts, maintenance schedules and
+ * supplier parts away with the items. Each of those is a target in its own right with its own
+ * key — `audit:delete` for the ledger, and the registry is explicit that clearing an audit trail
+ * does not ride on an item permission — so asking only for `items:delete` would let one key
+ * destroy what a sibling entry gates separately. Deriving the answer from `includes` keeps the
+ * two consistent without a second hand-written list to fall out of step.
+ */
+export function eraseTargetPermissions(id: EraseTargetId): readonly PermissionKey[] {
+  const keys = new Set<PermissionKey>();
+  const seen = new Set<EraseTargetId>();
+  const visit = (targetId: EraseTargetId): void => {
+    if (seen.has(targetId)) return;
+    seen.add(targetId);
+    const target = eraseTargetById(targetId);
+    if (!target) return;
+    for (const key of target.permissions) keys.add(key);
+    for (const included of target.includes ?? []) visit(included);
+  };
+  visit(id);
+  return [...keys];
+}
+
+/**
+ * The subjects the factory reset destroys that no *target* covers, so no union over the catalog
+ * would ever find them (issue #519).
+ *
+ * "Erase everything" is `hardResetLocalData`: it deletes the whole database file, not a set of
+ * tables. Every row of `users` and `roles` goes with it, which is `users:manage` by any reading —
+ * destroying an account is the most complete way of administering one. `stock`, `bookings` and
+ * `wishlist` are here for the same plain reason: the reset destroys their rows and no catalog
+ * entry asks for them.
+ *
+ * The point is the data, not the authority. Anyone may switch the Users module off from the
+ * Modules screen and come back unrestricted — that is a documented, deliberate escape hatch, and
+ * no key here closes it. What these keys withhold is the ability to take everyone's records with
+ * you on the way.
+ */
+const RESET_ONLY_PERMISSIONS: readonly PermissionKey[] = [
+  'users:manage',
+  'stock:write',
+  'bookings:delete',
+  'wishlist:delete',
+];
+
+/**
+ * What the factory reset ("Erase everything") demands: every permission the catalog names, plus
+ * the subjects only the reset reaches (issue #519).
+ *
+ * Derived from the catalog rather than enumerated, so a target added later cannot leave the
+ * strongest action in the app asking for less than the individual one beside it.
+ */
+export const ERASE_EVERYTHING_PERMISSIONS: readonly PermissionKey[] = [
+  ...new Set([...ERASE_TARGETS.flatMap((target) => target.permissions), ...RESET_ONLY_PERMISSIONS]),
+];
