@@ -351,6 +351,12 @@ export const MS_PER_HOUR = 3_600_000;
  *   into a `data:` URL (compressed on the way in — see `encodeFieldImage`). Because it
  *   lives in `item_field_values.value` it syncs and backs up with everything else; the
  *   size cap keeps the synced database from ballooning.
+ * - `COLOUR` stores a colour as a canonical lowercase `#rrggbb` (or `#rrggbbaa` when it
+ *   carries alpha). The user may type or paste hex, `rgb()`, `hsl()`, HSB/HSV or a CSS
+ *   colour name — `src/lib/colour.ts` parses all of them down to that one spelling, so two
+ *   devices that entered the same colour by different routes store the same string. The
+ *   canonical form is what makes grouping, equality and search work without a colour parser
+ *   in the SQL; the other notations are a *display* choice, offered back on demand.
  */
 export const FIELD_TYPES = [
   'TEXT',
@@ -362,6 +368,7 @@ export const FIELD_TYPES = [
   'ON_OFF',
   'DATE',
   'SELECT',
+  'COLOUR',
   'FILE',
   'IMAGE',
 ] as const;

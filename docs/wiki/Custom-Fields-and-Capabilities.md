@@ -55,6 +55,9 @@ Each custom field has a **type** that decides how you enter and how Gubbins show
 - **Yes / No** and **On / Off** — a simple two-state toggle.
 - **Date** — a calendar date.
 - **Choice** — a value picked from a list of options you define.
+- **Colour** — an actual colour, shown as a
+  [[swatch beside its code|#recording-a-colour]]. Type or paste it in whichever notation you
+  have to hand, or pick it from your device's colour picker.
 - **URL / Link** — a web address, shown as a
   [[clickable link|#opening-a-link-or-file-field]] on the item card, the list rows and a
   location's detail panel.
@@ -79,6 +82,36 @@ Each custom field has a **type** that decides how you enter and how Gubbins show
 > text — isn't a picture, so Gubbins tells you it can't be shown and offers to replace it
 > rather than trying to load it. On the item's card that field simply reads `—` until you
 > choose a picture.
+
+### Recording a colour
+
+A **Colour** field holds a colour itself, not a description of one — so *Chocolate*, `#D2691E`
+and `rgb(210, 105, 30)` are stored as the **same** value, and the item's card shows a swatch of
+that colour with its hex code beside it.
+
+You can enter a colour in any of these ways:
+
+- a **hex code** — `#D2691E`, or the short `#F00`, with or without the leading `#`
+- **`rgb()`** or **`rgba()`** — `rgb(210, 105, 30)` or `rgb(210 105 30 / 50%)`
+- **`hsl()`** or **`hsla()`** — `hsl(25, 75%, 47%)`
+- **`hsb()`** / **`hsv()`** — `hsb(25, 86%, 82%)`, which is what most colour pickers and many
+  filament and paint listings quote
+- a **colour name** — `chocolate`, `teal`, `dimgrey`
+- the **swatch** beside the box, which opens your device's own colour picker
+
+Whichever you use, Gubbins stores one hex code. The **Show as** button (the palette, to the
+right of the box) rewrites the box in any of the notations above, so you can copy the value out
+in the form the tool you're pasting into expects.
+
+> **💡 Tip**
+> Because every spelling is stored the same way, two spools entered as `#FF0000` and as `red`
+> match each other — searching or grouping by colour finds both.
+
+> **ℹ️ Note**
+> A colour may carry transparency (`rgba(255, 0, 0, 0.5)`, or an eight-digit hex), and Gubbins
+> keeps it. Your device's colour picker has no transparency control, so the swatch shows such a
+> colour at full strength — picking a new colour from it changes the colour and leaves the
+> transparency as it was.
 
 ### Opening a link or file field
 

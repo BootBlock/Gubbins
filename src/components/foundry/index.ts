@@ -17,6 +17,10 @@ export { optionCardClassName, type OptionCardSize } from './option-card';
 export { ReorderList, type ReorderListProps, type ReorderListItem } from './reorder-list';
 export { Spinner, type SpinnerProps } from './spinner';
 export { Input, Checkbox, type InputProps } from './input';
+// The COLOUR custom field's control (issue #452): a box that reads any colour notation, a
+// native swatch, and a menu that re-renders the value in another notation. `ColourSwatch` is
+// its read-only half, for cards, tables and detail panels.
+export { ColourInput, ColourSwatch, type ColourInputProps } from './colour-input';
 export { Textarea, DEFAULT_TEXTAREA_MAX_ROWS, type TextareaProps } from './textarea';
 export { Radio } from './radio';
 export { NumberInput, type NumberInputProps } from './number-input';

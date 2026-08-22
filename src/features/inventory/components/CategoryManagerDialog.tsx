@@ -1726,7 +1726,10 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
 - **Yes / No** – a two-button toggle.
 - **On / Off** – a checkbox — identical to Yes/No, just worded (and shown) differently.
 - **Date** – a calendar date.
-- **Choice** – one of a fixed list you define below.`}
+- **Choice** – one of a fixed list you define below.
+- **Colour** – a colour, entered as a hex code, rgb()/hsl()/hsb(), or a colour name; stored as hex and readable back in any of those.
+- **File link** – a path or address pointing at a file kept outside Gubbins.
+- **Image** – a small picture stored in Gubbins itself.`}
           hintSize="md"
           value={fieldType}
           onChange={(value) => {

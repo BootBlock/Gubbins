@@ -1,5 +1,13 @@
 import { useRef, useState } from 'react';
-import { Checkbox, Input, Select, Spinner, Textarea, useRovingRadioGroup } from '@/components/foundry';
+import {
+  Checkbox,
+  ColourInput,
+  Input,
+  Select,
+  Spinner,
+  Textarea,
+  useRovingRadioGroup,
+} from '@/components/foundry';
 import { CloseIcon, UploadIcon } from '@/components/icons';
 import { encodeFieldImage } from '@/features/images/compression';
 import { useErrorMessage } from '@/features/errors';
@@ -153,6 +161,17 @@ export function TypedFieldControl({
           aria-labelledby={labelId}
           aria-invalid={controlProps['aria-invalid']}
           aria-describedby={controlProps['aria-describedby']}
+        />
+      );
+    case 'COLOUR':
+      return (
+        <ColourInput
+          value={value}
+          onChange={onChange}
+          onBlur={onBlur}
+          aria-label={ariaLabel}
+          aria-labelledby={labelId}
+          {...controlProps}
         />
       );
     case 'FILE':
