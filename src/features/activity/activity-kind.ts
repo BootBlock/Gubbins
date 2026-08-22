@@ -68,6 +68,9 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   ATTRIBUTES_CHANGED: 'lifecycle',
   // The ledger itself was cleared (issue #620) — a record-keeping event about the record.
   HISTORY_CLEARED: 'lifecycle',
+  // A sync merge overwrote this device's field values (issue #487) — the same record-keeping
+  // change `ATTRIBUTES_CHANGED` covers, arrived at by last-write-wins rather than by an edit.
+  MERGE_OVERWRITTEN: 'lifecycle',
   // Outbound / commercial stock movements.
   SOLD: 'stock',
   // Supplier / external data.

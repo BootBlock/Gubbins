@@ -178,6 +178,13 @@ restore your version instead of losing it.
 > automatically so this device's storage stays healthy. Review anything you want to keep or restore
 > soon after it appears rather than leaving it indefinitely.
 
+Where the overwritten edit was to an **item's details**, its own [[Activity log|Activity-Log]]
+records it too, as an **Overwritten by sync** entry naming each field the merge replaced. That
+entry is kept in the item's log rather than expiring with the review list above, and it travels to
+your other devices, so the log still shows that a merge changed the item long after the review
+list has moved on. Nothing is written for a device simply catching up on newer changes — only for
+an edit that was genuinely overwritten.
+
 ## When Gubbins can't reach your Drive
 
 Syncing to **Google Drive** needs a working connection. If you sync without one — on a train, in a

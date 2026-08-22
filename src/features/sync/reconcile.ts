@@ -43,6 +43,7 @@ import { buildConflict, detectsConflicts, nonLwwColumns } from './conflict-detec
 import { reconcileGauge, reconcileStockQuantity, replayGaugeValue, replayStockQuantity } from './delta-crdt';
 import { enforceForeignKeys } from './fk-refs';
 import { resolveLww } from './lww';
+import { overwrittenFields } from './merge-audit';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
 import { sanitiseRow } from './schema-dictionary';
 import { SUPPLIER_PART_FLAG_COLUMNS, flagWinner, type FlagRanked } from './supplier-part-flags';
@@ -61,6 +62,7 @@ import type {
   ItemRegionEdgeDelete,
   LocationTagEdge,
   LocationTagEdgeDelete,
+  MergeOverwrite,
   ReconciliationPlan,
   ReparentLog,
   SchemaDictionary,
@@ -101,6 +103,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   gaugeResolutions: [],
   stockResolutions: [],
   reparented: [],
+  mergeOverwrites: [],
   rejectedCycles: [],
   serialisedLoansClosed: [],
   bookingsCancelled: [],
@@ -255,6 +258,11 @@ export function reconcile(
   );
   enforceForeignKeys(localUpserts, removedParents);
 
+  // --- Issue #487: what the merge overwrote --------------------------------------
+  // Deliberately after the FK guard: an `items` upsert that guard drops overwrites nothing, so
+  // it must not be recorded as a loss. Nothing later touches the `items` upserts.
+  const mergeOverwrites = planMergeOverwrites(conflicts, localUpserts, finalItemIds);
+
   // --- Issues #157 / #192: "one flag per item" cross-row repair ------------------
   // Runs after the FK guard so it sees the final upsert set, and mutates the losing upserts in
   // place. Per-row LWW cannot enforce a one-of-N flag, so two devices pinning different supplier
@@ -352,6 +360,7 @@ export function reconcile(
     gaugeResolutions,
     stockResolutions,
     reparented,
+    mergeOverwrites,
     rejectedCycles,
     serialisedLoansClosed,
     bookingsCancelled,
@@ -457,6 +466,53 @@ function resolveTableMerges(
   }
 
   return { localUpserts, localDeletes, conflicts };
+}
+
+/**
+ * Issue #487: the ledger records for the item edits this merge is about to discard.
+ *
+ * Derived from the {@link SyncConflict}s the LWW pass already raised rather than from a second
+ * scan, so the audit trail and the review UI can never disagree about what was lost. That also
+ * settles the "unconditional or bounded?" question the issue raised: an entry is written only
+ * where a local edit made **since the last sync** lost to a newer remote one — a genuine
+ * concurrent collision. Ordinary propagation of a peer's edit is not a loss (this device changed
+ * nothing, and the peer's own `ATTRIBUTES_CHANGED` entry travels with it in the unioned ledger),
+ * so it writes nothing and the volume stays proportional to real offline divergence rather than
+ * to the size of the pull. Within that gate it is unconditional: a partial audit trail is worse
+ * than a large one, because the entries a cap dropped are indistinguishable from edits that were
+ * never overwritten.
+ *
+ * Filtered to the items that both survive the merge and are actually being upserted — the
+ * entry's `item_id` is a foreign key into a table the same atomic transaction is writing, and an
+ * upsert a later pass dropped overwrote nothing to begin with.
+ */
+function planMergeOverwrites(
+  conflicts: readonly SyncConflict[],
+  localUpserts: readonly TableRow[],
+  finalItemIds: ReadonlySet<string>,
+): MergeOverwrite[] {
+  const upsertedItemIds = new Set<string>();
+  for (const { table, row } of localUpserts) {
+    if (table === 'items') upsertedItemIds.add(String(row.id));
+  }
+
+  const overwrites: MergeOverwrite[] = [];
+  for (const conflict of conflicts) {
+    if (conflict.tableName !== 'items' || conflict.remoteVersion === null) continue;
+    if (!upsertedItemIds.has(conflict.rowId) || !finalItemIds.has(conflict.rowId)) continue;
+    const changes = overwrittenFields(conflict.localVersion, conflict.remoteVersion);
+    if (changes.length === 0) continue;
+    overwrites.push({
+      itemId: conflict.rowId,
+      // The **unadjusted** stamps both rows carry, so the derived id is the same on every
+      // device and on every replay. The §7.3 offset is a per-sync measurement of two clocks;
+      // folding it in would make the id depend on when the merge ran.
+      losingUpdatedAt: num(conflict.localVersion.updated_at),
+      winningUpdatedAt: num(conflict.remoteVersion.updated_at),
+      changes,
+    });
+  }
+  return overwrites;
 }
 
 /**

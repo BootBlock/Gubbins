@@ -78,6 +78,11 @@ export const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
   // subscriber watching the audit trail should still see that the trail was emptied, so it maps
   // to the same generic type rather than being silently unpublished.
   HISTORY_CLEARED: 'item.changed',
+  // A sync merge discarded this device's values for one or more fields (issue #487). The item's
+  // attributes did change, and by the same fields-and-values record `ATTRIBUTES_CHANGED` carries,
+  // so it publishes as the same generic type rather than minting a sync-specific one: a subscriber
+  // watching an item's attributes wants the change regardless of which device won it.
+  MERGE_OVERWRITTEN: 'item.changed',
 };
 
 /**

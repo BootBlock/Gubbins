@@ -197,6 +197,12 @@ export const HISTORY_ACTIONS = [
   // straight back on the next merge. Entries older than the newest `HISTORY_CLEARED` for an
   // item are neither imported nor kept — see `reconcileHistory`.
   'HISTORY_CLEARED',
+  // A sync merge discarded this device's version of one or more of the item's fields (issue
+  // #487). The counterpart to `ATTRIBUTES_CHANGED` for the one path that changes an item without
+  // anybody editing it: last-write-wins adopted a peer's newer row, and the values it overwrote
+  // would otherwise have vanished with nothing in the ledger saying so. Attributed to the System
+  // user, because no person asked for it.
+  'MERGE_OVERWRITTEN',
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 

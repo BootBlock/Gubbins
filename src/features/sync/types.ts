@@ -7,6 +7,7 @@
  */
 import type { SqlRow } from '@/db/rpc/driver';
 import type { SyncTable, Tombstone } from '@/db/repositories';
+import type { FieldChange } from './merge-audit';
 
 export type { SyncTable, Tombstone };
 
@@ -188,6 +189,25 @@ export interface ReparentLog {
 }
 
 /**
+ * Issue #487 audit record: a last-write-wins merge overwrote this device's version of an item's
+ * fields, and these are the values it discarded.
+ *
+ * Built by `reconcile` — which is where the losing local row and the winning remote row are both
+ * in hand — and written to `item_history` by `applyPlan`, which derives the entry's id (the
+ * derivation is asynchronous, so it cannot happen inside the pure engine).
+ */
+export interface MergeOverwrite {
+  /** The item whose ledger the entry belongs to. */
+  readonly itemId: string;
+  /** `updated_at` of the discarded local version, in the local frame — half the derived id. */
+  readonly losingUpdatedAt: number;
+  /** `updated_at` of the adopted remote version — the other half. */
+  readonly winningUpdatedAt: number;
+  /** Each overwritten field, with the value discarded and the value adopted. */
+  readonly changes: readonly FieldChange[];
+}
+
+/**
  * Issue #193 repair log: a serialised item's surplus open loan was closed by the merge.
  *
  * A serialised item is one physical instance, so it can be on loan to at most one borrower. Two
@@ -322,6 +342,12 @@ export interface ReconciliationPlan {
   readonly stockResolutions: readonly StockResolution[];
   /** §7.5.2 automatic re-parents to Unassigned, to log in each item's Activity Ledger. */
   readonly reparented: readonly ReparentLog[];
+  /**
+   * Issue #487: the ledger entries recording what a last-write-wins merge overwrote on this
+   * device. Empty unless a local edit made since the last sync lost to a newer remote one —
+   * ordinary propagation of a peer's edit overwrites nothing this device had changed.
+   */
+  readonly mergeOverwrites: readonly MergeOverwrite[];
   /** §7.5.3 location moves discarded because they would create a nesting cycle. */
   readonly rejectedCycles: readonly string[];
   /** Issue #193: serialised items whose surplus open loans were closed (see {@link SerialisedLoanClosure}). */

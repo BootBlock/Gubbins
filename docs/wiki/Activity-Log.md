@@ -34,6 +34,11 @@ manufacturer and manufacturer part number, category, batch and lot numbers,
 period, weight and dimensions — alongside the renames, tracking-mode switches and condition changes
 that have always been logged.
 
+A [[sync|Cloud-Sync]] can change an item's details too, without anybody editing it. When two
+devices edited the same item while apart, the more recent change wins and the other is set aside —
+and an **Overwritten by sync** entry records it, naming each field the merge replaced. So the log
+never reads as though a discarded edit still stands.
+
 > **ℹ️ Note**
 > A few things change quietly. The free-text description, notes and **operational parameters** do,
 > because keeping a copy of long text on every edit would bloat a log that syncs to your other

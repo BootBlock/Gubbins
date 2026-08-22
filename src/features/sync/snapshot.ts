@@ -31,12 +31,13 @@ import {
 } from '@/db/repositories/tombstone';
 // Imported from the defining module rather than the `@/db/repositories` barrel: these are read
 // at module scope, and screen tests that mock the barrel wholesale do not provide them.
-import { SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
+import { SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID, type HistoryAction } from '@/db/repositories/constants';
 import { historyStatement } from '@/db/repositories/item/history';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
 import { dedupeDefaultLocations, defaultLocationWinner } from './location-default-flag';
+import { labelsFor, mergeOverwriteId, overwriteNote } from './merge-audit';
 import { buildSchemaDictionary } from './schema-dictionary';
 import { ALWAYS_PRESENT_ROW_IDS, repairSnapshotIntegrity } from './snapshot-integrity';
 import { dedupeSupplierPartFlags, supplierPartFlagClears } from './supplier-part-flags';
@@ -45,6 +46,7 @@ import type {
   ItemRegionEdge,
   ItemTagEdge,
   LocationTagEdge,
+  MergeOverwrite,
   ReconciliationPlan,
   SchemaDictionary,
   SyncSnapshot,
@@ -718,6 +720,58 @@ export function withDeferredForeignKeys(statements: readonly SqlStatement[]): Sq
 }
 
 /**
+ * The `MERGE_OVERWRITTEN` Activity-Ledger entries for what a last-write-wins merge discarded
+ * (issue #487) — one per item whose local version lost, naming every field it overwrote and the
+ * value it threw away.
+ *
+ * Two things separate these from an ordinary ledger write, and both are why they are built here
+ * rather than by the pure engine:
+ *
+ *  - **The id is derived, not minted.** `item_history` reconciles by union-of-id, so a
+ *    `crypto.randomUUID()` would append a fresh duplicate every time the same merge replayed —
+ *    after a sync that applied but failed before its watermark advanced, say. {@link
+ *    mergeOverwriteId} hashes the three facts that identify the overwrite instead, and the
+ *    `INSERT OR IGNORE` below then collapses a replay to a no-op. The derivation is
+ *    asynchronous (`crypto.subtle`), which `reconcile` — pure and synchronous — cannot be.
+ *  - **The actor is the System user** (issue #79, plan §2.4), the same attribution the §7.5.2
+ *    re-parent takes: no person asked for this write; the merge did it while resolving two
+ *    devices' concurrent edits.
+ *
+ * `created_at` is left to the column default rather than stamped, so the entry is dated when the
+ * merge actually ran on this device — the ledger's own frame, which is what the prune watermark
+ * and the §7.6.3-A clear marks are compared against.
+ *
+ * The metadata mirrors `ATTRIBUTES_CHANGED` exactly (issue #144) — `changes` as the audit record
+ * proper, `fields` beside it as the already-published field-name list — so one reader handles a
+ * field's history whether a person changed it or a sync overwrote it.
+ */
+async function mergeOverwriteStatements(
+  overwrites: readonly MergeOverwrite[],
+  columns: readonly string[] | undefined,
+): Promise<SqlStatement[]> {
+  const statements: SqlStatement[] = [];
+  for (const { itemId, losingUpdatedAt, winningUpdatedAt, changes } of overwrites) {
+    const id = await mergeOverwriteId(itemId, losingUpdatedAt, winningUpdatedAt);
+    statements.push(
+      historyInsertStatement(
+        {
+          id,
+          item_id: itemId,
+          action: 'MERGE_OVERWRITTEN' satisfies HistoryAction,
+          quantity_delta: null,
+          net_value_delta: null,
+          note: overwriteNote(labelsFor(changes)),
+          metadata: JSON.stringify({ fields: changes.map((c) => c.field), changes }),
+          actor_user_id: SYSTEM_USER_ID,
+        },
+        columns,
+      ),
+    );
+  }
+  return statements;
+}
+
+/**
  * A RE_PARENTED Activity-Ledger entry for a §7.5.2 sync re-parent.
  *
  * Attributed to the System user explicitly (issue #79, plan §2.4): no person asked for this
@@ -1083,6 +1137,10 @@ export async function applyPlan(
   for (const { itemId } of plan.reparented) {
     statements.push(reparentHistoryStatement(itemId));
   }
+
+  // Issue #487: what the merge overwrote. Written last among the ledger appends, and after the
+  // `items` upserts above, so the entry's `item_id` foreign key sees the row the merge settled on.
+  statements.push(...(await mergeOverwriteStatements(plan.mergeOverwrites, dictionary[ITEM_HISTORY_TABLE])));
 
   // Issue #188: the whole merge is a sync apply, so its `stock_batches` writes must not re-capture
   // deltas (they already travel in the unioned ledger). Disable capture around the batch.
