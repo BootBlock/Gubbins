@@ -770,6 +770,11 @@ and only one of them is a display decision.
    *and* reports to show for it — whereas this one is a rule about a custom-field value with a
    single consumer. Lift it when a second feature needs it, not on the strength of a resemblance.
 
+   > **Since:** issue [#518](https://github.com/BootBlock/Gubbins/issues/518) gave it those
+   > callers — supplier parts, datasheet attachments and wishlist entries all render a stored
+   > address as a link — so the module now lives at `lib/external-href.ts`. The reasoning above
+   > stands as the record of why it started in the feature.
+
    Note what it is **not**: it does not unify the http(s) checks in `validateFieldValue` and
    `AttachmentRepository`, which stay where they are. Those are *write-time* validators whose job
    is to explain a refusal in the user's words, each differently; this one only has to answer yes
