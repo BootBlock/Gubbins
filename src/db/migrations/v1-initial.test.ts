@@ -5,6 +5,8 @@ import { migrations, TARGET_SCHEMA_VERSION } from './index';
 import { v1Initial } from './v1-initial';
 import { captureSchemaSnapshot } from './__fixtures__/schema-snapshot';
 import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
+import { FTS_TEXT_ITEM_COLUMNS } from '@/db/search/parseASTtoSQL';
+import { FTS_ITEM_COLUMNS } from '@/db/repositories/constants';
 
 /**
  * Schema-baseline lock.
@@ -244,5 +246,122 @@ describe('schema baseline lock', () => {
     await expect(runMigrations(driver, migrations)).rejects.toMatchObject({
       code: 'SCHEMA_TOO_NEW',
     });
+  });
+});
+
+/**
+ * FTS5 index / search-vocabulary drift lock (issue #248).
+ *
+ * The `items_fts` virtual table and its three sync triggers name the same column list four
+ * times, and that list has to be exactly the `fts-text` fields of the search registry
+ * (`ITEM_FIELDS`, surfaced here as {@link FTS_TEXT_ITEM_COLUMNS}). Nothing related the two
+ * before: the golden snapshot above locks the DDL's shape but knows nothing of the registry,
+ * so marking a new column `fts-text` without touching the migration left `CONTAINS` on that
+ * field querying an index with no such column — a SQL error, or a silently empty result set.
+ * The reverse gap has already bitten: `notes` was indexed all along but absent from
+ * `FTS_ITEM_COLUMNS`, which left every scoped "Notes contains…" search compiling to the
+ * always-false `0` (issue #120). Both directions are locked here.
+ *
+ * These tests read the DDL back from `sqlite_master`, so they assert against the schema the
+ * migration actually produced rather than against the source text that produced it.
+ */
+describe('items_fts column list', () => {
+  let driver: MemoryDriver;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  /** Read one `sqlite_master.sql` definition, failing loudly if the object is absent. */
+  const ddl = async (name: string): Promise<string> => {
+    const row = await driver.queryOne<{ sql: string }>('SELECT sql FROM sqlite_master WHERE name = ?;', [
+      name,
+    ]);
+    expect(row?.sql, `no schema object named ${name}`).toBeTruthy();
+    return row!.sql;
+  };
+
+  /**
+   * The indexed columns declared inside `fts5(…)`, in order. The argument list mixes column
+   * names with `option='value'` configuration (`content`, `content_rowid`), so anything
+   * carrying an `=` is dropped.
+   */
+  const virtualTableColumns = (sql: string): string[] => {
+    const args = /USING\s+fts5\s*\(([\s\S]*)\)/i.exec(sql)?.[1];
+    expect(args, `could not read the fts5 argument list from: ${sql}`).toBeTruthy();
+    return args!
+      .split(',')
+      .map((arg) => arg.trim())
+      .filter((arg) => arg.length > 0 && !arg.includes('='));
+  };
+
+  /**
+   * Every `INSERT INTO items_fts(…)` column list in a trigger body, in order, with the two
+   * FTS5 sentinels dropped: `items_fts` (the command column that carries `'delete'`) and
+   * `rowid` (the row key, not an indexed column).
+   */
+  const triggerColumnLists = (sql: string): string[][] =>
+    [...sql.matchAll(/INSERT\s+INTO\s+items_fts\s*\(([^)]*)\)/gi)].map((match) =>
+      match[1]
+        .split(',')
+        .map((column) => column.trim())
+        .filter((column) => column.length > 0 && column !== 'items_fts' && column !== 'rowid'),
+    );
+
+  it('indexes exactly the fts-text fields the search registry routes CONTAINS through', async () => {
+    // Order is the migration's to choose, so compare as sets — the registry has no say in it.
+    expect([...virtualTableColumns(await ddl('items_fts'))].sort()).toEqual(
+      [...FTS_TEXT_ITEM_COLUMNS].sort(),
+    );
+  });
+
+  it('keeps FTS_ITEM_COLUMNS in step with both the registry and the index', async () => {
+    // The shared constant the search layer scopes its MATCH queries with. It sits between the
+    // two, so it is pinned to both: to the registry as a set, and to the index in exact order
+    // (its own doc block promises the order is the migration's).
+    expect([...FTS_ITEM_COLUMNS].sort()).toEqual([...FTS_TEXT_ITEM_COLUMNS].sort());
+    expect(virtualTableColumns(await ddl('items_fts'))).toEqual([...FTS_ITEM_COLUMNS]);
+  });
+
+  it('syncs every indexed column in all three triggers', async () => {
+    const expected = [...FTS_ITEM_COLUMNS];
+    // `_ai` inserts the new row; `_ad` deletes the old one; `_au` does both, so it carries two
+    // column lists. A column missing from any one of them leaves the index stale rather than
+    // erroring, which is the harder failure to notice.
+    for (const trigger of ['items_fts_ai', 'items_fts_ad', 'items_fts_au']) {
+      const lists = triggerColumnLists(await ddl(trigger));
+      expect(lists.length, `${trigger} names no items_fts column list`).toBeGreaterThan(0);
+      for (const list of lists) {
+        expect(list, `${trigger} column list drifted`).toEqual(expected);
+      }
+    }
+  });
+
+  it('matches on every indexed column through a column-scoped MATCH', async () => {
+    // The end-to-end proof: seed one item whose every indexed column holds a distinct token,
+    // then scope a MATCH to each column in turn. A column declared on the virtual table but
+    // never written by the triggers passes the string comparisons above and still fails here.
+    const loc = '00000000-0000-4000-8000-000000000001'; // seeded Unassigned location
+    const columns = [...FTS_ITEM_COLUMNS];
+    const tokens = columns.map((_, index) => `ftstoken${index}`);
+    const placeholders = columns.map(() => '?').join(', ');
+    await driver.execute(
+      `INSERT INTO items (id, location_id, quantity, ${columns.join(', ')})
+       VALUES ('fts-drift', ?, 1, ${placeholders});`,
+      [loc, ...tokens],
+    );
+
+    for (const [index, column] of columns.entries()) {
+      const row = await driver.queryOne<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM items_fts WHERE items_fts MATCH ?;',
+        [`${column} : ("${tokens[index]}"*)`],
+      );
+      expect(Number(row?.n), `${column} is not searchable through items_fts`).toBe(1);
+    }
   });
 });
