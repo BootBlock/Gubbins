@@ -1165,8 +1165,8 @@ behaviour that does not exist.
    against `currentValue()`. It stops at valuation: turnover's cost of goods, ABC's consumption value
    and dead stock's tied-up capital keep reading the bare cost seam, because a write-down refunds
    none of what stock cost, and a test pins that they still differ. The
-   four wiki pages, the item editor's hint and the bridge schema now describe the real precedence,
-   and the wiki's phantom "salvage floor" is gone. As found: `currentValue()`
+   six affected wiki pages, the item editor's hint and the bridge schema now describe the real
+   precedence, and the wiki's phantom "salvage floor" is gone. As found: `currentValue()`
    ([asset-lifecycle.ts:120](../../src/features/inventory/asset-lifecycle.ts#L120)) has one
    production call site — the Asset editor. No report, export, card, bridge or schedule reads it:
    valuation resolves `unitCost` then the preferred supplier cost and nothing else

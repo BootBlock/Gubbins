@@ -7,11 +7,16 @@
  *
  * The repository runs the SQL and hands the minimal raw rows to the pure helpers in
  * `@/features/reports/reports`, which own all bucketing/grouping/boundary maths (and are
- * unit-tested there). Cost lookups go through a single `effectiveUnitCost` seam in that
- * module, which delegates the precedence rule (manual cost wins, else the preferred supplier
- * cost) to the Phase-60 `supplier-cost` helper; the valuation queries feed it the preferred
- * supplier cost via {@link preferredSupplierCostSql}. Reads are unpaginated *aggregates* (a
- * fixed, tiny result set), not row dumps.
+ * unit-tested there). Two seams price a unit, and which one a report reads is a deliberate
+ * choice: `valuedUnitValue` answers what stock is **worth** (a manual current value, else
+ * `effectiveUnitCost`, else the depreciated purchase price — issue #688), while `effectiveUnitCost`
+ * alone answers what it **cost** (manual cost, else the preferred supplier cost, delegated to the
+ * Phase-60 `supplier-cost` helper) and is what the consumption reports read. A valuation query
+ * either projects the inputs with {@link valuedItemColumns} and folds them in JS, or restates the
+ * rule in SQL as {@link effectiveUnitValueSql} to sum a whole inventory in the database
+ * ({@link ReportRepository.partsCatalogue} is the one that spells its own projection out, because
+ * a printed catalogue deliberately reads fewer of the columns). Reads are unpaginated *aggregates*
+ * (a fixed, tiny result set), not row dumps.
  */
 import { BaseRepository } from './base';
 import { parsePriceBreaks } from './mappers';
@@ -731,9 +736,9 @@ export class ReportRepository extends BaseRepository {
    * {@link resolveScheduleGroupKey} did — narrowing that to `location_id IS NULL` would silently drop
    * assets pointing at a deleted room from a document someone claims against.
    *
-   * Cost flows through the same `effectiveUnitCost` seam as the valuation report (manual cost wins,
-   * else the preferred supplier cost, via {@link preferredSupplierCostSql}), so the figures a page
-   * shows and the totals above them come from one rule.
+   * Value flows through the same `valuedUnitValue` rule as the valuation report — restated here as
+   * {@link effectiveUnitValueSql} so the whole schedule sums in SQL — so the figures a page shows
+   * and the totals above them come from one rule.
    */
   async insuranceScheduleSummary(now: number = nowMs()): Promise<InsuranceScheduleSummary> {
     const base = this.baseCurrency();
@@ -887,9 +892,14 @@ export class ReportRepository extends BaseRepository {
    * its whole subtree, by a project's bill of materials, or by an explicit ad-hoc selection.
    * One row per active, non-parent item (a variant parent holds no stock of its own); the
    * pure {@link buildPartsCatalogue} groups them by location and rolls up value subtotals.
-   * Cost flows through the same {@link preferredSupplierCostSql} → `effectiveUnitCost` seam as
-   * every valuation. The columns the reader ultimately prints are a UI concern — every field
-   * is resolved here.
+   * A line is valued through the same `valuedUnitValue` seam as every other valuation — a unit
+   * cost, else the {@link preferredSupplierCostSql} supplier price, else the
+   * {@link depreciatedPurchasePriceSql} book value (issue #688). It is the one valuation read that
+   * spells its projection out rather than taking {@link valuedItemColumns}, and the difference is a
+   * real one: it selects no `current_value`, so no catalogue line is priced at a manual current
+   * value the way the valuation reports and the schedule price the same item. That predates issue
+   * #688 and is untouched by it. The columns the reader ultimately prints are a UI concern — every
+   * field is resolved here.
    */
   async partsCatalogue(
     scope: CatalogueScope,

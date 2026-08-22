@@ -45,19 +45,22 @@ export function inBaseCurrencySql(col: string, baseCurrency: string): string {
  * Correlated subquery yielding the **preferred** supplier part's `unit_cost` for an item
  * (NULL when none is marked, the preferred row is unpriced, or its price is in a currency
  * other than the base — see {@link inBaseCurrencySql}). Feeds the `preferredSupplierCost`
- * fallback so valuation honours the Phase-60 cost precedence — a manual `items.unit_cost` wins,
+ * fallback so every reader honours the Phase-60 cost precedence — a manual `items.unit_cost` wins,
  * else the preferred supplier cost — resolved in one place by `effectiveUnitCost`
  * (`@/features/reports/reports`, and its `@/features/inventory/supplier-cost` twin on the sale
- * path). `col` is the qualified item-id column to correlate on. At most one preferred row exists
+ * path). A **valuation** read continues past that pair to the depreciated purchase price
+ * (issue #688); a cost read stops there. `col` is the qualified item-id column to correlate on. At most one preferred row exists
  * per item — the repository's demote-then-set write, backstopped by the partial unique index
  * `idx_supplier_parts_one_preferred` (issues #157/#192) — so the `ORDER BY` is a defensive
  * tiebreak for a state the schema already forbids, not a rule anything relies on.
  *
  * A declined price yields NULL rather than 0: "unpriced" and "worth nothing" are different facts,
- * and every consumer already distinguishes them — valuation counts the item as unpriced and
- * `ReportRepository.foreignCurrencyCostCount` surfaces how many were left out, while a sale writes
- * no `unitCostAtSale` and the sales report tallies the units in `unitsWithoutCost` so the margin is
- * caveated rather than overstated.
+ * and every consumer already distinguishes them — valuation falls past it to whatever prices the
+ * item next, counting it as unpriced only when nothing does, and
+ * `ReportRepository.foreignCurrencyCostCount` surfaces how many were left out on that footing
+ * (which is why an item carrying a purchase price is not among them — issue #688), while a sale
+ * writes no `unitCostAtSale` and the sales report tallies the units in `unitsWithoutCost` so the
+ * margin is caveated rather than overstated.
  */
 export function preferredSupplierCostSql(col: string, baseCurrency: string | null): string {
   return `(SELECT sp.unit_cost FROM supplier_parts sp

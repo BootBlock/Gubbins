@@ -38,9 +38,13 @@ export interface HygieneItemFlags {
   readonly hasLocation: boolean;
   /**
    * False when nothing prices the item: no unit cost, no preferred supplier cost and no purchase
-   * price for a counted item (issue #688), or no cost per unit of measure for a gauge (#683). It
-   * must name every source valuation can price from — flagging an item the reports value would
-   * send the user to fix something that is not broken.
+   * price for a counted item (issue #688), or no cost per unit of measure for a gauge (#683).
+   *
+   * Each source added here has to be one valuation prices from, or the screen sends the user to
+   * fix something that is not broken — which is why the purchase price joined the list when
+   * valuation began falling back to it. The converse does not hold yet: a manual `current_value`
+   * also values an item and is **not** read here, so an item carrying only one is still flagged.
+   * That gap predates issue #688 and is left as found rather than widened into it.
    */
   readonly hasPrice: boolean;
   readonly hasPhoto: boolean;
@@ -123,7 +127,7 @@ const SECTION_META: Record<
   },
   'missing-price': {
     label: 'Missing price',
-    description: 'No unit cost or supplier price.',
+    description: 'No unit cost, supplier price or purchase price.',
     passDescription: 'Every item has a price.',
   },
   'missing-photo': {

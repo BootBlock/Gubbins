@@ -403,9 +403,13 @@ export interface CatalogueLine {
   readonly manufacturer: string | null;
   readonly supplier: string | null;
   /**
-   * The per-unit value `valuedUnitValue` resolved — a manual current value, else a manual unit
-   * cost, else the preferred supplier price, else the depreciated purchase price (issue #688); for
-   * a gauge, its cost per unit of measure. Null when {@link isPriced} finds no source at all.
+   * The per-unit value `valuedUnitValue` resolved from the sources the catalogue supplies it — a
+   * manual unit cost, else the preferred supplier price, else the depreciated purchase price
+   * (issue #688); for a gauge, its cost per unit of measure. Null when {@link isPriced} finds no
+   * source at all.
+   *
+   * A manual `current_value` outranks all of those in the valuation reports, but the catalogue's
+   * read does not select it, so no line is ever valued at one. That predates issue #688.
    */
   readonly unitCost: number | null;
   /** `quantity × unitCost`, or null when the item is unpriced. */
@@ -452,9 +456,10 @@ export interface PartsCatalogue {
  * measure (issue #683). A gauge is never priced from the first three: they price one *countable*
  * unit, and it holds a measure.
  *
- * This must name exactly the sources `valuedUnitValue` values from. Leaving one out prints a
- * dash on a line the valuation reports total a real figure for, and the catalogue's own grand
- * total would then disagree with the value column above it.
+ * This must name exactly the sources `valuedUnitValue` can reach *from a catalogue row*. Leaving
+ * one out prints a dash on a line the catalogue's own grand total counts a real figure for, and the
+ * document would stop adding up. (`currentValuePerUnit` is absent from both because the catalogue's
+ * read never selects `items.current_value` — a gap that predates issue #688.)
  */
 function isPriced(item: CatalogueItemInput): boolean {
   if (item.gauge) return item.gauge.costPerUnitOfMeasure != null;
