@@ -81,6 +81,14 @@ describe('buildContentSecurityPolicy', () => {
     );
   });
 
+  it("locks form submission to 'self' in both delivered forms", () => {
+    // The CSP spec excludes `form-action` from `default-src` fallback, so leaving it out would
+    // let an injected form post off-origin while every other directive says `'self'` (issue
+    // #517). Unlike `frame-ancestors` a `<meta>` can express it, so both forms must carry it.
+    expect(buildContentSecurityPolicy()).toContain("form-action 'self'");
+    expect(buildContentSecurityPolicy({ forMeta: true })).toContain("form-action 'self'");
+  });
+
   it('drops frame-ancestors from the meta form, with or without a bridge origin', () => {
     expect(buildContentSecurityPolicy({ forMeta: true })).not.toContain('frame-ancestors');
     const meta = buildContentSecurityPolicy({ forMeta: true, bridgeOrigin: BRIDGE });
