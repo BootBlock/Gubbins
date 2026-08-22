@@ -40,7 +40,12 @@ import type { SqlStatement } from '../rpc/driver';
  * (gated by the §7.6.3-A prune watermark). All are tombstone/auxiliary, not LWW.
  *
  * Order is dependency-safe (parents before children) so a batch of UPSERTs in this
- * order never trips a foreign key.
+ * order never trips a foreign key. That contract is no longer maintained by hand and hope:
+ * `features/sync/sync-table-fk-order.test.ts` reads `PRAGMA foreign_key_list` over the built
+ * schema and fails if any synced table's parent sits at a larger index (issue #535, which is how
+ * `checkouts` came to precede `projects`). A *self*-reference is the one shape the list cannot
+ * express — a table is neither before nor after itself — and is covered instead by the deferred
+ * foreign-key check the apply paths run under (issue #602).
  */
 export const SYNC_TABLES = [
   // Principals first (issue #79): `roles` before `users` before anything attributing a row
@@ -83,14 +88,20 @@ export const SYNC_TABLES = [
   'item_attachments', // FK → items
   'location_photos', // FK → locations (issue #81 — photos of a place; ordered after locations so its FK never trips on an UPSERT batch)
   'location_regions', // FK → location_photos (issue #81 — named shapes drawn on a photo; ordered after its parent photo). The `item_regions` join that links items to these is NOT here: it has no `updated_at` and reconciles by membership, like `location_tags`.
+  // Issue #535: the whole project block sits ahead of `checkouts`, which can borrow against a
+  // project (`checkouts.project_id`, one arm of the tagged-union borrower). It was below, so a
+  // clone or a Replace restore of any database holding a project loan wrote the loan against a
+  // still-empty `projects` table — surviving only because the deferred check (#602) waits until
+  // COMMIT to look. Its own children stay behind it, and it stays behind `items` for
+  // `project_bom_lines`.
+  'projects', // independent — but referenced by checkouts.project_id, so it must precede them
+  'project_bom_lines', // FK → projects, items
+  'project_budget_categories', // FK → projects (ordered before project_expenses, which references it)
+  'project_expenses', // FK → projects, project_budget_categories
   'capabilities',
   'contacts',
-  'checkouts',
+  'checkouts', // FK → items (CASCADE), locations (source_location_id, NO ACTION), and the tagged-union borrower — contacts XOR projects XOR locations, all CASCADE — so ordered after all four parents
   'asset_bookings', // FK → items (CASCADE), contacts (SET NULL) — calendar reservations (Phase 78); ordered after both parents so its FKs never trip on an UPSERT batch
-  'projects', // independent
-  'project_bom_lines', // FK → projects, items
-  'project_budget_categories', // FK → projects (ordered before project_expenses, its parent)
-  'project_expenses', // FK → projects, project_budget_categories
   'maintenance_schedules', // FK → items
   'wishlist', // independent (feature-gap G8 — manual "to-buy" list; LWW leaf, no FK → no FK_REFS reconcile entry, like contacts/projects)
   'tare_presets', // independent (issue #94 — saved empty-container weights; LWW leaf, no FK → no FK_REFS reconcile entry, like wishlist)
