@@ -9,10 +9,11 @@ changed.
 
 ## Why a manual value
 
-By default, Gubbins derives an item's worth from its purchase price minus
-[[depreciation|Warranty-and-Depreciation]] — a *book value* that only ever falls. That's wrong
-for anything that appreciates. Setting a **current value** overrides that with a figure you
-control, which can move in either direction.
+Without a current value, Gubbins works an item's worth out from what it costs to replace — its
+unit cost, or its preferred supplier's price — and, failing those, from its purchase price minus
+[[depreciation|Warranty-and-Depreciation]], a *book value* that only ever falls. Every one of
+those is wrong for something that appreciates. Setting a **current value** overrides the lot with
+a figure you control, which can move in either direction.
 
 > **ℹ️ Note**
 > When an item has a manual current value, that figure wins over the depreciated book value

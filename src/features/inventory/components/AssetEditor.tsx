@@ -178,9 +178,11 @@ export function AssetEditor({ item }: { item: Item }) {
           label="Purchase price"
           error={measureIssueText(priceEntry.issue, t)}
           hint={
-            "The original acquisition cost in the base currency. Shown as the item's current " +
-            '**book value** (decreasing over time when a depreciation term is set).\n\nEnter it ' +
-            'as plain digits — `1250`, not `1,250` — with a full stop for any decimals.'
+            "The original acquisition cost of one unit, in the base currency. Shown as the item's " +
+            'current **book value** (decreasing over time when a depreciation term is set).\n\nThe ' +
+            'book value is the **last** figure valuation falls back on — a current value, a unit ' +
+            'cost and a preferred supplier price each win over it.\n\nEnter it as plain digits — ' +
+            '`1250`, not `1,250` — with a full stop for any decimals.'
           }
         >
           <MoneyInput

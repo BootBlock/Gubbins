@@ -51,9 +51,10 @@ spot when a supplier's price has crept up.
 > A supplier part can be priced in **a different currency** — pick one from the list, or type any
 > three-letter ISO 4217 code — and Gubbins shows it exactly as entered — it
 > never converts. Because of that, a price in anything other than your base currency **can't be
-> counted in valuation totals**, and the item is left out of them (the reports say how many).
-> Give the item its own **unit cost** if you need it counted. See
-> [[valuation & spend|Valuation-and-Spend]].
+> counted in valuation totals**. If the supplier's price is the only figure the item has, it is
+> left out of them altogether and the reports say how many. Give the item its own **unit cost** —
+> or a **[[purchase price|Warranty-and-Depreciation]]**, which valuation falls back on last — if
+> you need it counted. See [[valuation & spend|Valuation-and-Spend]].
 
 ## Related pages
 

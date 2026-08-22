@@ -13,7 +13,9 @@
  * so a document handed to an insurer and the totals on screen can never disagree: a manual
  * {@link ScheduleItemInput.currentValuePerUnit} wins over the replacement cost (G9, so an
  * appreciating asset is scheduled at today's worth), else the manual cost, else the preferred
- * supplier cost, else 0. A CONSUMABLE_GAUGE asset is valued from its contents and its cost per
+ * supplier cost, else the depreciated purchase price (issue #688, so an old tool priced only by
+ * what it cost years ago is scheduled at its book value rather than left at nothing), else 0.
+ * A CONSUMABLE_GAUGE asset is valued from its contents and its cost per
  * unit of measure instead (issue #683) — it holds a measure rather than units, so the counted
  * product would schedule a full cylinder at zero however carefully it was priced.
  *
@@ -241,8 +243,11 @@ export function toScheduleLine(item: ScheduleItemInput, now: number, decimals: n
         : null,
     acquiredAt: item.acquiredAt,
     purchasePrice: item.purchasePrice,
-    // Only `warrantyExpiresAt` drives the status; the rest of the slice is unused here
-    // (depreciation is never applied — value flows through `stockValue`).
+    // Only `warrantyExpiresAt` drives the status, so the rest of the slice is filled in with
+    // whatever satisfies the type. `depreciationMonths` is deliberately null rather than the
+    // item's own term: this call derives a *warranty badge*, and the depreciated figure the
+    // schedule values a line at is applied by `stockValue` from the item's already-resolved
+    // `depreciatedPurchasePrice` (issue #688), not re-derived here.
     warranty: warrantyStatus(
       {
         acquiredAt: item.acquiredAt,

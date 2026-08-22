@@ -19,9 +19,10 @@ above always covers every one of them, listed or not. See
 [[long lists in a report|Reports-Overview]].
 
 Each item is valued through Gubbins' valuation logic: a manual
-**[[current value|Current-Value-and-Revaluation]]** where you've set one, otherwise purchase price
-less [[depreciation|Warranty-and-Depreciation]]. So the total reflects *today's* worth, not just
-what you paid.
+**[[current value|Current-Value-and-Revaluation]]** where you've set one, else its unit cost, else
+its preferred supplier's base-currency price, and failing all three its purchase price less
+[[depreciation|Warranty-and-Depreciation]]. So the total reflects *today's* worth, not just what
+you paid.
 
 There's also **valuation over time**, showing how your inventory's total value has changed. It ends
 on exactly the headline total above it and reconstructs the earlier points by working backwards
@@ -83,8 +84,11 @@ not `9800` pounds, and treating it as though it were would silently inflate the 
 leaves those items out of the valuation totals instead, and tells you it has done so — a notice
 above the breakdown says how many items were left out.
 
-To bring an item back into the totals, either give it its own **unit cost** (a manual cost always
-wins, and is read as base currency), or record the supplier's price in your base currency.
+Only items the supplier's price is the *only* figure for are left out. An item that also carries a
+**[[purchase price|Warranty-and-Depreciation]]** is still valued, at its depreciated book value, and
+is not counted in the notice. To bring any other item back into the totals, either give it its own
+**unit cost** (a manual cost always wins, and is read as base currency), or record the supplier's
+price in your base currency.
 
 **Spend works the same way.** A [[purchase order|Purchase-Orders]] carries its own currency, so an
 order placed in `USD` is left out of the spend total — and out of the by-supplier and by-category

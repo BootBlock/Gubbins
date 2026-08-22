@@ -22,9 +22,22 @@ about to lapse surfaces while you can still act on it (make that claim, plan a r
 ## Depreciation & replacement value
 
 From an item's **purchase price** and expected life, Gubbins estimates its **depreciated value**
-today using straight-line depreciation down to a salvage floor — a *book value* that only ever
-decreases. This underpins the valuation [[reports|Reports-Overview]] and the
-[[insurance schedule|Insurance-and-Estate-Schedule]].
+today using straight-line depreciation — a *book value* that only ever decreases, falling in equal
+steps from the purchase price to **zero** over the term. There is no salvage floor: once the term
+has run out, the book value is nothing.
+
+This is the figure the valuation [[reports|Reports-Overview]] and the
+[[insurance schedule|Insurance-and-Estate-Schedule]] fall back on, but it is the **last** thing
+they try. An item is valued at the first of these that it has:
+
+1. a manual **[[current value|Current-Value-and-Revaluation]]**;
+2. its own **unit cost**;
+3. its **[[preferred supplier's price|Supplier-Parts-and-Price-History]]**, if that price is in
+   your base currency;
+4. its **purchase price less depreciation** — the book value above.
+
+So depreciation decides an item's worth only when nothing better prices it. An item with none of
+the four is reported as **unpriced** rather than as worth nothing.
 
 > **ℹ️ Note**
 > Depreciation always trends **downwards**. For things that hold or gain value — collectibles,

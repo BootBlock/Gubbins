@@ -14,9 +14,10 @@
  * Location grouping, hierarchy ordering and the trailing "Unassigned" bucket are shared with
  * the insurance schedule via {@link flattenLocationHierarchy}, so the two documents order
  * rooms identically. Per-unit cost flows through the same {@link valuedUnitValue} seam as every
- * other valuation (a manual cost wins, else the preferred supplier cost — or, for a gauge, its
- * cost per unit of measure, since it holds a measure rather than countable units); an item with
- * none of those is *unpriced* — its cost and line value read as "—" rather than a misleading £0.
+ * other valuation (a manual cost wins, else the preferred supplier cost, else the depreciated
+ * purchase price — or, for a gauge, its cost per unit of measure, since it holds a measure rather
+ * than countable units); an item with none of those is *unpriced* — its cost and line value read
+ * as "—" rather than a misleading £0.
  */
 import { valuedAmount, valuedUnitValue, type ValuedStock } from './reports';
 import {
@@ -401,7 +402,15 @@ export interface CatalogueLine {
   readonly mpn: string | null;
   readonly manufacturer: string | null;
   readonly supplier: string | null;
-  /** Effective unit cost (manual → preferred supplier), or null when the item is unpriced. */
+  /**
+   * The per-unit value `valuedUnitValue` resolved from the sources the catalogue supplies it — a
+   * manual unit cost, else the preferred supplier price, else the depreciated purchase price
+   * (issue #688); for a gauge, its cost per unit of measure. Null when {@link isPriced} finds no
+   * source at all.
+   *
+   * A manual `current_value` outranks all of those in the valuation reports, but the catalogue's
+   * read does not select it, so no line is ever valued at one. That predates issue #688.
+   */
   readonly unitCost: number | null;
   /** `quantity × unitCost`, or null when the item is unpriced. */
   readonly lineValue: number | null;
@@ -442,13 +451,19 @@ export interface PartsCatalogue {
 }
 
 /**
- * An item is priced when a figure exists to value it by — a manual unit cost or a preferred
- * supplier cost, or for a gauge its cost per unit of measure (issue #683). A gauge is never
- * priced from the first two: they price one *countable* unit, and it holds a measure.
+ * An item is priced when a figure exists to value it by — a manual unit cost, a preferred
+ * supplier cost or a depreciated purchase price (issue #688), or for a gauge its cost per unit of
+ * measure (issue #683). A gauge is never priced from the first three: they price one *countable*
+ * unit, and it holds a measure.
+ *
+ * This must name exactly the sources `valuedUnitValue` can reach *from a catalogue row*. Leaving
+ * one out prints a dash on a line the catalogue's own grand total counts a real figure for, and the
+ * document would stop adding up. (`currentValuePerUnit` is absent from both because the catalogue's
+ * read never selects `items.current_value` — a gap that predates issue #688.)
  */
 function isPriced(item: CatalogueItemInput): boolean {
   if (item.gauge) return item.gauge.costPerUnitOfMeasure != null;
-  return item.unitCost != null || item.preferredSupplierCost != null;
+  return item.unitCost != null || item.preferredSupplierCost != null || item.depreciatedPurchasePrice != null;
 }
 
 /** Resolve a single item input to its display line, valuing it through the cost seam. */

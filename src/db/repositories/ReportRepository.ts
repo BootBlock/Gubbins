@@ -7,11 +7,16 @@
  *
  * The repository runs the SQL and hands the minimal raw rows to the pure helpers in
  * `@/features/reports/reports`, which own all bucketing/grouping/boundary maths (and are
- * unit-tested there). Cost lookups go through a single `effectiveUnitCost` seam in that
- * module, which delegates the precedence rule (manual cost wins, else the preferred supplier
- * cost) to the Phase-60 `supplier-cost` helper; the valuation queries feed it the preferred
- * supplier cost via {@link preferredSupplierCostSql}. Reads are unpaginated *aggregates* (a
- * fixed, tiny result set), not row dumps.
+ * unit-tested there). Two seams price a unit, and which one a report reads is a deliberate
+ * choice: `valuedUnitValue` answers what stock is **worth** (a manual current value, else
+ * `effectiveUnitCost`, else the depreciated purchase price — issue #688), while `effectiveUnitCost`
+ * alone answers what it **cost** (manual cost, else the preferred supplier cost, delegated to the
+ * Phase-60 `supplier-cost` helper) and is what the consumption reports read. A valuation query
+ * either projects the inputs with {@link valuedItemColumns} and folds them in JS, or restates the
+ * rule in SQL as {@link effectiveUnitValueSql} to sum a whole inventory in the database
+ * ({@link ReportRepository.partsCatalogue} is the one that spells its own projection out, because
+ * a printed catalogue deliberately reads fewer of the columns). Reads are unpaginated *aggregates*
+ * (a fixed, tiny result set), not row dumps.
  */
 import { BaseRepository } from './base';
 import { parsePriceBreaks } from './mappers';
@@ -25,6 +30,7 @@ import {
 } from './constants';
 import { addCalendarDays } from '@/lib/calendar-days';
 import { buildAncestorChain } from '@/features/inventory/location-inheritance';
+import { DEPRECIATION_MS_PER_MONTH } from '@/features/inventory/asset-lifecycle';
 import {
   resolveDeadStockPolicy,
   type DeadStockLocationPolicy,
@@ -234,10 +240,57 @@ function valuedAmountSql(alias: string): string {
 const SCHEDULE_ITEM_FILTER = valuableItemFilter('items');
 
 /**
+ * SQL expression for an item's **depreciated purchase price** in stored micro-units, or NULL when
+ * it carries no purchase price — the SQL twin of the pure `currentValue` seam
+ * (`@/features/inventory/asset-lifecycle`), evaluated as at `now`.
+ *
+ * It states the straight-line formula a second time, in SQL, for the same reason
+ * {@link effectiveUnitValueSql} states the precedence rule a second time (issue #170): a valuation
+ * over a 100k-item inventory is summed **by the database**, and a fallback that only existed in
+ * JavaScript could not take part in that `SUM`. The month length itself is *not* restated — both
+ * statements import {@link DEPRECIATION_MS_PER_MONTH} — and `ReportRepository.test.ts` pins this
+ * expression against `currentValue` over randomised fixtures so the rest cannot drift either.
+ *
+ * The branches mirror `currentValue` exactly:
+ *  - no `purchase_price` → NULL (nothing to depreciate; the item stays unpriced by this route).
+ *  - no `depreciation_months` → the purchase price, flat and indefinitely (the asset does not
+ *    depreciate).
+ *  - no usable `acquired_at` → the purchase price: the asset is treated as just acquired, so
+ *    nothing has been written off yet. `julianday()` yields NULL for a NULL **or** unparseable
+ *    stamp, which is the same pair of cases `Date.parse` + `Number.isFinite` rejects in the JS twin,
+ *    so the one test covers both.
+ *  - otherwise `purchase_price × (1 − elapsedMonths / depreciation_months)`, the proportion clamped
+ *    to 0…1 so a future acquisition date cannot inflate the value and a fully-expired term floors
+ *    at zero rather than going negative.
+ *
+ * `2440587.5` is the Julian day of the Unix epoch, so `(julianday(x) − 2440587.5) × 86400000` is
+ * `Date.parse(x)` for the `YYYY-MM-DD` stamps `items.acquired_at` holds (both read the stamp as
+ * midnight **UTC**). The result is rounded back to an integer count of micro-units before it leaves
+ * this expression, because every other money column is one: an exact integer keeps the enclosing
+ * `SUM` order-independent, which a REAL product would quietly give up (issue #286).
+ *
+ * `alias` is the qualified `items` alias; `now` is a UNIX-ms instant, interpolated as an integer
+ * literal (it is a number, so it carries no quoting or injection surface — the same treatment
+ * `inBaseCurrencySql` gives the normalised base currency).
+ */
+function depreciatedPurchasePriceSql(alias: string, now: number): string {
+  const nowLiteral = Math.trunc(now);
+  const elapsedMonths = `((${nowLiteral} - (julianday(${alias}.acquired_at) - 2440587.5) * 86400000.0) / ${DEPRECIATION_MS_PER_MONTH})`;
+  const proportion = `MIN(1.0, MAX(0.0, ${elapsedMonths} / ${alias}.depreciation_months))`;
+  return `CASE
+            WHEN ${alias}.purchase_price IS NULL THEN NULL
+            WHEN ${alias}.depreciation_months IS NULL THEN ${alias}.purchase_price
+            WHEN julianday(${alias}.acquired_at) IS NULL THEN ${alias}.purchase_price
+            ELSE CAST(ROUND(${alias}.purchase_price * (1.0 - ${proportion})) AS INTEGER)
+          END`;
+}
+
+/**
  * SQL expression for an item's **effective per-unit value** — the exact rule the pure
  * `valuedUnitValue` seam applies in JavaScript, in the order it applies it: a manual
  * `current_value` wins (a 0 is a deliberate "worth nothing" mark), else a manual `unit_cost`,
- * else the preferred supplier cost, else 0 (genuinely unpriced). A negative figure is not a
+ * else the preferred supplier cost, else the {@link depreciatedPurchasePriceSql depreciated
+ * purchase price} (issue #688), else 0 (genuinely unpriced). A negative figure is not a
  * usable price, matching `usablePrice`, so it falls through.
  *
  * A **gauge** short-circuits all of that (issue #683): its per-unit value is the cost of one unit
@@ -252,6 +305,15 @@ const SCHEDULE_ITEM_FILTER = valuableItemFilter('items');
  * outright, so no infinity can be stored to be read back here, and testing for one in SQL would
  * cost a second evaluation of the correlated cost lookup for no reachable case.
  *
+ * For the same reason the supplier cost is floored rather than *skipped* when negative, where the
+ * JS twin's `usablePrice` would fall through to the depreciated price below it. A negative one
+ * cannot occur — `supplier_parts.unit_cost` carries a `CHECK (… >= 0)` — and testing for it here
+ * would mean evaluating the correlated lookup twice, once to test and once to use.
+ *
+ * Note this is the **valuation** rule, twin of `valuedUnitValue`, not of the bare `effectiveUnitCost`
+ * cost seam — which stops at the supplier price, because the figures reading it are costs (issue
+ * #688). No query that feeds a cost figure inlines this expression.
+ *
  * It exists so the valuation aggregates can be summed **by the database** (issue #170) instead of
  * shipping one row per item to the worker and folding them in JS: a `GROUP BY` over a 100k-item
  * inventory returns the ~50 rows the screen actually shows. The rule is stated twice as a result —
@@ -262,22 +324,32 @@ const SCHEDULE_ITEM_FILTER = valuableItemFilter('items');
  * `alias` is the qualified `items` alias to read; {@link preferredSupplierCostSql} is inlined once
  * (never twice) so the correlated lookup is evaluated at most once per row.
  */
-function effectiveUnitValueSql(alias: string, baseCurrency: string | null): string {
+function effectiveUnitValueSql(alias: string, baseCurrency: string | null, now: number): string {
   return `CASE
             WHEN ${isGauge(alias)} THEN MAX(COALESCE(${alias}.cost_per_unit_of_measure, 0), 0)
             WHEN ${alias}.current_value IS NOT NULL AND ${alias}.current_value >= 0 THEN ${alias}.current_value
             WHEN ${alias}.unit_cost IS NOT NULL AND ${alias}.unit_cost >= 0 THEN ${alias}.unit_cost
-            ELSE MAX(COALESCE(${preferredSupplierCostSql(`${alias}.id`, baseCurrency)}, 0), 0)
+            ELSE MAX(COALESCE(${preferredSupplierCostSql(`${alias}.id`, baseCurrency)},
+                              ${depreciatedPurchasePriceSql(alias, now)}, 0), 0)
           END`;
 }
 
 /**
  * The SELECT-list projection of the **raw stored inputs a valuation read needs** when it values
  * each row in JavaScript rather than summing in SQL: an item's manual `unit_cost`, its manual
- * `current_value`, and its {@link preferredSupplierCostSql} preferred-supplier fallback, aliased
- * `unit_cost` / `current_value` / `preferred_supplier_cost`. A consumer feeds exactly these three
- * (after `fromStoredMoney`) to `effectiveUnitValue(currentValue, effectiveUnitCost({ unitCost,
- * preferredSupplierCost }))` — the JS twin of {@link effectiveUnitValueSql}.
+ * `current_value`, its {@link preferredSupplierCostSql} preferred-supplier fallback, and its
+ * {@link depreciatedPurchasePriceSql} depreciated purchase price, aliased `unit_cost` /
+ * `current_value` / `preferred_supplier_cost` / `depreciated_purchase_price`. A consumer feeds
+ * exactly these four (after `fromStoredMoney`) to `valuedUnitValue` — the JS twin of
+ * {@link effectiveUnitValueSql}. Both are *valuation* seams; a query feeding the bare
+ * `effectiveUnitCost` cost seam (ABC, turnover, dead stock) uses none of this and spells out the
+ * two columns that seam reads, deliberately without the depreciated one, because a cost figure may
+ * not quote a residual book value (issue #688).
+ *
+ * The depreciated price is resolved **here, in SQL**, rather than by handing the three raw asset
+ * columns up for the pure seam to fold: that keeps one statement of the formula serving both the
+ * per-row reads and the `SUM`-in-SQL aggregates, so a row-by-row page and the headline it sits
+ * under cannot round an asset differently (issue #688).
  *
  * This is the projection half of the valuation read: {@link valuableItemFilter} says which rows
  * count, this says which value inputs to select. It exists for the same reason (issue #398) — the
@@ -286,10 +358,11 @@ function effectiveUnitValueSql(alias: string, baseCurrency: string | null): stri
  * stock at cost with no shared projection to have dropped it from. `alias` is the qualified `items`
  * alias (`i`, `items`).
  */
-function valuedItemColumns(alias: string, baseCurrency: string | null): string {
+function valuedItemColumns(alias: string, baseCurrency: string | null, now: number): string {
   return `${alias}.unit_cost AS unit_cost,
           ${alias}.current_value AS current_value,
-          ${preferredSupplierCostSql(`${alias}.id`, baseCurrency)} AS preferred_supplier_cost`;
+          ${preferredSupplierCostSql(`${alias}.id`, baseCurrency)} AS preferred_supplier_cost,
+          ${depreciatedPurchasePriceSql(alias, now)} AS depreciated_purchase_price`;
 }
 
 /**
@@ -323,9 +396,14 @@ function valuedItemColumns(alias: string, baseCurrency: string | null): string {
  * explicit `MAX(…, 0)` mirrors `scheduleLineValue`'s `Math.max(0, …)` defence exactly. `ReportRepository.test.ts`
  * pins this against the pure seam over randomised fixtures at each supported minor unit (0dp, 2dp, 3dp).
  */
-function scheduleLineMinorUnitsSql(alias: string, baseCurrency: string | null, decimals: number): string {
+function scheduleLineMinorUnitsSql(
+  alias: string,
+  baseCurrency: string | null,
+  decimals: number,
+  now: number,
+): string {
   // `amount × effectiveUnitValue` in stored micro-units (issue #286).
-  const lineMicros = `(${valuedAmountSql(alias)}) * MAX(${effectiveUnitValueSql(alias, baseCurrency)}, 0)`;
+  const lineMicros = `(${valuedAmountSql(alias)}) * MAX(${effectiveUnitValueSql(alias, baseCurrency, now)}, 0)`;
   // micro-units → the reporting currency's minor units: divide by 10^(6 − reportingDecimals).
   const divisor = 10 ** (MONEY_STORAGE_DECIMALS - decimals);
   return `CAST(CAST(printf('%.15g', (${lineMicros}) / ${divisor}.0) AS REAL) + 0.5 AS INTEGER)`;
@@ -373,11 +451,12 @@ export class ReportRepository extends BaseRepository {
    * value of their own to fall back on — so {@link preferredSupplierCostSql} declines that price
    * and the item is left unvalued (issue #284).
    *
-   * "No value of their own" means neither a manual `unit_cost` nor a manual `current_value`:
-   * either one wins over the supplier price outright (`effectiveUnitValue` → `effectiveUnitCost`),
-   * so an item carrying one is valued correctly no matter what currency its supplier quotes in.
-   * Counting those would raise a false alarm about a total that is in fact complete — the exact
-   * failure this notice exists to prevent, pointed the other way.
+   * "No value of their own" means no manual `unit_cost`, no manual `current_value` **and** no
+   * `purchase_price`: either of the first two wins over the supplier price outright, and the third
+   * catches the item underneath it as a depreciated book value (`effectiveUnitValue` →
+   * `effectiveUnitCost`, issue #688), so an item carrying any of them is valued no matter what
+   * currency its supplier quotes in. Counting those would raise a false alarm about a total that
+   * is in fact complete — the exact failure this notice exists to prevent, pointed the other way.
    *
    * This is the number the screens surface. Excluding a foreign price is the only correct thing
    * to do without exchange rates, but doing it silently would swap a visible overstatement for
@@ -398,7 +477,7 @@ export class ReportRepository extends BaseRepository {
          FROM items i
         WHERE ${valuableItemFilter('i')}
           AND NOT ${isGauge('i')}
-          AND i.unit_cost IS NULL AND i.current_value IS NULL
+          AND i.unit_cost IS NULL AND i.current_value IS NULL AND i.purchase_price IS NULL
           AND EXISTS (SELECT 1 FROM supplier_parts sp
                        WHERE sp.item_id = i.id AND sp.is_preferred = 1 AND sp.unit_cost IS NOT NULL
                          AND NOT ${inBaseCurrencySql('sp.currency', base)});`,
@@ -451,11 +530,11 @@ export class ReportRepository extends BaseRepository {
    * fetch at 100k items as at 100. The headline is the category rollup re-summed, which is why
    * it can never disagree with the breakdown beside it.
    */
-  async inventoryValue(): Promise<InventoryValueReport> {
+  async inventoryValue(now: number = nowMs()): Promise<InventoryValueReport> {
     // The base currency valuation totals are expressed in, resolved once per report so a
     // change mid-report can never split one total across two currencies (#284).
     const base = this.baseCurrency();
-    const unitValue = effectiveUnitValueSql('i', base);
+    const unitValue = effectiveUnitValueSql('i', base, now);
 
     // Headline + per-category: `items.quantity` (the whole on-hand count) grouped by category.
     // The unpriced count is per *item*, so it belongs to this query and not the location one —
@@ -532,10 +611,11 @@ export class ReportRepository extends BaseRepository {
   async locationStats(
     locationId: string,
     options: { includeSubtree?: boolean } = {},
+    now: number = nowMs(),
   ): Promise<LocationStatsReport> {
     const includesSubtree = options.includeSubtree ?? false;
     const base = this.baseCurrency();
-    const unitValue = effectiveUnitValueSql('i', base);
+    const unitValue = effectiveUnitValueSql('i', base, now);
 
     // The scope is the location alone, or (with the subtree) it and every descendant — resolved
     // here so the filter is a bound `IN (…)` of ids, never string-built location names.
@@ -656,9 +736,9 @@ export class ReportRepository extends BaseRepository {
    * {@link resolveScheduleGroupKey} did — narrowing that to `location_id IS NULL` would silently drop
    * assets pointing at a deleted room from a document someone claims against.
    *
-   * Cost flows through the same `effectiveUnitCost` seam as the valuation report (manual cost wins,
-   * else the preferred supplier cost, via {@link preferredSupplierCostSql}), so the figures a page
-   * shows and the totals above them come from one rule.
+   * Value flows through the same `valuedUnitValue` rule as the valuation report — restated here as
+   * {@link effectiveUnitValueSql} so the whole schedule sums in SQL — so the figures a page shows
+   * and the totals above them come from one rule.
    */
   async insuranceScheduleSummary(now: number = nowMs()): Promise<InsuranceScheduleSummary> {
     const base = this.baseCurrency();
@@ -668,7 +748,7 @@ export class ReportRepository extends BaseRepository {
 
     const rows = await this.driver.query<{ group_id: string | null; n: number; minor: number | null }>(
       `SELECT loc.id AS group_id, COUNT(*) AS n,
-              SUM(${scheduleLineMinorUnitsSql('items', base, decimals)}) AS minor
+              SUM(${scheduleLineMinorUnitsSql('items', base, decimals, now)}) AS minor
          FROM items
          LEFT JOIN locations loc ON loc.id = items.location_id
         WHERE ${SCHEDULE_ITEM_FILTER}
@@ -737,6 +817,7 @@ export class ReportRepository extends BaseRepository {
       warranty_expires_at: string | null;
       location_id: string | null;
       preferred_supplier_cost: number | null;
+      depreciated_purchase_price: number | null;
       thumbnail_blob: Uint8Array | null;
     }>(
       `SELECT items.id AS id, items.name AS name, items.serial_no AS serial_no, items.condition AS condition,
@@ -745,7 +826,7 @@ export class ReportRepository extends BaseRepository {
               items.unit_of_measure AS unit_of_measure,
               items.current_net_value AS current_net_value,
               items.cost_per_unit_of_measure AS cost_per_unit_of_measure,
-              ${valuedItemColumns('items', base)},
+              ${valuedItemColumns('items', base, now)},
               items.purchase_price AS purchase_price,
               items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
               items.location_id AS location_id,
@@ -785,6 +866,9 @@ export class ReportRepository extends BaseRepository {
           // Feature-gap G9: the manual current value wins over the replacement cost.
           currentValuePerUnit: fromStoredMoney(r.current_value),
           preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
+          // The last cost fallback (issue #688), so an asset priced only by a purchase price and
+          // a depreciation term is scheduled at its book value rather than at nothing.
+          depreciatedPurchasePrice: fromStoredMoney(r.depreciated_purchase_price),
           locationId: r.location_id,
           thumbnail: r.thumbnail_blob ?? null,
         },
@@ -808,9 +892,14 @@ export class ReportRepository extends BaseRepository {
    * its whole subtree, by a project's bill of materials, or by an explicit ad-hoc selection.
    * One row per active, non-parent item (a variant parent holds no stock of its own); the
    * pure {@link buildPartsCatalogue} groups them by location and rolls up value subtotals.
-   * Cost flows through the same {@link preferredSupplierCostSql} → `effectiveUnitCost` seam as
-   * every valuation. The columns the reader ultimately prints are a UI concern — every field
-   * is resolved here.
+   * A line is valued through the same `valuedUnitValue` seam as every other valuation — a unit
+   * cost, else the {@link preferredSupplierCostSql} supplier price, else the
+   * {@link depreciatedPurchasePriceSql} book value (issue #688). It is the one valuation read that
+   * spells its projection out rather than taking {@link valuedItemColumns}, and the difference is a
+   * real one: it selects no `current_value`, so no catalogue line is priced at a manual current
+   * value the way the valuation reports and the schedule price the same item. That predates issue
+   * #688 and is untouched by it. The columns the reader ultimately prints are a UI concern — every
+   * field is resolved here.
    */
   async partsCatalogue(
     scope: CatalogueScope,
@@ -843,6 +932,7 @@ export class ReportRepository extends BaseRepository {
       manufacturer: string | null;
       supplier_name: string | null;
       unit_cost: number | null;
+      depreciated_purchase_price: number | null;
       preferred_supplier_cost: number | null;
       tracking_mode: string;
       current_net_value: number | null;
@@ -862,6 +952,7 @@ export class ReportRepository extends BaseRepository {
               ${preferredSupplierNameSql('items.id')} AS supplier_name,
               items.unit_cost AS unit_cost,
               ${preferredSupplierCostSql('items.id', base)} AS preferred_supplier_cost,
+              ${depreciatedPurchasePriceSql('items', now)} AS depreciated_purchase_price,
               items.tracking_mode AS tracking_mode,
               items.current_net_value AS current_net_value,
               items.cost_per_unit_of_measure AS cost_per_unit_of_measure,
@@ -898,6 +989,7 @@ export class ReportRepository extends BaseRepository {
       // Money columns are stored in micro-units (issue #286); back to major units at this boundary.
       unitCost: fromStoredMoney(r.unit_cost),
       preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
+      depreciatedPurchasePrice: fromStoredMoney(r.depreciated_purchase_price),
       // A gauge is priced per unit of *measure* and its count is always 0, so the catalogue
       // values it from its contents exactly as the insurance schedule does (issue #683) —
       // otherwise a printed parts list totals a full cylinder at nothing.
@@ -1514,6 +1606,7 @@ export class ReportRepository extends BaseRepository {
       unit_cost: number | null;
       current_value: number | null;
       preferred_supplier_cost: number | null;
+      depreciated_purchase_price: number | null;
       acquired_at: string | null;
       created_at: number;
       last_inbound_at: number | null;
@@ -1527,7 +1620,7 @@ export class ReportRepository extends BaseRepository {
                      i.tracking_mode AS tracking_mode,
                      i.current_net_value AS current_net_value,
                      i.cost_per_unit_of_measure AS cost_per_unit_of_measure,
-                     ${valuedItemColumns('i', base)},
+                     ${valuedItemColumns('i', base, now)},
                      i.acquired_at AS acquired_at, i.created_at AS created_at,
                      ( SELECT MAX(h.created_at) FROM item_history h
                         WHERE h.item_id = i.id
@@ -1541,6 +1634,7 @@ export class ReportRepository extends BaseRepository {
               a.cost_per_unit_of_measure AS cost_per_unit_of_measure,
               a.unit_cost AS unit_cost, a.current_value AS current_value,
               a.preferred_supplier_cost AS preferred_supplier_cost,
+              a.depreciated_purchase_price AS depreciated_purchase_price,
               a.acquired_at AS acquired_at, a.created_at AS created_at,
               a.last_inbound_at AS last_inbound_at,
               CASE WHEN a.last_inbound_at IS NULL
@@ -1564,6 +1658,7 @@ export class ReportRepository extends BaseRepository {
       unitCost: fromStoredMoney(r.unit_cost),
       currentValuePerUnit: fromStoredMoney(r.current_value),
       preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
+      depreciatedPurchasePrice: fromStoredMoney(r.depreciated_purchase_price),
       lastInboundAt: r.last_inbound_at,
       // A date-only `acquired_at` is re-anchored to the user's local calendar day so its age is
       // measured on the same wall-clock timeline as `now` (issue #323).
@@ -1610,7 +1705,7 @@ export class ReportRepository extends BaseRepository {
     // headline (issue #170), so the right-hand endpoint lands exactly on the headline figure
     // beside it rather than merely near it.
     const anchor = await this.driver.queryOne<{ total: number | null }>(
-      `SELECT SUM((${valuedAmountSql('i')}) * (${effectiveUnitValueSql('i', base)})) AS total
+      `SELECT SUM((${valuedAmountSql('i')}) * (${effectiveUnitValueSql('i', base, now)})) AS total
          FROM items i
         WHERE ${valuableItemFilter('i')};`,
     );
@@ -1631,12 +1726,13 @@ export class ReportRepository extends BaseRepository {
       unit_cost: number | null;
       current_value: number | null;
       preferred_supplier_cost: number | null;
+      depreciated_purchase_price: number | null;
     }>(
       `SELECT h.created_at AS created_at,
               CASE WHEN ${isGauge('i')} THEN h.net_value_delta ELSE h.quantity_delta END AS amount_delta,
               i.tracking_mode AS tracking_mode,
               i.cost_per_unit_of_measure AS cost_per_unit_of_measure,
-              ${valuedItemColumns('i', base)}
+              ${valuedItemColumns('i', base, now)}
          FROM item_history h
          JOIN items i ON i.id = h.item_id
         WHERE h.created_at > ? AND h.created_at <= ?
@@ -1656,6 +1752,7 @@ export class ReportRepository extends BaseRepository {
           quantity: 0,
           unitCost: fromStoredMoney(r.unit_cost),
           preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
+          depreciatedPurchasePrice: fromStoredMoney(r.depreciated_purchase_price),
           currentValuePerUnit: fromStoredMoney(r.current_value),
           gauge:
             r.tracking_mode === 'CONSUMABLE_GAUGE'
@@ -1695,6 +1792,7 @@ export class ReportRepository extends BaseRepository {
       category_id: string | null;
       location_id: string;
       unit_cost: number | null;
+      purchase_price: number | null;
       cost_per_unit_of_measure: number | null;
       tracking_mode: string;
       preferred_supplier_cost: number | null;
@@ -1704,6 +1802,7 @@ export class ReportRepository extends BaseRepository {
     }>(
       `SELECT i.id AS id, i.name AS name, i.mpn AS mpn, i.category_id AS category_id,
               i.location_id AS location_id, i.unit_cost AS unit_cost,
+              i.purchase_price AS purchase_price,
               i.cost_per_unit_of_measure AS cost_per_unit_of_measure,
               i.tracking_mode AS tracking_mode,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
@@ -1725,10 +1824,13 @@ export class ReportRepository extends BaseRepository {
       // `unit_cost` here would both clear the flag on a gauge that is genuinely unpriced and
       // raise it on one that is correctly priced — directly contradicting the unpriced-gauge
       // notice on the same screen.
+      // A `purchase_price` is a priced source too (issue #688): it is the last fallback the
+      // valuation rule tries, so an asset carrying one is valued and flagging it as unpriced
+      // would send the user to fix something that is not broken.
       hasPrice:
         r.tracking_mode === 'CONSUMABLE_GAUGE'
           ? r.cost_per_unit_of_measure != null
-          : r.unit_cost != null || r.preferred_supplier_cost != null,
+          : r.unit_cost != null || r.preferred_supplier_cost != null || r.purchase_price != null,
       hasPhoto: r.has_photo === 1,
       everCounted: r.ever_counted === 1,
       lastActivityAt: Number(r.last_activity_at),

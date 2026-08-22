@@ -9,7 +9,9 @@
  * change in this phase. Valuation honours a single internal "effective unit cost"
  * lookup ({@link effectiveUnitCost}) which delegates the cost-precedence rule to the
  * Phase-60 {@link resolveCostPrecedence} helper, so the "manual cost wins, else preferred
- * supplier cost" rule lives in exactly one place across the app.
+ * supplier cost" rule lives in exactly one place across the app. {@link valuedUnitValue} adds
+ * one further fallback beneath it — the depreciated purchase price (issue #688) — which belongs
+ * to *valuation* and deliberately not to the cost seam every consumption figure reads.
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { addCalendarDays } from '@/lib/calendar-days';
@@ -38,19 +40,38 @@ export interface ValuedUnit {
 }
 
 /**
- * The effective per-unit cost used for valuation, isolated behind one function so callers
- * never re-implement cost precedence. The precedence rule itself — a manual `unitCost`
- * wins, else the preferred supplier cost, else unpriced — is owned by the Phase-60
- * {@link resolveCostPrecedence} helper (`@/features/inventory/supplier-cost`), which this
- * delegates to so there is a single source of truth across reporting and the item screens.
+ * The effective per-unit **cost** used wherever a report asks what stock cost rather than what it
+ * is worth, isolated behind one function so callers never re-implement cost precedence. The rule
+ * itself — a manual `unitCost` wins, else the preferred supplier cost, else unpriced — is owned by
+ * the Phase-60 {@link resolveCostPrecedence} helper (`@/features/inventory/supplier-cost`), which
+ * this delegates to so there is a single source of truth across reporting and the item screens.
  * An unpriced item contributes `0` to valuation totals.
+ *
+ * It stops there. The depreciated purchase price added by issue #688 is a *valuation* fallback and
+ * lives one level up, in {@link valuedUnitValue}, because the figures reading this function are
+ * cost figures: turnover's cost of goods, ABC's annual consumption value, and dead stock's capital
+ * tied up in stock that is not moving — "what it cost to acquire", which a write-down does not
+ * refund any of. Quoting a residual book value in any of the three would be the same category
+ * error as letting one price a purchase-order line.
  */
 export function effectiveUnitCost(unit: ValuedUnit): number {
-  const resolved = resolveCostPrecedence(
+  return resolveUnitCost(unit) ?? 0;
+}
+
+/**
+ * {@link effectiveUnitCost} before the unpriced case is collapsed onto `0`: the resolved per-unit
+ * cost, or `null` when no source names one. The single point at which this module delegates to
+ * {@link resolveCostPrecedence}.
+ *
+ * The distinction matters to exactly one caller — {@link valuationUnitCost}, which has a further
+ * fallback below and so must tell a deliberate `0` price apart from no price at all. Every other
+ * caller wants the `0`, which is why {@link effectiveUnitCost} remains the public seam.
+ */
+function resolveUnitCost(unit: ValuedUnit): number | null {
+  return resolveCostPrecedence(
     { unitCost: unit.unitCost },
     unit.preferredSupplierCost != null ? [{ unitCost: unit.preferredSupplierCost, isPreferred: true }] : [],
   );
-  return resolved ?? 0;
 }
 
 // --- What a valuation multiplies (issue #683) ----------------------------------
@@ -86,6 +107,29 @@ export interface ValuedStock extends ValuedUnit {
   readonly quantity: number;
   /** Manual per-unit mark-to-market value (`items.current_value`); wins over the cost. */
   readonly currentValuePerUnit?: number | null;
+  /**
+   * The item's **depreciated purchase price** per unit (issue #688) — `items.purchase_price` run
+   * down its `depreciation_months` straight-line term as at the read's `now`, resolved by
+   * `ReportRepository` in SQL so a whole-inventory total can still be summed by the database.
+   * NULL/absent when the item carries no purchase price.
+   *
+   * It is the **last** thing {@link valuedUnitValue} tries, beneath every source
+   * {@link resolveUnitCost} knows, because it answers a different question from those above it:
+   * what this particular unit is reckoned to be worth today, rather than what replacing it would
+   * cost. Anything that knows the replacement cost knows it better. Before this existed an asset
+   * priced *only* by a purchase price and a term was valued at 0 by every valuation report and by
+   * the printed insurance schedule, while the item editor showed a book value and the wiki said
+   * that figure was what the reports used.
+   *
+   * It sits on {@link ValuedStock} rather than {@link ValuedUnit} deliberately: this is the shape
+   * for "what is this stock **worth**", and the bare cost seam beneath it must stay a cost — see
+   * {@link effectiveUnitCost}.
+   *
+   * `purchase_price` is read as a **per-unit** figure, like the `unitCost` and
+   * `currentValuePerUnit` it stands in for — the whole precedence chain prices one unit and is
+   * multiplied by the on-hand amount afterwards.
+   */
+  readonly depreciatedPurchasePrice?: number | null;
   /** Gauge state, for a CONSUMABLE_GAUGE item only; absent/null for every other mode. */
   readonly gauge?: GaugeValuation | null;
 }
@@ -100,18 +144,36 @@ export function valuedAmount(item: ValuedStock): number {
 }
 
 /**
+ * The replacement cost a **valuation** prices one unit at: every source {@link resolveUnitCost}
+ * knows, and beneath them the {@link ValuedStock.depreciatedPurchasePrice} book value (issue
+ * #688), for an asset nothing else prices. Only when that is absent too is the item genuinely
+ * unpriced and worth `0` to a total.
+ *
+ * A priced source that resolved to a real `0` is a price and stands — `resolveUnitCost` returns
+ * `null`, not `0`, for "no price", which is exactly what keeps "worth nothing" and "we do not
+ * know" apart here.
+ */
+function valuationUnitCost(item: ValuedStock): number {
+  const priced = resolveUnitCost(item);
+  if (priced != null) return priced;
+  const depreciated = item.depreciatedPurchasePrice;
+  // The same usability test the priced sources get: a non-finite or negative figure names no price.
+  return depreciated != null && Number.isFinite(depreciated) && depreciated >= 0 ? depreciated : 0;
+}
+
+/**
  * The **per-unit value** that amount is worth: for a gauge, the cost of one unit of measure
  * (0 when unpriced); otherwise the ordinary precedence — a manual current value wins, else the
- * effective replacement cost.
+ * {@link valuationUnitCost} replacement cost, else the depreciated book value beneath it.
  *
- * A gauge deliberately does **not** fall back to `unit_cost`, `current_value` or a supplier
- * price. All three price one *countable unit*, so applying any of them per gram would be a
- * confident wrong number — off by whatever the capacity happens to be. An unpriced gauge is
+ * A gauge deliberately does **not** fall back to `unit_cost`, `current_value`, a supplier price or
+ * a purchase price. All four price one *countable unit*, so applying any of them per gram would be
+ * a confident wrong number — off by whatever the capacity happens to be. An unpriced gauge is
  * reported as unpriced instead, which is the same refusal the foreign-currency exclusion makes.
  */
 export function valuedUnitValue(item: ValuedStock): number {
   if (item.gauge) return Math.max(0, item.gauge.costPerUnitOfMeasure ?? 0);
-  return Math.max(0, effectiveUnitValue(item.currentValuePerUnit, effectiveUnitCost(item)));
+  return Math.max(0, effectiveUnitValue(item.currentValuePerUnit, valuationUnitCost(item)));
 }
 
 /** The value of one item's on-hand stock: {@link valuedAmount} × {@link valuedUnitValue}. */

@@ -2,7 +2,7 @@
  * Pure valuation seam (feature-gap G9 — manual current / market value).
  *
  * Sits *beside* `asset-lifecycle.ts` rather than folding into it: depreciation lowers a
- * *book* value toward salvage over time, whereas a manual current value is an independent
+ * *book* value to zero over the asset's term, whereas a manual current value is an independent
  * mark-to-market that can move up or down. This module owns two things and nothing else —
  * no React, no repository, no SQL, no DOM — so both are exhaustively unit-testable in
  * isolation (same "logic out of glue" seam as `asset-lifecycle.ts`, `reorder-policy.ts`,

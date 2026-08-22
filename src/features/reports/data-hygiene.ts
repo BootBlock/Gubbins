@@ -36,7 +36,16 @@ export interface HygieneItemFlags {
   readonly hasCategory: boolean;
   /** False when the item still sits in the Unassigned holding pen. */
   readonly hasLocation: boolean;
-  /** False when the item is unpriced (no unit cost and no preferred supplier cost). */
+  /**
+   * False when nothing prices the item: no unit cost, no preferred supplier cost and no purchase
+   * price for a counted item (issue #688), or no cost per unit of measure for a gauge (#683).
+   *
+   * Each source added here has to be one valuation prices from, or the screen sends the user to
+   * fix something that is not broken — which is why the purchase price joined the list when
+   * valuation began falling back to it. The converse does not hold yet: a manual `current_value`
+   * also values an item and is **not** read here, so an item carrying only one is still flagged.
+   * That gap predates issue #688 and is left as found rather than widened into it.
+   */
   readonly hasPrice: boolean;
   readonly hasPhoto: boolean;
   /** True once the item has at least one cycle-count reconciliation in its ledger. */
@@ -118,7 +127,7 @@ const SECTION_META: Record<
   },
   'missing-price': {
     label: 'Missing price',
-    description: 'No unit cost or supplier price.',
+    description: 'No unit cost, supplier price or purchase price.',
     passDescription: 'Every item has a price.',
   },
   'missing-photo': {

@@ -10,6 +10,7 @@ import {
   UNGROUPED_LABEL,
   valuedAmount,
   valuedUnitValue,
+  type ValuedStock,
 } from './reports';
 
 describe('effectiveUnitCost — the single cost-precedence seam', () => {
@@ -33,6 +34,57 @@ describe('effectiveUnitCost — the single cost-precedence seam', () => {
   it('treats a negative cost as unset (the shared precedence helper rejects it)', () => {
     expect(effectiveUnitCost({ unitCost: -5, preferredSupplierCost: 2 })).toBe(2);
     expect(effectiveUnitCost({ unitCost: null, preferredSupplierCost: -1 })).toBe(0);
+  });
+
+  // Issue #688 put the depreciated purchase price *below* this seam, in `valuedUnitValue`, not
+  // in it. The figures reading this one are costs — turnover's cost of goods, ABC's consumption
+  // value, dead stock's tied-up capital — and a write-down refunds none of what stock cost.
+  it('ignores a depreciated purchase price: a cost is not a book value (issue #688)', () => {
+    expect(effectiveUnitCost({ unitCost: null, depreciatedPurchasePrice: 750 } as ValuedStock)).toBe(0);
+  });
+});
+
+// Issue #688 — before this, an asset priced only by what it cost and how long it lasts was valued
+// at 0 by every valuation report and by the printed insurance schedule, while the item editor
+// showed it a book value and the wiki said that figure was what the reports used.
+describe('valuedUnitValue — the depreciated purchase price as the last fallback', () => {
+  const asset = { quantity: 1, unitCost: null } as const;
+
+  it('falls back to the depreciated purchase price when nothing else prices the item', () => {
+    expect(valuedUnitValue({ ...asset, depreciatedPurchasePrice: 750 })).toBe(750);
+    expect(stockValue({ ...asset, quantity: 2, depreciatedPurchasePrice: 750 })).toBe(1500);
+  });
+
+  it('stays below a current value, a unit cost and a supplier cost', () => {
+    expect(valuedUnitValue({ ...asset, currentValuePerUnit: 900, depreciatedPurchasePrice: 750 })).toBe(900);
+    expect(valuedUnitValue({ ...asset, unitCost: 3, depreciatedPurchasePrice: 750 })).toBe(3);
+    expect(valuedUnitValue({ ...asset, preferredSupplierCost: 2, depreciatedPurchasePrice: 750 })).toBe(2);
+  });
+
+  // A priced source that resolved to a real 0 is a price, and it stands: "worth nothing" and
+  // "we do not know" are different facts, and only the second may reach the fallback.
+  it('lets a deliberate zero price win over the depreciated value', () => {
+    expect(valuedUnitValue({ ...asset, unitCost: 0, depreciatedPurchasePrice: 750 })).toBe(0);
+    expect(valuedUnitValue({ ...asset, preferredSupplierCost: 0, depreciatedPurchasePrice: 750 })).toBe(0);
+  });
+
+  it('treats an unusable depreciated purchase price as unset', () => {
+    expect(valuedUnitValue({ ...asset, depreciatedPurchasePrice: null })).toBe(0);
+    expect(valuedUnitValue({ ...asset, depreciatedPurchasePrice: -1 })).toBe(0);
+    expect(valuedUnitValue({ ...asset, depreciatedPurchasePrice: NaN })).toBe(0);
+  });
+
+  // A gauge holds a *measure*, so every per-countable-unit figure is wrong for it by whatever
+  // the capacity happens to be — a purchase price no less than a unit cost (issue #683).
+  it('never prices a gauge from a depreciated purchase price', () => {
+    expect(
+      valuedUnitValue({
+        ...asset,
+        quantity: 0,
+        depreciatedPurchasePrice: 750,
+        gauge: { netValue: 400, costPerUnitOfMeasure: null },
+      }),
+    ).toBe(0);
   });
 });
 
