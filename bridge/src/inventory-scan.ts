@@ -42,7 +42,7 @@ export const MAX_LOCATIONS_SCANNED = 10_000;
  * come out of a single pass over `items` — and only these two, so the pass never computes the
  * correlated purchase-order / checkout / maintenance probes whose answers nothing here publishes.
  *
- * Spelled out rather than reusing the app's `STOCK_DEPENDENT_STATUSES` (today the same two): that
+ * Spelled out rather than reusing the app's `STOCK_DEPENDENT_STATUSES`, which is a wider set: that
  * list means "a stock write can move this count", which is a question about cache invalidation.
  * {@link StockLevelCounts} has one field per entry here, so a status joining that list should not
  * silently start being probed for a figure this has nowhere to put.

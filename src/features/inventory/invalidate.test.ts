@@ -4,9 +4,9 @@
  * `invalidateItems` is the broad, always-correct sweep every item write uses.
  * `invalidateItemStock` is its narrow counterpart for a write that moves **only** an item's
  * stock level (the quantity stepper, a gauge adjust): it deliberately leaves the
- * `item-attention` prefix cached, because the six status counts living there — on order,
- * expiring, warranty, on loan, overdue, maintenance due — are decided by fields and tables a
- * stock write never touches, and each carries a correlated per-row subquery.
+ * `item-attention` prefix cached, because the five status counts living there — on order,
+ * warranty, on loan, overdue, maintenance due — are decided by fields and tables a stock write
+ * never touches, and each carries a correlated per-row subquery.
  *
  * These tests pin the boundary in both directions. Getting it wrong is quiet in either
  * direction — too narrow leaves a stale chip count on screen, too broad silently gives back
