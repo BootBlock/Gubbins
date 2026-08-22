@@ -179,6 +179,29 @@ const ITEM_FIELDS: Readonly<Record<string, ItemFieldMeta>> = {
  */
 export const ITEM_FIELD_NAMES: readonly string[] = Object.keys(ITEM_FIELDS);
 
+/**
+ * The `items` columns every `fts-text` field in {@link ITEM_FIELDS} routes CONTAINS through,
+ * with the `items.` prefix stripped — i.e. the column set the `items_fts` FTS5 index *must*
+ * carry for those searches to resolve.
+ *
+ * Exported for the same reason as {@link ITEM_FIELD_NAMES}: this set is restated elsewhere and
+ * has drifted before. The `v1-initial` migration names the columns four times (the virtual
+ * table plus its three sync triggers) and `FTS_ITEM_COLUMNS` (`src/db/repositories/constants.ts`)
+ * names them once more, none of which the golden-schema snapshot can relate back to this
+ * registry — it locks the DDL's *shape*, not its agreement with the search vocabulary. `notes`
+ * was once indexed but absent from `FTS_ITEM_COLUMNS`, so `isFtsColumn` rejected it and every
+ * scoped "Notes contains…" search compiled to the always-false `0` (issue #120). A drift test
+ * over this list, that constant and the migration's DDL now fails the build rather than review
+ * (issue #248).
+ *
+ * Marking a *new* field `fts-text` therefore has to reach the schema as well: the column joins
+ * the virtual table and all three triggers, or `CONTAINS` on it queries an index that has no
+ * such column — the opposite direction of drift, and the louder one.
+ */
+export const FTS_TEXT_ITEM_COLUMNS: readonly string[] = Object.values(ITEM_FIELDS)
+  .filter((meta) => meta.kind === 'fts-text')
+  .map((meta) => meta.column.replace(/^items\./, ''));
+
 /** The `active` field name, shared with {@link astFiltersActiveFlag} so the two can't drift. */
 const ACTIVE_FIELD = 'active';
 
