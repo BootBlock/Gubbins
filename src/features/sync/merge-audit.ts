@@ -116,11 +116,13 @@ function major(value: unknown): SqlValue {
  * The audited fields in which the winning row differs from the losing one — what the merge is
  * about to overwrite, and what it discards doing so.
  *
- * Only columns **present on the winner** are compared. `applyPlan` builds its upsert as
- * `SET col = excluded.col` over exactly those columns, so a column an older peer's schema does
- * not carry is not written at all; reading its absence as "overwritten to nothing" would record
- * a loss that never happens. Values are compared as strings for the same reason `rowsDiffer`
- * does: a snapshot round-trip can change a number's runtime type without changing the value.
+ * Only columns **both rows carry** are compared. `applyPlan` builds its upsert as
+ * `SET col = excluded.col` over exactly the winner's columns, so a column an older peer's schema
+ * does not carry is not written at all; reading its absence as "overwritten to nothing" would
+ * record a loss that never happens. A column missing from the losing row is skipped for the
+ * mirror reason: there is no discarded value to record, so the entry would assert one it never
+ * saw. Values are compared as strings for the same reason `rowsDiffer` does: a snapshot
+ * round-trip can change a number's runtime type without changing the value.
  */
 export function overwrittenFields(losing: SqlRow, winning: SqlRow): FieldChange[] {
   const changes: FieldChange[] = [];
@@ -142,9 +144,18 @@ export function labelsFor(changes: readonly FieldChange[]): string[] {
   return AUDITED_COLUMNS.filter((c) => named.has(c.field)).map((c) => c.label);
 }
 
-/** The British-English prose for an overwrite entry's note. */
+/**
+ * The British-English prose for an overwrite entry's note.
+ *
+ * Deliberately written from **no device's** point of view. The entry is authored by the device
+ * that lost, but `item_history` is unioned by id, so the row then travels to every peer —
+ * including the one whose edit won, where "another device overwrote *this* device's price" is the
+ * exact opposite of what happened. The ledger is immutable and the insert is `INSERT OR IGNORE`
+ * under a derived id, so a note that is wrong on arrival can never be corrected in place. Which
+ * version was discarded is still recorded, as the `from` value of each change.
+ */
 export function overwriteNote(labels: readonly string[]): string {
-  return `A newer edit from another device overwrote this device's ${labels.join(', ')}.`;
+  return `Two devices edited this item; the newer edit replaced its ${labels.join(', ')}.`;
 }
 
 /**

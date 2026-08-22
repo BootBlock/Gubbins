@@ -36,8 +36,7 @@ that have always been logged.
 
 A [[sync|Cloud-Sync]] can change an item's details too, without anybody editing it. When two
 devices edited the same item while apart, the more recent change wins and the other is set aside —
-and the device that lost records an **Overwritten by sync** entry naming each field that was
-replaced and the value it held before. So the log answers *"what was this before the merge?"* and
+and an **Overwritten by sync** entry records it, naming each field the merge replaced. So the log
 never reads as though a discarded edit still stands.
 
 > **ℹ️ Note**

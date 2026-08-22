@@ -8,7 +8,10 @@
  * discarding it in silence — the very fault this issue closes, re-opened one column at a time.
  *
  * These two tests hold it against both neighbours: the fields `ItemRepository.update` actually
- * audits, and the live `items` schema.
+ * audits, and the live `items` schema. Between them they cover drift in either direction — the
+ * first drives *every* mutable field the edit path takes, audited and silent alike, so a field
+ * that starts or stops being audited shows up; the second makes a brand-new column a decision
+ * rather than a default.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
@@ -97,6 +100,15 @@ describe('the merge-overwrite registry (issue #487)', () => {
       height: 20,
       depth: 30,
       currentValue: 12,
+      // The fields the edit path deliberately leaves silent, driven in the same call. Passing
+      // them is what closes the *other* drift direction: if one ever starts raising a ledger
+      // entry without being added to the registry, it turns up in `audited` below and this test
+      // fails — where a payload naming only the audited fields could never have seen it.
+      description: 'A drill.',
+      notes: 'Kept in the van.',
+      operationalMetadata: { torque: '40Nm' },
+      isFavourite: true,
+      deadStockMode: 'never',
     });
 
     const gauge = await items.create({

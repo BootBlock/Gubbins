@@ -13,8 +13,11 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { SYSTEM_USER_ID } from '@/db/repositories/constants';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
+import { ITEM_HISTORY_TABLE, SYNC_TABLES } from '@/db/repositories/tombstone';
 import { runSnapshotMerge, type SnapshotMergeRequest } from './merge';
-import { buildLocalSnapshot } from './snapshot';
+import { reconcile } from './reconcile';
+import { buildSchemaDictionary } from './schema-dictionary';
+import { applyPlan, buildLocalSnapshot } from './snapshot';
 
 describe('a sync merge records what it overwrote (issue #487)', () => {
   let a: MemoryDriver;
@@ -110,7 +113,7 @@ describe('a sync merge records what it overwrote (issue #487)', () => {
     const entries = await overwriteEntries(a, itemId);
     expect(entries).toHaveLength(1);
     expect(entries[0]!.note).toBe(
-      "A newer edit from another device overwrote this device's name, barcode, unit cost.",
+      'Two devices edited this item; the newer edit replaced its name, barcode, unit cost.',
     );
     expect(JSON.parse(entries[0]!.metadata)).toEqual({
       fields: ['name', 'barcode', 'unitCost'],
@@ -129,11 +132,39 @@ describe('a sync merge records what it overwrote (issue #487)', () => {
     const itemId = await divergeThenMerge();
     const first = await overwriteEntries(a, itemId);
 
-    // The same merge again — what a sync that applied but failed before its watermark advanced
-    // replays on the next attempt.
+    // Re-syncing the same peer adds nothing, because the two rows now agree: the re-diff plans
+    // no upsert at all. The derived id is what covers the *other* replay — see the next test.
     await sync(b, a, { conflictSince: LAST_SYNC });
 
     expect(await overwriteEntries(a, itemId)).toEqual(first);
+  });
+
+  it('writes one entry when the identical plan is applied twice', async () => {
+    // The replay the derived id actually exists for: a merge that applied and then failed before
+    // its watermark advanced re-applies *this* plan on the next attempt, not a freshly-diffed one.
+    // A random id would append a second entry here; the derived one makes the insert a no-op.
+    const item = await itemsA.create({ name: 'Torque wrench', unitCost: 40 });
+    await sync(a, b);
+    await stamp(a, item.id, 1_000);
+    await stamp(b, item.id, 1_000);
+
+    await itemsA.update(item.id, { unitCost: 42 });
+    await stamp(a, item.id, 2_000);
+    await itemsB.update(item.id, { unitCost: 45 });
+    await stamp(b, item.id, 3_000);
+
+    const dictionary = await buildSchemaDictionary(a, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+    const plan = reconcile(await buildLocalSnapshot(a), await buildLocalSnapshot(b), {
+      offset: 0,
+      dictionary,
+      conflictSince: LAST_SYNC,
+    });
+    expect(plan.mergeOverwrites).toHaveLength(1);
+
+    await applyPlan(a, plan, dictionary);
+    await applyPlan(a, plan, dictionary);
+
+    expect(await overwriteEntries(a, item.id)).toHaveLength(1);
   });
 
   it('travels to the peer as one entry, not as a second copy of the same overwrite', async () => {
