@@ -32,11 +32,15 @@ pure seam [`src/lib/colour.ts`](../../src/lib/colour.ts); the control is the Fou
 `ColourInput`, whose "Show as" menu re-renders the stored value in any of those notations.
 
 **The decision that shapes everything else:** canonicalise **at save**, not at display. Two
-users who enter the same colour by different routes then store the same string, so equality,
-grouping and search work with no colour parser in the SQL. The cost is that `hsl()` and
-`hsb()` are rendered at whole degrees and percent, so reading a colour back in one of those
-and re-entering it can shift a channel by a shade. Storage is unaffected — the stored form is
-always the hex.
+users who enter the same colour by different routes then store the same string, so a `field:`
+search predicate compares two colours as plain strings with no colour parser in the SQL.
+
+The cost is that `hsl()` and `hsb()` are rendered at the whole degrees and percent a person
+reads, so they cannot name every 8-bit colour: `#4ab66a` shows as `hsl(138, 43%, 50%)`, which
+reads back as `#49b66a`. The control therefore keeps the box's text paired with the colour it
+was rendered *from*, so merely reading a colour in another notation never re-enters a
+neighbouring one. A user who copies that text out and pastes it back later does land on the
+neighbour — that is inherent to the notation, not something the app can avoid.
 
 `ON_OFF`-style aliasing was deliberately *not* used: there is one colour type, not a
 `HEX`/`RGB` pair, because the notation is how a value is written, not what it is.
@@ -167,8 +171,12 @@ five stop compiling if missed; the rest fail silently.
 
 6. `customFieldValue` in `card-fields.ts` — an unhandled type falls through to plain text. A
    new `CardFieldValue` kind also needs an arm in `ItemCardFields.tsx`.
-7. `commitsOnPick` in `LocationFieldsEditor.tsx` — a type whose value is set by something other
-   than the text box it wires `onBlur` to never commits on a location.
+7. `commitsOnPick` in `LocationFieldsEditor.tsx` — a location's field value is committed on
+   blur, so a type whose value is set by something the blur is not wired to never commits at
+   all. A type with no text box (`SELECT`, the toggles, `IMAGE`) belongs on that list. A type
+   that *has* one does not: `COLOUR` reports per keystroke like any text control, and wires its
+   picker to the same blur instead, because committing each keystroke would have written every
+   colour a half-typed hex passes through.
 8. The prose hint listing the types in `CategoryManagerDialog.tsx`.
 9. `fd.field_type <> 'IMAGE'` in `parseASTtoSQL.ts` and in
    `CategoryRepository.listLocationFieldSearchText` — the "not text, don't index it" filters.
