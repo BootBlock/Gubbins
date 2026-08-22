@@ -1131,7 +1131,10 @@ function reconcileHistoryClears(
  * The remote `stock_deltas` rows this device is missing (issue #188; union-by-id), to INSERT.
  *
  * A leaner sibling of {@link reconcileHistory}: the convergence ledger has no `actor_user_id`, so
- * there is no actor re-key to apply, and (in this first cut) no prune watermark. A delta is
+ * there is no actor re-key to apply, and no prune watermark — the ledger is bounded by summarising
+ * a placement's old movements into a checkpoint row rather than by refusing to re-import them
+ * (issue #544, `./stock-delta-compaction`), so a re-imported delta is superseded by the checkpoint
+ * instead of needing to be turned away here. A delta is
  * imported when its id is new here and its `item_id` will survive the merge — a delta for an item
  * that will not exist locally would replay the CRDT against nothing, and its `item_id` is
  * ON DELETE CASCADE, so it could never be inserted anyway. `location_id` / `batch_key` are plain
