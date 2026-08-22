@@ -688,6 +688,86 @@ export function withCaptureDisabled(statements: readonly SqlStatement[]): SqlSta
 }
 
 /**
+ * The set-based re-derivation of the stock projection, run once at the end of a batch whose
+ * per-statement recompute was suppressed by {@link withRecomputeDeferred}.
+ *
+ * Each statement is the set-based twin of the recompute trigger it stands in for, carrying the
+ * same `quantity <> (SELECT SUM(...))` guard — so a placement or an item whose stored total already
+ * equals its ledger is not written at all, and its `updated_at` survives untouched. Where a total
+ * genuinely differs the row is written, the auto-stamp trigger stamps it exactly as any local stock
+ * change is stamped, and the correction propagates on the next sync.
+ *
+ * The `EXISTS` guards keep the sweep to placements and items the ledger actually speaks for, which
+ * is what a trigger does implicitly by only firing on a write. Without them a snapshot that carries
+ * `item_stock` but no `stock_batches` — a foreign or hand-edited file — would have every one of its
+ * placements zeroed by a sweep that the triggers would never have run.
+ */
+function settleStockProjectionStatements(): SqlStatement[] {
+  const batchSum = `(SELECT COALESCE(SUM(quantity), 0) FROM stock_batches
+                      WHERE item_id = item_stock.item_id AND location_id = item_stock.location_id)`;
+  const placementSum = `(SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = items.id)`;
+  return [
+    // A placement the snapshot carries batches for but no `item_stock` row: the insert arm of
+    // `trg_stock_batches_recompute_ins`. Matched on the natural key rather than the derived id,
+    // because a foreign snapshot's `item_stock.id` need not follow the `item|location` form.
+    {
+      sql: `INSERT INTO item_stock (id, item_id, location_id, quantity)
+            SELECT b.item_id || '|' || b.location_id, b.item_id, b.location_id, SUM(b.quantity)
+              FROM stock_batches b
+             WHERE NOT EXISTS (SELECT 1 FROM item_stock s
+                                WHERE s.item_id = b.item_id AND s.location_id = b.location_id)
+             GROUP BY b.item_id, b.location_id;`,
+    },
+    {
+      sql: `UPDATE item_stock SET quantity = ${batchSum}
+             WHERE EXISTS (SELECT 1 FROM stock_batches b
+                            WHERE b.item_id = item_stock.item_id AND b.location_id = item_stock.location_id)
+               AND quantity <> ${batchSum};`,
+    },
+    {
+      sql: `UPDATE items SET quantity = ${placementSum}
+             WHERE EXISTS (SELECT 1 FROM item_stock s WHERE s.item_id = items.id)
+               AND quantity <> ${placementSum};`,
+    },
+  ];
+}
+
+/**
+ * Bracket a batch of snapshot-apply statements so the derived-quantity recompute triggers stay
+ * dormant while they run, then settle the whole projection once at the end (issue #548).
+ *
+ * A restore or clone rebuilds the stock ledger one row at a time, and the recompute triggers see
+ * every intermediate partial sum. An item with stock in two locations restores its settled
+ * `quantity` first, then watches the projection knock it down to the first location's share and
+ * back up again — and because that recompute writes `quantity` without touching `updated_at`, the
+ * auto-stamp trigger fires on each step and re-stamps a row nobody edited. The damage is not
+ * cosmetic: the bridge hydrates the served file through this path on every push, so those items
+ * always look newer than the app's genuine edits to them, and last-write-wins discards the edits
+ * with a `200 ok`. The app's Merge restore has the milder form of it — every multi-placement item
+ * comes back looking freshly edited and beats a peer's newer version at the next sync.
+ *
+ * Suppressing the triggers alone would not do, because the projection is not always a formality: a
+ * Merge restore lands a backup's placements alongside local ones the backup never knew about, and
+ * the totals genuinely have to be recomputed. So the settle pass runs inside the bracket, after the
+ * caller's statements, doing set-based what the triggers did per row — and doing it once, from the
+ * finished ledger, rather than from each partial sum along the way. On the ordinary consistent
+ * snapshot it writes nothing and every `updated_at` restores byte-identical.
+ *
+ * The switch is flipped inside the caller's own transaction, so a rollback restores it too. Only
+ * wraps a non-empty batch, matching {@link withCaptureDisabled} — an empty transaction has no
+ * projection to settle.
+ */
+export function withRecomputeDeferred(statements: readonly SqlStatement[]): SqlStatement[] {
+  if (statements.length === 0) return [...statements];
+  return [
+    { sql: 'UPDATE stock_delta_capture SET recompute = 0 WHERE id = 1;' },
+    ...statements,
+    ...settleStockProjectionStatements(),
+    { sql: 'UPDATE stock_delta_capture SET recompute = 1 WHERE id = 1;' },
+  ];
+}
+
+/**
  * Bracket a batch so SQLite checks its foreign keys once, at COMMIT, rather than after every
  * statement (issue #602).
  *
@@ -1452,7 +1532,10 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   // section above, so capture stays disabled around the batch to avoid double-counting.
   // Issue #602: the backup's rows are carried in id order, so a sub-location or a variant can
   // precede the row it points at — the foreign-key check is deferred to COMMIT for that.
-  await driver.transaction(withDeferredForeignKeys(withCaptureDisabled(statements)));
+  // Issue #548: the rows also carry their derived quantities already settled, so the recompute
+  // triggers watch the ledger rebuild itself row by row and re-stamp every multi-placement item.
+  // Defer the projection to a single settle pass at the end of the batch instead.
+  await driver.transaction(withDeferredForeignKeys(withCaptureDisabled(withRecomputeDeferred(statements))));
 }
 
 export { buildSchemaDictionary, SYNC_TABLES, UNASSIGNED_LOCATION_ID };

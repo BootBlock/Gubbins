@@ -1507,10 +1507,64 @@ const baselineStatements: SqlStatement[] = [
       `,
   },
   {
+    // Local-only stock-apply switch row (issue #188). A single row of device-local session state
+    // that the `stock_batches` capture triggers and the derived-quantity recompute triggers both
+    // consult: never synced, backed up, cloned, restored or tombstoned, and — like
+    // `location_item_counts` — carrying no foreign key, so a restore's table ordering can never
+    // abort on it.
+    //
+    // `enabled` is the capture switch: the capture triggers below record a delta for every
+    // `stock_batches` quantity change EXCEPT while it is off — which the sync/backup apply turns
+    // off around its writes, because the rows it applies already carry their deltas via the
+    // unioned `stock_deltas` section (recording a second, local delta would double-count).
+    //
+    // `asserting` is the same idea for the other axis (issue #633): while it is on, the delta each
+    // trigger writes also records the resulting quantity as an *asserted* one, because the write it
+    // is capturing came from a physical count rather than a movement. Only the cycle-count
+    // reconciliation turns it on, and only around its own `stock_batches` writes.
+    //
+    // `operation_key` is the third (issue #696): while it holds a key, each captured delta takes a
+    // *derived* id instead of a random one, so the same one-shot operation performed offline on two
+    // devices writes the same ledger rows rather than two copies of one movement. See
+    // {@link stockDeltaIdExpression} for the derivation and `withOperationKey` for what may set it.
+    // The CHECK pins the shape the derivation relies on — a key that held `|` could collide with
+    // another operation's id across the segment boundary, and one holding a `%` or `_` would turn
+    // the ordinal's `LIKE` prefix into a wildcard that counts other operations' rows.
+    //
+    // `recompute` is the fourth (issue #548), and the only one the recompute triggers below read.
+    // While it is off they do not project `stock_batches` → `item_stock` → `items`, because the
+    // caller is applying a snapshot that already carries those derived values settled. Left on, the
+    // projection fires once per restored row and walks each item through the partial sums of a
+    // ledger being rebuilt one row at a time; every intermediate step differs from the settled
+    // value, so the recompute writes `items.quantity` without touching `updated_at` — which is
+    // precisely the condition {@link updatedAtTrigger} watches for, and it re-stamps a row nobody
+    // edited. `withRecomputeDeferred` (`features/sync/snapshot.ts`) turns it off around a restore
+    // or clone and settles the projection once at the end, so a snapshot restores byte-identical
+    // and an inconsistent one is still repaired.
+    sql: `
+        CREATE TABLE stock_delta_capture (
+          id            INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+          enabled       INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+          asserting     INTEGER NOT NULL DEFAULT 0 CHECK (asserting IN (0, 1)),
+          operation_key TEXT CHECK (operation_key IS NULL OR operation_key NOT GLOB '*[|%_]*'),
+          recompute     INTEGER NOT NULL DEFAULT 1 CHECK (recompute IN (0, 1))
+        ) STRICT;
+      `,
+  },
+  {
+    sql: `INSERT INTO stock_delta_capture (id, enabled, asserting, operation_key, recompute)
+          VALUES (1, 1, 0, NULL, 1);`,
+  },
+  {
+    // Project `item_stock` → `items.quantity` (Phase 25). Guarded by `quantity <> SUM(...)` so a
+    // write that leaves the total unchanged costs nothing, and by the `recompute` switch so a
+    // snapshot apply — which carries the settled totals already — projects once at the end rather
+    // than once per restored row (issue #548; see the switch table above).
     sql: `
         CREATE TRIGGER trg_item_stock_recompute_ins
         AFTER INSERT ON item_stock
         FOR EACH ROW
+        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
           UPDATE items
           SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id)
@@ -1524,6 +1578,7 @@ const baselineStatements: SqlStatement[] = [
         CREATE TRIGGER trg_item_stock_recompute_upd
         AFTER UPDATE ON item_stock
         FOR EACH ROW
+        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
           UPDATE items
           SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id)
@@ -1537,6 +1592,7 @@ const baselineStatements: SqlStatement[] = [
         CREATE TRIGGER trg_item_stock_recompute_del
         AFTER DELETE ON item_stock
         FOR EACH ROW
+        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
           UPDATE items
           SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = OLD.item_id)
@@ -1590,10 +1646,14 @@ const baselineStatements: SqlStatement[] = [
       `,
   },
   {
+    // Project `stock_batches` → `item_stock.quantity`, the lower level of the same projection —
+    // and the same two guards. The INSERT arm creates the placement row when a batch is the first
+    // stock to land there.
     sql: `
         CREATE TRIGGER trg_stock_batches_recompute_ins
         AFTER INSERT ON stock_batches
         FOR EACH ROW
+        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
           INSERT INTO item_stock (id, item_id, location_id, quantity)
           VALUES (
@@ -1611,6 +1671,7 @@ const baselineStatements: SqlStatement[] = [
         CREATE TRIGGER trg_stock_batches_recompute_upd
         AFTER UPDATE ON stock_batches
         FOR EACH ROW
+        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
           UPDATE item_stock
           SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches
@@ -1626,6 +1687,7 @@ const baselineStatements: SqlStatement[] = [
         CREATE TRIGGER trg_stock_batches_recompute_del
         AFTER DELETE ON stock_batches
         FOR EACH ROW
+        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
           UPDATE item_stock
           SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches
@@ -1696,40 +1758,6 @@ const baselineStatements: SqlStatement[] = [
           SELECT RAISE(ABORT, 'stock_deltas is an immutable, append-only ledger.');
         END;
       `,
-  },
-  {
-    // Local-only capture switch (issue #188). The capture triggers below record a delta for every
-    // `stock_batches` quantity change EXCEPT while this switch is off — which the sync/backup apply
-    // turns off around its writes, because the rows it applies already carry their deltas via the
-    // unioned `stock_deltas` section (recording a second, local delta would double-count). It is
-    // device-local session state: never synced, backed up, cloned, restored or tombstoned, and —
-    // like `location_item_counts` — carries no foreign key so a restore's table ordering can never
-    // abort on it.
-    //
-    // `asserting` is the same idea for the other axis (issue #633): while it is on, the delta each
-    // trigger writes also records the resulting quantity as an *asserted* one, because the write it
-    // is capturing came from a physical count rather than a movement. Only the cycle-count
-    // reconciliation turns it on, and only around its own `stock_batches` writes.
-    //
-    // `operation_key` is the third (issue #696): while it holds a key, each captured delta takes a
-    // *derived* id instead of a random one, so the same one-shot operation performed offline on two
-    // devices writes the same ledger rows rather than two copies of one movement. See
-    // {@link stockDeltaIdExpression} for the derivation and `withOperationKey` for what may set it.
-    // The CHECK pins the shape the derivation relies on — a key that held `|` could collide with
-    // another operation's id across the segment boundary, and one holding a `%` or `_` would turn
-    // the ordinal's `LIKE` prefix into a wildcard that counts other operations' rows.
-    sql: `
-        CREATE TABLE stock_delta_capture (
-          id            INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
-          enabled       INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
-          asserting     INTEGER NOT NULL DEFAULT 0 CHECK (asserting IN (0, 1)),
-          operation_key TEXT CHECK (operation_key IS NULL OR operation_key NOT GLOB '*[|%_]*')
-        ) STRICT;
-      `,
-  },
-  {
-    sql: `INSERT INTO stock_delta_capture (id, enabled, asserting, operation_key)
-          VALUES (1, 1, 0, NULL);`,
   },
   {
     // Capture a delta for every batch placement that gains stock. `NEW.quantity - 0` on insert;
