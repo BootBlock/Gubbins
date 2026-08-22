@@ -7,9 +7,9 @@
  * The badge needs three counts. It used to reach them through the `@/features/lifecycle` barrel,
  * which also re-exported the Audit Day and Cycle Count dialogs and the Kit / Lifecycle /
  * Maintenance editors; those import back from `@/components/foundry`, closing an import cycle the
- * bundler cannot split, and ~80 KB of dialog source rode along for users who never open an item's
- * tabs or start a stock take. Their real consumers (`ItemDetailDialog`, `InventoryScreen`) are
- * lazily reached and import each component from its own module instead.
+ * bundler cannot split, and ~80 KB of dialog source came with them for users who never open an
+ * item's tabs or start a stock take. Their real consumers (`ItemDetailDialog`, `InventoryScreen`)
+ * are lazily reached and import each component from its own module instead.
  *
  * Nothing about that regression is visible to a type-check or a component test — re-adding one
  * `export { AuditDayDialog }` line to the barrel restores it silently — so this walks the static
@@ -21,23 +21,30 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { repoPath } from '../../test/repo-path';
 
-// Vitest runs from the project root; under happy-dom `import.meta.url` is an http: URL, not a
-// file: one, so resolve against cwd (the same approach as the other source-scanning guards).
-const PROJECT_ROOT = process.cwd();
-const SRC_DIR = resolve(PROJECT_ROOT, 'src');
+// Resolved from *this file's* checkout, never `process.cwd()` — see `repoPath`. A worktree's suite
+// can be run from the primary checkout, and a cwd-relative guard would then walk the *primary's*
+// import graph and report green while the worktree's edits went unchecked.
+const PROJECT_ROOT = repoPath(import.meta.dirname);
+const SRC_DIR = join(PROJECT_ROOT, 'src');
 
 /** The module the eager boot path pulls in — `AppNav` imports it directly. */
-const ENTRY = resolve(SRC_DIR, 'features/alerts/useAlerts.ts');
+const ENTRY = join(SRC_DIR, 'features', 'alerts', 'useAlerts.ts');
 
 /** Heavy React components that must stay off the eager path, as repo-relative paths. */
 const FORBIDDEN_PREFIX = 'src/features/lifecycle/components/';
 
 /**
- * A module the walk must reach, proving the resolver still works. Without it, a resolver that
- * silently stopped following imports would look identical to a clean graph.
+ * Modules the walk must reach. Without them, a walk that quietly stopped following imports would
+ * look identical to a clean graph. The first is a direct import of the entry, so it proves the
+ * resolver works; the second is reached only *through* the first, so it proves the walk recurses
+ * rather than certifying one hop.
  */
-const POSITIVE_CONTROL = resolve(SRC_DIR, 'features/lifecycle/hooks.ts');
+const POSITIVE_CONTROLS = [
+  join(SRC_DIR, 'features', 'lifecycle', 'hooks.ts'),
+  join(SRC_DIR, 'features', 'calendar', 'keys.ts'),
+];
 
 const CANDIDATE_SUFFIXES = ['', '.ts', '.tsx', '/index.ts', '/index.tsx'];
 
@@ -61,9 +68,13 @@ function resolveSpecifier(specifier: string, fromFile: string): string | null {
  */
 function staticSpecifiers(source: string): string[] {
   const out: string[] = [];
-  const statement = /(?:^|\n)\s*(import|export)\s+([\s\S]*?)from\s*['"]([^'"]+)['"]/g;
-  for (const [, , clause, specifier] of source.matchAll(statement)) {
-    if (/^\s*type\s/.test(clause)) continue;
+  // The clause between the keyword and `from` is bounded by `[^;]*?`, not `[\s\S]*?`: an import
+  // clause never contains a semicolon, whereas a statement with no `from` of its own (say
+  // `export type { Foo };`) would otherwise open a match that ran on to the *next* statement's
+  // `from '…'`, be discarded as type-only, and take a genuine value import down with it.
+  const statement = /(?:^|\n)\s*(?:import|export)\b([^;]*?)\bfrom\s*['"]([^'"]+)['"]/g;
+  for (const [, clause, specifier] of source.matchAll(statement)) {
+    if (/^\s*type\b/.test(clause)) continue;
     out.push(specifier);
   }
   // Side-effect imports (`import '@/foo'`) carry no clause, so the pattern above misses them.
@@ -91,8 +102,8 @@ function reachableFrom(entry: string): Set<string> {
 }
 
 describe('the @/features/lifecycle barrel', () => {
-  it('re-exports no React component', () => {
-    const barrel = readFileSync(resolve(SRC_DIR, 'features/lifecycle/index.ts'), 'utf8');
+  it('re-exports nothing from ./components', () => {
+    const barrel = readFileSync(join(SRC_DIR, 'features', 'lifecycle', 'index.ts'), 'utf8');
     const componentReExports = [...barrel.matchAll(/from\s*'(\.\/components\/[^']+)'/g)].map(
       ([, specifier]) => specifier,
     );
@@ -101,11 +112,28 @@ describe('the @/features/lifecycle barrel', () => {
   });
 });
 
+describe('the static-import parser', () => {
+  it('keeps a value import that follows a type-only re-export', () => {
+    // The shape that broke an earlier revision: `export type { … };` has no `from` of its own, so
+    // an unbounded clause swallowed the following import and the whole subtree behind it went
+    // unwalked — a hole the reachability assertion below could not see.
+    const source = [
+      "import { a, type B } from '@/one';",
+      'export type { B };',
+      "import { c } from '@/two';",
+      "export type { D } from '@/three';",
+      "import '@/four';",
+    ].join('\n');
+
+    expect(staticSpecifiers(source).sort()).toEqual(['@/four', '@/one', '@/two']);
+  });
+});
+
 describe('the eager alert-badge import graph', () => {
   const reachable = reachableFrom(ENTRY);
 
-  it('still walks the graph it is meant to guard', () => {
-    expect(reachable.has(POSITIVE_CONTROL)).toBe(true);
+  it.each(POSITIVE_CONTROLS)('still walks as far as %s', (control) => {
+    expect(reachable.has(control)).toBe(true);
   });
 
   it('does not statically reach any lifecycle dialog or editor', () => {

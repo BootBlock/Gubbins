@@ -4,14 +4,15 @@
  * cycle-counting / reconciliation workflow. Pure scheduling/variance maths live in
  * the sibling modules and are unit-tested in isolation.
  *
- * This barrel exports hooks, stores and pure logic only — deliberately **no React
- * components**. The dialogs and editors (`AuditDayDialog`, `CycleCountDialog`,
- * `KitEditor`, `LifecycleEditor`, `MaintenanceEditor`) import back from
- * `@/components/foundry`, so re-exporting them here closed an import cycle that
+ * This barrel exports hooks, stores and pure logic — deliberately **nothing from
+ * `./components`** (the lightweight `CycleCountProvider` context is the one component
+ * here, and it renders no UI of its own). The dialogs and editors (`AuditDayDialog`,
+ * `CycleCountDialog`, `KitEditor`, `LifecycleEditor`, `MaintenanceEditor`) import back
+ * from `@/components/foundry`, so re-exporting them here closed an import cycle that
  * dragged all of them into the eagerly-preloaded entry chunk as soon as anything on
  * the boot path (`AppNav` -> `useAlerts`) reached for a hook. Import a component
  * from its own module — `@/features/lifecycle/components/<Name>` — and keep this
- * barrel component-free.
+ * barrel free of them.
  */
 export { expiryStatus, daysUntilExpiry, type ExpiryStatus } from './expiry';
 export { fieldDueStatus, clampFieldDueLeadDays, type FieldDueStatus } from './field-due';
