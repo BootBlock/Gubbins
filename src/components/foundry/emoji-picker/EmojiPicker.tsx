@@ -165,7 +165,7 @@ export function EmojiPicker({
     setSelected(null);
   };
   const onRailKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    let next = railIndex;
+    let next: number;
     switch (event.key) {
       case 'ArrowDown':
         next = Math.min(rail.length - 1, railIndex + 1);

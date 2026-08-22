@@ -290,7 +290,7 @@ export async function gatherEnvironment(): Promise<EnvironmentDiagnostics> {
   const nav = typeof navigator !== 'undefined' ? navigator : undefined;
   const win = typeof window !== 'undefined' ? window : undefined;
 
-  let timeZone = '';
+  let timeZone: string;
   try {
     timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
   } catch {

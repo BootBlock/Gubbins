@@ -137,7 +137,7 @@ async function resolveCategoryName(
   const cached = context.categoryNames.get(categoryId);
   if (cached !== undefined) return cached;
 
-  let name: string | null = null;
+  let name: string | null;
   try {
     name = (await context.categories.getById(categoryId))?.name ?? null;
   } catch {
@@ -159,7 +159,7 @@ async function resolveTagIds(context: WebhookViewContext, itemId: string): Promi
   const cached = context.itemTagIds.get(itemId);
   if (cached !== undefined) return cached;
 
-  let tagIds: readonly string[] = [];
+  let tagIds: readonly string[];
   try {
     tagIds = (await context.tags.getForItem(itemId)).map((tag) => tag.id);
   } catch {

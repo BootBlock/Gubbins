@@ -72,7 +72,7 @@ export async function hydrateFromFile(path: string): Promise<HydrateResult> {
     text = await readFile(path, 'utf8');
   } catch (err) {
     const reason = errorMessage(err);
-    throw new Error(`Could not read the snapshot file at "${path}": ${reason}`);
+    throw new Error(`Could not read the snapshot file at "${path}": ${reason}`, { cause: err });
   }
   return hydrateFromJson(text);
 }

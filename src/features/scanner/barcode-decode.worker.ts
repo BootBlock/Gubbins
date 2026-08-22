@@ -75,7 +75,7 @@ function decodeBitmap(bitmap: ImageBitmap, decode: RgbaDecoder): string | null {
 
 self.onmessage = (event: MessageEvent<DecodeRequest>) => {
   const data = event.data;
-  let text: string | null = null;
+  let text: string | null;
   try {
     const decode = decoderFor(data.symbology);
     if ('bitmap' in data) {
