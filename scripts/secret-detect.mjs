@@ -26,7 +26,7 @@ const KV_PATTERN =
  * itself; without one, the whole match IS the credential (an `AKIA…` key is its own value).
  * All are matched case-insensitively, as the original `grep -nEi` did.
  */
-export const SECRET_PATTERNS = [
+const SECRET_PATTERNS = [
   { name: 'private-key block', re: /-----BEGIN[ A-Z]*PRIVATE KEY-----/gi },
   { name: 'AWS access key id', re: /AKIA[0-9A-Z]{16}/gi },
   { name: 'sk- style API key', re: /sk-[A-Za-z0-9]{20,}/gi },
@@ -45,14 +45,20 @@ export const SECRET_PATTERNS = [
 const PLACEHOLDER_WORD = /xxxx|example|placeholder|your[_-]|changeme|redacted|dummy|noreply/i;
 
 /**
- * A value that is wholly a substitution marker rather than a secret: `<YOUR_API_KEY>`, `$TOKEN`,
- * `${TOKEN}`, `{{ token }}`, `%TOKEN%`. Anchored, so the marker has to BE the value — an angle
- * bracket merely appearing elsewhere on the line, as in any JSX element, excuses nothing.
+ * A value that is wholly a substitution marker rather than a secret: the `<YOUR_API_KEY>` form
+ * CLAUDE.md documents, or a reference to an environment variable (`$API_TOKEN`, `${API_TOKEN}`).
+ * Two deliberate restrictions keep this from becoming an escape hatch:
+ *
+ *   - It is anchored, so the marker has to BE the whole value. An angle bracket appearing
+ *     elsewhere on the line, as in any JSX element, excuses nothing.
+ *   - The variable forms require the SHOUTING_SNAKE_CASE that environment variables actually
+ *     use. Without that, a real password beginning with `$` — `$Password123` — would read as a
+ *     variable reference and be waved through.
  */
-const TEMPLATE_VALUE = /^(?:<[^>]*>|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\{\{[^}]*\}\}|%[^%]+%)$/;
+const TEMPLATE_VALUE = /^(?:<[^>]*>|\$\{[A-Z_][A-Z0-9_]*\}|\$[A-Z_][A-Z0-9_]*)$/;
 
 /** True if the matched credential value is an obvious placeholder rather than a real secret. */
-export function isPlaceholderValue(value) {
+function isPlaceholderValue(value) {
   return TEMPLATE_VALUE.test(value) || PLACEHOLDER_WORD.test(value);
 }
 

@@ -11,6 +11,11 @@ const GOOGLE_KEY = `AI${'za'}${'0123456789abcdefghijklmnopqrstuvwxy'}`;
 const SLACK_TOKEN = `xo${'xb'}-${'0123456789'}-${'abcdefghij'}`;
 const PRIVATE_KEY_HEADER = `${'-----'}BEGIN RSA PRIVATE KEY${'-----'}`;
 const REAL_VALUE = 'hunter2secret';
+// Values that must NOT read as substitution markers. Assembled here, like the fixtures above,
+// so the literal text of the case below is itself an exempt `${UPPER_SNAKE}` reference.
+const DOLLAR_PREFIXED = `$${'Password123'}`;
+const PERCENT_WRAPPED = `%${REAL_VALUE}%`;
+const BRACE_WRAPPED = `{{${REAL_VALUE}}}`;
 
 /**
  * Lines the scanner MUST flag. The JSX and HTML cases are the regression this suite exists for:
@@ -35,16 +40,22 @@ const MUST_FLAG = [
     'a real credential after a placeholder one on the same line',
     `apiKey: "<YOUR_API_KEY>", secret: "${REAL_VALUE}"`,
   ],
+  // A real password that merely begins with `$`, or is wrapped in `%…%`/`{{…}}`, must not read
+  // as a substitution marker — only the SHOUTING_SNAKE_CASE variable forms are excused.
+  ['a mixed-case value beginning with a dollar sign', `password: "${DOLLAR_PREFIXED}"`],
+  ['a real value wrapped in percent signs', `password: "${PERCENT_WRAPPED}"`],
+  ['a real value wrapped in double braces', `token: "${BRACE_WRAPPED}"`],
 ];
 
 /** Lines the scanner MUST NOT flag — the example snippets the placeholder rules exist to allow. */
 const MUST_NOT_FLAG = [
-  ['an angle-bracket placeholder value', 'const key = "<YOUR_API_KEY>";'],
+  ['the documented angle-bracket placeholder', 'const api_key = "<YOUR_API_KEY>";'],
+  // Isolates the angle-bracket rule: this value carries no word from the placeholder list, so
+  // only the `<…>` form can excuse it.
+  ['an angle-bracket placeholder with no placeholder word in it', 'api_key: "<INSERT_KEY_HERE>"'],
   ['the documented xxxx placeholder', `const key = "sk-${'x'.repeat(24)}";`],
   ['an environment reference', 'api_key: "$GUBBINS_API_KEY"'],
   ['a braced environment reference', 'api_key: "${GUBBINS_API_KEY}"'],
-  ['a template substitution', 'token: "{{secrets.TOKEN}}"'],
-  ['a Windows-style variable', 'password: "%GUBBINS_PASSWORD%"'],
   ['an obvious example value', 'password: "example-password"'],
   ['plain JSX with no credential', '<Button variant="primary" onClick={handleSave}>Save</Button>'],
   ['an XML feed line', '<link>https://example.test/items/42</link>'],
