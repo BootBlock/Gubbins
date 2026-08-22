@@ -175,9 +175,12 @@ async function pruneOrphans(driver: IDatabaseDriver): Promise<number> {
  * the stamp sat at `cutoff − 1`, a row stamped at exactly `cutoff − 1` would be summarised *and*
  * tie with the checkpoint on re-import — and `replayStockQuantity` orders an assertion before a
  * movement at equal `createdAt`, so that row would be applied on top of a checkpoint that already
- * contained it. Excluding the stamp from the era leaves nothing that can tie from below. A
- * *survivor* at the stamp still ties, and that tie is correct: a movement the checkpoint does not
- * account for belongs on top of it.
+ * contained it. Excluding the stamp from the era leaves nothing that can tie from below.
+ *
+ * A *survivor* at the stamp still ties, and the sweep refuses the placement outright rather than
+ * reason about which way the tie falls — see {@link sweepStockDeltas}. The tie is harmless for a
+ * movement and unsafe for an assertion, and the rule is not worth splitting for the sake of one
+ * millisecond a day.
  */
 function checkpointStamp(cutoff: number): number {
   return cutoff - 1;
@@ -315,6 +318,14 @@ export async function sweepStockDeltas(
     // locally, and it stays merely incomplete rather than becoming authoritatively wrong.
     if (quantity === undefined) continue;
     if (replayStockQuantity(deltas) !== quantity) continue;
+    // Nothing may already occupy the instant the checkpoint is about to claim. A *movement* there
+    // would be harmless — the replay orders an assertion before a movement at equal `createdAt`, so
+    // it would simply apply on top — but an **assertion** there ties on rank as well, leaving only
+    // the id to separate them. The checkpoint's derived UUID has no ordering relationship to a
+    // capture trigger's `randomblob` id, so a cycle count stamped in that one millisecond would be
+    // superseded by the checkpoint on a coin-flip, asserting a total that predates the count. The
+    // placement is left for the next sweep, whose stamp falls on a different instant.
+    if (deltas.some((d) => d.createdAt === stamp)) continue;
     const era = deltas.filter((d) => d.createdAt < stamp);
     // The grouping query already excluded a one-row era; a concurrent delete could still have
     // reduced one, and rewriting that single row under a new id is the churn the threshold exists

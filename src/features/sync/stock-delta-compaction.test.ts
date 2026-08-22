@@ -132,14 +132,6 @@ describe('compaction is replay-equivalent (issue #544)', () => {
       era: [move('a', 12, 10), move('b', -4, 20)],
       survivors: [],
     },
-    {
-      // The one instant a survivor can share with the checkpoint. It must still be applied on top:
-      // the checkpoint does not account for it, and the replay ranks an assertion before a movement
-      // at equal `createdAt` precisely so a movement in that instant is not lost.
-      name: 'a survivor stamped on the checkpoint itself',
-      era: [move('a', 30, 10), move('b', -5, 20)],
-      survivors: [move('x', -6, CUTOFF - 1), move('y', 2, CUTOFF)],
-    },
   ];
 
   for (const { name, era, survivors } of cases) {
@@ -212,8 +204,11 @@ describe('sweepStockDeltas — against the real schema (issue #544)', () => {
     ]);
   }
 
-  /** Move one delta's `created_at` to `at`, rewriting the row rather than updating it. */
-  async function restamp(id: string, at: number): Promise<void> {
+  /**
+   * Move one delta's `created_at` to `at`, optionally marking it a cycle count's assertion of
+   * `asserted`. Rewrites the row rather than updating it, which the append-only trigger forbids.
+   */
+  async function restamp(id: string, at: number, asserted?: number): Promise<void> {
     const row = await driver.queryOne<{
       item_id: string;
       location_id: string;
@@ -238,7 +233,7 @@ describe('sweepStockDeltas — against the real schema (issue #544)', () => {
           row!.batch_key,
           row!.quantity_delta,
           at,
-          row!.asserted_quantity,
+          asserted ?? row!.asserted_quantity,
         ],
       },
     ]);
@@ -411,33 +406,31 @@ describe('sweepStockDeltas — against the real schema (issue #544)', () => {
     await expectPlacementsReconstruct(item.id);
   });
 
-  it('never summarises a movement stamped on the checkpoint instant itself', async () => {
-    // The era bound is the property this guards. The summarised rows do not stay deleted — an
-    // unswept peer hands them back on the next merge — and only a checkpoint that sorts *after*
-    // them makes the replay discard them as superseded. A row sharing the checkpoint's instant
-    // would tie, and the replay ranks an assertion before a movement at equal `createdAt`, so it
-    // would be applied on top of a total that already contained it.
+  it('stands off a placement holding a row on the instant the checkpoint would claim', async () => {
+    // A cycle count in that one millisecond ties with the checkpoint on `createdAt` *and* on rank,
+    // leaving only the id to separate two assertions — and the checkpoint's derived UUID has no
+    // ordering relationship to a capture trigger's random id. Half the time the checkpoint would
+    // win and assert a total that predates the count. The completeness gate cannot catch it: the
+    // gate passes on the ledger as it stands, and the damage is done by the row it then writes.
     const drawer = await locations.create({ name: 'Drawer A' });
-    const item = await items.create({ name: 'Ferrule', quantity: 20, locationId: drawer.id });
-    await items.adjustQuantity(item.id, -4);
-    await items.adjustQuantity(item.id, -1);
+    const item = await items.create({ name: 'Ferrule', quantity: 40, locationId: drawer.id });
+    await items.adjustQuantity(item.id, -15);
+    await items.adjustQuantity(item.id, -20);
     await age(item.id, 2 * STOCK_DELTA_RETENTION_MS);
 
-    // Re-stamp the newest movement onto the exact instant the sweep will use for its checkpoint.
+    // Plant a cycle count's assertion on the exact instant the sweep would stamp its checkpoint.
     const cutoff = stockDeltaCompactionCutoff(Date.now());
     const rows = await ledger(item.id);
-    await restamp(rows[rows.length - 1]!.id, cutoff - 1);
+    await restamp(rows[rows.length - 1]!.id, cutoff - 1, 5);
+    const before = await ledger(item.id);
+    expect(replayStockQuantity(before)).toBe(5);
 
-    const before = replayStockQuantity(await ledger(item.id));
     const result = await sweepStockDeltas(driver, cutoff);
 
-    // Two rows summarised, not three: the one on the instant survives as a movement on top.
-    expect(result.erasCompacted).toBe(2);
-    const after = await ledger(item.id);
-    expect(after).toHaveLength(2);
-    expect(after.filter((d) => d.assertedQuantity !== null)).toHaveLength(1);
-    expect(after.every((d) => d.createdAt <= cutoff - 1)).toBe(true);
-    expect(replayStockQuantity(after)).toBe(before);
+    // Left entirely alone. The next sweep's stamp falls on a different instant, so nothing is
+    // permanently un-compactable.
+    expect(result.placementsCompacted).toBe(0);
+    expect(await ledger(item.id)).toEqual(before);
     await expectPlacementsReconstruct(item.id);
   });
 
