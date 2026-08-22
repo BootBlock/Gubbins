@@ -82,6 +82,8 @@ describe('AssetEditor', () => {
     ['a negative price', '-250', /negative/i],
     ['a comma-grouped price', '1,250', /number/i],
     ['a comma-decimal price', '250,00', /number/i],
+    ['a price with a stray second point', '1.2.5', /number/i],
+    ['a half-typed sum', '250*', /number/i],
   ])('refuses to save %s instead of erasing the stored one (issue #675)', (_label, typed, message) => {
     render(<AssetEditor item={priced} />);
     fireEvent.change(price(), { target: { value: typed } });
@@ -98,6 +100,33 @@ describe('AssetEditor', () => {
 
     expect(screen.getByRole('alert').textContent).toMatch(/above zero/i);
     expect(saveButton()).toHaveProperty('disabled', true);
+  });
+
+  it('leaves an out-of-range price exactly as typed, so the error survives the blur (#676)', () => {
+    // The declared `min={0}` marks the entry invalid; it never rewrites it to `0`, which would
+    // clear the error and let a meaningless figure save over the stored one.
+    render(<AssetEditor item={priced} />);
+    fireEvent.change(price(), { target: { value: '-250' } });
+    fireEvent.blur(price());
+
+    // Padded to the currency's decimals by the money field, which is lossless — but still the
+    // figure that was typed, not the `0` a clamp would have put there.
+    expect(price()).toHaveValue('-250.00');
+    expect(screen.getByRole('alert').textContent).toMatch(/negative/i);
+    expect(saveButton()).toHaveProperty('disabled', true);
+  });
+
+  it('drops a letter outright, but never guesses what a comma meant (issue #676)', () => {
+    // A letter in a price is unambiguous rubbish, so the field refuses the character the way a
+    // native number box does. A comma is *not* unambiguous — `250,00` is two hundred and fifty to
+    // a German reader — so it is left in place and reported rather than read as `25000`.
+    render(<AssetEditor item={priced} />);
+    fireEvent.change(price(), { target: { value: '250abc' } });
+    expect(price()).toHaveValue('250');
+
+    fireEvent.change(price(), { target: { value: '250,00' } });
+    expect(price()).toHaveValue('250,00');
+    expect(screen.getByRole('alert').textContent).toMatch(/number/i);
   });
 
   it('marks the unusable field invalid and describes the error to it', () => {

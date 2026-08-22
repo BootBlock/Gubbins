@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type FocusEvent,
@@ -15,6 +16,15 @@ import { useT } from '@/features/i18n';
 import { cn } from '@/lib/utils';
 import { evaluateExpression, formatCalcResult, hasCalcExpression } from './evaluate-expression';
 import { LiveRegion } from './live-region';
+import {
+  applyBounds,
+  hasBounds,
+  parseNumericText,
+  removedBefore,
+  resolveBounds,
+  sanitiseNumericText,
+  stepFrom,
+} from './numeric-bounds';
 import { Tooltip } from './tooltip';
 
 /**
@@ -32,11 +42,34 @@ import { Tooltip } from './tooltip';
  * operator characters (`/`, `*`, …) it is a `type="text"` box with `inputMode="decimal"`,
  * not a native `type="number"` spinbutton.
  *
+ * That text box is also why the control has to apply `min` / `max` / `step` itself (issue
+ * #676): the browser only honours those attributes on a real `number`/`range`/date input, so
+ * on a text field they are inert markup — no stepper, no validity, no announced range. They
+ * are read here through the pure {@link resolveBounds} seam and given back the three jobs they
+ * do natively, and only those three: they bound the Up/Down stepper, they mark an out-of-range
+ * value `aria-invalid`, and they are announced as the field's range.
+ *
+ * What the control deliberately does **not** do is rewrite a value you typed to fit them. A
+ * native number field does not either, and rewriting on commit turned out to be actively
+ * harmful here: it quantised a three-decimal currency to two, it settled a mistyped negative
+ * price to `0` and let it save over the stored figure (undoing issue #675), and it changed the
+ * box under call sites that read their own state in `onBlur`. Out-of-range text stays exactly
+ * as typed and is reported, which is the contract the rest of the app already keeps.
+ *
+ * Characters a figure cannot contain (letters, a newline) are dropped as they arrive, the way
+ * a native number box refuses them — with the sole exception of a comma, which means different
+ * things in different locales and so is reported rather than guessed at. Call sites keep the
+ * plain `min={0} step={1}` markup they already had; nothing there has to change.
+ *
  * Accessibility (WCAG 2.x): the calculator hint is always exposed to assistive tech via a
  * visually-hidden `aria-describedby` (so it never depends on hovering the glyph), the
  * computed result is announced through a polite {@link LiveRegion} on commit (4.1.3 Status
  * Messages), and any `aria-describedby` / `aria-invalid` a parent {@link FormField} injects
- * is preserved and merged rather than clobbered.
+ * is preserved and merged rather than clobbered. A field that declares a range also takes the
+ * `spinbutton` role with `aria-valuemin`/`aria-valuemax`/`aria-valuenow`, so the bound is
+ * announced instead of being visible only in the markup, and a value outside it is marked
+ * `aria-invalid` on top of any invalidity a parent injects. A field with no range stays a plain
+ * `textbox`, because there would be nothing for a spinbutton to report.
  */
 export type NumberInputProps = InputHTMLAttributes<HTMLInputElement>;
 
@@ -68,6 +101,13 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
   const [text, setText] = useState<string>(() => String(props.value ?? props.defaultValue ?? ''));
   const [focused, setFocused] = useState(false);
   const [announcement, setAnnouncement] = useState('');
+  // The declared range, read straight off the same `min`/`max`/`step` attributes the call
+  // sites already pass. They stay in `props` too, so the rendered markup still carries them.
+  const bounds = useMemo(
+    () => resolveBounds(props.min, props.max, props.step),
+    [props.min, props.max, props.step],
+  );
+  const bounded = hasBounds(bounds);
 
   // Compose the caller's ref (often React Hook Form's `register().ref`) with our own.
   const setRef = useCallback(
@@ -88,6 +128,10 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
    * Evaluate the current text and, if it is a valid calculation, write the result back so
    * downstream `onChange` (RHF / controlled parents) sees the computed number. Returns
    * whether it actually rewrote the field.
+   *
+   * A plainly-typed number is never touched, in range or out of it. Working out `500/2` is a
+   * rewrite the user asked for; moving their `-250` to `0` is not one, and the call site is
+   * better placed to say what is wrong with it than this control is to guess a replacement.
    */
   const commit = useCallback((): boolean => {
     const el = innerRef.current;
@@ -107,7 +151,23 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      setText(e.target.value);
+      // Drop anything a number field cannot mean before it reaches the caller — a letter, a
+      // pasted thousands comma, a newline. Doing it here means the user sees the rejection as
+      // they type, and no `Number(...)` downstream ever meets one of those characters.
+      const el = e.currentTarget;
+      const raw = el.value;
+      const clean = sanitiseNumericText(raw);
+      if (clean !== raw) {
+        const caret = el.selectionStart ?? raw.length;
+        const moved = caret - removedBefore(raw, caret);
+        // A plain assignment, *not* {@link setNativeValue}: this runs inside React's own change
+        // handling, so the node's value tracker has to be brought along. Writing through the
+        // prototype setter would leave the tracker holding the rejected text, and the very next
+        // keystroke that reproduced it would compare equal and fire no change event at all.
+        el.value = clean;
+        el.setSelectionRange(moved, moved);
+      }
+      setText(el.value);
       onChange?.(e);
     },
     [onChange],
@@ -135,15 +195,37 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
+      // A field that declares a range is a spinbutton, so Up/Down must move the value by a
+      // step the way a native one does — the affordance the text box otherwise gives up.
+      const el = innerRef.current;
+      if (bounded && el && !disabled && !readOnly && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        // Settle a half-typed sum first, so stepping from `40+3` moves off 43 rather than
+        // throwing the calculation away and starting again from the bottom of the range.
+        if (hasCalcExpression(el.value)) commit();
+        const from = parseNumericText(el.value);
+        const next = formatCalcResult(stepFrom(from, bounds, e.key === 'ArrowUp' ? 1 : -1));
+        setNativeValue(el, next);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        setText(next);
+        onKeyDown?.(e);
+        return;
+      }
       // Enter computes the sum in place; swallow it (so it doesn't submit the form) only when
-      // there was actually a calculation to work out, leaving plain-number Enter untouched.
+      // there was actually something to settle, leaving an untouched plain number alone.
       if (e.key === 'Enter' && commit()) e.preventDefault();
       onKeyDown?.(e);
     },
-    [commit, onKeyDown],
+    [bounded, bounds, commit, disabled, onKeyDown, readOnly],
   );
 
   const isCalc = hasCalcExpression(text);
+  // The number the box currently denotes, or null while it is blank or mid-calculation.
+  const current = isCalc ? null : parseNumericText(text);
+  // Out of the declared range is exactly what a native number field reports as invalid, and it
+  // is all this control claims: the entry is left alone for the call site to explain.
+  const outOfRange = bounded && current !== null && applyBounds(current, bounds).adjusted;
+
   const preview = isCalc ? evaluateExpression(text) : null;
   const showAffordance = focused && isCalc && !disabled && !readOnly;
 
@@ -157,6 +239,21 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
         autoComplete={autoComplete}
         disabled={disabled}
         readOnly={readOnly}
+        {...(bounded
+          ? {
+              role: 'spinbutton',
+              'aria-valuemin': bounds.min,
+              'aria-valuemax': bounds.max,
+              // Omitted while the box is blank or holds a half-typed sum: there is no current
+              // value to report, and a stale one would be worse than none.
+              'aria-valuenow': current ?? undefined,
+            }
+          : {})}
+        // Never downgrades an invalidity a parent {@link FormField} injected: the field is
+        // invalid if either this control's range or the call site's own validation says so.
+        aria-invalid={
+          props['aria-invalid'] === true || props['aria-invalid'] === 'true' || outOfRange || undefined
+        }
         aria-describedby={[ariaDescribedBy, hintId].filter(Boolean).join(' ')}
         onChange={handleChange}
         onFocus={handleFocus}

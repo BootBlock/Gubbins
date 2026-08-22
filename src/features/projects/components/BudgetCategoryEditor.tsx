@@ -86,7 +86,7 @@ export function BudgetCategoryEditor({
           <Input
             type="number"
             min={0}
-            step="0.01"
+            step="any"
             inputMode="decimal"
             placeholder="0"
             value={amount}

@@ -46,7 +46,12 @@ export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(
     const fmt = formatters ?? hookFormatters;
     const handleBlur = useCallback(
       (event: FocusEvent<HTMLInputElement>) => {
-        const snapped = snapMoneyInput(value, fmt.currencyFractionDigits(currency));
+        // Read the field rather than the `value` prop: the underlying NumberInput works out a
+        // typed sum (`8*2` becomes `16`) before this runs, and that result has not reached this
+        // component's props yet. Snapping the stale prop instead would write the un-calculated
+        // text straight back over the answer.
+        const settled = event.currentTarget.value;
+        const snapped = snapMoneyInput(settled, fmt.currencyFractionDigits(currency));
         if (snapped !== value) onValueChange(snapped);
         onBlur?.(event);
       },

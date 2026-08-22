@@ -101,7 +101,7 @@ export function ExpenseDialog({
             <Input
               type="number"
               min={0}
-              step="0.01"
+              step="any"
               inputMode="decimal"
               data-testid="expense-amount-input"
               value={amount}

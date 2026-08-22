@@ -63,7 +63,7 @@ export function SellDialog({ open, onClose, item }: { open: boolean; onClose: ()
             ref={priceRef}
             type="number"
             min={0}
-            step="0.01"
+            step="any"
             value={unitPrice}
             onChange={(e) => setUnitPrice(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && submit()}
