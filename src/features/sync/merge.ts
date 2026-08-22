@@ -321,10 +321,11 @@ async function cloneWithSalvage(
   // and can never complete the recovery the salvage exists to give it. Resolving here settles who
   // keeps each name, re-keying the loser so the offline work merges into the surviving row.
   //
-  // The cloned remote *is* the local state these rows land on — the wipe a few statements above
-  // left nothing else behind — so it stands in as the "local" side of the comparison. The salvage
-  // tombstones are passed too: their DELETEs run after these upserts, so a doomed row would still
-  // be holding its name when a winner arrived to take it.
+  // The cloned remote *is* the local state these rows land on, so it stands in as the "local" side
+  // of the comparison: the wipe a few statements above left behind only the rows every device
+  // seeds identically (the system locations and the built-in accounts), none of which a salvaged
+  // row can contest for a name. The salvage tombstones are passed too: their DELETEs run after
+  // these upserts, so a doomed row would still be holding its name when a winner arrived for it.
   const repair = repairUniqueKeys({ tables: remote.tables }, salvageRows, salvageTombstones);
   // Issue #538: the M:N joins carry no `id`, so a retired tag cannot be repointed as a row the way
   // a checkout or a field value can — a salvaged edge naming one would name a tag the clone never
@@ -332,12 +333,31 @@ async function cloneWithSalvage(
   // #405). Every tag id crossing the edge sections below therefore goes through the re-key map,
   // which is also what merges the two devices' memberships onto the one surviving tag.
   const salvagedTag = (tagId: string) => repair.tagRekeys.get(tagId) ?? tagId;
+  // An edge *tombstone* is keyed by the same pair, so it has to move with the edge or it stops
+  // matching what it deletes: the DELETE would name the retired tag, find nothing, and leave the
+  // membership the user removed offline standing under the winning tag. This mirrors
+  // `rekeyEdgeTombstones` in `reconcile`, including collapsing two keys that fold onto one onto
+  // the newer deletion instant. A no-op while nothing was retired, which is every ordinary clone.
+  const rekeyTombstone = (t: Tombstone): Tombstone => {
+    if (repair.tagRekeys.size === 0) return t;
+    if (t.tableName === ITEM_TAGS_TABLE) {
+      const { itemId, tagId } = parseItemTagEdgeId(t.id);
+      return { ...t, id: itemTagEdgeId(itemId, salvagedTag(tagId)) };
+    }
+    if (t.tableName === LOCATION_TAGS_TABLE) {
+      const { locationId, tagId } = parseLocationTagEdgeId(t.id);
+      return { ...t, id: locationTagEdgeId(locationId, salvagedTag(tagId)) };
+    }
+    return t;
+  };
+  const salvageEdgeTombstones = collapseTombstones(salvage.tombstones.map(rekeyTombstone));
+
   statements.push(...repair.before);
   for (const { table, row } of repair.rows) {
     statements.push(upsert(table, row, requireColumns(dictionary, table)));
   }
   statements.push(...repair.after);
-  for (const t of salvageTombstones) {
+  for (const t of collapseTombstones(salvageTombstones.map(rekeyTombstone))) {
     statements.push(tombstoneDeleteStatement(t.tableName, t.id));
     statements.push(tombstone(t));
   }
@@ -352,21 +372,12 @@ async function cloneWithSalvage(
   const removedItemEdges = new Set<string>();
   const removedLocationEdges = new Set<string>();
   const removedRegionEdges = new Set<string>();
-  // The edge tombstones are keyed by tag id too, so they are re-keyed alongside the edges
-  // themselves (issue #538) — otherwise a removal recorded against the retired id would no longer
-  // match the edge it removed, and the clone would resurrect a membership one side had deleted.
-  // `item_regions` needs none of this: a region is identified by its UUID, never by a name.
-  for (const source of [remote.tombstones, salvage.tombstones]) {
+  const remoteEdgeTombstones = collapseTombstones(remote.tombstones.map(rekeyTombstone));
+  for (const source of [remoteEdgeTombstones, salvageEdgeTombstones]) {
     for (const t of source) {
-      if (t.tableName === ITEM_TAGS_TABLE) {
-        const { itemId, tagId } = parseItemTagEdgeId(t.id);
-        removedItemEdges.add(itemTagEdgeId(itemId, salvagedTag(tagId)));
-      } else if (t.tableName === LOCATION_TAGS_TABLE) {
-        const { locationId, tagId } = parseLocationTagEdgeId(t.id);
-        removedLocationEdges.add(locationTagEdgeId(locationId, salvagedTag(tagId)));
-      } else if (t.tableName === ITEM_REGIONS_TABLE) {
-        removedRegionEdges.add(t.id);
-      }
+      if (t.tableName === ITEM_TAGS_TABLE) removedItemEdges.add(t.id);
+      else if (t.tableName === LOCATION_TAGS_TABLE) removedLocationEdges.add(t.id);
+      else if (t.tableName === ITEM_REGIONS_TABLE) removedRegionEdges.add(t.id);
     }
   }
 
@@ -422,16 +433,24 @@ async function cloneWithSalvage(
       params: [itemId, regionId],
     });
   }
-  for (const t of salvage.tombstones) {
-    if (
-      t.tableName !== ITEM_TAGS_TABLE &&
-      t.tableName !== LOCATION_TAGS_TABLE &&
-      t.tableName !== ITEM_REGIONS_TABLE
-    ) {
-      continue;
+  // The remote's own edge tombstones are cloned verbatim by `buildCloneStatements`, which runs
+  // before the re-key is known. Where one named a retired tag, record it again under the winning
+  // id (issue #538) — otherwise this device holds the deletion only against an id that exists
+  // nowhere, and stops propagating it to peers.
+  const edgeTombstoneSources =
+    repair.tagRekeys.size > 0 ? [salvageEdgeTombstones, remoteEdgeTombstones] : [salvageEdgeTombstones];
+  for (const source of edgeTombstoneSources) {
+    for (const t of source) {
+      if (
+        t.tableName !== ITEM_TAGS_TABLE &&
+        t.tableName !== LOCATION_TAGS_TABLE &&
+        t.tableName !== ITEM_REGIONS_TABLE
+      ) {
+        continue;
+      }
+      statements.push(tombstoneDeleteStatement(t.tableName, t.id));
+      statements.push(tombstone(t));
     }
-    statements.push(tombstoneDeleteStatement(t.tableName, t.id));
-    statements.push(tombstone(t));
   }
 
   // Issue #188: the clone AND the salvage both re-insert `stock_batches` rows whose deltas travel
@@ -455,6 +474,22 @@ function upsert(table: SyncTable, snapshotRow: SqlRow, columns: readonly string[
     `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')}) ` +
     `ON CONFLICT(id) DO UPDATE SET ${updates};`;
   return { sql, params: cols.map((c) => row[c] as SqlValue) };
+}
+
+/**
+ * Collapse a re-keyed tombstone list back to one entry per `(table, id)`, keeping the newer
+ * deletion instant where two keys folded onto one — the rule `reconcile`'s 2P-set applies, and the
+ * one that keeps a collapsed pair from ageing backwards towards the TTL prune. Order of first
+ * appearance is preserved, so an ordinary run's statement list is unchanged.
+ */
+function collapseTombstones(tombstones: readonly Tombstone[]): Tombstone[] {
+  const byKey = new Map<string, Tombstone>();
+  for (const t of tombstones) {
+    const key = `${t.tableName}\u0000${t.id}`;
+    const held = byKey.get(key);
+    if (held === undefined || t.deletedAt > held.deletedAt) byKey.set(key, t);
+  }
+  return [...byKey.values()];
 }
 
 function tombstone(t: Tombstone): SqlStatement {

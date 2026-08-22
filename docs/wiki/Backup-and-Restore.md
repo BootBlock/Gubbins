@@ -65,7 +65,7 @@ There are two ways to restore:
 
 > **ℹ️ Note**
 > A few things are identified by their **name** rather than by which device made them — tags,
-> contacts, custom fields, item aliases and user accounts. If the backup was taken on another
+> contacts, custom fields, item aliases, roles and user accounts. If the backup was taken on another
 > device, both of you may have created a tag called *Tools* independently. A merge treats those as
 > the one tag and joins them together, rather than refusing the restore: the surviving tag carries
 > **both** sides' items, a merged contact keeps the loans from either side, and a merged custom

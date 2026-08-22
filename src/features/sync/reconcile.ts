@@ -41,7 +41,7 @@ import { resolveBookingConflicts, type BookingWindow } from '@/features/bookings
 import { applyOffset } from './clock';
 import { buildConflict, detectsConflicts, nonLwwColumns } from './conflict-detect';
 import { reconcileGauge, reconcileStockQuantity, replayGaugeValue, replayStockQuantity } from './delta-crdt';
-import { FK_REFS } from './fk-refs';
+import { enforceForeignKeys } from './fk-refs';
 import { resolveLww } from './lww';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
 import { sanitiseRow } from './schema-dictionary';
@@ -787,38 +787,6 @@ function removedIds(
     if (!surviving.has(id)) removed.add(id);
   }
   return removed;
-}
-
-/**
- * Drop (or null) any upsert whose parent was removed in the merge, mutating
- * `localUpserts` in place. A NOT-NULL orphan is removed; a nullable orphan keeps the row
- * with the FK column cleared.
- */
-function enforceForeignKeys(
-  localUpserts: TableRow[],
-  removedParents: Partial<Record<SyncTable, Set<string>>>,
-): void {
-  for (let i = localUpserts.length - 1; i >= 0; i -= 1) {
-    const u = localUpserts[i]!;
-    const refs = FK_REFS[u.table];
-    if (!refs) continue;
-    let row = u.row;
-    let drop = false;
-    for (const { col, parent, nullable } of refs) {
-      const value = row[col];
-      if (value === null || value === undefined) continue;
-      const removed = removedParents[parent];
-      if (!removed || !removed.has(String(value))) continue; // parent intact (or unknown)
-      if (nullable) {
-        row = { ...row, [col]: null };
-      } else {
-        drop = true;
-        break;
-      }
-    }
-    if (drop) localUpserts.splice(i, 1);
-    else if (row !== u.row) localUpserts[i] = { table: u.table, row };
-  }
 }
 
 /** A row that will carry a flag after the merge — either a surviving local row or a pending upsert. */

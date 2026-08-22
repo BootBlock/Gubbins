@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { migrations } from '@/db/migrations';
+import { itemTagEdgeId } from '@/db/repositories/tombstone';
 import { runMigrations } from '@/db/migrations/engine';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
@@ -263,7 +264,42 @@ describe('§2 merge restore resolves natural-key collisions (issue #538)', () =>
     ]);
   });
 
-  it('leaves an ordinary collision-free backup byte-for-byte unchanged', async () => {
+  it('revokes a losing account’s bridge token rather than failing the restore', async () => {
+    // A Bridge / Home Assistant token is deliberately NOT carried to the winning account — a
+    // credential must not silently start authenticating as a different principal. Its FK is
+    // ON DELETE CASCADE / NOT NULL, so the backup's token has to be dropped along with the row
+    // it speaks for; writing it against a retired id would abort the whole restore on the
+    // foreign key rather than on the unique index.
+    for (const [driver, id, username, at] of [
+      [target, 'uLocal', 'ada', 20],
+      [source, 'uBackup', 'ADA', 10],
+    ] as const) {
+      await driver.execute(
+        `INSERT INTO users (id, username, display_name, kind, updated_at) VALUES (?, ?, ?, 'normal', ?);`,
+        [id, username, username, at],
+      );
+      await driver.execute(
+        `INSERT INTO api_tokens (id, user_id, name, token_hash, token_prefix, updated_at)
+         VALUES (?, ?, 'Home Assistant', ?, 'gbn_', ?);`,
+        [`tok-${id}`, id, `hash-${id}`, at],
+      );
+    }
+
+    const backup = await buildLocalSnapshot(source);
+    await expect(restoreSnapshot(target, backup)).resolves.toBeUndefined();
+
+    const users = await target.query<{ id: string }>(
+      "SELECT id FROM users WHERE kind = 'normal' ORDER BY id;",
+    );
+    expect(users.map((u) => u.id)).toEqual(['uLocal']);
+
+    const tokens = await target.query<{ id: string; user_id: string }>(
+      'SELECT id, user_id FROM api_tokens ORDER BY id;',
+    );
+    expect(tokens).toEqual([{ id: 'tok-uLocal', user_id: 'uLocal' }]);
+  });
+
+  it('retires nothing when the backup’s names do not collide', async () => {
     // The guard against the resolution doing anything at all on the common path.
     await seedTaggedItem(target, { itemId: 'iLocal', tagId: 'tagLocal', tagName: 'Tools', at: 10 });
     await seedTaggedItem(source, { itemId: 'iBackup', tagId: 'tagBackup', tagName: 'Fixings', at: 20 });
@@ -392,6 +428,41 @@ describe('§7.2 tombstone-TTL clone resolves natural-key collisions (issue #538)
       { item_id: 'iOffline', def_id: 'defRemote', value: '5V' },
       { item_id: 'iRemote', def_id: 'defRemote', value: '12V' },
     ]);
+  });
+
+  it('keeps an offline tag removal whose tag then loses the name', async () => {
+    // An edge tombstone is keyed by (item, tag), so it has to follow the re-key too. Left on the
+    // retired id its DELETE matches nothing, and the membership the user removed offline comes
+    // straight back under the winning tag — the clone undoing the user's own edit.
+    await seedTaggedItem(device, { itemId: 'iShared', tagId: 'tagOffline', tagName: 'Tools', at: 20 });
+    await seedTaggedItem(peer, { itemId: 'iShared', tagId: 'tagRemote', tagName: 'tools', at: 50 });
+
+    // Offline, after the last sync, the device unlinks the tag from the item.
+    await device.execute('DELETE FROM item_tags WHERE item_id = ? AND tag_id = ?;', [
+      'iShared',
+      'tagOffline',
+    ]);
+    await device.execute('INSERT INTO tombstones (table_name, id, deleted_at) VALUES (?, ?, ?);', [
+      'item_tags',
+      itemTagEdgeId('iShared', 'tagOffline'),
+      60,
+    ]);
+
+    await expect(cloneWithSalvage(10)).resolves.toBeDefined();
+
+    const tags = await device.query<{ id: string }>('SELECT id FROM tags;');
+    expect(tags.map((t) => t.id)).toEqual(['tagRemote']); // the remote's row is the newer
+
+    const tagged = await device.query<{ item_id: string; tag_id: string }>(
+      'SELECT item_id, tag_id FROM item_tags;',
+    );
+    expect(tagged).toEqual([]);
+
+    // The removal is recorded against the surviving tag, so it still reaches other devices.
+    const tombstones = await device.query<{ id: string }>(
+      "SELECT id FROM tombstones WHERE table_name = 'item_tags';",
+    );
+    expect(tombstones.map((t) => t.id)).toContain(itemTagEdgeId('iShared', 'tagRemote'));
   });
 
   it('leaves an ordinary collision-free clone alone', async () => {

@@ -45,7 +45,8 @@ import {
   SYNC_TABLES,
 } from '@/db/repositories/tombstone';
 import type { SqlStatement } from '@/db/rpc/driver';
-import type { CollisionResolution, SyncTable, TableRow, Tombstone } from './types';
+import { enforceForeignKeys } from './fk-refs';
+import type { SyncTable, TableRow, Tombstone } from './types';
 import { resolveUniqueKeyCollisions, type LocalTables } from './unique-keys';
 
 /** Everything one wholesale apply needs to write its rows without tripping a UNIQUE index. */
@@ -66,8 +67,6 @@ export interface UniqueKeyRepair {
   readonly userRekeys: ReadonlyMap<string, string>;
   /** Every retired id, by table. An id listed here must not be written or tombstone-cleared. */
   readonly retired: ReadonlyMap<SyncTable, ReadonlySet<string>>;
-  /** The verdicts, for the caller to count or log. Empty on the ordinary collision-free apply. */
-  readonly collisions: readonly CollisionResolution[];
 }
 
 const EMPTY_REKEY: ReadonlyMap<string, string> = new Map();
@@ -152,6 +151,16 @@ export function repairUniqueKeys(
     });
   }
 
+  // A retired id is a parent that will not exist after this apply, so anything still pointing at
+  // one has to go — `ON CONFLICT` resolution does not extend to FOREIGN KEY, and one orphan aborts
+  // the whole transaction rather than costing that row (issue #405). The resolution has already
+  // repointed every reference `UNIQUE_KEY_SPECS` lists; what is left is the reference it
+  // deliberately omits, `api_tokens.user_id`, whose ON DELETE CASCADE is meant to revoke a losing
+  // account's Bridge token rather than hand it to the winner. The delta merge reaches the same
+  // outcome through its own `enforceForeignKeys` pass a few steps later; a wholesale apply has no
+  // such pass, so it happens here.
+  enforceForeignKeys(incoming, Object.fromEntries(retired));
+
   // Parents before children, the same FK-safe ordering `applyPlan` gives its upserts. The
   // resolution appends re-emitted rows for whatever referenced a retired id, so the incoming
   // list is no longer grouped by table by the time it comes back.
@@ -165,7 +174,6 @@ export function repairUniqueKeys(
     tagRekeys: rekeys.get('tags') ?? EMPTY_REKEY,
     userRekeys: rekeys.get('users') ?? EMPTY_REKEY,
     retired,
-    collisions,
   };
 }
 

@@ -225,7 +225,7 @@ function rowForSnapshot(table: SyncTable, row: SqlRow): SqlRow {
  * Rows come back snapshot-shaped (held-back columns dropped, BLOBs base64-encoded), so they are
  * directly comparable with — and interchangeable with — the rows of an incoming snapshot.
  */
-export async function readSnapshotTables(
+async function readSnapshotTables(
   driver: IDatabaseDriver,
   tables: readonly SyncTable[],
 ): Promise<Record<string, SqlRow[]>> {
@@ -1263,7 +1263,19 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
     clearIfHeld(ITEM_REGIONS_TABLE, itemRegionEdgeId(itemId, regionId));
   }
   for (const t of snapshot.tombstones) {
-    statements.push(conditionalTombstoneStatement(t.tableName, t.id, t.deletedAt));
+    // An edge tombstone is keyed by its tag id, so it follows a re-key like the edge itself
+    // (issue #538) — otherwise this device would record the backup's deletion against an id that
+    // exists nowhere and re-publish it to peers. A no-op on an ordinary restore.
+    const id =
+      repair.tagRekeys.size > 0 && t.tableName === ITEM_TAGS_TABLE
+        ? itemTagEdgeId(parseItemTagEdgeId(t.id).itemId, restoredTag(parseItemTagEdgeId(t.id).tagId))
+        : repair.tagRekeys.size > 0 && t.tableName === LOCATION_TAGS_TABLE
+          ? locationTagEdgeId(
+              parseLocationTagEdgeId(t.id).locationId,
+              restoredTag(parseLocationTagEdgeId(t.id).tagId),
+            )
+          : t.id;
+    statements.push(conditionalTombstoneStatement(t.tableName, id, t.deletedAt));
   }
 
   // Issue #188: a restore re-inserts `stock_batches` rows whose deltas travel in the ledger

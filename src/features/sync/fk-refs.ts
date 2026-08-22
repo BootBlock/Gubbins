@@ -9,6 +9,7 @@
  * chose to exclude from the file. Adding a table/column here is what keeps both honest.
  */
 import type { SyncTable } from '@/db/repositories';
+import type { TableRow } from './types';
 
 /** One foreign-key column of a child table, and how a dangling reference is repaired. */
 export interface FkRef {
@@ -193,3 +194,42 @@ export const FK_REFS: Partial<Record<SyncTable, readonly FkRef[]>> = {
     { col: 'supplier_part_id', parent: 'supplier_parts', nullable: true },
   ],
 };
+
+/**
+ * Drop (or null) any pending upsert whose parent will not exist after this apply, mutating
+ * `upserts` in place. A NOT-NULL orphan is removed; a nullable orphan keeps the row with the FK
+ * column cleared.
+ *
+ * Every apply path needs this, not only the delta merge: `ON CONFLICT` resolution does not extend
+ * to FOREIGN KEY, so one orphan aborts the whole atomic transaction rather than costing that row
+ * (issue #405). The delta merge calls it with the parents its LWW pass removed; the §7.5
+ * natural-key resolution calls it with the ids it retired (issue #538), which is what stops a
+ * losing account's Bridge token — deliberately *not* repointed, because a credential must not
+ * change principal — from being written against an id that no longer exists.
+ */
+export function enforceForeignKeys(
+  upserts: TableRow[],
+  removedParents: Partial<Record<SyncTable, ReadonlySet<string>>>,
+): void {
+  for (let i = upserts.length - 1; i >= 0; i -= 1) {
+    const u = upserts[i]!;
+    const refs = FK_REFS[u.table];
+    if (!refs) continue;
+    let row = u.row;
+    let drop = false;
+    for (const { col, parent, nullable } of refs) {
+      const value = row[col];
+      if (value === null || value === undefined) continue;
+      const removed = removedParents[parent];
+      if (!removed || !removed.has(String(value))) continue; // parent intact (or unknown)
+      if (nullable) {
+        row = { ...row, [col]: null };
+      } else {
+        drop = true;
+        break;
+      }
+    }
+    if (drop) upserts.splice(i, 1);
+    else if (row !== u.row) upserts[i] = { table: u.table, row };
+  }
+}
