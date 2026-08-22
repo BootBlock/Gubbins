@@ -244,6 +244,31 @@ heading, and finished work is archived:
 - A unit test (`src/lib/docs-todo-status.test.ts`) enforces the banner and the placement, so drift
   fails the build rather than review. It can't judge whether "COMPLETE" is *true* — that's yours.
 
+## Dependency changes go through `npm run lock`
+
+`npm install` on Windows writes a `package-lock.json` that `npm ci` then refuses, so the change
+passes locally and fails every CI job with an error that names neither the cause nor the culprit:
+
+```
+npm error Missing: @emnapi/wasi-threads@1.2.3 from lock file
+npm error Missing: tslib@2.8.1 from lock file
+```
+
+The cause is `@tailwindcss/oxide-wasm32-wasi`, one of the per-platform binaries `@tailwindcss/oxide`
+fans out to. It declares `cpu: ["wasm32"]`, so npm on an x64 host skips it and drops its private
+`@emnapi/*` entries while leaving the requirement on them in place. The same npm also strips the
+`libc` markers that separate a glibc build of a native package from a musl one. Neither `--cpu`,
+`--os`, `--include=optional` nor `--force` avoids it — the lockfile has to be produced on Linux.
+
+**The rule — after any change to `package.json`'s dependencies, run `npm run lock`.** It re-resolves
+the lockfile in a Linux container (Docker must be running), reseeding from the *committed* lockfile
+so a bare `npm install` that already degraded the working copy is repaired rather than carried
+forward, and then verifies the result with `npm ci --dry-run`. `npm run lock:check` verifies without
+writing. Commit the lockfile it produces; never hand-edit one.
+
+CI needs no extra wiring — its own `npm ci` is the same gate. The point of running it locally is to
+fail in one command rather than in five red jobs.
+
 ## Every task runs in a worktree, and parallelises with sub-agents (mandatory)
 
 Multiple agents edit this repo concurrently, so **every** task starts by creating a **new git
