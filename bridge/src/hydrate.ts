@@ -39,6 +39,14 @@ export interface HydrateResult {
 /**
  * Hydrate from an already-read snapshot JSON string. Throws a clear error on a
  * malformed envelope or a future `formatVersion` (the {@link parseBackupJson} guard).
+ *
+ * No baseline check here, unlike the raw-`.sqlite` path (issue #507). The schema is built from
+ * *this* build's own baseline a line below, so its stamp is this build's by construction — and
+ * `app_meta`, which holds the stamp, is device-local rather than synced, so {@link restoreSnapshot}
+ * cannot overwrite it with the exporting device's. A snapshot from another revision is *tolerated*
+ * rather than refused, which is the JSON format's whole point: `formatVersion` turns away a newer
+ * envelope, and the restore writes each row through the schema dictionary of the schema it just
+ * built, so a column this build no longer has is dropped instead of failing the insert.
  */
 export async function hydrateFromJson(text: string): Promise<HydrateResult> {
   // Validate (and refuse newer-format) BEFORE building anything, so a bad file is a
