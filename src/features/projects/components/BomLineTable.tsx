@@ -233,12 +233,9 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
                     </span>
                     {unbackedQty > 0 ? (
                       <Tooltip
-                        content={t(
-                          unbackedQty === 1
-                            ? 'projects.bom.reservation.unbacked.one'
-                            : 'projects.bom.reservation.unbacked.other',
-                          { vars: { count: unbackedQty, reserved: line.reservedQty } },
-                        )}
+                        content={t('projects.bom.reservation.unbacked', {
+                          vars: { count: unbackedQty, reserved: line.reservedQty },
+                        })}
                         triggerTabIndex={-1}
                       >
                         <span

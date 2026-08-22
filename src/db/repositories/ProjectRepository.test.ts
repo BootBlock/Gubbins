@@ -637,6 +637,20 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(await projects.getShoppingList(live.id)).toHaveLength(0);
   });
 
+  it('takes a closed project’s own reservation at face value on its own list', async () => {
+    const item = await items.create({ name: 'Widget', quantity: 10 });
+    const p = await projects.create({ name: 'Done' });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 10 });
+    await projects.setReservation(line.id, 'ACTUAL', 10);
+    expect(await projects.getShoppingList(p.id)).toHaveLength(0);
+
+    // Completing the project takes its claim out of the allocation — it has drawn its parts.
+    // Its own list must not then read that absence as "your reservation lost out" and tell it
+    // to re-buy a build that is already done.
+    await projects.update(p.id, { status: 'COMPLETED' });
+    expect(await projects.getShoppingList(p.id)).toHaveLength(0);
+  });
+
   it('reports an item as over-committed, naming every project holding it', async () => {
     const item = await items.create({ name: 'Widget', quantity: 10 });
     const first = await projects.create({ name: 'First' });

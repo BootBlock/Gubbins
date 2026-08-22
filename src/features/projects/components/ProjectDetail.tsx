@@ -248,7 +248,9 @@ export function ProjectDetail({
           <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold [&_svg]:size-4">
             <ShoppingCartIcon />
             Shopping list
-            <span className="text-xs font-normal text-muted-foreground">(still to buy, not yet ordered)</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {t('projects.shoppingList.caption')}
+            </span>
           </h3>
           {list.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -279,12 +281,9 @@ export function ProjectDetail({
                               ever reserved. */}
                           {entry.unbackedQty > 0 ? (
                             <Tooltip
-                              content={t(
-                                entry.unbackedQty === 1
-                                  ? 'projects.shoppingList.unbacked.one'
-                                  : 'projects.shoppingList.unbacked.other',
-                                { vars: { count: entry.unbackedQty } },
-                              )}
+                              content={t('projects.shoppingList.unbacked', {
+                                vars: { count: entry.unbackedQty },
+                              })}
                               triggerTabIndex={-1}
                             >
                               <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-normal text-destructive">

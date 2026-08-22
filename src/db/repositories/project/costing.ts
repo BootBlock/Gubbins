@@ -4,7 +4,8 @@
  * projections over a project's BOM lines.
  */
 import { fromStoredMoney } from '@/lib/money';
-import { readAvailability } from '../reservations';
+import type { ItemAvailability } from '@/features/projects/reservations';
+import { isOpenProjectStatus, readAvailability } from '../reservations';
 import type { ProjectCosting, ShoppingListEntry } from '../types';
 import type { Constructor } from './mixin';
 import type { ProjectCoreRepository } from './core';
@@ -64,11 +65,20 @@ export function withCosting<TBase extends Constructor<ProjectCoreRepository>>(Ba
      * every live claim on it — firm before soft, oldest first — and whatever this project's
      * lines did not win is a shortfall like any other.
      *
-     * An **unmatched** line (no `item_id`) has no stock record to check against, so its
-     * reservation is taken at face value: it is the user's own assertion that the parts are
-     * in hand, and Gubbins has nothing to contradict it with.
+     * Two kinds of line are taken at face value instead. An **unmatched** line (no `item_id`)
+     * has no stock record to check against, so its reservation is the user's own assertion that
+     * the parts are in hand and Gubbins has nothing to contradict it with. And a **closed**
+     * project's lines were never in the allocation at all — a `COMPLETED`/`ARCHIVED` project has
+     * drawn its parts or been put aside — so reading their absence from it as "this claim lost
+     * out" would tell the user to re-buy a build that is already done.
      */
     async getShoppingList(projectId: string): Promise<ShoppingListEntry[]> {
+      // A closed project is not in the allocation at all, so its lines would come back with no
+      // backing and every reserved part would read as something still to buy. Its reservations
+      // are a record of a build already drawn or put aside, so they stand as written.
+      const project = await this.requireProject(projectId);
+      const allocated = isOpenProjectStatus(project.status);
+
       const rows = await this.driver.query<{
         line_id: string;
         item_id: string | null;
@@ -103,10 +113,12 @@ export function withCosting<TBase extends Constructor<ProjectCoreRepository>>(Ba
       // One batched read for every matched line on the list; the pure seam does the
       // allocation. Lines whose reservation is already zero still go through it — their
       // backing is zero either way, and asking per-line would be an N+1.
-      const availability = await readAvailability(
-        this.driver,
-        rows.map((r) => r.item_id).filter((id): id is string => id !== null),
-      );
+      const availability = allocated
+        ? await readAvailability(
+            this.driver,
+            rows.map((r) => r.item_id).filter((id): id is string => id !== null),
+          )
+        : new Map<string, ItemAvailability>();
 
       // Grouped by matched item (unmatched lines stay distinct), first-seen order — the query
       // is already sorted, so this preserves the label ordering without re-sorting in JS.
@@ -114,10 +126,10 @@ export function withCosting<TBase extends Constructor<ProjectCoreRepository>>(Ba
       for (const r of rows) {
         const requiredQty = Number(r.required_qty);
         const reservedQty = Number(r.reserved_qty);
-        // What this line's own reservation is actually worth. An unmatched line has no stock
-        // to allocate, so its claim stands as written.
+        // What this line's own reservation is actually worth. An unmatched line has no stock to
+        // allocate, and a closed project was never in the allocation, so both stand as written.
         const backedQty =
-          r.item_id === null
+          r.item_id === null || !allocated
             ? reservedQty
             : (availability.get(r.item_id)?.backingByLine.get(r.line_id)?.backedQty ?? 0);
         const shortfallQty = Math.max(0, requiredQty - backedQty);

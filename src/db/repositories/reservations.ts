@@ -30,6 +30,16 @@ import type { IDatabaseDriver, SqlValue } from '../rpc/driver';
 /** The `projects.status` values whose BOM lines still hold stock. */
 export const OPEN_PROJECT_STATUSES = ['PLANNING', 'ACTIVE'] as const;
 
+/**
+ * Whether a project's reservations are live claims on stock. A `COMPLETED` or `ARCHIVED` project
+ * has drawn its parts or been put aside, so its lines are excluded from the allocation — which
+ * also means a caller reading such a project's *own* lines back must not read their absence from
+ * the allocation as "this claim lost out".
+ */
+export function isOpenProjectStatus(status: string): boolean {
+  return (OPEN_PROJECT_STATUSES as readonly string[]).includes(status);
+}
+
 interface ClaimRow {
   readonly line_id: string;
   readonly item_id: string;

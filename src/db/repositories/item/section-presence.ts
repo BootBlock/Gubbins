@@ -15,6 +15,7 @@
  * what the caller holds — the expiry and batch columns on the item row, the lot rows the stock
  * breakdown has loaded — so spending a subquery on those would be waste.
  */
+import { OPEN_PROJECT_STATUSES } from '../reservations';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 
@@ -103,7 +104,7 @@ export function withSectionPresence<TBase extends Constructor<ItemCoreRepository
              WHERE l.item_id = ?1
                AND l.reservation_status <> 'NONE'
                AND l.reserved_qty > 0
-               AND p.status IN ('PLANNING', 'ACTIVE')
+               AND p.status IN (${OPEN_PROJECT_STATUSES.map((s) => `'${s}'`).join(', ')})
            )                                                                            AS has_reservations;`,
         [itemId],
       );

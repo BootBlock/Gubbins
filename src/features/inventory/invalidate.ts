@@ -13,6 +13,19 @@ import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
 
 /**
+ * Refresh the project caches a **stock** change reaches (issue #653).
+ *
+ * A project's shopping list is no longer a function of its own BOM alone: a reservation reduces
+ * what a line has to buy only to the extent real stock backs it, so selling, lending or writing
+ * off units can turn another project's satisfied line into a shortfall without that project
+ * being touched. The `projects` prefix is small and refetches only what something is observing,
+ * so carrying it on every item write is cheap and always correct.
+ */
+function invalidateProjectsForStock(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: projectKeys.all });
+}
+
+/**
  * Invalidate the item caches after a write, **and the reports and agenda that read them**.
  *
  * Every §3 report — inventory value, stock movement, consumption, ABC, turnover, dead stock,
@@ -31,18 +44,6 @@ import { inventoryKeys } from './queries';
  * so carrying them on a write that happens not to move a reported figure or a dated event costs
  * nothing away from those screens — and is always correct on them.
  */
-/**
- * Refresh the project caches a **stock** change reaches (issue #653).
- *
- * A project's shopping list is no longer a function of its own BOM alone: a reservation reduces
- * what a line has to buy only to the extent real stock backs it, so selling, lending or writing
- * off units can turn another project's satisfied line into a shortfall without that project
- * being touched. The `projects` prefix is small and refetches only what something is observing,
- * so carrying it on every item write is cheap and always correct.
- */
-function invalidateProjectsForStock(client: QueryClient): void {
-  void client.invalidateQueries({ queryKey: projectKeys.all });
-}
 
 export function invalidateItems(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });

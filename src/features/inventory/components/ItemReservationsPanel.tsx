@@ -23,13 +23,23 @@ import { useItemAvailability } from '../queries';
 
 export function ItemReservationsPanel({ item }: { item: Item }) {
   const t = useT();
-  const { data: availability, isLoading } = useItemAvailability(item.id);
+  const { data: availability, isLoading, isError } = useItemAvailability(item.id);
 
   if (isLoading) {
     return (
       <div className="flex justify-center p-4">
         <Spinner />
       </div>
+    );
+  }
+  // A failed read leaves `data` undefined exactly as a missing item does, so it has to be
+  // separated out: drawing nothing would read as "nothing is reserved", which is the one
+  // conclusion this panel must never let a user reach by mistake.
+  if (isError) {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {t('inventory.reservations.loadFailed')}
+      </p>
     );
   }
   // Absent means the id matched no item — a race with a delete, not "nothing reserved". Say
@@ -62,14 +72,7 @@ export function ItemReservationsPanel({ item }: { item: Item }) {
           data-testid="item-over-committed"
         >
           <WarningIcon aria-hidden />
-          <span>
-            {t(
-              overCommittedQty === 1
-                ? 'inventory.reservations.overCommitted.one'
-                : 'inventory.reservations.overCommitted.other',
-              { vars: { count: overCommittedQty } },
-            )}
-          </span>
+          <span>{t('inventory.reservations.overCommitted', { vars: { count: overCommittedQty } })}</span>
         </p>
       ) : null}
 

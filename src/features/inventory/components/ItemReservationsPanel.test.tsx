@@ -12,10 +12,11 @@ import type { ItemAvailability, ReservationClaim } from '@/features/projects/res
 const h = vi.hoisted(() => ({
   availability: undefined as ItemAvailability | undefined,
   isLoading: false,
+  isError: false,
 }));
 
 vi.mock('../queries', () => ({
-  useItemAvailability: () => ({ data: h.availability, isLoading: h.isLoading }),
+  useItemAvailability: () => ({ data: h.availability, isLoading: h.isLoading, isError: h.isError }),
 }));
 
 import { ItemReservationsPanel } from './ItemReservationsPanel';
@@ -55,6 +56,7 @@ function availability(overrides: Partial<ItemAvailability> = {}): ItemAvailabili
 beforeEach(() => {
   h.availability = undefined;
   h.isLoading = false;
+  h.isError = false;
 });
 afterEach(cleanup);
 
@@ -110,6 +112,16 @@ describe('ItemReservationsPanel (issue #653)', () => {
       screen.getByText('This item has an unlimited supply, so a reservation can never run it short.'),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('item-over-committed')).toBeNull();
+  });
+
+  it('says so when the read fails, rather than looking like nothing is reserved', () => {
+    // A failed read leaves `data` undefined exactly as a missing item does. Drawing nothing
+    // would tell the user this item is unreserved, which is the one wrong answer here.
+    h.isError = true;
+    render(<ItemReservationsPanel item={ITEM} />);
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Couldn’t load this item’s reservations.');
   });
 
   it('renders nothing for an id that matches no item, rather than a confident zero', () => {

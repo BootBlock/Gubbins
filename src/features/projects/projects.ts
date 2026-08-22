@@ -247,7 +247,12 @@ export function useUpdateProject() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateProjectInput }) =>
       getProjectRepository().update(id, input),
-    onSettled: (_data, _err, vars) => invalidateProject(client, vars.id),
+    onSettled: (_data, _err, vars) => {
+      // Closing or reopening a project releases or reinstates every reservation it holds, so
+      // this moves other projects' shopping lists and the items' availability (issue #653).
+      invalidateItems(client);
+      return invalidateProject(client, vars.id);
+    },
   });
 }
 
@@ -397,7 +402,13 @@ export function useUpdateBomLine(projectId: string) {
   return useMutation({
     mutationFn: ({ lineId, input }: { lineId: string; input: UpdateBomLineInput }) =>
       getProjectRepository().updateLine(lineId, input),
-    onSettled: () => invalidateProject(client, projectId),
+    onSettled: () => {
+      // Re-matching a line moves its reservation from one item to another, and lowering the
+      // requirement changes what that claim is worth — both move an item's availability
+      // (issue #653), so the sweep cannot stop at this project.
+      invalidateItems(client);
+      return invalidateProject(client, projectId);
+    },
   });
 }
 
@@ -411,7 +422,12 @@ export function useRemoveBomLine(projectId: string) {
     mutationFn: (lineId: string) => getProjectRepository().removeLine(lineId),
     // Surface a rejected BOM-line removal rather than letting it fail silently (#389).
     onError: reportFailure,
-    onSettled: () => invalidateProject(client, projectId),
+    onSettled: () => {
+      // Removing a line releases whatever it reserved, freeing that stock for every other
+      // project and for the item's own availability figures (issue #653).
+      invalidateItems(client);
+      return invalidateProject(client, projectId);
+    },
   });
 }
 
