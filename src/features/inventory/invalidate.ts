@@ -8,8 +8,22 @@
  */
 import type { QueryClient } from '@tanstack/react-query';
 import { agendaKeys } from '@/features/calendar/keys';
+import { projectKeys } from '@/features/projects/keys';
 import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
+
+/**
+ * Refresh the project caches a **stock** change reaches (issue #653).
+ *
+ * A project's shopping list is no longer a function of its own BOM alone: a reservation reduces
+ * what a line has to buy only to the extent real stock backs it, so selling, lending or writing
+ * off units can turn another project's satisfied line into a shortfall without that project
+ * being touched. The `projects` prefix is small and refetches only what something is observing,
+ * so carrying it on every item write is cheap and always correct.
+ */
+function invalidateProjectsForStock(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: projectKeys.all });
+}
 
 /**
  * Invalidate the item caches after a write, **and the reports and agenda that read them**.
@@ -30,6 +44,7 @@ import { inventoryKeys } from './queries';
  * so carrying them on a write that happens not to move a reported figure or a dated event costs
  * nothing away from those screens — and is always correct on them.
  */
+
 export function invalidateItems(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });
   void client.invalidateQueries({ queryKey: inventoryKeys.itemAttention() });
@@ -43,6 +58,7 @@ export function invalidateItems(client: QueryClient): void {
   // prefix a second time: the alert-centre due-date feed is the only part not already covered
   // by the four above. It is a *sibling* of `items()`, not a child, so the prefix misses it.
   void client.invalidateQueries({ queryKey: inventoryKeys.fieldDueDates() });
+  invalidateProjectsForStock(client);
 }
 
 /**
@@ -92,4 +108,5 @@ export function invalidateItemStock(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.expiring() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
   void client.invalidateQueries({ queryKey: agendaKeys.all });
+  invalidateProjectsForStock(client);
 }

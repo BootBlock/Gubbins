@@ -69,15 +69,45 @@ the **Related** tab of the item that needs it; see
 
 ## Reservations
 
-**Reserve** stock for a project to earmark it — the reserved quantity is set aside so it isn't
-accidentally used elsewhere before you get to the build. Your available count reflects the
-reservation.
+**Reserve** stock for a project to earmark it for that build. A reservation is a *claim on stock
+you already have* — it doesn't move anything and it never conjures parts up, so what it can
+promise depends on whether the stock is really there.
+
+Each matched BOM line shows how many units are **available**: what is on hand, less everything
+every open project has reserved. Items out on [[loan|Loans-Check-Out-and-In]] are already out of
+the on-hand figure, so they are never counted twice.
+
+A reservation can be **Tentative** (a soft hold, "probably this build") or **Actual** (a firm
+commitment). When several projects want the same part, the firm claims are honoured first, and
+then the earliest.
+
+### When there isn't enough to go round
+
+Nothing stops two projects reserving the same units, and stock can be sold, lent or used up after
+a reservation was made. So Gubbins checks, rather than taking a reservation at its word:
+
+- The project that loses out is flagged on its BOM line, and the units it didn't get go **back on
+  its shopping list** — they still have to be bought.
+- The item's own **Reservations** panel lists every project holding it, how much each one actually
+  holds, and warns when more is reserved than exists.
+
+> **ℹ️ Note**
+> Reserving is a plan, not a lock. It doesn't stop you spending the stock elsewhere — it just
+> makes sure that when you do, the project that was counting on it says so.
+
+Reservations are released when a project is completed or archived.
+
+**Where to find it:** the item's **Reservations** panel is on the **Supplier & ops** tab of the
+item's detail screen.
 
 ## Costing & the shopping list
 
 A project can total its cost, and toggle how it's **costed** (for example, what you'd pay to buy
 the missing parts versus the value of everything in the build). The missing-parts shopping list
 flows into your [[purchasing|Reorder-and-Shopping-List]].
+
+The list counts a line's reservation only as far as real stock backs it, so a part another project
+got to first still shows up as something to buy.
 
 > **💡 Tip**
 > Projects are great even for one-off jobs: drop in the parts, see what's short, and let Gubbins

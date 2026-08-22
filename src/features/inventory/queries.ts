@@ -235,6 +235,12 @@ export const inventoryKeys = {
   // check); under items() so any relation write refreshes it by prefix.
   itemsRelations: (itemIds: readonly string[]) =>
     [...inventoryKeys.items(), 'relations-batch', itemIds] as const,
+  // Issue #653 — how much of a set of items is free versus claimed by open projects, in one
+  // round-trip (the BOM table's over-commitment flags, the item dialog's Reservations section).
+  // Under items() so any stock write — which is exactly what changes the answer — refreshes it
+  // by prefix, and so a reservation write's `invalidateItems` sweep reaches it too.
+  itemsAvailability: (itemIds: readonly string[]) =>
+    [...inventoryKeys.items(), 'availability-batch', itemIds] as const,
   // Feature-gap G7 — an item's test/calibration/service records; under item() so an `items()`
   // invalidation refreshes it by prefix.
   itemTestRecords: (itemId: string) => [...inventoryKeys.item(itemId), 'test-records'] as const,
@@ -403,6 +409,31 @@ export function useItemsRelations(itemIds: readonly string[]) {
     queryFn: () => getItemRepository().listRelationsForItems(sortedIds),
     enabled: sortedIds.length > 0,
   });
+}
+
+/**
+ * How much of each item is free, and which open projects hold the rest (issue #653) — one
+ * round-trip for a whole screen's worth of items rather than N+1. The ids are sorted into the
+ * cache key so a re-ordered but otherwise identical set hits the same entry. Resolves to a `Map`
+ * keyed by item id (a key is absent when the id matches no item); disabled for an empty set.
+ */
+export function useItemsAvailability(itemIds: readonly string[]) {
+  const sortedIds = [...itemIds].sort();
+  return useQuery({
+    queryKey: inventoryKeys.itemsAvailability(sortedIds),
+    queryFn: () => getItemRepository().getAvailability(sortedIds),
+    enabled: sortedIds.length > 0,
+  });
+}
+
+/**
+ * One item's availability (issue #653). Shares {@link useItemsAvailability}'s cache entry shape
+ * rather than adding a second key for the singular case, so an item shown in both the BOM table
+ * and its own dialog is not read twice.
+ */
+export function useItemAvailability(itemId: string | undefined) {
+  const query = useItemsAvailability(itemId === undefined ? [] : [itemId]);
+  return { ...query, data: itemId === undefined ? undefined : query.data?.get(itemId) };
 }
 
 /** An item's test / calibration / service records (feature-gap G7), newest-first. */

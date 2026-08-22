@@ -15,6 +15,7 @@ import {
   LinkIcon,
   LocationOtherIcon,
   LowStockIcon,
+  ProjectIcon,
   MapViewIcon,
   SettingsIcon,
   SubstituteIcon,
@@ -58,6 +59,7 @@ import { suppressesFlourish } from '@/features/settings/theme-registry';
 import { LocationEditor } from './LocationEditor';
 import { OperationalMetadataEditor } from './OperationalMetadataEditor';
 import { DeadStockEditor } from './DeadStockEditor';
+import { ItemReservationsPanel } from './ItemReservationsPanel';
 import { ReorderPointEditor } from './ReorderPointEditor';
 import { RelationsEditor } from './RelationsEditor';
 import { SubstitutionsEditor } from './SubstitutionsEditor';
@@ -300,6 +302,14 @@ const SECTION_HINT_LOW_STOCK =
   '- **Custom** — your own trigger: a quantity floor (with an optional top-up amount) for counted ' +
   'items, or a percentage-remaining floor for a gauge.\n' +
   '- **Never** — a hard exemption: never flagged, even when a global default is on.';
+
+const SECTION_HINT_RESERVATIONS =
+  'How much of this item is **free**, and which projects have spoken for the rest.\n\n' +
+  '- **Available** — what is on hand, less everything open projects have reserved.\n' +
+  '- A reservation claims stock that already exists; it never adds any, and two projects can ' +
+  'claim the same units. Anything claimed with no stock behind it is flagged here, and goes ' +
+  'back on that project’s shopping list.\n\n' +
+  '> Items out on loan are already out of the on-hand figure, so they are not listed again.';
 
 const SECTION_HINT_DEAD_STOCK =
   'Whether this item appears on the **Dead stock** report when it goes unused.\n\n' +
@@ -559,6 +569,17 @@ export function buildTabs(
           icon: <LowStockIcon />,
           content: <ReorderPointEditor item={item} />,
           hint: SECTION_HINT_LOW_STOCK,
+        },
+        {
+          // Issue #653. Sits under the low-stock alert because it answers the same question one
+          // step further on: that one says whether there is enough stock, this one says how much
+          // of it is still yours to spend.
+          title: 'Reservations',
+          icon: <ProjectIcon />,
+          content: <ItemReservationsPanel item={item} />,
+          hint: SECTION_HINT_RESERVATIONS,
+          feature: 'projects',
+          hasData: presence.reservations,
         },
         {
           title: 'Dead-stock reporting',
