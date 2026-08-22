@@ -898,9 +898,21 @@ describe('stock_deltas — a removed placement records its own emptying (issue #
       const dictB = await dictOf(b);
       await applyPlan(b, reconcile(snapB, snapA, { offset: 0, dictionary: dictB }), dictB);
 
-      // The tombstone apply empties B's own shelf row too, and it runs under `withCaptureDisabled`
-      // — so the DELETE arm must stay silent there, exactly as the INSERT and UPDATE arms do.
-      // B's ledger is therefore A's, row for row, rather than A's plus a second copy of the move.
+      // The deleting half reaches B as an ordinary unioned ledger row, by its own id — that is the
+      // whole point of capturing it rather than leaving the move half-recorded.
+      const offsetting = await a.queryOne<{ id: string }>(
+        `SELECT id FROM stock_deltas WHERE item_id = ? AND location_id = ? AND quantity_delta = -5;`,
+        [item.id, shelf.id],
+      );
+      expect(offsetting?.id, "A records the shelf's emptying").toBeDefined();
+      const onB = await b.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM stock_deltas WHERE id = ?;', [
+        offsetting!.id,
+      ]);
+      expect(Number(onB?.n), 'and B holds that same row').toBe(1);
+
+      // B's own re-home and delete run under `withCaptureDisabled`, so the DELETE arm must stay
+      // silent there exactly as the INSERT and UPDATE arms do: B's ledger is A's row for row,
+      // rather than A's plus a second copy of the same move.
       const idsOf = async (driver: MemoryDriver) =>
         (await driver.query<{ id: string }>('SELECT id FROM stock_deltas ORDER BY id;')).map((r) =>
           String(r.id),

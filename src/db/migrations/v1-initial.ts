@@ -1607,8 +1607,9 @@ const baselineStatements: SqlStatement[] = [
   },
   {
     // Immutable, append-only — the ledger's facts never change. Scoped to every column (there is
-    // no FK-action column to exempt, unlike `item_history`'s `actor_user_id`); a cascade DELETE is
-    // still permitted, as SQLite applies FK actions without firing triggers.
+    // no FK-action column to exempt, unlike `item_history`'s `actor_user_id`); the `items` cascade
+    // still retires a row freely, because this guards UPDATE alone and a cascade DELETE is a
+    // delete. Not because a foreign-key action skips triggers — it does not.
     sql: `
         CREATE TRIGGER trg_stock_deltas_immutable
         BEFORE UPDATE OF id, item_id, location_id, batch_key, quantity_delta, created_at,
@@ -1711,11 +1712,14 @@ const baselineStatements: SqlStatement[] = [
     // ledger keeps the movements that put stock into a batch row and none of the one that took
     // it away, so `stock_batches.quantity == Σ(stock_deltas)` — claimed by the UPDATE arm above,
     // and relied on by `reconcileStock`'s completeness guard — was not true of a deleted placement.
-    // Both paths that delete a non-zero row (`LocationRepository.delete` and the sync tombstone
-    // apply) re-home the same units into the item's Unassigned placement first, and that re-home
-    // is an INSERT/UPSERT which *does* capture. So the missing half left the two ends of one move
-    // unpaired: a positive at the removed location that nothing ever offsets, replicated to every
-    // peer and never pruned. `-OLD.quantity` closes it, and the pair now reads as the move it is.
+    // `LocationRepository.delete` is the path this matters on. It re-homes the units into the
+    // item's Unassigned placement first — an INSERT/UPSERT, which *does* capture — and only then
+    // drops the rows it emptied, so the missing half left the two ends of one move unpaired: a
+    // positive at the removed location that nothing ever offsets, replicated to every peer and
+    // never pruned. `-OLD.quantity` closes it, and the pair now reads as the move it is. The sync
+    // tombstone apply performs the same re-home and delete, but the whole apply runs under
+    // `withCaptureDisabled` — its deltas travel in the unioned ledger — so no arm fires there, the
+    // DELETE arm included.
     //
     // `asserted_quantity` is always NULL here, unlike the two arms above. Emptying a placement is
     // a relative movement whatever the switch says — it is the CHECK-clamped change the row
