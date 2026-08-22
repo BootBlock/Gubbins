@@ -43,6 +43,7 @@ beforeEach(() => {
   prefState.allowOnlineProductLookup = false;
   show.mockClear();
   bridge.requestLookup.mockClear();
+  bridge.clearLookup.mockClear();
   online.mockReset();
 });
 afterEach(cleanup);
@@ -123,5 +124,24 @@ describe('ProductLookupPanel (issue #59)', () => {
     expect(bridge.requestLookup).toHaveBeenCalledWith('4006381333931');
     expect(online).not.toHaveBeenCalled();
     expect(screen.queryByTestId('product-lookup-consent-confirm')).toBeNull();
+  });
+
+  it('drops a still-running lookup when the dialog closes (issue #665)', () => {
+    bridge.ready = true;
+    const view = render(<ProductLookupPanel barcode="4006381333931" onResult={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('product-lookup-submit'));
+    expect(bridge.clearLookup).not.toHaveBeenCalled();
+
+    view.unmount();
+
+    // Nobody is left to read the outcome, so the entry must not sit in the app-wide map until
+    // its deadline expires.
+    expect(bridge.clearLookup).toHaveBeenCalledWith('req-1');
+  });
+
+  it('does not clear anything when no lookup was started', () => {
+    bridge.ready = true;
+    render(<ProductLookupPanel barcode="4006381333931" onResult={vi.fn()} />).unmount();
+    expect(bridge.clearLookup).not.toHaveBeenCalled();
   });
 });

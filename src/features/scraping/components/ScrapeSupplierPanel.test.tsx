@@ -33,6 +33,7 @@ beforeEach(() => {
   bridge.requests = {};
   show.mockClear();
   bridge.requestScrape.mockClear();
+  bridge.clear.mockClear();
 });
 afterEach(cleanup);
 
@@ -116,5 +117,28 @@ describe('ScrapeSupplierPanel — unsupported links are answered here (issue #66
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(bridge.requestScrape).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toBeTruthy();
+  });
+});
+
+describe('ScrapeSupplierPanel — an abandoned scrape leaves nothing behind (issue #665)', () => {
+  it('drops a still-running scrape when the dialog closes', () => {
+    const view = render(<ScrapeSupplierPanel onResult={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Product URL'), {
+      target: { value: 'https://www.digikey.co.uk/p/ne555p' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Scrape' }));
+    expect(bridge.clear).not.toHaveBeenCalled();
+
+    view.unmount();
+
+    // Nobody is left to read the outcome, so the entry must not sit in the app-wide map raising
+    // the pending count until its deadline expires.
+    expect(bridge.clear).toHaveBeenCalledWith('req-1');
+  });
+
+  it('does not clear anything when no scrape was started', () => {
+    const view = render(<ScrapeSupplierPanel onResult={vi.fn()} />);
+    view.unmount();
+    expect(bridge.clear).not.toHaveBeenCalled();
   });
 });

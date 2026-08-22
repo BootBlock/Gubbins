@@ -74,7 +74,10 @@ Scraped data is applied carefully:
 > If a page can't be read — a login wall, a CAPTCHA, an unsupported layout, or a site Gubbins has
 > no parser for — Gubbins tells you which of those it was, rather than failing silently or sending
 > you off to retry something that can't succeed. A groceries barcode with no match is a simple
-> "not found", not an error.
+> "not found", not an error. If nothing answers at all — the extension was switched off part-way
+> through, say — the scrape gives up after 30 seconds and tells you it timed out, so the button
+> never stays stuck on **Scraping…**. Close the dialog while a scrape is running and it is simply
+> dropped, with nothing left waiting in the background.
 
 ## Related pages
 

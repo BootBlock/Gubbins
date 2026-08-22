@@ -17,7 +17,7 @@
  * database's coverage is groceries/consumables, so a hardware barcode legitimately misses) raises
  * a quiet, actionable toast and stays out of the way.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Modal, Tooltip, useToast } from '@/components/foundry';
 import { CloudIcon, PackageIcon, SearchIcon, WarningIcon } from '@/components/icons';
 import { useFeature } from '@/features/modules/useFeature';
@@ -55,6 +55,23 @@ export function ProductLookupPanel({
   // elsewhere can never deliver its result here (multi-request correlation, mirroring §9).
   const [requestId, setRequestId] = useState<string | null>(null);
   const lookup = requestId ? bridge.lookups[requestId] : undefined;
+
+  // Read from the unmount cleanup below, which must not close over a stale id.
+  const abandoned = useRef<{ id: string | null; clear: (id: string) => void }>({
+    id: null,
+    clear: bridge.clearLookup,
+  });
+  abandoned.current = { id: requestId, clear: bridge.clearLookup };
+
+  // Drop a still-tracked lookup when the panel goes away — the dialog was closed mid-lookup, so
+  // there is nobody left to read its outcome (issue #665, mirroring ScrapeSupplierPanel).
+  useEffect(
+    () => () => {
+      const { id, clear } = abandoned.current;
+      if (id) clear(id);
+    },
+    [],
+  );
   // The direct (extension-less) online lookup runs here rather than over the bridge.
   const [onlineBusy, setOnlineBusy] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);

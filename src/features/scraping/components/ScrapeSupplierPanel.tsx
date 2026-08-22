@@ -13,7 +13,7 @@
  * site is answered inline — naming the distributors that do work — rather than coming back
  * as a remote-sounding failure the user cannot act on.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, FormField, Input, Tooltip, useToast } from '@/components/foundry';
 import { ScrapeIcon, SupplierIcon, WarningIcon } from '@/components/icons';
 import { useT, type MessageKey } from '@/features/i18n';
@@ -56,6 +56,25 @@ export function ScrapeSupplierPanel({
   // edited — a refusal describes the link as it was submitted, not as it is being retyped.
   const [refusal, setRefusal] = useState<UrlRefusal | null>(null);
   const request = requestId ? bridge.requests[requestId] : undefined;
+
+  // Read from the unmount cleanup below, which must not close over a stale id.
+  const abandoned = useRef<{ id: string | null; clear: (id: string) => void }>({
+    id: null,
+    clear: bridge.clear,
+  });
+  abandoned.current = { id: requestId, clear: bridge.clear };
+
+  // Drop a still-tracked scrape when the panel goes away — the dialog was closed mid-scrape, so
+  // there is nobody left to read its outcome. The bridge's own deadline would eventually settle
+  // the entry, but it would settle it into a map nothing is watching, leaving the app-wide
+  // pending count raised until it expired (issue #665).
+  useEffect(
+    () => () => {
+      const { id, clear } = abandoned.current;
+      if (id) clear(id);
+    },
+    [],
+  );
 
   // React only to the outcome of our own correlated request.
   useEffect(() => {
