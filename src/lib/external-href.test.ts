@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isExternalHref } from './external-href';
+import { isExternalHref, safeExternalHref } from './external-href';
 
 /**
  * The gate deciding whether a stored custom-field value may become an `<a href>` (W1f). Its
@@ -44,5 +44,37 @@ describe('isExternalHref', () => {
     expect(isExternalHref('see the folder on the NAS')).toBe(false);
     expect(isExternalHref('')).toBe(false);
     expect(isExternalHref('   ')).toBe(false);
+  });
+});
+
+/**
+ * The render-site companion: "give me the href, or tell me there isn't one". Every surface that
+ * turns a stored address into an anchor goes through it — supplier parts, datasheets, wishlist
+ * entries and custom fields — so a value that reached the database over sync or a restore, past
+ * every write-time validator, still cannot become a link.
+ */
+describe('safeExternalHref', () => {
+  it('returns the address when it is one a page can navigate to', () => {
+    expect(safeExternalHref('https://example.test/p/1')).toBe('https://example.test/p/1');
+    expect(safeExternalHref('http://example.test/p/1')).toBe('http://example.test/p/1');
+  });
+
+  it('returns the TRIMMED address, so what opens is exactly what was checked', () => {
+    expect(safeExternalHref('  https://example.test/p/1  ')).toBe('https://example.test/p/1');
+  });
+
+  it('returns null for an absent or blank value — simply no link', () => {
+    expect(safeExternalHref(null)).toBeNull();
+    expect(safeExternalHref(undefined)).toBeNull();
+    expect(safeExternalHref('')).toBeNull();
+    expect(safeExternalHref('   ')).toBeNull();
+  });
+
+  it('returns null for a scheme a browser would execute or cannot navigate to', () => {
+    expect(safeExternalHref('javascript:alert(1)')).toBeNull();
+    expect(safeExternalHref('data:text/html,<script>alert(1)</script>')).toBeNull();
+    expect(safeExternalHref('vbscript:msgbox(1)')).toBeNull();
+    expect(safeExternalHref('file:///C:/datasheets/ne555.pdf')).toBeNull();
+    expect(safeExternalHref('\\server\share\manual.pdf')).toBeNull();
   });
 });

@@ -136,6 +136,29 @@ describe('clonedSupplierPartInput', () => {
     });
   });
 
+  it('drops a URL the app would not open, so one bad link cannot fail the whole clone', () => {
+    // `supplier_parts.url` can hold anything a synced or restored row carried, and the
+    // repository now refuses a non-http(s) address — a clone must not inherit that refusal.
+    const part: SupplierPart = {
+      id: 'sp-1',
+      itemId: 'src',
+      supplierId: 'sup-mouser',
+      supplierName: 'Mouser',
+      orderCode: null,
+      unitCost: null,
+      currency: null,
+      packQty: null,
+      minOrderQty: null,
+      priceBreaks: [],
+      url: 'javascript:alert(1)',
+      isPreferred: false,
+      isPriceSource: false,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    expect(clonedSupplierPartInput(part).url).toBeNull();
+  });
+
   it('passes null price breaks when there are none', () => {
     const part = {
       id: 'sp',

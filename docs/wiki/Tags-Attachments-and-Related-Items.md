@@ -125,7 +125,9 @@ Attach the documents and images that belong with an item:
   the **✕** in the corner of its thumbnail; with a mouse it appears when you hover the thumbnail,
   and on a touch screen it is always shown.
 - **Datasheets and files** — either a **link** (a URL to a datasheet online) or a **local file
-  pointer**. Great for keeping a part's datasheet, manual, or receipt one click away.
+  pointer**. Great for keeping a part's datasheet, manual, or receipt one click away. Only ordinary
+  web links (`http`/`https`) are accepted; anything else is shown as plain text rather than as
+  something to click.
 
 > **ℹ️ Note**
 > Whether attachments can be external URLs, local file pointers, or both is a setting under

@@ -9,7 +9,7 @@
  *
  * It is its own module rather than an export of `attachment-link.ts` because neither caller
  * owns it: `resolveAttachmentLink` reads a `kind` column a field value does not have, and the
- * field-value side decides openability from the string instead (`external-href.ts`). What the
+ * field-value side decides openability from the string instead (`@/lib/external-href`). What the
  * two genuinely share is this comparison and its NULL rule — and sharing it is what stops the
  * two surfaces disagreeing about what an unattributed row means.
  *
@@ -19,7 +19,7 @@
  * shared rather than ceremony.)
  */
 import type { FieldType } from '@/db/repositories/constants';
-import { isExternalHref } from './external-href';
+import { isExternalHref } from '@/lib/external-href';
 
 /**
  * True when `originDeviceId` names a device other than the one reading it.

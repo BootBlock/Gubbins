@@ -16,7 +16,7 @@ import type { Condition, FieldType } from '@/db/repositories/constants';
 import { parseColour } from '@/lib/colour';
 import { isImageDataUrl } from '@/lib/image-data-url';
 import { isForeignOrigin } from './device-origin';
-import { isExternalHref } from './external-href';
+import { isExternalHref } from '@/lib/external-href';
 import { formatFieldNumber } from './field-number-format';
 import { UNLIMITED_GLYPH } from './unlimited';
 import { itemTotalValue } from './item-total-value';
@@ -238,7 +238,7 @@ export type CardFieldValue =
    * An openable http(s) address (W1f) — a `URL` field's value, or a `FILE` field's when what
    * the user pointed at happens to be a web address. Named `href` rather than `text` because
    * that is the load-bearing part: only a value approved by
-   * {@link import('./external-href').isExternalHref} may take this arm, and the renderer
+   * {@link import('@/lib/external-href').isExternalHref} may take this arm, and the renderer
    * shows the address itself, exactly as the datasheet list does for an unlabelled link.
    */
   | { readonly kind: 'link'; readonly href: string }

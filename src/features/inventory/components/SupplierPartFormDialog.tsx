@@ -4,6 +4,7 @@ import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/rep
 import { SUPPORTED_SUPPLIER_LABELS } from '@/features/scraping';
 import { useT } from '@/features/i18n';
 import { SupplierPicker, supplierRefFrom, type SupplierPickerValue } from '@/features/suppliers';
+import { isExternalHref } from '@/lib/external-href';
 import { TEXT_LIMITS } from '@/lib/text-limits';
 
 /** Help for the Currency picker (the chosen currency drives the displayed symbol). */
@@ -81,6 +82,17 @@ function optionalText(value: string): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/**
+ * Coerce the optional product-page URL: blank → null, an absolute `http(s)` address → itself,
+ * anything else → INVALID. The repository refuses the same values, but it would surface as a
+ * write error over the table; catching it here names the field while the user is still in it.
+ */
+function optionalUrl(value: string): string | null | typeof INVALID {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  return isExternalHref(trimmed) ? trimmed : INVALID;
+}
+
 export function SupplierPartFormDialog({
   open,
   part,
@@ -131,6 +143,11 @@ export function SupplierPartFormDialog({
       setError('Minimum order quantity must be a whole number greater than zero.');
       return;
     }
+    const productUrl = optionalUrl(url);
+    if (productUrl === INVALID) {
+      setError(t('supplierPart.url.invalid'));
+      return;
+    }
     onSubmit({
       supplier: supplierRef,
       orderCode: optionalText(orderCode),
@@ -138,7 +155,7 @@ export function SupplierPartFormDialog({
       currency: optionalText(currency),
       packQty: pack,
       minOrderQty: minOrder,
-      url: optionalText(url),
+      url: productUrl,
       priceBreaks: parseBreaks(breaksText),
     });
   };

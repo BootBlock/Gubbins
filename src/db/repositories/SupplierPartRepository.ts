@@ -16,6 +16,7 @@
  * grows storage and is therefore Hard-Stop gated; deletes (which free space) are not and
  * record a tombstone in the same transaction so the deletion syncs (§7.2).
  */
+import { isExternalHref } from '@/lib/external-href';
 import { toStoredMoney } from '@/lib/money';
 import { DbError } from '../errors';
 import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
@@ -69,6 +70,26 @@ function cleanText(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
+}
+
+/**
+ * Trim an optional product-page URL, refusing anything that is not an absolute `http(s)`
+ * address — the same rule `AttachmentRepository` applies to a datasheet URL and
+ * `sanitiseWishlistUrl` to a wish, so the three user-settable link fields now agree. The stored
+ * value is rendered as an anchor, and a `javascript:`/`file:`/`vbscript:` address is either
+ * dangerous or inert; refusing it here says so while the person is still looking at the field.
+ *
+ * This is input validation, not an invariant: sync and restore write `supplier_parts.url`
+ * column by column from a snapshot without passing through this repository at all, so the
+ * render side re-checks with {@link import('@/lib/external-href').safeExternalHref} regardless.
+ */
+function cleanUrl(value: string | null | undefined): string | null {
+  const trimmed = cleanText(value);
+  if (trimmed === null) return null;
+  if (!isExternalHref(trimmed)) {
+    throw new DbError('SQLITE_CONSTRAINT', 'A supplier URL must be a full http or https web address.');
+  }
+  return trimmed;
 }
 
 /**
@@ -210,7 +231,7 @@ export class SupplierPartRepository extends BaseRepository {
         cleanCount(input.packQty, 'A pack quantity'),
         cleanCount(input.minOrderQty, 'A minimum order quantity'),
         serialisePriceBreaks(input.priceBreaks),
-        cleanText(input.url),
+        cleanUrl(input.url),
         wantsPreferred ? 1 : 0,
       ],
     });
@@ -279,7 +300,7 @@ export class SupplierPartRepository extends BaseRepository {
     }
     if (input.url !== undefined) {
       sets.push('url = ?');
-      params.push(cleanText(input.url));
+      params.push(cleanUrl(input.url));
     }
 
     // A preferred toggle goes through the single-winner transaction, never a bare SET.

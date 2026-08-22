@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, InfoHint, Money } from '@/components/foundry';
+import { Button, InfoHint, Money, Tooltip } from '@/components/foundry';
 import {
   AddIcon,
   DeleteIcon,
@@ -10,6 +10,8 @@ import {
   PreferredIcon,
 } from '@/components/icons';
 import type { CreateSupplierPartInput, Item, SupplierPart } from '@/db/repositories';
+import { useT } from '@/features/i18n';
+import { safeExternalHref } from '@/lib/external-href';
 import { useFormatters } from '@/lib/useFormatters';
 import {
   useCreateSupplierPart,
@@ -148,17 +150,7 @@ export function SupplierPartsTable({ item }: { item: Item }) {
                   )}
                   {part.packQty !== null ? <span>Pack {part.packQty}</span> : null}
                   {part.minOrderQty !== null ? <span>MOQ {part.minOrderQty}</span> : null}
-                  {part.url ? (
-                    <a
-                      href={part.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="inline-flex items-center gap-1 text-primary hover:underline [&_svg]:size-3"
-                    >
-                      <LinkIcon />
-                      Open
-                    </a>
-                  ) : null}
+                  {part.url ? <SupplierPartLink url={part.url} /> : null}
                 </div>
 
                 {part.priceBreaks.length > 0 ? (
@@ -215,5 +207,47 @@ export function SupplierPartsTable({ item }: { item: Item }) {
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The "Open" affordance for a supplier part's product page.
+ *
+ * The stored value is only an `href` when {@link safeExternalHref} says so. A row can carry
+ * anything — the sync/restore path writes `supplier_parts.url` column by column from a snapshot,
+ * never through the repository — so the address is re-checked here rather than trusted. A value
+ * that fails renders as inert text saying why, instead of a link that silently does nothing when
+ * clicked.
+ */
+function SupplierPartLink({ url }: { url: string }) {
+  const t = useT();
+  const href = safeExternalHref(url);
+  if (href === null) {
+    return (
+      <Tooltip content={t('externalLink.unopenable.hint')}>
+        <span
+          className="inline-flex items-center gap-1 text-muted-foreground [&_svg]:size-3"
+          data-testid="supplier-part-unopenable"
+        >
+          <span aria-hidden className="inline-flex">
+            <LinkIcon />
+          </span>
+          {t('externalLink.unopenable.label')}
+        </span>
+      </Tooltip>
+    );
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="inline-flex items-center gap-1 text-primary hover:underline [&_svg]:size-3"
+    >
+      <span aria-hidden className="inline-flex">
+        <LinkIcon />
+      </span>
+      Open
+    </a>
   );
 }
