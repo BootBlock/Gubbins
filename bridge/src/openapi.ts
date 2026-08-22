@@ -735,7 +735,10 @@ const itemFieldSchemas: Readonly<Record<string, JsonValue>> = {
   purchasePrice: {
     type: 'number',
     nullable: true,
-    description: 'Original acquisition cost, in the base currency; null if unpriced.',
+    description:
+      'Original acquisition cost per unit, in the base currency; null if unpriced. It is the ' +
+      'last fallback valuation uses — below `unitCost` and the preferred supplier price — ' +
+      'written down over any `depreciationMonths` term, straight-line to zero.',
   },
   currentValue: {
     type: 'number',
@@ -788,7 +791,9 @@ const itemFieldSchemas: Readonly<Record<string, JsonValue>> = {
   depreciationMonths: {
     type: 'integer',
     nullable: true,
-    description: 'Useful life for straight-line depreciation; null when it does not depreciate.',
+    description:
+      'Useful life in whole months for straight-line depreciation of `purchasePrice`, to zero ' +
+      'and no lower; null when the item does not depreciate and the purchase price stays flat.',
   },
   deadStockMode: {
     type: 'string',

@@ -4,6 +4,7 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { MS_PER_DAY, UNASSIGNED_LOCATION_ID } from './constants';
+import { DEPRECIATION_MS_PER_MONTH, currentValue } from '@/features/inventory/asset-lifecycle';
 import { CategoryRepository } from './CategoryRepository';
 import { ImageRepository } from './ImageRepository';
 import { ItemRepository } from './ItemRepository';
@@ -768,6 +769,230 @@ describe('ReportRepository', () => {
         );
       },
     );
+  });
+
+  // Issue #688 — straight-line depreciation used to feed nothing. `currentValue()` was shown in
+  // the item editor and nowhere else, so an asset priced *only* by what it cost and how long it
+  // lasts was valued at 0 by every report and by the printed insurance schedule — while the wiki,
+  // the item editor and the bridge schema all said that book value was the figure they used.
+  describe('depreciated purchase price as the last valuation fallback (issue #688)', () => {
+    /** An acquisition day, and a `now` exactly `months` depreciation-months after it. */
+    function acquiredAndNow(months: number): { acquiredAt: string; now: number } {
+      const acquiredAt = '2025-01-01';
+      return { acquiredAt, now: Date.parse(acquiredAt) + months * DEPRECIATION_MS_PER_MONTH };
+    }
+
+    it('values an asset nothing else prices at its book value, and does not call it unpriced', async () => {
+      // Half of a 24-month term elapsed → half of £1,200 written off, £600 a unit, £1,200 for two.
+      const { acquiredAt, now } = acquiredAndNow(12);
+      await items.create({
+        name: 'Bandsaw',
+        quantity: 2,
+        unitCost: null,
+        purchasePrice: 1200,
+        depreciationMonths: 24,
+        acquiredAt,
+      });
+
+      const report = await reports.inventoryValue(now);
+      expect(report.totalValue).toBe(1200);
+      expect(report.unpricedItemCount).toBe(0);
+    });
+
+    it('stays below a unit cost and a preferred supplier price', async () => {
+      const { acquiredAt, now } = acquiredAndNow(12);
+      const asset = { purchasePrice: 1200, depreciationMonths: 24, acquiredAt } as const;
+
+      await items.create({ name: 'Priced', quantity: 1, unitCost: 5, ...asset });
+      const supplied = await items.create({ name: 'Supplied', quantity: 1, unitCost: null, ...asset });
+      await supplierParts.create(supplied.id, {
+        supplier: { supplierName: 'Preferred Co' },
+        unitCost: 7,
+        isPreferred: true,
+      });
+
+      // 5 + 7, not 600 + 600: the book value is what a report reaches for last, never first.
+      expect((await reports.inventoryValue(now)).totalValue).toBe(12);
+    });
+
+    it('stays below a manual current value, which is what the item editor promises', async () => {
+      const { acquiredAt, now } = acquiredAndNow(12);
+      await items.create({
+        name: 'Collectible',
+        quantity: 1,
+        unitCost: null,
+        currentValue: 2500,
+        purchasePrice: 1200,
+        depreciationMonths: 24,
+        acquiredAt,
+      });
+
+      expect((await reports.inventoryValue(now)).totalValue).toBe(2500);
+    });
+
+    it('keeps the purchase price flat with no depreciation term, and with no acquisition date', async () => {
+      const { acquiredAt, now } = acquiredAndNow(36);
+      await items.create({
+        name: 'Flat',
+        quantity: 1,
+        unitCost: null,
+        purchasePrice: 400,
+        depreciationMonths: null,
+        acquiredAt,
+      });
+      // No acquisition date ⇒ treated as just acquired, so nothing has been written off yet.
+      await items.create({
+        name: 'Undated',
+        quantity: 1,
+        unitCost: null,
+        purchasePrice: 100,
+        depreciationMonths: 12,
+        acquiredAt: null,
+      });
+
+      expect((await reports.inventoryValue(now)).totalValue).toBe(500);
+    });
+
+    it('floors a fully-expired term at zero rather than going negative', async () => {
+      // Three times a 12-month term has elapsed: the straight line would read −£2,400 unclamped.
+      const { acquiredAt, now } = acquiredAndNow(36);
+      await items.create({
+        name: 'Written off',
+        quantity: 1,
+        unitCost: null,
+        purchasePrice: 1200,
+        depreciationMonths: 12,
+        acquiredAt,
+      });
+
+      const report = await reports.inventoryValue(now);
+      expect(report.totalValue).toBe(0);
+      // Worth nothing is a real answer, but the totals still report it as an item with no
+      // usable price — `unit_value > 0` is what that count has always meant.
+      expect(report.unpricedItemCount).toBe(1);
+    });
+
+    it('writes nothing off before the acquisition date', async () => {
+      // `now` a year *before* the item was acquired: the proportion clamps at 0, not a negative.
+      const { acquiredAt, now } = acquiredAndNow(-12);
+      await items.create({
+        name: 'Future',
+        quantity: 1,
+        unitCost: null,
+        purchasePrice: 900,
+        depreciationMonths: 24,
+        acquiredAt,
+      });
+
+      expect((await reports.inventoryValue(now)).totalValue).toBe(900);
+    });
+
+    it('schedules the asset at its book value in the insurance schedule, summary and page alike', async () => {
+      const { acquiredAt, now } = acquiredAndNow(12);
+      const study = await locations.create({ name: 'Study' });
+      await items.create({
+        name: 'Bandsaw',
+        locationId: study.id,
+        quantity: 2,
+        unitCost: null,
+        purchasePrice: 1200,
+        depreciationMonths: 24,
+        acquiredAt,
+      });
+
+      const summary = await reports.insuranceScheduleSummary(now);
+      expect(summary.grandTotal).toBe(1200);
+      expect(summary.groups.find((g) => g.locationId === study.id)?.subtotal).toBe(1200);
+
+      // The page's lines are folded in JavaScript while the totals above are summed in SQL, so
+      // the two paths must land on the same figure or the document does not add up.
+      const page = await reports.insuranceScheduleGroupPage(study.id, {}, {}, now);
+      expect(page.rows.map((l) => l.replacementValue)).toEqual([1200]);
+    });
+
+    it('no longer reports the asset as an item with no price to fix', async () => {
+      const { acquiredAt, now } = acquiredAndNow(12);
+      await items.create({
+        name: 'Bandsaw',
+        quantity: 1,
+        unitCost: null,
+        purchasePrice: 1200,
+        depreciationMonths: 24,
+        acquiredAt,
+      });
+
+      const hygiene = await reports.dataHygiene(90, now);
+      expect(hygiene.sections.find((s) => s.kind === 'missing-price')!.count).toBe(0);
+    });
+
+    it('excludes it from the foreign-currency notice, which counts only items nothing else values', async () => {
+      const { acquiredAt } = acquiredAndNow(12);
+      const repo = new ReportRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+      const asset = await items.create({
+        name: 'Imported',
+        quantity: 1,
+        unitCost: null,
+        purchasePrice: 1200,
+        depreciationMonths: 24,
+        acquiredAt,
+      });
+      await supplierParts.create(asset.id, {
+        supplier: { supplierName: 'Yen Co' },
+        unitCost: 9800,
+        currency: 'JPY',
+        isPreferred: true,
+      });
+
+      // The yen price is still declined, but the asset is valued by its book value, so warning
+      // that it has been left out of the total would be the same false alarm pointed the other way.
+      expect(await repo.foreignCurrencyCostCount()).toBe(0);
+    });
+
+    it('matches the pure `currentValue` seam over a randomised fixture', async () => {
+      // The straight-line formula is now stated twice — once in `asset-lifecycle.ts` for the item
+      // editor, once in SQL so a whole-inventory total can be summed by the database. This pins
+      // the second against the first. The catalogue's per-line `unitCost` is the unrounded value
+      // the cost seam resolved, so it compares the expressions themselves rather than a rounded
+      // headline that could hide a drift of a fraction of a penny.
+      let seed = 90210;
+      const rand = () => {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed / 2147483648;
+      };
+
+      const expected = new Map<string, number>();
+      const now = Date.UTC(2026, 6, 19);
+      for (let i = 0; i < 60; i++) {
+        // Four fractional digits, a term of 1–60 months, and an acquisition anywhere from six
+        // years back to a year ahead — so mid-term, long-expired and not-yet-started all occur.
+        const purchasePrice = Math.round(rand() * 5_000_000) / 10_000;
+        const depreciationMonths = Math.floor(rand() * 60) + 1;
+        const acquiredAt = new Date(now - Math.floor((rand() * 7 - 1) * 365 * MS_PER_DAY))
+          .toISOString()
+          .slice(0, 10);
+        const created = await items.create({
+          name: `Asset ${i}`,
+          quantity: 1,
+          unitCost: null,
+          purchasePrice,
+          depreciationMonths,
+          acquiredAt,
+        });
+        expected.set(
+          created.id,
+          currentValue({ acquiredAt, warrantyExpiresAt: null, purchasePrice, depreciationMonths }, now)!,
+        );
+      }
+
+      const catalogue = await reports.partsCatalogue({ kind: 'all' }, {}, now);
+      const lines = catalogue.groups.flatMap((g) => g.lines);
+      expect(lines).toHaveLength(expected.size);
+      for (const line of lines) {
+        // Both sides quantise to whole stored micro-units (1e-6 of a major unit), so five decimal
+        // places is a stricter agreement than any figure the app ever displays.
+        expect(line.unitCost).toBeCloseTo(expected.get(line.id)!, 5);
+      }
+    });
   });
 
   describe('consumptionRate', () => {

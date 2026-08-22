@@ -34,6 +34,32 @@ describe('effectiveUnitCost — the single cost-precedence seam', () => {
     expect(effectiveUnitCost({ unitCost: -5, preferredSupplierCost: 2 })).toBe(2);
     expect(effectiveUnitCost({ unitCost: null, preferredSupplierCost: -1 })).toBe(0);
   });
+
+  // Issue #688 — the depreciated purchase price is the last fallback. Before it existed, an
+  // asset priced only by what it cost and how long it lasts was valued at 0 by every report
+  // and by the printed insurance schedule, while the item editor showed it a book value.
+  it('falls back to the depreciated purchase price when nothing else prices the item', () => {
+    expect(effectiveUnitCost({ unitCost: null, depreciatedPurchasePrice: 750 })).toBe(750);
+  });
+
+  it('prefers a unit cost and a supplier cost over the depreciated purchase price', () => {
+    expect(effectiveUnitCost({ unitCost: 3, depreciatedPurchasePrice: 750 })).toBe(3);
+    expect(
+      effectiveUnitCost({ unitCost: null, preferredSupplierCost: 2, depreciatedPurchasePrice: 750 }),
+    ).toBe(2);
+  });
+
+  it('treats an unusable depreciated purchase price as unset', () => {
+    expect(effectiveUnitCost({ unitCost: null, depreciatedPurchasePrice: null })).toBe(0);
+    expect(effectiveUnitCost({ unitCost: null, depreciatedPurchasePrice: -1 })).toBe(0);
+    expect(effectiveUnitCost({ unitCost: null, depreciatedPurchasePrice: NaN })).toBe(0);
+  });
+
+  // A fully written-off asset is worth 0 — a real figure, not a missing one. It must not
+  // read as "unpriced" and it must not let anything beneath it take over.
+  it('accepts a fully depreciated 0 as a real value', () => {
+    expect(effectiveUnitCost({ unitCost: null, depreciatedPurchasePrice: 0 })).toBe(0);
+  });
 });
 
 // Issue #683 — a gauge is valued along a different axis: it holds a *measure*, so its

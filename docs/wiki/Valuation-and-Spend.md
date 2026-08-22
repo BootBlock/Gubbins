@@ -19,9 +19,10 @@ above always covers every one of them, listed or not. See
 [[long lists in a report|Reports-Overview]].
 
 Each item is valued through Gubbins' valuation logic: a manual
-**[[current value|Current-Value-and-Revaluation]]** where you've set one, otherwise purchase price
-less [[depreciation|Warranty-and-Depreciation]]. So the total reflects *today's* worth, not just
-what you paid.
+**[[current value|Current-Value-and-Revaluation]]** where you've set one, else its unit cost, else
+its preferred supplier's base-currency price, and failing all three its purchase price less
+[[depreciation|Warranty-and-Depreciation]]. So the total reflects *today's* worth, not just what
+you paid.
 
 There's also **valuation over time**, showing how your inventory's total value has changed. It ends
 on exactly the headline total above it and reconstructs the earlier points by working backwards

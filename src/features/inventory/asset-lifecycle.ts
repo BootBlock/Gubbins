@@ -103,6 +103,19 @@ export function warrantyExpiryFromWindow(
 }
 
 /**
+ * Milliseconds in one depreciation month — a continuous fraction of the mean Gregorian year
+ * (365.25 days / 12 ≈ 30.4375 days), not a calendar month, so a term runs down smoothly rather
+ * than in twelve unequal steps.
+ *
+ * Exported because {@link currentValue} is no longer the only place the straight-line formula is
+ * evaluated: the valuation reads state it again in SQL (`depreciatedPurchasePriceSql` in
+ * `ReportRepository`) so a 100k-item total can be summed by the database rather than folded in
+ * JavaScript. Sharing the constant is what stops the two statements of the same formula drifting
+ * by a rounding of the month length.
+ */
+export const DEPRECIATION_MS_PER_MONTH = (365.25 / 12) * 86_400_000;
+
+/**
  * Compute the current book value of an item under straight-line depreciation.
  *
  * Returns `null` when no `purchase_price` is set (the widget is hidden).
@@ -132,9 +145,7 @@ export function currentValue(item: AssetLifecycleItem, now: number): number | nu
   const acquiredMs = Date.parse(item.acquiredAt);
   if (!Number.isFinite(acquiredMs)) return price;
 
-  // Elapsed months as a continuous fraction (365.25 days / 12 ≈ 30.4375 days/month).
-  const MS_PER_MONTH = (365.25 / 12) * 86_400_000;
-  const elapsedMonths = (now - acquiredMs) / MS_PER_MONTH;
+  const elapsedMonths = (now - acquiredMs) / DEPRECIATION_MS_PER_MONTH;
 
   const totalMonths = item.depreciationMonths;
   const proportion = Math.min(1, Math.max(0, elapsedMonths / totalMonths));

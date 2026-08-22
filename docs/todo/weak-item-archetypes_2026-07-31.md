@@ -1156,7 +1156,14 @@ behaviour that does not exist.
    booked verbatim as base-currency cost. ✅ **Fixed:** the guard and the preferred-supplier lookup
    now live in one shared module (`db/repositories/supplier-cost-sql.ts`) that both the reports and
    the sale path import, so a foreign price is declined on a sale exactly as it is in valuation.
-6. **Straight-line depreciation is orphaned, and the documentation says otherwise** ([#688](https://github.com/BootBlock/Gubbins/issues/688)). `currentValue()`
+6. **Straight-line depreciation is orphaned, and the documentation says otherwise** ([#688](https://github.com/BootBlock/Gubbins/issues/688)). ✅ **Fixed** — the
+   depreciated purchase price is now the **last** fallback in the cost precedence, below a manual
+   unit cost and the preferred supplier price, so an asset priced only by what it cost and how long
+   it lasts is valued at its book value rather than at nothing. The rule is stated in both halves of
+   the valuation seam — the pure `effectiveUnitCost` and the SQL that lets a whole-inventory total be
+   summed by the database — and a randomised test pins the SQL formula against `currentValue()`. The
+   four wiki pages, the item editor's hint and the bridge schema now describe the real precedence,
+   and the wiki's phantom "salvage floor" is gone. As found: `currentValue()`
    ([asset-lifecycle.ts:120](../../src/features/inventory/asset-lifecycle.ts#L120)) has one
    production call site — the Asset editor. No report, export, card, bridge or schedule reads it:
    valuation resolves `unitCost` then the preferred supplier cost and nothing else

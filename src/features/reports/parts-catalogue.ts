@@ -442,13 +442,18 @@ export interface PartsCatalogue {
 }
 
 /**
- * An item is priced when a figure exists to value it by — a manual unit cost or a preferred
- * supplier cost, or for a gauge its cost per unit of measure (issue #683). A gauge is never
- * priced from the first two: they price one *countable* unit, and it holds a measure.
+ * An item is priced when a figure exists to value it by — a manual unit cost, a preferred
+ * supplier cost or a depreciated purchase price (issue #688), or for a gauge its cost per unit of
+ * measure (issue #683). A gauge is never priced from the first three: they price one *countable*
+ * unit, and it holds a measure.
+ *
+ * This must name exactly the sources `valuedUnitValue` values from. Leaving one out prints a
+ * dash on a line the valuation reports total a real figure for, and the catalogue's own grand
+ * total would then disagree with the value column above it.
  */
 function isPriced(item: CatalogueItemInput): boolean {
   if (item.gauge) return item.gauge.costPerUnitOfMeasure != null;
-  return item.unitCost != null || item.preferredSupplierCost != null;
+  return item.unitCost != null || item.preferredSupplierCost != null || item.depreciatedPurchasePrice != null;
 }
 
 /** Resolve a single item input to its display line, valuing it through the cost seam. */

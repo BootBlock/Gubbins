@@ -7,9 +7,10 @@
  *
  * The reports are read-only projections over data already stored — there is no schema
  * change in this phase. Valuation honours a single internal "effective unit cost"
- * lookup ({@link effectiveUnitCost}) which delegates the cost-precedence rule to the
+ * lookup ({@link effectiveUnitCost}) which delegates the priced-source half of the rule to the
  * Phase-60 {@link resolveCostPrecedence} helper, so the "manual cost wins, else preferred
- * supplier cost" rule lives in exactly one place across the app.
+ * supplier cost" rule lives in exactly one place across the app, and adds the depreciated
+ * purchase price beneath both as the last fallback (issue #688).
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { addCalendarDays } from '@/lib/calendar-days';
@@ -35,22 +36,53 @@ export interface ValuedUnit {
    * the fallback when there is no manual {@link ValuedUnit.unitCost}.
    */
   readonly preferredSupplierCost?: number | null;
+  /**
+   * The item's **depreciated purchase price** per unit (issue #688) — `items.purchase_price` run
+   * down its `depreciation_months` straight-line term as at the read's `now`, resolved by
+   * `ReportRepository` in SQL so a whole-inventory total can still be summed by the database.
+   * NULL/absent when the item carries no purchase price.
+   *
+   * It is the **last** cost fallback, below the preferred supplier cost, because it answers a
+   * different question from the two above it: what this particular unit is reckoned to be worth
+   * today, rather than what replacing it would cost. Anything that knows the replacement cost
+   * knows it better. Before this existed an asset priced *only* by a purchase price and a term
+   * was valued at 0 by every report and by the printed insurance schedule, while the item editor
+   * showed a book value and the wiki said that figure was what the reports used.
+   *
+   * `purchase_price` is read as a **per-unit** figure, like the `unitCost` and `currentValuePerUnit`
+   * it stands in for — the whole precedence chain prices one unit and is multiplied by the on-hand
+   * amount afterwards.
+   */
+  readonly depreciatedPurchasePrice?: number | null;
 }
 
 /**
  * The effective per-unit cost used for valuation, isolated behind one function so callers
- * never re-implement cost precedence. The precedence rule itself — a manual `unitCost`
- * wins, else the preferred supplier cost, else unpriced — is owned by the Phase-60
- * {@link resolveCostPrecedence} helper (`@/features/inventory/supplier-cost`), which this
- * delegates to so there is a single source of truth across reporting and the item screens.
- * An unpriced item contributes `0` to valuation totals.
+ * never re-implement cost precedence. The *priced-source* half of the rule — a manual `unitCost`
+ * wins, else the preferred supplier cost — is owned by the Phase-60 {@link resolveCostPrecedence}
+ * helper (`@/features/inventory/supplier-cost`), which this delegates to so there is a single
+ * source of truth across reporting and the item screens.
+ *
+ * Below both sits the {@link ValuedUnit.depreciatedPurchasePrice} fallback (issue #688): an asset
+ * that nothing else prices is still worth its purchase price less whatever its depreciation term
+ * has written off. Only when that is absent too is the item genuinely unpriced, and an unpriced
+ * item contributes `0` to valuation totals.
+ *
+ * The depreciated figure is not delegated to `resolveCostPrecedence` because that helper is also
+ * what prices a **purchase-order line** (`effectiveUnitCostForQty`) and what a sale snapshots as
+ * its permanent cost of goods. Neither may quote a residual book value: one is what a supplier
+ * will charge, the other what the stock actually cost. This function is the valuation seam, and
+ * the extra fallback belongs to it alone.
  */
 export function effectiveUnitCost(unit: ValuedUnit): number {
   const resolved = resolveCostPrecedence(
     { unitCost: unit.unitCost },
     unit.preferredSupplierCost != null ? [{ unitCost: unit.preferredSupplierCost, isPreferred: true }] : [],
   );
-  return resolved ?? 0;
+  if (resolved != null) return resolved;
+  const depreciated = unit.depreciatedPurchasePrice;
+  // Same usability test the priced sources get: a non-finite or negative figure names no price.
+  return depreciated != null && Number.isFinite(depreciated) && depreciated >= 0 ? depreciated : 0;
 }
 
 // --- What a valuation multiplies (issue #683) ----------------------------------
@@ -384,12 +416,10 @@ export function bucketMovement(
 // --- Dead stock (no movement in N days) ----------------------------------------
 
 /** A candidate item for the dead-stock report, with its last-movement instant. */
-export interface DeadStockCandidate {
+export interface DeadStockCandidate extends ValuedUnit {
   readonly id: string;
   readonly name: string;
   readonly quantity: number;
-  readonly unitCost: number | null;
-  readonly preferredSupplierCost?: number | null;
   /**
    * Gauge state for a CONSUMABLE_GAUGE item (issue #683), else absent. Its `quantity` is always
    * 0, so without this a full-but-idle cylinder would look like nothing to report.

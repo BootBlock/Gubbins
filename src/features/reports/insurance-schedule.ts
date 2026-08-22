@@ -241,8 +241,11 @@ export function toScheduleLine(item: ScheduleItemInput, now: number, decimals: n
         : null,
     acquiredAt: item.acquiredAt,
     purchasePrice: item.purchasePrice,
-    // Only `warrantyExpiresAt` drives the status; the rest of the slice is unused here
-    // (depreciation is never applied — value flows through `stockValue`).
+    // Only `warrantyExpiresAt` drives the status, so the rest of the slice is filled in with
+    // whatever satisfies the type. `depreciationMonths` is deliberately null rather than the
+    // item's own term: this call derives a *warranty badge*, and the depreciated figure the
+    // schedule values a line at is applied by `stockValue` from the item's already-resolved
+    // `depreciatedPurchasePrice` (issue #688), not re-derived here.
     warranty: warrantyStatus(
       {
         acquiredAt: item.acquiredAt,

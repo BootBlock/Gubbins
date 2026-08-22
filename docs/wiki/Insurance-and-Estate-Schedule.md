@@ -40,10 +40,11 @@ mistaken for the whole room. The room's own subtotal is always its full subtotal
 ## Values reflect today's worth
 
 Each line is valued through Gubbins' valuation logic: an item with a manual
-**[[current value|Current-Value-and-Revaluation]]** is scheduled at *today's* worth, while
-others fall back to purchase price less [[depreciation|Warranty-and-Depreciation]]. So an
-appreciating collectible is listed at its real replacement cost, not an out-of-date purchase
-figure.
+**[[current value|Current-Value-and-Revaluation]]** is scheduled at *today's* worth, and the rest
+fall back to a unit cost, then a base-currency supplier price, then purchase price less
+[[depreciation|Warranty-and-Depreciation]]. So an appreciating collectible is listed at its real
+replacement cost, not an out-of-date purchase figure, and an old tool priced only by what it cost
+years ago is listed at its book value rather than left at nothing.
 
 > **⚠️ Heads-up**
 > The grand total is in your **base currency**, and Gubbins never converts between currencies. If
