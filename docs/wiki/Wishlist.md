@@ -37,7 +37,8 @@ list to a [[purchase order|Purchase-Orders]] instead, if you're ready to actuall
 
 > **⚠️ Heads-up**
 > Only ordinary web links (`http`/`https`) are accepted for an entry's link, so a wishlist can't
-> carry anything unsafe.
+> carry anything unsafe. A link that reaches your device some other way and isn't a web address is
+> shown as plain text marked **Not a web address**, never as something to click.
 
 ## Removing a wish
 

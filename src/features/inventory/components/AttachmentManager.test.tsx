@@ -192,6 +192,15 @@ describe('AttachmentManager — resolved row presentation', () => {
     expect(screen.queryByTestId('attachment-unlinked')).not.toBeInTheDocument();
   });
 
+  it('renders a URL row that is not a web address as text, never an anchor', () => {
+    // `AttachmentRepository` refuses these at write time, but a row applied by sync or a
+    // restore never met it — so the row is shown, with its value, and simply is not a link.
+    h.attachments = [attachment({ id: 'url-2', kind: 'URL', value: 'javascript:alert(1)', label: 'Sheet' })];
+    renderManager();
+    expect(screen.queryByRole('link', { name: 'Sheet' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('attachment-unopenable')).toHaveTextContent('Sheet');
+  });
+
   it('renders an own-device local pointer with its path, not the unlinked placeholder', () => {
     h.attachments = [
       attachment({

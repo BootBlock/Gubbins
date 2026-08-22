@@ -8,6 +8,7 @@ import { useAddAttachment, useItemAttachments, useRemoveAttachment, useUpdateAtt
 import { resolveAttachmentLink } from '../attachment-link';
 import { ATTACHMENT_KIND_LABELS } from './inventory-ui';
 import { useErrorMessage } from '@/features/errors';
+import { useT } from '@/features/i18n';
 
 /**
  * Datasheet/attachment manager (spec §4 "Attachments & Datasheets"). The kinds a
@@ -158,6 +159,7 @@ function AttachmentRow({
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
+  const t = useT();
 
   const confirm = () => {
     setError(null);
@@ -267,8 +269,8 @@ function AttachmentRow({
 
   return (
     <li className="flex items-center gap-2 rounded-lg border border-border bg-secondary/20 px-2.5 py-1.5 text-sm">
-      <span className="text-muted-foreground [&_svg]:size-4">
-        {link.state === 'url' ? <LinkIcon /> : <LocalFileIcon />}
+      <span aria-hidden className="text-muted-foreground [&_svg]:size-4">
+        {link.state === 'local' ? <LocalFileIcon /> : <LinkIcon />}
       </span>
       {link.state === 'url' ? (
         <a
@@ -280,11 +282,22 @@ function AttachmentRow({
           {att.label || link.value}
         </a>
       ) : (
+        // Not a link: either a local path (valid only on the device that linked it) or a
+        // stored value that is not an `http(s)` address at all, which no page can navigate
+        // to. Both are shown as text, each with the tooltip that explains its own case.
         <Tooltip
-          content="**Local file pointer** — this path is only valid on the device that linked it; on other devices it shows as an unlinked local file."
+          content={
+            link.state === 'unopenable'
+              ? t('externalLink.unopenable.hint')
+              : '**Local file pointer** — this path is only valid on the device that linked it; on other devices it shows as an unlinked local file.'
+          }
           openDelayMs={INFO_OPEN_DELAY_MS}
         >
-          <span className="min-w-0 flex-1 truncate" title={link.value}>
+          <span
+            className="min-w-0 flex-1 truncate"
+            title={link.value}
+            data-testid={link.state === 'unopenable' ? 'attachment-unopenable' : undefined}
+          >
             {att.label || link.value}
           </span>
         </Tooltip>

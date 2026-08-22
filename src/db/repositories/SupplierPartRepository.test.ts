@@ -35,6 +35,36 @@ describe('SupplierPartRepository (Phase 60)', () => {
     await driver.close();
   });
 
+  it('refuses a product URL that is not a full http(s) web address', async () => {
+    // Brings supplier parts into line with datasheet attachments and wishlist entries, which
+    // have always refused a non-web scheme. The stored value is rendered as an anchor, so an
+    // address a browser will not navigate to is at best a dead link.
+    for (const url of ['javascript:alert(1)', 'file:///C:/p.html', 'example.test/p/1', 'not a url']) {
+      await expect(repo.create(itemId, { supplier: { supplierName: 'DigiKey' }, url })).rejects.toThrow(
+        /http or https/,
+      );
+    }
+  });
+
+  it('refuses a bad product URL on update too, and leaves the stored one untouched', async () => {
+    const created = await repo.create(itemId, {
+      supplier: { supplierName: 'DigiKey' },
+      url: 'https://example.test/p/1',
+    });
+    await expect(repo.update(created.id, { url: 'javascript:alert(1)' })).rejects.toThrow(/http or https/);
+    expect((await repo.getById(created.id))?.url).toBe('https://example.test/p/1');
+  });
+
+  it('trims a product URL and still accepts clearing it', async () => {
+    const created = await repo.create(itemId, {
+      supplier: { supplierName: 'DigiKey' },
+      url: '  https://example.test/p/1  ',
+    });
+    expect(created.url).toBe('https://example.test/p/1');
+    await repo.update(created.id, { url: null });
+    expect((await repo.getById(created.id))?.url).toBeNull();
+  });
+
   it('creates and reads back a supplier part with all fields', async () => {
     const created = await repo.create(itemId, {
       supplier: { supplierName: 'DigiKey' },

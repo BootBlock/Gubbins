@@ -19,6 +19,7 @@ import {
   Pagination,
   Spinner,
   Surface,
+  Tooltip,
   pageCount,
   pageSliceBounds,
 } from '@/components/foundry';
@@ -30,6 +31,7 @@ import {
   UploadIcon,
   WishlistIcon,
 } from '@/components/icons';
+import { safeExternalHref } from '@/lib/external-href';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { useT } from '@/features/i18n';
@@ -291,18 +293,7 @@ function WishlistRow({
         {(entry.note || entry.url) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
             {entry.note && <span className="truncate">{entry.note}</span>}
-            {entry.url && (
-              <a
-                href={entry.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline [&_svg]:size-3"
-                data-testid="wishlist-link"
-              >
-                <ExternalLinkIcon aria-hidden="true" />
-                View
-              </a>
-            )}
+            {entry.url && <WishlistLink url={entry.url} />}
           </div>
         )}
       </div>
@@ -336,5 +327,43 @@ function WishlistRow({
         </Button>
       </div>
     </li>
+  );
+}
+
+/**
+ * The "View" affordance for a wish's link.
+ *
+ * `sanitiseWishlistUrl` already refuses a non-`http(s)` address when a wish is created or
+ * edited, but `wishlist.url` can also arrive over sync or a restore, which writes the column
+ * straight from the snapshot with no repository in the way. The address is therefore re-checked
+ * here; one that fails renders as inert text saying why, rather than a link that does nothing.
+ */
+function WishlistLink({ url }: { url: string }) {
+  const t = useT();
+  const href = safeExternalHref(url);
+  if (href === null) {
+    return (
+      <Tooltip content={t('externalLink.unopenable.hint')}>
+        <span
+          className="inline-flex items-center gap-1 text-muted-foreground [&_svg]:size-3"
+          data-testid="wishlist-unopenable"
+        >
+          <ExternalLinkIcon aria-hidden="true" />
+          {t('externalLink.unopenable.label')}
+        </span>
+      </Tooltip>
+    );
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline [&_svg]:size-3"
+      data-testid="wishlist-link"
+    >
+      <ExternalLinkIcon aria-hidden="true" />
+      View
+    </a>
   );
 }

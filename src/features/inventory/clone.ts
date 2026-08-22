@@ -11,6 +11,7 @@
  */
 import type { CreateItemInput, Item, ResolvedItemField, SupplierPart } from '@/db/repositories';
 import type { CreateSupplierPartInput } from '@/db/repositories';
+import { safeExternalHref } from '@/lib/external-href';
 
 /**
  * Default suffix appended to the cloned item's name so the copy is distinguishable.
@@ -97,6 +98,12 @@ export function planItemClone(source: Item, options: { readonly nameSuffix?: str
  * The supplier is carried by **id**, not by name: the clone points at the very same supplier
  * record rather than re-resolving its name, so a rename later moves both parts together and no
  * near-duplicate can be minted on the way through.
+ *
+ * The URL is carried only when it is one the app would open. A row synced or restored from a
+ * peer can hold anything in that column, and the repository now refuses a non-`http(s)` address
+ * — so copying it verbatim would fail the whole clone over a link that never worked. Dropping
+ * it clones everything else and leaves the field blank, rather than carrying a link the source
+ * itself could only show as "Not a web address".
  */
 export function clonedSupplierPartInput(part: SupplierPart): CreateSupplierPartInput {
   return {
@@ -107,7 +114,7 @@ export function clonedSupplierPartInput(part: SupplierPart): CreateSupplierPartI
     packQty: part.packQty,
     minOrderQty: part.minOrderQty,
     priceBreaks: part.priceBreaks.length > 0 ? part.priceBreaks : null,
-    url: part.url,
+    url: safeExternalHref(part.url),
     isPreferred: part.isPreferred,
   };
 }

@@ -95,6 +95,17 @@ describe('WishlistTab (feature-gap G8)', () => {
     expect(screen.getByTestId('wishlist-summary')).toHaveTextContent('est.');
   });
 
+  it('shows a stored link that is not a web address as inert text, never an anchor', () => {
+    // `sanitiseWishlistUrl` refuses these when a wish is written, but the sync/restore path
+    // applies `wishlist.url` straight from a snapshot with no repository in the way — so the
+    // render side re-checks rather than trusting the column.
+    rows = [entry({ name: 'Impact driver', url: 'javascript:alert(1)' })];
+    render(<WishlistTab />);
+
+    expect(screen.queryByTestId('wishlist-link')).not.toBeInTheDocument();
+    expect(screen.getByTestId('wishlist-unopenable')).toHaveTextContent('Not a web address');
+  });
+
   it('opens the add dialog and creates an entry on submit', () => {
     render(<WishlistTab />);
     fireEvent.click(screen.getByTestId('wishlist-add'));

@@ -131,6 +131,34 @@ describe('SupplierPartFormDialog — the validation gates block submit', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('rejects a URL that is not a full http(s) web address', () => {
+    // The value is later rendered as an anchor, so an address a browser cannot navigate to is
+    // at best a dead link. Naming it here beats letting the repository's refusal surface as a
+    // write error over the table, after the dialog has closed.
+    for (const url of ['javascript:alert(1)', 'file:///C:/p.html', 'example.test/p/1']) {
+      cleanup();
+      onSubmit.mockReset();
+      renderDialog();
+      fireEvent.change(nameInput(), { target: { value: 'DigiKey' } });
+      fireEvent.change(screen.getByLabelText('URL'), { target: { value: url } });
+      submitForm();
+
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'The supplier URL must be a full web address starting with http:// or https://.',
+      );
+      expect(onSubmit).not.toHaveBeenCalled();
+    }
+  });
+
+  it('accepts a web address and submits it trimmed', () => {
+    renderDialog();
+    fireEvent.change(nameInput(), { target: { value: 'DigiKey' } });
+    fireEvent.change(screen.getByLabelText('URL'), { target: { value: '  https://example.test/p/1 ' } });
+    submitForm();
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.test/p/1' }));
+  });
+
   it('rejects a fractional pack quantity (whole numbers only)', () => {
     renderDialog();
     fireEvent.change(nameInput(), { target: { value: 'DigiKey' } });

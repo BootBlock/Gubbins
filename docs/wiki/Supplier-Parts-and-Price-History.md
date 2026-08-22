@@ -13,6 +13,7 @@ Record one or more suppliers against an item, each with:
 - The **supplier** it comes from.
 - The supplier's **part number / order code** for it.
 - The **price** (and, where relevant, price breaks for quantity).
+- The **URL** of the supplier's product page for it, so the listing is one click away.
 
 So when it's time to reorder, you already know **who** to buy from, **their code**, and **what it
 costs** — without digging through old invoices.
@@ -46,6 +47,13 @@ spot when a supplier's price has crept up.
 > **ℹ️ Note**
 > Supplier prices feed [[valuation and spend|Valuation-and-Spend]] reporting and inform the
 > [[reorder|Reorder-and-Shopping-List]] and [[purchase order|Purchase-Orders]] flows.
+
+> **⚠️ Heads-up**
+> Only ordinary web links (`http`/`https`) are accepted for a supplier part's URL, the same rule
+> the [[wishlist|Wishlist]] and [[datasheets|Tags-Attachments-and-Related-Items]] already follow.
+> Anything else is refused when you save it, and a link already stored that isn't a web address is
+> shown as plain text marked **Not a web address** rather than as something to click. If an older
+> supplier part holds such a link, correct or clear its **URL** the next time you edit that part.
 
 > **⚠️ Heads-up**
 > A supplier part can be priced in **a different currency** — pick one from the list, or type any
