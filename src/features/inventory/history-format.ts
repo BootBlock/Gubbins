@@ -44,6 +44,7 @@ const ACTION_LABELS: Record<HistoryAction, string> = {
   TESTED: 'Test recorded',
   ATTRIBUTES_CHANGED: 'Details changed',
   HISTORY_CLEARED: 'Activity log cleared',
+  MERGE_OVERWRITTEN: 'Overwritten by sync',
 };
 
 /**
