@@ -2041,6 +2041,7 @@
   "lookup.fieldType.onOff": "Ein/Aus",
   "lookup.fieldType.date": "Datum",
   "lookup.fieldType.select": "Auswahl",
+  "lookup.fieldType.colour": "Farbe",
   "lookup.fieldType.file": "Dateiverknüpfung",
   "lookup.fieldType.image": "Bild",
   "lookup.panel.loading": "Felder dieser Kategorie werden geladen…",
@@ -2064,5 +2065,13 @@
   "storage.hardStop.observed.heading": "Speicher voll – Speichern angehalten",
   "storage.hardStop.observed.body": "Ein Speichervorgang ist fehlgeschlagen, weil auf diesem Gerät kein Platz mehr frei ist. Gubbins hat deshalb alle Schreibvorgänge angehalten, um Ihre Daten zu schützen. Ihr Browser meldet weiterhin nur {percent} belegt – er erkennt nicht immer, wenn das Gerät selbst voll ist. Geben Sie Speicherplatz frei, um fortzufahren.",
   "storage.hardStop.observed.bodyNoEstimate": "Ein Speichervorgang ist fehlgeschlagen, weil auf diesem Gerät kein Platz mehr frei ist. Gubbins hat deshalb alle Schreibvorgänge angehalten, um Ihre Daten zu schützen. Ihr Browser meldet nicht, wie viel Speicher belegt ist, daher gab es vorher keine Warnung. Geben Sie Speicherplatz frei, um fortzufahren.",
-  "storage.triage.observedFull": "Ein Speichervorgang ist aus Platzmangel fehlgeschlagen, deshalb ist das Speichern angehalten. Die Werte oben geben möglicherweise nicht wieder, wie voll dieses Gerät tatsächlich ist."
+  "storage.triage.observedFull": "Ein Speichervorgang ist aus Platzmangel fehlgeschlagen, deshalb ist das Speichern angehalten. Die Werte oben geben möglicherweise nicht wieder, wie voll dieses Gerät tatsächlich ist.",
+  "field.colour.placeholder": "#RRGGBB, rgb(…), hsl(…) oder ein Farbname",
+  "field.colour.pick": "Farbe wählen",
+  "field.colour.showAs": "Anzeigen als",
+  "field.colour.format.hex": "Hex",
+  "field.colour.format.rgb": "RGB",
+  "field.colour.format.hsl": "HSL",
+  "field.colour.format.hsb": "HSB",
+  "field.colour.format.name": "Farbname"
 }

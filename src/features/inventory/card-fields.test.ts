@@ -453,6 +453,26 @@ describe('resolveCardFields — custom fields', () => {
     expect(resolved[0].value).toEqual({ kind: 'text', text: '5.5' });
   });
 
+  it('renders a COLOUR custom field as a swatch value, canonicalised', () => {
+    const colourField: CardCustomField = { ...field, fieldType: 'COLOUR' };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', colourField]]), customValues: storedValues({ f1: 'Chocolate' }) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'colour', colour: '#d2691e' });
+  });
+
+  it('degrades an unreadable COLOUR value to its own text rather than inventing a swatch', () => {
+    const colourField: CardCustomField = { ...field, fieldType: 'COLOUR' };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', colourField]]), customValues: storedValues({ f1: ' teal-ish ' }) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: 'teal-ish' });
+  });
+
   it('renders an IMAGE custom field as a thumbnail of its data URL', () => {
     const imageField: CardCustomField = { ...field, fieldType: 'IMAGE' };
     const tinyImage = 'data:image/webp;base64,UklGRhoAAABXRUJQ';

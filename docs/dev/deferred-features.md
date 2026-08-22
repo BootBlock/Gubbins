@@ -659,9 +659,14 @@ re-scheduled, not dropped** — all are still triggered conditionals tracked in 
 - [ ] **Multi-scrape UI tray / live distributor selector maintenance / `SCRAPE_ERROR` taxonomy depth** —
       **→ Backlog** (carried from Phase 13).
 
-> **Carried LWW-class limitation (not a Phase-30 change):** concurrent location-delete vs. offline stock edit —
-> an additive re-home of a removed location's placement/batches to Unassigned can transiently over-count until
-> the next reconcile (accepted, parallel to §7.5.2).
+> **Carried LWW-class limitation (not a Phase-30 change):** concurrent location-delete vs. offline stock edit.
+> The merge no longer over-counts: applying a peer's `locations` tombstone re-homes to Unassigned *before* the
+> Last-Write-Wins upserts, so the peer's own re-homed placement settles the destination rather than being added
+> to (issue #709). What remains is the other direction — a quantity this device added to the same lot while the
+> peer was offline is discarded by that Last-Write-Wins settlement, because the destination's re-home is not yet
+> reconcilable through the §7.3 stock-delta ledger (two devices removing the same location capture their re-homes
+> under independent random delta ids, so the union double-counts — issue #696's derived ids are the shape of the
+> fix). Accepted for now, parallel to §7.5.2.
 
 > **Phase-30 design note (semantics worth knowing):** a location-scoped schedule only auto-accrues loans whose
 > `source_location_id` matches its scope — a loan with no recorded source location (a NULL pointer) cannot be

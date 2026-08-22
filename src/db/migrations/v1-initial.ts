@@ -1644,6 +1644,12 @@ const baselineStatements: SqlStatement[] = [
     // by last-write-wins (which silently discards one device's concurrent decrement). Rows are
     // written automatically by the capture triggers below, never by hand.
     //
+    // Append-only, but not unbounded (issue #544). Once per sync pass the compaction sweep in
+    // `features/sync/stock-delta-compaction.ts` replaces a placement's movements older than 180
+    // days with a single row asserting what that era replays to, and deletes any delta whose
+    // placement no longer has a `stock_batches` row. That sweep is the ONLY writer here besides
+    // the capture triggers, and the only thing that removes a row besides the `items` cascade.
+    //
     // `location_id` / `batch_key` are plain columns, not foreign keys: they are the historical
     // coordinates of a movement, and a batch row may legitimately be gone (fully consumed, or its
     // location removed) while its deltas remain — an FK here would either abort a delete or,

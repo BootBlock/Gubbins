@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { cn } from '@/lib/utils';
 import { assertExhaustive } from '@/lib/exhaustive';
-import { Money } from '@/components/foundry';
+import { ColourSwatch, Money } from '@/components/foundry';
 import { LinkIcon, LocalFileIcon, TagIcon, UnlinkIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import type { ResolvedCardField } from '../card-fields';
@@ -77,6 +77,10 @@ export function FieldValue({
       // A custom-field cover (issue #453): a small bounded thumbnail; the base64 data: URL
       // is the value itself, so there is nothing to fetch.
       return <img src={value.src} alt={field.label} className="max-h-8 rounded object-contain" />;
+    case 'colour':
+      // A COLOUR field (issue #452): the swatch and its hex, always together — the swatch
+      // alone would carry the whole value in colour, which is exactly what WCAG 1.4.1 forbids.
+      return <ColourSwatch value={value.colour} className={wrap ? 'break-words' : 'truncate'} />;
     case 'empty':
       return <span className="text-muted-foreground/60">—</span>;
     case 'measure':

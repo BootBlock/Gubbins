@@ -155,6 +155,13 @@ const EXPECTED_CONTROL: Record<FieldType, (label: string) => void> = {
   ON_OFF: (label) => expect(screen.getByRole('checkbox', { name: label })).toBeInTheDocument(),
   DATE: (label) => expect(screen.getByLabelText(label)).toHaveAttribute('type', 'date'),
   SELECT: (label) => expect(screen.getByRole('combobox', { name: label })).toBeInTheDocument(),
+  COLOUR: (label) => {
+    // The named control is the *text* box, not the swatch: it is first in the DOM so a
+    // caller's wrapping <label> binds to it, and it is the one that accepts every notation.
+    const input = screen.getByLabelText(label);
+    expect(input).toHaveAttribute('type', 'text');
+    expect(screen.getByLabelText('Pick a colour')).toHaveAttribute('type', 'color');
+  },
   FILE: (label) => {
     const input = screen.getByLabelText(label);
     expect(input).toHaveAttribute('type', 'text');

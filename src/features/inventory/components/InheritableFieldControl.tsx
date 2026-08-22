@@ -50,10 +50,10 @@ export interface InheritableFieldControlProps {
  * typed control so freeform text/numbers/dates can still be entered.
  *
  * The picker is a separate control rather than an extra entry inside each input because a
- * custom field may be any of nine {@link FieldType}s — a date picker, a rating spinner or
- * a yes/no radiogroup has nowhere to *put* an extra option, and only SELECT is natively a
- * dropdown. One picker in front of the control gives every field type the same choice and
- * the same accessible wiring, instead of nine bespoke approximations of it.
+ * custom field may be any {@link FieldType} — a date picker, a rating spinner, a colour
+ * swatch or a yes/no radiogroup has nowhere to *put* an extra option, and only SELECT is
+ * natively a dropdown. One picker in front of the control gives every field type the same
+ * choice and the same accessible wiring, instead of a bespoke approximation per type.
  */
 export function InheritableFieldControl({
   fieldType,

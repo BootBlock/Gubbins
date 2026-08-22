@@ -735,6 +735,10 @@ function reparentHistoryStatement(itemId: string): SqlStatement {
  * winning tombstone locally), then the §7.3 gauge corrections, then the §7.5.2
  * re-parent conflict logs.
  *
+ * The stock re-home a removed location needs is the exception to that order: it runs *before*
+ * the upserts, so the peer's own re-homed placement settles it by Last-Write-Wins instead of
+ * being added to (issue #709).
+ *
  * That table-by-table order cannot cover a self-referencing table, so the whole batch also runs
  * under {@link withDeferredForeignKeys} (issue #602).
  *
@@ -828,6 +832,49 @@ export async function applyPlan(
     statements.push({
       sql: `UPDATE locations SET is_default = 0 WHERE is_default = 1 AND id <> ?;`,
       params: [plan.defaultLocationWinnerId],
+    });
+  }
+
+  // Per-batch stock ledger (Phase 28 — `stock_batches` is the SSOT below `item_stock`): re-home
+  // every batch still standing at a location this merge is about to remove into the item's
+  // Unassigned placement, preserving each lot's identity, so the location's RESTRICT foreign key
+  // cannot block its tombstone DELETE below. The recompute triggers re-derive `item_stock` and
+  // then `items.quantity` at Unassigned. Mirrors the §7.5.2 item re-parent and the local
+  // `LocationRepository.delete`.
+  //
+  // Issue #709: this runs *before* the LWW upserts, not beside the DELETEs it serves. The peer
+  // that removed the location performed this same re-home locally before it pushed, so its
+  // snapshot already carries the destination placement at the full re-homed quantity. Run after
+  // the upserts, the accumulate-on-conflict clause added this device's own row on top of that
+  // figure and counted the same units twice — a doubled headline count that then won the next
+  // exchange and travelled back. Ordered first, the accumulation reconstructs the state the
+  // peer's snapshot describes, and the peer's own placement row settles it by Last-Write-Wins,
+  // exactly as any other contested row is settled.
+  //
+  // What that ordering means for a destination the incoming snapshot *does* carry: the peer's
+  // figure wins outright, so a quantity this device added to the same lot while the peer was
+  // offline is discarded rather than doubled. Both numbers are wrong; the Last-Write-Wins one is
+  // at least the discipline every other contested placement follows here. Recovering the units
+  // needs the destination's re-home to be reconcilable through the §7.3 stock-delta ledger, which
+  // it is not yet — two devices removing the same location capture their re-homes under
+  // independent random delta ids, so the union counts them twice (issue #696's derived ids exist
+  // for that class of one-shot operation). A lot the snapshot carries no destination row for is
+  // untouched by the upserts, so it is still re-homed rather than lost.
+  //
+  // The local `LocationRepository.delete` path needs no such ordering. Its own check-in returns
+  // can write the same Unassigned row ahead of the re-home, but those are units genuinely coming
+  // back from a loan — distinct stock, which the re-home is right to add to. No peer's account of
+  // the same units precedes it, so its accumulate-on-conflict is correct as it stands.
+  for (const del of plan.localDeletes) {
+    if (del.tableName !== 'locations') continue;
+    statements.push({
+      sql: `INSERT INTO stock_batches
+              (id, item_id, location_id, batch_key, batch_number, lot_number, expiry_date, quantity)
+            SELECT item_id || '|' || ? || '|' || batch_key, item_id, ?, batch_key,
+                   batch_number, lot_number, expiry_date, quantity
+            FROM stock_batches WHERE location_id = ? AND quantity > 0
+            ON CONFLICT(id) DO UPDATE SET quantity = stock_batches.quantity + excluded.quantity;`,
+      params: [UNASSIGNED_LOCATION_ID, UNASSIGNED_LOCATION_ID, del.id],
     });
   }
 
@@ -953,21 +1000,10 @@ export async function applyPlan(
   const deletes = [...plan.localDeletes].sort((a, b) => tableIndex(b.tableName) - tableIndex(a.tableName));
   for (const del of deletes) {
     if (del.tableName === 'locations') {
-      // Per-batch stock ledger (Phase 28 — `stock_batches` is the SSOT below `item_stock`):
-      // re-home every batch at a removed location into the item's Unassigned placement,
-      // preserving each lot's identity, before the location's RESTRICT foreign key can block
-      // its tombstone DELETE. The recompute triggers re-derive item_stock then items.quantity
-      // at Unassigned; the deleted location's batch and (now-empty) placement rows are then
-      // dropped. Mirrors the §7.5.2 item re-parent and the local LocationRepository.delete.
-      statements.push({
-        sql: `INSERT INTO stock_batches
-                (id, item_id, location_id, batch_key, batch_number, lot_number, expiry_date, quantity)
-              SELECT item_id || '|' || ? || '|' || batch_key, item_id, ?, batch_key,
-                     batch_number, lot_number, expiry_date, quantity
-              FROM stock_batches WHERE location_id = ? AND quantity > 0
-              ON CONFLICT(id) DO UPDATE SET quantity = stock_batches.quantity + excluded.quantity;`,
-        params: [UNASSIGNED_LOCATION_ID, UNASSIGNED_LOCATION_ID, del.id],
-      });
+      // The re-home into Unassigned already ran, ahead of the upserts (issue #709 — see the
+      // block above the UPSERT loop). What is left here is dropping the deleted location's
+      // now-settled batch and placement rows, whose RESTRICT foreign keys would otherwise
+      // block the tombstone DELETE.
       statements.push({ sql: 'DELETE FROM stock_batches WHERE location_id = ?;', params: [del.id] });
       statements.push({ sql: 'DELETE FROM item_stock WHERE location_id = ?;', params: [del.id] });
       // Clear the lend-from pointer on any local checkout drawn from the removed location
