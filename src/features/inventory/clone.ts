@@ -102,7 +102,8 @@ export function planItemClone(source: Item, options: { readonly nameSuffix?: str
  * The URL is carried only when it is one the app would open. A row synced or restored from a
  * peer can hold anything in that column, and the repository now refuses a non-`http(s)` address
  * — so copying it verbatim would fail the whole clone over a link that never worked. Dropping
- * it clones everything else and leaves the field blank, which is what it already showed.
+ * it clones everything else and leaves the field blank, rather than carrying a link the source
+ * itself could only show as "Not a web address".
  */
 export function clonedSupplierPartInput(part: SupplierPart): CreateSupplierPartInput {
   return {

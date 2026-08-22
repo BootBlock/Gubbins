@@ -52,7 +52,8 @@ spot when a supplier's price has crept up.
 > Only ordinary web links (`http`/`https`) are accepted for a supplier part's URL, the same rule
 > the [[wishlist|Wishlist]] and [[datasheets|Tags-Attachments-and-Related-Items]] already follow.
 > Anything else is refused when you save it, and a link already stored that isn't a web address is
-> shown as plain text marked **Not a web address** rather than as something to click.
+> shown as plain text marked **Not a web address** rather than as something to click. If an older
+> supplier part holds such a link, correct or clear its **URL** the next time you edit that part.
 
 > **⚠️ Heads-up**
 > A supplier part can be priced in **a different currency** — pick one from the list, or type any

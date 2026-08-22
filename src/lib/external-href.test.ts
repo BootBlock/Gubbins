@@ -75,6 +75,6 @@ describe('safeExternalHref', () => {
     expect(safeExternalHref('data:text/html,<script>alert(1)</script>')).toBeNull();
     expect(safeExternalHref('vbscript:msgbox(1)')).toBeNull();
     expect(safeExternalHref('file:///C:/datasheets/ne555.pdf')).toBeNull();
-    expect(safeExternalHref('\\server\share\manual.pdf')).toBeNull();
+    expect(safeExternalHref('\\\\server\\share\\manual.pdf')).toBeNull();
   });
 });
