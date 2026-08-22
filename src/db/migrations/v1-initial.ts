@@ -2472,7 +2472,7 @@ const baselineStatements: SqlStatement[] = [
           CHECK (method IN (${webhookMethodList})),
           CHECK (enabled IN (0, 1)),
           CHECK (secret IS NULL OR secret_ref IS NULL),
-          ${lengthChecks({ name: TEXT_LIMITS.line, url: TEXT_LIMITS.url, event_types: TEXT_LIMITS.payload, filter: TEXT_LIMITS.payload, template: TEXT_LIMITS.payload, headers: TEXT_LIMITS.payload })}
+          ${lengthChecks({ name: TEXT_LIMITS.line, url: TEXT_LIMITS.url, secret_ref: TEXT_LIMITS.line, event_types: TEXT_LIMITS.payload, filter: TEXT_LIMITS.payload, template: TEXT_LIMITS.payload, headers: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -2523,8 +2523,7 @@ const baselineStatements: SqlStatement[] = [
           field      TEXT    NOT NULL,              -- the preference's field name within that store
           value      TEXT    NOT NULL,              -- JSON encoding of the value (app-validated on apply)
           created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          ${lengthChecks({ value: TEXT_LIMITS.payload })}
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
   },

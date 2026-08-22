@@ -32,10 +32,13 @@ import {
   cellAt,
   cellAsAmount,
   mapColumns,
+  problemExcerpt,
   readCountCell,
+  textCellProblem,
   type ColumnSynonyms,
   type ImportRowProblem,
 } from '@/features/import/columns';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import type { WishlistEntryDraft } from './wishlist';
 
 /** A single row parsed from a purchase list, before it is landed on either surface. */
@@ -273,6 +276,25 @@ export function parsePurchaseList(
     const mpn = cellAt(row, columns.mpn);
     const supplierSku = cellAt(row, columns.supplierSku);
     if (!name && !mpn && !supplierSku) continue; // blank row — nothing to buy
+
+    // Bounded for the same reason as the BOM importer's cells (issue #346): an over-long value
+    // left to the column CHECK would abort the write half-way down the file.
+    const overLong =
+      textCellProblem(name, TEXT_LIMITS.line) ??
+      textCellProblem(mpn, TEXT_LIMITS.line) ??
+      textCellProblem(supplierSku, TEXT_LIMITS.line) ??
+      textCellProblem(cellAt(row, columns.supplierName), TEXT_LIMITS.line) ??
+      textCellProblem(cellAt(row, columns.url), TEXT_LIMITS.url) ??
+      textCellProblem(cellAt(row, columns.note), TEXT_LIMITS.note);
+    if (overLong) {
+      problems.push({
+        sourceRow: index + 1,
+        // Excerpted, because the label may itself be the over-long cell.
+        label: problemExcerpt(name ?? mpn ?? supplierSku ?? ''),
+        ...overLong,
+      });
+      continue;
+    }
 
     // `zeroAllowed: false`: an order line for zero units cannot exist, and a basket export
     // writes 0 for a row the user de-selected — so the row is left out and named, never

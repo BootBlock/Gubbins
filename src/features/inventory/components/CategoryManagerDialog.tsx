@@ -562,9 +562,8 @@ function CategoryFieldProminencePanel({
         >
           <Input
             value={labelText}
-            // Reported rather than refused, like every other text field (issue #346) — and
-            // counted in the same code points the seam caps by, so what the field says is too
-            // long is exactly what storage would have shortened.
+            // Reported rather than refused, like every other text field (issue #346), and counted
+            // in the same code points `normaliseFieldTabLabel` caps by.
             maxLength={MAX_FIELD_TAB_LABEL_LENGTH}
             placeholder={t('item.tab.customFields')}
             data-testid="category-field-tab-label"
@@ -575,7 +574,11 @@ function CategoryFieldProminencePanel({
               // over-long label to fit. Saving one anyway would mean the label the user is
               // looking at and the label that was stored had quietly parted company, so an
               // over-long draft is held back until it fits — the field is already saying so.
-              if (!exceedsTextLimit(next, MAX_FIELD_TAB_LABEL_LENGTH)) {
+              //
+              // Measured on the *trimmed* draft, because that is what the seam measures: a label
+              // at exactly the cap plus a trailing space is stored verbatim, and refusing to save
+              // it would strand a legitimate entry on a technicality of where the space fell.
+              if (!exceedsTextLimit(next.trim(), MAX_FIELD_TAB_LABEL_LENGTH)) {
                 updateCategory.mutate({ id: category.id, input: { fieldTabLabel: next } });
               }
             }}
@@ -1417,8 +1420,8 @@ function resolveBound(raw: string): number | null | undefined {
  * Unlike a bound, this one is *clamped* rather than passed on to be refused. A count of decimal
  * places is a bounded whole number, exactly as a notice period is, so `2.5` settling to `3` and
  * `9` settling to the cap is a predictable read of what was typed rather than a rejection the user
- * has to act on. The control's `maxLength` of 1 narrows what can reach the clamp by typing to a
- * single digit above the cap — `7`, `8` or `9`; anything further out has to be pasted.
+ * has to act on. The control's `maxLength` of 1 is reported rather than enforced (issue #346), so
+ * anything at all can reach this — a two-digit entry settles to the cap the same way a `9` does.
  */
 function resolvePrecision(raw: string): number | null | undefined {
   if (raw.trim() === '') return null;
@@ -1522,9 +1525,14 @@ function FieldNumberOptionsControl({ field }: { field: CategoryField }) {
   const commitUnit = () => {
     const next = unit.trim() === '' ? null : unit.trim();
     // An over-long unit is refused by the `field_defs` CHECK, which would surface as the generic
-    // database wording. The field itself already reports the overflow (issue #346), so leave the
-    // draft standing and the stored unit alone until it fits.
-    if (next !== null && exceedsTextLimit(next, FIELD_UNIT_MAX_LENGTH)) return;
+    // database wording. Said here instead, and the draft is left standing rather than shortened
+    // (issue #346) — this box sits in a flex row with no field around it, so the shared error slot
+    // below is the only place it can be explained.
+    if (next !== null && exceedsTextLimit(next, FIELD_UNIT_MAX_LENGTH)) {
+      setError(t('inventory.fields.number.unitTooLong', { vars: { limit: FIELD_UNIT_MAX_LENGTH } }));
+      return;
+    }
+    setError(null);
     setUnit(next ?? '');
     if (next !== field.unit) save({ unit: next });
   };

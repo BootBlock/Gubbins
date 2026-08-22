@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import { parseCsv, parseBom, BomImportError } from './bom-import';
 
 describe('parseCsv (RFC-4180-ish, native)', () => {
@@ -128,6 +129,34 @@ describe('parseBom — quantities the file actually stated (issue #350)', () => 
   it('names a reported row by whatever identified it', () => {
     const { problems } = parseBom(['MPN,Description,Qty', ',0.1uF cap,lots'].join('\n'));
     expect(problems[0]!.label).toBe('0.1uF cap');
+  });
+});
+
+describe('parseBom — cells too long for the column (issue #346)', () => {
+  const NEWLINE = '\n';
+
+  it('reports the row and imports the rest of the file', () => {
+    const long = 'x'.repeat(TEXT_LIMITS.line + 1);
+    const csv = ['Reference,MPN,Quantity', 'R1,ABC,1', `R2,${long},2`, 'R3,GHI,3'].join(NEWLINE);
+    const { lines, problems } = parseBom(csv);
+    expect(lines.map((l) => l.designator)).toEqual(['R1', 'R3']);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]!.sourceRow).toBe(2);
+    expect(problems[0]!.reason).toBe('too-long');
+  });
+
+  it('quotes only an excerpt of the offending cell, not the runaway itself', () => {
+    const long = 'x'.repeat(TEXT_LIMITS.line + 1);
+    const { problems } = parseBom(['Reference,MPN,Quantity', `R1,${long},1`].join(NEWLINE));
+    expect(problems[0]!.value).toBe(`${'x'.repeat(40)}…`);
+  });
+
+  it('holds a description to the roomier prose tier, not the one-line one', () => {
+    const description = 'x'.repeat(TEXT_LIMITS.line + 1);
+    const rows = ['Reference,Description,Quantity', `R1,${description},1`];
+    const { lines, problems } = parseBom(rows.join(NEWLINE));
+    expect(problems).toEqual([]);
+    expect(lines[0]!.description).toBe(description);
   });
 });
 

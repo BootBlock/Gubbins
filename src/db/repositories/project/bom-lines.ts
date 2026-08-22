@@ -5,6 +5,7 @@
  * snapshot) or stand alone with free-text. Line deletion is tombstoned for sync (§7.2).
  */
 import { DbError } from '../../errors';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import type { SqlValue } from '../../rpc/driver';
 import { normaliseText } from '../item/normalise';
 import { rowToBomLine } from '../mappers';
@@ -54,7 +55,7 @@ export function withBomLines<TBase extends Constructor<ProjectCoreRepository>>(B
 
       let mpn = normaliseText(input.mpn);
       let manufacturer = normaliseText(input.manufacturer);
-      let description = normaliseText(input.description);
+      let description = normaliseText(input.description, TEXT_LIMITS.note, 'A BOM line description');
       let snapshot: number | null = null;
 
       if (input.itemId) {
@@ -117,7 +118,9 @@ export function withBomLines<TBase extends Constructor<ProjectCoreRepository>>(B
       if (input.designator !== undefined) set('designator', normaliseText(input.designator));
       if (input.mpn !== undefined) set('mpn', normaliseText(input.mpn));
       if (input.manufacturer !== undefined) set('manufacturer', normaliseText(input.manufacturer));
-      if (input.description !== undefined) set('description', normaliseText(input.description));
+      if (input.description !== undefined) {
+        set('description', normaliseText(input.description, TEXT_LIMITS.note, 'A BOM line description'));
+      }
       if (input.requiredQty !== undefined) set('required_qty', Math.max(0, Math.floor(input.requiredQty)));
       if (input.position !== undefined) set('position', input.position);
 

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useForm } from 'react-hook-form';
 import { TEXT_LIMITS } from '@/lib/text-limits';
 import { AutocompleteField } from './autocomplete';
 import { FormField } from './field';
@@ -32,14 +34,23 @@ describe('defaultTextLimit', () => {
 });
 
 describe('Input — length limit (issue #346)', () => {
-  it('does not put maxLength on the element, so a paste is never silently truncated', () => {
+  it('keeps every character a user types past the limit, rather than refusing the keystroke', async () => {
     render(<Input aria-label="Name" maxLength={5} />);
     const control = screen.getByLabelText('Name') as HTMLInputElement;
-    expect(control.getAttribute('maxlength')).toBeNull();
-
-    fireEvent.change(control, { target: { value: 'far too long to fit' } });
-    // Every character the user handed the field is still in it.
+    // Typed through user-event, not `fireEvent.change`: a programmatic value assignment ignores
+    // `maxLength` whatever the element carries, so it would pass against a natively-capped field
+    // too and prove nothing. Typing is what a native cap actually refuses.
+    await userEvent.type(control, 'far too long to fit');
     expect(control.value).toBe('far too long to fit');
+    expect(control.getAttribute('maxlength')).toBeNull();
+  });
+
+  it('keeps a pasted value whole, rather than cutting it down to the limit', async () => {
+    render(<Input aria-label="Name" maxLength={5} />);
+    const control = screen.getByLabelText('Name') as HTMLInputElement;
+    await userEvent.click(control);
+    await userEvent.paste('a whole sentence pasted in');
+    expect(control.value).toBe('a whole sentence pasted in');
   });
 
   it('marks itself invalid past the limit, and valid again once it fits', () => {
@@ -76,6 +87,33 @@ describe('Input — length limit (issue #346)', () => {
   it('reports a stored over-long value at mount, without waiting for a keystroke', () => {
     render(<Input aria-label="Name" defaultValue={'a'.repeat(TEXT_LIMITS.line + 1)} />);
     expect(screen.getByLabelText('Name').getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('reports a value React Hook Form writes in after mount, with no keystroke or focus', async () => {
+    // `reset()` writes straight into the node through the registered ref. There is no change
+    // event and no focus, so a control that only read itself at mount and on focus would sit
+    // there showing an over-long stored value as valid.
+    function Harness() {
+      const { register, reset } = useForm<{ name: string }>({ defaultValues: { name: '' } });
+      return (
+        <>
+          <FormField label="Name">
+            <Input maxLength={5} {...register('name')} />
+          </FormField>
+          <button type="button" onClick={() => reset({ name: 'far too long' })}>
+            Load
+          </button>
+        </>
+      );
+    }
+    render(<Harness />);
+    const control = screen.getByLabelText('Name');
+    expect(control.getAttribute('aria-invalid')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Load' }));
+    expect((control as HTMLInputElement).value).toBe('far too long');
+    expect(control.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByRole('alert').textContent).toBe('7 characters too many. The limit is 5.');
   });
 
   it('keeps an invalidity the call site injected, rather than replacing it', () => {
@@ -141,7 +179,7 @@ describe('FormField — reporting a control that is too long', () => {
   it('counts down as the field fills, and stops once it overflows', () => {
     render(
       <FormField label="Name">
-        <Input maxLength={10} />
+        <Input maxLength={100} />
       </FormField>,
     );
     const control = screen.getByLabelText('Name');
@@ -150,15 +188,38 @@ describe('FormField — reporting a control that is too long', () => {
     fireEvent.change(control, { target: { value: 'ab' } });
     expect(screen.queryByText(/characters? left/)).toBeNull();
 
-    fireEvent.change(control, { target: { value: 'abcdefghi' } });
+    fireEvent.change(control, { target: { value: 'a'.repeat(99) } });
     expect(screen.getByText('1 character left')).toBeTruthy();
 
-    fireEvent.change(control, { target: { value: 'abcdefghij' } });
+    fireEvent.change(control, { target: { value: 'a'.repeat(100) } });
     expect(screen.getByText('0 characters left')).toBeTruthy();
 
     // Past the limit the alert says it better, so the countdown gives way.
-    fireEvent.change(control, { target: { value: 'abcdefghijk' } });
+    fireEvent.change(control, { target: { value: 'a'.repeat(101) } });
     expect(screen.queryByText(/characters? left/)).toBeNull();
+  });
+
+  it('never counts down on a field no bigger than a short code', () => {
+    // A tenth of three characters is a third of one, so an unguarded window would leave a
+    // three-letter currency box permanently reading "0 characters left".
+    render(
+      <FormField label="Currency">
+        <Input maxLength={3} />
+      </FormField>,
+    );
+    fireEvent.change(screen.getByLabelText('Currency'), { target: { value: 'EUR' } });
+    expect(screen.queryByText(/characters? left/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('still reports a short-code field that overflows', () => {
+    render(
+      <FormField label="Currency">
+        <Input maxLength={3} />
+      </FormField>,
+    );
+    fireEvent.change(screen.getByLabelText('Currency'), { target: { value: 'EURO' } });
+    expect(screen.getByRole('alert').textContent).toBe('One character too many. The limit is 3.');
   });
 
   it('reports a type-ahead field the same way as a plain one', () => {

@@ -108,7 +108,7 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
   // for a fixed-format code (a three-letter currency), so where one is declared the box cannot
   // reach this and the report stays inert; a free-text type-ahead takes the ordinary one-line
   // tier and reports the way every other text field does.
-  const { over } = useTextLimit<HTMLInputElement>(maxLength ?? TEXT_LIMITS.line, value);
+  const { over, attach } = useTextLimit<HTMLInputElement>(maxLength ?? TEXT_LIMITS.line);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -141,6 +141,7 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
 
   const setRef = (el: HTMLInputElement | null) => {
     inputRef.current = el;
+    attach(el);
     if (typeof forwardedRef === 'function') forwardedRef(el);
     else if (forwardedRef) forwardedRef.current = el;
   };

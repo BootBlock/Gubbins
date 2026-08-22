@@ -20,8 +20,6 @@
  *   administration, and it is gated as such.
  */
 import { mintApiToken, hashApiToken } from '@/features/users/api-token';
-import { TEXT_LIMITS } from '@/lib/text-limits';
-import { assertTextLimit } from './text-limits';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { rowToApiToken } from './mappers';
@@ -79,7 +77,6 @@ export class ApiTokenRepository extends BaseRepository {
     if (name.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A token must have a name.');
     }
-    assertTextLimit(name, TEXT_LIMITS.line, 'A token name');
     if (name.length > MAX_API_TOKEN_NAME_LENGTH) {
       throw new DbError(
         'SQLITE_CONSTRAINT',

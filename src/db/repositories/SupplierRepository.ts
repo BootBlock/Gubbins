@@ -165,6 +165,7 @@ export class SupplierRepository extends BaseRepository {
       if (key.length === 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'A supplier must have a name.');
       }
+      assertTextLimit(name, TEXT_LIMITS.line, 'A supplier name');
       // A rename that collides with another supplier is a merge, not an update — the caller
       // has to say so explicitly, because merging is destructive of one of the two rows.
       const clash = await this.driver.queryOne<{ id: string }>(

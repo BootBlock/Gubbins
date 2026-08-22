@@ -1,6 +1,5 @@
 import {
   type ChangeEvent,
-  type FocusEvent,
   type TextareaHTMLAttributes,
   forwardRef,
   useCallback,
@@ -81,13 +80,12 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     maxRows = DEFAULT_TEXTAREA_MAX_ROWS,
     maxLength = TEXT_LIMITS.note,
     onChange,
-    onFocus,
     ...props
   },
   forwardedRef,
 ) {
   const elementRef = useRef<HTMLTextAreaElement | null>(null);
-  const { over, noteText, syncFrom } = useTextLimit<HTMLTextAreaElement>(maxLength, props.value);
+  const { over, noteText, attach } = useTextLimit<HTMLTextAreaElement>(maxLength);
   /**
    * The height the user chose, or `null` while the box is still at its default size. This
    * is what auto-grow stands aside for, and the `null` is what keeps an untouched box out
@@ -103,13 +101,13 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   const setElement = useCallback(
     (node: HTMLTextAreaElement | null) => {
       elementRef.current = node;
-      // Seeds the length from the node itself: an uncontrolled box (React Hook Form's
-      // `register()`) has its stored value written straight in, with no render carrying it.
-      syncFrom(node);
+      // The limit seam reads the length from the node itself: an uncontrolled box (React Hook
+      // Form's `register()`) has its stored value written straight in, with no render carrying it.
+      attach(node);
       if (typeof forwardedRef === 'function') forwardedRef(node);
       else if (forwardedRef) forwardedRef.current = node;
     },
-    [forwardedRef, syncFrom],
+    [forwardedRef, attach],
   );
 
   /**
@@ -241,16 +239,6 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     [autoGrow, noteText, onChange, fitToContent],
   );
 
-  const handleFocus = useCallback(
-    (event: FocusEvent<HTMLTextAreaElement>) => {
-      // Covers a value written from outside while the box was unfocused — a form reset, a
-      // dialog re-opened onto a different record — which reaches the node without a change event.
-      syncFrom(event.currentTarget);
-      onFocus?.(event);
-    },
-    [onFocus, syncFrom],
-  );
-
   return (
     <textarea
       {...props}
@@ -261,7 +249,6 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       // if either its length or the call site's own validation says so.
       aria-invalid={props['aria-invalid'] === true || props['aria-invalid'] === 'true' || over || undefined}
       onChange={handleChange}
-      onFocus={handleFocus}
     />
   );
 });

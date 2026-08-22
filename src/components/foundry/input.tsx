@@ -1,4 +1,4 @@
-import { type ChangeEvent, type FocusEvent, type InputHTMLAttributes, forwardRef, useCallback } from 'react';
+import { type ChangeEvent, type InputHTMLAttributes, forwardRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { fieldClasses } from './field-classes';
 import { NumberInput } from './number-input';
@@ -56,22 +56,22 @@ interface TextInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'ma
 }
 
 const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInput(
-  { className, type = 'text', limit, onChange, onFocus, ...props },
+  { className, type = 'text', limit, onChange, ...props },
   forwardedRef,
 ) {
   const resolvedLimit = limit ?? defaultTextLimit(type);
-  const { over, noteText, syncFrom } = useTextLimit<HTMLInputElement>(resolvedLimit, props.value);
+  const { over, noteText, attach } = useTextLimit<HTMLInputElement>(resolvedLimit);
 
-  // Seeds the length at mount as well as composing the caller's ref: an uncontrolled field
-  // (React Hook Form's `register()`) has its stored value written straight into the node, so
-  // there is no render in which a prop would have carried it.
+  // Hands the element to the limit seam as well as composing the caller's ref: the length is
+  // read from the node, because an uncontrolled field (React Hook Form's `register()`) has its
+  // stored value written straight in, with no render carrying it.
   const setRef = useCallback(
     (node: HTMLInputElement | null) => {
-      syncFrom(node);
+      attach(node);
       if (typeof forwardedRef === 'function') forwardedRef(node);
       else if (forwardedRef) forwardedRef.current = node;
     },
-    [forwardedRef, syncFrom],
+    [forwardedRef, attach],
   );
 
   const handleChange = useCallback(
@@ -80,16 +80,6 @@ const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInpu
       onChange?.(event);
     },
     [noteText, onChange],
-  );
-
-  const handleFocus = useCallback(
-    (event: FocusEvent<HTMLInputElement>) => {
-      // Covers a value written from outside while the box was unfocused — a form reset, a
-      // dialog re-opened onto a different record — which reaches the node without a change event.
-      syncFrom(event.currentTarget);
-      onFocus?.(event);
-    },
-    [onFocus, syncFrom],
   );
 
   return (
@@ -101,7 +91,6 @@ const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInpu
       // if either its length or the call site's own validation says so.
       aria-invalid={props['aria-invalid'] === true || props['aria-invalid'] === 'true' || over || undefined}
       onChange={handleChange}
-      onFocus={handleFocus}
       className={cn(fieldClasses, className)}
     />
   );

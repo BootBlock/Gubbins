@@ -66,9 +66,6 @@ export const TEXT_LIMITS = {
   payload: 1_000_000,
 } as const;
 
-/** The name of one of the {@link TEXT_LIMITS} tiers. */
-export type TextLimitTier = keyof typeof TEXT_LIMITS;
-
 /** Any UTF-16 surrogate code unit, i.e. half of a character from outside the basic plane. */
 const SURROGATE = /[\uD800-\uDFFF]/;
 

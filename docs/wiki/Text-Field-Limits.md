@@ -23,18 +23,23 @@ A character means a character: an emoji or a Chinese character counts as one, no
 - **Near the limit**, a small count appears under the field — *42 characters left* — so the
   ceiling never arrives as a surprise.
 - **Past the limit**, the count is replaced by a message saying how far over you are, and the
-  field is outlined as invalid. Saving is refused until it fits.
+  field is outlined as invalid. What you typed stays put, and it is not saved until it fits.
 
 > **ℹ️ Note**
-> **Nothing you type or paste is ever thrown away.** Gubbins does not cut a long paste down to
-> the limit behind your back — it keeps every character and tells you it is too long, so you can
+> **Nothing you type or paste is thrown away.** Gubbins does not cut a long paste down to the
+> limit behind your back — it keeps every character and tells you it is too long, so you can
 > decide what to shorten. This is the same rule number fields follow: see
 > **[[Calculations in number fields|Calculations-in-Number-Fields]]**.
+>
+> The one exception is a box that takes a **fixed-format code** — the three-letter currency
+> pickers, for instance. Those stop at their length, because a fourth letter would not be a
+> currency at all.
 
 ## Importing
 
 An imported row whose cell is too long is reported as a problem with **that row**, and the rest of
-the file still imports. See **[[Export & import|Export-and-Import]]**.
+the file still imports. The import preview lists what was left out and why, so nothing is dropped
+without being named. See **[[Export & import|Export-and-Import]]**.
 
 > **💡 Tip**
 > If a name is bumping against the 500-character limit, it is almost certainly a description
