@@ -12,6 +12,7 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
+import { STOCKER_ROLE_ID, VIEWER_ROLE_ID } from '@/features/users/builtin-roles';
 import { reconcile } from './reconcile';
 import { applyPlan, buildLocalSnapshot, buildSchemaDictionary } from './snapshot';
 import { SYNC_TABLES } from '@/db/repositories';
@@ -461,5 +462,202 @@ describe('§7.5 natural-key collisions apply cleanly (issue #187)', () => {
     const tagsB = await deviceB.query<{ id: string }>('SELECT id FROM tags ORDER BY id;');
     expect(tagsA).toEqual([{ id: 'tagB' }]);
     expect(tagsB).toEqual([{ id: 'tagB' }]);
+  });
+});
+
+/**
+ * Issue #708: a built-in role that loses the `roles.name` contest is retired with
+ * `DELETE FROM roles`, which `trg_roles_protect_builtin_delete` answers with `RAISE(ABORT)` —
+ * taking down the whole atomic apply, not the one statement.
+ *
+ * These run against the real schema with the trigger live, because a plan-level assertion cannot
+ * see a `RAISE(ABORT)` at all.
+ */
+describe('§7.5 a protected row never loses its natural key (issue #708)', () => {
+  let deviceA: MemoryDriver;
+  let deviceB: MemoryDriver;
+
+  beforeEach(async () => {
+    deviceA = await freshDevice();
+    deviceB = await freshDevice();
+  });
+
+  afterEach(async () => {
+    await deviceA.close();
+    await deviceB.close();
+  });
+
+  /**
+   * Flatten every seeded role's `updated_at` so the renames below are the only recent edits.
+   * Each device seeds its own built-ins at its own wall-clock instant, which would otherwise
+   * decide the LWW pass before the contest under test is ever reached.
+   */
+  async function flattenRoleStamps(driver: MemoryDriver): Promise<void> {
+    await driver.execute('UPDATE roles SET updated_at = 1;');
+  }
+
+  /** Merge `from`'s snapshot into `into`, exactly as a sync round would. */
+  async function mergeInto(into: MemoryDriver, from: MemoryDriver): Promise<void> {
+    const local = await buildLocalSnapshot(into);
+    const remote = await buildLocalSnapshot(from);
+    const dictionary = await buildSchemaDictionary(into, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+    await applyPlan(into, reconcile(local, remote, { offset: 0, dictionary }), dictionary);
+  }
+
+  it('retires the custom role, not the built-in one, when the two share a name', async () => {
+    // Device A invented a custom role "Curator" and assigned a user to it — *newer* than the
+    // built-in row it collides with, so plain last-write-wins would retire the built-in.
+    await flattenRoleStamps(deviceA);
+    await flattenRoleStamps(deviceB);
+    await deviceA.execute(
+      'INSERT INTO roles (id, name, permissions, is_builtin, updated_at) VALUES (?, ?, ?, 0, ?);',
+      ['role-custom', 'Curator', '[]', 100],
+    );
+    await deviceA.execute(
+      'INSERT INTO users (id, username, display_name, role_id, updated_at) VALUES (?, ?, ?, ?, ?);',
+      ['uA', 'alex', 'Alex', 'role-custom', 100],
+    );
+
+    // Device B renamed the built-in Stocker onto that same name — legal there, because its own
+    // UNIQUE index has never seen "Curator".
+    await deviceB.execute('UPDATE roles SET name = ?, updated_at = ? WHERE id = ?;', [
+      'Curator',
+      50,
+      STOCKER_ROLE_ID,
+    ]);
+
+    // Before the fix this raised `A built-in role cannot be deleted.` and rolled the merge back,
+    // leaving the watermark unadvanced so every later sync recomputed the identical failing plan.
+    await expect(mergeInto(deviceA, deviceB)).resolves.toBeUndefined();
+
+    const named = await deviceA.query<{ id: string }>('SELECT id FROM roles WHERE name = ? ORDER BY id;', [
+      'Curator',
+    ]);
+    expect(named).toEqual([{ id: STOCKER_ROLE_ID }]);
+
+    // The custom row is retired and tombstoned, and its user follows the winner rather than
+    // being left role-less by `role_id`'s ON DELETE SET NULL.
+    const custom = await deviceA.query('SELECT id FROM roles WHERE id = ?;', ['role-custom']);
+    expect(custom).toEqual([]);
+    const users = await deviceA.query<{ id: string; role_id: string | null }>(
+      "SELECT id, role_id FROM users WHERE kind = 'normal';",
+    );
+    expect(users).toEqual([{ id: 'uA', role_id: STOCKER_ROLE_ID }]);
+    const tombstones = await deviceA.query<{ id: string }>(
+      "SELECT id FROM tombstones WHERE table_name = 'roles';",
+    );
+    expect(tombstones).toEqual([{ id: 'role-custom' }]);
+  });
+
+  it('converges: the peer reaches the same verdict from the mirrored merge', async () => {
+    await flattenRoleStamps(deviceA);
+    await flattenRoleStamps(deviceB);
+    await deviceA.execute(
+      'INSERT INTO roles (id, name, permissions, is_builtin, updated_at) VALUES (?, ?, ?, 0, ?);',
+      ['role-custom', 'Curator', '[]', 100],
+    );
+    await deviceB.execute('UPDATE roles SET name = ?, updated_at = ? WHERE id = ?;', [
+      'Curator',
+      50,
+      STOCKER_ROLE_ID,
+    ]);
+
+    const snapA = await buildLocalSnapshot(deviceA);
+    const snapB = await buildLocalSnapshot(deviceB);
+    const dictA = await buildSchemaDictionary(deviceA, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+    const dictB = await buildSchemaDictionary(deviceB, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+
+    await applyPlan(deviceA, reconcile(snapA, snapB, { offset: 0, dictionary: dictA }), dictA);
+    await applyPlan(deviceB, reconcile(snapB, snapA, { offset: 0, dictionary: dictB }), dictB);
+
+    // Both devices kept the built-in and dropped the custom row — no ping-pong next round.
+    const q = 'SELECT id FROM roles WHERE name = ? ORDER BY id;';
+    expect(await deviceA.query(q, ['Curator'])).toEqual([{ id: STOCKER_ROLE_ID }]);
+    expect(await deviceB.query(q, ['Curator'])).toEqual([{ id: STOCKER_ROLE_ID }]);
+  });
+
+  it('protects a built-in role this device does not recognise by id', async () => {
+    // The trigger fires on `is_builtin = 1`, not on membership of the four seeded ids, so a
+    // built-in row from a differently-shaped peer is just as undeletable and must be guarded by
+    // its flag. Deleting it would abort the apply exactly as deleting a familiar one does.
+    await flattenRoleStamps(deviceA);
+    await flattenRoleStamps(deviceB);
+    await deviceA.execute(
+      'INSERT INTO roles (id, name, permissions, is_builtin, updated_at) VALUES (?, ?, ?, 1, ?);',
+      ['role-foreign', 'Curator', '[]', 50],
+    );
+    await deviceB.execute(
+      'INSERT INTO roles (id, name, permissions, is_builtin, updated_at) VALUES (?, ?, ?, 0, ?);',
+      ['role-custom', 'Curator', '[]', 100],
+    );
+
+    await expect(mergeInto(deviceA, deviceB)).resolves.toBeUndefined();
+
+    const named = await deviceA.query<{ id: string }>('SELECT id FROM roles WHERE name = ?;', ['Curator']);
+    expect(named).toEqual([{ id: 'role-foreign' }]);
+  });
+
+  it('lets the peer take a built-in name this device is renaming away from', async () => {
+    // Not a contest at all: the peer holds both roles' new names, so the local row sitting on
+    // "Keeper" is the one this same merge renames back to "Viewer". The §7.5 park (issue #707)
+    // frees the name ahead of the upserts, and the protection clause has nothing to decide.
+    await flattenRoleStamps(deviceA);
+    await flattenRoleStamps(deviceB);
+    await deviceA.execute('UPDATE roles SET name = ?, updated_at = ? WHERE id = ?;', [
+      'Keeper',
+      100,
+      VIEWER_ROLE_ID,
+    ]);
+    await deviceB.execute('UPDATE roles SET name = ?, updated_at = ? WHERE id = ?;', [
+      'Keeper',
+      200,
+      STOCKER_ROLE_ID,
+    ]);
+    await deviceB.execute('UPDATE roles SET description = ?, updated_at = ? WHERE id = ?;', [
+      'Read-only access.',
+      150,
+      VIEWER_ROLE_ID,
+    ]);
+
+    await expect(mergeInto(deviceA, deviceB)).resolves.toBeUndefined();
+
+    const roles = await deviceA.query<{ id: string; name: string }>(
+      'SELECT id, name FROM roles WHERE id IN (?, ?) ORDER BY id;',
+      [STOCKER_ROLE_ID, VIEWER_ROLE_ID],
+    );
+    expect(roles).toEqual([
+      { id: STOCKER_ROLE_ID, name: 'Keeper' },
+      { id: VIEWER_ROLE_ID, name: 'Viewer' },
+    ]);
+  });
+
+  it('refuses the contest when the peer renames a second built-in onto a built-in name', async () => {
+    // Neither row can be retired, so the contest is refused rather than settled: both survive,
+    // and the peer's rename is the one that does not land.
+    await flattenRoleStamps(deviceA);
+    await flattenRoleStamps(deviceB);
+    await deviceA.execute('UPDATE roles SET name = ?, updated_at = ? WHERE id = ?;', [
+      'Keeper',
+      100,
+      STOCKER_ROLE_ID,
+    ]);
+    await deviceB.execute('UPDATE roles SET name = ?, updated_at = ? WHERE id = ?;', [
+      'Keeper',
+      200,
+      VIEWER_ROLE_ID,
+    ]);
+
+    await expect(mergeInto(deviceA, deviceB)).resolves.toBeUndefined();
+
+    const roles = await deviceA.query<{ id: string; name: string }>(
+      'SELECT id, name FROM roles WHERE id IN (?, ?) ORDER BY id;',
+      [STOCKER_ROLE_ID, VIEWER_ROLE_ID],
+    );
+    // The local row keeps the contested name; the peer's rename is the one refused.
+    expect(roles).toEqual([
+      { id: STOCKER_ROLE_ID, name: 'Keeper' },
+      { id: VIEWER_ROLE_ID, name: 'Viewer' },
+    ]);
+    expect(await deviceA.query("SELECT id FROM tombstones WHERE table_name = 'roles';")).toEqual([]);
   });
 });
