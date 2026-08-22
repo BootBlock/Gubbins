@@ -154,6 +154,17 @@ describe('conversions', () => {
     expect(rgbToHsb({ r: 255, g: 255, b: 255 })).toEqual({ h: 0, s: 0, b: 100 });
   });
 
+  it('rounds an exact half up, where float arithmetic would land just under it', () => {
+    // Each of these is a channel that comes to exactly `x.5` in real arithmetic and to
+    // `x.4999…` in binary floating point. They are the three distinct ways the old code lost
+    // it: subtracting fractions, adding a residual back, and dividing the hue by 60 first.
+    expect(parseColour('hsb(0, 75%, 40%)')).toBe('#661a1a');
+    expect(parseColour('hsl(0, 60%, 75%)')).toBe('#e69999');
+    expect(parseColour('hsl(0, 100%, 5%)')).toBe('#1a0000');
+    expect(hsbToRgb({ h: 2, s: 100, b: 100 })).toEqual({ r: 255, g: 9, b: 0 });
+    expect(hslToRgb({ h: 6, s: 100, l: 50 })).toEqual({ r: 255, g: 26, b: 0 });
+  });
+
   it('matches the HSV definition exactly, rather than reaching a channel by addition', () => {
     // Both the via-HSL route and the chroma-plus-offset form reach the brightest channel by
     // adding a residual back, and the sum lands just under the value it should equal:

@@ -301,31 +301,54 @@ function wrapHue(h: number): number {
   return wrapped < 0 ? wrapped + 360 : wrapped;
 }
 
-/** HSL (h `0`–`360`, s/l `0`–`100`) → 8-bit sRGB. */
+/**
+ * The 8-bit level for a channel expressed as the exact fraction `numerator / denominator`,
+ * rounded half **up** — the rounding the colour models are defined with.
+ *
+ * `Math.round(numerator / denominator)` is not good enough, and the difference is visible.
+ * Both conversions below reach values that are exactly `x.5` for whole-percent inputs, and a
+ * float division lands a hair under: `hsl(0, 60%, 75%)` should give 230 and gives 229,
+ * `hsb(0, 75%, 40%)` should give 26 and gives 25. Doing the comparison in integers keeps the
+ * tie intact. Both callers stay far inside the exact-integer range (under 10^9 against 2^53).
+ */
+function level(numerator: number, denominator: number): number {
+  return Math.floor((2 * numerator + denominator) / (2 * denominator));
+}
+
+/**
+ * HSL (h `0`–`360`, s/l `0`–`100`) → 8-bit sRGB.
+ *
+ * Every quantity is kept as an integer numerator over a fixed denominator until the single
+ * rounding at the end — the hue over 60, the percentages over 100 — so a whole-percent input
+ * never loses an exact half to binary floating point. Written in fractions, `0.75 − 0.15` is a
+ * shade under `0.6`, and `hsl(0, 60%, 75%)` rounds to 229 instead of the 230 the definition
+ * gives. See {@link level} for the rounding itself.
+ */
 export function hslToRgb({ h, s, l }: Hsl): Rgb {
   const hue = wrapHue(h);
-  const sat = clamp(s, 0, 100) / 100;
-  const light = clamp(l, 0, 100) / 100;
-  const chroma = (1 - Math.abs(2 * light - 1)) * sat;
-  const secondary = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
-  const base = light - chroma / 2;
+  const light = clamp(l, 0, 100);
+  // Chroma over 100, so an integer saturation and lightness keep it integral.
+  const chroma = (100 - Math.abs(2 * light - 100)) * clamp(s, 0, 100);
+  // The hue's ramp, over 60: `1 - |((h / 60) mod 2) - 1|` with the division deferred.
+  const ramp = 60 - Math.abs((hue % 120) - 60);
   const sector = Math.floor(hue / 60) % 6;
+  // Components over 6000 (= 100 × 60), matching `base` below.
   const triples = [
-    [chroma, secondary, 0],
-    [secondary, chroma, 0],
-    [0, chroma, secondary],
-    [0, secondary, chroma],
-    [secondary, 0, chroma],
-    [chroma, 0, secondary],
+    [chroma * 60, chroma * ramp, 0],
+    [chroma * ramp, chroma * 60, 0],
+    [0, chroma * 60, chroma * ramp],
+    [0, chroma * ramp, chroma * 60],
+    [chroma * ramp, 0, chroma * 60],
+    [chroma * 60, 0, chroma * ramp],
   ] as const;
   // `sector` is `floor(hue/60) % 6` over a hue already wrapped into `[0, 360)`, so it indexes
   // this six-entry tuple; the fallback exists only to satisfy the compiler's index checking.
   const [r, g, b] = triples[sector] ?? triples[0];
-  return {
-    r: Math.round((r + base) * 255),
-    g: Math.round((g + base) * 255),
-    b: Math.round((b + base) * 255),
-  };
+  // `base` = `l - chroma/2`, also over 6000. A channel is then `(component + base) / 6000` of
+  // full scale, i.e. `× 255 / 100` of a byte — one denominator, one rounding.
+  const base = light * 6000 - chroma * 30;
+  const channel = (component: number): number => level((component + base) * 255, 600_000);
+  return { r: channel(r), g: channel(g), b: channel(b) };
 }
 
 /** 8-bit sRGB → HSL, rounded to whole degrees/percent (the precision a user types in). */
@@ -352,21 +375,26 @@ export function rgbToHsl({ r, g, b }: Rgb): Hsl {
 /**
  * HSB/HSV (h `0`–`360`, s/b `0`–`100`) → 8-bit sRGB.
  *
- * Uses the CSS/HSV `f(n)` formulation — each channel is `v` minus a fraction of `v·s` — rather
- * than the chroma-plus-offset form, and certainly rather than routing through {@link hslToRgb}.
- * Both of the others reach the brightest channel by *adding a residual back*, and in binary
- * floating point the sum lands just below the value it should equal: `0.9·0.35 + (0.9 − 0.9·0.35)`
- * is `0.8999999999999999`, so `× 255` rounds to 229 where the definition gives 230. That is one
- * shade, on around one integer HSV triple in 1750, and it breaks the `rgb → hsb → rgb` identity —
- * a colour read back as HSB and re-entered came out darker than it went in.
+ * Uses the HSV `f(n)` definition — each channel is `v` less a fraction of `v·s` — with the
+ * same integer-numerator discipline as {@link hslToRgb}. Three float hazards have to be
+ * avoided here rather than one. Reaching the brightest channel by *adding a residual back*
+ * (chroma-plus-offset, or routing through HSL) leaves it just under `v`: `0.9·0.35 +
+ * (0.9 − 0.9·0.35)` is `0.8999999999999999`. Subtracting fractions loses an exact half:
+ * `0.4 − 0.4·0.75` is `0.09999999999999998`, so `hsb(0, 75%, 40%)` gave `#661919` where the
+ * definition gives `#661a1a`. And dividing the hue by 60 first loses another: `hsb(2, 100%,
+ * 100%)` should reach `8.5` on green and reached `8.4999…`. Deferring every division to
+ * {@link level} settles all three.
  */
 export function hsbToRgb({ h, s, b }: Hsb): Rgb {
   const hue = wrapHue(h);
-  const sat = clamp(s, 0, 100) / 100;
-  const value = clamp(b, 0, 100) / 100;
+  const sat = clamp(s, 0, 100);
+  const value = clamp(b, 0, 100);
   const channelAt = (n: number): number => {
-    const k = (n + hue / 60) % 6;
-    return Math.round((value - value * sat * Math.max(0, Math.min(k, 4 - k, 1))) * 255);
+    // `k` over 60, and `t = clamp(k, 4 - k, 1)` with it — so `sat * t` stays integral for a
+    // whole-degree hue and a whole-percent saturation.
+    const k = (60 * n + hue) % 360;
+    const t = Math.max(0, Math.min(k, 240 - k, 60));
+    return level(value * (6000 - sat * t) * 255, 600_000);
   };
   return { r: channelAt(5), g: channelAt(3), b: channelAt(1) };
 }
