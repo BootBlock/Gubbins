@@ -23,7 +23,7 @@ import {
   type TabularExportResult,
 } from '@/features/export/tabular-export';
 import { isoTimestamp, listExportFilename } from '@/features/export/export-every-page';
-import { locationKindLabel } from './location-kind';
+import { humanizeGlyphName } from '@/components/foundry/glyph-picker/glyph-name';
 import { locationPath } from './labels/location-label';
 
 /** The separator between path levels, matching the one the printed location label uses. */
@@ -89,9 +89,9 @@ export function locationsExportColumns(): readonly TabularColumn<LocationExportR
     { header: 'Name', value: (r) => r.location.name },
     { header: 'Parent', value: (r) => r.parentName },
     { header: 'Path', value: (r) => r.path },
-    // The stored key is a semantic token ('drawer'); the label is what the app shows. An unknown
-    // key — one a newer peer synced — resolves to nothing rather than leaking the raw token.
-    { header: 'Kind', value: (r) => locationKindLabel(r.location.kind) ?? null },
+    // The stored value is a canonical Lucide glyph name ('Archive'); the humanised form is what
+    // the app shows beside the picker, so the sheet reads the same way ('Archive', 'Circle Alert').
+    { header: 'Icon', value: (r) => (r.location.icon ? humanizeGlyphName(r.location.icon) : null) },
     { header: 'Description', value: (r) => r.location.description },
     { header: 'Items', value: (r) => r.location.itemCount },
     { header: 'Capacity', value: (r) => r.location.capacity },

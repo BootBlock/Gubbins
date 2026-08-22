@@ -8,6 +8,17 @@ vi.mock('../mutations', () => ({
   useCreateLocationPath: () => ({ mutate: spies.create, isPending: false }),
 }));
 
+// The real picker renders the whole ~1,700-glyph catalogue, which is far more work than this
+// dialog's tests need — they only care that a chosen glyph reaches the save payload. The picker
+// itself is covered by `GlyphPicker.test.tsx`.
+vi.mock('@/components/foundry/glyph-picker/GlyphPicker', () => ({
+  GlyphPicker: ({ onSelect }: { onSelect: (glyph: string) => void }) => (
+    <button type="button" onClick={() => onSelect('Rocket')}>
+      Pick Rocket
+    </button>
+  ),
+}));
+
 afterEach(() => {
   cleanup();
   spies.create.mockReset();
@@ -33,23 +44,25 @@ describe('CreateLocationDialog', () => {
     expect(name.className).toContain('text-loc-teal');
   });
 
-  it('offers a Type picker, a Capacity field and a Default toggle', () => {
+  it('offers an Icon picker, a Capacity field and a Default toggle', () => {
     renderDialog();
-    expect(screen.getByRole('radiogroup', { name: 'Type (optional)' })).toBeTruthy();
+    expect(screen.getByLabelText('Icon (optional)').textContent).toContain('Choose an icon');
     expect(screen.getByLabelText('Capacity (optional)')).toBeTruthy();
     expect(screen.getByLabelText(/default location for new items/i)).toBeTruthy();
   });
 
   it('gives every field an information badge', () => {
     renderDialog();
-    // Name, Parent, Description, Type, Colour, Capacity, Dimensions, Default.
+    // Name, Parent, Description, Icon, Colour, Capacity, Dimensions, Default.
     expect(screen.getAllByLabelText('More information')).toHaveLength(8);
   });
 
-  it('submits the richer metadata', () => {
+  it('submits the richer metadata, including the glyph chosen in the picker', async () => {
     renderDialog();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Cabinet A' } });
-    fireEvent.click(screen.getByRole('radio', { name: 'Cabinet' }));
+    // The picker is lazy-loaded, so its first paint is awaited rather than assumed.
+    fireEvent.click(screen.getByLabelText('Icon (optional)'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Pick Rocket' }));
     fireEvent.change(screen.getByLabelText('Capacity (optional)'), { target: { value: '20' } });
     fireEvent.click(screen.getByLabelText(/default location for new items/i));
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
@@ -57,7 +70,7 @@ describe('CreateLocationDialog', () => {
     expect(spies.create).toHaveBeenCalledTimes(1);
     expect(spies.create.mock.calls[0][0]).toMatchObject({
       name: 'Cabinet A',
-      kind: 'cabinet',
+      icon: 'Rocket',
       capacity: 20,
       isDefault: true,
     });

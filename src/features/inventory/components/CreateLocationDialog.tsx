@@ -1,5 +1,15 @@
 import { useId, useMemo, useRef, useState } from 'react';
-import { Button, Checkbox, FormField, Input, InfoHint, Modal, Textarea } from '@/components/foundry';
+import {
+  Button,
+  Checkbox,
+  FormField,
+  GlyphPickerButton,
+  Input,
+  InfoHint,
+  Modal,
+  Textarea,
+} from '@/components/foundry';
+import { FolderIcon } from '@/components/icons';
 import type { Location, LocationWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
@@ -8,14 +18,12 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useCreateLocationPath } from '../mutations';
 import { buildParentOptions } from '../parent-options';
 import { locationColorTextClass, type LocationColor } from '../location-color';
-import type { LocationKind } from '../location-kind';
 import { parseLocationBranch } from '../location-path';
 import { resolveDimension, resolvePackingPercent, resolveVolume } from '../measure-input';
 import { LocationSelect } from './LocationSelect';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { LocationAdvancedVolumeFields } from './LocationAdvancedVolumeFields';
 import { LocationDimensionsFields } from './LocationDimensionsFields';
-import { LocationKindPicker } from './LocationKindPicker';
 
 /** Create a (optionally nested) location (spec §4). */
 export function CreateLocationDialog({
@@ -43,13 +51,13 @@ export function CreateLocationDialog({
   const volumeEntryUnit = volumeSystemForDimensionUnit(dimensionUnit) === 'imperial' ? 'ft3' : 'l';
   const parentLabelId = useId();
   const colorLabelId = useId();
-  const kindLabelId = useId();
+  const iconFieldId = useId();
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState('');
   const [parentId, setParentId] = useState<string>(defaultParentId ?? '');
   const [description, setDescription] = useState('');
   const [color, setColor] = useState<LocationColor | null>(null);
-  const [kind, setKind] = useState<LocationKind | null>(null);
+  const [icon, setIcon] = useState<string | null>(null);
   const [capacity, setCapacity] = useState('');
   const [isDefault, setIsDefault] = useState(false);
   // Internal size (issue #457): entered in the user's dimension unit, stored canonical mm. A
@@ -100,7 +108,7 @@ export function CreateLocationDialog({
         parentId: parentId || null,
         description,
         color,
-        kind,
+        icon,
         capacity: capacityNum,
         // Only a single location can be the default, so a multi-sibling create never sets it.
         isDefault: multipleLeaves ? false : isDefault,
@@ -117,7 +125,7 @@ export function CreateLocationDialog({
           setName('');
           setDescription('');
           setColor(null);
-          setKind(null);
+          setIcon(null);
           setCapacity('');
           setIsDefault(false);
           setWidth('');
@@ -208,14 +216,24 @@ export function CreateLocationDialog({
           />
         </FormField>
 
+        {/* Explicit <label htmlFor> (a <button> is a labelable element) rather than
+            FormField's implicit-label wrap, which is meant for a single input. */}
         <div className="relative">
-          <span id={kindLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
-            {t('inventory.location.field.type')}
-          </span>
+          <label htmlFor={iconFieldId} className="mb-field-gap block pr-6 text-sm font-medium">
+            {t('inventory.location.field.icon')}
+          </label>
           <span className="absolute right-0 top-0.5">
-            <InfoHint content={t('inventory.location.hint.kind')} />
+            <InfoHint content={t('inventory.location.hint.icon')} />
           </span>
-          <LocationKindPicker labelledBy={kindLabelId} value={kind} onChange={setKind} />
+          <GlyphPickerButton
+            id={iconFieldId}
+            value={icon}
+            onChange={setIcon}
+            fallback={FolderIcon}
+            placeholder={t('inventory.location.field.iconPlaceholder')}
+            title={t('inventory.location.field.iconPickerTitle')}
+            clearable
+          />
         </div>
 
         <div className="relative">

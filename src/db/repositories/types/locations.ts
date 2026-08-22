@@ -12,8 +12,8 @@ export interface LocationRow {
   readonly description: string | null;
   /** Semantic colour swatch key (e.g. 'teal'); NULL = standard text colour (v19). */
   readonly color: string | null;
-  /** Semantic type key (e.g. 'cabinet'); NULL = generic/folder. Drives iconography. */
-  readonly kind: string | null;
+  /** Chosen icon: a canonical Lucide glyph name (PascalCase); NULL = the generic folder. */
+  readonly icon: string | null;
   /** Optional maximum item capacity; NULL = unbounded. Powers the fullness gauge. */
   readonly capacity: number | null;
   /** 1 ⇒ the default location pre-selected when adding new items (at most one row). */
@@ -59,8 +59,8 @@ export interface Location {
   readonly description: string | null;
   /** Semantic colour swatch key; null = standard text colour (v19). */
   readonly color: string | null;
-  /** Semantic type key; null = generic/folder. Drives iconography. */
-  readonly kind: string | null;
+  /** Chosen icon: a canonical Lucide glyph name (PascalCase); null = the generic folder. */
+  readonly icon: string | null;
   /** Optional maximum item capacity; null = unbounded. */
   readonly capacity: number | null;
   /** True ⇒ the default location pre-selected when adding new items. */
@@ -162,7 +162,8 @@ export interface CreateLocationInput {
   readonly parentId?: string | null;
   readonly description?: string | null;
   readonly color?: string | null;
-  readonly kind?: string | null;
+  /** Canonical Lucide glyph name (PascalCase); omit/null for the generic folder. */
+  readonly icon?: string | null;
   readonly capacity?: number | null;
   readonly isDefault?: boolean;
   readonly deadStockMode?: DeadStockMode;
@@ -184,7 +185,8 @@ export interface UpdateLocationInput {
   readonly parentId?: string | null;
   readonly description?: string | null;
   readonly color?: string | null;
-  readonly kind?: string | null;
+  /** Canonical Lucide glyph name (PascalCase); omit/null for the generic folder. */
+  readonly icon?: string | null;
   readonly capacity?: number | null;
   readonly isDefault?: boolean;
   /** Epoch-ms to archive, or null to restore. Undefined leaves it unchanged. */

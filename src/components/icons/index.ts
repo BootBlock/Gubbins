@@ -79,16 +79,9 @@ export {
   Folder as FolderIcon,
   FolderOpen as FolderOpenIcon,
 
-  // Location types (semantic 'kind' — drives per-location iconography in the tree/pickers)
-  Building2 as LocationBuildingIcon,
-  DoorOpen as LocationRoomIcon,
-  Archive as LocationCabinetIcon,
-  Layers as LocationShelfIcon,
-  Inbox as LocationDrawerIcon,
-  Container as LocationBinIcon,
+  // Location glyphs used by hand (a location's own icon is chosen from the full Lucide
+  // catalogue through the glyph picker — see `LocationIcon`)
   Box as LocationBoxIcon,
-  ShoppingBag as LocationBagIcon,
-  Car as LocationVehicleIcon,
   MapPin as LocationOtherIcon,
   Gauge as GaugeIcon,
   Scale as ScaleIcon,

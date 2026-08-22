@@ -54,7 +54,7 @@ import { useArchiveLocation, useMoveItem, useUpdateLocation } from '../mutations
 import { planMoveUndo } from '../undo';
 import { useUndoToast } from '../useUndoToast';
 import { LocationTreeItem } from './LocationTreeItem';
-import { LocationKindIcon } from './LocationKindIcon';
+import { LocationIcon } from './LocationIcon';
 import { CreateLocationDialog } from './CreateLocationDialog';
 import { EditLocationDialog } from './EditLocationDialog';
 import { PrintLocationLabelDialog } from './PrintLocationLabelDialog';
@@ -743,7 +743,7 @@ export function LocationSidebar({
         setSize={atTopLevel ? topLevelSetSize : setSize}
         selected={selectedId === node.id}
         focused={tabStopId === node.id}
-        icon={<LocationKindIcon kind={node.kind} expanded={isExpanded && hasChildren} />}
+        icon={<LocationIcon icon={node.icon} expanded={isExpanded && hasChildren} />}
         label={node.name}
         colorClass={locationColorTextClass(node.color)}
         description={node.description}

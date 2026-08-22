@@ -1978,7 +1978,7 @@ const baselineStatements: SqlStatement[] = [
   },
   { sql: updatedAtTrigger('supplier_part_price_history') },
   // --- Folded former v4: richer location metadata -------------------------------
-  { sql: `ALTER TABLE locations ADD COLUMN kind TEXT;` },
+  { sql: `ALTER TABLE locations ADD COLUMN icon TEXT;` },
   {
     sql: `ALTER TABLE locations ADD COLUMN capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0);`,
   },

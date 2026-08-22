@@ -5,7 +5,7 @@ import { ChevronRightIcon } from '@/components/icons';
 import type { LocationWithCount } from '@/db/repositories';
 import type { LayoutDensity } from '@/state/stores/useLayoutStore';
 import { descriptionSnippet } from '../location-detail';
-import { LocationKindIcon } from './LocationKindIcon';
+import { LocationIcon } from './LocationIcon';
 
 /**
  * A one-line summary of what a child location holds, shown beneath its name so the
@@ -97,7 +97,7 @@ export function SubLocationNav({
               className="group flex w-full items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 text-left outline-none transition-colors hover:bg-card focus-visible:ring-2 focus-visible:ring-primary/60"
             >
               <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary/50 text-muted-foreground [&_svg]:size-4">
-                <LocationKindIcon kind={loc.kind} />
+                <LocationIcon icon={loc.icon} />
               </span>
               <div className="min-w-0 flex-1">
                 <p className={cn('truncate text-sm font-medium', colorClass)} aria-hidden>
@@ -123,7 +123,7 @@ export function SubLocationNav({
               className="relative flex items-center gap-4 p-5 transition-all duration-200 ease-emphasized hover:-translate-y-1 hover:shadow-primary/10 focus-within:ring-2 focus-within:ring-primary/60"
             >
               <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-secondary/50 text-muted-foreground [&_svg]:size-5">
-                <LocationKindIcon kind={loc.kind} />
+                <LocationIcon icon={loc.icon} />
               </span>
               <div className="min-w-0 flex-1">
                 <h3 className={cn('truncate text-base font-semibold tracking-tight', colorClass)}>

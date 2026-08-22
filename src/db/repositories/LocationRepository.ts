@@ -116,7 +116,7 @@ const VOLUME_TOTALS_SUBQUERY = `
 
 const SELECT_WITH_COUNT = `
   SELECT l.id, l.name, l.parent_id, l.is_system, l.description, l.color,
-         l.kind, l.capacity, l.is_default, l.archived_at, l.last_counted_at,
+         l.icon, l.capacity, l.is_default, l.archived_at, l.last_counted_at,
          l.dead_stock_mode, l.dead_stock_days,
          l.width, l.height, l.depth, l.usable_volume, l.packing_factor,
          l.walk_order,
@@ -229,7 +229,7 @@ export class LocationRepository extends BaseRepository {
       statements.push({ sql: 'UPDATE locations SET is_default = 0 WHERE is_default = 1;' });
     }
     statements.push({
-      sql: `INSERT INTO locations (id, name, parent_id, description, color, kind, capacity, is_default,
+      sql: `INSERT INTO locations (id, name, parent_id, description, color, icon, capacity, is_default,
                                    dead_stock_mode, dead_stock_days,
                                    width, height, depth, usable_volume, packing_factor, walk_order)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
@@ -239,7 +239,7 @@ export class LocationRepository extends BaseRepository {
         parentId,
         normaliseText(input.description),
         normaliseText(input.color),
-        normaliseText(input.kind),
+        normaliseText(input.icon),
         normaliseCapacity(input.capacity),
         makeDefault ? 1 : 0,
         // Defaults to 'inherit' so a new location defers to its parent — dead-stock
@@ -286,7 +286,7 @@ export class LocationRepository extends BaseRepository {
    * doesn't already exist** there — an existing ancestor is reused, never duplicated — so the
    * same path can be typed repeatedly and only the genuinely-missing levels are added. The
    * intermediate ancestors are created bare; every leaf carries the full input (description,
-   * colour, kind, capacity, default), since those are the locations the user was configuring;
+   * colour, icon, capacity, default), since those are the locations the user was configuring;
    * a leaf that already exists is reused untouched rather than clobbered. Returns each resolved
    * leaf, in the order given. A single plain name (no separator) is exactly one leaf and behaves
    * exactly like {@link create}.
@@ -357,9 +357,9 @@ export class LocationRepository extends BaseRepository {
       sets.push('color = ?');
       params.push(normaliseText(input.color));
     }
-    if (input.kind !== undefined) {
-      sets.push('kind = ?');
-      params.push(normaliseText(input.kind));
+    if (input.icon !== undefined) {
+      sets.push('icon = ?');
+      params.push(normaliseText(input.icon));
     }
     if (input.capacity !== undefined) {
       sets.push('capacity = ?');
