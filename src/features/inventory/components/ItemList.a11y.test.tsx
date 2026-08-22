@@ -6,9 +6,9 @@ import type { Item } from '@/db/repositories';
  * List semantics for the virtualised flat list (issue #208). Only a screenful of rows exists
  * in the DOM, so a screen reader learns the shape of the result set from the container's
  * `role="list"` and from each row's absolute `aria-posinset` / `aria-setsize` — never from
- * counting the mounted elements. The leaf presentations are stubbed to inert markers that
- * echo those two props back (per the [[component-test-gotchas]] guidance), so this exercises
- * the list's own numbering rather than re-testing the card and the row.
+ * counting the mounted elements. The leaf presentations are stubbed to inert markers that echo
+ * those two props back, so this exercises the list's own numbering rather than re-testing the
+ * card and the row (they cover their own `role="listitem"` against the real components).
  */
 
 vi.mock('./ItemCard', () => ({
@@ -144,6 +144,19 @@ describe('ItemList — list semantics (issue #208)', () => {
     withViewport();
     render(<ItemList {...BASE_PROPS} items={items(5)} density="visual" totalCount={340} />);
     expect(positions(screen.getByRole('list')).map(([pos]) => pos)).toEqual(['1', '2', '3', '4', '5']);
+  });
+
+  it('keeps every wrapper between the list and its items out of the accessibility tree', () => {
+    // The generic positioning wrappers would otherwise sit between `list` and `listitem` and break
+    // that ownership in real assistive tech — a DOM-descendant query in a test would not notice.
+    withViewport();
+    render(<ItemList {...BASE_PROPS} items={items(5)} density="visual" totalCount={340} />);
+    const list = screen.getByRole('list');
+    for (const item of within(list).getAllByRole('listitem')) {
+      for (let el = item.parentElement; el && el !== list; el = el.parentElement) {
+        expect(el).toHaveAttribute('role', 'presentation');
+      }
+    }
   });
 
   it('keeps the Table density a table, not a list', () => {

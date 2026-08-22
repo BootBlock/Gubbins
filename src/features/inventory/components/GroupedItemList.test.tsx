@@ -256,11 +256,20 @@ describe('GroupedItemList', () => {
   });
 
   // Issue #208: a grouped section is a list too, and its cards must say where they sit in it.
+  it('names each section list after its own location, so open sections are distinguishable', () => {
+    // Two sections are open by default; identically-named lists would leave assistive tech no way
+    // to tell one from the other. The fixture resolves a location's name to its id.
+    render(<GroupedItemList tree={TREE} {...PROPS} />);
+    fireEvent.click(screen.getByTestId('location-section-header-child'));
+    expect(screen.getByRole('list', { name: 'Items in parent' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Items in child' })).toBeInTheDocument();
+  });
+
   it('declares each plain section a labelled list and numbers its cards', () => {
     // Fully loaded (no further page), so the section's own item count is the honest set size.
     sectionResult.set('parent', page(['parent-a', 'parent-b']));
     render(<GroupedItemList tree={TREE} {...PROPS} />);
-    const list = screen.getAllByRole('list', { name: 'Items in this location' })[0] as HTMLElement;
+    const list = screen.getByRole('list', { name: 'Items in parent' });
     expect(
       within(list)
         .getAllByRole('listitem')
@@ -274,7 +283,7 @@ describe('GroupedItemList', () => {
   it('reports an unknown set size for a section that still has a page to load', () => {
     // The shared fixture leaves "Workshop" with a further page pending.
     render(<GroupedItemList tree={TREE} {...PROPS} />);
-    const list = screen.getAllByRole('list', { name: 'Items in this location' })[0] as HTMLElement;
+    const list = screen.getByRole('list', { name: 'Items in parent' });
     for (const el of within(list).getAllByRole('listitem')) {
       expect(el).toHaveAttribute('aria-setsize', '-1');
     }
@@ -286,7 +295,7 @@ describe('GroupedItemList', () => {
     // has to carry its own absolute position and an unknown set size.
     sectionResult.set('parent', bigPage(200));
     render(<GroupedItemList tree={TREE} {...PROPS} />);
-    const list = screen.getAllByRole('list', { name: 'Items in this location' })[0] as HTMLElement;
+    const list = screen.getByRole('list', { name: 'Items in parent' });
     const mounted = within(list).getAllByRole('listitem');
     expect(mounted[0]).toHaveAttribute('aria-posinset', '1');
     expect(mounted[1]).toHaveAttribute('aria-posinset', '2');

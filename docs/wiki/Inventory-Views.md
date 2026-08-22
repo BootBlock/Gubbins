@@ -42,7 +42,9 @@ inventory reads as its true length rather than as the handful currently on scree
 > **ℹ️ Note**
 > Where Gubbins doesn't yet know the total — while the count is still being worked out, or inside
 > a grouped location that has more items still to load — the position is still announced, but the
-> total is reported as unknown rather than guessed at.
+> total is reported as unknown rather than guessed at. With **Paginate long lists** turned on, the
+> announced total is the page you are on, since the page control beneath the list is what tells you
+> where that page sits in the whole result.
 
 ## Grouping
 

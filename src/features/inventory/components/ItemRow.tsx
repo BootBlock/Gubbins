@@ -89,7 +89,7 @@ const ItemRowBody = memo(function ItemRow({
   // Suppressed during batch selection, where a body click means "toggle this row".
   const { actionsRef, onClick, clickable } = useCardClickAction(selection != null);
   return (
-    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- the body click is a pointer-only shortcut that only ever mirrors one of the row's own focusable, labelled action buttons (details/move/label), so keyboard/AT users already have full parity; giving the row itself a role + tabindex would wrap those buttons in a redundant, confusing nested tab stop.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- the body click is a pointer-only shortcut that only ever mirrors one of the row's own focusable, labelled action buttons (details/move/label), so keyboard/AT users already have full parity; giving the row itself an interactive role + tabindex would wrap those buttons in a redundant, confusing nested tab stop (its `listitem` role is structural, and adds no tab stop).
     <div
       ref={ref}
       // The row is one item of the list its container declares (`role="list"`), with its

@@ -326,6 +326,11 @@ function SectionItems({
     ) : null;
   }
 
+  // Every section is its own list, so each one is named by its location — several sections are
+  // open at once by default, and a run of identically-named lists gives assistive tech no way to
+  // tell the Workshop list from the Garage one.
+  const listLabel = t('inventory.list.sectionLabel', { vars: { location: locationName(locationId) } });
+
   // Past its first page a section is large enough that mounting every card is the problem the
   // flat list already solved (issue #171), so its body switches to the virtualiser. Trimmed-off
   // front pages force the same choice: only absolute indexing renders them without jumping.
@@ -336,6 +341,7 @@ function SectionItems({
           items={items}
           firstItemIndex={firstItemIndex}
           hasNextPage={hasNextPage}
+          listLabel={listLabel}
           density={density}
           scrollRef={scrollRef}
           locations={locations}
@@ -370,6 +376,7 @@ function SectionItems({
       {density === 'table' ? (
         <SectionTable
           items={items}
+          listLabel={listLabel}
           locations={locations}
           locationName={locationName}
           locationColorClass={locationColorClass}
@@ -381,7 +388,7 @@ function SectionItems({
       ) : (
         <div
           role="list"
-          aria-label={t('inventory.list.sectionLabel')}
+          aria-label={listLabel}
           className={density === 'data' ? 'flex flex-col gap-1.5' : 'grid gap-4'}
           style={
             density === 'data'
@@ -489,6 +496,7 @@ function VirtualSectionBody({
   items,
   firstItemIndex,
   hasNextPage,
+  listLabel,
   density,
   scrollRef,
   locations,
@@ -509,6 +517,8 @@ function VirtualSectionBody({
    * announce is the loaded span or "unknown" (issue #208).
    */
   readonly hasNextPage: boolean;
+  /** This section's accessible name — "Items in <location>" (issue #208). */
+  readonly listLabel: string;
   readonly density: ItemDensity;
   readonly scrollRef: React.RefObject<HTMLDivElement | null>;
   readonly locations: readonly LocationWithCount[];
@@ -522,7 +532,6 @@ function VirtualSectionBody({
   readonly isFetchingPreviousPage: boolean;
   readonly fetchPreviousPage: () => void;
 }) {
-  const t = useT();
   const isTable = density === 'table';
   const bodyRef = useRef<HTMLDivElement>(null);
   const columns = useSectionColumns(bodyRef, density);
@@ -568,7 +577,7 @@ function VirtualSectionBody({
     <div
       ref={bodyRef}
       role={isTable ? 'presentation' : 'list'}
-      aria-label={isTable ? undefined : t('inventory.list.sectionLabel')}
+      aria-label={isTable ? undefined : listLabel}
       data-testid="location-section-virtual-body"
       className="relative w-full"
       style={{ height: virtualizer.getTotalSize() }}
@@ -669,7 +678,7 @@ function VirtualSectionBody({
   // A spreadsheet table: the column header sits above the virtualised body, and the
   // intermediate wrappers are `role="presentation"` so the rows re-parent to this `role="table"`.
   return (
-    <div role="table" aria-label={t('inventory.list.sectionLabel')} aria-rowcount={rowCount + 1}>
+    <div role="table" aria-label={listLabel} aria-rowcount={rowCount + 1}>
       <ItemTableHeader columns={tableColumns} selecting={selecting} gridTemplate={tableGrid} />
       <div role="rowgroup">{body}</div>
     </div>
@@ -782,6 +791,7 @@ function useSectionScrollMargin(
  */
 function SectionTable({
   items,
+  listLabel,
   locations,
   locationName,
   locationColorClass,
@@ -791,6 +801,8 @@ function SectionTable({
   cardFields,
 }: {
   readonly items: readonly Item[];
+  /** This section's accessible name — "Items in <location>" (issue #208). */
+  readonly listLabel: string;
   readonly locations: readonly LocationWithCount[];
   readonly locationName: (id: string) => string;
   readonly locationColorClass?: (id: string) => string | undefined;
@@ -799,11 +811,10 @@ function SectionTable({
   readonly selectedIds?: ReadonlySet<string>;
   readonly cardFields: CardFieldsListContext;
 }) {
-  const t = useT();
   const selecting = selection != null;
   const { columns, columnIds, gridTemplate } = useTableColumnModel(cardFields, selecting);
   return (
-    <div role="table" aria-label={t('inventory.list.sectionLabel')} aria-rowcount={items.length + 1}>
+    <div role="table" aria-label={listLabel} aria-rowcount={items.length + 1}>
       <ItemTableHeader columns={columns} selecting={selecting} gridTemplate={gridTemplate} />
       <div role="rowgroup">
         {items.map((item, i) => (

@@ -375,7 +375,7 @@
   "inventory.savedSearches.recalledBuilder": "Saved search loaded into visual search.",
   "inventory.savedSearches.failed": "That saved search couldn’t be loaded: {reason}",
   "inventory.list.label": "Inventory items",
-  "inventory.list.sectionLabel": "Items in this location",
+  "inventory.list.sectionLabel": "Items in {location}",
   "inventory.list.error": "Your items couldn’t be loaded.",
   "inventory.list.retry": "Try again",
   "inventory.item.crashed": "This item couldn’t be displayed.",
