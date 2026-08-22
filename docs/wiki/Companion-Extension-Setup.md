@@ -29,6 +29,21 @@ those controls stay hidden — nothing to configure and nothing running in the b
 > This is the one feature that reaches out to the web, and only when *you* trigger it on a page.
 > The rest of Gubbins stays fully [[offline and local|How-Your-Data-Is-Stored]].
 
+## Where it works
+
+The extension only ever runs on Gubbins itself — the hosted app at
+`https://bootblock.github.io/Gubbins/`, or a copy you run on your own machine at
+`http://localhost/Gubbins/`. On every other page in your browser it is not present at all: it
+reads nothing, adds nothing, and cannot be asked to do anything.
+
+> **ℹ️ Note**
+> If you [[host Gubbins yourself|Self-Hosting-with-Docker]] at your own web address, the
+> extension does not recognise it out of the box, and its **Scrape** controls stay hidden.
+> Add your address to the extension's own `matches` list (the `manifest.json` inside the
+> folder you loaded) and reload it in your browser's extensions page. The list is deliberately
+> narrow rather than a wildcard: a wildcard broad enough to cover your address would also cover
+> every unrelated site sharing it.
+
 ## Related pages
 
 - **[[Scraping supplier data|Scraping-Supplier-Data]]** — using it to fill item details.

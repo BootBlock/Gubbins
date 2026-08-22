@@ -12,6 +12,11 @@
  * link the user chose; the lookup and data-lookup gates build their own URLs from an
  * allow-listed host, so a refusal there is a fault rather than a choice and stays `BLOCKED`.
  *
+ * Every request is also checked against its *sender* (issue #493): only the content script
+ * running on a Gubbins PWA page may drive a fetch or claim a queued active-tab payload, and only
+ * the scraper injected into a genuine Amazon tab may report one. The browser fills in the
+ * sender's URL, so a page cannot claim to be the app.
+ *
  * Note: MV3 service workers have no DOM, so parsing happens in the content script
  * (which does) — keeping this worker tiny and dependency-free.
  */
@@ -29,6 +34,7 @@ import {
   URL_REFUSAL_REASONS,
 } from '../../src/features/scraping/parsers/suppliers';
 import { buildProductLookupUrl, parseOpenFoodFactsProduct } from '../../src/features/scraping/product-lookup';
+import { GUBBINS_APP_URL_PATTERNS, isGubbinsAppUrl } from '../../src/features/scraping/app-origins';
 import { isAmazonHost } from '../../src/features/inventory/asin';
 import { parseGtin } from '../../src/features/scanner/gtin';
 
@@ -70,6 +76,55 @@ interface Tab {
   url?: string;
 }
 
+/**
+ * Minimal `chrome.runtime.MessageSender` shape — who sent a runtime message.
+ *
+ * `url` is the document URL of the frame that sent it, and is populated for a content script
+ * without the broad `tabs` permission (`tab.url` is not, so it is only a fallback). It is set
+ * by the browser, not by the page, which is what makes it usable as an identity check.
+ */
+interface MessageSender {
+  tab?: Tab;
+  url?: string;
+}
+
+/** The URL the browser attributes a runtime message to, if it gave us one. */
+function senderUrl(sender: MessageSender): string | undefined {
+  return sender.url ?? sender.tab?.url;
+}
+
+/**
+ * Did this runtime message come from a Gubbins PWA page (issue #493)?
+ *
+ * The privileged worker fetches on behalf of whoever asks it, so "whoever asks it" has to be
+ * checked rather than assumed. Only the content script the manifest injects into the app may
+ * drive `FETCH`/`LOOKUP`/`DATA_FETCH` or claim a queued active-tab payload; the Amazon
+ * scraper injected on a user gesture has its own check ({@link isForeignAmazonSender}).
+ */
+function isAppSender(sender: MessageSender): boolean {
+  return isGubbinsAppUrl(senderUrl(sender));
+}
+
+/**
+ * Is this message *not* from a genuine Amazon marketplace tab?
+ *
+ * Phrased as a refusal rather than an approval on purpose: the only thing that ever sends an
+ * `ACTIVE_TAB_SCRAPE` is the bundle this worker injects itself, and only into a tab whose host
+ * {@link scrapeAmazonTab} already checked. A sender URL the browser did not attribute therefore
+ * proves nothing suspicious, and refusing it would break the user's Amazon import for the sake of
+ * an attacker who cannot reach this message anyway. A sender URL that *is* attributed, and is not
+ * an Amazon marketplace, is a different matter.
+ */
+function isForeignAmazonSender(sender: MessageSender): boolean {
+  const url = senderUrl(sender);
+  if (url === undefined) return false;
+  try {
+    return !isAmazonHost(new URL(url).hostname);
+  } catch {
+    return true;
+  }
+}
+
 declare const chrome: {
   runtime: {
     onInstalled: { addListener: (cb: () => void) => void };
@@ -77,7 +132,7 @@ declare const chrome: {
       addListener: (
         cb: (
           message: unknown,
-          sender: { tab?: Tab },
+          sender: MessageSender,
           sendResponse: (r: FetchResponse | LookupResponse | DataFetchResponse) => void,
         ) => boolean | void,
       ) => void;
@@ -231,9 +286,6 @@ async function fetchDataUrl(url: string): Promise<DataFetchResponse> {
 // bundle parses the live DOM with the shared §9 parser and posts the outcome back here;
 // we route it to an open Gubbins PWA tab, or queue it for the next one that opens.
 
-/** Content-script match patterns for the Gubbins PWA — where a payload may be delivered. */
-const PWA_URL_PATTERNS = ['http://localhost/*', 'http://127.0.0.1/*', 'https://*.github.io/*'] as const;
-
 const CONTEXT_MENU_ID = 'gubbins-add-from-amazon';
 
 /**
@@ -309,9 +361,14 @@ async function deliverToPwa(outcome: ActiveTabOutcome): Promise<void> {
   const item: QueuedScrape = { requestId: crypto.randomUUID(), outcome };
   let delivered = false;
   try {
-    const tabs = await chrome.tabs.query({ url: PWA_URL_PATTERNS });
+    const tabs = await chrome.tabs.query({ url: GUBBINS_APP_URL_PATTERNS });
     for (const tab of tabs) {
       if (tab.id === undefined) continue;
+      // The query filter already narrows to the app, but a tab whose URL we can read is
+      // re-checked here: delivery carries the scraped payload, so it goes to the Gubbins app
+      // or nowhere (issue #493). A tab with no readable URL is left to the content script's
+      // own self-check, which is the only thing that answers a `DELIVER_ACTIVE_TAB`.
+      if (tab.url !== undefined && !isGubbinsAppUrl(tab.url)) continue;
       if (await sendToTab(tab.id, item)) delivered = true;
     }
   } catch {
@@ -372,28 +429,51 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === CONTEXT_MENU_ID && tab) void scrapeAmazonTab(tab);
 });
 
+/** The refusal returned to a sender that is not the Gubbins app (issue #493). */
+const FOREIGN_SENDER: FetchResponse = {
+  ok: false,
+  errorType: 'BLOCKED',
+  reason: 'Request did not come from Gubbins.',
+};
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const req = message as Partial<FetchRequest & LookupRequest & DataFetchRequest> | null;
+  const fromApp = isAppSender(sender);
   if (req?.kind === 'FETCH' && typeof req.url === 'string') {
+    if (!fromApp) {
+      sendResponse(FOREIGN_SENDER);
+      return false;
+    }
     void fetchPage(req.url).then(sendResponse);
     return true; // keep the message channel open for the async response
   }
   if (req?.kind === 'LOOKUP' && typeof req.gtin === 'string') {
+    if (!fromApp) {
+      sendResponse(FOREIGN_SENDER);
+      return false;
+    }
     void fetchProduct(req.gtin).then(sendResponse);
     return true;
   }
   if (req?.kind === 'DATA_FETCH' && typeof req.url === 'string') {
+    if (!fromApp) {
+      sendResponse(FOREIGN_SENDER);
+      return false;
+    }
     void fetchDataUrl(req.url).then(sendResponse);
     return true;
   }
-  // The injected active-tab bundle reporting a live-DOM scrape outcome (Path A2).
+  // The injected active-tab bundle reporting a live-DOM scrape outcome (Path A2). It runs on the
+  // Amazon tab, not the app, so it is checked against the marketplace hosts instead.
   const active = message as { kind?: string; outcome?: ActiveTabOutcome } | null;
   if (active?.kind === 'ACTIVE_TAB_SCRAPE' && active.outcome) {
-    void deliverToPwa(active.outcome);
+    if (!isForeignAmazonSender(sender)) void deliverToPwa(active.outcome);
     return false; // fire-and-forget
   }
-  // A Gubbins PWA tab announcing it is ready to receive queued scrapes.
-  if (active?.kind === 'PWA_READY' && sender.tab?.id !== undefined) {
+  // A Gubbins PWA tab announcing it is ready to receive queued scrapes. Verified against the
+  // app's own origin: a queued payload is handed to the *first* tab that says PWA_READY, so
+  // trusting the claim would let any injected page collect a scrape it never triggered (#493).
+  if (active?.kind === 'PWA_READY' && sender.tab?.id !== undefined && fromApp) {
     void flushQueueTo(sender.tab.id);
     return false;
   }

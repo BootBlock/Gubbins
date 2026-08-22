@@ -13,11 +13,43 @@ manual entry when it is absent — the extension is never required.
 | `src/content-script.ts` | Page-side bridge on the Gubbins origins: broadcasts `EXTENSION_READY`, validates inbound messages with the shared `parseExtensionMessage` (origin + signature + Zod), parses fetched HTML with the shared Strategy parsers, posts `SCRAPE_RESULT`/`SCRAPE_ERROR`. Also receives active-tab scrapes routed from the background worker and posts them into the page as `ACTIVE_TAB_RESULT`/`ACTIVE_TAB_ERROR`. |
 | `src/background.ts` | CORS-bypassing fetcher (MV3 service worker — no DOM, so parsing lives in a content script). Maps transport failures to the §9.4.2 error taxonomy. Also hosts the **active-tab** trigger (toolbar click / "Add to Gubbins" context menu): injects `active-tab-scrape.js` into the Amazon tab and routes the result to an open PWA tab (or queues it). |
 | `src/active-tab-scrape.ts` | Injected into the user's **live Amazon tab** (Path A2) via `chrome.scripting.executeScript` under the `activeTab` permission; runs the shared `runParser` against the rendered DOM and messages the outcome back to the background worker. |
-| `manifest.json` | MV3 manifest. Content script injects on the Gubbins origins; `host_permissions` allow **fetching** supplier pages; the `activeTab`/`scripting`/`contextMenus` permissions drive the Amazon active-tab flow **without** a broad host grant. |
+| `manifest.json` | MV3 manifest. Content script injects on the Gubbins app pages only (see below); `host_permissions` allow **fetching** supplier pages; the `activeTab`/`scripting`/`contextMenus` permissions drive the Amazon active-tab flow **without** a broad host grant. |
 
 The protocol schema (`src/features/scraping/protocol.ts`) and the Strategy parsers
 (`src/features/scraping/parsers/`) are **shared with the PWA** and unit-tested there, so the
 wire contract and DOM-drift handling cannot drift between the two halves.
+
+### Where the content script runs (issue #493)
+
+Injection is pinned to the Gubbins app itself, path and all — the single source of truth is
+`GUBBINS_APP_URL_PATTERNS` in `src/features/scraping/app-origins.ts`, which
+`app-origins.test.ts` pins the manifest to:
+
+```
+https://bootblock.github.io/Gubbins/*
+http://localhost/Gubbins/*
+http://127.0.0.1/Gubbins/*
+```
+
+The earlier `https://*.github.io/*` + `http://localhost/*` patterns were far wider than they
+read: a Chrome match pattern ignores the port, and `*.github.io` covers every GitHub Pages site
+anyone publishes. Since the content script trusted `window.location.origin`, every one of those
+pages was a trusted one — it could drive the scraper and receive the Amazon payloads the worker
+delivers. An origin check is only worth as much as the set of pages the checking code runs in, so
+the patterns are the fix; the page path is what narrows `localhost`, where a port cannot be
+expressed.
+
+Two checks back that up in code, so it never rests on the manifest alone: the content script
+re-checks its own page with `isGubbinsAppUrl` before installing a single listener, and the
+background worker checks the *sender* of every message the browser attributes — only an app page
+may drive a fetch or claim a queued active-tab payload, and only a genuine Amazon tab may report
+one.
+
+**Self-hosting?** A deployment on your own address (see the repository `Dockerfile`) is
+deliberately not covered by a wildcard — one that admitted your origin would admit every
+unrelated site on it too. Add your own origin to `content_scripts[0].matches` in
+`extension/dist/manifest.json` (and to `GUBBINS_APP_ORIGINS` if you build from source), keeping
+it as narrow as your deployment allows, then reload the unpacked extension.
 
 ### Amazon: active-tab only (Path A2), never background-fetched
 

@@ -1,9 +1,9 @@
 /**
  * Build-time resolution of the public path Gubbins is served from.
  *
- * This module is consumed by `vite.config.ts` only — like `src/csp.ts`, it lives under
- * `src/` so it is type-checked and unit-tested with the rest of the app, but it never
- * enters the browser bundle.
+ * This module is consumed by `vite.config.ts` and — for {@link DEFAULT_BASE_PATH} — by the
+ * extension's `features/scraping/app-origins.ts`. Like `src/csp.ts` it lives under `src/` so it
+ * is type-checked and unit-tested with the rest of the app, but it never enters the PWA bundle.
  *
  * GitHub Pages serves Gubbins under a project sub-path (spec §1.2), so `/Gubbins/` stays
  * the default. A self-hosted deployment (see `Dockerfile`) usually serves it at the domain
