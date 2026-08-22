@@ -384,6 +384,42 @@ describe('validateFieldValue — SELECT', () => {
   });
 });
 
+describe('validateFieldValue — COLOUR', () => {
+  it('canonicalises every accepted notation to one lowercase hex', () => {
+    const d = def({ fieldType: 'COLOUR', name: 'Filament colour' });
+    for (const raw of [
+      '#F00',
+      '#ff0000',
+      '#FF0000FF',
+      'rgb(255, 0, 0)',
+      'rgb(255 0 0)',
+      'hsl(0, 100%, 50%)',
+      'hsb(0, 100%, 100%)',
+      'red',
+      '  Red  ',
+    ]) {
+      expect(validateFieldValue(d, raw), raw).toEqual({ ok: true, value: '#ff0000' });
+    }
+  });
+
+  it('keeps a partial alpha', () => {
+    const d = def({ fieldType: 'COLOUR' });
+    expect(validateFieldValue(d, 'rgba(255, 0, 0, 0.5)')).toEqual({ ok: true, value: '#ff000080' });
+  });
+
+  it('rejects a value that is not a colour, naming the field', () => {
+    const d = def({ fieldType: 'COLOUR', name: 'Filament colour' });
+    const result = validateFieldValue(d, 'burnt sienna-ish');
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toContain('Filament colour');
+  });
+
+  it('clears on blank, and reports required when it must be set', () => {
+    expect(validateFieldValue(def({ fieldType: 'COLOUR' }), '   ')).toEqual({ ok: true, value: null });
+    expect(validateFieldValue(def({ fieldType: 'COLOUR', isRequired: true }), '').ok).toBe(false);
+  });
+});
+
 describe('validateFieldValue — FILE', () => {
   it('accepts any non-blank pointer string verbatim', () => {
     const d = def({ fieldType: 'FILE' });

@@ -220,6 +220,11 @@ function LocationFieldValueInput({
   // The selection types commit the moment the user picks — they emit no blur of their own,
   // so a blur-only commit would silently never fire for them. IMAGE is the same: it emits its
   // value on pick (asynchronously, after compression) with no meaningful blur (issue #453).
+  //
+  // COLOUR is deliberately **not** one of them, even though it too has a picker. It is a text
+  // box first, and a partly-typed hex is frequently a valid colour in its own right (`#ff0`
+  // is yellow), so committing per change would write a string of colours nobody chose on the
+  // way to the one they did. Its swatch wires this same blur instead.
   const commitsOnPick =
     value.fieldType === 'SELECT' ||
     value.fieldType === 'BOOLEAN' ||

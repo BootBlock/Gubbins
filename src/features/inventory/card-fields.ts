@@ -13,6 +13,7 @@
  */
 import type { CardFieldStoredValue, Item } from '@/db/repositories';
 import type { Condition, FieldType } from '@/db/repositories/constants';
+import { parseColour } from '@/lib/colour';
 import { isImageDataUrl } from '@/lib/image-data-url';
 import { isForeignOrigin } from './device-origin';
 import { isExternalHref } from './external-href';
@@ -260,6 +261,12 @@ export type CardFieldValue =
   | { readonly kind: 'condition'; readonly condition: Condition }
   | { readonly kind: 'tags'; readonly tags: readonly string[] }
   | { readonly kind: 'image'; readonly src: string }
+  /**
+   * A `COLOUR` field's value, as its canonical `#rrggbb`/`#rrggbbaa`. Its own arm rather than
+   * `text` so the renderer can draw the swatch beside the code — and the code stays beside the
+   * swatch, because colour is never allowed to be the only carrier of the value (WCAG 1.4.1).
+   */
+  | { readonly kind: 'colour'; readonly colour: string }
   | { readonly kind: 'empty' };
 
 export interface ResolvedCardField {
@@ -471,6 +478,14 @@ export function customFieldValue(
   if (type === 'IMAGE') {
     const trimmed = raw.trim();
     return isImageDataUrl(trimmed) ? { kind: 'image', src: trimmed } : EMPTY;
+  }
+  // A COLOUR is stored canonicalised, so this normally just confirms the shape. It is re-parsed
+  // rather than trusted because a value can arrive out of band — an import, a peer on an older
+  // build, a hand-edited backup — and a swatch painted from an unvalidated string would be a
+  // colour the app made up. Anything unreadable degrades to its own text, which is honest.
+  if (type === 'COLOUR') {
+    const canonical = parseColour(raw);
+    return canonical === null ? { kind: 'text', text: raw.trim() } : { kind: 'colour', colour: canonical };
   }
   return { kind: 'text', text: raw };
 }

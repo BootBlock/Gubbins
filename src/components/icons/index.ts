@@ -105,6 +105,12 @@ export {
   SlidersHorizontal as SettingsIcon,
   Check as CheckIcon,
 
+  // A colour recorded *about a thing* — the COLOUR custom field's swatch and its
+  // notation menu (issue #452). Deliberately the same palette glyph as AppearanceIcon
+  // under its own semantic name: one is the app theming itself, the other is a fact the
+  // user recorded about something they own, and the two should be free to diverge later.
+  Palette as ColourIcon,
+
   // Settings & preferences (Phase 12, §3)
   Palette as AppearanceIcon,
   // Branding (issue #110) — the "make it your own" swatch-book glyph, distinct from the Appearance palette.
